@@ -1,0 +1,161 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendPush } from '../_shared/send-push.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+/**
+ * capture-payment
+ *
+ * Called when a driver marks a delivery as complete (status: collected → delivered).
+ * Captures the pre-authorised PaymentIntent for base fee + any confirmed waiting fee.
+ *
+ * Body: { request_id: string }
+ */
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+
+    // Verify caller
+    const anonSupabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } },
+    );
+    const { data: { user }, error: userError } = await anonSupabase.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { request_id } = await req.json();
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+
+    // Fetch the request (+ customer_id for notification)
+    const { data: request, error: reqError } = await supabase
+      .from('delivery_requests')
+      .select('id, customer_id, payment_intent_id, base_fee_pence, waiting_fee_pence, payment_status')
+      .eq('id', request_id)
+      .single();
+
+    if (reqError || !request) {
+      return new Response(JSON.stringify({ error: 'Request not found' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!request.payment_intent_id) {
+      // No payment intent — mark delivered anyway (e.g. already-paid or legacy requests)
+      await supabase
+        .from('delivery_requests')
+        .update({ status: 'delivered', payment_status: 'unpaid' })
+        .eq('id', request_id);
+
+      const { data: customerProfile } = await supabase
+        .from('profiles').select('push_token').eq('id', request.customer_id).single();
+      await sendPush(customerProfile?.push_token, 'Delivered! 🎉',
+        'Your item has arrived.', { request_id });
+
+      return new Response(
+        JSON.stringify({ captured: false, no_payment_intent: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (request.payment_status === 'captured') {
+      return new Response(JSON.stringify({ already_captured: true }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const totalPence = (request.base_fee_pence ?? 0) + (request.waiting_fee_pence ?? 0);
+
+    // If there's a waiting fee, update the PaymentIntent amount before capturing
+    if ((request.waiting_fee_pence ?? 0) > 0) {
+      const updateRes = await fetch(`https://api.stripe.com/v1/payment_intents/${request.payment_intent_id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${stripeKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ amount: String(totalPence) }),
+      });
+      if (!updateRes.ok) {
+        const updateErr = await updateRes.json();
+        throw new Error(`PaymentIntent update failed: ${updateErr.error?.message}`);
+      }
+    }
+
+    // Capture the payment
+    const captureRes = await fetch(
+      `https://api.stripe.com/v1/payment_intents/${request.payment_intent_id}/capture`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${stripeKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ amount_to_capture: String(totalPence) }),
+      },
+    );
+
+    const captured = await captureRes.json();
+    if (!captureRes.ok) {
+      throw new Error(`Capture failed: ${captured.error?.message}`);
+    }
+
+    // Update request to captured + delivered
+    await supabase
+      .from('delivery_requests')
+      .update({
+        payment_status: 'captured',
+        total_fee_pence: totalPence,
+        status: 'delivered',
+      })
+      .eq('id', request_id);
+
+    // Notify the customer their item has been delivered
+    const { data: customerProfile } = await supabase
+      .from('profiles')
+      .select('push_token')
+      .eq('id', request.customer_id)
+      .single();
+
+    await sendPush(
+      customerProfile?.push_token,
+      'Delivered! 🎉',
+      `Your item has arrived. £${(totalPence / 100).toFixed(2)} has been charged to your card.`,
+      { request_id },
+    );
+
+    return new Response(
+      JSON.stringify({ captured: true, total_fee_pence: totalPence }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+
+  } catch (err) {
+    console.error('[capture-payment]', err);
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+});

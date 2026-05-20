@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "OneShetland Fetch",
+    "slug": "oneshetland-fetch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#032F4C"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.oneshetland.app",
+      "icon": "./assets/icon.png"
+    },
+    "android": {
+      "package": "com.oneshetland.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#032F4C"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow OneShetland Fetch to use Face ID to secure your account."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#032F4C",
+          "sounds": []
+        }
+      ]
+    ],
+    "scheme": "oneshetland-fetch",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "505d7724-8b86-493d-973e-45c44011157f"
+      }
+    },
+    "owner": "darrenfullerton"
+  }
+}
