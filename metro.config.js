@@ -1,15 +1,21 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Force Babel transformation for packages that ship modern JS syntax
-// (private class fields, optional chaining, etc.) that Hermes cannot handle raw
-config.transformer.minifierConfig = {};
-config.resolver.sourceExts = [...config.resolver.sourceExts];
+// @supabase/supabase-js exports both a .mjs (uses dynamic import() which
+// Hermes rejects) and a .cjs (uses safe require()). Metro was picking the
+// .mjs via the package exports "import" condition. Map it to .cjs directly.
+config.resolver.extraNodeModules = {
+  ...config.resolver.extraNodeModules,
+  '@supabase/supabase-js': path.resolve(
+    __dirname,
+    'node_modules/@supabase/supabase-js/dist/index.cjs'
+  ),
+};
 
-// Override transformIgnorePatterns to include packages that need transpiling
-config.transformer.transformIgnorePatterns = [
-  'node_modules/(?!(expo|@expo|expo-router|expo-modules-core|expo-constants|expo-linking|expo-notifications|expo-device|expo-secure-store|expo-splash-screen|expo-status-bar|expo-font|expo-web-browser|react-native|@react-native|@react-native-community|@stripe/stripe-react-native|@supabase|react-native-url-polyfill|react-native-safe-area-context|react-native-screens)/)',
-];
+// Disable package exports resolution so packages fall back to their
+// "main" field (CommonJS) instead of the "import" condition (.mjs)
+config.resolver.unstable_enablePackageExports = false;
 
 module.exports = config;
