@@ -50,7 +50,11 @@
           "color": "#032F4C",
           "sounds": []
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "@stripe/stripe-react-native",
+      "expo-font",
+      "expo-web-browser"
     ],
     "scheme": "oneshetland-fetch",
     "experiments": {

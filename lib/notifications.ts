@@ -11,18 +11,21 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
-// How foreground notifications appear while the app is open
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
-
 export async function registerPushToken(userId: string): Promise<void> {
   // Push tokens only work on physical devices
   if (!Device.isDevice) return;
+
+  // Set how foreground notifications appear — must be called before requesting a token.
+  // Placed here (not at module level) so it only runs on device and can't crash at import time.
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,   // legacy (SDK ≤54)
+      shouldShowBanner: true,  // SDK 55+
+      shouldShowList: true,    // SDK 55+
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
 
   // Android needs a notification channel
   if (Platform.OS === 'android') {

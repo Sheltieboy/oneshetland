@@ -54,7 +54,7 @@ function RootNavigator() {
     }
 
     // Signed in — redirect away from auth/landing to the right dashboard
-    if (inAuthGroup || segments[0] === 'index' || segments.length === 0) {
+    if (inAuthGroup || (segments as string[])[0] === 'index' || segments.length === 0) {
       // Use profile role if available, default to customer
       const role = profile?.role ?? 'customer';
       if (role === 'admin' || role === 'moderator') {
@@ -107,12 +107,19 @@ export default function RootLayout() {
     </AuthProvider>
   );
 
-  // StripeProvider temporarily disabled to isolate iOS 26 launch crash.
-  // Re-enable once stripe-react-native is confirmed compatible.
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        {content}
+        {STRIPE_KEY ? (
+          <StripeProvider
+            publishableKey={STRIPE_KEY}
+            merchantIdentifier="merchant.com.oneshetland.app"
+          >
+            {content}
+          </StripeProvider>
+        ) : (
+          content
+        )}
       </SafeAreaProvider>
     </ErrorBoundary>
   );
