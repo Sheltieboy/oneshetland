@@ -113,7 +113,6 @@ export default function RootLayout() {
         {STRIPE_KEY ? (
           <StripeProvider
             publishableKey={STRIPE_KEY}
-            merchantIdentifier="merchant.com.oneshetland.app"
           >
             {content}
           </StripeProvider>
