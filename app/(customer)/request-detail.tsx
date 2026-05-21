@@ -105,6 +105,7 @@ export default function RequestDetailScreen() {
   const [waitingEvent, setWaitingEvent] = useState<WaitingEvent | null>(null);
   const [liveWaitingFee, setLiveWaitingFee] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -207,6 +208,57 @@ export default function RequestDetailScreen() {
     : 0;
   const inGrace = graceRemaining > 0;
 
+  async function handleCancel() {
+    const status = request.status;
+
+    if (status === 'collected' || status === 'delivered') return; // blocked
+
+    const isMatched = status === 'matched';
+
+    Alert.alert(
+      isMatched ? 'Cancel this request?' : 'Cancel this request?',
+      isMatched
+        ? 'A driver has already accepted this request. They will be notified of the cancellation. Please only cancel if absolutely necessary.'
+        : 'This will remove your request and no driver will be sent.',
+      [
+        { text: 'Keep request', style: 'cancel' },
+        {
+          text: 'Yes, cancel it',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            const { error } = await supabase
+              .from('delivery_requests')
+              .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+              .eq('id', id);
+
+            if (error) {
+              setCancelling(false);
+              Alert.alert('Error', 'Could not cancel the request. Please try again.');
+              return;
+            }
+
+            // Notify the driver if they had already accepted
+            if (isMatched) {
+              const { data: { session } } = await supabase.auth.getSession();
+              fetch('https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/notify-drivers', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({ request_id: id, event: 'cancelled' }),
+              }).catch(() => {/* non-fatal */});
+            }
+
+            setCancelling(false);
+            router.back();
+          },
+        },
+      ],
+    );
+  }
+
   const baseFee = request.base_fee_pence;
   const waitFee = isDelivered ? (request.waiting_fee_pence ?? 0) : liveWaitingFee;
   const totalFee = isDelivered
@@ -219,7 +271,7 @@ export default function RequestDetailScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>← Back</Text>
+            <Text style={styles.backLinkText}>‹ Back</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Delivery request</Text>
           <View style={styles.statusRow}>
@@ -386,6 +438,28 @@ export default function RequestDetailScreen() {
             )}
           </Card>
 
+          {/* ── Cancel request ── */}
+          {(request.status === 'pending' || request.status === 'matched') && (
+            <Button
+              label={cancelling ? 'Cancelling…' : 'Cancel this request'}
+              onPress={handleCancel}
+              loading={cancelling}
+              variant="danger"
+              size="md"
+              fullWidth
+              style={styles.cancelBtn}
+            />
+          )}
+
+          {request.status === 'collected' && (
+            <View style={styles.cancelBlockedCard}>
+              <Text style={styles.cancelBlockedTitle}>⚠️ Can't cancel at this stage</Text>
+              <Text style={styles.cancelBlockedBody}>
+                The driver has already collected your item and is on their way. To stop the delivery please contact your driver directly.
+              </Text>
+            </View>
+          )}
+
           <Text style={styles.submittedAt}>
             Submitted{' '}
             {new Date(request.created_at).toLocaleDateString('en-GB', {
@@ -518,7 +592,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   backLink: { marginBottom: spacing.md },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
+  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
   title: { color: colors.white, fontSize: fontSize.xxl, fontWeight: '800', marginBottom: spacing.sm },
   statusRow: { alignSelf: 'flex-start' },
 
@@ -571,4 +645,16 @@ const styles = StyleSheet.create({
   },
   submittedAt: { fontSize: fontSize.xs, color: colors.textLight, textAlign: 'center' },
   refreshNote: { fontSize: fontSize.xs, color: colors.textLight, textAlign: 'center', marginTop: 2 },
+
+  cancelBtn: { marginBottom: spacing.md },
+  cancelBlockedCard: {
+    backgroundColor: colors.warningLight,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  cancelBlockedTitle: { fontSize: fontSize.sm, fontWeight: '700', color: '#92400E', marginBottom: 4 },
+  cancelBlockedBody: { fontSize: fontSize.sm, color: '#78350F', lineHeight: 20 },
 });

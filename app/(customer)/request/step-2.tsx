@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Switch, StyleSheet, LogBox } from 'react-native';
+
+LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 import { haptic } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,6 +10,9 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+
+const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 export default function RequestStep2() {
   const router = useRouter();
@@ -16,8 +21,7 @@ export default function RequestStep2() {
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!formData.pickupName.trim()) e.pickupName = 'Enter the shop or place name';
-    if (!formData.pickupLocation.trim()) e.pickupLocation = 'Enter the pickup address';
+    if (!formData.pickupLocation.trim()) e.pickupLocation = 'Search for the pickup location';
     return e;
   }
 
@@ -30,19 +34,19 @@ export default function RequestStep2() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardDoneBar />
+      <View style={styles.navHeader}>
+        <Pressable onPress={() => { haptic.light(); router.back(); }} hitSlop={12}>
+          <Text style={styles.backText}>‹ Back</Text>
+        </Pressable>
+        <StepIndicator current={2} />
+      </View>
+
       <FormScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Pressable onPress={() => { haptic.light(); router.back(); }} style={styles.backBtn} hitSlop={12}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </Pressable>
-          <StepIndicator current={2} />
-        </View>
-
         <View style={styles.categoryBadge}>
           <Text style={styles.categoryBadgeText}>
             {formData.categoryName || 'Collection'}
@@ -50,25 +54,86 @@ export default function RequestStep2() {
         </View>
 
         <Text style={styles.heading}>Pickup details</Text>
-        <Text style={styles.subheading}>Tell us where to collect from in Lerwick.</Text>
+        <Text style={styles.subheading}>Where should the driver collect from?</Text>
 
-        <Input
-          label="Shop or place name *"
-          placeholder="e.g. Lerwick Co-op, Anderson & Co Pharmacy"
-          value={formData.pickupName}
-          onChangeText={(v) => { update({ pickupName: v }); setErrors((e) => ({ ...e, pickupName: '' })); }}
-          error={errors.pickupName}
-          autoCapitalize="words"
-        />
-
-        <Input
-          label="Pickup address *"
-          placeholder="e.g. 16 Commercial Street, Lerwick"
-          value={formData.pickupLocation}
-          onChangeText={(v) => { update({ pickupLocation: v }); setErrors((e) => ({ ...e, pickupLocation: '' })); }}
-          error={errors.pickupLocation}
-          autoCapitalize="words"
-        />
+        {/* Unified place search */}
+        <View style={styles.placesWrapper}>
+          <Text style={styles.fieldLabel}>Shop or pickup address *</Text>
+          <Text style={styles.fieldHint}>Search by shop name, street, or postcode</Text>
+          {errors.pickupLocation ? <Text style={styles.errorText}>{errors.pickupLocation}</Text> : null}
+          <GooglePlacesAutocomplete
+            placeholder="e.g. Lerwick Co-op, 16 Commercial Street…"
+            minLength={2}
+            onPress={(data, details) => {
+              const full = details?.formatted_address ?? data.description;
+              const name = data.structured_formatting?.main_text ?? data.description.split(',')[0].trim();
+              const postcode = (details?.address_components ?? [])
+                .find((c: any) => c.types.includes('postal_code'))?.long_name ?? '';
+              const lat = details?.geometry?.location?.lat ?? null;
+              const lng = details?.geometry?.location?.lng ?? null;
+              update({ pickupLocation: full, pickupName: name, pickupPostcode: postcode, pickupLat: lat, pickupLng: lng });
+              setErrors((e) => ({ ...e, pickupLocation: '' }));
+              haptic.select();
+            }}
+            query={{
+              key: GOOGLE_KEY,
+              language: 'en',
+              components: 'country:gb',
+              location: '60.155,-1.145',
+              radius: '50000',
+            }}
+            textInputProps={{
+              value: formData.pickupLocation,
+              onChangeText: (v: string) => {
+                update({ pickupLocation: v, pickupName: v });
+                setErrors((e) => ({ ...e, pickupLocation: '' }));
+              },
+              placeholderTextColor: colors.textLight,
+              autoCorrect: false,
+              autoCapitalize: 'none',
+            }}
+            styles={{
+              textInputContainer: { backgroundColor: 'transparent' },
+              textInput: {
+                backgroundColor: colors.white,
+                borderWidth: 1.5,
+                borderColor: errors.pickupLocation ? colors.error : colors.border,
+                borderRadius: radius.md,
+                fontSize: fontSize.md,
+                color: colors.textPrimary,
+                paddingHorizontal: spacing.md,
+                height: 48,
+                marginBottom: 0,
+              },
+              listView: {
+                backgroundColor: colors.white,
+                borderRadius: radius.md,
+                borderWidth: 1,
+                borderColor: colors.border,
+                marginTop: 4,
+                elevation: 6,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.12,
+                shadowRadius: 10,
+              },
+              row: {
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.md,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              },
+              description: { fontSize: fontSize.sm, color: colors.textPrimary },
+              poweredContainer: { display: 'none' },
+            }}
+            flatListProps={{ nestedScrollEnabled: true, keyboardShouldPersistTaps: 'always' }}
+            fetchDetails={true}
+            enablePoweredByContainer={false}
+            keepResultsAfterBlur={false}
+            nearbyPlacesAPI="GooglePlacesSearch"
+            debounce={300}
+          />
+        </View>
 
         <Input
           label="Collection notes (optional)"
@@ -109,9 +174,7 @@ export default function RequestStep2() {
   );
 }
 
-function ToggleRow({
-  label, hint, value, onValueChange,
-}: {
+function ToggleRow({ label, hint, value, onValueChange }: {
   label: string; hint: string; value: boolean; onValueChange: (v: boolean) => void;
 }) {
   return (
@@ -131,12 +194,7 @@ function ToggleRow({
 }
 
 const toggleStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    gap: spacing.md,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, gap: spacing.md },
   text: { flex: 1 },
   label: { fontSize: fontSize.md, fontWeight: '600', color: colors.navy, marginBottom: 2 },
   hint: { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
@@ -146,14 +204,7 @@ function StepIndicator({ current }: { current: number }) {
   return (
     <View style={styles.steps}>
       {[1, 2, 3, 4].map((n) => (
-        <View
-          key={n}
-          style={[
-            styles.stepDot,
-            n === current && styles.stepDotActive,
-            n < current && styles.stepDotDone,
-          ]}
-        />
+        <View key={n} style={[styles.stepDot, n === current && styles.stepDotActive, n < current && styles.stepDotDone]} />
       ))}
     </View>
   );
@@ -162,21 +213,23 @@ function StepIndicator({ current }: { current: number }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.navy },
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
-  header: {
+  navHeader: {
+    backgroundColor: colors.navy,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xl,
   },
-  backBtn: { padding: 4 },
-  backText: { fontSize: fontSize.sm, color: colors.navy, fontWeight: '600' },
-
+  backText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
   steps: { flexDirection: 'row', gap: 6 },
-  stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
-  stepDotActive: { backgroundColor: colors.accent, width: 24 },
-  stepDotDone: { backgroundColor: colors.navy },
+  stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.25)' },
+  stepDotActive: { backgroundColor: colors.accent, width: 24, borderRadius: 4 },
+  stepDotDone: { backgroundColor: 'rgba(255,255,255,0.6)' },
+
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
   categoryBadge: {
     alignSelf: 'flex-start',
@@ -190,6 +243,11 @@ const styles = StyleSheet.create({
 
   heading: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.navy, marginBottom: spacing.sm },
   subheading: { fontSize: fontSize.md, color: colors.textMuted, lineHeight: 22, marginBottom: spacing.xl },
+
+  placesWrapper: { marginBottom: spacing.md, zIndex: 10 },
+  fieldLabel: { fontSize: fontSize.sm, fontWeight: '600', color: colors.navy, marginBottom: 2 },
+  fieldHint: { fontSize: fontSize.xs, color: colors.textMuted, marginBottom: 6 },
+  errorText: { fontSize: fontSize.xs, color: colors.error, marginBottom: 4 },
 
   toggleSection: {
     backgroundColor: colors.white,

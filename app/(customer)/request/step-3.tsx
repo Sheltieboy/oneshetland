@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Modal, FlatList } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Modal, FlatList, LogBox } from 'react-native';
+
+LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 import { haptic } from '@/lib/haptics';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+
+const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useRequest } from '@/context/RequestContext';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { REGIONS } from '@/constants/regions';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
@@ -40,13 +44,12 @@ export default function RequestStep3() {
   }, [profile?.id]);
 
   function applySavedAddress(addr: SavedAddress) {
-    // Find the region slug that best matches — default to empty if no match
     const fullAddress = addr.postcode
       ? `${addr.address} ${addr.postcode}`
       : addr.address;
-
     update({
       destinationAddress: fullAddress,
+      destinationPostcode: addr.postcode ?? '',
       deliveryNotes: addr.delivery_instructions ?? formData.deliveryNotes,
     });
     setShowPicker(false);
@@ -55,7 +58,6 @@ export default function RequestStep3() {
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!formData.destinationRegionSlug) e.region = 'Select a delivery area';
     if (!formData.destinationAddress.trim()) e.destinationAddress = 'Enter a delivery address';
     return e;
   }
@@ -69,80 +71,126 @@ export default function RequestStep3() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardDoneBar />
+      {/* Nav header — matches other steps */}
+      <View style={styles.navHeader}>
+        <Pressable onPress={() => { haptic.light(); router.back(); }} hitSlop={12}>
+          <Text style={styles.backText}>‹ Back</Text>
+        </Pressable>
+        <StepIndicator current={3} />
+      </View>
+
       <FormScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Pressable onPress={() => { haptic.light(); router.back(); }} style={styles.backBtn} hitSlop={12}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </Pressable>
-          <StepIndicator current={3} />
-        </View>
-
         <View style={styles.categoryBadge}>
           <Text style={styles.categoryBadgeText}>{formData.categoryName}</Text>
         </View>
 
-        <Text style={styles.heading}>Delivery details</Text>
-        <Text style={styles.subheading}>Where should this be delivered to?</Text>
+        <View style={styles.headingRow}>
+          <View style={styles.headingIcon}>
+            <Text style={{ fontSize: 22 }}>📍</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heading}>Delivery details</Text>
+            <Text style={styles.subheading}>Where should this be delivered to?</Text>
+          </View>
+        </View>
 
-        {/* Region picker */}
-        <Text style={styles.fieldLabel}>Delivery area *</Text>
-        {errors.region ? <Text style={styles.errorText}>{errors.region}</Text> : null}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.regionScroll}
-          contentContainerStyle={styles.regionRow}
-        >
-          {REGIONS.map((r) => {
-            const selected = formData.destinationRegionSlug === r.slug;
-            return (
-              <Pressable
-                key={r.slug}
-                style={({ pressed }) => [
-                  styles.regionChip,
-                  selected && styles.regionChipSelected,
-                  pressed && styles.regionChipPressed,
-                ]}
-                onPress={() => {
-                  haptic.select();
-                  update({ destinationRegionSlug: r.slug });
-                  setErrors((e) => ({ ...e, region: '' }));
-                }}
-              >
-                <Text style={[styles.regionChipText, selected && styles.regionChipTextSelected]}>
-                  {r.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-
-        {/* Saved address picker */}
+        {/* Saved address shortcut */}
         {savedAddresses.length > 0 && (
           <Pressable
-            style={({ pressed }) => [styles.savedBtn, pressed && { opacity: 0.8 }]}
+            style={({ pressed }) => [styles.savedBtn, pressed && styles.savedBtnPressed]}
             onPress={() => { haptic.light(); setShowPicker(true); }}
           >
-            <Text style={styles.savedBtnText}>📍 Use a saved address</Text>
+            <Text style={{ fontSize: 18 }}>🏠</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.savedBtnTitle}>Use a saved address</Text>
+              <Text style={styles.savedBtnHint}>Pick from your saved locations</Text>
+            </View>
+            <Text style={styles.savedBtnArrow}>›</Text>
           </Pressable>
         )}
 
-        <Input
-          label="Delivery address *"
-          placeholder="e.g. 4 Harbour View, Scalloway"
-          value={formData.destinationAddress}
-          onChangeText={(v) => {
-            update({ destinationAddress: v });
-            setErrors((e) => ({ ...e, destinationAddress: '' }));
-          }}
-          error={errors.destinationAddress}
-          autoCapitalize="words"
-        />
+        {/* Google Places autocomplete for delivery address */}
+        <View style={styles.placesWrapper}>
+          <Text style={styles.fieldLabel}>Delivery address *</Text>
+          <Text style={styles.fieldHint}>Search by street, postcode or landmark</Text>
+          {errors.destinationAddress ? <Text style={styles.errorText}>{errors.destinationAddress}</Text> : null}
+          <GooglePlacesAutocomplete
+            placeholder="e.g. 4 Harbour View, Scalloway"
+            minLength={2}
+            onPress={(data, details) => {
+              const full = details?.formatted_address ?? data.description;
+              const postcode = (details?.address_components ?? [])
+                .find((c: any) => c.types.includes('postal_code'))?.long_name ?? '';
+              const lat = details?.geometry?.location?.lat ?? null;
+              const lng = details?.geometry?.location?.lng ?? null;
+              update({ destinationAddress: full, destinationPostcode: postcode, destinationLat: lat, destinationLng: lng });
+              setErrors((e) => ({ ...e, destinationAddress: '' }));
+              haptic.select();
+            }}
+            query={{
+              key: GOOGLE_KEY,
+              language: 'en',
+              components: 'country:gb',
+              location: '60.155,-1.145',
+              radius: '50000',
+              types: 'address',
+            }}
+            textInputProps={{
+              value: formData.destinationAddress,
+              onChangeText: (v: string) => {
+                update({ destinationAddress: v });
+                setErrors((e) => ({ ...e, destinationAddress: '' }));
+              },
+              placeholderTextColor: colors.textLight,
+              autoCorrect: false,
+              autoCapitalize: 'none',
+            }}
+            styles={{
+              textInputContainer: { backgroundColor: 'transparent' },
+              textInput: {
+                backgroundColor: colors.white,
+                borderWidth: 1.5,
+                borderColor: errors.destinationAddress ? colors.error : colors.border,
+                borderRadius: radius.md,
+                fontSize: fontSize.md,
+                color: colors.textPrimary,
+                paddingHorizontal: spacing.md,
+                height: 48,
+                marginBottom: 0,
+              },
+              listView: {
+                backgroundColor: colors.white,
+                borderRadius: radius.md,
+                borderWidth: 1,
+                borderColor: colors.border,
+                marginTop: 4,
+                elevation: 6,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.12,
+                shadowRadius: 10,
+              },
+              row: {
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.md,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              },
+              description: { fontSize: fontSize.sm, color: colors.textPrimary },
+              poweredContainer: { display: 'none' },
+            }}
+            flatListProps={{ nestedScrollEnabled: true, keyboardShouldPersistTaps: 'always' }}
+            fetchDetails={true}
+            enablePoweredByContainer={false}
+            keepResultsAfterBlur={false}
+            debounce={300}
+          />
+        </View>
 
         {/* Saved address modal */}
         <Modal visible={showPicker} animationType="slide" presentationStyle="pageSheet">
@@ -181,13 +229,6 @@ export default function RequestStep3() {
             />
           </SafeAreaView>
         </Modal>
-
-        <Input
-          label="Area or village (optional)"
-          placeholder="e.g. Near the pier"
-          value={formData.destinationArea}
-          onChangeText={(v) => update({ destinationArea: v })}
-        />
 
         <Input
           label="Delivery notes (optional)"
@@ -243,19 +284,21 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
-  header: {
+  navHeader: {
+    backgroundColor: colors.navy,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xl,
   },
-  backBtn: { padding: 4 },
-  backText: { fontSize: fontSize.sm, color: colors.navy, fontWeight: '600' },
+  backText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
 
   steps: { flexDirection: 'row', gap: 6 },
-  stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
-  stepDotActive: { backgroundColor: colors.accent, width: 24 },
-  stepDotDone: { backgroundColor: colors.navy },
+  stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.25)' },
+  stepDotActive: { backgroundColor: colors.accent, width: 24, borderRadius: 4 },
+  stepDotDone: { backgroundColor: 'rgba(255,255,255,0.6)' },
 
   categoryBadge: {
     alignSelf: 'flex-start',
@@ -267,40 +310,46 @@ const styles = StyleSheet.create({
   },
   categoryBadgeText: { fontSize: fontSize.xs, color: colors.white, fontWeight: '700' },
 
-  heading: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.navy, marginBottom: spacing.sm },
-  subheading: { fontSize: fontSize.md, color: colors.textMuted, lineHeight: 22, marginBottom: spacing.xl },
-
-  fieldLabel: { fontSize: fontSize.sm, fontWeight: '600', color: colors.navy, marginBottom: 8 },
-  errorText: { fontSize: fontSize.xs, color: colors.error, marginBottom: spacing.sm },
-
-  regionScroll: { marginBottom: spacing.md },
-  regionRow: { flexDirection: 'row', gap: spacing.sm, paddingBottom: 4 },
-  regionChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.full,
-    backgroundColor: colors.white,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginBottom: spacing.xl,
   },
-  regionChipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  regionChipPressed: { opacity: 0.8 },
-  regionChipText: { fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '500' },
-  regionChipTextSelected: { color: colors.white, fontWeight: '700' },
+  headingIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    flexShrink: 0,
+  },
+  heading: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.navy, marginBottom: 4 },
+  subheading: { fontSize: fontSize.sm, color: colors.textMuted, lineHeight: 20 },
+
+  fieldLabel: { fontSize: fontSize.sm, fontWeight: '600', color: colors.navy, marginBottom: 2 },
+  fieldHint: { fontSize: fontSize.xs, color: colors.textMuted, marginBottom: 6 },
+  errorText: { fontSize: fontSize.xs, color: colors.error, marginBottom: 4 },
+  placesWrapper: { marginBottom: spacing.sm, zIndex: 10 },
 
   savedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.offWhite,
-    borderWidth: 1,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    marginBottom: spacing.md,
-    alignSelf: 'flex-start',
+    marginBottom: spacing.lg,
+    gap: spacing.md,
   },
-  savedBtnText: { fontSize: fontSize.sm, color: colors.navy, fontWeight: '600' },
+  savedBtnPressed: { backgroundColor: colors.offWhite },
+  savedBtnTitle: { fontSize: fontSize.sm, fontWeight: '700', color: colors.navy },
+  savedBtnHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
+  savedBtnArrow: { fontSize: 22, color: colors.textLight },
 });
 
 const modal = StyleSheet.create({

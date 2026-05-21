@@ -5,12 +5,18 @@ export interface RequestFormData {
   categoryName: string;
   pickupName: string;
   pickupLocation: string;
+  pickupPostcode: string;
+  pickupLat: number | null;
+  pickupLng: number | null;
   pickupNotes: string;
   alreadyPaid: boolean;
   readyForCollection: boolean;
   destinationRegionSlug: string;
   destinationArea: string;
   destinationAddress: string;
+  destinationPostcode: string;
+  destinationLat: number | null;
+  destinationLng: number | null;
   contactPhone: string;
   deliveryNotes: string;
   liabilityAcknowledged: boolean;
@@ -21,12 +27,18 @@ const initialData: RequestFormData = {
   categoryName: '',
   pickupName: '',
   pickupLocation: '',
+  pickupPostcode: '',
+  pickupLat: null,
+  pickupLng: null,
   pickupNotes: '',
   alreadyPaid: false,
   readyForCollection: false,
   destinationRegionSlug: '',
   destinationArea: '',
   destinationAddress: '',
+  destinationPostcode: '',
+  destinationLat: null,
+  destinationLng: null,
   contactPhone: '',
   deliveryNotes: '',
   liabilityAcknowledged: false,

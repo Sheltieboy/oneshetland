@@ -9,16 +9,24 @@ import { DELIVERY_CATEGORIES } from '@/constants/categories';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { haptic } from '@/lib/haptics';
 
-// Typed-routes workaround — payment-setup type is generated at Expo start
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const PAYMENT_SETUP_HREF = '/(customer)/payment-setup' as any;
+
+// Tint colour per category for the icon box
+const CATEGORY_TINT: Record<string, { bg: string; emoji: string }> = {
+  'takeaway':                  { bg: '#FFF3E0', emoji: '🍕' },
+  'pharmacy':                  { bg: '#F3E5F5', emoji: '💊' },
+  'small-parcel':              { bg: '#E8F5E9', emoji: '📦' },
+  'shop-collection':           { bg: '#FFF8E1', emoji: '🛍️' },
+  'supermarket-click-collect': { bg: '#E3F2FD', emoji: '🛒' },
+  'other':                     { bg: '#F5F5F5', emoji: '📫' },
+};
 
 export default function RequestStep1() {
   const router = useRouter();
   const { profile } = useAuth();
   const { formData, update } = useRequest();
 
-  // Gate: customer must have a payment method before requesting a delivery
   useEffect(() => {
     if (profile && !profile.has_payment_method) {
       router.replace(PAYMENT_SETUP_HREF);
@@ -33,26 +41,28 @@ export default function RequestStep1() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Navy header strip — matches other screens */}
+      <View style={styles.navHeader}>
+        <Pressable onPress={() => { haptic.light(); router.back(); }} hitSlop={12}>
+          <Text style={styles.backText}>‹ Back</Text>
+        </Pressable>
+        <StepIndicator current={1} />
+      </View>
+
       <FormScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Pressable onPress={() => { haptic.light(); router.back(); }} style={styles.backBtn} hitSlop={12}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </Pressable>
-          <StepIndicator current={1} />
-        </View>
-
-        <Text style={styles.heading}>What needs collecting?</Text>
+        <Text style={styles.heading}>What needs{'\n'}collecting?</Text>
         <Text style={styles.subheading}>
           Choose the type of item — this helps drivers know what to expect.
         </Text>
 
-        <View style={styles.grid}>
+        <View style={styles.list}>
           {DELIVERY_CATEGORIES.map((cat) => {
             const selected = formData.categorySlug === cat.slug;
+            const tint = CATEGORY_TINT[cat.slug] ?? { bg: '#F5F5F5', emoji: cat.icon };
             return (
               <Pressable
                 key={cat.slug}
@@ -63,15 +73,26 @@ export default function RequestStep1() {
                 ]}
                 onPress={() => select(cat.slug, cat.name)}
               >
-                <Text style={styles.cardIcon}>{cat.icon}</Text>
-                <Text style={[styles.cardName, selected && styles.cardNameSelected]}>
-                  {cat.name}
-                </Text>
-                <Text style={styles.cardDesc}>{cat.description}</Text>
-                {selected && (
-                  <View style={styles.checkBadge}>
+                {/* Tinted icon box */}
+                <View style={[styles.iconBox, { backgroundColor: selected ? colors.accentLight : tint.bg }]}>
+                  <Text style={styles.iconEmoji}>{cat.icon}</Text>
+                </View>
+
+                {/* Text */}
+                <View style={styles.cardBody}>
+                  <Text style={[styles.cardName, selected && styles.cardNameSelected]}>
+                    {cat.name}
+                  </Text>
+                  <Text style={styles.cardDesc} numberOfLines={1}>{cat.description}</Text>
+                </View>
+
+                {/* Right indicator */}
+                {selected ? (
+                  <View style={styles.checkCircle}>
                     <Text style={styles.checkText}>✓</Text>
                   </View>
+                ) : (
+                  <Text style={styles.arrow}>›</Text>
                 )}
               </Pressable>
             );
@@ -80,7 +101,7 @@ export default function RequestStep1() {
 
         <View style={styles.disclaimer}>
           <Text style={styles.disclaimerText}>
-            Goods only. No alcohol, tobacco, or passengers. Items must fit safely in a car boot.
+            Goods only — no alcohol, tobacco, or passengers. Items must fit in a car boot.
           </Text>
         </View>
       </FormScrollView>
@@ -108,78 +129,109 @@ function StepIndicator({ current }: { current: number }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.navy },
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
-  header: {
+  // Navy nav header — same pattern as dashboards
+  navHeader: {
+    backgroundColor: colors.navy,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xl,
   },
-  backBtn: { padding: 4 },
-  backText: { fontSize: fontSize.sm, color: colors.navy, fontWeight: '600' },
-
+  backText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+  },
   steps: { flexDirection: 'row', gap: 6 },
-  stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
-  stepDotActive: { backgroundColor: colors.accent, width: 24 },
-  stepDotDone: { backgroundColor: colors.navy },
+  stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.25)' },
+  stepDotActive: { backgroundColor: colors.accent, width: 24, borderRadius: 4 },
+  stepDotDone: { backgroundColor: 'rgba(255,255,255,0.6)' },
+
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
 
   heading: {
-    fontSize: fontSize.xxl,
+    fontSize: fontSize.xxxl,
     fontWeight: '800',
-    color: colors.navy,
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
     marginBottom: spacing.sm,
+    marginTop: spacing.sm,
   },
   subheading: {
-    fontSize: fontSize.md,
+    fontSize: fontSize.sm,
     color: colors.textMuted,
-    lineHeight: 22,
+    lineHeight: 20,
     marginBottom: spacing.xl,
   },
 
-  grid: { gap: spacing.sm },
+  list: { gap: spacing.sm },
 
   card: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.white,
     borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderWidth: 2,
+    padding: spacing.md,
+    borderWidth: 1.5,
     borderColor: colors.border,
+    gap: spacing.md,
     ...shadow.card,
   },
   cardSelected: {
     borderColor: colors.accent,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.white,
   },
   cardPressed: {
-    opacity: 0.9,
+    opacity: 0.85,
     transform: [{ scale: 0.99 }],
   },
-  cardIcon: { fontSize: 28, marginBottom: spacing.sm },
+
+  iconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  iconEmoji: { fontSize: 26 },
+
+  cardBody: { flex: 1 },
   cardName: {
     fontSize: fontSize.md,
     fontWeight: '700',
-    color: colors.navy,
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: 3,
   },
-  cardNameSelected: { color: colors.accent },
+  cardNameSelected: { color: colors.navy },
   cardDesc: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
-    lineHeight: 20,
+    lineHeight: 18,
   },
-  checkBadge: {
-    position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+
+  checkCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: radius.full,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
-  checkText: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  checkText: { color: colors.white, fontSize: 13, fontWeight: '800' },
+  arrow: {
+    fontSize: 22,
+    color: colors.textLight,
+    fontWeight: '300',
+    flexShrink: 0,
+  },
 
   disclaimer: {
     marginTop: spacing.xl,

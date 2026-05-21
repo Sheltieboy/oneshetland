@@ -22,6 +22,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { colors, fontSize, spacing, radius, shadow, fontWeight } from '@/constants/theme';
 import { haptic } from '@/lib/haptics';
+import { getCategoryName } from '@/constants/categories';
 
 interface Run {
   id: string;
@@ -305,37 +306,28 @@ export default function DriverDashboard() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
       >
-        {/* ── Hero header ── */}
+        {/* ── Header ── */}
         <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <View style={styles.brandRow}>
-              <View style={styles.logoCircle}>
-                <Image
-                  source={require('../../assets/icon.png')}
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
-              </View>
-              <View>
-                <Text style={styles.brandName}>OneShetland Fetch</Text>
-                <Text style={styles.brandRole}>Driver</Text>
-              </View>
+          <Animated.View style={[styles.headerInner, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+            <View>
+              <Text style={styles.greeting}>{getGreeting()}, <Text style={styles.greetingName}>{firstName}</Text></Text>
+              <Text style={styles.brandRole}>Driver dashboard</Text>
             </View>
             <Pressable
               onPress={() => { haptic.light(); router.push('/account'); }}
               hitSlop={12}
             >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {(profile?.full_name ?? 'D')[0].toUpperCase()}
-                </Text>
+              <View style={styles.avatarStack}>
+                <View style={styles.iconCircle}>
+                  <Image source={require('../../assets/icon.png')} style={styles.iconImage} resizeMode="contain" />
+                </View>
+                <View style={styles.initialBadge}>
+                  <Text style={styles.initialText}>
+                    {(profile?.full_name ?? 'D')[0].toUpperCase()}
+                  </Text>
+                </View>
               </View>
             </Pressable>
-          </View>
-
-          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-            <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.greetingName}>{firstName} 🚗</Text>
           </Animated.View>
         </View>
 
@@ -469,19 +461,61 @@ export default function DriverDashboard() {
               const originLine = noteLines.find((l) => l.startsWith('Origin:'))?.replace('Origin: ', '') ?? 'Lerwick';
               const destLine = noteLines.find((l) => l.startsWith('Destination:'))?.replace('Destination: ', '') ?? '—';
 
+              const canCancel = run.status === 'open';
+
               return (
-                <Card key={run.id} style={styles.runCard}>
+                <Card
+                  key={run.id}
+                  style={styles.runCard}
+                  onPress={() => {
+                    haptic.light();
+                    Alert.alert(
+                      `${originLine} → ${destLine}`,
+                      `${dayLabel} · ${timeRange}`,
+                      [
+                        canCancel ? {
+                          text: 'Cancel this run',
+                          style: 'destructive',
+                          onPress: () => {
+                            Alert.alert(
+                              'Cancel run?',
+                              'This will remove the run. Any accepted requests will be returned to pending.',
+                              [
+                                { text: 'Keep run', style: 'cancel' },
+                                {
+                                  text: 'Yes, cancel run',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    await supabase
+                                      .from('runs')
+                                      .update({ status: 'cancelled' })
+                                      .eq('id', run.id);
+                                    fetchData();
+                                  },
+                                },
+                              ],
+                            );
+                          },
+                        } : null,
+                        { text: 'Dismiss', style: 'cancel' },
+                      ].filter(Boolean) as any[],
+                    );
+                  }}
+                >
                   <View style={styles.runHeader}>
                     <View style={styles.runRouteContainer}>
                       <Text style={styles.runOrigin}>{originLine}</Text>
                       <Text style={styles.runArrow}> → </Text>
                       <Text style={styles.runDest}>{destLine}</Text>
                     </View>
-                    {run.ferry_crossing && (
-                      <View style={styles.ferryBadge}>
-                        <Text style={styles.ferryText}>⛴ Ferry</Text>
-                      </View>
-                    )}
+                    <View style={styles.runHeaderRight}>
+                      {run.ferry_crossing && (
+                        <View style={styles.ferryBadge}>
+                          <Text style={styles.ferryText}>⛴ Ferry</Text>
+                        </View>
+                      )}
+                      <Text style={styles.runChevron}>›</Text>
+                    </View>
                   </View>
                   <View style={styles.runTimeRow}>
                     <Text style={styles.runDay}>{dayLabel}</Text>
@@ -492,7 +526,7 @@ export default function DriverDashboard() {
                     <View style={styles.categoryRow}>
                       {run.categories_accepted.slice(0, 4).map((c) => (
                         <View key={c} style={styles.categoryChip}>
-                          <Text style={styles.categoryText}>{c}</Text>
+                          <Text style={styles.categoryText}>{getCategoryName(c)}</Text>
                         </View>
                       ))}
                       {run.categories_accepted.length > 4 && (
@@ -712,65 +746,62 @@ const styles = StyleSheet.create({
     backgroundColor: colors.navy,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.md,
   },
-  headerTop: {
+  headerInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
   },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  logoCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 2,
-  },
-  logoImage: { width: 28, height: 28, borderRadius: 14 },
-  brandName: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: fontSize.sm,
-    fontWeight: '700',
-    letterSpacing: 0.1,
-  },
-  brandRole: {
-    color: colors.accent,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    marginTop: 1,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.full,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadow.accent,
-  },
-  avatarText: { color: colors.white, fontWeight: '700', fontSize: fontSize.md },
   greeting: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.7)',
     fontSize: fontSize.md,
     fontWeight: '400',
   },
   greetingName: {
     color: colors.white,
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontWeight: '700',
+  },
+  brandRole: {
+    color: colors.accent,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
     marginTop: 2,
   },
+  avatarStack: {
+    width: 44,
+    height: 44,
+  },
+  iconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  iconImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+  },
+  initialBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderRadius: radius.full,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.navy,
+  },
+  initialText: { color: colors.white, fontWeight: '800', fontSize: 9 },
 
   // ── Status strip ──
   statusStrip: {
@@ -895,6 +926,8 @@ const styles = StyleSheet.create({
 
   // ── Run cards ──
   runCard: { marginBottom: spacing.sm },
+  runHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  runChevron: { fontSize: 20, color: colors.textLight, fontWeight: '300' },
   runHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -902,9 +935,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   runRouteContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  runOrigin: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
+  runOrigin: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary, textTransform: 'capitalize' },
   runArrow: { fontSize: fontSize.md, color: colors.textMuted, fontWeight: '300' },
-  runDest: { fontSize: fontSize.md, fontWeight: '700', color: colors.navy },
+  runDest: { fontSize: fontSize.md, fontWeight: '700', color: colors.navy, textTransform: 'capitalize' },
   runTimeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   runDay: { fontSize: fontSize.sm, fontWeight: '600', color: colors.textSecondary },
   runTimeSep: { color: colors.textLight, fontSize: fontSize.sm },

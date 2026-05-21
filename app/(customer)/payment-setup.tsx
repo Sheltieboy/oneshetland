@@ -90,7 +90,7 @@ export default function PaymentSetupScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backRow}>
-          <Text style={styles.backText}>← Back</Text>
+          <Text style={styles.backText}>‹ Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Set up payment</Text>
         <Text style={styles.subtitle}>
@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   backRow: { marginBottom: spacing.md },
-  backText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
+  backText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
   title: {
     color: colors.white,
     fontSize: fontSize.xxl,

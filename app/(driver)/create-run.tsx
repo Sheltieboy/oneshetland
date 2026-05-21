@@ -235,7 +235,7 @@ export default function CreateRunScreen() {
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-              <Text style={styles.backLinkText}>← Back</Text>
+              <Text style={styles.backLinkText}>‹ Back</Text>
             </TouchableOpacity>
             <Text style={styles.title}>Create a run</Text>
             <Text style={styles.subtitle}>
@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   backLink: { marginBottom: spacing.md },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
+  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
   title: {
     color: colors.white,
     fontSize: fontSize.xxl,

@@ -142,7 +142,7 @@ export default function ConnectBankScreen() {
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backRow}>
-          <Text style={styles.backText}>← Back</Text>
+          <Text style={styles.backText}>‹ Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Connect your bank account</Text>
         <Text style={styles.subtitle}>
@@ -212,9 +212,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   backRow: { marginBottom: spacing.md },
-  backText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
+  backText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
   title: { color: colors.white, fontSize: fontSize.xxl, fontWeight: '800', marginBottom: spacing.sm },
-  subtitle: { color: 'rgba(255,255,255,0.72)', fontSize: fontSize.sm, lineHeight: 20 },
+  subtitle: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, lineHeight: 20 },
 
   body: { flex: 1, padding: spacing.lg, gap: spacing.lg },
 

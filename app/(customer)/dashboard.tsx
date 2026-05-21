@@ -8,6 +8,7 @@ import {
   Pressable,
   Animated,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -129,34 +130,28 @@ export default function CustomerDashboard() {
           />
         }
       >
-        {/* ── Hero header ── */}
+        {/* ── Header ── */}
         <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <View style={styles.brandRow}>
-              <View style={styles.logoCircle}>
-                <Image
-                  source={require('../../assets/icon.png')}
-                  style={styles.logoImage}
-                  resizeMode="contain"
-                />
-              </View>
+          <Animated.View style={[styles.headerInner, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+            <View>
+              <Text style={styles.greeting}>{getGreeting()}, <Text style={styles.greetingName}>{firstName} 👋</Text></Text>
               <Text style={styles.brandName}>OneShetland Fetch</Text>
             </View>
             <Pressable
               onPress={() => { haptic.light(); router.push('/account'); }}
               hitSlop={12}
             >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {(profile?.full_name ?? 'U')[0].toUpperCase()}
-                </Text>
+              <View style={styles.avatarStack}>
+                <View style={styles.iconCircle}>
+                  <Image source={require('../../assets/icon.png')} style={styles.iconImage} resizeMode="contain" />
+                </View>
+                <View style={styles.initialBadge}>
+                  <Text style={styles.initialText}>
+                    {(profile?.full_name ?? 'U')[0].toUpperCase()}
+                  </Text>
+                </View>
               </View>
             </Pressable>
-          </View>
-
-          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-            <Text style={styles.greeting}>{getGreeting()},</Text>
-            <Text style={styles.greetingName}>{firstName} 👋</Text>
           </Animated.View>
         </View>
 
@@ -248,7 +243,10 @@ export default function CustomerDashboard() {
                 <View style={styles.requestBody}>
                   <View style={styles.requestTopRow}>
                     <Text style={styles.requestFrom} numberOfLines={1}>{req.pickup_name}</Text>
-                    <StatusBadge status={`request_${req.status}`} />
+                    <View style={styles.requestTopRight}>
+                      <StatusBadge status={`request_${req.status}`} />
+                      <Text style={styles.requestChevron}>›</Text>
+                    </View>
                   </View>
                   <Text style={styles.requestTo} numberOfLines={1}>
                     → {req.destination_area ? `${req.destination_area} · ` : ''}{req.destination_address}
@@ -257,11 +255,47 @@ export default function CustomerDashboard() {
                     <Text style={styles.requestStatusLabel}>
                       {STATUS_LABEL[req.status] ?? req.status}
                     </Text>
-                    <Text style={styles.requestDate}>
-                      {new Date(req.created_at).toLocaleDateString('en-GB', {
-                        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                      })}
-                    </Text>
+                    {(req.status === 'pending' || req.status === 'matched') && (
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          haptic.warning();
+                          const isMatched = req.status === 'matched';
+                          Alert.alert(
+                            'Cancel this request?',
+                            isMatched
+                              ? 'A driver has already accepted this. They will be notified of the cancellation.'
+                              : 'This will remove your request and no driver will be sent.',
+                            [
+                              { text: 'Keep it', style: 'cancel' },
+                              {
+                                text: 'Yes, cancel',
+                                style: 'destructive',
+                                onPress: async () => {
+                                  await supabase
+                                    .from('delivery_requests')
+                                    .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+                                    .eq('id', req.id);
+                                  if (isMatched) {
+                                    const { data: { session } } = await supabase.auth.getSession();
+                                    fetch('https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/notify-drivers', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+                                      body: JSON.stringify({ request_id: req.id, event: 'cancelled' }),
+                                    }).catch(() => {});
+                                  }
+                                  fetchData();
+                                },
+                              },
+                            ],
+                          );
+                        }}
+                        hitSlop={8}
+                        style={({ pressed }) => [styles.cancelChip, pressed && { opacity: 0.7 }]}
+                      >
+                        <Text style={styles.cancelChipText}>Cancel</Text>
+                      </Pressable>
+                    )}
                   </View>
                 </View>
               </Pressable>
@@ -289,7 +323,7 @@ export default function CustomerDashboard() {
           ) : availableRuns.length === 0 ? (
             <Card padded={false}>
               <EmptyState
-                icon="⛵"
+                icon="🚗"
                 title="No runs right now"
                 body="Check back soon — drivers post new runs daily."
               />
@@ -348,39 +382,41 @@ export default function CustomerDashboard() {
         {/* ── My account quick links ── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>My account</Text>
-          <View style={styles.quickLinks}>
-            {QUICK_LINKS.map(({ icon, label, route }) => (
-              <Card
+          <View style={styles.linkGroup}>
+            {QUICK_LINKS.map(({ icon, label, route }, i) => (
+              <Pressable
                 key={label}
-                style={styles.quickLink}
-                onPress={() => router.push(route as any)}
+                style={({ pressed }) => [
+                  styles.linkRow,
+                  i < QUICK_LINKS.length - 1 && styles.linkRowBorder,
+                  pressed && styles.linkRowPressed,
+                ]}
+                onPress={() => { haptic.light(); router.push(route as any); }}
               >
-                <Text style={styles.quickLinkIcon}>{icon}</Text>
-                <Text style={styles.quickLinkLabel}>{label}</Text>
-                <Text style={styles.quickLinkArrow}>›</Text>
-              </Card>
+                <Text style={styles.linkIcon}>{icon}</Text>
+                <Text style={styles.linkLabel}>{label}</Text>
+                <Text style={styles.linkArrow}>›</Text>
+              </Pressable>
             ))}
-            <Card
-              style={styles.quickLink}
-              onPress={() => router.push(PAYMENT_SETUP_HREF)}
+            <Pressable
+              style={({ pressed }) => [styles.linkRow, styles.linkRowBorder, pressed && styles.linkRowPressed]}
+              onPress={() => { haptic.light(); router.push(PAYMENT_SETUP_HREF); }}
             >
-              <Text style={styles.quickLinkIcon}>💳</Text>
-              <Text style={styles.quickLinkLabel}>
+              <Text style={styles.linkIcon}>💳</Text>
+              <Text style={styles.linkLabel}>
                 {profile?.has_payment_method ? 'Update payment method' : 'Set up payment'}
               </Text>
-              <Text style={styles.quickLinkArrow}>›</Text>
-            </Card>
+              <Text style={styles.linkArrow}>›</Text>
+            </Pressable>
             {profile?.role !== 'driver' && (
-              <Card
-                style={[styles.quickLink, styles.quickLinkDriver]}
-                onPress={() => router.push('/(customer)/apply-driver')}
+              <Pressable
+                style={({ pressed }) => [styles.linkRow, styles.linkRowDriver, pressed && styles.linkRowPressed]}
+                onPress={() => { haptic.light(); router.push('/(customer)/apply-driver'); }}
               >
-                <Text style={styles.quickLinkIcon}>🚗</Text>
-                <Text style={[styles.quickLinkLabel, styles.quickLinkDriverLabel]}>
-                  Apply to become a driver
-                </Text>
-                <Text style={[styles.quickLinkArrow, { color: colors.accent }]}>›</Text>
-              </Card>
+                <Text style={styles.linkIcon}>🚗</Text>
+                <Text style={[styles.linkLabel, styles.linkLabelDriver]}>Apply to become a driver</Text>
+                <Text style={[styles.linkArrow, { color: colors.accent }]}>›</Text>
+              </Pressable>
             )}
           </View>
         </View>
@@ -424,61 +460,62 @@ const styles = StyleSheet.create({
     backgroundColor: colors.navy,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.md,
   },
-  headerTop: {
+  headerInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  logoCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 2,
-  },
-  logoImage: { width: 28, height: 28, borderRadius: 14 },
-  brandName: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.full,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadow.accent,
-  },
-  avatarText: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: fontSize.md,
   },
   greeting: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.7)',
     fontSize: fontSize.md,
     fontWeight: '400',
   },
   greetingName: {
     color: colors.white,
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontWeight: '700',
+  },
+  brandName: {
+    color: colors.accent,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
     marginTop: 2,
   },
+  avatarStack: {
+    width: 44,
+    height: 44,
+  },
+  iconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  iconImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+  },
+  initialBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderRadius: radius.full,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.navy,
+  },
+  initialText: { color: colors.white, fontWeight: '800', fontSize: 9 },
 
   // ── Payment banner ──
   paymentBanner: {
@@ -648,6 +685,29 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontWeight: '500',
   },
+  requestTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  requestChevron: {
+    fontSize: 20,
+    color: colors.textLight,
+    fontWeight: '300',
+  },
+  cancelChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+    backgroundColor: colors.errorLight,
+    borderWidth: 1,
+    borderColor: colors.error,
+  },
+  cancelChipText: {
+    fontSize: fontSize.xs,
+    color: colors.error,
+    fontWeight: '600',
+  },
   requestDate: {
     fontSize: fontSize.xs,
     color: colors.textLight,
@@ -724,33 +784,41 @@ const styles = StyleSheet.create({
     paddingLeft: 4,
   },
 
-  // ── Quick links ──
-  quickLinks: { gap: spacing.sm },
-  quickLink: {
+  // ── Quick links grouped list ──
+  linkGroup: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    ...shadow.card,
+  },
+  linkRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     gap: spacing.md,
+    backgroundColor: colors.white,
   },
-  quickLinkIcon: { fontSize: 20, width: 28, textAlign: 'center' },
-  quickLinkLabel: {
+  linkRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  linkRowPressed: { backgroundColor: colors.offWhite },
+  linkRowDriver: {
+    backgroundColor: colors.accentLight,
+  },
+  linkIcon: { fontSize: 19, width: 26, textAlign: 'center' },
+  linkLabel: {
     flex: 1,
     fontSize: fontSize.md,
     color: colors.textPrimary,
     fontWeight: '500',
   },
-  quickLinkArrow: {
+  linkLabelDriver: { color: colors.navy, fontWeight: '600' },
+  linkArrow: {
     fontSize: 20,
     color: colors.textLight,
     fontWeight: '300',
-  },
-  quickLinkDriver: {
-    backgroundColor: colors.accentLight,
-    borderWidth: 1,
-    borderColor: 'rgba(18,179,214,0.2)',
-  },
-  quickLinkDriverLabel: {
-    color: colors.navy,
-    fontWeight: '600',
   },
 
   // ── Footer ──

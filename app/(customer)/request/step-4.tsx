@@ -17,7 +17,6 @@ import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Card } from '@/components/ui/Card';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { getRegionName } from '@/constants/regions';
 
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -32,6 +31,22 @@ function penceToGBP(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`;
 }
 
+/** Haversine distance in miles between two lat/lng points */
+function haversinemiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 3958.8; // Earth radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const PRICE_PER_MILE_PENCE = 95;
+const MIN_FEE_PENCE = 400;
+const ROAD_FACTOR = 1.4;
+
 export default function Step4ReviewScreen() {
   const router = useRouter();
   const { formData, update, reset } = useRequest();
@@ -45,20 +60,39 @@ export default function Step4ReviewScreen() {
   const [feeError, setFeeError] = useState<string | null>(null);
 
   const calculateFee = useCallback(() => {
-    const pickupPostcode = extractPostcode(formData.pickupLocation);
-    const destPostcode   = extractPostcode(formData.destinationAddress);
-
-    if (!pickupPostcode || !destPostcode) {
-      setFeeError('Could not read postcodes from your addresses — make sure both include a postcode.');
-      return;
-    }
-
     setFeeLoading(true);
     setFeeError(null);
     setFeePence(null);
 
+    // Preferred path: use lat/lng from Places Details (no network call needed)
+    if (
+      formData.pickupLat != null && formData.pickupLng != null &&
+      formData.destinationLat != null && formData.destinationLng != null
+    ) {
+      const straightMiles = haversinemiles(
+        formData.pickupLat, formData.pickupLng,
+        formData.destinationLat, formData.destinationLng,
+      );
+      const roadMiles = straightMiles * ROAD_FACTOR;
+      const fee = Math.max(MIN_FEE_PENCE, Math.round(roadMiles * PRICE_PER_MILE_PENCE));
+      setFeePence(fee);
+      setDistanceMiles(Math.round(roadMiles * 10) / 10);
+      setFeeLoading(false);
+      return;
+    }
+
+    // Fallback: use postcodes via edge function (e.g. saved addresses without coords)
+    const pickupPostcode = formData.pickupPostcode || extractPostcode(formData.pickupLocation);
+    const destPostcode   = formData.destinationPostcode || extractPostcode(formData.destinationAddress);
+
+    if (!pickupPostcode || !destPostcode) {
+      setFeeError('Select both addresses from the suggestions to get a fee estimate.');
+      setFeeLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s — allows for cold start
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     fetch('https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/calculate-fee', {
       method: 'POST',
@@ -83,7 +117,8 @@ export default function Step4ReviewScreen() {
         setFeeError(`Fee estimate unavailable (${msg}).`);
       })
       .finally(() => { clearTimeout(timeout); setFeeLoading(false); });
-  }, [formData.pickupLocation, formData.destinationAddress]);
+  }, [formData.pickupLat, formData.pickupLng, formData.destinationLat, formData.destinationLng,
+      formData.pickupPostcode, formData.pickupLocation, formData.destinationPostcode, formData.destinationAddress]);
 
   // Calculate fee on mount
   useEffect(() => { calculateFee(); }, [calculateFee]);
@@ -188,29 +223,31 @@ export default function Step4ReviewScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Compact nav strip — matches steps 1–3 */}
+      <View style={styles.navHeader}>
+        <Pressable onPress={() => { haptic.light(); router.back(); }} hitSlop={12}>
+          <Text style={styles.backLinkText}>‹ Back</Text>
+        </Pressable>
+        <View style={styles.progressRow}>
+          {[1, 2, 3, 4].map((s) => (
+            <View
+              key={s}
+              style={[styles.progressDot, s <= 4 && styles.progressDotDone, s === 4 && styles.progressDotCurrent]}
+            />
+          ))}
+        </View>
+      </View>
+
       <FormScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={() => { haptic.light(); router.back(); }} style={styles.backLink} hitSlop={12}>
-            <Text style={styles.backLinkText}>‹ Back</Text>
-          </Pressable>
-          <View style={styles.progressRow}>
-            {[1, 2, 3, 4].map((s) => (
-              <View
-                key={s}
-                style={[styles.progressDot, styles.progressDotActive, s === 4 && styles.progressDotCurrent]}
-              />
-            ))}
+        <View style={styles.body}>
+          <View style={styles.pageHeader}>
+            <Text style={styles.categoryBadgeText}>{formData.categoryName}</Text>
           </View>
-          <Text style={styles.stepLabel}>Step 4 of 4</Text>
           <Text style={styles.title}>Review & submit</Text>
           <Text style={styles.subtitle}>Check everything looks right before sending.</Text>
-        </View>
-
-        <View style={styles.body}>
           {submitError && (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{submitError}</Text>
@@ -261,10 +298,6 @@ export default function Step4ReviewScreen() {
             <View style={styles.divider} />
 
             <Text style={styles.summarySection}>Delivery</Text>
-            <Row label="Region" value={getRegionName(formData.destinationRegionSlug)} />
-            {formData.destinationArea ? (
-              <Row label="Area" value={formData.destinationArea} />
-            ) : null}
             <Row label="Address" value={formData.destinationAddress} />
             {formData.contactPhone ? (
               <Row label="Phone" value={formData.contactPhone} />
@@ -356,45 +389,44 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     flexGrow: 1,
   },
-  header: {
+
+  // Compact nav strip — matches steps 1–3
+  navHeader: {
     backgroundColor: colors.navy,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  backLink: { marginBottom: spacing.md },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
-  progressRow: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
     flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  progressDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
+  progressRow: { flexDirection: 'row', gap: 6 },
+  progressDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.25)' },
+  progressDotDone: { backgroundColor: 'rgba(255,255,255,0.6)' },
+  progressDotCurrent: { backgroundColor: colors.accent, width: 24, borderRadius: 4 },
+
+  // Page heading — lives in scroll content like steps 1–3
+  pageHeader: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.navy,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    marginBottom: spacing.md,
   },
-  progressDotActive: { backgroundColor: 'rgba(255,255,255,0.6)' },
-  progressDotCurrent: { backgroundColor: colors.accent, width: 24 },
-  stepLabel: {
-    color: colors.accent,
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: spacing.sm,
-  },
+  categoryBadgeText: { fontSize: fontSize.xs, color: colors.white, fontWeight: '700' },
   title: {
-    color: colors.white,
+    color: colors.navy,
     fontSize: fontSize.xxl,
     fontWeight: '800',
     marginBottom: spacing.sm,
   },
   subtitle: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: fontSize.sm,
-    lineHeight: 20,
+    color: colors.textMuted,
+    fontSize: fontSize.md,
+    lineHeight: 22,
+    marginBottom: spacing.xl,
   },
 
   body: { padding: spacing.lg },

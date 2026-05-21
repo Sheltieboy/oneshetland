@@ -3,7 +3,8 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
+  Image,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +15,8 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { haptic } from '@/lib/haptics';
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -24,6 +26,10 @@ export default function AccountScreen() {
   const [phone, setPhone] = useState(profile?.phone ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const isDirty =
+    fullName.trim() !== (profile?.full_name ?? '').trim() ||
+    (phone.trim() || null) !== (profile?.phone ?? null);
 
   async function handleSave() {
     if (!isSupabaseConfigured || !profile?.id) return;
@@ -67,23 +73,27 @@ export default function AccountScreen() {
       <FormScrollView contentContainerStyle={styles.content}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-              <Text style={styles.backLinkText}>← Back</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>My account</Text>
-
-            {/* Avatar */}
-            <View style={styles.avatarSection}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {(profile?.full_name ?? 'U')[0].toUpperCase()}
-                </Text>
-              </View>
+            <View style={styles.headerTop}>
+              <Pressable onPress={() => { haptic.light(); router.back(); }} hitSlop={12} style={styles.backBtn}>
+                <Text style={styles.backText}>‹ Back</Text>
+              </Pressable>
+            </View>
+            <View style={styles.headerInner}>
               <View>
-                <Text style={styles.avatarName}>{profile?.full_name ?? '—'}</Text>
+                <Text style={styles.title}>{profile?.full_name ?? 'My account'}</Text>
                 <View style={styles.roleBadge}>
                   <Text style={styles.roleBadgeText}>
                     {roleLabel[profile?.role ?? 'customer']}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.avatarStack}>
+                <View style={styles.iconCircle}>
+                  <Image source={require('../assets/icon.png')} style={styles.iconImage} resizeMode="contain" />
+                </View>
+                <View style={styles.initialBadge}>
+                  <Text style={styles.initialText}>
+                    {(profile?.full_name ?? 'U')[0].toUpperCase()}
                   </Text>
                 </View>
               </View>
@@ -116,6 +126,7 @@ export default function AccountScreen() {
                 label={saved ? '✓ Saved' : 'Save changes'}
                 onPress={handleSave}
                 loading={saving}
+                disabled={!isDirty}
                 variant={saved ? 'outline' : 'primary'}
                 size="md"
                 style={styles.saveButton}
@@ -167,22 +178,22 @@ export default function AccountScreen() {
             {/* Quick links */}
             <Card style={styles.section}>
               <Text style={styles.sectionTitle}>More</Text>
-              <TouchableOpacity
-                style={styles.accountLink}
-                onPress={() => router.push('/(customer)/saved-addresses')}
+              <Pressable
+                style={({ pressed }) => [styles.accountLink, pressed && { opacity: 0.7 }]}
+                onPress={() => { haptic.light(); router.push('/(customer)/saved-addresses'); }}
               >
                 <Text style={styles.accountLinkIcon}>📍</Text>
                 <Text style={styles.accountLinkLabel}>Saved addresses</Text>
                 <Text style={styles.accountLinkArrow}>›</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.accountLink, styles.accountLinkLast]}
-                onPress={() => router.push('/(customer)/previous-requests')}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.accountLink, styles.accountLinkLast, pressed && { opacity: 0.7 }]}
+                onPress={() => { haptic.light(); router.push('/(customer)/previous-requests'); }}
               >
                 <Text style={styles.accountLinkIcon}>📋</Text>
                 <Text style={styles.accountLinkLabel}>Previous requests</Text>
                 <Text style={styles.accountLinkArrow}>›</Text>
-              </TouchableOpacity>
+              </Pressable>
             </Card>
           </View>
       </FormScrollView>
@@ -200,53 +211,68 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: colors.navy,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
-  backLink: { marginBottom: spacing.md },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
+  headerTop: {
+    marginBottom: spacing.sm,
+  },
+  backBtn: {},
+  backText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+  },
+  headerInner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
     color: colors.white,
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
-    marginBottom: spacing.lg,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
   },
-  avatarSection: {
-    flexDirection: 'row',
+  roleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(18,179,214,0.25)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    marginTop: 4,
+  },
+  roleBadgeText: {
+    color: colors.accent,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  avatarStack: { width: 44, height: 44 },
+  iconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: colors.white,
     alignItems: 'center',
-    gap: spacing.md,
+    justifyContent: 'center',
+    padding: 3,
   },
-  avatar: {
-    width: 56,
-    height: 56,
+  iconImage: { width: 36, height: 36, borderRadius: 9 },
+  initialBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
     borderRadius: radius.full,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.navy,
   },
-  avatarText: {
-    color: colors.white,
-    fontWeight: '800',
-    fontSize: fontSize.xl,
-  },
-  avatarName: {
-    color: colors.white,
-    fontSize: fontSize.lg,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  roleBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.accent,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  roleBadgeText: {
-    color: colors.white,
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-  },
+  initialText: { color: colors.white, fontWeight: '800', fontSize: 9 },
 
   body: { padding: spacing.lg, gap: spacing.md },
   section: {},
