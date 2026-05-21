@@ -42,7 +42,8 @@ export default function PaymentSetupScreen() {
         merchantDisplayName: 'OneShetland Fetch',
         customerId: data.customer_id,
         returnURL: 'oneshetland-fetch://payment-return',
-        applePay: { merchantCountryCode: 'GB' },
+        // Apple Pay requires a registered merchantIdentifier — enable once configured
+        // applePay: { merchantCountryCode: 'GB' },
         googlePay: { merchantCountryCode: 'GB', testEnv: true },
         style: 'automatic',
         appearance: {
