@@ -1,11 +1,33 @@
-import { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { useEffect, Component, ReactNode } from 'react';
+import { View, ActivityIndicator, Text, ScrollView } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { colors } from '@/constants/theme';
+
+// Temporary error boundary — catches JS crashes and shows the error
+// so we can diagnose the TestFlight crash. Remove once stable.
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      const err = this.state.error as Error;
+      return (
+        <ScrollView style={{ flex: 1, backgroundColor: '#1a1a2e', padding: 20, paddingTop: 60 }}>
+          <Text style={{ color: '#ff6b6b', fontSize: 18, fontWeight: 'bold', marginBottom: 10 }}>
+            ⚠️ App Error (debug build)
+          </Text>
+          <Text style={{ color: '#fff', fontSize: 13, marginBottom: 10 }}>{err.message}</Text>
+          <Text style={{ color: '#aaa', fontSize: 11, fontFamily: 'monospace' }}>{err.stack}</Text>
+        </ScrollView>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
@@ -86,17 +108,19 @@ export default function RootLayout() {
   );
 
   return (
-    <SafeAreaProvider>
-      {STRIPE_KEY ? (
-        <StripeProvider
-          publishableKey={STRIPE_KEY}
-          merchantIdentifier="merchant.com.oneshetland.app"
-        >
-          {content}
-        </StripeProvider>
-      ) : (
-        content
-      )}
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        {STRIPE_KEY ? (
+          <StripeProvider
+            publishableKey={STRIPE_KEY}
+            merchantIdentifier="merchant.com.oneshetland.app"
+          >
+            {content}
+          </StripeProvider>
+        ) : (
+          content
+        )}
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
