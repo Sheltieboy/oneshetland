@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, FlatList } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Modal, FlatList } from 'react-native';
+import { haptic } from '@/lib/haptics';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -75,9 +76,9 @@ export default function RequestStep3() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Back</Text>
-          </TouchableOpacity>
+          <Pressable onPress={() => { haptic.light(); router.back(); }} style={styles.backBtn} hitSlop={12}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </Pressable>
           <StepIndicator current={3} />
         </View>
 
@@ -100,32 +101,35 @@ export default function RequestStep3() {
           {REGIONS.map((r) => {
             const selected = formData.destinationRegionSlug === r.slug;
             return (
-              <TouchableOpacity
+              <Pressable
                 key={r.slug}
-                style={[styles.regionChip, selected && styles.regionChipSelected]}
+                style={({ pressed }) => [
+                  styles.regionChip,
+                  selected && styles.regionChipSelected,
+                  pressed && styles.regionChipPressed,
+                ]}
                 onPress={() => {
+                  haptic.select();
                   update({ destinationRegionSlug: r.slug });
                   setErrors((e) => ({ ...e, region: '' }));
                 }}
-                activeOpacity={0.75}
               >
                 <Text style={[styles.regionChipText, selected && styles.regionChipTextSelected]}>
                   {r.name}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </ScrollView>
 
         {/* Saved address picker */}
         {savedAddresses.length > 0 && (
-          <TouchableOpacity
-            style={styles.savedBtn}
-            onPress={() => setShowPicker(true)}
-            activeOpacity={0.75}
+          <Pressable
+            style={({ pressed }) => [styles.savedBtn, pressed && { opacity: 0.8 }]}
+            onPress={() => { haptic.light(); setShowPicker(true); }}
           >
             <Text style={styles.savedBtnText}>📍 Use a saved address</Text>
-          </TouchableOpacity>
+          </Pressable>
         )}
 
         <Input
@@ -145,19 +149,18 @@ export default function RequestStep3() {
           <SafeAreaView style={modal.safe} edges={['top', 'bottom']}>
             <View style={modal.header}>
               <Text style={modal.title}>Saved addresses</Text>
-              <TouchableOpacity onPress={() => setShowPicker(false)}>
+              <Pressable onPress={() => { haptic.light(); setShowPicker(false); }} hitSlop={12}>
                 <Text style={modal.close}>Done</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
             <FlatList
               data={savedAddresses}
               keyExtractor={(item) => item.id}
               contentContainerStyle={modal.list}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={modal.item}
-                  onPress={() => applySavedAddress(item)}
-                  activeOpacity={0.7}
+                <Pressable
+                  style={({ pressed }) => [modal.item, pressed && { opacity: 0.85 }]}
+                  onPress={() => { haptic.select(); applySavedAddress(item); }}
                 >
                   <View style={modal.itemIcon}>
                     <Text style={{ fontSize: 20 }}>📍</Text>
@@ -281,6 +284,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   regionChipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  regionChipPressed: { opacity: 0.8 },
   regionChipText: { fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '500' },
   regionChipTextSelected: { color: colors.white, fontWeight: '700' },
 

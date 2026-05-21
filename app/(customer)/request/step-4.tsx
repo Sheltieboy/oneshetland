@@ -2,14 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Switch,
   Alert,
   ActivityIndicator,
-  Pressable,
 } from 'react-native';
+import { haptic } from '@/lib/haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useRequest } from '@/context/RequestContext';
@@ -174,9 +173,10 @@ export default function Step4ReviewScreen() {
     }
 
     reset();
+    haptic.success();
     Alert.alert(
-      'Request submitted!',
-      "Your delivery request has been submitted. You'll be notified when a driver picks it up.",
+      'Request submitted! 🎉',
+      "Your delivery request is live. You'll be notified when a driver picks it up.",
       [
         {
           text: 'Back to dashboard',
@@ -194,9 +194,9 @@ export default function Step4ReviewScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>← Back</Text>
-          </TouchableOpacity>
+          <Pressable onPress={() => { haptic.light(); router.back(); }} style={styles.backLink} hitSlop={12}>
+            <Text style={styles.backLinkText}>‹ Back</Text>
+          </Pressable>
           <View style={styles.progressRow}>
             {[1, 2, 3, 4].map((s) => (
               <View
@@ -229,9 +229,9 @@ export default function Step4ReviewScreen() {
             {!feeLoading && feeError && (
               <View style={styles.feeRetryRow}>
                 <Text style={styles.feeErrorText}>{feeError}</Text>
-                <TouchableOpacity onPress={calculateFee} style={styles.retryBtn}>
+                <Pressable onPress={calculateFee} style={styles.retryBtn}>
                   <Text style={styles.retryBtnText}>Try again</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             )}
             {!feeLoading && feePence != null && (

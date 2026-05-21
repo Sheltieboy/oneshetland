@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
+  RefreshControl,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -33,9 +34,14 @@ export default function DriverApprovalsScreen() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchApplications();
+  useEffect(() => { fetchApplications(); }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchApplications();
+    setRefreshing(false);
   }, []);
 
   async function fetchApplications() {
@@ -94,7 +100,11 @@ export default function DriverApprovalsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy} />}
+      >
 
         {/* Header */}
         <View style={styles.header}>

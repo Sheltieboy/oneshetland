@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRequest } from '@/context/RequestContext';
 import { DELIVERY_CATEGORIES } from '@/constants/categories';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { haptic } from '@/lib/haptics';
 
 // Typed-routes workaround — payment-setup type is generated at Expo start
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,6 +26,7 @@ export default function RequestStep1() {
   }, [profile]);
 
   function select(slug: string, name: string) {
+    haptic.select();
     update({ categorySlug: slug, categoryName: name });
     router.push('/(customer)/request/step-2');
   }
@@ -37,9 +39,9 @@ export default function RequestStep1() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Back</Text>
-          </TouchableOpacity>
+          <Pressable onPress={() => { haptic.light(); router.back(); }} style={styles.backBtn} hitSlop={12}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </Pressable>
           <StepIndicator current={1} />
         </View>
 
@@ -52,11 +54,14 @@ export default function RequestStep1() {
           {DELIVERY_CATEGORIES.map((cat) => {
             const selected = formData.categorySlug === cat.slug;
             return (
-              <TouchableOpacity
+              <Pressable
                 key={cat.slug}
-                style={[styles.card, selected && styles.cardSelected]}
+                style={({ pressed }) => [
+                  styles.card,
+                  selected && styles.cardSelected,
+                  pressed && styles.cardPressed,
+                ]}
                 onPress={() => select(cat.slug, cat.name)}
-                activeOpacity={0.75}
               >
                 <Text style={styles.cardIcon}>{cat.icon}</Text>
                 <Text style={[styles.cardName, selected && styles.cardNameSelected]}>
@@ -68,7 +73,7 @@ export default function RequestStep1() {
                     <Text style={styles.checkText}>✓</Text>
                   </View>
                 )}
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </View>
@@ -144,7 +149,11 @@ const styles = StyleSheet.create({
   },
   cardSelected: {
     borderColor: colors.accent,
-    backgroundColor: '#F0FBFF',
+    backgroundColor: colors.accentLight,
+  },
+  cardPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
   },
   cardIcon: { fontSize: 28, marginBottom: spacing.sm },
   cardName: {
