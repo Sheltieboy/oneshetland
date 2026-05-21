@@ -78,17 +78,25 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const content = (
+    <AuthProvider>
+      <StatusBar style="light" />
+      <RootNavigator />
+    </AuthProvider>
+  );
+
   return (
     <SafeAreaProvider>
-      <StripeProvider
-        publishableKey={STRIPE_KEY}
-        merchantIdentifier="merchant.com.oneshetland.fetch"
-      >
-        <AuthProvider>
-          <StatusBar style="light" />
-          <RootNavigator />
-        </AuthProvider>
-      </StripeProvider>
+      {STRIPE_KEY ? (
+        <StripeProvider
+          publishableKey={STRIPE_KEY}
+          merchantIdentifier="merchant.com.oneshetland.app"
+        >
+          {content}
+        </StripeProvider>
+      ) : (
+        content
+      )}
     </SafeAreaProvider>
   );
 }
