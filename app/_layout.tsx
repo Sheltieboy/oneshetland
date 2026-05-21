@@ -107,19 +107,12 @@ export default function RootLayout() {
     </AuthProvider>
   );
 
+  // StripeProvider temporarily disabled to isolate iOS 26 launch crash.
+  // Re-enable once stripe-react-native is confirmed compatible.
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        {STRIPE_KEY ? (
-          <StripeProvider
-            publishableKey={STRIPE_KEY}
-            merchantIdentifier="merchant.com.oneshetland.app"
-          >
-            {content}
-          </StripeProvider>
-        ) : (
-          content
-        )}
+        {content}
       </SafeAreaProvider>
     </ErrorBoundary>
   );
