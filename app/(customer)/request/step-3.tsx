@@ -176,7 +176,7 @@ export default function RequestStep3() {
                     )}
                   </View>
                   <Text style={modal.itemArrow}>›</Text>
-                </TouchableOpacity>
+                </Pressable>
               )}
             />
           </SafeAreaView>
