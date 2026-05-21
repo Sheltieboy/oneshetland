@@ -40,7 +40,7 @@ export function Card({
   };
 
   const handlePress = () => {
-    if (haptic) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (haptic) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     onPress?.();
   };
 

@@ -64,7 +64,7 @@ export function Button({
         variant === 'primary' || variant === 'secondary'
           ? Haptics.ImpactFeedbackStyle.Medium
           : Haptics.ImpactFeedbackStyle.Light;
-      Haptics.impactAsync(impactStyle);
+      Haptics.impactAsync(impactStyle).catch(() => {});
     }
     onPress();
   };
