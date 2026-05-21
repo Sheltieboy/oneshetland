@@ -68,6 +68,12 @@
         "projectId": "505d7724-8b86-493d-973e-45c44011157f"
       }
     },
-    "owner": "darrenfullerton"
+    "owner": "darrenfullerton",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/505d7724-8b86-493d-973e-45c44011157f"
+    }
   }
 }

@@ -235,15 +235,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   logoCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.white,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 2,
   },
-  logoImage: { width: 28, height: 28, borderRadius: 14 },
+  logoImage: { width: 36, height: 36, borderRadius: 9 },
   brandName: {
     color: colors.white,
     fontSize: fontSize.sm,

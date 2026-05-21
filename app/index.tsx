@@ -286,13 +286,10 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 3,
   },
-  logoImage: { width: 34, height: 34, borderRadius: 17 },
+  logoImage: { width: 40, height: 40, borderRadius: 10 },
   communityPill: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -12,3 +12,14 @@ android/
 
 expo-env.d.ts
 # @end expo-cli
+
+# Build artifacts
+*.ipa
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# Claude session files
+.claude/
