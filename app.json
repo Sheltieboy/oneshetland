@@ -52,7 +52,6 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "@stripe/stripe-react-native",
       "expo-font",
       "expo-web-browser"
     ],
