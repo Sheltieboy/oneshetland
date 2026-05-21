@@ -17,7 +17,11 @@
       "bundleIdentifier": "com.oneshetland.app",
       "icon": "./assets/icon.png",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "OneShetland Fetch uses your camera to take photos of delivered items.",
+        "NSPhotoLibraryUsageDescription": "OneShetland Fetch uses your photo library to attach images to deliveries.",
+        "NSLocationWhenInUseUsageDescription": "OneShetland Fetch uses your location to help match you with nearby drivers.",
+        "NSMicrophoneUsageDescription": "OneShetland Fetch may use your microphone for video proof of delivery."
       }
     },
     "android": {
