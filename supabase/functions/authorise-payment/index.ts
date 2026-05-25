@@ -136,6 +136,8 @@ serve(async (req) => {
       payment_method: paymentMethodId,
       capture_method: 'manual',        // pre-auth only — captured on delivery
       confirm: 'true',
+      'automatic_payment_methods[enabled]': 'true',
+      'automatic_payment_methods[allow_redirects]': 'never',
       'metadata[request_id]': request_id,
       'metadata[customer_id]': request.customer_id,
       description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'}`,

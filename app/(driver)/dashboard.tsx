@@ -290,6 +290,7 @@ export default function DriverDashboard() {
     setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
     haptic.success();
     Alert.alert('Request accepted! 📦', 'The customer has been notified and their card pre-authorised.');
+    fetchData();
   }
 
   const isApproved = driverProfile?.driver_status === 'approved';
@@ -381,20 +382,39 @@ export default function DriverDashboard() {
 
         {/* ── Bank connect banner ── */}
         {isApproved && !driverProfile?.stripe_onboarding_complete && (
-          <Pressable
-            style={({ pressed }) => [styles.bankBanner, pressed && styles.bankBannerPressed]}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            onPress={() => { haptic.medium(); router.push('/(driver)/connect-bank' as any); }}
-          >
-            <View style={styles.bankBannerIcon}>
-              <Text style={styles.bankBannerEmoji}>🏦</Text>
-            </View>
-            <View style={styles.bankBannerBody}>
-              <Text style={styles.bankBannerTitle}>Connect your bank account</Text>
-              <Text style={styles.bankBannerSub}>Required to receive payment for deliveries</Text>
-            </View>
-            <Text style={styles.bankBannerArrow}>›</Text>
-          </Pressable>
+          driverProfile?.stripe_account_id ? (
+            // Account created but verification not yet confirmed by webhook
+            <Pressable
+              style={({ pressed }) => [styles.bankBannerPending, pressed && styles.bankBannerPressed]}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onPress={() => { haptic.medium(); router.push('/(driver)/connect-bank' as any); }}
+            >
+              <View style={styles.bankBannerIcon}>
+                <Text style={styles.bankBannerEmoji}>⏳</Text>
+              </View>
+              <View style={styles.bankBannerBody}>
+                <Text style={styles.bankBannerTitlePending}>Verification in progress</Text>
+                <Text style={styles.bankBannerSubPending}>Stripe is reviewing your details — tap to check status</Text>
+              </View>
+              <Text style={styles.bankBannerArrowPending}>›</Text>
+            </Pressable>
+          ) : (
+            // No account yet — prompt to connect
+            <Pressable
+              style={({ pressed }) => [styles.bankBanner, pressed && styles.bankBannerPressed]}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onPress={() => { haptic.medium(); router.push('/(driver)/connect-bank' as any); }}
+            >
+              <View style={styles.bankBannerIcon}>
+                <Text style={styles.bankBannerEmoji}>💷</Text>
+              </View>
+              <View style={styles.bankBannerBody}>
+                <Text style={styles.bankBannerTitle}>Connect your bank account</Text>
+                <Text style={styles.bankBannerSub}>Required to receive payment for deliveries</Text>
+              </View>
+              <Text style={styles.bankBannerArrow}>›</Text>
+            </Pressable>
+          )
         )}
 
         {/* ── Create run CTA ── */}
@@ -873,6 +893,21 @@ const styles = StyleSheet.create({
   bankBannerTitle: { fontSize: fontSize.sm, fontWeight: '700', color: '#92400E', marginBottom: 2 },
   bankBannerSub: { fontSize: fontSize.xs, color: '#B45309', lineHeight: 16 },
   bankBannerArrow: { fontSize: fontSize.xl, color: '#D97706', fontWeight: '300' },
+
+  // Pending variant — blue/grey tones
+  bankBannerPending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F4FF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#C7D7FD',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  bankBannerTitlePending: { fontSize: fontSize.sm, fontWeight: '700', color: '#1E3A8A', marginBottom: 2 },
+  bankBannerSubPending: { fontSize: fontSize.xs, color: '#3B5FC0', lineHeight: 16 },
+  bankBannerArrowPending: { fontSize: fontSize.xl, color: '#3B5FC0', fontWeight: '300' },
 
   // ── CTA ──
   ctaSection: {

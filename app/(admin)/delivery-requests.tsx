@@ -16,13 +16,14 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
 interface DeliveryRequest {
   id: string;
+  customer_id: string;
   category_slug: string;
   pickup_name: string;
   destination_area: string | null;
   destination_address: string;
   status: string;
   created_at: string;
-  customer: { full_name: string } | null;
+  customer_name: string;
 }
 
 const STATUS_FILTERS = ['all', 'pending', 'matched', 'collected', 'delivered', 'cancelled'] as const;
@@ -47,7 +48,7 @@ export default function AdminDeliveryRequestsScreen() {
   const fetchRequests = useCallback(async () => {
     let query = supabase
       .from('delivery_requests')
-      .select('id, category_slug, pickup_name, destination_area, destination_address, status, created_at, customer:profiles!customer_id(full_name)')
+      .select('id, customer_id, category_slug, pickup_name, destination_area, destination_address, status, created_at')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -56,7 +57,24 @@ export default function AdminDeliveryRequestsScreen() {
     }
 
     const { data } = await query;
-    setRequests((data as DeliveryRequest[]) ?? []);
+    const rows = (data as any[]) ?? [];
+
+    // Fetch customer names separately
+    const customerIds = [...new Set(rows.map((r) => r.customer_id).filter(Boolean))];
+    let namesMap: Record<string, string> = {};
+    if (customerIds.length > 0) {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', customerIds);
+      (profileData ?? []).forEach((p: { id: string; full_name: string | null }) => {
+        if (p.full_name) namesMap[p.id] = p.full_name;
+      });
+    }
+
+    setRequests(
+      rows.map((r) => ({ ...r, customer_name: namesMap[r.customer_id] ?? 'Unknown customer' })),
+    );
     setLoading(false);
     setRefreshing(false);
   }, [filter]);
@@ -143,7 +161,7 @@ export default function AdminDeliveryRequestsScreen() {
                       <View style={styles.requestInfo}>
                         <View style={styles.requestTopRow}>
                           <Text style={styles.customerName} numberOfLines={1}>
-                            {req.customer?.full_name ?? 'Unknown customer'}
+                            {req.customer_name}
                           </Text>
                           <StatusBadge status={`request_${req.status}`} />
                         </View>

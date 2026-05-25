@@ -7,6 +7,9 @@ import {
   StyleSheet,
   Pressable,
   Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
   Image,
   Alert,
 } from 'react-native';
@@ -21,6 +24,11 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { colors, fontSize, spacing, radius, shadow, fontWeight } from '@/constants/theme';
 import { haptic } from '@/lib/haptics';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 // Typed-routes workaround
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +76,15 @@ export default function CustomerDashboard() {
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Per-card fade animations (keyed by request id)
+  const cardAnims = useRef<Record<string, Animated.Value>>({});
+  function getCardAnim(id: string) {
+    if (!cardAnims.current[id]) {
+      cardAnims.current[id] = new Animated.Value(1);
+    }
+    return cardAnims.current[id];
+  }
+
   const firstName = profile?.full_name?.split(' ')[0] ?? 'there';
 
   // Entrance animation
@@ -79,6 +96,16 @@ export default function CustomerDashboard() {
       Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, speed: 14, bounciness: 4, useNativeDriver: true }),
     ]).start();
+  }, []);
+
+  // Fade out a card, then slide remaining cards up smoothly
+  const fadeOutRequest = useCallback((id: string) => {
+    const anim = getCardAnim(id);
+    Animated.timing(anim, { toValue: 0, duration: 350, useNativeDriver: true }).start(() => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setRequests((prev) => prev.filter((r) => r.id !== id));
+      delete cardAnims.current[id];
+    });
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -108,7 +135,44 @@ export default function CustomerDashboard() {
     setLoadingRuns(false);
   }, [profile?.id]);
 
+  // Initial fetch
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Realtime — fade out when a request is cancelled or delivered
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  useEffect(() => {
+    if (!profile?.id) return;
+    const pid = profile.id;
+
+    // Always remove any existing channel before creating a new one
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`customer-dashboard-${pid}-${Date.now()}`)
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'delivery_requests', filter: `customer_id=eq.${pid}` },
+        (payload) => {
+          const updated = payload.new as DeliveryRequest;
+          if (updated.status === 'cancelled' || updated.status === 'delivered') {
+            fadeOutRequest(updated.id);
+          } else {
+            setRequests((prev) =>
+              prev.map((r) => r.id === updated.id ? { ...r, status: updated.status } : r)
+            );
+          }
+        },
+      )
+      .subscribe();
+
+    realtimeChannelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      realtimeChannelRef.current = null;
+    };
+  }, [profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -222,8 +286,8 @@ export default function CustomerDashboard() {
             </Card>
           ) : (
             requests.map((req) => (
+              <Animated.View key={req.id} style={{ opacity: getCardAnim(req.id) }}>
               <Pressable
-                key={req.id}
                 onPress={() => {
                   haptic.light();
                   router.push({
@@ -240,6 +304,7 @@ export default function CustomerDashboard() {
                 style={({ pressed }) => [styles.requestCard, pressed && styles.requestCardPressed]}
               >
                 <View style={[styles.requestAccent, styles[`accent_${req.status}` as keyof typeof styles] as object]} />
+
                 <View style={styles.requestBody}>
                   <View style={styles.requestTopRow}>
                     <Text style={styles.requestFrom} numberOfLines={1}>{req.pickup_name}</Text>
@@ -274,7 +339,7 @@ export default function CustomerDashboard() {
                                 onPress: async () => {
                                   await supabase
                                     .from('delivery_requests')
-                                    .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+                                    .update({ status: 'cancelled' })
                                     .eq('id', req.id);
                                   if (isMatched) {
                                     const { data: { session } } = await supabase.auth.getSession();
@@ -284,7 +349,7 @@ export default function CustomerDashboard() {
                                       body: JSON.stringify({ request_id: req.id, event: 'cancelled' }),
                                     }).catch(() => {});
                                   }
-                                  fetchData();
+                                  fadeOutRequest(req.id);
                                 },
                               },
                             ],
@@ -299,6 +364,7 @@ export default function CustomerDashboard() {
                   </View>
                 </View>
               </Pressable>
+              </Animated.View>
             ))
           )}
         </View>

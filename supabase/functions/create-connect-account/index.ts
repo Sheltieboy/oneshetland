@@ -14,6 +14,7 @@ serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
+      console.error('[create-connect-account] No Authorization header');
       return new Response(JSON.stringify({ error: 'Unauthorised' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -28,14 +29,18 @@ serve(async (req) => {
 
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
+      console.error('[create-connect-account] getUser failed:', userError?.message);
       return new Response(JSON.stringify({ error: 'Unauthorised' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    console.log('[create-connect-account] user:', user.id);
+
     const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
     if (!stripeSecretKey) {
+      console.error('[create-connect-account] STRIPE_SECRET_KEY not set');
       return new Response(JSON.stringify({ error: 'Stripe not configured' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -72,6 +77,7 @@ serve(async (req) => {
           'capabilities[transfers][requested]': 'true',
           'business_type': 'individual',
           'individual[email]': user.email ?? '',
+          'business_profile[product_description]': 'Community member picking up and delivering items for neighbours on the OneShetland platform',
           'metadata[supabase_user_id]': user.id,
         }),
       });

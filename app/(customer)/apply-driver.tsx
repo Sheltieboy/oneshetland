@@ -184,13 +184,13 @@ export default function ApplyDriverScreen() {
             />
 
             <Input
-              label="About you"
+              label="Your typical routes"
               value={statement}
               onChangeText={(v) => {
                 setStatement(v);
                 if (errors.statement) setErrors((e) => ({ ...e, statement: '' }));
               }}
-              placeholder="Tell us a little about yourself and why you'd like to drive for OneShetland Fetch. Where do you usually travel to?"
+              placeholder="Where do you regularly travel to and from? E.g. Lerwick to Scalloway most days, or regular trips north. This helps us match you with requests along your route."
               multiline
               numberOfLines={5}
               style={{ height: 120, textAlignVertical: 'top' }}

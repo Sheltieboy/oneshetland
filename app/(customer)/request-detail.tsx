@@ -106,7 +106,6 @@ export default function RequestDetailScreen() {
   const [liveWaitingFee, setLiveWaitingFee] = useState(0);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -149,14 +148,29 @@ export default function RequestDetailScreen() {
     setLoading(false);
   }, [id]);
 
-  // Initial load + poll every 15s for status changes
+  // Initial load + realtime subscription for status changes
   useEffect(() => {
+    if (!id) return;
     load();
-    pollRef.current = setInterval(load, 15_000);
+
+    const channel = supabase
+      .channel(`request-detail-${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_requests', filter: `id=eq.${id}` },
+        () => { load(); },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'waiting_events', filter: `request_id=eq.${id}` },
+        () => { load(); },
+      )
+      .subscribe();
+
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      supabase.removeChannel(channel);
     };
-  }, [load]);
+  }, [id, load]);
 
   // Live waiting fee timer — ticks every 10s while driver is waiting
   useEffect(() => {
@@ -229,7 +243,7 @@ export default function RequestDetailScreen() {
             setCancelling(true);
             const { error } = await supabase
               .from('delivery_requests')
-              .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+              .update({ status: 'cancelled' })
               .eq('id', id);
 
             if (error) {
@@ -289,47 +303,59 @@ export default function RequestDetailScreen() {
               </Text>
               <Text style={styles.waitBody}>
                 {inGrace
-                  ? `Your driver is at the collection point. You have ${Math.ceil(graceRemaining / 60)} min to confirm collection before a waiting fee applies.`
-                  : `Your driver has been waiting longer than the grace period. A waiting fee of up to £6.00 may apply.`}
+                  ? 'Your driver is at the collection point. Confirm your item is ready to avoid a waiting fee.'
+                  : 'Your driver has been waiting longer than the grace period. A waiting fee of up to £6.00 may apply.'}
               </Text>
+              {inGrace && (
+                <View style={styles.countdownRow}>
+                  <Text style={styles.countdownValue}>{Math.ceil(graceRemaining / 60)}</Text>
+                  <Text style={styles.countdownLabel}>min remaining{'\n'}before fee starts</Text>
+                </View>
+              )}
               {!inGrace && liveWaitingFee > 0 && (
                 <Text style={styles.waitFeeAmount}>
                   Current waiting fee: {penceToGBP(liveWaitingFee)}
                 </Text>
               )}
-              <Button
-                label="I've confirmed collection is ready"
-                onPress={() =>
-                  Alert.alert(
-                    'Confirm collection ready?',
-                    'This lets your driver know the item is definitely ready for collection and stops any further waiting fee.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Yes, confirm',
-                        onPress: async () => {
-                          await supabase
-                            .from('delivery_requests')
-                            .update({ ready_for_collection: true })
-                            .eq('id', id);
-                          load();
+              {request.ready_for_collection ? (
+                <View style={styles.collectionConfirmed}>
+                  <Text style={styles.collectionConfirmedText}>✓ Collection confirmed — driver is on their way</Text>
+                </View>
+              ) : (
+                <Button
+                  label="I've confirmed collection is ready"
+                  onPress={() =>
+                    Alert.alert(
+                      'Confirm collection ready?',
+                      'This lets your driver know the item is definitely ready for collection and stops any further waiting fee.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Yes, confirm',
+                          onPress: async () => {
+                            await supabase
+                              .from('delivery_requests')
+                              .update({ ready_for_collection: true })
+                              .eq('id', id);
+                            load();
+                          },
                         },
-                      },
-                    ],
-                  )
-                }
-                variant="secondary"
-                size="sm"
-                fullWidth
-                style={{ marginTop: spacing.sm }}
-              />
+                      ],
+                    )
+                  }
+                  variant="secondary"
+                  size="sm"
+                  fullWidth
+                  style={{ marginTop: spacing.sm }}
+                />
+              )}
             </Card>
           )}
 
           {/* ── Status timeline ── */}
           <Card>
             <Text style={styles.sectionLabel}>Status</Text>
-            <StatusTimeline status={request.status} />
+            <StatusTimeline status={request.status} driverArrived={!!driverArrived} />
           </Card>
 
           {/* ── Driver info ── */}
@@ -469,7 +495,7 @@ export default function RequestDetailScreen() {
               minute: '2-digit',
             })}
           </Text>
-          <Text style={styles.refreshNote}>Updates automatically every 15 seconds</Text>
+          <Text style={styles.refreshNote}>🔴 Live updates</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -477,25 +503,33 @@ export default function RequestDetailScreen() {
 }
 
 // ── Status Timeline ──────────────────────────────────────────────────────────
-const STEPS = [
-  { key: 'pending',   label: 'Request submitted',          sub: 'Waiting for a driver to accept' },
-  { key: 'matched',   label: 'Driver matched',             sub: 'Your driver will collect within the window below' },
-  { key: 'collected', label: 'Item collected',             sub: 'Your driver has picked up your item and is on their way' },
-  { key: 'delivered', label: 'Delivered 🎉',               sub: 'Your item has arrived!' },
+const BASE_STEPS = [
+  { key: 'pending',        label: 'Request submitted',    sub: 'Waiting for a driver to accept' },
+  { key: 'matched',        label: 'Driver matched',       sub: 'Your driver will collect within the window below' },
+  { key: 'driver_arrived', label: 'Driver arrived 📍',    sub: 'Your driver is at the collection point' },
+  { key: 'collected',      label: 'Item collected',       sub: 'Your driver has picked up your item and is on their way' },
+  { key: 'delivered',      label: 'Delivered 🎉',         sub: 'Your item has arrived!' },
 ];
 
-function StatusTimeline({ status }: { status: string }) {
-  const currentIdx = STEPS.findIndex((s) => s.key === status);
+function StatusTimeline({ status, driverArrived }: { status: string; driverArrived: boolean }) {
+  const steps = driverArrived || status === 'collected' || status === 'delivered'
+    ? BASE_STEPS
+    : BASE_STEPS.filter((s) => s.key !== 'driver_arrived');
+
+  // Map real status to step key (driver_arrived is injected, not a DB status)
+  const activeKey = driverArrived && status === 'matched' ? 'driver_arrived' : status;
+  const currentIdx = steps.findIndex((s) => s.key === activeKey);
+
   return (
     <View style={tlStyles.container}>
-      {STEPS.map((step, idx) => {
+      {steps.map((step, idx) => {
         const done = idx <= currentIdx;
         const active = idx === currentIdx;
         return (
           <View key={step.key} style={tlStyles.row}>
             <View style={tlStyles.lineCol}>
               <View style={[tlStyles.dot, done && tlStyles.dotDone, active && tlStyles.dotActive]} />
-              {idx < STEPS.length - 1 && (
+              {idx < steps.length - 1 && (
                 <View style={[tlStyles.line, idx < currentIdx && tlStyles.lineDone]} />
               )}
             </View>
@@ -646,6 +680,25 @@ const styles = StyleSheet.create({
   submittedAt: { fontSize: fontSize.xs, color: colors.textLight, textAlign: 'center' },
   refreshNote: { fontSize: fontSize.xs, color: colors.textLight, textAlign: 'center', marginTop: 2 },
 
+  countdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+    backgroundColor: 'rgba(245,158,11,0.15)',
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  countdownValue: { fontSize: 40, fontWeight: '800', color: '#B45309', lineHeight: 44 },
+  countdownLabel: { fontSize: fontSize.sm, color: '#92400E', fontWeight: '600', lineHeight: 18 },
+  collectionConfirmed: {
+    marginTop: spacing.sm,
+    backgroundColor: '#F0FDF4',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  collectionConfirmedText: { fontSize: fontSize.sm, color: '#166534', fontWeight: '600' },
   cancelBtn: { marginBottom: spacing.md },
   cancelBlockedCard: {
     backgroundColor: colors.warningLight,

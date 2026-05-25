@@ -78,7 +78,13 @@ export default function PaymentSetupScreen() {
       router.back();
 
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      const raw = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      // Surface a friendlier message for the most common config-level Stripe errors
+      if (raw.includes('client_secret') || raw.includes('publishable key')) {
+        setError('Payment setup is temporarily unavailable. Please try again later or contact support.');
+      } else {
+        setError(raw);
+      }
     } finally {
       setLoading(false);
     }

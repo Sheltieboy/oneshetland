@@ -5,13 +5,15 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
-import { FormScrollView } from '@/components/ui/FormScrollView';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
 
@@ -28,12 +30,9 @@ export default function SignInScreen() {
     setError(null);
 
     if (!isSupabaseConfigured) {
-      setError(
-        'Supabase is not configured. Add your EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file. See README.md.',
-      );
+      setError('Supabase is not configured. Check your .env file.');
       return;
     }
-
     if (!email.trim() || !password) {
       setError('Please enter your email address and password.');
       return;
@@ -44,70 +43,83 @@ export default function SignInScreen() {
     setLoading(false);
 
     if (authError) {
-      // Common Supabase errors made readable
       if (authError.includes('Invalid login credentials')) {
         setError('Email address or password is incorrect. Please try again.');
       } else if (authError.includes('Email not confirmed')) {
-        setError('Please confirm your email address first. Check your inbox for a verification link, or turn off email confirmation in your Supabase dashboard while building.');
+        setError('Please confirm your email address first. Check your inbox for a verification link.');
       } else {
         setError(authError);
       }
     }
-    // On success, _layout.tsx handles the redirect to the correct dashboard
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardDoneBar />
-      <FormScrollView contentContainerStyle={styles.content}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-              <Text style={styles.backLinkText}>← Back</Text>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── Hero ── */}
+          <View style={styles.hero}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Text style={styles.backText}>← Back</Text>
             </TouchableOpacity>
-            <View style={styles.logoCircle}>
+
+            <View style={styles.heroContent}>
               <Image
                 source={require('../../assets/icon.png')}
-                style={styles.logoImage}
+                style={styles.logo}
                 resizeMode="contain"
               />
+              <Text style={styles.heroTitle}>OneShetland</Text>
+              <Text style={styles.heroTagline}>
+                Your community. One account.
+              </Text>
             </View>
-            <Text style={styles.title}>Sign in to OneShetland</Text>
-            <Text style={styles.subtitle}>
-              Use your OneShetland account to access Fetch and all other OneShetland services.
-            </Text>
           </View>
 
-          {/* Form */}
-          <View style={styles.form}>
+          {/* ── Form card ── */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Welcome back</Text>
+            <Text style={styles.cardSubtitle}>Sign in to your OneShetland account</Text>
+
             {error && (
               <View style={styles.errorBox}>
+                <Text style={styles.errorIcon}>⚠️</Text>
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
 
-            <Input
-              label="Email address"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              returnKeyType="next"
-            />
+            <View style={styles.fields}>
+              <Input
+                label="Email address"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                returnKeyType="next"
+              />
 
-            <Input
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Your password"
-              secureTextEntry
-              autoComplete="password"
-              returnKeyType="done"
-              onSubmitEditing={handleSignIn}
-            />
+              <Input
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Your password"
+                secureTextEntry
+                autoComplete="password"
+                returnKeyType="done"
+                onSubmitEditing={handleSignIn}
+              />
+            </View>
 
             <Button
               label="Sign in"
@@ -115,104 +127,135 @@ export default function SignInScreen() {
               loading={loading}
               fullWidth
               size="lg"
-              style={styles.submitButton}
+              style={styles.submitBtn}
             />
 
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>New to OneShetland?</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
             <TouchableOpacity
+              style={styles.secondaryBtn}
               onPress={() => router.push('/(auth)/sign-up')}
-              style={styles.switchLink}
             >
-              <Text style={styles.switchText}>
-                Not yet a member?{' '}
-                <Text style={styles.switchTextBold}>Create an account</Text>
-              </Text>
+              <Text style={styles.secondaryBtnText}>Create a free account</Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.legalNote}>
-            OneShetland Fetch is a community platform. Members must be 18 or over.
-            Goods only — no alcohol, tobacco, vapes, cash, or passengers.
+          <Text style={styles.legal}>
+            Members must be 18 or over. Fetch is for goods only — no alcohol, tobacco, vapes, cash, or passengers.
           </Text>
-      </FormScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.navy },
-  content: {
-    flexGrow: 1,
-    backgroundColor: colors.screenBackground,
-    paddingBottom: spacing.xxl,
-  },
-  header: {
+  flex: { flex: 1 },
+  scroll: { flexGrow: 1 },
+
+  // Hero
+  hero: {
     backgroundColor: colors.navy,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxxl,
   },
-  backLink: {
+  backBtn: { marginBottom: spacing.lg },
+  backText: { color: 'rgba(255,255,255,0.6)', fontSize: fontSize.sm },
+  heroContent: { alignItems: 'center', paddingTop: spacing.md },
+  logo: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
     marginBottom: spacing.md,
   },
-  backLinkText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: fontSize.sm,
-  },
-  logoCircle: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  logoImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-  },
-  title: {
+  heroTitle: {
     color: colors.white,
+    fontSize: fontSize.xxxl,
+    fontWeight: '800',
+    marginBottom: spacing.xs,
+    letterSpacing: -0.5,
+  },
+  heroTagline: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: fontSize.md,
+    fontWeight: '500',
+  },
+
+  // Card
+  card: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    marginTop: -radius.xxl,
+    padding: spacing.lg,
+    paddingTop: spacing.xl,
+    flex: 1,
+  },
+  cardTitle: {
     fontSize: fontSize.xxl,
     fontWeight: '800',
-    marginBottom: spacing.sm,
+    color: colors.navy,
+    marginBottom: spacing.xs,
   },
-  subtitle: {
-    color: 'rgba(255,255,255,0.7)',
+  cardSubtitle: {
     fontSize: fontSize.sm,
-    lineHeight: 20,
+    color: colors.textMuted,
+    marginBottom: spacing.lg,
   },
-  form: {
-    padding: spacing.lg,
-  },
+
+  // Error
   errorBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     backgroundColor: colors.errorLight,
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
+    gap: spacing.sm,
   },
-  errorText: {
-    color: colors.error,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-  },
-  submitButton: {
-    marginTop: spacing.sm,
-  },
-  switchLink: {
+  errorIcon: { fontSize: 14, marginTop: 1 },
+  errorText: { flex: 1, color: colors.error, fontSize: fontSize.sm, lineHeight: 20 },
+
+  // Fields
+  fields: { gap: spacing.xs, marginBottom: spacing.sm },
+
+  submitBtn: { marginTop: spacing.md },
+
+  // Divider
+  divider: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.lg,
+    gap: spacing.sm,
+    marginVertical: spacing.lg,
   },
-  switchText: {
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { fontSize: fontSize.xs, color: colors.textLight, fontWeight: '500' },
+
+  // Secondary button
+  secondaryBtn: {
+    borderWidth: 1.5,
+    borderColor: colors.navy,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
   },
-  switchTextBold: {
+  secondaryBtnText: {
     color: colors.navy,
-    fontWeight: '600',
+    fontSize: fontSize.md,
+    fontWeight: '700',
   },
-  legalNote: {
+
+  legal: {
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: 0,
+    paddingBottom: spacing.xl,
     fontSize: fontSize.xs,
     color: colors.textLight,
     textAlign: 'center',

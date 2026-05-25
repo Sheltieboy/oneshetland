@@ -43,7 +43,8 @@ function RootNavigator() {
     const inCustomerGroup = segments[0] === '(customer)';
     const inDriverGroup = segments[0] === '(driver)';
     const inAdminGroup = segments[0] === '(admin)';
-    const inProtected = inCustomerGroup || inDriverGroup || inAdminGroup;
+    const inAccountScreen = (segments as string[])[0] === 'account';
+    const inProtected = inCustomerGroup || inDriverGroup || inAdminGroup || inAccountScreen;
 
     if (!session) {
       // Not signed in — redirect away from protected routes to the landing page
@@ -113,6 +114,7 @@ export default function RootLayout() {
         {STRIPE_KEY ? (
           <StripeProvider
             publishableKey={STRIPE_KEY}
+            merchantIdentifier="merchant.com.oneshetland.app"
           >
             {content}
           </StripeProvider>

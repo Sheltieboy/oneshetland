@@ -16,13 +16,14 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
 interface Run {
   id: string;
+  driver_id: string;
   departure_start: string;
   departure_end: string;
   ferry_crossing: boolean;
   notes: string | null;
   status: string;
   categories_accepted: string[];
-  driver: { full_name: string } | null;
+  driver_name: string;
   request_count: number;
 }
 
@@ -39,7 +40,7 @@ export default function AdminRunsScreen() {
   const fetchRuns = useCallback(async () => {
     let query = supabase
       .from('runs')
-      .select('id, departure_start, departure_end, ferry_crossing, notes, status, categories_accepted, driver:profiles!driver_id(full_name)')
+      .select('id, driver_id, departure_start, departure_end, ferry_crossing, notes, status, categories_accepted')
       .order('departure_start', { ascending: false })
       .limit(100);
 
@@ -50,26 +51,42 @@ export default function AdminRunsScreen() {
     const { data } = await query;
     const runsData = (data as any[]) ?? [];
 
-    // Fetch request counts per run
+    // Fetch driver names and request counts in parallel
     const runIds = runsData.map((r) => r.id);
+    const driverIds = [...new Set(runsData.map((r) => r.driver_id).filter(Boolean))];
     let countsMap: Record<string, number> = {};
+    let namesMap: Record<string, string> = {};
 
-    if (runIds.length > 0) {
-      const { data: countData } = await supabase
-        .from('delivery_requests')
-        .select('run_id')
-        .in('run_id', runIds)
-        .neq('status', 'cancelled');
-
-      (countData ?? []).forEach((row: { run_id: string }) => {
-        countsMap[row.run_id] = (countsMap[row.run_id] ?? 0) + 1;
-      });
-    }
+    await Promise.all([
+      runIds.length > 0
+        ? supabase
+            .from('delivery_requests')
+            .select('run_id')
+            .in('run_id', runIds)
+            .neq('status', 'cancelled')
+            .then(({ data: countData }) => {
+              (countData ?? []).forEach((row: { run_id: string }) => {
+                countsMap[row.run_id] = (countsMap[row.run_id] ?? 0) + 1;
+              });
+            })
+        : Promise.resolve(),
+      driverIds.length > 0
+        ? supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', driverIds)
+            .then(({ data: profileData }) => {
+              (profileData ?? []).forEach((p: { id: string; full_name: string | null }) => {
+                if (p.full_name) namesMap[p.id] = p.full_name;
+              });
+            })
+        : Promise.resolve(),
+    ]);
 
     setRuns(
       runsData.map((r) => ({
         ...r,
-        driver: Array.isArray(r.driver) ? r.driver[0] ?? null : r.driver,
+        driver_name: namesMap[r.driver_id] ?? 'Unknown driver',
         request_count: countsMap[r.id] ?? 0,
       })),
     );
@@ -184,7 +201,7 @@ export default function AdminRunsScreen() {
                     <View style={styles.runMetaRow}>
                       <View style={styles.runMeta}>
                         <Text style={styles.runMetaText}>
-                          🧑‍✈️ {run.driver?.full_name ?? 'Unknown driver'}
+                          🧑‍✈️ {run.driver_name}
                         </Text>
                       </View>
                       {run.ferry_crossing && (

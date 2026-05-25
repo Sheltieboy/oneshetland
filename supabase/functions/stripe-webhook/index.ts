@@ -16,6 +16,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 serve(async (req) => {
   const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
   const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? '';
+  const connectWebhookSecret = Deno.env.get('STRIPE_CONNECT_WEBHOOK_SECRET') ?? '';
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -25,11 +26,14 @@ serve(async (req) => {
   const body = await req.text();
   const signature = req.headers.get('stripe-signature') ?? '';
 
-  // Verify the webhook signature to ensure it's genuinely from Stripe
-  // Deno doesn't have crypto.subtle.timingSafeEqual so we do a manual HMAC check
+  // Try platform secret first, then Connect secret
   let event: Record<string, unknown>;
   try {
-    event = await verifyStripeSignature(body, signature, webhookSecret);
+    try {
+      event = await verifyStripeSignature(body, signature, webhookSecret);
+    } catch {
+      event = await verifyStripeSignature(body, signature, connectWebhookSecret);
+    }
   } catch (err) {
     console.error('[stripe-webhook] Signature verification failed:', err);
     return new Response('Webhook signature invalid', { status: 400 });

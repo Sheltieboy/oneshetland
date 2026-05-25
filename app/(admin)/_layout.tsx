@@ -23,6 +23,9 @@ export default function AdminLayout() {
       <Stack.Screen name="driver-approvals" />
       <Stack.Screen name="delivery-requests" />
       <Stack.Screen name="runs" />
+      <Stack.Screen name="payments" />
+      <Stack.Screen name="disputes" />
+      <Stack.Screen name="regions" />
     </Stack>
   );
 }
