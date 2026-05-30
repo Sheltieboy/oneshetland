@@ -155,12 +155,13 @@ export default function ConnectBankScreen() {
   const [checking, setChecking] = useState(false);
   const [checkedOnce, setCheckedOnce] = useState(false);
 
-  // Check status on mount so the screen reflects the right state immediately
+  // Check status on mount — read from profiles (source of truth).
+  // driver_profiles is kept in sync for backward compat with driver dashboards.
   useEffect(() => {
     async function checkStatus() {
       if (!profile?.id) return;
       const { data } = await supabase
-        .from('driver_profiles')
+        .from('profiles')
         .select('stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled')
         .eq('id', profile.id)
         .single();
@@ -168,7 +169,6 @@ export default function ConnectBankScreen() {
       if (data?.stripe_onboarding_complete && data?.stripe_payouts_enabled) {
         setAlreadyComplete(true);
       } else if (data?.stripe_account_id && !data?.stripe_onboarding_complete) {
-        // Already started Stripe onboarding but webhook hasn't confirmed yet
         setStatus('pending');
       }
     }
@@ -225,8 +225,9 @@ export default function ConnectBankScreen() {
     if (!profile?.id) return;
     setChecking(true);
 
+    // profiles is the source of truth; webhook now writes here + driver_profiles
     const { data } = await supabase
-      .from('driver_profiles')
+      .from('profiles')
       .select('stripe_onboarding_complete, stripe_payouts_enabled')
       .eq('id', profile.id)
       .single();

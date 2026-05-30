@@ -34,9 +34,15 @@ export interface Profile {
   is_active: boolean;
   // Games Centre — public handle shown on leaderboards. Null = "Anon".
   games_handle: string | null;
-  // Delivers-specific
+  // Payments — card on file (paying for things across the app)
   has_payment_method: boolean;
   stripe_customer_id: string | null;
+  // Payouts — central Stripe Connect bank account (receiving money across the app)
+  // Covers drivers, shift workers, business owners — any user who receives money.
+  stripe_account_id:          string | null;
+  stripe_onboarding_complete: boolean;
+  stripe_payouts_enabled:     boolean;
+  stripe_charges_enabled:     boolean;
   created_at: string;
   updated_at: string;
 }

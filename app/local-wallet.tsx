@@ -60,6 +60,19 @@ export default function WalletScreen() {
   useEffect(() => { load(); }, [load]);
 
   const handleTopUp = async (amountPence: number) => {
+    // Pre-flight: card must be set up centrally in Me before topping up
+    if (!profile?.has_payment_method) {
+      Alert.alert(
+        'Payment card needed',
+        'Add a payment card in your account before topping up your wallet.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+        ],
+      );
+      return;
+    }
+
     setToppingUp(amountPence);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {

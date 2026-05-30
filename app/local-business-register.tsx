@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -50,6 +50,10 @@ export default function BusinessRegisterScreen() {
   const [website, setWebsite]     = useState('');
   const [email, setEmail]         = useState('');
 
+  // Payment / payout overrides — both off by default (use central card/bank)
+  const [useBusinessPayment, setUseBusinessPayment] = useState(false);
+  const [useBusinessPayout,  setUseBusinessPayout]  = useState(false);
+
   const [loading, setLoading]     = useState(!!id);
   const [saving, setSaving]       = useState(false);
 
@@ -66,6 +70,8 @@ export default function BusinessRegisterScreen() {
         setPhone(b.phone ?? '');
         setWebsite(b.website ?? '');
         setEmail(b.email ?? '');
+        setUseBusinessPayment((b as any).use_business_payment ?? false);
+        setUseBusinessPayout((b as any).use_business_payout  ?? false);
       }
       setLoading(false);
     });
@@ -89,6 +95,8 @@ export default function BusinessRegisterScreen() {
       phone:   phone.trim()   || null,
       website: website.trim() || null,
       email:   email.trim()   || null,
+      use_business_payment: useBusinessPayment,
+      use_business_payout:  useBusinessPayout,
     };
 
     try {
@@ -290,6 +298,51 @@ export default function BusinessRegisterScreen() {
             <Text style={styles.fieldHint}>Used for Stripe payouts and account verification</Text>
           </View>
 
+          {/* ── Payment & Payout setup ──────────────────────────────────────── */}
+          <View style={styles.paymentSection}>
+            <Text style={styles.paymentSectionTitle}>Payments & Payouts</Text>
+            <Text style={styles.paymentSectionSub}>
+              By default this business uses your central OneShetland payment card and bank account.
+              Turn on a toggle to set up separate payment details for this business only.
+            </Text>
+
+            {/* Payment card toggle */}
+            <View style={styles.toggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleLabel}>Business payment card</Text>
+                <Text style={styles.toggleSub}>
+                  {useBusinessPayment
+                    ? 'Using a separate card for this business — set up in Payments & Banking after saving'
+                    : 'Using your central OneShetland payment card'}
+                </Text>
+              </View>
+              <Switch
+                value={useBusinessPayment}
+                onValueChange={v => { Haptics.selectionAsync(); setUseBusinessPayment(v); }}
+                trackColor={{ false: colors.border, true: S.color + '55' }}
+                thumbColor={useBusinessPayment ? S.color : '#fff'}
+              />
+            </View>
+
+            {/* Payout bank toggle */}
+            <View style={[styles.toggleRow, { borderBottomWidth: 0 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleLabel}>Business bank account</Text>
+                <Text style={styles.toggleSub}>
+                  {useBusinessPayout
+                    ? 'Using a separate bank account for payouts — connect it in Payments & Banking after saving'
+                    : 'Using your central OneShetland bank account'}
+                </Text>
+              </View>
+              <Switch
+                value={useBusinessPayout}
+                onValueChange={v => { Haptics.selectionAsync(); setUseBusinessPayout(v); }}
+                trackColor={{ false: colors.border, true: S.color + '55' }}
+                thumbColor={useBusinessPayout ? S.color : '#fff'}
+              />
+            </View>
+          </View>
+
           <TouchableOpacity
             style={[styles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.7 }]}
             onPress={handleSave}
@@ -327,6 +380,26 @@ const styles = StyleSheet.create({
   backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
   backText:    { fontSize: fontSize.sm, fontWeight: '700' },
   headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800', flex: 1, textAlign: 'center' },
+
+  // Payment section
+  paymentSection: {
+    backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, gap: 2,
+  },
+  paymentSectionTitle: {
+    fontSize: fontSize.sm, fontWeight: '900', color: colors.textPrimary, marginBottom: 4,
+  },
+  paymentSectionSub: {
+    fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 17, marginBottom: spacing.sm,
+  },
+  toggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  toggleLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  toggleSub:   { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
 
   field:      {},
   fieldLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },

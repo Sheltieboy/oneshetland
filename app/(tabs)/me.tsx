@@ -64,12 +64,23 @@ type ShiftStats = {
   pendingIncoming: number;
 };
 
+type MyBusiness = {
+  id: string;
+  name: string;
+  use_business_payment: boolean;
+  has_business_payment_method: boolean;
+  use_business_payout: boolean;
+  business_stripe_onboarding_complete: boolean;
+  business_stripe_payouts_enabled: boolean;
+};
+
 export default function MeTab() {
   const router = useRouter();
   const { session, profile, signOut, refreshProfile } = useAuth();
   const { alert } = useAlert();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [myBusinesses, setMyBusinesses] = useState<MyBusiness[]>([]);
   const [stats, setStats] = useState<ShiftStats>({
     myApps:          { pending: 0, accepted: 0, total: 0 },
     postedShifts:    0,
@@ -82,9 +93,13 @@ export default function MeTab() {
   const loadStats = useCallback(async () => {
     if (!profile?.id) return;
     try {
-      const [appsRes, shiftsRes] = await Promise.all([
+      const [appsRes, shiftsRes, bizRes] = await Promise.all([
         supabase.from('shift_applications').select('status').eq('worker_id', profile.id),
         supabase.from('shifts').select('id').eq('employer_id', profile.id).eq('status', 'open'),
+        supabase.from('local_businesses')
+          .select('id, name, use_business_payment, has_business_payment_method, use_business_payout, business_stripe_onboarding_complete, business_stripe_payouts_enabled')
+          .eq('owner_id', profile.id)
+          .eq('is_active', true),
       ]);
 
       const myApps   = appsRes.data   ?? [];
@@ -109,6 +124,7 @@ export default function MeTab() {
         postedShifts:    myShifts.length,
         pendingIncoming,
       });
+      setMyBusinesses((bizRes.data ?? []) as MyBusiness[]);
     } catch { /* silent */ }
   }, [profile?.id]);
 
@@ -277,6 +293,8 @@ export default function MeTab() {
 
           {/* ── Payments & Banking ──────────────────────────────────────────── */}
           <SectionCard title="Payments & Banking" accentColor={colors.jobs}>
+
+            {/* Payment card status */}
             <View style={[styles.statusBanner, {
               backgroundColor: profile?.has_payment_method ? colors.jobsLight : '#FEF3C7',
             }]}>
@@ -305,17 +323,113 @@ export default function MeTab() {
               icon="credit-card"
               iconColor={colors.jobs}
               label={profile?.has_payment_method ? 'Update payment card' : 'Add a payment card'}
-              sublabel="Used for Fetch deliveries, events and services"
+              sublabel="Used for Fetch, Shifts, Local, bookings and boosts across the whole app"
               onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/payment-setup'); }}
             />
+
+            {/* Payout bank status — for all users, not just drivers */}
+            <View style={[styles.statusBanner, {
+              backgroundColor: profile?.stripe_payouts_enabled ? colors.jobsLight : '#F3F4F6',
+              marginTop: 4,
+            }]}>
+              <FontAwesome5
+                name={profile?.stripe_payouts_enabled ? 'check-circle' : 'exclamation-circle'}
+                size={13}
+                color={profile?.stripe_payouts_enabled ? colors.jobs : colors.textMuted}
+                solid
+              />
+              <Text style={[styles.statusText, {
+                color: profile?.stripe_payouts_enabled ? colors.jobs : colors.textMuted,
+              }]}>
+                {profile?.stripe_payouts_enabled
+                  ? 'Bank account connected'
+                  : profile?.stripe_onboarding_complete
+                    ? 'Bank verification in progress'
+                    : 'No bank account yet'}
+              </Text>
+              {!profile?.stripe_onboarding_complete && (
+                <TouchableOpacity
+                  style={[styles.statusBtn, { backgroundColor: colors.navy }]}
+                  onPress={() => { Haptics.selectionAsync(); router.push('/(driver)/connect-bank'); }}
+                >
+                  <Text style={styles.statusBtnText}>Connect</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
             <MenuRow
               icon="university"
               iconColor={colors.jobs}
-              label="Bank account & payouts"
-              sublabel="Receive payment for shifts and deliveries"
+              label={profile?.stripe_payouts_enabled ? 'Bank account connected' : 'Connect bank account'}
+              sublabel="Receive payment for Fetch deliveries, shifts, bookings and Local wallet"
               onPress={() => { Haptics.selectionAsync(); router.push('/(driver)/connect-bank'); }}
-              last
+              last={myBusinesses.length === 0}
             />
+
+            {/* Per-business payment/payout overrides */}
+            {myBusinesses.map((biz, i) => (
+              <View key={biz.id} style={styles.bizPaymentBlock}>
+                <View style={styles.bizPaymentHeader}>
+                  <FontAwesome5 name="store" size={11} color={colors.jobs} solid />
+                  <Text style={styles.bizPaymentName} numberOfLines={1}>{biz.name}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.bizPaymentRow}
+                  onPress={() => router.push({ pathname: '/local-business-dashboard', params: { id: biz.id, tab: 'payments' } })}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.bizPaymentRowLeft}>
+                    <FontAwesome5 name="credit-card" size={11} color={colors.textMuted} />
+                    <Text style={styles.bizPaymentRowLabel}>Payment card</Text>
+                  </View>
+                  <View style={[styles.bizPaymentPill, {
+                    backgroundColor: biz.use_business_payment
+                      ? (biz.has_business_payment_method ? colors.jobsLight : '#FEF3C7')
+                      : colors.accentLight,
+                  }]}>
+                    <Text style={[styles.bizPaymentPillText, {
+                      color: biz.use_business_payment
+                        ? (biz.has_business_payment_method ? colors.jobs : '#92400E')
+                        : colors.accentDark,
+                    }]}>
+                      {biz.use_business_payment
+                        ? (biz.has_business_payment_method ? 'Business card' : 'Setup needed')
+                        : 'Central card'}
+                    </Text>
+                  </View>
+                  <FontAwesome5 name="chevron-right" size={9} color={colors.textLight} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.bizPaymentRow, i === myBusinesses.length - 1 && { borderBottomWidth: 0 }]}
+                  onPress={() => router.push({ pathname: '/local-business-dashboard', params: { id: biz.id, tab: 'payments' } })}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.bizPaymentRowLeft}>
+                    <FontAwesome5 name="university" size={11} color={colors.textMuted} />
+                    <Text style={styles.bizPaymentRowLabel}>Payout bank</Text>
+                  </View>
+                  <View style={[styles.bizPaymentPill, {
+                    backgroundColor: biz.use_business_payout
+                      ? (biz.business_stripe_payouts_enabled ? colors.jobsLight : '#FEF3C7')
+                      : colors.accentLight,
+                  }]}>
+                    <Text style={[styles.bizPaymentPillText, {
+                      color: biz.use_business_payout
+                        ? (biz.business_stripe_payouts_enabled ? colors.jobs : '#92400E')
+                        : colors.accentDark,
+                    }]}>
+                      {biz.use_business_payout
+                        ? (biz.business_stripe_payouts_enabled ? 'Business bank' : 'Setup needed')
+                        : 'Central bank'}
+                    </Text>
+                  </View>
+                  <FontAwesome5 name="chevron-right" size={9} color={colors.textLight} />
+                </TouchableOpacity>
+              </View>
+            ))}
+
           </SectionCard>
 
           {/* ── Fetch Delivers ──────────────────────────────────────────────── */}
@@ -525,6 +639,26 @@ const styles = StyleSheet.create({
   statusText:    { flex: 1, fontSize: fontSize.xs, fontWeight: '600' },
   statusBtn:     { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.full },
   statusBtnText: { fontSize: fontSize.xs, fontWeight: '700', color: '#fff' },
+
+  // Business payment/payout block
+  bizPaymentBlock: {
+    marginTop: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8,
+  },
+  bizPaymentHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6,
+  },
+  bizPaymentName: {
+    fontSize: fontSize.xs, fontWeight: '800', color: colors.textPrimary, flex: 1,
+  },
+  bizPaymentRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 7,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  bizPaymentRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  bizPaymentRowLabel: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
+  bizPaymentPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
+  bizPaymentPillText: { fontSize: 10, fontWeight: '800' },
 
   // Info block
   infoBlock: { marginTop: 8 },

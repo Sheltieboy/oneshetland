@@ -228,9 +228,24 @@ function BoostSheet({
   onBoosted: (boostedUntil: string) => void;
 }) {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { profile } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   const handleBoost = async () => {
+    // Pre-flight: card must be set up centrally in Me before any payment
+    if (!profile?.has_payment_method) {
+      Alert.alert(
+        'Payment card needed',
+        'Add a payment card in your account before boosting a shift.',
+        [
+          { text: 'Not now', style: 'cancel', onPress: onDismiss },
+          { text: 'Add card', onPress: () => { onDismiss(); router.push('/(customer)/payment-setup'); } },
+        ],
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('create-boost-intent', {

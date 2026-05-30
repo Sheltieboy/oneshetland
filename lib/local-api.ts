@@ -255,6 +255,9 @@ export interface BusinessUpsertInput {
   website?: string | null;
   email?: string | null;
   opening_hours?: OpeningHours | null;
+  // Payment / payout override toggles
+  use_business_payment?: boolean;
+  use_business_payout?:  boolean;
 }
 
 export async function createBusiness(userId: string, input: BusinessUpsertInput): Promise<LocalBusiness> {

@@ -119,28 +119,45 @@ serve(async (req) => {
       }
 
       // ── Connect account updated ──────────────────────────────────────
-      // Stripe fires this when EITHER a driver OR a local business completes
-      // their Connect onboarding. We update both tables — only the matching one
-      // will have a row (0-row update is harmless).
+      // Stripe fires this when any user completes Connect onboarding
+      // (driver, employer, business owner — anyone who receives money).
+      // profiles is now the source of truth; driver_profiles is kept in
+      // sync for backward compat. local_businesses covers business-specific
+      // Connect accounts (use_business_payout = true).
       case 'account.updated': {
         const accountId = eventData.id as string;
-        const payoutsEnabled = eventData.payouts_enabled as boolean;
-        const chargesEnabled = eventData.charges_enabled as boolean;
+        const payoutsEnabled   = eventData.payouts_enabled   as boolean;
+        const chargesEnabled   = eventData.charges_enabled   as boolean;
         const detailsSubmitted = eventData.details_submitted as boolean;
 
+        // 1. Central user account (profiles) — covers drivers, employers, business owners
+        await supabase
+          .from('profiles')
+          .update({
+            stripe_onboarding_complete: detailsSubmitted,
+            stripe_payouts_enabled:     payoutsEnabled,
+            stripe_charges_enabled:     chargesEnabled,
+          })
+          .eq('stripe_account_id', accountId);
+
+        // 2. driver_profiles — backward compat for existing driver dashboard reads
         await supabase
           .from('driver_profiles')
           .update({
             stripe_onboarding_complete: detailsSubmitted,
-            stripe_payouts_enabled: payoutsEnabled,
-            stripe_charges_enabled: chargesEnabled,
+            stripe_payouts_enabled:     payoutsEnabled,
+            stripe_charges_enabled:     chargesEnabled,
           })
           .eq('stripe_account_id', accountId);
 
+        // 3. Business-specific Connect accounts (use_business_payout = true)
         await supabase
           .from('local_businesses')
-          .update({ payout_enabled: payoutsEnabled && chargesEnabled })
-          .eq('stripe_account_id', accountId);
+          .update({
+            business_stripe_onboarding_complete: detailsSubmitted,
+            business_stripe_payouts_enabled:     payoutsEnabled,
+          })
+          .eq('business_stripe_account_id', accountId);
 
         break;
       }
