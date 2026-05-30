@@ -196,6 +196,15 @@ export default function AdminDashboard() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.replace('/(tabs)')}
+            style={styles.backToApp}
+            hitSlop={8}
+          >
+            <FontAwesome5 name="chevron-left" size={11} color="rgba(255,255,255,0.6)" />
+            <Text style={styles.backToAppText}>Back to app</Text>
+          </TouchableOpacity>
+
           <View style={styles.headerTop}>
             <View style={styles.brandRow}>
               <View style={styles.logoCircle}>
@@ -454,6 +463,15 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.navy },
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: spacing.xxl },
+
+  backToApp: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingTop: spacing.xs, paddingBottom: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  backToAppText: {
+    color: 'rgba(255,255,255,0.6)', fontSize: fontSize.sm, fontWeight: '600',
+  },
 
   // Header
   header: {
