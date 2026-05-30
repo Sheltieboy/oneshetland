@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import { logCompliance } from '@/lib/compliance';
 import { supabase } from '@/lib/supabase';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { FormScrollView } from '@/components/ui/FormScrollView';
@@ -95,7 +96,10 @@ export default function ApplyDriverScreen() {
       return;
     }
 
-    // 3. Refresh profile in context so the app re-routes correctly
+    // 3. Log compliance — driver terms accepted at point of application
+    logCompliance({ eventType: 'driver.terms_accepted', documentVersion: '1.0', description: 'Accepted Fetch driver terms at application', metadata: { screen: 'apply-driver' } });
+
+    // 4. Refresh profile in context so the app re-routes correctly
     await refreshProfile();
     setSubmitting(false);
 

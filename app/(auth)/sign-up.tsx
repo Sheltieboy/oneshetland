@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { logCompliance } from '@/lib/compliance';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
@@ -54,6 +55,10 @@ export default function SignUpScreen() {
     if (authError) {
       setError(authError);
     } else {
+      // Log compliance events — fire and forget, non-blocking
+      logCompliance({ eventType: 'terms.accepted',   documentVersion: '1.0', description: 'Accepted OneShetland Terms of Service at sign-up', metadata: { screen: 'sign-up' } });
+      logCompliance({ eventType: 'privacy.accepted', documentVersion: '1.0', description: 'Accepted OneShetland Privacy Policy at sign-up',   metadata: { screen: 'sign-up' } });
+      logCompliance({ eventType: 'age.confirmed',                             description: 'Confirmed 18 or over at account creation',         metadata: { screen: 'sign-up' } });
       setSuccess(true);
     }
   }

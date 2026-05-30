@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { logCompliance } from '@/lib/compliance';
 import { useStripe } from '@stripe/stripe-react-native';
 import { FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
@@ -73,6 +74,8 @@ export default function PaymentSetupScreen() {
         .from('profiles')
         .update({ has_payment_method: true })
         .eq('id', profile!.id);
+
+      logCompliance({ eventType: 'payment.method_added', description: 'Payment card added to account', metadata: { screen: 'payment-setup' } });
 
       await refreshProfile();
       router.back();

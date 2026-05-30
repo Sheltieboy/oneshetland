@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useRequest } from '@/context/RequestContext';
 import { useAuth } from '@/context/AuthContext';
+import { logCompliance } from '@/lib/compliance';
 import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Card } from '@/components/ui/Card';
@@ -152,6 +153,15 @@ export default function Step4ReviewScreen() {
     }
 
     setSubmitting(true);
+
+    // Log liability acknowledgement before the request is created
+    if (formData.liabilityAcknowledged) {
+      logCompliance({
+        eventType:   'fetch.liability_ack',
+        description: 'Acknowledged Fetch delivery liability on request submission',
+        metadata:    { pickup: formData.pickupName, destination: formData.destinationAddress },
+      });
+    }
 
     try {
       // Race the insert against a 12-second timeout so we never hang silently
