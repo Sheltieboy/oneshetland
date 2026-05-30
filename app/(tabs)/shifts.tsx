@@ -232,9 +232,11 @@ function BoostSheet({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
+  const hasSavedCard = !!profile?.has_payment_method;
+
   const handleBoost = async () => {
-    // Pre-flight: card must be set up centrally in Me before any payment
-    if (!profile?.has_payment_method) {
+    // Pre-flight: redirect to card setup if no card on file
+    if (!hasSavedCard) {
       Alert.alert(
         'Payment card needed',
         'Add a payment card in your account before boosting a shift.',
@@ -248,32 +250,22 @@ function BoostSheet({
 
     setLoading(true);
     try {
+      // Charge the saved card off-session — no PaymentSheet needed
       const { data, error: fnErr } = await supabase.functions.invoke('create-boost-intent', {
+        body: { shift_id: shiftId, use_saved_card: true },
+      });
+      if (fnErr) throw new Error(fnErr.message ?? 'Boost payment failed.');
+      if (!data?.charged) throw new Error(data?.error ?? 'Payment did not complete.');
+
+      const { data: confirmData, error: confirmErr } = await supabase.functions.invoke('confirm-boost', {
         body: { shift_id: shiftId },
       });
-      if (fnErr) throw fnErr;
-
-      const { error: initErr } = await initPaymentSheet({
-        merchantDisplayName: 'OneShetland',
-        paymentIntentClientSecret: data.clientSecret,
-        style: 'alwaysLight',
-      });
-      if (initErr) throw initErr;
-
-      const { error: presentErr } = await presentPaymentSheet();
-      if (presentErr) {
-        if (presentErr.code !== 'Canceled') Alert.alert('Payment failed', presentErr.message);
-        return;
-      }
-
-      const { data: confirmData } = await supabase.functions.invoke('confirm-boost', {
-        body: { shift_id: shiftId },
-      });
+      if (confirmErr) throw confirmErr;
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onBoosted(confirmData?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString());
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Boost failed. Try again.');
+      Alert.alert('Boost failed', e?.message ?? 'Try again.');
     } finally {
       setLoading(false);
     }
@@ -305,6 +297,14 @@ function BoostSheet({
             </View>
           </View>
 
+          {/* Show which card will be charged */}
+          {hasSavedCard && (
+            <View style={styles.savedCardNote}>
+              <FontAwesome5 name="credit-card" size={11} color={colors.jobs} solid />
+              <Text style={styles.savedCardNoteText}>Charged to your saved card</Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.boostBtn, loading && { opacity: 0.7 }]}
             onPress={handleBoost}
@@ -315,7 +315,9 @@ function BoostSheet({
               ? <ActivityIndicator color="#fff" size="small" />
               : <>
                   <FontAwesome5 name="bolt" size={13} color="#fff" solid />
-                  <Text style={styles.boostBtnText}>Boost for £2.99</Text>
+                  <Text style={styles.boostBtnText}>
+                    {hasSavedCard ? 'Confirm boost — £2.99' : 'Boost for £2.99'}
+                  </Text>
                 </>
             }
           </TouchableOpacity>
@@ -1643,6 +1645,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     marginTop: 4,
   },
+  savedCardNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: colors.jobsLight, borderRadius: radius.md,
+    paddingHorizontal: 12, paddingVertical: 7, marginBottom: 4,
+  },
+  savedCardNoteText: { fontSize: fontSize.xs, color: colors.jobs, fontWeight: '700' },
   boostBtnText:  { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
   boostSkipBtn:  { paddingVertical: 6 },
   boostSkipText: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '600' },

@@ -11,10 +11,18 @@ const corsHeaders = {
  * create-boost-intent
  *
  * Creates a Stripe PaymentIntent for boosting a shift (£2.99 for 24 hours).
- * Verifies the caller is the shift's employer before creating the intent.
  *
- * Body: { shift_id: string }
- * Returns: { clientSecret: string }
+ * Two modes:
+ *
+ *   use_saved_card = true  (default when has_payment_method is set)
+ *     → Charges the user's central saved card off-session immediately.
+ *       Returns { charged: true, payment_intent_id }.
+ *       No PaymentSheet required on the client.
+ *
+ *   use_saved_card = false  (fallback — user has no card on file)
+ *     → Returns { clientSecret } for the client to present a PaymentSheet.
+ *
+ * Body: { shift_id: string, use_saved_card?: boolean }
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -29,7 +37,6 @@ serve(async (req) => {
       });
     }
 
-    // Verify signed-in user
     const anonSupabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -47,7 +54,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { shift_id } = await req.json();
+    const { shift_id, use_saved_card = false } = await req.json();
     if (!shift_id) {
       return new Response(JSON.stringify({ error: 'shift_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -66,7 +73,6 @@ serve(async (req) => {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
     if (shift.employer_id !== user.id) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -78,16 +84,69 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount:   299,          // £2.99 in pence
-      currency: 'gbp',
+    const intentParams = {
+      amount:      299,
+      currency:    'gbp',
       metadata: {
         shift_id,
         employer_id: user.id,
         type:        'shift_boost',
       },
       description: `OneShetland Shifts — Boost: "${shift.title}"`,
-    });
+    };
+
+    // ── Mode 1: charge saved card off-session ─────────────────────────────────
+    if (use_saved_card) {
+      // Look up the user's central stripe_customer_id
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('stripe_customer_id')
+        .eq('id', user.id)
+        .single();
+
+      const customerId = profile?.stripe_customer_id;
+      if (!customerId) {
+        return new Response(JSON.stringify({ error: 'No saved card found. Please add a payment card in your account.' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get the customer's default (most recently added) payment method
+      const paymentMethods = await stripe.paymentMethods.list({
+        customer: customerId,
+        type:     'card',
+        limit:    1,
+      });
+      const pm = paymentMethods.data[0];
+      if (!pm) {
+        return new Response(JSON.stringify({ error: 'No saved card found. Please update your payment card in account settings.' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Confirm immediately — off_session means no 3DS prompt for small amounts
+      const paymentIntent = await stripe.paymentIntents.create({
+        ...intentParams,
+        customer:       customerId,
+        payment_method: pm.id,
+        confirm:        true,
+        off_session:    true,
+      });
+
+      if (paymentIntent.status !== 'succeeded') {
+        return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${paymentIntent.status}). Please check your card.` }), {
+          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({ charged: true, payment_intent_id: paymentIntent.id }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // ── Mode 2: return clientSecret for PaymentSheet (fallback / no saved card) ──
+    const paymentIntent = await stripe.paymentIntents.create(intentParams);
 
     return new Response(
       JSON.stringify({ clientSecret: paymentIntent.client_secret }),

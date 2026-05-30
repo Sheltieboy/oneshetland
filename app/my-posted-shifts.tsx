@@ -138,38 +138,28 @@ export default function MyPostedShiftsScreen() {
     setBoosting(shiftId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
+      // Charge saved card off-session — no PaymentSheet
       const { data, error: fnErr } = await supabase.functions.invoke('create-boost-intent', {
+        body: { shift_id: shiftId, use_saved_card: true },
+      });
+      if (fnErr) throw new Error(fnErr.message ?? 'Boost payment failed.');
+      if (!data?.charged) throw new Error(data?.error ?? 'Payment did not complete.');
+
+      const { data: confirmData, error: confirmErr } = await supabase.functions.invoke('confirm-boost', {
         body: { shift_id: shiftId },
       });
-      if (fnErr) throw fnErr;
-
-      const { error: initErr } = await initPaymentSheet({
-        merchantDisplayName: 'OneShetland',
-        paymentIntentClientSecret: data.clientSecret,
-        style: 'alwaysLight',
-      });
-      if (initErr) throw initErr;
-
-      const { error: presentErr } = await presentPaymentSheet();
-      if (presentErr) {
-        if (presentErr.code !== 'Canceled') Alert.alert('Payment failed', presentErr.message);
-        return;
-      }
-
-      const { data: confirmData } = await supabase.functions.invoke('confirm-boost', {
-        body: { shift_id: shiftId },
-      });
+      if (confirmErr) throw confirmErr;
 
       const boostedUntil = confirmData?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString();
       setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, boosted_until: boostedUntil } : s));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         '⚡ Shift boosted!',
-        `Matching workers have been alerted. Your shift is pinned to the top for 24 hours.`,
+        'Matching workers have been alerted. Your shift is pinned to the top for 24 hours.',
         [{ text: 'Great' }]
       );
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Boost failed. Please try again.');
+      Alert.alert('Boost failed', e?.message ?? 'Please try again.');
     } finally {
       setBoosting(null);
     }
