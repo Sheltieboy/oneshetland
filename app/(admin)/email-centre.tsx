@@ -189,17 +189,33 @@ export default function EmailCentreScreen() {
     setSendingTest(tmpl.id);
     try {
       const { data: { session: s } } = await supabase.auth.getSession();
-      const res = await supabase.functions.invoke('send-email', {
-        body: {
+      const supabaseUrl  = process.env.EXPO_PUBLIC_SUPABASE_URL  ?? '';
+      const supabaseAnon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+      const token = s?.access_token ?? supabaseAnon;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${token}`,
+          'apikey':         supabaseAnon,
+        },
+        body: JSON.stringify({
           template_key:    tmpl.key,
           recipient_email: email,
           variables: Object.fromEntries(
             (tmpl.variables ?? []).map(v => [v, `[${v}]`])
           ),
           metadata: { test: true },
-        },
+        }),
       });
-      if (res.error) throw res.error;
+
+      const json = await res.json() as { ok?: boolean; error?: string; skipped?: boolean };
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      if (json.skipped) {
+        Alert.alert('Skipped', 'This template is disabled. Enable it first.');
+        return;
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Test sent!', `Check ${email} for the email.`);
     } catch (e: any) {
