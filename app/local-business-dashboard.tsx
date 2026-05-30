@@ -71,6 +71,8 @@ export default function BusinessDashboardScreen() {
 
   const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
   const [bookServiceCount, setBookServiceCount] = useState(0);
+  const [savingPaymentToggle, setSavingPaymentToggle] = useState(false);
+  const [savingPayoutToggle,  setSavingPayoutToggle]  = useState(false);
 
   // Backfill state — count of this user's shifts that don't yet have a
   // business linked (posted_as_business_id IS NULL). If > 0, we offer to
@@ -227,6 +229,19 @@ export default function BusinessDashboardScreen() {
   const startCheckout = async (tier: 'pro' | 'premium') => {
     if (!activeBusiness || upgradeBusy) return;
 
+    // Pre-flight: card must be set up centrally in Me before subscribing
+    if (!profile?.has_payment_method) {
+      Alert.alert(
+        'Payment card needed',
+        'Add a payment card in your account before subscribing.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+        ],
+      );
+      return;
+    }
+
     // EXISTING SUBSCRIBER → preview + confirm + apply with proration
     // (no Payment Sheet — saved card is auto-charged for the prorated amount)
     if (activeBusiness.subscription_tier !== 'free' && activeBusiness.stripe_subscription_id) {
@@ -325,6 +340,20 @@ export default function BusinessDashboardScreen() {
 
   const handleBoost = async (weeks: 1 | 2 | 3) => {
     if (!activeBusiness || boostBusy) return;
+
+    // Pre-flight: card must be set up in Me before purchasing a boost
+    if (!profile?.has_payment_method) {
+      Alert.alert(
+        'Payment card needed',
+        'Add a payment card in your account before purchasing a boost.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+        ],
+      );
+      return;
+    }
+
     setBoostBusy(weeks);
     try {
       // 1. Server: create the PaymentIntent
@@ -462,6 +491,34 @@ export default function BusinessDashboardScreen() {
     }
   };
 
+  const toggleBusinessPayment = async (value: boolean) => {
+    if (!activeBusiness) return;
+    setSavingPaymentToggle(true);
+    try {
+      await updateBusiness(activeBusiness.id, { use_business_payment: value } as any);
+      setActiveBusiness({ ...activeBusiness, use_business_payment: value } as any);
+      Haptics.selectionAsync();
+    } catch (e: any) {
+      Alert.alert('Could not update', e?.message ?? 'Try again.');
+    } finally {
+      setSavingPaymentToggle(false);
+    }
+  };
+
+  const toggleBusinessPayout = async (value: boolean) => {
+    if (!activeBusiness) return;
+    setSavingPayoutToggle(true);
+    try {
+      await updateBusiness(activeBusiness.id, { use_business_payout: value } as any);
+      setActiveBusiness({ ...activeBusiness, use_business_payout: value } as any);
+      Haptics.selectionAsync();
+    } catch (e: any) {
+      Alert.alert('Could not update', e?.message ?? 'Try again.');
+    } finally {
+      setSavingPayoutToggle(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
@@ -565,6 +622,96 @@ export default function BusinessDashboardScreen() {
               : <FontAwesome5 name="chevron-right" size={11} color={S.color} />}
           </TouchableOpacity>
         )}
+
+        {/* ── Payments & Payouts ── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardIcon, { backgroundColor: colors.jobs + '18' }]}>
+              <FontAwesome5 name="credit-card" size={13} color={colors.jobs} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Payments & Payouts</Text>
+              <Text style={styles.cardSub}>How this business pays and receives money</Text>
+            </View>
+          </View>
+
+          {/* Payment card row */}
+          <View style={styles.payToggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.payToggleLabel}>Payment card</Text>
+              <Text style={styles.payToggleSub}>
+                {(activeBusiness as any).use_business_payment
+                  ? (activeBusiness as any).has_business_payment_method
+                    ? '✓ Business card set up'
+                    : 'Business card — setup needed'
+                  : 'Using your central OneShetland card'}
+              </Text>
+            </View>
+            <Switch
+              value={!!(activeBusiness as any).use_business_payment}
+              onValueChange={toggleBusinessPayment}
+              disabled={savingPaymentToggle}
+              trackColor={{ false: colors.border, true: colors.jobs + '55' }}
+              thumbColor={(activeBusiness as any).use_business_payment ? colors.jobs : '#fff'}
+            />
+          </View>
+
+          {/* If business card is ON and not yet set up, show setup CTA */}
+          {(activeBusiness as any).use_business_payment && !(activeBusiness as any).has_business_payment_method && (
+            <TouchableOpacity
+              style={[styles.paySetupBtn, { borderColor: colors.jobs }]}
+              onPress={() => router.push({ pathname: '/(customer)/payment-setup', params: { businessId: activeBusiness.id } })}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name="credit-card" size={11} color={colors.jobs} />
+              <Text style={[styles.paySetupBtnText, { color: colors.jobs }]}>Set up business card</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Payout bank row */}
+          <View style={[styles.payToggleRow, { borderBottomWidth: 0, marginTop: 4 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.payToggleLabel}>Payout bank account</Text>
+              <Text style={styles.payToggleSub}>
+                {(activeBusiness as any).use_business_payout
+                  ? (activeBusiness as any).business_stripe_payouts_enabled
+                    ? '✓ Business bank connected'
+                    : (activeBusiness as any).business_stripe_onboarding_complete
+                      ? 'Verification in progress'
+                      : 'Business bank — setup needed'
+                  : 'Using your central OneShetland bank'}
+              </Text>
+            </View>
+            <Switch
+              value={!!(activeBusiness as any).use_business_payout}
+              onValueChange={toggleBusinessPayout}
+              disabled={savingPayoutToggle}
+              trackColor={{ false: colors.border, true: colors.jobs + '55' }}
+              thumbColor={(activeBusiness as any).use_business_payout ? colors.jobs : '#fff'}
+            />
+          </View>
+
+          {/* If business bank is ON and not yet connected, show Connect CTA */}
+          {(activeBusiness as any).use_business_payout && !(activeBusiness as any).business_stripe_payouts_enabled && (
+            <TouchableOpacity
+              style={[styles.paySetupBtn, { borderColor: colors.jobs, marginTop: 4 }]}
+              onPress={handleConnectStripe}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name="university" size={11} color={colors.jobs} />
+              <Text style={[styles.paySetupBtnText, { color: colors.jobs }]}>
+                {(activeBusiness as any).business_stripe_onboarding_complete
+                  ? 'Check verification status'
+                  : 'Connect business bank account'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <Text style={styles.payToggleNote}>
+            Toggle off to use your personal OneShetland payment method for this business.
+            Each business can have its own independent setup.
+          </Text>
+        </View>
 
         {/* ── Plan ── */}
         <View style={styles.card}>
@@ -1201,6 +1348,14 @@ const styles = StyleSheet.create({
   backfillIcon:     { width: 30, height: 30, borderRadius: 15, backgroundColor: S.color + '22', alignItems: 'center', justifyContent: 'center' },
   backfillTitle:    { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   backfillSub:      { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1, lineHeight: 16 },
+
+  // Payments & Payouts section
+  payToggleRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  payToggleLabel:   { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  payToggleSub:     { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
+  paySetupBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1.5, alignSelf: 'flex-start', marginTop: 6 },
+  paySetupBtnText:  { fontSize: fontSize.xs, fontWeight: '800' },
+  payToggleNote:    { fontSize: fontSize.xs, color: colors.textLight, lineHeight: 16, marginTop: 10 },
 
   cancelBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, padding: 10, backgroundColor: '#FEF3C7', borderRadius: radius.md, borderWidth: 1, borderColor: '#FCD34D' },
   cancelBannerText: { flex: 1, fontSize: fontSize.xs, color: '#92400E', fontWeight: '700', lineHeight: 17 },

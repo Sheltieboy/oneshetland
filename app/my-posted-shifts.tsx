@@ -122,6 +122,19 @@ export default function MyPostedShiftsScreen() {
   };
 
   const handleBoost = async (shiftId: string) => {
+    // Pre-flight: card must be set up centrally in Me before boosting
+    if (!profile?.has_payment_method) {
+      Alert.alert(
+        'Payment card needed',
+        'Add a payment card in your account before boosting a shift.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+        ],
+      );
+      return;
+    }
+
     setBoosting(shiftId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
