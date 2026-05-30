@@ -157,6 +157,7 @@ function RootNavigator() {
           <Stack.Screen name="fetch-about" />
           <Stack.Screen name="fetch-about-driver" />
           <Stack.Screen name="(admin)/email-centre" />
+          <Stack.Screen name="(admin)/compliance" />
         </Stack>
       )}
 

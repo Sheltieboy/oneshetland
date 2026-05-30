@@ -421,6 +421,22 @@ export default function AdminDashboard() {
                 <Text style={styles.arrow}>›</Text>
               </View>
             </Card>
+
+            <Card
+              style={styles.managementCard}
+              onPress={() => router.push('/(admin)/compliance' as any)}
+            >
+              <View style={styles.managementRow}>
+                <Text style={styles.managementIcon}>🔒</Text>
+                <View style={styles.managementBody}>
+                  <Text style={styles.managementTitle}>Compliance Log</Text>
+                  <Text style={styles.managementDesc}>
+                    Search any member's email to view all their verifications, agreements and consents
+                  </Text>
+                </View>
+                <Text style={styles.arrow}>›</Text>
+              </View>
+            </Card>
           </View>
         </View>
 
