@@ -81,6 +81,12 @@ const PLATFORM_MODULES: PlatformModule[] = [
 
 const PLATFORM_SECTIONS = [
   {
+    key: 'config',
+    icon: '⚙️',
+    title: 'Config',
+    description: 'Stripe price IDs, fees, feature flags — tweak without a redeploy',
+  },
+  {
     key: 'payments',
     icon: '💳',
     title: 'Payments',
@@ -101,6 +107,7 @@ const PLATFORM_SECTIONS = [
 ];
 
 const PLATFORM_SECTION_ROUTES: Record<string, string> = {
+  'config':    '/(admin)/config',
   'payments':  '/(admin)/payments',
   'disputes':  '/(admin)/disputes',
   'regions':   '/(admin)/regions',
@@ -142,6 +149,7 @@ interface PlatformStats {
   pendingDrivers: number | null;
   pendingRequests: number | null;
   openRuns: number | null;
+  pendingSpikSuggestions: number | null;
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -154,23 +162,26 @@ export default function AdminDashboard() {
     pendingDrivers: null,
     pendingRequests: null,
     openRuns: null,
+    pendingSpikSuggestions: null,
   });
 
   const firstName = profile?.full_name?.split(' ')[0] || profile?.email || 'Admin';
 
   useEffect(() => {
     async function fetchStats() {
-      const [usersRes, driversRes, requestsRes, runsRes] = await Promise.all([
+      const [usersRes, driversRes, requestsRes, runsRes, spikRes] = await Promise.all([
         supabase.from('profiles').select('*', { count: 'exact', head: true }),
         supabase.from('driver_profiles').select('*', { count: 'exact', head: true }).eq('driver_status', 'pending'),
         supabase.from('delivery_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('runs').select('*', { count: 'exact', head: true }).eq('status', 'open'),
+        supabase.from('spik_suggestions').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       ]);
       setStats({
         totalUsers: usersRes.count ?? 0,
         pendingDrivers: driversRes.count ?? 0,
         pendingRequests: requestsRes.count ?? 0,
         openRuns: runsRes.count ?? 0,
+        pendingSpikSuggestions: spikRes.count ?? 0,
       });
     }
     fetchStats();
@@ -358,6 +369,42 @@ export default function AdminDashboard() {
                 </View>
               </Card>
             ))}
+          </View>
+        </View>
+
+        {/* ── Spik management ── */}
+        <View style={styles.section}>
+          <View style={styles.fetchHeader}>
+            <View style={[styles.fetchStrip, { backgroundColor: '#0891B2' }]} />
+            <View style={styles.fetchHeaderText}>
+              <Text style={styles.sectionTitle}>Spik management</Text>
+              <Text style={styles.sectionMeta}>Shetland dialect dictionary</Text>
+            </View>
+          </View>
+
+          <View style={styles.managementList}>
+            <Card
+              style={styles.managementCard}
+              onPress={() => router.push('/(admin)/spik-suggestions' as any)}
+            >
+              <View style={styles.managementRow}>
+                <Text style={styles.managementIcon}>📝</Text>
+                <View style={styles.managementBody}>
+                  <View style={styles.managementTitleRow}>
+                    <Text style={styles.managementTitle}>Community suggestions</Text>
+                    {(stats.pendingSpikSuggestions ?? 0) > 0 && (
+                      <View style={styles.alertBadge}>
+                        <Text style={styles.alertBadgeText}>{stats.pendingSpikSuggestions}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.managementDesc}>
+                    Review, copy and paste improvements into WordPress
+                  </Text>
+                </View>
+                <Text style={styles.arrow}>›</Text>
+              </View>
+            </Card>
           </View>
         </View>
 

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { haptic } from '@/lib/haptics';
+import { useAlert } from '@/components/BrandedAlert';
 
 interface DriverProfile {
   driver_status: 'pending' | 'approved' | 'rejected';
@@ -69,6 +70,7 @@ function LinkRow({
 export default function AccountScreen() {
   const router = useRouter();
   const { session, profile, signOut, refreshProfile } = useAuth();
+  const { alert } = useAlert();
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [phone, setPhone] = useState(profile?.phone ?? '');
@@ -178,10 +180,16 @@ export default function AccountScreen() {
   }
 
   async function handleSignOut() {
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: signOut },
-    ]);
+    alert({
+      title:   'Sign out?',
+      message: 'You\'ll need to sign back in to access your account.',
+      icon:    'sign-out-alt',
+      accent:  '#DC2626',
+      actions: [
+        { label: 'Cancel',   style: 'cancel' },
+        { label: 'Sign out', style: 'destructive', onPress: signOut },
+      ],
+    });
   }
 
   const roleLabel: Record<string, string> = {
@@ -484,6 +492,19 @@ export default function AccountScreen() {
               )}
             </Card>
           )}
+
+          {/* ── Preferences ─────────────────────────────────────────────── */}
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>Preferences</Text>
+            <View style={styles.linkGroup}>
+              <LinkRow
+                icon="🔔"
+                label="Notifications"
+                onPress={() => { haptic.light(); router.push('/notification-preferences'); }}
+                last
+              />
+            </View>
+          </Card>
 
           {/* ── Account info ──────────────────────────────────────────── */}
           <Card style={styles.section}>

@@ -32,6 +32,8 @@ export interface Profile {
   location_area: string | null; // e.g. "Lerwick", "Yell"
   email_verified: boolean;
   is_active: boolean;
+  // Games Centre — public handle shown on leaderboards. Null = "Anon".
+  games_handle: string | null;
   // Delivers-specific
   has_payment_method: boolean;
   stripe_customer_id: string | null;

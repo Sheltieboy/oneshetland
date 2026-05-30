@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getConfig } from '../_shared/admin-config.ts';
 
 /**
  * stripe-webhook
@@ -49,13 +50,57 @@ serve(async (req) => {
 
       // ── Payment confirmed ────────────────────────────────────────────
       case 'payment_intent.succeeded': {
-        const requestId = (eventData.metadata as Record<string, string>)?.request_id;
+        const meta = (eventData.metadata ?? {}) as Record<string, string>;
+
+        // Fetch delivery (Fetch module)
+        const requestId = meta.request_id;
         if (requestId) {
           await supabase
             .from('delivery_requests')
             .update({ payment_status: 'captured' })
             .eq('payment_intent_id', eventData.id as string);
         }
+
+        // Local Boost — short-term Pro access
+        if (meta.type === 'local_boost' && meta.business_id) {
+          const weeks = parseInt(meta.weeks ?? '0', 10);
+          if (weeks > 0) {
+            // Fetch current subscription_until so we can extend it if there
+            // are still days left on an existing boost. Stacking is allowed.
+            const { data: biz } = await supabase
+              .from('local_businesses')
+              .select('subscription_until')
+              .eq('id', meta.business_id)
+              .single();
+
+            const now = new Date();
+            const startFrom = biz?.subscription_until && new Date(biz.subscription_until) > now
+              ? new Date(biz.subscription_until)
+              : now;
+            const newExpiry = new Date(startFrom.getTime() + weeks * 7 * 24 * 60 * 60 * 1000);
+
+            await supabase
+              .from('local_businesses')
+              .update({
+                subscription_tier:                 'pro',
+                subscription_until:                newExpiry.toISOString(),
+                subscription_cancel_at_period_end: false,
+                // Important: leave stripe_subscription_id NULL — that's how we
+                // tell a boost apart from a monthly subscription downstream.
+              })
+              .eq('id', meta.business_id);
+
+            // Mark the pending purchase row as succeeded + record expiry
+            await supabase
+              .from('local_boost_purchases')
+              .update({
+                status:     'succeeded',
+                expires_at: newExpiry.toISOString(),
+              })
+              .eq('stripe_payment_intent_id', eventData.id as string);
+          }
+        }
+
         break;
       }
 
@@ -73,8 +118,10 @@ serve(async (req) => {
         break;
       }
 
-      // ── Driver Connect account updated ───────────────────────────────
-      // Stripe sends this when a driver completes/updates their onboarding
+      // ── Connect account updated ──────────────────────────────────────
+      // Stripe fires this when EITHER a driver OR a local business completes
+      // their Connect onboarding. We update both tables — only the matching one
+      // will have a row (0-row update is harmless).
       case 'account.updated': {
         const accountId = eventData.id as string;
         const payoutsEnabled = eventData.payouts_enabled as boolean;
@@ -90,12 +137,94 @@ serve(async (req) => {
           })
           .eq('stripe_account_id', accountId);
 
+        await supabase
+          .from('local_businesses')
+          .update({ payout_enabled: payoutsEnabled && chargesEnabled })
+          .eq('stripe_account_id', accountId);
+
+        break;
+      }
+
+      // ── Local business subscription created/updated ──────────────────
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated': {
+        const subId             = eventData.id as string;
+        const customerId        = eventData.customer as string;
+        const status            = eventData.status as string;
+        const cancelAtPeriodEnd = Boolean(eventData.cancel_at_period_end);
+        const items             = eventData.items as {
+          data: Array<{ price: { id: string }; current_period_end?: number }>
+        };
+        const priceId           = items?.data?.[0]?.price?.id;
+
+        // Stripe API 2025-04-30+ moved current_period_end to the subscription_item
+        // level. Read it from there with a fallback to the legacy top-level field.
+        const periodEndSec =
+          items?.data?.[0]?.current_period_end ??
+          (eventData.current_period_end as number | undefined);
+        const periodEndIso = periodEndSec
+          ? new Date(periodEndSec * 1000).toISOString()
+          : null;
+
+        // Map Stripe price IDs to our tiers — read from admin_config first,
+        // fall back to env vars so old deployments keep working.
+        const proPrice     = await getConfig(supabase, 'stripe.price.local_pro',     Deno.env.get('STRIPE_PRICE_LOCAL_PRO')     ?? null);
+        const premiumPrice = await getConfig(supabase, 'stripe.price.local_premium', Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM') ?? null);
+
+        let tier: 'free' | 'pro' | 'premium' = 'free';
+        if (priceId === premiumPrice) tier = 'premium';
+        else if (priceId === proPrice) tier = 'pro';
+
+        const isActive = ['active', 'trialing'].includes(status);
+
+        await supabase
+          .from('local_businesses')
+          .update({
+            subscription_tier:                 isActive ? tier : 'free',
+            subscription_until:                isActive ? periodEndIso : null,
+            subscription_cancel_at_period_end: isActive ? cancelAtPeriodEnd : false,
+            stripe_subscription_id:            subId,
+            stripe_customer_id:                customerId,
+          })
+          .eq('stripe_customer_id', customerId);
+
+        break;
+      }
+
+      // ── Subscription cancelled / lapsed ──────────────────────────────
+      case 'customer.subscription.deleted': {
+        const subId = eventData.id as string;
+        await supabase
+          .from('local_businesses')
+          .update({
+            subscription_tier:                 'free',
+            subscription_until:                null,
+            subscription_cancel_at_period_end: false,
+          })
+          .eq('stripe_subscription_id', subId);
+        break;
+      }
+
+      // ── Subscription renewal payment succeeded — extend the expiry ──
+      case 'invoice.payment_succeeded': {
+        const subId = eventData.subscription as string | null;
+        // Invoices have always had period_end at top level — but newer API
+        // versions also expose it under lines.data[0].period.end. Be defensive.
+        const lines = eventData.lines as { data: Array<{ period?: { end?: number } }> } | undefined;
+        const periodEndSec =
+          (eventData.period_end as number | undefined) ??
+          lines?.data?.[0]?.period?.end;
+        if (subId && periodEndSec) {
+          await supabase
+            .from('local_businesses')
+            .update({ subscription_until: new Date(periodEndSec * 1000).toISOString() })
+            .eq('stripe_subscription_id', subId);
+        }
         break;
       }
 
       // ── Payout to driver succeeded ───────────────────────────────────
       case 'transfer.created': {
-        // Future: log driver earnings, send push notification
         console.log('[stripe-webhook] Transfer created:', eventData.id);
         break;
       }

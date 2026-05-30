@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OneShetland Fetch — App Store Screenshots</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(135deg, #0a0a1a 0%, #0d1b2a 100%);
+    font-family: -apple-system, 'SF Pro Display', sans-serif;
+    display: flex;
+    gap: 48px;
+    padding: 60px 48px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    min-height: 100vh;
+  }
+
+  .screenshot {
+    width: 260px;
+    height: 563px;
+    border-radius: 36px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.1), inset 0 0 0 1px rgba(255,255,255,0.05);
+    flex-shrink: 0;
+    transform: scale(1.35);
+    transform-origin: top center;
+    margin-bottom: 120px;
+  }
+
+  /* ── SCREEN 1: Landing ── */
+  .s1 { background: #032F4C; }
+  .s1 .status-bar {
+    height: 44px;
+    background: #032F4C;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px;
+  }
+  .s1 .status-bar span { color: #fff; font-size: 12px; font-weight: 600; }
+  .s1 .hero {
+    padding: 24px 28px 0;
+    display: flex;
+    flex-direction: column;
+    height: calc(100% - 44px);
+  }
+  .s1 .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(18,179,214,0.15);
+    border: 1px solid rgba(18,179,214,0.4);
+    border-radius: 20px;
+    padding: 6px 14px;
+    width: fit-content;
+    margin-bottom: 20px;
+  }
+  .s1 .badge span { color: #12B3D6; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+  .s1 .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #12B3D6; animation: pulse 2s infinite; }
+  .s1 h1 { color: #fff; font-size: 34px; font-weight: 800; line-height: 1.1; margin-bottom: 14px; letter-spacing: -0.5px; }
+  .s1 h1 em { color: #12B3D6; font-style: normal; }
+  .s1 p { color: rgba(255,255,255,0.65); font-size: 15px; line-height: 1.5; margin-bottom: 32px; }
+  .s1 .cta-btn {
+    background: #12B3D6;
+    color: #032F4C;
+    border: none;
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .s1 .cta-secondary {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border-radius: 14px;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .s1 .stats {
+    display: flex;
+    gap: 12px;
+    margin-top: auto;
+    padding-bottom: 40px;
+  }
+  .s1 .stat {
+    flex: 1;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 14px;
+    text-align: center;
+  }
+  .s1 .stat .val { color: #12B3D6; font-size: 22px; font-weight: 800; }
+  .s1 .stat .lbl { color: rgba(255,255,255,0.5); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+  /* caption */
+  .caption {
+    text-align: center;
+    color: rgba(255,255,255,0.5);
+    font-size: 12px;
+    margin-top: 14px;
+    letter-spacing: 0.3px;
+    font-weight: 500;
+  }
+  .caption strong { color: #12B3D6; display: block; font-size: 14px; margin-bottom: 4px; }
+
+  /* ── SCREEN 2: Request ── */
+  .s2 { background: #032F4C; }
+  .s2 .topbar {
+    height: 44px;
+    background: #032F4C;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+  }
+  .s2 .topbar .time { color: #fff; font-size: 14px; font-weight: 600; margin-right: auto; }
+  .s2 .content { padding: 0 20px; }
+  .s2 .section-head { color: #12B3D6; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin: 18px 0 10px; }
+  .s2 .page-title { color: #fff; font-size: 26px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.3px; }
+  .s2 .page-sub { color: rgba(255,255,255,0.5); font-size: 13px; margin-bottom: 20px; }
+  .s2 .cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+  .s2 .cat-item {
+    background: rgba(255,255,255,0.06);
+    border: 1.5px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    padding: 14px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .s2 .cat-item.active {
+    background: rgba(18,179,214,0.12);
+    border-color: #12B3D6;
+  }
+  .s2 .cat-icon { font-size: 22px; }
+  .s2 .cat-name { color: #fff; font-size: 13px; font-weight: 600; }
+  .s2 .cat-desc { color: rgba(255,255,255,0.45); font-size: 10px; margin-top: 1px; }
+  .s2 .field-label { color: rgba(255,255,255,0.6); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .s2 .field-box {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 13px 14px;
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .s2 .field-box .icon { font-size: 16px; opacity: 0.7; }
+  .s2 .field-box span { opacity: 0.8; }
+  .s2 .fee-pill {
+    background: rgba(18,179,214,0.12);
+    border: 1px solid rgba(18,179,214,0.3);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .s2 .fee-pill .fee-lbl { color: rgba(255,255,255,0.6); font-size: 12px; }
+  .s2 .fee-pill .fee-amt { color: #12B3D6; font-size: 18px; font-weight: 800; }
+  .s2 .next-btn {
+    background: #12B3D6;
+    color: #032F4C;
+    border-radius: 14px;
+    padding: 15px;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  /* ── SCREEN 3: Tracking ── */
+  .s3 { background: #032F4C; }
+  .s3 .topbar { height: 44px; background: #032F4C; padding: 0 20px; display: flex; align-items: center; }
+  .s3 .topbar .time { color: #fff; font-size: 14px; font-weight: 600; }
+  .s3 .content { padding: 0 20px; }
+  .s3 .page-title { color: #fff; font-size: 26px; font-weight: 800; margin: 16px 0 4px; letter-spacing: -0.3px; }
+  .s3 .page-sub { color: rgba(255,255,255,0.5); font-size: 13px; margin-bottom: 18px; }
+  .s3 .status-card {
+    background: linear-gradient(135deg, rgba(18,179,214,0.2), rgba(18,179,214,0.06));
+    border: 1.5px solid rgba(18,179,214,0.4);
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .s3 .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .s3 .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #12B3D6; box-shadow: 0 0 0 3px rgba(18,179,214,0.3); }
+  .s3 .status-label { color: #12B3D6; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .s3 .driver-row { display: flex; align-items: center; gap: 12px; }
+  .s3 .avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #12B3D6, #0891B2); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: #032F4C; flex-shrink: 0; }
+  .s3 .driver-name { color: #fff; font-size: 15px; font-weight: 700; }
+  .s3 .driver-info { color: rgba(255,255,255,0.5); font-size: 12px; margin-top: 2px; }
+  .s3 .eta-badge {
+    margin-left: auto;
+    background: rgba(18,179,214,0.15);
+    border: 1px solid rgba(18,179,214,0.3);
+    border-radius: 10px;
+    padding: 8px 12px;
+    text-align: center;
+  }
+  .s3 .eta-badge .eta-val { color: #12B3D6; font-size: 18px; font-weight: 800; }
+  .s3 .eta-badge .eta-lbl { color: rgba(255,255,255,0.5); font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .s3 .timeline { margin-bottom: 14px; }
+  .s3 .tl-item { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+  .s3 .tl-icon-wrap { display: flex; flex-direction: column; align-items: center; }
+  .s3 .tl-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+  .s3 .tl-icon.done { background: #12B3D6; }
+  .s3 .tl-icon.active { background: rgba(18,179,214,0.2); border: 2px solid #12B3D6; }
+  .s3 .tl-icon.pending { background: rgba(255,255,255,0.08); }
+  .s3 .tl-line { width: 2px; height: 14px; background: rgba(18,179,214,0.3); margin-top: 4px; }
+  .s3 .tl-text { padding-top: 5px; }
+  .s3 .tl-title { color: #fff; font-size: 13px; font-weight: 600; }
+  .s3 .tl-sub { color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 2px; }
+  .s3 .map-block {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .s3 .map-block .map-bg {
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(18,179,214,0.04) 0px, rgba(18,179,214,0.04) 1px, transparent 1px, transparent 30px),
+                repeating-linear-gradient(90deg, rgba(18,179,214,0.04) 0px, rgba(18,179,214,0.04) 1px, transparent 1px, transparent 30px);
+  }
+  .s3 .map-pin { font-size: 28px; position: relative; z-index: 1; }
+  .s3 .map-label { color: rgba(255,255,255,0.4); font-size: 11px; position: relative; z-index: 1; margin-left: 8px; }
+
+  /* ── SCREEN 4: Driver ── */
+  .s4 { background: #032F4C; }
+  .s4 .topbar { height: 44px; background: #032F4C; padding: 0 20px; display: flex; align-items: center; }
+  .s4 .topbar .time { color: #fff; font-size: 14px; font-weight: 600; }
+  .s4 .content { padding: 0 20px; }
+  .s4 .page-title { color: #fff; font-size: 26px; font-weight: 800; margin: 14px 0 4px; letter-spacing: -0.3px; }
+  .s4 .page-sub { color: rgba(255,255,255,0.5); font-size: 13px; margin-bottom: 14px; }
+  .s4 .toggle-row { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.06); border-radius: 14px; padding: 12px 16px; margin-bottom: 16px; }
+  .s4 .toggle-label { color: #fff; font-size: 14px; font-weight: 600; }
+  .s4 .toggle-sub { color: rgba(255,255,255,0.45); font-size: 11px; margin-top: 2px; }
+  .s4 .toggle-pill { width: 50px; height: 28px; background: #12B3D6; border-radius: 14px; display: flex; align-items: center; padding: 3px; justify-content: flex-end; }
+  .s4 .toggle-knob { width: 22px; height: 22px; border-radius: 50%; background: white; }
+  .s4 .request-card {
+    background: rgba(255,255,255,0.05);
+    border: 1.5px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .s4 .request-card.highlight {
+    background: rgba(18,179,214,0.08);
+    border-color: rgba(18,179,214,0.35);
+  }
+  .s4 .req-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .s4 .req-cat { color: #12B3D6; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; }
+  .s4 .req-fee { color: #12B3D6; font-size: 16px; font-weight: 800; }
+  .s4 .req-route { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .s4 .req-loc { display: flex; align-items: center; gap: 8px; }
+  .s4 .req-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .s4 .req-dot.from { background: #12B3D6; }
+  .s4 .req-dot.to { background: rgba(255,255,255,0.4); border: 2px solid rgba(255,255,255,0.3); }
+  .s4 .req-loc-text { color: rgba(255,255,255,0.75); font-size: 12px; }
+  .s4 .req-actions { display: flex; gap: 8px; }
+  .s4 .btn-accept { flex: 1; background: #12B3D6; color: #032F4C; border-radius: 10px; padding: 10px; font-size: 13px; font-weight: 700; text-align: center; }
+  .s4 .btn-pass { flex: 0; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 600; text-align: center; }
+  .s4 .earnings-row { display: flex; gap: 10px; margin-top: 16px; }
+  .s4 .earn-card { flex: 1; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 12px; text-align: center; }
+  .s4 .earn-val { color: #fff; font-size: 20px; font-weight: 800; }
+  .s4 .earn-lbl { color: rgba(255,255,255,0.45); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+  .wrapper { display: flex; flex-direction: column; align-items: center; }
+</style>
+</head>
+<body>
+
+<!-- SCREEN 1: Landing -->
+<div class="wrapper">
+  <div class="screenshot s1">
+    <div class="status-bar">
+      <span>9:41</span>
+      <span>●●●</span>
+    </div>
+    <div class="hero">
+      <div class="badge">
+        <div class="dot"></div>
+        <span>Community Delivery</span>
+      </div>
+      <h1>Shetland<br/>delivers for<br/><em>itself.</em></h1>
+      <p>Real deliveries, real neighbours. Request a collection or earn by helping your community.</p>
+      <div class="cta-btn">Request a Delivery</div>
+      <div class="cta-secondary">Become a Driver</div>
+      <div class="stats">
+        <div class="stat"><div class="val">2min</div><div class="lbl">Avg accept</div></div>
+        <div class="stat"><div class="val">Local</div><div class="lbl">Drivers only</div></div>
+        <div class="stat"><div class="val">£3+</div><div class="lbl">Per delivery</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><strong>Built for Shetland</strong>Your island, your community</div>
+</div>
+
+<!-- SCREEN 2: Request -->
+<div class="wrapper">
+  <div class="screenshot s2">
+    <div class="topbar"><span class="time">9:41</span></div>
+    <div class="content">
+      <div class="section-head">New Request</div>
+      <div class="page-title">What needs<br/>collecting?</div>
+      <div class="page-sub">Choose a category to get started</div>
+      <div class="cat-grid">
+        <div class="cat-item active">
+          <div class="cat-icon">🛒</div>
+          <div><div class="cat-name">Groceries</div><div class="cat-desc">Food & essentials</div></div>
+        </div>
+        <div class="cat-item">
+          <div class="cat-icon">📦</div>
+          <div><div class="cat-name">Parcel</div><div class="cat-desc">Pick up & drop</div></div>
+        </div>
+        <div class="cat-item">
+          <div class="cat-icon">💊</div>
+          <div><div class="cat-name">Pharmacy</div><div class="cat-desc">Prescriptions</div></div>
+        </div>
+        <div class="cat-item">
+          <div class="cat-icon">🍕</div>
+          <div><div class="cat-name">Food</div><div class="cat-desc">Takeaway & more</div></div>
+        </div>
+      </div>
+      <div class="field-label">Pick up from</div>
+      <div class="field-box"><span class="icon">📍</span><span>Lerwick town centre</span></div>
+      <div class="field-label">Deliver to</div>
+      <div class="field-box"><span class="icon">🏠</span><span>My address</span></div>
+      <div class="fee-pill">
+        <span class="fee-lbl">Estimated fee</span>
+        <span class="fee-amt">£4.50</span>
+      </div>
+      <div class="next-btn">Continue →</div>
+    </div>
+  </div>
+  <div class="caption"><strong>Simple to request</strong>Up and running in seconds</div>
+</div>
+
+<!-- SCREEN 3: Tracking -->
+<div class="wrapper">
+  <div class="screenshot s3">
+    <div class="topbar"><span class="time">9:41</span></div>
+    <div class="content">
+      <div class="page-title">Your Delivery</div>
+      <div class="page-sub">Order #OSF-1042 · Groceries</div>
+      <div class="status-card">
+        <div class="status-row">
+          <div class="status-dot"></div>
+          <div class="status-label">Driver on the way</div>
+        </div>
+        <div class="driver-row">
+          <div class="avatar">C</div>
+          <div>
+            <div class="driver-name">Craig M.</div>
+            <div class="driver-info">⭐ 4.9 · 112 deliveries</div>
+          </div>
+          <div class="eta-badge">
+            <div class="eta-val">8</div>
+            <div class="eta-lbl">min away</div>
+          </div>
+        </div>
+      </div>
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-icon-wrap">
+            <div class="tl-icon done">✓</div>
+            <div class="tl-line"></div>
+          </div>
+          <div class="tl-text"><div class="tl-title">Request accepted</div><div class="tl-sub">9:34 AM</div></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-icon-wrap">
+            <div class="tl-icon active">🚗</div>
+            <div class="tl-line"></div>
+          </div>
+          <div class="tl-text"><div class="tl-title">Collecting your items</div><div class="tl-sub">In progress</div></div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-icon-wrap">
+            <div class="tl-icon pending">📦</div>
+          </div>
+          <div class="tl-text"><div class="tl-title">Out for delivery</div><div class="tl-sub">Coming up</div></div>
+        </div>
+      </div>
+      <div class="map-block">
+        <div class="map-bg"></div>
+        <div class="map-pin">📍</div>
+        <div class="map-label">Lerwick → Your door</div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><strong>Track every step</strong>Know exactly where your delivery is</div>
+</div>
+
+<!-- SCREEN 4: Driver -->
+<div class="wrapper">
+  <div class="screenshot s4">
+    <div class="topbar"><span class="time">9:41</span></div>
+    <div class="content">
+      <div class="page-title">Driver Hub</div>
+      <div class="page-sub">Wednesday · Lerwick area</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Available for runs</div>
+          <div class="toggle-sub">You're visible to customers</div>
+        </div>
+        <div class="toggle-pill"><div class="toggle-knob"></div></div>
+      </div>
+      <div class="request-card highlight">
+        <div class="req-header">
+          <span class="req-cat">🛒 Groceries</span>
+          <span class="req-fee">£5.00</span>
+        </div>
+        <div class="req-route">
+          <div class="req-loc"><div class="req-dot from"></div><span class="req-loc-text">Co-op, Lerwick</span></div>
+          <div class="req-loc"><div class="req-dot to"></div><span class="req-loc-text">Burgh Road, Lerwick</span></div>
+        </div>
+        <div class="req-actions">
+          <div class="btn-accept">Accept Run</div>
+          <div class="btn-pass">Pass</div>
+        </div>
+      </div>
+      <div class="request-card">
+        <div class="req-header">
+          <span class="req-cat">📦 Parcel</span>
+          <span class="req-fee">£3.50</span>
+        </div>
+        <div class="req-route">
+          <div class="req-loc"><div class="req-dot from"></div><span class="req-loc-text">Clickimin Centre</span></div>
+          <div class="req-loc"><div class="req-dot to"></div><span class="req-loc-text">Scalloway Road</span></div>
+        </div>
+        <div class="req-actions">
+          <div class="btn-accept">Accept Run</div>
+          <div class="btn-pass">Pass</div>
+        </div>
+      </div>
+      <div class="earnings-row">
+        <div class="earn-card"><div class="earn-val">£23</div><div class="earn-lbl">Today</div></div>
+        <div class="earn-card"><div class="earn-val">7</div><div class="earn-lbl">Runs</div></div>
+        <div class="earn-card"><div class="earn-val">⭐ 5.0</div><div class="earn-lbl">Rating</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><strong>Earn on your schedule</strong>Accept only the runs you want</div>
+</div>
+
+</body>
+</html>

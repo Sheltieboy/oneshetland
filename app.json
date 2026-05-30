@@ -16,12 +16,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.oneshetland.app",
+      "buildNumber": "3",
       "icon": "./assets/icon.png",
+      "associatedDomains": ["applinks:oneshetland.com"],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "OneShetland Fetch uses your camera to take photos of delivered items.",
         "NSPhotoLibraryUsageDescription": "OneShetland Fetch uses your photo library to attach images to deliveries.",
-        "NSLocationWhenInUseUsageDescription": "OneShetland Fetch uses your location to help match you with nearby drivers.",
+        "NSLocationWhenInUseUsageDescription": "OneShetland uses your location to verify you're at a business when you tap a Local NFC tile, and to match you with nearby drivers.",
         "NSMicrophoneUsageDescription": "OneShetland Fetch may use your microphone for video proof of delivery."
       }
     },
@@ -30,7 +32,17 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#032F4C"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/t/" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",

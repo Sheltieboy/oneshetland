@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.oneshetland.app",
+      "sha256_cert_fingerprints": [
+        "4F:4F:10:1D:99:1B:B1:25:96:DA:0B:EF:8E:26:81:0E:F0:D3:16:95:97:14:1B:55:53:91:58:CC:33:72:5F:99"
+      ]
+    }
+  }
+]

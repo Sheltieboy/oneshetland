@@ -20,7 +20,9 @@ import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, shadow, fontWeight } from '@/constants/theme';
+import { SECTIONS } from '@/constants/sections';
 import { haptic } from '@/lib/haptics';
 import { getCategoryName } from '@/constants/categories';
 
@@ -309,10 +311,22 @@ export default function DriverDashboard() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
+          <Pressable onPress={() => { haptic.light(); router.replace('/(tabs)'); }} style={styles.backToHome}>
+            <Text style={styles.backToHomeText}>‹ OneShetland</Text>
+          </Pressable>
           <Animated.View style={[styles.headerInner, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.greeting}>{getGreeting()}, <Text style={styles.greetingName}>{firstName}</Text></Text>
               <Text style={styles.brandRole}>Driver dashboard</Text>
+              <Pressable
+                onPress={() => { haptic.light(); router.push('/fetch-about-driver'); }}
+                hitSlop={8}
+                style={({ pressed }) => [styles.aboutPill, pressed && { opacity: 0.85 }]}
+              >
+                <FontAwesome5 name="info-circle" size={12} color="#fff" solid />
+                <Text style={styles.aboutPillText}>How driving Fetch works</Text>
+                <FontAwesome5 name="chevron-right" size={9} color="#fff" />
+              </Pressable>
             </View>
             <Pressable
               onPress={() => { haptic.light(); router.push('/account'); }}
@@ -768,6 +782,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
   },
+  backToHome: { marginBottom: spacing.xs },
+  backToHomeText: { color: 'rgba(255,255,255,0.6)', fontSize: fontSize.sm, fontWeight: '500' },
   headerInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -789,6 +805,28 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: 'uppercase',
     marginTop: 2,
+  },
+  aboutPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.full,
+    backgroundColor: SECTIONS.fetch.color,
+    shadowColor: SECTIONS.fetch.color,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  aboutPillText: {
+    color: '#fff',
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   avatarStack: {
     width: 44,

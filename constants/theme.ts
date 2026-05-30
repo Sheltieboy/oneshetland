@@ -7,6 +7,26 @@ export const colors = {
   accentDark: '#0E9AB8',
   accentLight: '#E0F7FC',
 
+  // Shifts
+  shifts:      '#E8A020',   // warm gold — opportunity / earning
+  shiftsLight: '#FEF3C7',
+
+  // Section brand colours — each major feature has its own identity
+  spik:          '#12B3D6',   // teal   — dialect / language
+  spikLight:     '#E0F7FC',
+  events:        '#D4921A',   // amber  — what's on / calendar
+  eventsLight:   '#FEF3C7',
+  notices:       '#C53B2F',   // red    — notices / alerts
+  noticesLight:  '#FEE2E2',
+  jobs:          '#2A8B5C',   // green  — jobs / opportunity
+  jobsLight:     '#D1FAE5',
+  services:      '#6B47BF',   // purple — services / directory
+  servicesLight: '#EDE9FE',
+  fetch:         '#E0722A',   // orange — delivery / fetch
+  fetchLight:    '#FFEDD5',
+  news:          '#0E6EA6',   // deep teal — news / media
+  newsLight:     '#DBEAFE',
+
   // Surfaces
   white: '#FFFFFF',
   offWhite: '#F5F7FA',
