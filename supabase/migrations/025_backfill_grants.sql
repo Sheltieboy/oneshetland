@@ -1,159 +1,170 @@
 -- ── 025_backfill_grants.sql ──────────────────────────────────────────────────
---
--- Explicit GRANTs on every existing table in the OneShetland project.
---
--- WHY: From October 30 2026, Supabase will stop automatically granting
--- Data API access to tables in the public schema. Existing tables keep
--- their implicit grants, but adding explicit ones here means:
---   1. The app still works after October 30 with no further changes.
---   2. New migrations that create tables will know the pattern to follow.
---
--- GRANT RULES USED:
---   anon         → SELECT only on tables that are safe for public browsing
---                  (dictionary words, public business listings, regions, etc.)
---                  Nothing that could leak PII.
---   authenticated → SELECT + write on tables the app reads/writes via supabase-js
---   service_role  → ALL on every table (edge functions run as service_role)
---
--- Run in Supabase Dashboard → SQL Editor → New query → Run.
--- Safe to run multiple times (GRANT is idempotent).
+-- Explicit GRANTs on every OneShetland table.
+-- Skips any table that doesn't exist yet — safe to run before all migrations
+-- have been applied. Idempotent — safe to run multiple times.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- Step 1: temporary helper that grants and silently skips missing tables
+CREATE OR REPLACE FUNCTION public._os_grant(privs text, tbl text, role_ text)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  EXECUTE format('GRANT %s ON public.%I TO %I', privs, tbl, role_);
+EXCEPTION
+  WHEN undefined_table THEN
+    RAISE NOTICE 'Skipping % on % (table does not exist yet)', privs, tbl;
+END;
+$$;
 
--- ── Core user + driver tables ─────────────────────────────────────────────────
+-- Step 2: grant everything
+SELECT public._os_grant('SELECT',                         'profiles',                   'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'profiles',                   'authenticated');
+SELECT public._os_grant('ALL',                            'profiles',                   'service_role');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'driver_profiles',            'authenticated');
+SELECT public._os_grant('ALL',                            'driver_profiles',            'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.profiles            TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.driver_profiles     TO authenticated;
-GRANT ALL                              ON public.profiles            TO service_role;
-GRANT ALL                              ON public.driver_profiles     TO service_role;
--- anon can read limited profile data (public display name etc) but not write
-GRANT SELECT                           ON public.profiles            TO anon;
+SELECT public._os_grant('SELECT',                         'regions',                    'anon');
+SELECT public._os_grant('SELECT',                         'regions',                    'authenticated');
+SELECT public._os_grant('ALL',                            'regions',                    'service_role');
 
--- ── Fetch / delivery ─────────────────────────────────────────────────────────
+SELECT public._os_grant('SELECT',                         'delivery_categories',        'anon');
+SELECT public._os_grant('SELECT',                         'delivery_categories',        'authenticated');
+SELECT public._os_grant('ALL',                            'delivery_categories',        'service_role');
 
-GRANT SELECT                           ON public.regions             TO anon;
-GRANT SELECT                           ON public.regions             TO authenticated;
-GRANT ALL                              ON public.regions             TO service_role;
+SELECT public._os_grant('SELECT',                         'runs',                       'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'runs',                       'authenticated');
+SELECT public._os_grant('ALL',                            'runs',                       'service_role');
 
-GRANT SELECT                           ON public.delivery_categories TO anon;
-GRANT SELECT                           ON public.delivery_categories TO authenticated;
-GRANT ALL                              ON public.delivery_categories TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'delivery_requests',          'authenticated');
+SELECT public._os_grant('ALL',                            'delivery_requests',          'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.runs                TO authenticated;
-GRANT SELECT                           ON public.runs                TO anon;
-GRANT ALL                              ON public.runs                TO service_role;
+SELECT public._os_grant('SELECT',                         'delivery_fees',              'authenticated');
+SELECT public._os_grant('ALL',                            'delivery_fees',              'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.delivery_requests   TO authenticated;
-GRANT ALL                              ON public.delivery_requests   TO service_role;
+SELECT public._os_grant('SELECT',                         'delivery_pricing_config',    'authenticated');
+SELECT public._os_grant('ALL',                            'delivery_pricing_config',    'service_role');
 
-GRANT SELECT                           ON public.delivery_fees       TO authenticated;
-GRANT ALL                              ON public.delivery_fees       TO service_role;
+SELECT public._os_grant('SELECT, INSERT',                 'waiting_events',             'authenticated');
+SELECT public._os_grant('ALL',                            'waiting_events',             'service_role');
 
-GRANT SELECT                           ON public.delivery_pricing_config TO authenticated;
-GRANT ALL                              ON public.delivery_pricing_config TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'saved_addresses',            'authenticated');
+SELECT public._os_grant('ALL',                            'saved_addresses',            'service_role');
 
-GRANT SELECT, INSERT                   ON public.waiting_events      TO authenticated;
-GRANT ALL                              ON public.waiting_events      TO service_role;
+SELECT public._os_grant('SELECT',                         'shift_employer_profiles',    'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'shift_employer_profiles',   'authenticated');
+SELECT public._os_grant('ALL',                            'shift_employer_profiles',    'service_role');
 
-GRANT SELECT                           ON public.saved_addresses     TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.saved_addresses     TO authenticated;
-GRANT ALL                              ON public.saved_addresses      TO service_role;
+SELECT public._os_grant('SELECT',                         'shifts',                     'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'shifts',                     'authenticated');
+SELECT public._os_grant('ALL',                            'shifts',                     'service_role');
 
--- ── Shifts ───────────────────────────────────────────────────────────────────
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'shift_applications',         'authenticated');
+SELECT public._os_grant('ALL',                            'shift_applications',         'service_role');
 
--- shifts, shift_employer_profiles, shift_applications, shift_alerts are
--- read publicly (anyone can browse job listings)
-GRANT SELECT                           ON public.shift_employer_profiles TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.shift_employer_profiles TO authenticated;
-GRANT ALL                              ON public.shift_employer_profiles TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'shift_alerts',               'authenticated');
+SELECT public._os_grant('ALL',                            'shift_alerts',               'service_role');
 
-GRANT SELECT                           ON public.shift_alerts        TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.shift_alerts        TO authenticated;
-GRANT ALL                              ON public.shift_alerts        TO service_role;
+SELECT public._os_grant('SELECT',                         'local_businesses',           'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'local_businesses',           'authenticated');
+SELECT public._os_grant('ALL',                            'local_businesses',           'service_role');
 
--- ── Local (loyalty, offers, wallet, booking) ─────────────────────────────────
+SELECT public._os_grant('SELECT, INSERT, DELETE',         'local_business_follows',     'authenticated');
+SELECT public._os_grant('ALL',                            'local_business_follows',     'service_role');
 
-GRANT SELECT                           ON public.local_businesses         TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.local_businesses         TO authenticated;
-GRANT ALL                              ON public.local_businesses         TO service_role;
+SELECT public._os_grant('SELECT',                         'local_loyalty_programs',     'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'local_loyalty_programs',     'authenticated');
+SELECT public._os_grant('ALL',                            'local_loyalty_programs',     'service_role');
 
-GRANT SELECT                           ON public.local_business_follows   TO authenticated;
-GRANT SELECT, INSERT, DELETE           ON public.local_business_follows   TO authenticated;
-GRANT ALL                              ON public.local_business_follows   TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'local_loyalty_cards',        'authenticated');
+SELECT public._os_grant('ALL',                            'local_loyalty_cards',        'service_role');
 
-GRANT SELECT                           ON public.local_loyalty_programs   TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.local_loyalty_programs   TO authenticated;
-GRANT ALL                              ON public.local_loyalty_programs   TO service_role;
+SELECT public._os_grant('SELECT, INSERT',                 'local_loyalty_transactions', 'authenticated');
+SELECT public._os_grant('ALL',                            'local_loyalty_transactions', 'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.local_loyalty_cards      TO authenticated;
-GRANT ALL                              ON public.local_loyalty_cards      TO service_role;
+SELECT public._os_grant('SELECT',                         'local_offers',               'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'local_offers',               'authenticated');
+SELECT public._os_grant('ALL',                            'local_offers',               'service_role');
 
-GRANT SELECT, INSERT                   ON public.local_loyalty_transactions TO authenticated;
-GRANT ALL                              ON public.local_loyalty_transactions TO service_role;
+SELECT public._os_grant('SELECT, INSERT',                 'local_offer_redemptions',    'authenticated');
+SELECT public._os_grant('ALL',                            'local_offer_redemptions',    'service_role');
 
-GRANT SELECT                           ON public.local_offers             TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.local_offers             TO authenticated;
-GRANT ALL                              ON public.local_offers             TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'local_wallet_balances',      'authenticated');
+SELECT public._os_grant('ALL',                            'local_wallet_balances',      'service_role');
 
-GRANT SELECT, INSERT                   ON public.local_offer_redemptions  TO authenticated;
-GRANT ALL                              ON public.local_offer_redemptions  TO service_role;
+SELECT public._os_grant('SELECT, INSERT',                 'local_wallet_transactions',  'authenticated');
+SELECT public._os_grant('ALL',                            'local_wallet_transactions',  'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.local_wallet_balances    TO authenticated;
-GRANT ALL                              ON public.local_wallet_balances    TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'local_business_codes',       'authenticated');
+SELECT public._os_grant('ALL',                            'local_business_codes',       'service_role');
 
-GRANT SELECT, INSERT                   ON public.local_wallet_transactions TO authenticated;
-GRANT ALL                              ON public.local_wallet_transactions TO service_role;
+SELECT public._os_grant('SELECT, INSERT',                 'local_boost_purchases',      'authenticated');
+SELECT public._os_grant('ALL',                            'local_boost_purchases',      'service_role');
 
-GRANT SELECT                           ON public.local_business_codes     TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.local_business_codes     TO authenticated;
-GRANT ALL                              ON public.local_business_codes     TO service_role;
+SELECT public._os_grant('SELECT',                         'book_services',              'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'book_services',              'authenticated');
+SELECT public._os_grant('ALL',                            'book_services',              'service_role');
 
-GRANT SELECT, INSERT                   ON public.local_boost_purchases    TO authenticated;
-GRANT ALL                              ON public.local_boost_purchases    TO service_role;
+SELECT public._os_grant('SELECT',                         'book_availability_rules',    'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'book_availability_rules',    'authenticated');
+SELECT public._os_grant('ALL',                            'book_availability_rules',    'service_role');
 
--- ── Book (slot booking) ───────────────────────────────────────────────────────
+SELECT public._os_grant('SELECT',                         'book_slot_overrides',        'anon');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'book_slot_overrides',        'authenticated');
+SELECT public._os_grant('ALL',                            'book_slot_overrides',        'service_role');
 
-GRANT SELECT                           ON public.book_services            TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.book_services            TO authenticated;
-GRANT ALL                              ON public.book_services            TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'book_bookings',              'authenticated');
+SELECT public._os_grant('ALL',                            'book_bookings',              'service_role');
 
-GRANT SELECT                           ON public.book_availability_rules  TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.book_availability_rules  TO authenticated;
-GRANT ALL                              ON public.book_availability_rules  TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'games_scores',               'authenticated');
+SELECT public._os_grant('ALL',                            'games_scores',               'service_role');
 
-GRANT SELECT                           ON public.book_slot_overrides      TO anon;
-GRANT SELECT, INSERT, UPDATE, DELETE   ON public.book_slot_overrides      TO authenticated;
-GRANT ALL                              ON public.book_slot_overrides      TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'games_user_stats',           'authenticated');
+SELECT public._os_grant('ALL',                            'games_user_stats',           'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.book_bookings            TO authenticated;
-GRANT ALL                              ON public.book_bookings            TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'notification_preferences',   'authenticated');
+SELECT public._os_grant('ALL',                            'notification_preferences',   'service_role');
 
--- ── Games ─────────────────────────────────────────────────────────────────────
+SELECT public._os_grant('SELECT',                         'notification_log',           'authenticated');
+SELECT public._os_grant('ALL',                            'notification_log',           'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.games_scores             TO authenticated;
-GRANT ALL                              ON public.games_scores             TO service_role;
+SELECT public._os_grant('SELECT',                         'admin_config',               'anon');
+SELECT public._os_grant('SELECT',                         'admin_config',               'authenticated');
+SELECT public._os_grant('ALL',                            'admin_config',               'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.games_user_stats         TO authenticated;
-GRANT ALL                              ON public.games_user_stats         TO service_role;
+-- ── Tables created directly in Supabase (no migration file) ──────────────────
+-- These exist in the live project but were built in the dashboard rather than
+-- via a migration. Granting explicitly here so they're covered post-Oct 2026.
 
--- ── Notifications ─────────────────────────────────────────────────────────────
+SELECT public._os_grant('SELECT',                         'spik_dictionary',            'anon');
+SELECT public._os_grant('SELECT',                         'spik_dictionary',            'authenticated');
+SELECT public._os_grant('ALL',                            'spik_dictionary',            'service_role');
 
-GRANT SELECT, INSERT, UPDATE           ON public.notification_preferences TO authenticated;
-GRANT ALL                              ON public.notification_preferences TO service_role;
+SELECT public._os_grant('SELECT, INSERT',                 'spik_suggestions',           'authenticated');
+SELECT public._os_grant('ALL',                            'spik_suggestions',           'service_role');
 
-GRANT SELECT                           ON public.notification_log         TO authenticated;
-GRANT ALL                              ON public.notification_log         TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'shift_worker_profiles',      'authenticated');
+SELECT public._os_grant('ALL',                            'shift_worker_profiles',      'service_role');
 
--- ── Admin config ─────────────────────────────────────────────────────────────
--- anon + authenticated can SELECT (used for reading prices, feature flags etc)
--- Only service_role can write (config is changed via edge functions / admin UI)
+SELECT public._os_grant('SELECT',                         'shift_availability',         'authenticated');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'shift_availability',         'authenticated');
+SELECT public._os_grant('ALL',                            'shift_availability',         'service_role');
 
-GRANT SELECT                           ON public.admin_config             TO anon;
-GRANT SELECT                           ON public.admin_config             TO authenticated;
-GRANT ALL                              ON public.admin_config             TO service_role;
+SELECT public._os_grant('SELECT, INSERT, UPDATE',         'shift_check_ins',            'authenticated');
+SELECT public._os_grant('ALL',                            'shift_check_ins',            'service_role');
 
--- ── Sequences (UUIDs are gen_random_uuid() so no sequences needed, but ────────
--- ── if any SERIAL columns exist, service_role needs USAGE + SELECT) ──────────
--- Uncomment if PostgREST reports sequence permission errors:
--- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
--- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon;
+SELECT public._os_grant('SELECT',                         'shift_payments',             'authenticated');
+SELECT public._os_grant('ALL',                            'shift_payments',             'service_role');
+
+SELECT public._os_grant('SELECT',                         'shift_qualifications',       'authenticated');
+SELECT public._os_grant('SELECT, INSERT, UPDATE, DELETE', 'shift_qualifications',       'authenticated');
+SELECT public._os_grant('ALL',                            'shift_qualifications',       'service_role');
+
+SELECT public._os_grant('SELECT',                         'shift_reviews',              'authenticated');
+SELECT public._os_grant('SELECT, INSERT',                 'shift_reviews',              'authenticated');
+SELECT public._os_grant('ALL',                            'shift_reviews',              'service_role');
+
+SELECT public._os_grant('SELECT',                         'oneshetland_feed',           'anon');
+SELECT public._os_grant('SELECT',                         'oneshetland_feed',           'authenticated');
+SELECT public._os_grant('ALL',                            'oneshetland_feed',           'service_role');
+
+-- Step 3: clean up the helper
+DROP FUNCTION public._os_grant(text, text, text);
