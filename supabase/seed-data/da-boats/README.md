@@ -1,8 +1,41 @@
 # Da Boats — seed data import
 
-Apply migration 042 first, then import the CSVs below **in this order** via
-Supabase dashboard → **Table Editor** → select the table → **Import data
-from CSV**.
+Apply migration 042 first. Then either run the bundled `load.sql` (one
+terminal command — recommended) **or** import each CSV manually via
+the dashboard.
+
+## Option A — one-shot loader (recommended)
+
+```bash
+cd supabase/seed-data/da-boats
+psql "<your-supabase-connection-string>" -f load.sql
+```
+
+Get the connection string from **Supabase dashboard → Project Settings
+→ Database → Connection string** (use the Session pooler URL — works
+from anywhere, no IP allow-listing needed).
+
+`psql` not installed? On macOS:
+
+```bash
+brew install libpq && brew link --force libpq
+```
+
+…or grab [Postgres.app](https://postgresapp.com).
+
+After it finishes, mark the migration applied:
+
+```bash
+supabase migration repair --status applied 042
+```
+
+## Option B — dashboard import
+
+If you'd rather not touch the terminal: Supabase dashboard →
+**Table Editor** → select the table → **Import data from CSV**.
+
+CSVs must be imported in this exact order — FK constraints will reject
+rows whose parents aren't in yet:
 
 The Supabase SQL Editor doesn't support `\copy`, so the dashboard import
 UI is the path of least resistance. Each file is small enough to upload
