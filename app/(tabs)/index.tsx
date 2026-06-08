@@ -8,6 +8,7 @@ import {
   Image,
   RefreshControl,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 
 const LOGO = require('@/assets/icon.png');
@@ -36,6 +37,8 @@ import {
   shiftDisplayBusiness, URGENCY_CONFIG, CATEGORY_LABELS as SHIFT_CATEGORY_LABELS,
   type Shift,
 } from '@/lib/shifts-api';
+import { fetchHomeData, type HomeData } from '@/lib/home-data';
+import { getDailyWird, loadDailyState, todayKey, maxTries } from '@/lib/guess-da-wird';
 
 function greeting(name: string | null): string {
   const hour = new Date().getHours();
@@ -43,49 +46,82 @@ function greeting(name: string | null): string {
   return name ? `${time}, ${name.split(' ')[0]}` : time;
 }
 
-// ── Live module strip ─────────────────────────────────────────────────────────
+// ── Date helper ───────────────────────────────────────────────────────────────
 
-function LiveModuleCard({
-  icon, name, description, stat, color, onPress,
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const tomorrow = new Date(now.getTime() + 86_400_000);
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' });
+  if (sameDay)    return `Today ${time}`;
+  if (isTomorrow) return `Tomorrow ${time}`;
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ` ${time}`;
+}
+
+// ── For You card (personalised state) ───────────────────────────────────────────
+
+function ForYouCard({
+  icon, color, tag, title, sub, onPress,
 }: {
-  icon: string; name: string; description: string; stat?: string; color: string; onPress: () => void;
+  icon: string; color: string; tag: string; title: string; sub: string; onPress: () => void;
 }) {
   return (
-    <TouchableOpacity
-      style={[styles.liveCard, { borderTopWidth: 3, borderTopColor: color }]}
-      onPress={onPress}
-      activeOpacity={0.82}
-    >
-      <View style={styles.liveCardTop}>
-        <View style={[styles.liveIconWrap, { backgroundColor: color + '28' }]}>
-          <FontAwesome5 name={icon as any} size={18} color={color} solid />
-        </View>
-        <View style={styles.liveBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveBadgeText}>Live</Text>
-        </View>
+    <TouchableOpacity style={styles.forYouCard} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.forYouIcon, { backgroundColor: color + '20' }]}>
+        <FontAwesome5 name={icon as any} size={15} color={color} solid />
       </View>
-      <Text style={styles.liveCardName}>{name}</Text>
-      <Text style={styles.liveCardDesc}>{description}</Text>
-      {stat ? <Text style={[styles.liveCardStat, { color }]}>{stat}</Text> : null}
+      <Text style={[styles.forYouTag, { color }]}>{tag.toUpperCase()}</Text>
+      <Text style={styles.forYouCardTitle} numberOfLines={2}>{title}</Text>
+      <Text style={styles.forYouCardSub} numberOfLines={1}>{sub}</Text>
     </TouchableOpacity>
   );
 }
 
-// ── Coming soon card ──────────────────────────────────────────────────────────
+// ── Quick action tile ─────────────────────────────────────────────────────────
 
-function ComingSoonCard({
-  icon, name, description, color,
+function QuickAction({
+  icon, label, color, onPress, badge,
 }: {
-  icon: string; name: string; description: string; color: string;
+  icon: string; label: string; color: string; onPress: () => void; badge?: string;
 }) {
   return (
-    <View style={[styles.comingCard, { borderLeftWidth: 3, borderLeftColor: color }]}>
-      <View style={[styles.comingIconWrap, { backgroundColor: color + '28' }]}>
-        <FontAwesome5 name={icon as any} size={15} color={color} />
+    <TouchableOpacity style={styles.quickTile} onPress={onPress} activeOpacity={0.82}>
+      <View style={[styles.quickIcon, { backgroundColor: color + '18' }]}>
+        <FontAwesome5 name={icon as any} size={18} color={color} solid />
+        {badge ? (
+          <View style={[styles.quickBadge, { backgroundColor: color }]}>
+            <Text style={styles.quickBadgeText}>{badge}</Text>
+          </View>
+        ) : null}
       </View>
-      <Text style={styles.comingName}>{name}</Text>
-      <Text style={styles.comingDesc}>{description}</Text>
+      <Text style={styles.quickLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ── Grow your business card ─────────────────────────────────────────────────────
+
+function GrowCard({
+  icon, title, body, cta, onPress, onDismiss,
+}: {
+  icon: string; title: string; body: string; cta: string; onPress: () => void; onDismiss: () => void;
+}) {
+  return (
+    <View style={styles.growCard}>
+      <TouchableOpacity style={styles.growDismiss} onPress={onDismiss} hitSlop={10}>
+        <FontAwesome5 name="times" size={12} color="rgba(255,255,255,0.6)" />
+      </TouchableOpacity>
+      <View style={styles.growIcon}>
+        <FontAwesome5 name={icon as any} size={16} color={colors.navy} solid />
+      </View>
+      <Text style={styles.growTitle}>{title}</Text>
+      <Text style={styles.growBody}>{body}</Text>
+      <TouchableOpacity style={styles.growCta} onPress={onPress} activeOpacity={0.85}>
+        <Text style={styles.growCtaText}>{cta}</Text>
+        <FontAwesome5 name="arrow-right" size={11} color={colors.navy} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -119,6 +155,9 @@ export default function HomeScreen() {
   const [localCount,  setLocalCount]      = useState<number | null>(null);
   const [featuredOffer, setFeaturedOffer] = useState<LocalOffer | null>(null);
   const [featuredShift, setFeaturedShift] = useState<Shift | null>(null);
+  const [home, setHome]   = useState<HomeData | null>(null);
+  const [wird, setWird]   = useState<{ length: number; tries: number; played: boolean } | null>(null);
+  const [growDismissed, setGrowDismissed] = useState(false);
 
   const isDriver = profile?.role === 'driver';
   const isAdmin  = profile?.role === 'admin';
@@ -145,6 +184,16 @@ export default function HomeScreen() {
         fetchActiveBusinessCount().then(setLocalCount).catch(() => {}),
         fetchFeaturedOffer().then(setFeaturedOffer).catch(() => {}),
         fetchFeaturedBoostedShift().then(setFeaturedShift).catch(() => {}),
+        // Personalised state for the signed-in user
+        fetchHomeData(profile).then(setHome).catch(() => {}),
+        // Guess da Wird daily teaser — length + played state only (never the answer)
+        (async () => {
+          try {
+            const dateKey = todayKey();
+            const [w, saved] = await Promise.all([getDailyWird(dateKey), loadDailyState(profile?.id ?? 'anon')]);
+            setWird({ length: w.word.length, tries: maxTries(w.word), played: !!(saved?.won || saved?.lost) });
+          } catch { /* teaser is optional */ }
+        })(),
       ]);
       setFeed(data);
     } catch (err) {
@@ -153,7 +202,7 @@ export default function HomeScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [profile]);
 
   useEffect(() => { loadFeed(); }, [loadFeed]);
 
@@ -162,6 +211,11 @@ export default function HomeScreen() {
   const goToFetch = () => {
     haptic.medium();
     router.push('/(tabs)/fetch');
+  };
+
+  const openUrl = (url?: string | null) => {
+    haptic.light();
+    if (url) Linking.openURL(url).catch(() => {});
   };
 
   return (
@@ -185,11 +239,28 @@ export default function HomeScreen() {
             </View>
             <View style={styles.heroRight}>
               {profile ? (
-                <TouchableOpacity onPress={() => { haptic.light(); router.push('/(tabs)/me'); }}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{(profile.full_name?.trim() || 'U')[0].toUpperCase()}</Text>
-                  </View>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    onPress={() => { haptic.light(); router.push('/local-wallet'); }}
+                    style={styles.headerIconBtn}
+                    accessibilityLabel={`My Wallet${home?.walletItemCount ? `, ${home.walletItemCount} items` : ''}`}
+                    hitSlop={6}
+                  >
+                    <FontAwesome5 name="wallet" size={14} color="#fff" solid />
+                    {!!home?.walletItemCount && home.walletItemCount > 0 && (
+                      <View style={styles.headerIconBadge}>
+                        <Text style={styles.headerIconBadgeText}>
+                          {home.walletItemCount > 99 ? '99+' : home.walletItemCount}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => { haptic.light(); router.push('/(tabs)/me'); }}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{(profile.full_name?.trim() || 'U')[0].toUpperCase()}</Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
               ) : (
                 <TouchableOpacity
                   style={styles.signInBtn}
@@ -203,59 +274,137 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ── Live now ── */}
-        <View style={styles.liveSection}>
-          <View style={styles.liveSectionHeader}>
-            <Text style={styles.liveSectionTitle}>Live now</Text>
-            <View style={styles.livePulse} />
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.liveRow}
-          >
-            <LiveModuleCard
-              icon={SECTIONS.local.icon}
-              name={SECTIONS.local.label}
-              description={SECTIONS.local.description}
-              stat={localCount !== null ? `${localCount} business${localCount !== 1 ? 'es' : ''}` : undefined}
-              color={SECTIONS.local.color}
-              onPress={() => router.push('/(tabs)/local')}
-            />
-            <LiveModuleCard
-              icon={SECTIONS.fetch.icon}
-              name={SECTIONS.fetch.label}
-              description={SECTIONS.fetch.description}
-              stat={fetchCount !== null ? `${fetchCount} active request${fetchCount !== 1 ? 's' : ''}` : undefined}
-              color={SECTIONS.fetch.color}
-              onPress={goToFetch}
-            />
-            <LiveModuleCard
-              icon={SECTIONS.shifts.icon}
-              name={SECTIONS.shifts.label}
-              description={SECTIONS.shifts.description}
-              stat={shiftsCount !== null ? `${shiftsCount} shift${shiftsCount !== 1 ? 's' : ''} open` : undefined}
-              color={SECTIONS.shifts.color}
+        {/* ── For you — personalised state cards ── */}
+        {home && (() => {
+          const cards: React.ReactNode[] = [];
+
+          if (home.activeDelivery) {
+            const d = home.activeDelivery;
+            const label =
+              d.status === 'collected' ? 'On its way to you'
+              : d.status === 'matched' ? 'A driver is on it'
+              : 'Looking for a driver';
+            cards.push(
+              <ForYouCard
+                key="delivery"
+                icon="box" color={SECTIONS.fetch.color}
+                tag="Your delivery" title={label}
+                sub={d.destination_area ? `To ${d.destination_area}` : 'Tap to track'}
+                onPress={() => router.push('/(customer)/dashboard')}
+              />
+            );
+          }
+          if (home.upcomingBooking) {
+            const b = home.upcomingBooking;
+            cards.push(
+              <ForYouCard
+                key="booking"
+                icon="calendar-check" color={SECTIONS.local.color}
+                tag="Your booking" title={b.service_name ?? 'Upcoming booking'}
+                sub={`${b.business_name ?? ''} · ${formatWhen(b.starts_at)}`.trim()}
+                onPress={() => router.push('/local-my-bookings')}
+              />
+            );
+          }
+          if (home.application) {
+            const a = home.application;
+            const t = a.status === 'accepted' ? "You're in! Shift accepted" : 'Application sent';
+            cards.push(
+              <ForYouCard
+                key="application"
+                icon="briefcase" color={SECTIONS.shifts.color}
+                tag="Your shift" title={t}
+                sub={a.title}
+                onPress={() => router.push('/my-shift-applications')}
+              />
+            );
+          }
+          if (home.rewardReady) {
+            const r = home.rewardReady;
+            cards.push(
+              <ForYouCard
+                key="reward"
+                icon="gift" color="#F59E0B"
+                tag="Reward ready" title="Free reward waiting"
+                sub={`At ${r.business_name ?? 'a local business'}`}
+                onPress={() => router.push({ pathname: '/local-business-detail', params: { id: r.business_id } })}
+              />
+            );
+          }
+          if (home.owner) {
+            const o = home.owner;
+            cards.push(
+              <ForYouCard
+                key="owner"
+                icon="store" color={colors.navy}
+                tag="Your business" title={o.primaryBusiness?.name ?? 'Business dashboard'}
+                sub={o.pendingBookings > 0 ? `${o.pendingBookings} upcoming booking${o.pendingBookings !== 1 ? 's' : ''}` : 'Manage your listing'}
+                onPress={() => router.push({ pathname: '/local-business-dashboard', params: o.primaryBusiness ? { businessId: o.primaryBusiness.id } : {} })}
+              />
+            );
+          }
+
+          if (cards.length === 0) return null;
+          return (
+            <View style={styles.forYouSection}>
+              <Text style={styles.forYouTitle}>For you</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.forYouRow}>
+                {cards}
+              </ScrollView>
+            </View>
+          );
+        })()}
+
+        {/* ── Quick actions — task verbs, role-aware ── */}
+        <View style={styles.quickSection}>
+          <View style={styles.quickGrid}>
+            {isDriver ? (
+              <QuickAction icon="route" label="My runs" color={SECTIONS.fetch.color}
+                onPress={() => router.push('/(driver)/dashboard')} />
+            ) : (
+              <QuickAction icon={SECTIONS.fetch.icon} label="Request" color={SECTIONS.fetch.color}
+                onPress={goToFetch} />
+            )}
+            <QuickAction icon="search" label="Shifts" color={SECTIONS.shifts.color}
               onPress={() => router.push('/(tabs)/shifts')}
-            />
-            <LiveModuleCard
-              icon={SECTIONS.spik.icon}
-              name={SECTIONS.spik.label}
-              description={SECTIONS.spik.description}
-              stat="2,845 words"
-              color={SECTIONS.spik.color}
-              onPress={() => router.push('/(tabs)/spik')}
-            />
-            <LiveModuleCard
-              icon={SECTIONS.games.icon}
-              name={SECTIONS.games.label}
-              description={SECTIONS.games.description}
-              stat="Spik games"
-              color={SECTIONS.games.color}
-              onPress={() => router.push('/games')}
-            />
-          </ScrollView>
+              badge={shiftsCount ? `${shiftsCount}` : undefined} />
+            <QuickAction icon={SECTIONS.local.icon} label="Marketplace" color={SECTIONS.local.color}
+              onPress={() => router.push('/(tabs)/local')} />
+            <QuickAction icon="gamepad" label="Games" color={SECTIONS.games.color}
+              onPress={() => router.push('/games')} />
+          </View>
         </View>
+
+        {/* ── Light sheet — navy band ends here, content curves into light ── */}
+        <View style={styles.lightSheet}>
+
+        {/* ── Guess da Wird daily teaser ── */}
+        {wird && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.wirdTeaser}
+              onPress={() => { haptic.medium(); router.push('/games/guess-da-wird'); }}
+              activeOpacity={0.9}
+            >
+              <View style={styles.wirdTeaserIcon}>
+                <FontAwesome5 name="puzzle-piece" size={18} color="#fff" solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.wirdTeaserTag}>GUESS DA WIRD · TODAY</Text>
+                <Text style={styles.wirdTeaserTitle}>
+                  {wird.played ? "You've played today — see your streak" : `Today's wird is ${wird.length} letters`}
+                </Text>
+                <Text style={styles.wirdTeaserSub}>
+                  {wird.played ? 'Come back the morn for a new wird' : `${wird.tries} tries · a peerie clue if you need it`}
+                </Text>
+              </View>
+              <View style={styles.wirdTeaserCta}>
+                <Text style={styles.wirdTeaserCtaText}>{wird.played ? 'View' : 'Play'}</Text>
+                <FontAwesome5 name="arrow-right" size={11} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ── Featured Shift — surfaces whenever an employer has boosted ── */}
         {featuredShift && (() => {
@@ -309,7 +458,7 @@ export default function HomeScreen() {
         {/* ── Featured Local — gated on subscription_tier = 'premium' ── */}
         {featuredOffer && (
           <View style={styles.section}>
-            <SectionHeader title="Featured Local" icon={SECTIONS.local.icon} color={SECTIONS.local.color} />
+            <SectionHeader title="Featured in the Marketplace" icon={SECTIONS.local.icon} color={SECTIONS.local.color} />
             <TouchableOpacity
               style={[styles.featuredOfferCard, { backgroundColor: SECTIONS.local.color }]}
               onPress={() => {
@@ -353,6 +502,44 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         )}
+
+        {/* ── Grow your business — role-gated, dismissible ── */}
+        {!growDismissed && (() => {
+          // Owner on free/pro tier → upgrade nudge
+          if (home?.owner && home.owner.tier !== 'premium') {
+            const tier = home.owner.tier ?? 'free';
+            return (
+              <View style={styles.section}>
+                <GrowCard
+                  icon="rocket"
+                  title={tier === 'pro' ? 'Go Premium — unlock bookings' : 'Reach more customers'}
+                  body={tier === 'pro'
+                    ? 'Premium adds in-app bookings, featured placement and richer loyalty tools.'
+                    : 'Featured placement on this home screen, loyalty cards, offers and bookings.'}
+                  cta="See plans"
+                  onPress={() => router.push({ pathname: '/local-business-dashboard', params: home.owner!.primaryBusiness ? { businessId: home.owner!.primaryBusiness.id } : {} })}
+                  onDismiss={() => setGrowDismissed(true)}
+                />
+              </View>
+            );
+          }
+          // Signed-in non-owner → list-your-business funnel entry
+          if (profile && !home?.owner && !isDriver) {
+            return (
+              <View style={styles.section}>
+                <GrowCard
+                  icon="store"
+                  title="Run a Shetland business?"
+                  body="List it free on OneShetland — get found by locals, take bookings, reward regulars."
+                  cta="List your business"
+                  onPress={() => router.push('/local-business-register')}
+                  onDismiss={() => setGrowDismissed(true)}
+                />
+              </View>
+            );
+          }
+          return null;
+        })()}
 
         {/* ── Loading / Error ── */}
         {loading && (
@@ -417,7 +604,7 @@ export default function HomeScreen() {
                     key={event.id}
                     style={[styles.eventCard, { borderLeftWidth: 4, borderLeftColor: SECTIONS.events.color }]}
                     activeOpacity={0.85}
-                    onPress={() => haptic.light()}
+                    onPress={() => openUrl(event.url)}
                   >
                     {event.image ? (
                       <Image source={{ uri: event.image }} style={styles.eventImage} />
@@ -450,7 +637,7 @@ export default function HomeScreen() {
                       key={notice.id}
                       style={[styles.noticeRow, i < feed.notices.length - 1 && styles.noticeRowBorder]}
                       activeOpacity={0.8}
-                      onPress={() => haptic.light()}
+                      onPress={() => openUrl(notice.url)}
                     >
                       <View style={[styles.noticeIcon, { backgroundColor: SECTIONS.notices.light }]}>
                         <FontAwesome5 name="bullhorn" size={12} color={SECTIONS.notices.color} />
@@ -468,16 +655,17 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* ── Latest Jobs ── */}
+            {/* ── Career vacancies (WP feed) — distinct from native Shifts marketplace ── */}
             {feed.jobs.length > 0 && (
               <View style={styles.section}>
-                <SectionHeader title="Latest Jobs" icon={SECTIONS.jobs.icon} color={SECTIONS.jobs.color} />
+                <SectionHeader title="Career vacancies" icon={SECTIONS.jobs.icon} color={SECTIONS.jobs.color} />
+                <Text style={styles.sectionSub}>Permanent &amp; contract roles from oneshetland.com · for casual work see Shifts</Text>
                 {feed.jobs.map((job) => (
                   <TouchableOpacity
                     key={job.id}
                     style={[styles.jobCard, { borderLeftWidth: 4, borderLeftColor: SECTIONS.jobs.color }]}
                     activeOpacity={0.85}
-                    onPress={() => haptic.light()}
+                    onPress={() => openUrl(job.url)}
                   >
                     {job.image ? (
                       <Image source={{ uri: job.image }} style={styles.jobLogo} />
@@ -505,21 +693,20 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* ── What's coming ── */}
-        <View style={styles.comingSection}>
-          <Text style={styles.comingSectionTitle}>What's coming to OneShetland</Text>
-          <Text style={styles.comingSectionSub}>
-            We're building the essential app for everyone who lives in, loves, or visits Shetland. Here's what's on the way.
-          </Text>
-          <View style={styles.comingGrid}>
-            <ComingSoonCard icon={SECTIONS.events.icon}    name={SECTIONS.events.label}    description={SECTIONS.events.description}    color={SECTIONS.events.color} />
-            <ComingSoonCard icon={SECTIONS.services.icon}  name={SECTIONS.services.label}  description={SECTIONS.services.description}  color={SECTIONS.services.color} />
-
-            <ComingSoonCard icon={SECTIONS.news.icon}      name={SECTIONS.news.label}      description={SECTIONS.news.description}      color={SECTIONS.news.color} />
-            <ComingSoonCard icon={SECTIONS.cruise.icon}    name={SECTIONS.cruise.label}    description={SECTIONS.cruise.description}    color={SECTIONS.cruise.color} />
-            <ComingSoonCard icon={SECTIONS.tourism.icon}   name={SECTIONS.tourism.label}   description={SECTIONS.tourism.description}   color={SECTIONS.tourism.color} />
-            <ComingSoonCard icon={SECTIONS.community.icon} name={SECTIONS.community.label} description={SECTIONS.community.description} color={SECTIONS.community.color} />
-          </View>
+        {/* ── What's coming — slim strip ── */}
+        <View style={styles.comingStrip}>
+          <Text style={styles.comingStripTitle}>More coming soon</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.comingStripRow}>
+            {[
+              SECTIONS.events, SECTIONS.services, SECTIONS.news,
+              SECTIONS.cruise, SECTIONS.tourism, SECTIONS.community,
+            ].map((s) => (
+              <View key={s.label} style={styles.comingChip}>
+                <FontAwesome5 name={s.icon as any} size={11} color={s.color} solid />
+                <Text style={styles.comingChipText}>{s.label}</Text>
+              </View>
+            ))}
+          </ScrollView>
         </View>
 
         {/* ── Footer ── */}
@@ -528,6 +715,8 @@ export default function HomeScreen() {
           <Text style={styles.footerText}>Everything Shetland, All in One Place</Text>
           <Text style={styles.footerBeta}>Beta · Your feedback helps shape this app</Text>
         </View>
+
+        </View>{/* ── end light sheet ── */}
 
       </ScrollView>
     </SafeAreaView>
@@ -538,8 +727,19 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.navy },
-  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
+  scroll:  { flex: 1, backgroundColor: colors.navy },
   content: { paddingBottom: 100 },
+
+  // Light "sheet" that the navy hero band curves into. Rounded top, lifts
+  // slightly over the navy so the transition reads as a panel, not a hard line.
+  lightSheet: {
+    backgroundColor: colors.screenBackground,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    minHeight: 500,
+  },
 
   // ── Hero ──
   hero: {
@@ -551,7 +751,7 @@ const styles = StyleSheet.create({
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   heroTaglineBlock: { flex: 1 },
-  heroRight: { flexDirection: 'column', alignItems: 'flex-end', gap: 6 },
+  heroRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logoWrap: {
     width: 52, height: 52, borderRadius: 26,
     backgroundColor: '#fff',
@@ -565,6 +765,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
+  // Wallet-icon circle matching the avatar's visual weight
+  headerIconBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+    position: 'relative',
+  },
+  headerIconBadge: {
+    position: 'absolute', top: -2, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: colors.accent,
+    borderWidth: 2, borderColor: colors.navy,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerIconBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', lineHeight: 12 },
   avatarText: { color: colors.white, fontSize: fontSize.sm, fontWeight: '700' },
 
   signInBtn: {
@@ -624,6 +840,82 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   sectionTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
+  sectionSub:   { fontSize: fontSize.xs, color: colors.textMuted, marginTop: -6, marginBottom: spacing.sm, lineHeight: 16 },
+
+  // ── For you ──
+  forYouSection: { paddingTop: spacing.xl },
+  forYouTitle:   { color: '#fff', fontSize: fontSize.md, fontWeight: '800', paddingHorizontal: spacing.lg, marginBottom: spacing.md },
+  forYouRow:     { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg },
+  forYouCard: {
+    width: 180, backgroundColor: colors.white, borderRadius: radius.lg,
+    padding: spacing.md, gap: 4, borderWidth: 1, borderColor: colors.border,
+  },
+  forYouIcon:      { width: 34, height: 34, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  forYouTag:       { fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  forYouCardTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, lineHeight: 18 },
+  forYouCardSub:   { fontSize: fontSize.xs, color: colors.textMuted },
+
+  // ── Quick actions ──
+  quickSection: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
+  quickGrid:    { flexDirection: 'row', gap: spacing.sm },
+  quickTile: {
+    flex: 1, alignItems: 'center', gap: 8,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    paddingVertical: 14, paddingHorizontal: 6,
+    borderWidth: 1, borderColor: colors.border,
+    // soft lift so the tiles read as pressable surfaces, not flat icons
+    shadowColor: '#0F1C26', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07, shadowRadius: 8, elevation: 2,
+  },
+  quickIcon: {
+    width: 48, height: 48, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  quickBadge: {
+    position: 'absolute', top: -5, right: -5,
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: colors.white,
+  },
+  quickBadgeText: { color: '#fff', fontSize: 9, fontWeight: '900' },
+  quickLabel:     { fontSize: fontSize.xs, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', lineHeight: 14 },
+
+  // ── Guess da Wird teaser ──
+  wirdTeaser: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: '#0EA5E9', borderRadius: radius.lg, padding: spacing.md,
+    shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 4,
+  },
+  wirdTeaserIcon:  { width: 44, height: 44, borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  wirdTeaserTag:   { color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  wirdTeaserTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '900', marginTop: 2 },
+  wirdTeaserSub:   { color: 'rgba(255,255,255,0.85)', fontSize: fontSize.xs, marginTop: 1 },
+  wirdTeaserCta:   { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.full },
+  wirdTeaserCtaText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+
+  // ── Grow your business ──
+  growCard: {
+    backgroundColor: colors.accent, borderRadius: radius.lg, padding: spacing.lg, gap: 6,
+  },
+  growDismiss: { position: 'absolute', top: 12, right: 12, zIndex: 2, padding: 4 },
+  growIcon:    { width: 40, height: 40, borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.85)', alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  growTitle:   { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
+  growBody:    { color: 'rgba(255,255,255,0.9)', fontSize: fontSize.sm, lineHeight: 20 },
+  growCta:     { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 9, borderRadius: radius.full, marginTop: 6 },
+  growCtaText: { color: colors.navy, fontSize: fontSize.sm, fontWeight: '800' },
+
+  // ── Coming strip ──
+  comingStrip:      { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
+  comingStripTitle: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700', marginBottom: spacing.sm },
+  comingStripRow:   { flexDirection: 'row', gap: 8, paddingRight: spacing.lg },
+  comingChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.white, borderRadius: radius.full,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  comingChipText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textSecondary ?? colors.textMuted },
 
   // ── Featured Local offer ──
   featuredOfferCard: {

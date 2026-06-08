@@ -259,7 +259,7 @@ export default function ShiftWorkerProfileScreen() {
       <View style={[styles.header, { borderBottomColor: S.color }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Me</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Shift profile</Text>
         <View style={{ width: 60 }} />
@@ -511,8 +511,8 @@ export default function ShiftWorkerProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {

@@ -40,7 +40,9 @@ export default function BookConfirmScreen() {
     startsAt:   string;
     endsAt:     string;
     lastMin?:   string;
+    giftId?:    string;
   }>();
+  const giftId = params.giftId || null;
 
   const [business, setBusiness] = useState<LocalBusiness | null>(null);
   const [service, setService]   = useState<BookService | null>(null);
@@ -84,9 +86,10 @@ export default function BookConfirmScreen() {
         startsAt:     startsAt.toISOString(),
         endsAt:       endsAt.toISOString(),
         pricePence:   service.price_pence,
-        depositPence,
+        depositPence: giftId ? 0 : depositPence,
         notes:        notes.trim() || null,
         status:       'confirmed',
+        giftId,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -284,8 +287,8 @@ function formatTime(d: Date): string {
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   dim:    { color: colors.textMuted },

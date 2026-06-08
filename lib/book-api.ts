@@ -322,6 +322,7 @@ export interface CreateBookingInput {
   depositPence:  number;     // snapshot (0 if no deposit)
   notes?:        string | null;
   status?:       BookingStatus;   // default 'confirmed' (Phase 3 will set 'pending_payment')
+  giftId?:       string | null;   // set when this booking was paid via a gift
 }
 
 /**
@@ -415,10 +416,20 @@ export async function createBooking(input: CreateBookingInput): Promise<BookBook
       deposit_pence: input.depositPence,
       notes:         input.notes ?? null,
       status:        input.status ?? 'confirmed',
+      gift_id:       input.giftId ?? null,
     })
     .select()
     .single();
   if (error) throw error;
+
+  // If this booking was paid by a gift, mark the gift as used.
+  if (input.giftId) {
+    await supabase
+      .from('book_gifts')
+      .update({ status: 'used', used_at: new Date().toISOString() })
+      .eq('id', input.giftId);
+  }
+
   return data as BookBooking;
 }
 
@@ -471,5 +482,111 @@ export async function setAcceptsBookings(
     .from('local_businesses')
     .update({ accepts_bookings: value })
     .eq('id', businessId);
+  if (error) throw error;
+}
+
+// ── Unit items (non-time-based things a business sells) ──────────────────────
+//
+// Tickets, class packs, day passes, gift vouchers. Optional finite stock,
+// optional expiry from purchase, optional multi-use (uses_per_purchase > 1
+// covers things like 10-class packs).
+
+export interface BookUnitItem {
+  id:                string;
+  business_id:       string;
+  name:              string;
+  description:       string | null;
+  price_pence:       number;
+  stock:             number | null;     // null = unlimited
+  valid_days:        number | null;     // null = never expires
+  uses_per_purchase: number;            // default 1
+  image_url:         string | null;
+  category:          string | null;
+  display_order:     number;
+  is_active:         boolean;
+  created_at:        string;
+  updated_at:        string;
+}
+
+export async function fetchBusinessUnitItems(
+  businessId: string,
+  includeInactive = false,
+): Promise<BookUnitItem[]> {
+  let q = supabase
+    .from('book_unit_items')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('display_order', { ascending: true })
+    .order('created_at',    { ascending: true });
+  if (!includeInactive) q = q.eq('is_active', true);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as BookUnitItem[];
+}
+
+export interface UnitItemWithBusiness extends BookUnitItem {
+  business_name?: string | null;
+}
+
+/**
+ * Active, in-stock unit items across all businesses — for the Marketplace feed.
+ * Sold-out items (stock === 0) are filtered out; unlimited (stock null) stay.
+ */
+export async function fetchActiveUnitItems(limit = 12): Promise<UnitItemWithBusiness[]> {
+  const { data, error } = await supabase
+    .from('book_unit_items')
+    .select('*')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  const available = (data ?? []).filter((i: any) => i.stock === null || i.stock > 0) as BookUnitItem[];
+  const bizIds = [...new Set(available.map(i => i.business_id))];
+  if (bizIds.length === 0) return available;
+
+  const { data: biz } = await supabase
+    .from('local_businesses')
+    .select('id, name')
+    .in('id', bizIds);
+  const nameMap = Object.fromEntries((biz ?? []).map(b => [b.id, b.name]));
+  return available.map(i => ({ ...i, business_name: nameMap[i.business_id] ?? null }));
+}
+
+export type UnitItemUpsertInput = Partial<Omit<BookUnitItem, 'id' | 'business_id' | 'created_at' | 'updated_at'>> & {
+  name:        string;
+  price_pence: number;
+};
+
+export async function createUnitItem(
+  businessId: string,
+  input: UnitItemUpsertInput,
+): Promise<BookUnitItem> {
+  const { data, error } = await supabase
+    .from('book_unit_items')
+    .insert({ business_id: businessId, ...input })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as BookUnitItem;
+}
+
+export async function updateUnitItem(
+  id: string,
+  patch: Partial<UnitItemUpsertInput>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('book_unit_items')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteUnitItem(id: string): Promise<void> {
+  // Soft-delete — preserves history on book_unit_purchases.
+  const { error } = await supabase
+    .from('book_unit_items')
+    .update({ is_active: false })
+    .eq('id', id);
   if (error) throw error;
 }

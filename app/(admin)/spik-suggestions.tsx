@@ -271,7 +271,7 @@ export default function SpikSuggestionsScreen() {
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <FontAwesome5 name="chevron-left" size={13} color="rgba(255,255,255,0.8)" />
-          <Text style={styles.backText}>Dashboard</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <View style={styles.headerTitles}>
           <Text style={styles.headerTitle}>Spik Suggestions</Text>
@@ -346,7 +346,7 @@ export default function SpikSuggestionsScreen() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
 
   header: {
     backgroundColor: colors.navy,

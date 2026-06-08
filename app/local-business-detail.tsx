@@ -23,7 +23,7 @@ import {
   formatOfferDiscount, daysRemaining,
   type LocalBusiness, type LoyaltyProgram, type LoyaltyCard, type LocalOffer,
 } from '@/lib/local-api';
-import { isBookableLive } from '@/lib/book-api';
+import { isBookableLive, fetchBusinessUnitItems, formatPence, type BookUnitItem } from '@/lib/book-api';
 import { supabase } from '@/lib/supabase';
 
 const S = SECTIONS.local;
@@ -51,11 +51,12 @@ export default function BusinessDetailScreen() {
     pay_amount: number | null;
     start_at: string | null;
   }>>([]);
+  const [unitItems, setUnitItems] = useState<BookUnitItem[]>([]);
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [b, p, o, s] = await Promise.all([
+      const [b, p, o, s, units] = await Promise.all([
         fetchBusiness(id),
         fetchLoyaltyProgram(id),
         fetchBusinessOffers(id),
@@ -69,11 +70,13 @@ export default function BusinessDetailScreen() {
           .limit(5)
           .then(({ data }) => data ?? [])
           .catch(() => [] as any[]),
+        fetchBusinessUnitItems(id, false).catch(() => [] as BookUnitItem[]),
       ]);
       setBusiness(b);
       setProgram(p);
       setOffers(o);
       setOpenShifts(s as any[]);
+      setUnitItems(units);
 
       if (profile) {
         const [c, isF, ids] = await Promise.all([
@@ -189,7 +192,7 @@ export default function BusinessDetailScreen() {
             hitSlop={12}
           >
             <FontAwesome5 name="chevron-left" size={13} color={S.color} />
-            <Text style={[styles.backText, { color: S.color }]}>Local</Text>
+            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
           </TouchableOpacity>
 
           <View style={styles.heroTop}>
@@ -243,6 +246,65 @@ export default function BusinessDetailScreen() {
               </View>
               <FontAwesome5 name="chevron-right" size={12} color="#fff" />
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── Tickets & passes (non-time-based unit items) ── */}
+        {unitItems.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Tickets &amp; passes</Text>
+            <View style={{ gap: 10 }}>
+              {unitItems.map(it => {
+                const soldOut = it.stock !== null && it.stock <= 0;
+                return (
+                  <View key={it.id} style={styles.unitCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.unitName}>{it.name}</Text>
+                      {it.description ? (
+                        <Text style={styles.unitDesc} numberOfLines={2}>{it.description}</Text>
+                      ) : null}
+                      <View style={styles.unitMetaRow}>
+                        <Text style={[styles.unitPrice, { color: S.color }]}>{formatPence(it.price_pence)}</Text>
+                        {it.uses_per_purchase > 1 && (
+                          <Text style={styles.unitMetaText}>· {it.uses_per_purchase} uses</Text>
+                        )}
+                        {it.valid_days !== null && (
+                          <Text style={styles.unitMetaText}>· {it.valid_days}d valid</Text>
+                        )}
+                        {it.stock !== null && it.stock <= 10 && it.stock > 0 && (
+                          <Text style={[styles.unitMetaText, { color: colors.error }]}>· {it.stock} left</Text>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.unitBtnCol}>
+                      <TouchableOpacity
+                        style={[
+                          styles.unitBuyBtn,
+                          { backgroundColor: soldOut ? colors.border : S.color },
+                        ]}
+                        onPress={() => router.push({ pathname: '/local-buy-unit', params: { itemId: it.id } })}
+                        disabled={soldOut}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={[styles.unitBuyText, soldOut && { color: colors.textMuted }]}>
+                          {soldOut ? 'Sold out' : 'Buy'}
+                        </Text>
+                      </TouchableOpacity>
+                      {!soldOut && (
+                        <TouchableOpacity
+                          style={[styles.unitGiftBtn, { borderColor: S.color }]}
+                          onPress={() => router.push({ pathname: '/local-gift', params: { kind: 'unit', itemId: it.id } })}
+                          activeOpacity={0.85}
+                        >
+                          <FontAwesome5 name="gift" size={10} color={S.color} solid />
+                          <Text style={[styles.unitGiftText, { color: S.color }]}>Gift</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
           </View>
         )}
 
@@ -488,8 +550,8 @@ function InfoRow({ icon, label, value, onPress }: {
 }
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.screenBackground },
-  scroll:  { flex: 1 },
+  safe:    { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: 40 },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: colors.textMuted, fontSize: fontSize.md },
@@ -523,6 +585,23 @@ const styles = StyleSheet.create({
   bookCtaIcon:  { width: 38, height: 38, borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
   bookCtaTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
   bookCtaSub:   { color: 'rgba(255,255,255,0.85)', fontSize: fontSize.xs, fontWeight: '600', marginTop: 1 },
+
+  // Unit items (tickets, class packs, day passes)
+  unitCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#fff', borderRadius: radius.lg,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
+  },
+  unitName:    { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  unitDesc:    { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 3, lineHeight: 17 },
+  unitMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 6 },
+  unitPrice:   { fontSize: fontSize.sm, fontWeight: '900' },
+  unitMetaText:{ fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  unitBtnCol:  { gap: 6, alignItems: 'stretch' },
+  unitBuyBtn:  { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.md, alignItems: 'center' },
+  unitBuyText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+  unitGiftBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10, borderRadius: radius.md, borderWidth: 1 },
+  unitGiftText:{ fontSize: 11, fontWeight: '800' },
 
   section:      { paddingHorizontal: spacing.md, marginTop: spacing.lg },
   sectionTitle: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 },

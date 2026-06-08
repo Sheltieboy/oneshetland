@@ -34,6 +34,8 @@ export default function GamesCentre() {
   const [stats, setStats]         = useState<UserGameStats | null>(null);
   const [bestSprint, setBestSprint] = useState<number>(0);
   const [bestSnap,   setBestSnap]   = useState<number>(0);
+  const [bestWird,   setBestWird]   = useState<number>(0);
+  const [bestMapIt,  setBestMapIt]  = useState<number>(0);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
   const [leaderboardGame, setLeaderboardGame] = useState<GameId>('spik_sprint');
   const [loading, setLoading]   = useState(true);
@@ -41,15 +43,19 @@ export default function GamesCentre() {
 
   const load = useCallback(async () => {
     try {
-      const [s, sprint, snap, lb] = await Promise.all([
-        profile ? fetchUserStats(profile.id).catch(() => null)            : Promise.resolve(null),
-        profile ? fetchMyBestScore(profile.id, 'spik_sprint').catch(() => 0) : Promise.resolve(0),
-        profile ? fetchMyBestScore(profile.id, 'spik_snap').catch(() => 0)   : Promise.resolve(0),
+      const [s, sprint, snap, wird, mapit, lb] = await Promise.all([
+        profile ? fetchUserStats(profile.id).catch(() => null)                    : Promise.resolve(null),
+        profile ? fetchMyBestScore(profile.id, 'spik_sprint').catch(() => 0)     : Promise.resolve(0),
+        profile ? fetchMyBestScore(profile.id, 'spik_snap').catch(() => 0)       : Promise.resolve(0),
+        profile ? fetchMyBestScore(profile.id, 'guess_da_wird').catch(() => 0)   : Promise.resolve(0),
+        profile ? fetchMyBestScore(profile.id, 'map_it').catch(() => 0)          : Promise.resolve(0),
         fetchTopScores(leaderboardGame, 'all', 10).catch(() => []),
       ]);
       setStats(s);
       setBestSprint(sprint);
       setBestSnap(snap);
+      setBestWird(wird);
+      setBestMapIt(mapit);
       setLeaderboard(lb);
     } finally {
       setLoading(false);
@@ -190,9 +196,21 @@ export default function GamesCentre() {
             />
             <GameRow
               game={GAMES.guess_da_wird}
-              best={null}
+              best={bestWird}
               accent="#0EA5E9"
-              onPress={() => { /* coming back soon */ }}
+              onPress={() => {
+                Haptics.selectionAsync();
+                router.push('/games/guess-da-wird');
+              }}
+            />
+            <GameRow
+              game={GAMES.map_it}
+              best={bestMapIt}
+              accent="#12B3D6"
+              onPress={() => {
+                Haptics.selectionAsync();
+                router.push('/games/map-it' as any);
+              }}
             />
           </View>
         </View>
@@ -203,7 +221,7 @@ export default function GamesCentre() {
 
           {/* Game switcher */}
           <View style={styles.lbSwitch}>
-            {(['spik_sprint', 'spik_snap', 'guess_da_wird'] as const).map(gid => {
+            {(['spik_sprint', 'spik_snap', 'guess_da_wird', 'map_it'] as const).map(gid => {
               const active = leaderboardGame === gid;
               return (
                 <TouchableOpacity
@@ -316,8 +334,8 @@ function GameRow({
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.screenBackground },
-  scroll:  { flex: 1 },
+  safe:    { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: 40 },
 
   header: {

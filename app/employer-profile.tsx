@@ -193,9 +193,9 @@ export default function EmployerProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
+  safe:   { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll: { flex: 1 },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.md, paddingBottom: 60 },
 
   header: {

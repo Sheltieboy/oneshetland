@@ -45,7 +45,7 @@ export default function MyCardsScreen() {
       <View style={[styles.header, { borderBottomColor: S.color }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Local</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>My cards</Text>
@@ -141,7 +141,7 @@ function CardRow({ card }: { card: LoyaltyCard }) {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
+  safe:   { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
 
   header: {

@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendPush } from '../_shared/send-push.ts';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -88,15 +90,35 @@ serve(async (req) => {
 
     const totalPence = (request.base_fee_pence ?? 0) + (request.waiting_fee_pence ?? 0);
 
-    // If there's a waiting fee, update the PaymentIntent amount before capturing
+    // If there's a waiting fee, update the PaymentIntent amount before capturing.
+    // Recompute the platform fee on the new total so it tracks the final
+    // amount charged (matters once the Fetch rate goes percentage-based).
+    //
+    // We only set application_fee_amount on the update if the original PI was
+    // authorised with one — i.e. against a connected driver account. PIs
+    // without a transfer_data destination cannot carry an application fee, so
+    // we GET the PI to find out reliably rather than guessing from local state.
     if ((request.waiting_fee_pence ?? 0) > 0) {
+      const updateBody: Record<string, string> = { amount: String(totalPence) };
+
+      const piGetRes = await fetch(
+        `https://api.stripe.com/v1/payment_intents/${request.payment_intent_id}`,
+        { headers: { 'Authorization': `Bearer ${stripeKey}` } },
+      );
+      const piExisting = await piGetRes.json();
+      if (piGetRes.ok && piExisting.application_fee_amount != null) {
+        const cfg = await getCommissionConfig(supabase, 'fetch');
+        const { fee_pence } = calculateCommission(totalPence, cfg, 'fetch');
+        updateBody.application_fee_amount = String(fee_pence);
+      }
+
       const updateRes = await fetch(`https://api.stripe.com/v1/payment_intents/${request.payment_intent_id}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${stripeKey}`,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({ amount: String(totalPence) }),
+        body: new URLSearchParams(updateBody),
       });
       if (!updateRes.ok) {
         const updateErr = await updateRes.json();

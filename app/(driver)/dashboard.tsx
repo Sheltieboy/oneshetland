@@ -311,7 +311,7 @@ export default function DriverDashboard() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <Pressable onPress={() => { haptic.light(); router.replace('/(tabs)'); }} style={styles.backToHome}>
+          <Pressable onPress={() => { haptic.light(); router.canGoBack() ? router.back() : router.replace('/(tabs)'); }} style={styles.backToHome}>
             <Text style={styles.backToHomeText}>‹ OneShetland</Text>
           </Pressable>
           <Animated.View style={[styles.headerInner, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>

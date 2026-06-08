@@ -18,6 +18,7 @@ import {
   formatOfferDiscount, daysRemaining,
   type LocalOffer,
 } from '@/lib/local-api';
+import { isBookableLive } from '@/lib/book-api';
 
 const S = SECTIONS.local;
 
@@ -50,7 +51,7 @@ export default function OffersScreen() {
       <View style={[styles.header, { borderBottomColor: S.color }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Local</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Offers</Text>
@@ -90,7 +91,14 @@ function OfferRow({ offer, claimed }: { offer: LocalOffer; claimed: boolean }) {
   return (
     <TouchableOpacity
       style={styles.card}
-      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: offer.business_id } })}
+      onPress={() => {
+        // Bookable business → straight to the booking screen; otherwise the profile
+        if (offer.business && isBookableLive(offer.business)) {
+          router.push({ pathname: '/local-book-business', params: { businessId: offer.business_id } });
+        } else {
+          router.push({ pathname: '/local-business-detail', params: { id: offer.business_id } });
+        }
+      }}
       activeOpacity={0.85}
     >
       <View style={[styles.discount, { backgroundColor: S.color }]}>
@@ -123,7 +131,7 @@ function OfferRow({ offer, claimed }: { offer: LocalOffer; claimed: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
 
   header: {

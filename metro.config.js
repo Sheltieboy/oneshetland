@@ -3,7 +3,15 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Use a custom resolver to force @supabase/supabase-js to its CJS build.
+// ── SVG → React component (react-native-svg-transformer) ────────────────────
+// .svg imports return a component you can render directly. Used by the Map It
+// game to render the Shetland blank-map asset without pulling in a heavy map
+// library.
+config.transformer.babelTransformerPath = require.resolve('react-native-svg-transformer/expo');
+config.resolver.assetExts = config.resolver.assetExts.filter(ext => ext !== 'svg');
+config.resolver.sourceExts = [...config.resolver.sourceExts, 'svg'];
+
+// ── Force @supabase/supabase-js to its CJS build ───────────────────────────
 // The .mjs build uses dynamic import() which Hermes rejects as invalid syntax.
 // All other packages keep normal resolution (including package exports).
 const originalResolveRequest = config.resolver.resolveRequest;

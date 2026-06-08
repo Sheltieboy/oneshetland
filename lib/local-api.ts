@@ -115,8 +115,8 @@ export interface LocalOffer {
   is_active:         boolean;
   redemption_count:  number;
   created_at:        string;
-  // joined
-  business?:         Pick<LocalBusiness, 'id' | 'name' | 'logo_url' | 'category'> | null;
+  // joined — includes bookability fields so callers can route to the booking screen
+  business?:         Pick<LocalBusiness, 'id' | 'name' | 'logo_url' | 'category' | 'accepts_bookings' | 'subscription_tier' | 'is_active'> | null;
   is_redeemed?:      boolean;
 }
 
@@ -419,7 +419,7 @@ export async function fetchActiveOffers(): Promise<LocalOffer[]> {
   if (businessIds.length === 0) return offers;
   const { data: biz } = await supabase
     .from('local_businesses')
-    .select('id, name, logo_url, category')
+    .select('id, name, logo_url, category, accepts_bookings, subscription_tier, is_active')
     .in('id', businessIds);
   const bizMap = Object.fromEntries((biz ?? []).map(b => [b.id, b]));
   return offers.map(o => ({ ...o, business: bizMap[o.business_id] ?? null }));
@@ -518,10 +518,27 @@ export async function fetchWalletTransactions(userId: string, limit = 50): Promi
   return txs.map(t => ({ ...t, business: t.business_id ? (bizMap[t.business_id] ?? null) : null }));
 }
 
-/** Start a top-up — returns Stripe clientSecret for the payment sheet */
-export async function startWalletTopUp(amountPence: number): Promise<{ clientSecret: string }> {
+/**
+ * Start a top-up.
+ *
+ * Two possible response shapes (mirrors Boost / Units / Gifts):
+ *   - { charged: true, payment_intent_id } when the user's saved card was
+ *     charged off-session successfully. Caller should immediately invoke
+ *     confirmWalletTopUp(payment_intent_id) to credit the balance.
+ *   - { clientSecret, payment_intent_id } when there's no saved card — the
+ *     caller should present the Stripe Payment Sheet with the clientSecret.
+ */
+export interface WalletTopUpResponse {
+  charged?:          boolean;
+  payment_intent_id: string;
+  clientSecret?:     string;
+}
+export async function startWalletTopUp(
+  amountPence: number,
+  useSavedCard = true,
+): Promise<WalletTopUpResponse> {
   const { data, error } = await supabase.functions.invoke('local-wallet-topup-intent', {
-    body: { amount_pence: amountPence },
+    body: { amount_pence: amountPence, use_saved_card: useSavedCard },
   });
   if (error) throw error;
   return data;
@@ -543,6 +560,45 @@ export async function payWithWallet(code: string, amountPence: number): Promise<
   });
   if (error) throw error;
   return data;
+}
+
+// ── Business owner: incoming wallet payments (receipts) ──────────────────────
+//
+// What the shop sees when customers pay them via wallet. Backed by the
+// SECURITY DEFINER RPC get_business_wallet_receipts (migration 033) so we
+// can return customer first names without widening profiles RLS.
+
+export interface BusinessWalletReceipt {
+  id:                  string;
+  created_at:          string;
+  /** What the customer paid from their wallet, in pence. */
+  gross_pence:         number;
+  /** Platform fee retained. NULL for rows written before migration 033. */
+  fee_pence:           number | null;
+  /**
+   * Cashback the business funded back to the customer (business-funded model,
+   * migration 034 onwards). NULL for rows written before migration 034.
+   */
+  cashback_pence:      number | null;
+  /**
+   * What hit the shop's Stripe Connect balance — gross − fee − cashback.
+   * NULL if fee_pence is unknown.
+   */
+  net_pence:           number | null;
+  customer_first_name: string | null;
+  stripe_transfer_id:  string | null;
+}
+
+export async function fetchBusinessWalletReceipts(
+  businessId: string,
+  limit = 20,
+): Promise<BusinessWalletReceipt[]> {
+  const { data, error } = await supabase.rpc('get_business_wallet_receipts', {
+    p_business_id: businessId,
+    p_limit:       limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as BusinessWalletReceipt[];
 }
 
 // ── Business owner: rotating code ─────────────────────────────────────────────
@@ -931,4 +987,114 @@ export async function fetchActiveBusinessCount(): Promise<number> {
     .select('id', { count: 'exact', head: true })
     .eq('is_active', true);
   return count ?? 0;
+}
+
+// ── My Wallet hub: passes & gifts ─────────────────────────────────────────────
+//
+// "Passes & vouchers" — unit purchases the user owns. Joins to the source
+// book_unit_items for name + business_id, and to local_businesses for the
+// business name. Filters to active passes (uses_remaining > 0, not expired).
+
+export interface MyPass {
+  id:                string;
+  item_id:           string;
+  business_id:       string;
+  uses_remaining:    number;
+  paid_amount_pence: number;
+  expires_at:        string | null;
+  created_at:        string;
+  item_name:         string | null;
+  business_name:     string | null;
+  /** True if this purchase was acquired by claiming a gift. */
+  from_gift:         boolean;
+}
+
+export async function fetchMyPasses(userId: string): Promise<MyPass[]> {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('book_unit_purchases')
+    .select(`
+      id, item_id, business_id, uses_remaining, paid_amount_pence,
+      expires_at, created_at, gift_id,
+      item:book_unit_items ( name ),
+      business:local_businesses ( name )
+    `)
+    .eq('owner_id', userId)
+    .gt('uses_remaining', 0)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((r: any) => ({
+    id:                r.id,
+    item_id:           r.item_id,
+    business_id:       r.business_id,
+    uses_remaining:    r.uses_remaining,
+    paid_amount_pence: r.paid_amount_pence,
+    expires_at:        r.expires_at,
+    created_at:        r.created_at,
+    item_name:         r.item?.name ?? null,
+    business_name:     r.business?.name ?? null,
+    from_gift:         !!r.gift_id,
+  }));
+}
+
+// "Gifts to claim" — gifts the user has claimed but not yet redeemed.
+// Unit gifts that already became book_unit_purchases rows show up as Passes,
+// not here. So this list is mainly:
+//   - booking gifts where claimed_by_user_id = me AND status = 'claimed' (slot
+//     not yet picked → routes into the booking picker with gift_id pre-attached)
+//
+// `kind` is preserved so the UI can route correctly.
+
+export interface MyGiftReceived {
+  id:                 string;
+  code:               string;
+  kind:               'unit' | 'booking';
+  status:             'claimed' | 'used';
+  business_id:        string;
+  business_name:      string | null;
+  /** Set when kind = 'booking' — the service the gift redeems. */
+  service_id:         string | null;
+  service_name:       string | null;
+  /** Set when kind = 'unit' — the item the gift becomes a purchase of. */
+  unit_item_id:       string | null;
+  unit_item_name:     string | null;
+  purchaser_name:     string | null;
+  message:            string | null;
+  claimed_at:         string;
+  expires_at:         string | null;
+}
+
+export async function fetchMyGiftsReceived(userId: string): Promise<MyGiftReceived[]> {
+  const { data, error } = await supabase
+    .from('book_gifts')
+    .select(`
+      id, code, kind, status, business_id, service_id, unit_item_id,
+      purchaser_name, message, claimed_at, expires_at,
+      business:local_businesses ( name ),
+      service:book_services ( name ),
+      unit_item:book_unit_items ( name )
+    `)
+    .eq('claimed_by_user_id', userId)
+    .in('status', ['claimed', 'used'])
+    .order('claimed_at', { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((r: any) => ({
+    id:             r.id,
+    code:           r.code,
+    kind:           r.kind,
+    status:         r.status,
+    business_id:    r.business_id,
+    business_name:  r.business?.name ?? null,
+    service_id:     r.service_id,
+    service_name:   r.service?.name ?? null,
+    unit_item_id:   r.unit_item_id,
+    unit_item_name: r.unit_item?.name ?? null,
+    purchaser_name: r.purchaser_name,
+    message:        r.message,
+    claimed_at:     r.claimed_at,
+    expires_at:     r.expires_at,
+  }));
 }

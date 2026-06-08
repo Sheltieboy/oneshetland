@@ -15,9 +15,8 @@ export default function CustomerLayout() {
   }
 
   if (!session) return <Redirect href="/(auth)/sign-in" />;
-  if (profile && (profile.role === 'admin' || profile.role === 'moderator')) {
-    return <Redirect href="/(admin)/dashboard" />;
-  }
+  // Admins/moderators can use the customer Fetch flow too — the admin
+  // dashboard is reachable from Me → Admin, not by hijacking other tabs.
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -27,7 +26,6 @@ export default function CustomerLayout() {
       <Stack.Screen name="request-detail" />
       <Stack.Screen name="previous-requests" />
       <Stack.Screen name="saved-addresses" />
-      <Stack.Screen name="payment-setup" />
     </Stack>
   );
 }

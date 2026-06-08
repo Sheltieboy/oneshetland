@@ -98,7 +98,7 @@ export default function SpikFilterScreen() {
           hitSlop={12}
         >
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Spik</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {filterKind === 'origin' ? 'Origin' : 'Usage'}
@@ -156,7 +156,7 @@ export default function SpikFilterScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.screenBackground },
+  safe:    { flex: 1, backgroundColor: colors.navy },
 
   header: {
     backgroundColor: colors.navy,

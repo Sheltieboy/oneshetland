@@ -88,7 +88,7 @@ function SuccessScreen({ onContinue }: { onContinue: () => void }) {
 }
 
 const successStyles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
   header: {
     backgroundColor: colors.navy,
     alignItems: 'center',
@@ -366,7 +366,7 @@ export default function ConnectBankScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
 
   header: {
     backgroundColor: colors.navy,

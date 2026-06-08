@@ -154,7 +154,7 @@ export default function EditProfileScreen() {
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color="#fff" />
-          <Text style={styles.backText}>Me</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit profile</Text>
         <View style={{ width: 60 }} />
@@ -326,8 +326,8 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
 
   header: {
     backgroundColor: colors.navy,

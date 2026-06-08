@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendPush } from '../_shared/send-push.ts';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -128,6 +130,14 @@ serve(async (req) => {
       });
     }
 
+    // Platform commission — only applied when routing to a connected account
+    // (no destination = no transfer = no application_fee_amount to deduct).
+    let applicationFeePence = 0;
+    if (driverProfile?.stripe_account_id) {
+      const cfg = await getCommissionConfig(supabase, 'fetch');
+      applicationFeePence = calculateCommission(baseFeePence, cfg, 'fetch').fee_pence;
+    }
+
     // Create a PaymentIntent with manual capture (pre-authorise only)
     const piBody: Record<string, string> = {
       amount: String(baseFeePence),
@@ -140,12 +150,17 @@ serve(async (req) => {
       'automatic_payment_methods[allow_redirects]': 'never',
       'metadata[request_id]': request_id,
       'metadata[customer_id]': request.customer_id,
-      description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'}`,
+      'metadata[application_fee_label]': 'OneShetland platform fee',
+      'metadata[application_fee_pence]': String(applicationFeePence),
+      description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'}${applicationFeePence > 0 ? ` (incl. £${(applicationFeePence / 100).toFixed(2)} platform fee)` : ''}`,
     };
 
     // Route funds to driver's Connect account if available
     if (driverProfile?.stripe_account_id) {
       piBody['transfer_data[destination]'] = driverProfile.stripe_account_id;
+      if (applicationFeePence > 0) {
+        piBody['application_fee_amount'] = String(applicationFeePence);
+      }
     }
 
     const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {

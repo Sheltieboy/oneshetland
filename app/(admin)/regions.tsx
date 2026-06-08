@@ -164,7 +164,7 @@ export default function AdminRegionsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>← Back</Text>
+            <Text style={styles.backLinkText}>‹ Back</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Regions</Text>
           <Text style={styles.subtitle}>

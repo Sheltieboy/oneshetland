@@ -31,7 +31,9 @@ import {
   requestNfcTile, NFC_TILE_URL_PREFIX,
   isBusinessFeatured, TIER_LABELS, TIER_PRICE,
   formatOfferDiscount, daysRemaining,
+  fetchBusinessWalletReceipts,
   type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType,
+  type BusinessWalletReceipt,
 } from '@/lib/local-api';
 import { setAcceptsBookings, fetchBusinessServices } from '@/lib/book-api';
 import { supabase } from '@/lib/supabase';
@@ -73,6 +75,7 @@ export default function BusinessDashboardScreen() {
   const [bookServiceCount, setBookServiceCount] = useState(0);
   const [savingPaymentToggle, setSavingPaymentToggle] = useState(false);
   const [savingPayoutToggle,  setSavingPayoutToggle]  = useState(false);
+  const [walletReceipts, setWalletReceipts] = useState<BusinessWalletReceipt[]>([]);
 
   // Backfill state — count of this user's shifts that don't yet have a
   // business linked (posted_as_business_id IS NULL). If > 0, we offer to
@@ -83,6 +86,13 @@ export default function BusinessDashboardScreen() {
   // Boost prices (loaded from admin_config)
   const [boostPrices, setBoostPrices] = useState<{ one: number | null; two: number | null; three: number | null }>({ one: null, two: null, three: null });
   const [boostBusy,   setBoostBusy]   = useState<1 | 2 | 3 | null>(null);
+
+  // Collapsible cards — collapsed by default; the header still shows the key status.
+  const [expanded, setExpanded] = useState<{ pay: boolean; plan: boolean; nfc: boolean }>({ pay: false, plan: false, nfc: false });
+  const toggleCard = (key: 'pay' | 'plan' | 'nfc') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     fetchBoostPrices().then(setBoostPrices).catch(() => {});
@@ -100,7 +110,7 @@ export default function BusinessDashboardScreen() {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -114,12 +124,18 @@ export default function BusinessDashboardScreen() {
         .is('posted_as_business_id', null)
         .then(({ count }) => count ?? 0)
         .catch(() => 0),
+      target.accepts_wallet
+        ? fetchBusinessWalletReceipts(target.id, 20)
+            .then(r => { console.log('[wallet receipts] got', r.length, 'rows'); return r; })
+            .catch(e => { console.warn('[wallet receipts] fetch failed:', e); return [] as BusinessWalletReceipt[]; })
+        : Promise.resolve([] as BusinessWalletReceipt[]),
     ]);
     setProgram(prog);
     setOffers(ofs);
     setCode(cd);
     setBookServiceCount(bookSvcs.length);
     setOrphanedShiftCount(orphanCount as number);
+    setWalletReceipts(receipts);
     setLoading(false);
     setRefreshing(false);
   }, [profile?.id]);
@@ -236,7 +252,7 @@ export default function BusinessDashboardScreen() {
         'Add a payment card in your account before subscribing.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+          { text: 'Add card', onPress: () => router.push('/payment-setup') },
         ],
       );
       return;
@@ -348,7 +364,7 @@ export default function BusinessDashboardScreen() {
         'Add a payment card in your account before purchasing a boost.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+          { text: 'Add card', onPress: () => router.push('/payment-setup') },
         ],
       );
       return;
@@ -555,7 +571,7 @@ export default function BusinessDashboardScreen() {
       <View style={[styles.header, { borderBottomColor: S.color }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Local</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{activeBusiness.name}</Text>
         <TouchableOpacity
@@ -623,18 +639,23 @@ export default function BusinessDashboardScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Payments & Payouts ── */}
+        {/* ── Plan, payments & payouts (merged) ── */}
         <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: colors.jobs + '18' }]}>
-              <FontAwesome5 name="credit-card" size={13} color={colors.jobs} solid />
+          <TouchableOpacity style={styles.cardHeader} onPress={() => toggleCard('plan')} activeOpacity={0.7}>
+            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+              <FontAwesome5 name="cog" size={13} color={S.color} solid />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Payments & Payouts</Text>
-              <Text style={styles.cardSub}>How this business pays and receives money</Text>
+              <Text style={styles.cardTitle}>Plan, payments &amp; payouts</Text>
+              <Text style={styles.cardSub}>
+                {isOnBoost(activeBusiness) ? 'Pro · Boost' : `${TIER_LABELS[activeBusiness.subscription_tier]} plan`} · billing, payouts &amp; NFC
+              </Text>
             </View>
-          </View>
+            <FontAwesome5 name={expanded.plan ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textMuted} />
+          </TouchableOpacity>
 
+          {expanded.plan && (<>
+          <Text style={styles.subSectionLabel}>Payments &amp; payouts</Text>
           {/* Payment card row */}
           <View style={styles.payToggleRow}>
             <View style={{ flex: 1 }}>
@@ -660,7 +681,7 @@ export default function BusinessDashboardScreen() {
           {(activeBusiness as any).use_business_payment && !(activeBusiness as any).has_business_payment_method && (
             <TouchableOpacity
               style={[styles.paySetupBtn, { borderColor: colors.jobs }]}
-              onPress={() => router.push({ pathname: '/(customer)/payment-setup', params: { businessId: activeBusiness.id } })}
+              onPress={() => router.push({ pathname: '/payment-setup', params: { businessId: activeBusiness.id } })}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="credit-card" size={11} color={colors.jobs} />
@@ -711,35 +732,24 @@ export default function BusinessDashboardScreen() {
             Toggle off to use your personal OneShetland payment method for this business.
             Each business can have its own independent setup.
           </Text>
-        </View>
 
-        {/* ── Plan ── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5
-                name={activeBusiness.subscription_tier === 'premium' ? 'crown' : activeBusiness.subscription_tier === 'pro' ? 'star' : 'circle'}
-                size={13} color={S.color} solid
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={styles.tierRow}>
-                <Text style={styles.cardTitle}>
-                  {isOnBoost(activeBusiness)
-                    ? 'Pro · Boost'
-                    : `${TIER_LABELS[activeBusiness.subscription_tier]} plan`}
-                </Text>
-                <Text style={styles.tierPrice}>{TIER_PRICE[activeBusiness.subscription_tier]}</Text>
-              </View>
-              {activeBusiness.subscription_until && (
-                <Text style={styles.tierExpiry}>
-                  {isOnBoost(activeBusiness)
-                    ? `Expires ${new Date(activeBusiness.subscription_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                    : `Renews ${new Date(activeBusiness.subscription_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
-                </Text>
-              )}
-            </View>
+          <View style={styles.subDivider} />
+          <Text style={styles.subSectionLabel}>Your plan</Text>
+          <View style={styles.tierRow}>
+            <Text style={styles.cardTitle}>
+              {isOnBoost(activeBusiness)
+                ? 'Pro · Boost'
+                : `${TIER_LABELS[activeBusiness.subscription_tier]} plan`}
+            </Text>
+            <Text style={styles.tierPrice}>{TIER_PRICE[activeBusiness.subscription_tier]}</Text>
           </View>
+          {activeBusiness.subscription_until && (
+            <Text style={styles.tierExpiry}>
+              {isOnBoost(activeBusiness)
+                ? `Expires ${new Date(activeBusiness.subscription_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                : `Renews ${new Date(activeBusiness.subscription_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+            </Text>
+          )}
 
           {/* Feature checklist — instantly clear what's unlocked vs locked */}
           <View style={styles.featureList}>
@@ -876,26 +886,17 @@ export default function BusinessDashboardScreen() {
               <FontAwesome5 name="external-link-alt" size={9} color={colors.textMuted} />
             </TouchableOpacity>
           )}
-        </View>
 
-        {/* ── NFC tile — Pro+ only; hidden otherwise (Plan card handles awareness) ── */}
-        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-                <FontAwesome5 name="wifi" size={13} color={S.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>NFC tile</Text>
-                <Text style={styles.cardSub}>
-                  {activeBusiness.nfc_status === 'active' ? '✓ Active · customers can tap to stamp' :
-                   activeBusiness.nfc_status === 'dispatched' ? 'Posted — stick it on the counter and tap it once with the app to activate' :
-                   activeBusiness.nfc_status === 'requested' ? 'Requested · we\'ll ship within 3 working days' :
-                   'Branded tap-to-stamp tile — included with your subscription'}
-                </Text>
-              </View>
-            </View>
-
+          {/* ── NFC tile — Pro+ only ── */}
+          {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (<>
+            <View style={styles.subDivider} />
+            <Text style={styles.subSectionLabel}>NFC tile</Text>
+            <Text style={styles.cardSub}>
+              {activeBusiness.nfc_status === 'active' ? '✓ Active · customers can tap to stamp' :
+               activeBusiness.nfc_status === 'dispatched' ? 'Posted — stick it on the counter and tap it once with the app to activate' :
+               activeBusiness.nfc_status === 'requested' ? 'Requested · we\'ll ship within 3 working days' :
+               'Branded tap-to-stamp tile — included with your subscription'}
+            </Text>
             {activeBusiness.nfc_token && (
               <View style={styles.nfcTokenRow}>
                 <Text style={styles.nfcTokenLabel}>Your tile URL</Text>
@@ -933,8 +934,9 @@ export default function BusinessDashboardScreen() {
                 <Text style={styles.upgradeBtnText}>Request my NFC tile</Text>
               </TouchableOpacity>
             )}
-          </View>
-        )}
+          </>)}
+          </>)}
+        </View>
 
         {/* ── Stripe Connect (for wallet) — Pro+ only ── */}
         {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
@@ -988,6 +990,11 @@ export default function BusinessDashboardScreen() {
             </View>
           ) : null}
         </View>
+        )}
+
+        {/* ── Wallet payments received — Pro+, only when wallet accepted ── */}
+        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && activeBusiness.accepts_wallet && (
+          <WalletReceiptsCard receipts={walletReceipts} accentColor={S.color} />
         )}
 
         {/* ── Loyalty programme — Pro+ only ── */}
@@ -1073,6 +1080,14 @@ export default function BusinessDashboardScreen() {
                 <FontAwesome5 name="list" size={11} color={S.color} solid />
                 <Text style={[styles.bookActionText, { color: S.color }]}>Bookings</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/local-book-units', params: { businessId: activeBusiness.id } })}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="ticket-alt" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Units</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -1149,6 +1164,111 @@ export default function BusinessDashboardScreen() {
       />
     </SafeAreaView>
   );
+}
+
+// ── Wallet payments received card ────────────────────────────────────────────
+//
+// Shows the shop the money flowing in from wallet pay-at-till. Each row lists
+// what the customer paid, what the platform retained, and what hit the shop's
+// Connect balance. Legacy rows (pre-migration 033) show "—" for the fee/net
+// because their fee_pence is NULL.
+
+function WalletReceiptsCard({
+  receipts, accentColor,
+}: {
+  receipts: BusinessWalletReceipt[];
+  accentColor: string;
+}) {
+  // Week total = sum of net amounts for receipts in the last 7 days.
+  // We sum gross when net is unknown (legacy rows) so the headline is
+  // not artificially low — but flag it visually.
+  const weekStart = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recent    = receipts.filter(r => new Date(r.created_at).getTime() >= weekStart);
+  const weekNetTotal = recent.reduce(
+    (sum, r) => sum + (r.net_pence ?? r.gross_pence),
+    0,
+  );
+  const hasLegacy = recent.some(r => r.net_pence === null);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.cardIcon, { backgroundColor: accentColor + '18' }]}>
+          <FontAwesome5 name="pound-sign" size={13} color={accentColor} solid />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>Wallet payments received</Text>
+          <Text style={styles.cardSub}>
+            {recent.length === 0
+              ? 'No wallet payments in the last 7 days yet'
+              : `£${(weekNetTotal / 100).toFixed(2)}${hasLegacy ? '+' : ''} this week · ${recent.length} payment${recent.length === 1 ? '' : 's'}`}
+          </Text>
+        </View>
+      </View>
+
+      {receipts.length > 0 && (
+        <View style={styles.receiptList}>
+          {receipts.slice(0, 10).map((r, i) => (
+            <View
+              key={r.id}
+              style={[styles.receiptRow, i < Math.min(receipts.length, 10) - 1 && styles.receiptRowBorder]}
+            >
+              <View style={styles.receiptTopLine}>
+                <Text style={styles.receiptWho} numberOfLines={1}>
+                  {r.customer_first_name ?? 'Customer'}
+                </Text>
+                <Text style={styles.receiptTime}>
+                  {formatReceiptTime(r.created_at)}
+                </Text>
+              </View>
+              <View style={styles.receiptBreakdown}>
+                <Text style={styles.receiptGross}>£{(r.gross_pence / 100).toFixed(2)} paid</Text>
+                <Text style={styles.receiptSep}>·</Text>
+                <Text style={[styles.receiptNet, { color: accentColor }]}>
+                  {r.net_pence === null ? 'breakdown not recorded' : `£${(r.net_pence / 100).toFixed(2)} to you`}
+                </Text>
+                {r.fee_pence !== null && (
+                  <>
+                    <Text style={styles.receiptSep}>·</Text>
+                    <Text style={styles.receiptFee}>£{(r.fee_pence / 100).toFixed(2)} fee</Text>
+                  </>
+                )}
+                {r.cashback_pence !== null && r.cashback_pence > 0 && (
+                  <>
+                    <Text style={styles.receiptSep}>·</Text>
+                    <Text style={styles.receiptCashback}>£{(r.cashback_pence / 100).toFixed(2)} cashback</Text>
+                  </>
+                )}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function formatReceiptTime(iso: string): string {
+  const d   = new Date(iso);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth()    === now.getMonth() &&
+    d.getDate()     === now.getDate();
+  if (sameDay) {
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth()    === yesterday.getMonth() &&
+    d.getDate()     === yesterday.getDate();
+  if (isYesterday) {
+    return 'Yesterday ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
+    ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Loyalty editor modal ─────────────────────────────────────────────────────
@@ -1280,8 +1400,8 @@ function LoyaltyModal({
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
@@ -1324,6 +1444,10 @@ const styles = StyleSheet.create({
   tierRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tierPrice:  { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '700' },
   tierExpiry: { fontSize: 10, color: colors.textLight, fontWeight: '600', marginTop: 2 },
+
+  // Merged-card sub-sections
+  subSectionLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  subDivider:      { height: 1, backgroundColor: colors.border, marginTop: 16, marginBottom: 14 },
 
   // Plan card feature checklist
   featureList: { gap: 8, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
@@ -1382,8 +1506,23 @@ const styles = StyleSheet.create({
   cashbackPill: { flex: 1, paddingVertical: 8, alignItems: 'center', borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, backgroundColor: '#fff' },
   cashbackPillText: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textPrimary },
 
-  bookActionsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  bookActionBtn:  { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: radius.md, borderWidth: 1.5, backgroundColor: '#fff' },
+  // Wallet receipts list
+  receiptList:       { marginTop: 12 },
+  receiptRow:        { paddingVertical: 10, gap: 4 },
+  receiptRowBorder:  { borderBottomWidth: 1, borderBottomColor: colors.border },
+  receiptTopLine:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  receiptWho:        { flex: 1, fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  receiptTime:       { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  receiptBreakdown:  { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  receiptGross:      { fontSize: fontSize.xs, color: colors.textMuted },
+  receiptNet:        { fontSize: fontSize.xs, fontWeight: '800' },
+  receiptFee:        { fontSize: fontSize.xs, color: colors.textLight },
+  receiptCashback:   { fontSize: fontSize.xs, color: colors.textLight },
+  receiptSep:        { fontSize: fontSize.xs, color: colors.textLight },
+
+  // 2×2 grid — four buttons don't fit on one row without the labels overflowing the borders
+  bookActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  bookActionBtn:  { flexGrow: 1, flexBasis: '47%', minWidth: 130, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 8, borderRadius: radius.md, borderWidth: 1.5, backgroundColor: '#fff' },
   bookActionText: { fontSize: fontSize.xs, fontWeight: '800' },
 
   offerLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border },

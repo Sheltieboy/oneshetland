@@ -519,7 +519,7 @@ function ConfettiBurst({ trigger }: { trigger: number }) {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
+  safe:   { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {

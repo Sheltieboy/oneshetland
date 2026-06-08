@@ -79,7 +79,7 @@ export default function GameStatsScreen() {
           hitSlop={12}
         >
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Games</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <View style={[styles.headerIconPill, { backgroundColor: S.color + '28' }]}>
@@ -253,8 +253,8 @@ function Stat({ label, value, accent }: { label: string; value: number; accent?:
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.screenBackground },
-  scroll:  { flex: 1 },
+  safe:    { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.md, paddingBottom: 40 },
 
   header: {

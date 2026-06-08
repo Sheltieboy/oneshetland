@@ -220,8 +220,8 @@ export default function NewOfferScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: spacing.md },
 
   header: {

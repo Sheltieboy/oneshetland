@@ -129,7 +129,7 @@ export default function MyPostedShiftsScreen() {
         'Add a payment card in your account before boosting a shift.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+          { text: 'Add card', onPress: () => router.push('/payment-setup') },
         ],
       );
       return;
@@ -386,7 +386,7 @@ export default function MyPostedShiftsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
+  safe:   { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {

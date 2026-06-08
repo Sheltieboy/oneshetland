@@ -109,7 +109,7 @@ export default function DriverApprovalsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>← Back</Text>
+            <Text style={styles.backLinkText}>‹ Back</Text>
           </TouchableOpacity>
           <View style={styles.brandRow}>
             <View style={styles.logoCircle}>

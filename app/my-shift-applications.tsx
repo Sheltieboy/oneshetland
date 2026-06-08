@@ -360,7 +360,7 @@ export default function MyShiftApplicationsScreen() {
       <View style={[styles.header, { borderBottomColor: S.color }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Me</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My applications</Text>
         <View style={{ width: 60 }} />
@@ -420,7 +420,7 @@ export default function MyShiftApplicationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
+  safe:   { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {

@@ -38,7 +38,8 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/t/" }
+            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/t/" },
+            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/g/" }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         }

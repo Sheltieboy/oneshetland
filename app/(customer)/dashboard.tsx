@@ -34,7 +34,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 // Typed-routes workaround
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const PAYMENT_SETUP_HREF = '/(customer)/payment-setup' as any;
+const PAYMENT_SETUP_HREF = '/payment-setup' as any;
 
 interface AvailableRun {
   id: string;
@@ -198,9 +198,8 @@ export default function CustomerDashboard() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <Pressable onPress={() => { haptic.light(); router.replace('/(tabs)'); }} style={styles.backToHome}>
-            <Text style={styles.backToHomeText}>‹ OneShetland</Text>
-          </Pressable>
+          {/* Back button removed — the customer dashboard is rendered
+              inline in the Fetch tab, so the bottom tab bar is the way out. */}
           <Animated.View style={[styles.headerInner, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.greeting}>{getGreeting()}, <Text style={styles.greetingName}>{firstName} 👋</Text></Text>

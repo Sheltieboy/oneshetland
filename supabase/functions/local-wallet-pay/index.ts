@@ -1,6 +1,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@13?target=deno';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
+
+// Stripe API version pinned via header below — kept aligned with authorise-payment.
+const STRIPE_API_VERSION = '2023-10-16';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +19,7 @@ const corsHeaders = {
  *   - validates code
  *   - debits customer's wallet
  *   - credits cashback (if business has cashback_percent > 0)
- *   - transfers funds to business's Stripe Connect account (minus 1.5% platform fee)
+ *   - transfers funds to business's Stripe Connect account (minus platform fee — see fees.wallet.* in admin_config)
  *
  * Body: { code: string, amount_pence: number }
  * Returns: { balance_pence: number, cashback_pence: number }
@@ -80,10 +84,24 @@ serve(async (req) => {
       return json({ error: 'Insufficient balance — top up first' }, 402);
     }
 
-    // Calculate cashback (1.5% platform fee taken from the merchant side)
+    // Cashback is BUSINESS-FUNDED — comes out of the merchant's transfer.
+    // The customer's wallet still gets the credit; the business absorbs the
+    // cost of the loyalty incentive they themselves set. See migration 034.
     const cashbackPence = Math.floor(amount_pence * (business.cashback_percent ?? 0) / 100);
-    const platformFee   = Math.floor(amount_pence * 0.015);   // 1.5%
-    const transferAmount = amount_pence - platformFee;
+
+    // Platform commission — admin-editable, see fees.wallet.* in admin_config.
+    const walletCfg = await getCommissionConfig(svc, 'wallet');
+    const platformFee = calculateCommission(amount_pence, walletCfg, 'wallet').fee_pence;
+    const transferAmount = amount_pence - platformFee - cashbackPence;
+
+    // Refuse if the business would receive nothing (or negative) after fee +
+    // cashback — typically only happens if a business sets an extreme cashback
+    // rate that combined with the platform fee exceeds the payment.
+    if (transferAmount < 1) {
+      return json({
+        error: 'This payment can\'t be processed — the business\'s cashback rate and platform fee together exceed the payment amount.',
+      }, 400);
+    }
 
     // Debit customer wallet
     const newBalance = currentBalance - amount_pence + cashbackPence;
@@ -95,21 +113,37 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id' });
 
-    // Stripe Connect transfer
+    // Stripe Connect transfer — raw fetch (no SDK) to avoid the esm.sh Stripe
+    // build's Node-compat shim, which crashes under newer Supabase edge
+    // runtimes. Same pattern as authorise-payment.
     let transferId: string | null = null;
     try {
-      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
-        apiVersion: '2023-10-16',
-        httpClient: Stripe.createFetchHttpClient(),
-      });
-      const transfer = await stripe.transfers.create({
-        amount: transferAmount,
-        currency: 'gbp',
+      const transferBody = new URLSearchParams({
+        amount:      String(transferAmount),
+        currency:    'gbp',
         destination: business.stripe_account_id,
-        description: `OneShetland Local payment from ${user.id.slice(0, 8)}`,
-        metadata: { user_id: user.id, business_id: business.id },
+        description: `OneShetland Marketplace payment from ${user.id.slice(0, 8)} (£${(platformFee / 100).toFixed(2)} platform fee${cashbackPence > 0 ? ` + £${(cashbackPence / 100).toFixed(2)} cashback to customer` : ''})`,
+        'metadata[user_id]':               user.id,
+        'metadata[business_id]':           business.id,
+        'metadata[application_fee_label]': 'OneShetland platform fee',
+        'metadata[application_fee_pence]': String(platformFee),
+        'metadata[cashback_to_customer_pence]': String(cashbackPence),
       });
-      transferId = transfer.id;
+
+      const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
+        method: 'POST',
+        headers: {
+          'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+          'Content-Type':   'application/x-www-form-urlencoded',
+          'Stripe-Version': STRIPE_API_VERSION,
+        },
+        body: transferBody,
+      });
+      const transferJson = await transferRes.json();
+      if (!transferRes.ok) {
+        throw new Error(transferJson.error?.message ?? `Stripe transfer failed (HTTP ${transferRes.status})`);
+      }
+      transferId = transferJson.id;
     } catch (stripeErr) {
       console.error('[local-wallet-pay] Stripe transfer failed:', stripeErr);
       // Refund customer
@@ -127,6 +161,8 @@ serve(async (req) => {
         business_id: business.id,
         type: 'spend',
         amount_pence: -amount_pence,
+        platform_fee_pence: platformFee,
+        cashback_pence: cashbackPence,
         stripe_transfer_id: transferId,
         description: `Payment at ${business.name}`,
       },

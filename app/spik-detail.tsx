@@ -227,7 +227,7 @@ function BackBar({ color }: { color: string }) {
   return (
     <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
       <FontAwesome5 name="chevron-left" size={13} color={color} />
-      <Text style={[styles.backText, { color }]}>Back to all words</Text>
+      <Text style={[styles.backText, { color }]}>Back</Text>
     </TouchableOpacity>
   );
 }

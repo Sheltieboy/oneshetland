@@ -10,7 +10,7 @@ import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { haptic } from '@/lib/haptics';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const PAYMENT_SETUP_HREF = '/(customer)/payment-setup' as any;
+const PAYMENT_SETUP_HREF = '/payment-setup' as any;
 
 // Tint colour per category for the icon box
 const CATEGORY_TINT: Record<string, { bg: string; emoji: string }> = {

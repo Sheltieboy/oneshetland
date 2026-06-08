@@ -1,11 +1,37 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@13?target=deno';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const STRIPE_API_VERSION = '2023-10-16';
+
+function stripePostHeaders(): HeadersInit {
+  return {
+    'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+    'Content-Type':   'application/x-www-form-urlencoded',
+    'Stripe-Version': STRIPE_API_VERSION,
+  };
+}
+async function listSavedCard(customerId: string): Promise<string | null> {
+  const res = await fetch(
+    `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
+    { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } },
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message ?? `Stripe payment_methods list failed (HTTP ${res.status})`);
+  return data.data?.[0]?.id ?? null;
+}
+async function createPaymentIntent(params: Record<string, string>): Promise<any> {
+  const res  = await fetch('https://api.stripe.com/v1/payment_intents', {
+    method: 'POST', headers: stripePostHeaders(), body: new URLSearchParams(params),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error?.message ?? `Stripe PaymentIntent failed (HTTP ${res.status})`);
+  return json;
+}
 
 /**
  * create-boost-intent
@@ -79,20 +105,13 @@ serve(async (req) => {
       });
     }
 
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
-      apiVersion: '2023-10-16',
-      httpClient: Stripe.createFetchHttpClient(),
-    });
-
-    const intentParams = {
-      amount:      299,
+    const baseParams: Record<string, string> = {
+      amount:      '299',
       currency:    'gbp',
-      metadata: {
-        shift_id,
-        employer_id: user.id,
-        type:        'shift_boost',
-      },
       description: `OneShetland Shifts — Boost: "${shift.title}"`,
+      'metadata[shift_id]':    shift_id,
+      'metadata[employer_id]': user.id,
+      'metadata[type]':        'shift_boost',
     };
 
     // ── Mode 1: charge saved card off-session ─────────────────────────────────
@@ -111,26 +130,20 @@ serve(async (req) => {
         });
       }
 
-      // Get the customer's default (most recently added) payment method
-      const paymentMethods = await stripe.paymentMethods.list({
-        customer: customerId,
-        type:     'card',
-        limit:    1,
-      });
-      const pm = paymentMethods.data[0];
-      if (!pm) {
+      const pmId = await listSavedCard(customerId);
+      if (!pmId) {
         return new Response(JSON.stringify({ error: 'No saved card found. Please update your payment card in account settings.' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
       // Confirm immediately — off_session means no 3DS prompt for small amounts
-      const paymentIntent = await stripe.paymentIntents.create({
-        ...intentParams,
+      const paymentIntent = await createPaymentIntent({
+        ...baseParams,
         customer:       customerId,
-        payment_method: pm.id,
-        confirm:        true,
-        off_session:    true,
+        payment_method: pmId,
+        confirm:        'true',
+        off_session:    'true',
       });
 
       if (paymentIntent.status !== 'succeeded') {
@@ -146,7 +159,10 @@ serve(async (req) => {
     }
 
     // ── Mode 2: return clientSecret for PaymentSheet (fallback / no saved card) ──
-    const paymentIntent = await stripe.paymentIntents.create(intentParams);
+    const paymentIntent = await createPaymentIntent({
+      ...baseParams,
+      'automatic_payment_methods[enabled]': 'true',
+    });
 
     return new Response(
       JSON.stringify({ clientSecret: paymentIntent.client_secret }),

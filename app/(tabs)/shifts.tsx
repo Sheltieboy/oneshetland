@@ -242,7 +242,7 @@ function BoostSheet({
         'Add a payment card in your account before boosting a shift.',
         [
           { text: 'Not now', style: 'cancel', onPress: onDismiss },
-          { text: 'Add card', onPress: () => { onDismiss(); router.push('/(customer)/payment-setup'); } },
+          { text: 'Add card', onPress: () => { onDismiss(); router.push('/payment-setup'); } },
         ],
       );
       return;

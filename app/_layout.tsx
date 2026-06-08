@@ -1,14 +1,18 @@
+import 'react-native-gesture-handler';   // must be first import in the entry file
 import { useEffect, useState, useRef, Component, ReactNode } from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { registerPushToken } from '@/lib/notifications';
 import { SplashAnimation } from '@/components/SplashAnimation';
 import { BrandedAlertProvider } from '@/components/BrandedAlert';
+import { INTRO_SEEN_KEY } from './intro';
 
 // Temporary error boundary — catches JS crashes and shows the error
 // so we can diagnose the TestFlight crash. Remove once stable.
@@ -49,6 +53,13 @@ function RootNavigator() {
   // out when both (a) auth has resolved and (b) its own entrance + hold finished.
   const [splashGone, setSplashGone] = useState(false);
 
+  // First-launch intro tour gate. We track whether the AsyncStorage check has
+  // completed (introCheckDone) and what it found (introSeen). Until the check
+  // resolves we treat the user as if they HAVE seen it, to avoid flashing the
+  // tour past returning users while the lookup is in flight.
+  const [introCheckDone, setIntroCheckDone] = useState(false);
+  const [introSeen,      setIntroSeen]      = useState(true);
+
   useEffect(() => {
     Linking.getInitialURL().then(url => {
       if (url) {
@@ -61,6 +72,14 @@ function RootNavigator() {
     }).catch(() => setLinkCheckDone(true));
   }, []);
 
+  // Check whether the user has seen the first-launch intro tour.
+  useEffect(() => {
+    AsyncStorage.getItem(INTRO_SEEN_KEY)
+      .then(v => setIntroSeen(v === '1'))
+      .catch(() => setIntroSeen(true))   // fail closed — never re-show on storage error
+      .finally(() => setIntroCheckDone(true));
+  }, []);
+
   // Register for push notifications once the user is fully loaded
   useEffect(() => {
     if (session?.user?.id && profile) {
@@ -68,9 +87,28 @@ function RootNavigator() {
     }
   }, [session?.user?.id, profile]);
 
+  // Separate effect for the intro gate. Reads AsyncStorage fresh on every
+  // segments-change so the moment intro.tsx writes the flag and replaces to
+  // (tabs), the next gate evaluation sees the updated value and does NOT
+  // redirect back — avoiding a loop.
+  useEffect(() => {
+    if (!linkCheckDone) return;
+    if (launchedViaDeepLink.current) return;
+    if ((segments as string[])[0] === 'intro') return;
+    AsyncStorage.getItem(INTRO_SEEN_KEY).then(v => {
+      if (v !== '1') router.replace('/intro');
+    }).catch(() => { /* fail open — assume seen */ });
+  }, [segments, linkCheckDone]);
+
   useEffect(() => {
     if (loading) return;
     if (!linkCheckDone) return;
+    if (!introCheckDone) return;
+
+    // Don't run sign-in routing while the user is in the intro flow — let the
+    // intro finish handler own the navigation. Otherwise this effect could
+    // race the intro's router.replace.
+    if ((segments as string[])[0] === 'intro') return;
 
     const inAuthGroup     = segments[0] === '(auth)';
     const inCustomerGroup = segments[0] === '(customer)';
@@ -96,7 +134,9 @@ function RootNavigator() {
     // (universal link / NFC tile) — otherwise we trample the link target.
     const isOnDeepLinkRoute =
       (segments as string[])[0] === 't' ||
-      (segments as string[])[0] === 'nfc';
+      (segments as string[])[0] === 'nfc' ||
+      (segments as string[])[0] === 'g' ||
+      (segments as string[])[0] === 'driver';
 
     if (!launchedViaDeepLink.current && !isOnDeepLinkRoute) {
       if (inAuthGroup || (segments as string[])[0] === 'index' || segments.length === 0) {
@@ -111,7 +151,7 @@ function RootNavigator() {
     if (inDriverGroup && profile.role === 'customer') {
       router.replace('/(tabs)');
     }
-  }, [session, profile, loading, segments, linkCheckDone]);
+  }, [session, profile, loading, segments, linkCheckDone, introCheckDone, introSeen]);
 
   // The Stack renders behind the splash overlay so we get a true cross-fade
   // when the splash dissolves at the end of its animation.
@@ -120,6 +160,7 @@ function RootNavigator() {
       {!loading && (
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
+          <Stack.Screen name="intro" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(customer)" />
           <Stack.Screen name="(driver)" />
@@ -143,6 +184,8 @@ function RootNavigator() {
           <Stack.Screen name="local-business-register" />
           <Stack.Screen name="local-business-dashboard" />
           <Stack.Screen name="local-my-cards" />
+          <Stack.Screen name="local-my-passes" />
+          <Stack.Screen name="local-my-gifts" />
           <Stack.Screen name="local-stamp-scanner" />
           <Stack.Screen name="local-offers" />
           <Stack.Screen name="local-offer-new" />
@@ -150,12 +193,20 @@ function RootNavigator() {
           <Stack.Screen name="local-pay" />
           <Stack.Screen name="nfc/[token]" />
           <Stack.Screen name="t/[token]" />
+          <Stack.Screen name="g/[code]" />
+          <Stack.Screen name="driver/connect-return" />
           <Stack.Screen name="games/index" />
           <Stack.Screen name="games/spik-sprint" />
           <Stack.Screen name="games/spik-snap" />
+          <Stack.Screen name="games/guess-da-wird" />
+          <Stack.Screen name="games/map-it" />
           <Stack.Screen name="games/stats" />
           <Stack.Screen name="fetch-about" />
           <Stack.Screen name="fetch-about-driver" />
+          <Stack.Screen name="payment-setup" />
+          <Stack.Screen name="local-book-units" />
+          <Stack.Screen name="local-buy-unit" />
+          <Stack.Screen name="local-gift" />
           <Stack.Screen name="(admin)/email-centre" />
           <Stack.Screen name="(admin)/compliance" />
         </Stack>
@@ -163,7 +214,7 @@ function RootNavigator() {
 
       {!splashGone && (
         <SplashAnimation
-          ready={!loading && linkCheckDone}
+          ready={!loading && linkCheckDone && introCheckDone}
           onDone={() => setSplashGone(true)}
         />
       )}
@@ -183,18 +234,22 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <SafeAreaProvider>
-        {STRIPE_KEY ? (
-          <StripeProvider
-            publishableKey={STRIPE_KEY}
-            merchantIdentifier="merchant.com.oneshetland.app"
-          >
-            {content}
-          </StripeProvider>
-        ) : (
-          content
-        )}
-      </SafeAreaProvider>
+      {/* GestureHandlerRootView is required by react-native-gesture-handler v2
+          for any pinch/pan gestures to work. Wraps the entire app. */}
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          {STRIPE_KEY ? (
+            <StripeProvider
+              publishableKey={STRIPE_KEY}
+              merchantIdentifier="merchant.com.oneshetland.app"
+            >
+              {content}
+            </StripeProvider>
+          ) : (
+            content
+          )}
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     </ErrorBoundary>
   );
 }

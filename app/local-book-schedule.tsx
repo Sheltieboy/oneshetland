@@ -621,8 +621,8 @@ function roundToNextHalf(d: Date): Date {
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.screenBackground },
-  scroll:  { flex: 1 },
+  safe:    { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.md, gap: 16 },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   dim:     { color: colors.textMuted },

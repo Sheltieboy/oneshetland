@@ -495,7 +495,7 @@ function InfoRow({ icon, text, color }: { icon: string; text: string; color: str
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
 
   header: {
     backgroundColor: '#fff',

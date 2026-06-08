@@ -14,7 +14,8 @@ import { supabase } from './supabase';
 export const GAMES = {
   spik_sprint:   { id: 'spik_sprint',   label: 'Spik Sprint',   icon: 'bolt',         live: true,  description: '60-second tap-the-right-meaning speed round.' },
   spik_snap:     { id: 'spik_snap',     label: 'Spik Snap',     icon: 'hand-paper',   live: true,  description: 'Swipe right if the meaning matches, left if not.' },
-  guess_da_wird: { id: 'guess_da_wird', label: 'Guess Da Wird', icon: 'puzzle-piece', live: false, description: 'Wordle-style daily puzzle. Coming back soon.' },
+  guess_da_wird: { id: 'guess_da_wird', label: 'Guess Da Wird', icon: 'puzzle-piece', live: true,  description: 'Daily Shetland dialect word puzzle. 7 tries. Progressive clues.' },
+  map_it:        { id: 'map_it',        label: 'Map It',        icon: 'map-marker-alt', live: true, description: 'Pin Shetland places on the map. 10 rounds. The closer, the better.' },
 } as const;
 
 export type GameId = keyof typeof GAMES;

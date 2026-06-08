@@ -18,9 +18,15 @@ import { useAuth } from '@/context/AuthContext';
 import {
   fetchWalletBalance, fetchWalletTransactions,
   startWalletTopUp, confirmWalletTopUp,
+  fetchMyPasses, fetchMyGiftsReceived, fetchMyLoyaltyCards,
   formatPence,
-  type WalletTransaction,
+  type WalletTransaction, type MyPass, type MyGiftReceived, type LoyaltyCard,
 } from '@/lib/local-api';
+import { fetchMyBookings, type BookBooking } from '@/lib/book-api';
+import {
+  fetchWorkSummary, fetchFetchSummary,
+  type WorkSummary, type FetchSummary,
+} from '@/lib/wallet-hub';
 
 const S = SECTIONS.local;
 
@@ -42,15 +48,44 @@ export default function WalletScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [toppingUp, setToppingUp] = useState<number | null>(null);
 
+  // My Wallet hub sections — each loads independently; failures degrade to empty.
+  const [passes, setPasses]                 = useState<MyPass[]>([]);
+  const [giftsToClaim, setGiftsToClaim]     = useState<MyGiftReceived[]>([]);
+  const [upcomingBookings, setUpcomingBookings] = useState<BookBooking[]>([]);
+  const [loyaltyCards, setLoyaltyCards]     = useState<LoyaltyCard[]>([]);
+  const [work, setWork]   = useState<WorkSummary  | null>(null);
+  const [fetch_, setFetch_] = useState<FetchSummary | null>(null);
+
   const load = useCallback(async () => {
     if (!profile) return;
     try {
-      const [b, t] = await Promise.all([
+      // Each fetcher wrapped in .catch so a single failure (RLS, network) only
+      // empties its own section, doesn't blank the screen.
+      const [b, t, ps, gs, bks, lcs, ws, fs] = await Promise.all([
         fetchWalletBalance(profile.id),
         fetchWalletTransactions(profile.id),
+        fetchMyPasses(profile.id).catch(() => [] as MyPass[]),
+        fetchMyGiftsReceived(profile.id).catch(() => [] as MyGiftReceived[]),
+        fetchMyBookings(profile.id).catch(() => [] as BookBooking[]),
+        fetchMyLoyaltyCards(profile.id).catch(() => [] as LoyaltyCard[]),
+        fetchWorkSummary(profile.id).catch(() => null),
+        fetchFetchSummary(profile.id).catch(() => null),
       ]);
       setBalance(b);
       setTxs(t);
+      setPasses(ps);
+      // Only show booking gifts that still need a slot picked
+      setGiftsToClaim(gs.filter(g => g.kind === 'booking' && g.status === 'claimed'));
+      // Only upcoming + confirmed bookings
+      const nowMs = Date.now();
+      setUpcomingBookings(
+        bks
+          .filter(b => b.status === 'confirmed' && new Date(b.starts_at).getTime() > nowMs)
+          .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()),
+      );
+      setLoyaltyCards(lcs);
+      setWork(ws);
+      setFetch_(fs);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -67,7 +102,7 @@ export default function WalletScreen() {
         'Add a payment card in your account before topping up your wallet.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/(customer)/payment-setup') },
+          { text: 'Add card', onPress: () => router.push('/payment-setup') },
         ],
       );
       return;
@@ -76,22 +111,36 @@ export default function WalletScreen() {
     setToppingUp(amountPence);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      const { clientSecret } = await startWalletTopUp(amountPence);
-      const piId = clientSecret.split('_secret_')[0];
+      // Try the off-session saved-card path first (the user has a card on
+      // file because the pre-flight above passed). The server falls back to
+      // PaymentSheet if it can't find a saved card on the Stripe Customer.
+      const startRes = await startWalletTopUp(amountPence, true);
 
-      const initRes = await initPaymentSheet({
-        merchantDisplayName: 'OneShetland Local',
-        paymentIntentClientSecret: clientSecret,
-        applePay: { merchantCountryCode: 'GB' },
-      });
-      if (initRes.error) throw new Error(initRes.error.message);
+      let piId: string;
 
-      const sheetRes = await presentPaymentSheet();
-      if (sheetRes.error) {
-        if (sheetRes.error.code !== 'Canceled') {
-          throw new Error(sheetRes.error.message);
+      if (startRes.charged) {
+        // Saved card succeeded — no PaymentSheet needed.
+        piId = startRes.payment_intent_id;
+      } else {
+        // No saved card / new-card path → present the PaymentSheet.
+        const clientSecret = startRes.clientSecret;
+        if (!clientSecret) throw new Error('Top-up could not be started.');
+        piId = clientSecret.split('_secret_')[0];
+
+        const initRes = await initPaymentSheet({
+          merchantDisplayName: 'OneShetland Local',
+          paymentIntentClientSecret: clientSecret,
+          applePay: { merchantCountryCode: 'GB' },
+        });
+        if (initRes.error) throw new Error(initRes.error.message);
+
+        const sheetRes = await presentPaymentSheet();
+        if (sheetRes.error) {
+          if (sheetRes.error.code !== 'Canceled') {
+            throw new Error(sheetRes.error.message);
+          }
+          return;
         }
-        return;
       }
 
       const { balance_pence } = await confirmWalletTopUp(piId);
@@ -111,9 +160,9 @@ export default function WalletScreen() {
       <View style={[styles.header, { borderBottomColor: S.color }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Local</Text>
+          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Wallet</Text>
+        <Text style={styles.headerTitle}>My Wallet</Text>
         <View style={{ width: 70 }} />
       </View>
 
@@ -158,6 +207,113 @@ export default function WalletScreen() {
           </View>
         </View>
 
+        {/* ── My Wallet hub sections ──────────────────────────────────────
+            Each section hides entirely if it has nothing — keeps the screen
+            tidy for users who haven't bought / been gifted / booked yet. */}
+
+        {passes.length > 0 && (
+          <HubSection
+            icon="ticket-alt"
+            title="Passes & vouchers"
+            countLabel={`${passes.length} active`}
+            onPress={() => router.push('/local-my-passes' as any)}
+          />
+        )}
+
+        {giftsToClaim.length > 0 && (
+          <HubSection
+            icon="gift"
+            title="Gifts to claim"
+            countLabel={`${giftsToClaim.length} waiting`}
+            onPress={() => router.push('/local-my-gifts' as any)}
+          />
+        )}
+
+        {upcomingBookings.length > 0 && (
+          <HubSection
+            icon="calendar-alt"
+            title="Upcoming bookings"
+            countLabel={`${upcomingBookings.length} ${upcomingBookings.length === 1 ? 'booking' : 'bookings'}`}
+            onPress={() => router.push('/local-my-bookings')}
+          />
+        )}
+
+        {loyaltyCards.length > 0 && (
+          <HubSection
+            icon="star"
+            title="Loyalty cards"
+            countLabel={(() => {
+              const ready = loyaltyCards.filter(c => c.program?.type === 'stamps' && (c.program?.stamps_required ?? 0) > 0 && c.stamps_collected >= (c.program?.stamps_required ?? 0)).length;
+              const base  = `${loyaltyCards.length} ${loyaltyCards.length === 1 ? 'card' : 'cards'}`;
+              return ready > 0 ? `${base} · ${ready} reward${ready === 1 ? '' : 's'} ready` : base;
+            })()}
+            onPress={() => router.push('/local-my-cards')}
+          />
+        )}
+
+        {/* ── Work (worker + employer) ── */}
+        {work?.hasAny && (
+          <HubSection
+            icon="briefcase"
+            title="Work"
+            countLabel={workCountLabel(work)}
+            onPress={() => {
+              // Prefer the side they're more active on.
+              if (work.worker.appCount >= work.employer.activeShifts) {
+                router.push('/my-shift-applications');
+              } else {
+                router.push('/my-posted-shifts');
+              }
+            }}
+            footChildren={
+              <>
+                {(work.worker.hasWorkerProfile || work.worker.appCount > 0) && (
+                  <HubFootLink
+                    label="Worker profile"
+                    onPress={() => router.push('/shift-worker-profile')}
+                  />
+                )}
+                {work.employer.activeShifts > 0 && (
+                  <HubFootLink
+                    label="Employer profile"
+                    onPress={() => router.push('/employer-profile')}
+                  />
+                )}
+              </>
+            }
+          />
+        )}
+
+        {/* ── Fetch (customer + driver) ── */}
+        {fetch_?.hasAny && (
+          <HubSection
+            icon="truck"
+            title="Fetch"
+            countLabel={fetchCountLabel(fetch_)}
+            onPress={() => {
+              if (fetch_.driver.isDriver && fetch_.driver.activeRuns >= fetch_.customer.activeCount) {
+                router.push('/(driver)/dashboard');
+              } else {
+                router.push('/(customer)/previous-requests');
+              }
+            }}
+            footChildren={
+              <>
+                <HubFootLink
+                  label="Saved addresses"
+                  onPress={() => router.push('/(customer)/saved-addresses')}
+                />
+                {!fetch_.driver.isDriver && (
+                  <HubFootLink
+                    label="Become a driver"
+                    onPress={() => router.push('/(customer)/apply-driver')}
+                  />
+                )}
+              </>
+            }
+          />
+        )}
+
         {/* Transactions */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent activity</Text>
@@ -178,6 +334,69 @@ export default function WalletScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+// ── My Wallet hub-section building blocks ────────────────────────────────────
+
+/**
+ * A single-row index entry. Tap anywhere on the row to navigate to the full
+ * list. Optional foot-buttons (Work / Fetch sections) sit underneath for
+ * secondary destinations like "Worker profile" or "Saved addresses".
+ */
+function HubSection({
+  icon, title, countLabel, onPress, footChildren,
+}: {
+  icon:          string;
+  title:         string;
+  countLabel?:   string;
+  onPress:       () => void;
+  footChildren?: React.ReactNode;
+}) {
+  return (
+    <View style={styles.hubSection}>
+      <TouchableOpacity
+        style={styles.hubHeader}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.hubIcon, { backgroundColor: S.color + '18' }]}>
+          <FontAwesome5 name={icon as any} size={13} color={S.color} solid />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.hubTitle}>{title}</Text>
+          {countLabel && <Text style={styles.hubCount}>{countLabel}</Text>}
+        </View>
+        <FontAwesome5 name="chevron-right" size={12} color={S.color} />
+      </TouchableOpacity>
+      {footChildren && (
+        <View style={styles.hubFootRow}>{footChildren}</View>
+      )}
+    </View>
+  );
+}
+
+function HubFootLink({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.hubFootLink} onPress={onPress} activeOpacity={0.7}>
+      <Text style={[styles.hubFootLinkText, { color: S.color }]}>{label}</Text>
+      <FontAwesome5 name="chevron-right" size={9} color={S.color} />
+    </TouchableOpacity>
+  );
+}
+
+function workCountLabel(work: WorkSummary): string {
+  const parts: string[] = [];
+  if (work.worker.appCount > 0)        parts.push(`${work.worker.appCount} app${work.worker.appCount === 1 ? '' : 's'}`);
+  if (work.employer.activeShifts > 0)  parts.push(`${work.employer.activeShifts} posted`);
+  return parts.join(' · ') || 'Set up';
+}
+
+function fetchCountLabel(fs: FetchSummary): string {
+  const parts: string[] = [];
+  if (fs.customer.activeCount > 0)      parts.push(`${fs.customer.activeCount} in progress`);
+  else if (fs.customer.recentCount > 0) parts.push(`${fs.customer.recentCount} recent`);
+  if (fs.driver.activeRuns > 0)         parts.push(`${fs.driver.activeRuns} run${fs.driver.activeRuns === 1 ? '' : 's'}`);
+  return parts.join(' · ') || 'Get started';
 }
 
 function TransactionRow({ tx }: { tx: WalletTransaction }) {
@@ -209,8 +428,8 @@ function TransactionRow({ tx }: { tx: WalletTransaction }) {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ paddingBottom: 40 },
 
   header: {
@@ -258,4 +477,23 @@ const styles = StyleSheet.create({
 
   emptyTx: { padding: spacing.lg, alignItems: 'center' },
   emptyTxText: { fontSize: fontSize.sm, color: colors.textMuted },
+
+  // ── My Wallet hub sections ───────────────────────────────────────────────
+  hubSection: {
+    backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  hubHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  hubIcon:     { width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  hubTitle:    { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary },
+  hubCount:    { fontSize: 12, color: colors.textMuted, fontWeight: '600', marginTop: 2 },
+
+  hubFootRow:  { backgroundColor: '#fff', flexDirection: 'row', gap: 6, padding: spacing.md, paddingTop: 6, flexWrap: 'wrap', borderTopWidth: 1, borderTopColor: colors.border },
+  hubFootLink: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.full, borderWidth: 1, borderColor: S.color + '40', backgroundColor: S.color + '10' },
+  hubFootLinkText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
 });

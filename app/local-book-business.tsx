@@ -37,9 +37,10 @@ const WINDOW_DAYS = 14;
 export default function BookBusinessScreen() {
   const router = useRouter();
   const { profile } = useAuth();
-  const { businessId, serviceId: paramServiceId } = useLocalSearchParams<{
+  const { businessId, serviceId: paramServiceId, giftId } = useLocalSearchParams<{
     businessId: string;
     serviceId?: string;
+    giftId?:    string;
   }>();
 
   const [business, setBusiness]   = useState<LocalBusiness | null>(null);
@@ -133,6 +134,7 @@ export default function BookBusinessScreen() {
         startsAt:   slot.start.toISOString(),
         endsAt:     slot.end.toISOString(),
         lastMin:    slot.lastMin ? '1' : '0',
+        ...(giftId ? { giftId } : {}),
       },
     });
   };
@@ -226,6 +228,16 @@ export default function BookBusinessScreen() {
                   </View>
                 )}
               </View>
+              {selectedService.price_pence > 0 && (
+                <TouchableOpacity
+                  style={[styles.giftLink, { borderColor: S.color }]}
+                  onPress={() => router.push({ pathname: '/local-gift', params: { kind: 'booking', serviceId: selectedService.id } })}
+                  activeOpacity={0.85}
+                >
+                  <FontAwesome5 name="gift" size={10} color={S.color} solid />
+                  <Text style={[styles.giftLinkText, { color: S.color }]}>Gift this to someone</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -364,8 +376,8 @@ function Header({ title, onBack }: { title: string; onBack: () => void }) {
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   dim:    { color: colors.textMuted },
@@ -402,6 +414,13 @@ const styles = StyleSheet.create({
   serviceSummaryMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   metaPill:           { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.border, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
   metaPillText:       { fontSize: 11, color: colors.textPrimary, fontWeight: '700' },
+
+  giftLink: {
+    flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.md, borderWidth: 1,
+    marginTop: 10,
+  },
+  giftLinkText: { fontSize: 12, fontWeight: '800' },
 
   // Day chip
   dayChip: {

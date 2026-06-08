@@ -122,7 +122,7 @@ export default function ComplianceScreen() {
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="chevron-left" size={14} color="#fff" />
-          <Text style={styles.backText}>Admin</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <FontAwesome5 name="shield-alt" size={14} color="#fff" solid />
@@ -319,8 +319,8 @@ export default function ComplianceScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.screenBackground },
-  scroll:  { flex: 1 },
+  safe:    { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.md },
 
   header: {

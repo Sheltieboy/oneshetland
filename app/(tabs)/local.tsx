@@ -19,13 +19,13 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import {
-  fetchActiveBusinesses, fetchActiveOffers, fetchMyLoyaltyCards,
-  fetchWalletBalance, fetchMyBusinesses,
+  fetchActiveBusinesses, fetchActiveOffers,
+  fetchMyBusinesses,
   formatPence, formatOfferDiscount, daysRemaining,
   CATEGORY_LABELS, CATEGORY_ICONS,
-  type LocalBusiness, type LocalOffer, type LoyaltyCard,
+  type LocalBusiness, type LocalOffer,
 } from '@/lib/local-api';
-import { fetchMyBookings, isBookableLive, type BookBooking } from '@/lib/book-api';
+import { isBookableLive, fetchActiveUnitItems, type UnitItemWithBusiness } from '@/lib/book-api';
 
 const S = SECTIONS.local;
 
@@ -33,31 +33,27 @@ export default function LocalHub() {
   const router      = useRouter();
   const { profile } = useAuth();
 
-  const [businesses,  setBusinesses]  = useState<LocalBusiness[]>([]);
-  const [offers,      setOffers]      = useState<LocalOffer[]>([]);
-  const [cards,       setCards]       = useState<LoyaltyCard[]>([]);
-  const [balance,     setBalance]     = useState<number>(0);
-  const [myBizCount,  setMyBizCount]  = useState<number>(0);
-  const [bookings,    setBookings]    = useState<BookBooking[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [refreshing,  setRefreshing]  = useState(false);
+  // Marketplace tab is pure discovery — no user-owned wallet items shown
+  // (those live in My Wallet). Only browse-able data is fetched here.
+  const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
+  const [offers,     setOffers]     = useState<LocalOffer[]>([]);
+  const [myBizCount, setMyBizCount] = useState<number>(0);
+  const [units,      setUnits]      = useState<UnitItemWithBusiness[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [biz, ofs, cds, bal, mine, bks] = await Promise.all([
+      const [biz, ofs, mine, uts] = await Promise.all([
         fetchActiveBusinesses().catch(() => []),
         fetchActiveOffers().catch(() => []),
-        profile ? fetchMyLoyaltyCards(profile.id).catch(() => []) : Promise.resolve([]),
-        profile ? fetchWalletBalance(profile.id).catch(() => 0)   : Promise.resolve(0),
-        profile ? fetchMyBusinesses(profile.id).catch(() => [])   : Promise.resolve([]),
-        profile ? fetchMyBookings(profile.id).catch(() => [])     : Promise.resolve([] as BookBooking[]),
+        profile ? fetchMyBusinesses(profile.id).catch(() => []) : Promise.resolve([]),
+        fetchActiveUnitItems().catch(() => [] as UnitItemWithBusiness[]),
       ]);
       setBusinesses(biz);
       setOffers(ofs);
-      setCards(cds);
-      setBalance(bal);
       setMyBizCount(mine.length);
-      setBookings(bks);
+      setUnits(uts);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -70,11 +66,7 @@ export default function LocalHub() {
   const bookableNow  = businesses.filter(isBookableLive).slice(0, 6);
   const allCount     = businesses.length;
   const latestOffers = offers.slice(0, 4);
-
-  const now = Date.now();
-  const upcomingBookings = bookings
-    .filter(b => b.status !== 'cancelled' && new Date(b.starts_at).getTime() >= now)
-    .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  const latestUnits  = units.slice(0, 6);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -94,33 +86,8 @@ export default function LocalHub() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
       >
 
-        {/* ── Wallet snapshot ── */}
-        <TouchableOpacity
-          style={styles.walletCard}
-          onPress={() => router.push('/local-wallet')}
-          activeOpacity={0.9}
-        >
-          <View style={styles.walletTop}>
-            <View>
-              <Text style={styles.walletLabel}>Local Wallet</Text>
-              <Text style={styles.walletBalance}>{formatPence(balance)}</Text>
-            </View>
-            <View style={styles.walletIconWrap}>
-              <FontAwesome5 name="wallet" size={20} color="#fff" solid />
-            </View>
-          </View>
-          <View style={styles.walletActions}>
-            <View style={styles.walletAction}>
-              <FontAwesome5 name="plus" size={11} color="#fff" />
-              <Text style={styles.walletActionText}>Top up</Text>
-            </View>
-            <View style={styles.walletActionDivider} />
-            <View style={styles.walletAction}>
-              <FontAwesome5 name="qrcode" size={11} color="#fff" />
-              <Text style={styles.walletActionText}>Pay at till</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+        {/* Wallet snapshot has moved to My Wallet (accessed via the wallet
+            icon in the home tab header). Marketplace is discovery only. */}
 
         {/* ── Quick action tiles ── */}
         <View style={styles.actionTiles}>
@@ -133,16 +100,8 @@ export default function LocalHub() {
           <ActionTile
             icon="calendar-check"
             label="Book"
-            sub={upcomingBookings.length > 0
-              ? `${upcomingBookings.length} upcoming · browse`
-              : 'Find a slot'}
+            sub="Find a slot"
             onPress={() => router.push('/local-bookable-browse')}
-          />
-          <ActionTile
-            icon="stamp"
-            label="Stamps"
-            sub={cards.length > 0 ? `${cards.length} card${cards.length !== 1 ? 's' : ''}` : 'Collect'}
-            onPress={() => router.push('/local-my-cards')}
           />
           <ActionTile
             icon="tags"
@@ -158,20 +117,7 @@ export default function LocalHub() {
           />
         </View>
 
-        {/* ── Upcoming bookings strip ── */}
-        {upcomingBookings.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Your bookings</Text>
-              <TouchableOpacity onPress={() => router.push('/local-my-bookings')}>
-                <Text style={[styles.sectionLink, { color: S.color }]}>See all →</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hStripContent}>
-              {upcomingBookings.slice(0, 5).map(b => <MiniBookingCard key={b.id} booking={b} />)}
-            </ScrollView>
-          </View>
-        )}
+        {/* Your bookings has moved to My Wallet → Upcoming bookings. */}
 
         {/* ── Bookable now (only when there's something to surface) ── */}
         {bookableNow.length > 0 && (
@@ -188,20 +134,7 @@ export default function LocalHub() {
           </View>
         )}
 
-        {/* ── My loyalty cards strip (if user has any) ── */}
-        {cards.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Your cards</Text>
-              <TouchableOpacity onPress={() => router.push('/local-my-cards')}>
-                <Text style={[styles.sectionLink, { color: S.color }]}>See all →</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hStripContent}>
-              {cards.slice(0, 5).map(c => <MiniLoyaltyCard key={c.id} card={c} />)}
-            </ScrollView>
-          </View>
-        )}
+        {/* Your cards has moved to My Wallet → Loyalty cards. */}
 
         {/* ── Latest offers ── */}
         {latestOffers.length > 0 && (
@@ -214,6 +147,18 @@ export default function LocalHub() {
             </View>
             <View style={styles.offerList}>
               {latestOffers.map(o => <OfferCard key={o.id} offer={o} />)}
+            </View>
+          </View>
+        )}
+
+        {/* ── Tickets & passes (unit items) ── */}
+        {latestUnits.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Tickets &amp; passes</Text>
+            </View>
+            <View style={styles.offerList}>
+              {latestUnits.map(u => <UnitCard key={u.id} item={u} />)}
             </View>
           </View>
         )}
@@ -324,7 +269,7 @@ function MiniBookableCard({ business }: { business: LocalBusiness }) {
   return (
     <TouchableOpacity
       style={styles.miniBookable}
-      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: business.id } })}
+      onPress={() => router.push({ pathname: '/local-book-business', params: { businessId: business.id } })}
       activeOpacity={0.85}
     >
       {business.logo_url ? (
@@ -346,86 +291,19 @@ function MiniBookableCard({ business }: { business: LocalBusiness }) {
   );
 }
 
-function MiniBookingCard({ booking }: { booking: BookBooking }) {
-  const router = useRouter();
-  const starts = new Date(booking.starts_at);
-  const today  = new Date(); today.setHours(0,0,0,0);
-  const startDay = new Date(starts); startDay.setHours(0,0,0,0);
-  const daysOff  = Math.round((startDay.getTime() - today.getTime()) / 86_400_000);
-  const dayLabel =
-    daysOff === 0 ? 'Today' :
-    daysOff === 1 ? 'Tomorrow' :
-    starts.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-
-  return (
-    <TouchableOpacity
-      style={styles.miniBooking}
-      onPress={() => router.push('/local-my-bookings')}
-      activeOpacity={0.85}
-    >
-      <View style={styles.miniBookingTop}>
-        <FontAwesome5 name="calendar-check" size={11} color={S.color} solid />
-        <Text style={[styles.miniBookingDay, { color: S.color }]}>{dayLabel}</Text>
-      </View>
-      <Text style={styles.miniBookingTime}>
-        {starts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}
-      </Text>
-      <Text style={styles.miniBookingBiz} numberOfLines={1}>
-        {booking.business?.name ?? 'Booking'}
-      </Text>
-      <Text style={styles.miniBookingSvc} numberOfLines={1}>
-        {booking.service?.name ?? ''}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-function MiniLoyaltyCard({ card }: { card: LoyaltyCard }) {
-  const router = useRouter();
-  const program = card.program;
-  const isStamp = program?.type === 'stamps';
-  const stamps   = card.stamps_collected;
-  const needed   = program?.stamps_required ?? 10;
-  const progress = Math.min(1, stamps / needed);
-
-  return (
-    <TouchableOpacity
-      style={styles.miniCard}
-      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: card.business_id } })}
-      activeOpacity={0.85}
-    >
-      <Text style={styles.miniCardName} numberOfLines={1}>
-        {card.business?.name ?? 'Local'}
-      </Text>
-      {isStamp ? (
-        <>
-          <Text style={styles.miniCardCount}>
-            <Text style={[styles.miniCardCountNum, { color: S.color }]}>{stamps}</Text>
-            <Text style={styles.miniCardCountRest}> / {needed}</Text>
-          </Text>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { backgroundColor: S.color, width: `${progress * 100}%` }]} />
-          </View>
-        </>
-      ) : (
-        <>
-          <Text style={styles.miniCardCount}>
-            <Text style={[styles.miniCardCountNum, { color: S.color }]}>{card.points_balance}</Text>
-            <Text style={styles.miniCardCountRest}> points</Text>
-          </Text>
-        </>
-      )}
-    </TouchableOpacity>
-  );
-}
-
 function OfferCard({ offer }: { offer: LocalOffer }) {
   const router = useRouter();
   const days = daysRemaining(offer.valid_until);
   return (
     <TouchableOpacity
       style={styles.offerCard}
-      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: offer.business_id } })}
+      onPress={() => {
+        if (offer.business && isBookableLive(offer.business)) {
+          router.push({ pathname: '/local-book-business', params: { businessId: offer.business_id } });
+        } else {
+          router.push({ pathname: '/local-business-detail', params: { id: offer.business_id } });
+        }
+      }}
       activeOpacity={0.85}
     >
       <View style={styles.offerCardLeft}>
@@ -447,12 +325,46 @@ function OfferCard({ offer }: { offer: LocalOffer }) {
   );
 }
 
+function UnitCard({ item }: { item: UnitItemWithBusiness }) {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      style={styles.offerCard}
+      onPress={() => router.push({ pathname: '/local-buy-unit', params: { itemId: item.id } })}
+      activeOpacity={0.85}
+    >
+      <View style={styles.offerCardLeft}>
+        <View style={[styles.offerDiscount, { backgroundColor: S.color }]}>
+          <Text style={styles.offerDiscountText}>{formatPence(item.price_pence)}</Text>
+        </View>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.offerTitle} numberOfLines={1}>{item.name}</Text>
+        {item.business_name && (
+          <Text style={styles.offerBusiness} numberOfLines={1}>{item.business_name}</Text>
+        )}
+        <Text style={styles.offerExpiry}>
+          {item.uses_per_purchase > 1 ? `${item.uses_per_purchase} uses` : 'Ticket / pass'}
+          {item.stock !== null && item.stock <= 10 ? ` · only ${item.stock} left` : ''}
+        </Text>
+      </View>
+      <FontAwesome5 name="chevron-right" size={12} color={colors.textLight} />
+    </TouchableOpacity>
+  );
+}
+
 function BusinessCard({ business }: { business: LocalBusiness }) {
   const router = useRouter();
   return (
     <TouchableOpacity
       style={styles.businessCard}
-      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: business.id } })}
+      onPress={() => {
+        if (isBookableLive(business)) {
+          router.push({ pathname: '/local-book-business', params: { businessId: business.id } });
+        } else {
+          router.push({ pathname: '/local-business-detail', params: { id: business.id } });
+        }
+      }}
       activeOpacity={0.85}
     >
       {business.logo_url ? (

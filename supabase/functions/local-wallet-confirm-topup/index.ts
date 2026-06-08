@@ -1,11 +1,12 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Stripe from 'https://esm.sh/stripe@13?target=deno';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const STRIPE_API_VERSION = '2023-10-16';
 
 /**
  * local-wallet-confirm-topup
@@ -47,12 +48,19 @@ serve(async (req) => {
       .eq('stripe_payment_intent_id', payment_intent_id)
       .maybeSingle();
 
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
-      apiVersion: '2023-10-16',
-      httpClient: Stripe.createFetchHttpClient(),
-    });
-
-    const intent = await stripe.paymentIntents.retrieve(payment_intent_id);
+    const piRes = await fetch(
+      `https://api.stripe.com/v1/payment_intents/${payment_intent_id}`,
+      {
+        headers: {
+          'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+          'Stripe-Version': STRIPE_API_VERSION,
+        },
+      },
+    );
+    const intent = await piRes.json();
+    if (!piRes.ok) {
+      throw new Error(intent.error?.message ?? `Stripe PaymentIntent retrieve failed (HTTP ${piRes.status})`);
+    }
 
     if (intent.metadata?.user_id !== user.id) return json({ error: 'Forbidden' }, 403);
     if (intent.status !== 'succeeded') return json({ error: 'Payment not completed' }, 400);

@@ -58,12 +58,6 @@ function MenuRow({ icon, iconColor, label, sublabel, badge, badgeColor, onPress,
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
-type ShiftStats = {
-  myApps:         { pending: number; accepted: number; total: number };
-  postedShifts:   number;
-  pendingIncoming: number;
-};
-
 type MyBusiness = {
   id: string;
   name: string;
@@ -81,50 +75,18 @@ export default function MeTab() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [myBusinesses, setMyBusinesses] = useState<MyBusiness[]>([]);
-  const [stats, setStats] = useState<ShiftStats>({
-    myApps:          { pending: 0, accepted: 0, total: 0 },
-    postedShifts:    0,
-    pendingIncoming: 0,
-  });
-
   const initials = (profile?.full_name ?? 'U')
     .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
 
   const loadStats = useCallback(async () => {
     if (!profile?.id) return;
     try {
-      const [appsRes, shiftsRes, bizRes] = await Promise.all([
-        supabase.from('shift_applications').select('status').eq('worker_id', profile.id),
-        supabase.from('shifts').select('id').eq('employer_id', profile.id).eq('status', 'open'),
-        supabase.from('local_businesses')
-          .select('id, name, use_business_payment, has_business_payment_method, use_business_payout, business_stripe_onboarding_complete, business_stripe_payouts_enabled')
-          .eq('owner_id', profile.id)
-          .eq('is_active', true),
-      ]);
-
-      const myApps   = appsRes.data   ?? [];
-      const myShifts = shiftsRes.data ?? [];
-
-      let pendingIncoming = 0;
-      if (myShifts.length > 0) {
-        const { count } = await supabase
-          .from('shift_applications')
-          .select('id', { count: 'exact', head: true })
-          .in('shift_id', myShifts.map(s => s.id))
-          .eq('status', 'pending');
-        pendingIncoming = count ?? 0;
-      }
-
-      setStats({
-        myApps: {
-          pending:  myApps.filter(a => a.status === 'pending').length,
-          accepted: myApps.filter(a => a.status === 'accepted').length,
-          total:    myApps.length,
-        },
-        postedShifts:    myShifts.length,
-        pendingIncoming,
-      });
-      setMyBusinesses((bizRes.data ?? []) as MyBusiness[]);
+      const { data: biz } = await supabase
+        .from('local_businesses')
+        .select('id, name, use_business_payment, has_business_payment_method, use_business_payout, business_stripe_onboarding_complete, business_stripe_payouts_enabled')
+        .eq('owner_id', profile.id)
+        .eq('is_active', true);
+      setMyBusinesses((biz ?? []) as MyBusiness[]);
     } catch { /* silent */ }
   }, [profile?.id]);
 
@@ -185,7 +147,7 @@ export default function MeTab() {
           </TouchableOpacity>
 
           <Text style={styles.signedOutFootnote}>
-            You can still browse Local businesses, Spik, Events and Fetch without an account.
+            You can still browse Shetland businesses, Spik, Events and Fetch without an account.
           </Text>
         </View>
       </SafeAreaView>
@@ -245,51 +207,9 @@ export default function MeTab() {
 
         <View style={styles.body}>
 
-          {/* ── Shifts ─────────────────────────────────────────────────────── */}
-          <SectionCard title="Shifts" accentColor={SECTIONS.shifts.color}>
-            <MenuRow
-              icon="paper-plane"
-              iconColor={SECTIONS.shifts.color}
-              label="My applications"
-              sublabel={
-                stats.myApps.total === 0
-                  ? 'No applications yet'
-                  : `${stats.myApps.pending} pending · ${stats.myApps.accepted} confirmed`
-              }
-              badge={stats.myApps.accepted > 0 ? `${stats.myApps.accepted} ✓` : undefined}
-              badgeColor={colors.jobs}
-              onPress={() => { Haptics.selectionAsync(); router.push('/my-shift-applications'); }}
-            />
-            <MenuRow
-              icon="id-badge"
-              iconColor={SECTIONS.shifts.color}
-              label="My shift profile"
-              sublabel="Bio, skills & qualifications employers see"
-              onPress={() => { Haptics.selectionAsync(); router.push('/shift-worker-profile'); }}
-              last={stats.postedShifts === 0}
-            />
-            {stats.postedShifts > 0 && (
-              <>
-                <MenuRow
-                  icon="briefcase"
-                  iconColor={SECTIONS.shifts.color}
-                  label="My posted shifts"
-                  sublabel={`${stats.postedShifts} live · ${stats.pendingIncoming} to review`}
-                  badge={stats.pendingIncoming > 0 ? stats.pendingIncoming.toString() : undefined}
-                  badgeColor={SECTIONS.shifts.color}
-                  onPress={() => { Haptics.selectionAsync(); router.push('/my-posted-shifts'); }}
-                />
-                <MenuRow
-                  icon="building"
-                  iconColor={SECTIONS.shifts.color}
-                  label="Business profile"
-                  sublabel="Name and description shown on your shift listings"
-                  onPress={() => { Haptics.selectionAsync(); router.push('/employer-profile'); }}
-                  last
-                />
-              </>
-            )}
-          </SectionCard>
+          {/* Shifts (worker + employer) and Fetch (customer + driver) entries
+              have moved into My Wallet → "Work" and "Fetch" sections. Profile
+              stays focused on identity and money config. */}
 
           {/* ── Payments & Banking ──────────────────────────────────────────── */}
           <SectionCard title="Payments & Banking" accentColor={colors.jobs}>
@@ -312,7 +232,7 @@ export default function MeTab() {
               {!profile?.has_payment_method && (
                 <TouchableOpacity
                   style={[styles.statusBtn, { backgroundColor: '#D97706' }]}
-                  onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/payment-setup'); }}
+                  onPress={() => { Haptics.selectionAsync(); router.push('/payment-setup'); }}
                 >
                   <Text style={styles.statusBtnText}>Add card</Text>
                 </TouchableOpacity>
@@ -324,7 +244,7 @@ export default function MeTab() {
               iconColor={colors.jobs}
               label={profile?.has_payment_method ? 'Update payment card' : 'Add a payment card'}
               sublabel="Used for Fetch, Shifts, Local, bookings and boosts across the whole app"
-              onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/payment-setup'); }}
+              onPress={() => { Haptics.selectionAsync(); router.push('/payment-setup'); }}
             />
 
             {/* Payout bank status — for all users, not just drivers */}
@@ -432,22 +352,8 @@ export default function MeTab() {
 
           </SectionCard>
 
-          {/* ── Fetch Delivers ──────────────────────────────────────────────── */}
-          <SectionCard title="Fetch Delivers" accentColor={SECTIONS.fetch.color}>
-            <MenuRow
-              icon="map-marker-alt"
-              iconColor={SECTIONS.fetch.color}
-              label="Saved addresses"
-              onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/saved-addresses'); }}
-            />
-            <MenuRow
-              icon="history"
-              iconColor={SECTIONS.fetch.color}
-              label="Previous requests"
-              onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/previous-requests'); }}
-              last
-            />
-          </SectionCard>
+          {/* Fetch entries (Saved addresses, Previous requests) moved into
+              My Wallet → "Fetch" section. */}
 
           {/* ── Preferences ─────────────────────────────────────────────────── */}
           <SectionCard title="Preferences" accentColor={colors.navy}>
@@ -512,7 +418,7 @@ export default function MeTab() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
 
   // ── Signed-out state ──
   signedOutHeader: {

@@ -1,9 +1,16 @@
 /**
  * (tabs)/fetch.tsx
  *
- * Public-facing Fetch hub.
- * - Signed-in users with a role → routed straight into their dashboard
- * - Anyone else → sees a friendly intro to Fetch with a "Sign in to request" CTA
+ * Fetch tab. Renders different content based on auth + role:
+ *   - Signed-out → the public hub (intro + live runs + sign-in CTA)
+ *   - Driver     → the driver dashboard component, inline
+ *   - Everyone else (customer, admin, etc.) → the customer dashboard component, inline
+ *
+ * We render the role dashboards INLINE (not via router.replace) so:
+ *   - The bottom tab bar stays visible (it lives at the (tabs) group level)
+ *   - There's no navigation hop / no back button needed
+ *   - The /(customer)/dashboard and /(driver)/dashboard routes still exist
+ *     for any deep links that point to them directly.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -19,6 +26,8 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { supabase } from '@/lib/supabase';
+import CustomerDashboard from '../(customer)/dashboard';
+import DriverDashboard from '../(driver)/dashboard';
 
 interface LiveRun {
   id: string;
@@ -32,25 +41,33 @@ interface LiveRun {
 const S = SECTIONS.fetch;
 
 export default function FetchTab() {
-  const router = useRouter();
   const { profile, loading } = useAuth();
-  const [runs, setRuns]             = useState<LiveRun[]>([]);
+
+  // While auth is resolving, show a quick spinner — avoids flashing the
+  // public hub for a frame before the role-specific dashboard mounts.
+  if (loading) {
+    return (
+      <View style={styles.bootCenter}>
+        <ActivityIndicator color={SECTIONS.fetch.color} />
+      </View>
+    );
+  }
+
+  // Role-specific dashboards render inline so the bottom tab bar stays
+  // visible and there's no navigation hop / back button.
+  if (profile?.role === 'driver') return <DriverDashboard />;
+  if (profile)                    return <CustomerDashboard />;
+
+  return <PublicFetchHub />;
+}
+
+// ── Public hub (signed-out) ──────────────────────────────────────────────────
+
+function PublicFetchHub() {
+  const router = useRouter();
+  const [runs, setRuns]               = useState<LiveRun[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
 
-  // Signed-in users get routed straight to their role's dashboard.
-  // Non-signed-in users stay here and see the hub.
-  useEffect(() => {
-    if (loading || !profile) return;
-    if (profile.role === 'admin' || profile.role === 'moderator') {
-      router.replace('/(admin)/dashboard');
-    } else if (profile.role === 'driver') {
-      router.replace('/(driver)/dashboard');
-    } else {
-      router.replace('/(customer)/dashboard');
-    }
-  }, [profile, loading]);
-
-  // Always fetch upcoming runs so non-signed-in users see what's available
   useEffect(() => {
     const now = new Date().toISOString();
     supabase
@@ -239,6 +256,7 @@ const styles = StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: 40 },
+  bootCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBackground },
 
   headerBadge:     { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
   headerBadgeDot:  { width: 6, height: 6, borderRadius: 3 },

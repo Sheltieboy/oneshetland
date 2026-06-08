@@ -312,7 +312,7 @@ export default function AccountScreen() {
               {!profile?.has_payment_method && (
                 <Pressable
                   style={styles.statusBannerAction}
-                  onPress={() => { haptic.light(); router.push('/(customer)/payment-setup'); }}
+                  onPress={() => { haptic.light(); router.push('/payment-setup'); }}
                 >
                   <Text style={styles.statusBannerActionText}>Set up</Text>
                 </Pressable>
@@ -323,7 +323,7 @@ export default function AccountScreen() {
               <LinkRow
                 icon="💳"
                 label={profile?.has_payment_method ? 'Update payment method' : 'Set up payment method'}
-                onPress={() => { haptic.light(); router.push('/(customer)/payment-setup'); }}
+                onPress={() => { haptic.light(); router.push('/payment-setup'); }}
               />
               <LinkRow
                 icon="📍"

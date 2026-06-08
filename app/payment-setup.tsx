@@ -165,7 +165,7 @@ export default function PaymentSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
 
   header: {
     backgroundColor: colors.navy,

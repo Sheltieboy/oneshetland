@@ -68,7 +68,7 @@ export default function SignInScreen() {
           {/* ── Hero ── */}
           <View style={styles.hero}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-              <Text style={styles.backText}>← Back</Text>
+              <Text style={styles.backText}>‹ Back</Text>
             </TouchableOpacity>
 
             <View style={styles.heroContent}>

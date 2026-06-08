@@ -113,7 +113,7 @@ export default function ShiftDetailScreen() {
           {/* Back */}
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
             <FontAwesome5 name="chevron-left" size={13} color={S.color} />
-            <Text style={[styles.backText, { color: S.color }]}>Shifts</Text>
+            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
           </TouchableOpacity>
 
           {/* Badges row */}
@@ -382,8 +382,8 @@ function AcceptedBlock({ cis }: { cis: CheckInStatus }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.screenBackground },
-  scroll:  { flex: 1 },
+  safe:    { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: 40 },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: colors.textMuted, fontSize: fontSize.md },

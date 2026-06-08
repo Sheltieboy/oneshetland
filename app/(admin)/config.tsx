@@ -46,6 +46,12 @@ const CATEGORY_META: Record<string, { label: string; icon: string; color: string
 const KEY_LABELS: Record<string, string> = {
   'stripe.price.local_pro':     'Local Pro · price ID',
   'stripe.price.local_premium': 'Local Premium · price ID',
+  'fees.fetch.percent_bps':     'Fetch · % fee (basis points)',
+  'fees.fetch.fixed_pence':     'Fetch · fixed fee (pence)',
+  'fees.wallet.percent_bps':    'Wallet · % fee (basis points)',
+  'fees.wallet.fixed_pence':    'Wallet · fixed fee (pence)',
+  'fees.product.percent_bps':   'Product sales · % fee (basis points)',
+  'fees.product.fixed_pence':   'Product sales · fixed fee (pence)',
 };
 
 // Per-key input placeholders and helper hints (used in the edit modal).
@@ -350,8 +356,8 @@ function Header({ onBack }: { onBack: () => void }) {
 // ── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.screenBackground },
-  scroll: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: colors.navy },
+  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   dim:    { color: colors.textMuted },

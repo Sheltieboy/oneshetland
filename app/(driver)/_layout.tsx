@@ -16,7 +16,8 @@ export default function DriverLayout() {
 
   if (!session) return <Redirect href="/(auth)/sign-in" />;
   if (profile && profile.role === 'customer') return <Redirect href="/(customer)/dashboard" />;
-  if (profile && profile.role === 'admin') return <Redirect href="/(admin)/dashboard" />;
+  // Admins can use the driver dashboard like any approved driver — admin
+  // surface is reachable via Me → Admin.
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
