@@ -127,9 +127,50 @@ export function MemoryMapNative({
   // latitudeDelta from onRegionChangeComplete — under ~0.3° (~33 km
   // north-south) is roughly "looking at one parish".
   const [showLabels, setShowLabels] = useState(false);
+  // Current view zoom (in latitudeDelta degrees). Used both to decide when
+  // labels appear and to scale pins up when the user has zoomed in close.
+  const [latDelta, setLatDelta]   = useState(1.6);
   const handleRegionChangeComplete = (region: any) => {
     if (!region) return;
     setShowLabels(region.latitudeDelta < 0.3);
+    setLatDelta(region.latitudeDelta);
+  };
+
+  // ── Forgiving pin taps ───────────────────────────────────────────────────
+  //
+  // On iOS the marker hit-test is fussy: a tap that's a few pixels off the
+  // 28-px pin head goes to the map's onPress instead, which then fires
+  // onDropPin — i.e. you wanted to read a memory but you got the
+  // "create new memory" flow. Fix: in the map's onPress handler we first
+  // check whether the tap coordinate is within a small radius of any
+  // existing pin. If so, open that pin. Otherwise (and only then) treat
+  // it as a "drop new pin here" tap.
+  //
+  // The tolerance scales with zoom — at the archipelago level it's about
+  // 1 km, at parish level about 150 m, at street level about 30 m. Roughly
+  // proportional to one pin head's width in degrees.
+  const tapToleranceDeg = (latDelta / 60);
+
+  const handleMapPress = (e: any) => {
+    const { latitude, longitude } = e?.nativeEvent?.coordinate ?? {};
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
+
+    // Find the nearest pin to the tap.
+    let nearest: { pin: MemoryPin; d: number } | null = null;
+    for (const pin of pins) {
+      // Simple Euclidean in degrees — good enough at Shetland latitudes
+      // for a "did the user mean this pin?" check.
+      const dLat = pin.lat - latitude;
+      const dLng = pin.lng - longitude;
+      const d = Math.sqrt(dLat * dLat + dLng * dLng);
+      if (!nearest || d < nearest.d) nearest = { pin, d };
+    }
+
+    if (nearest && nearest.d <= tapToleranceDeg) {
+      onOpenPin?.(nearest.pin);
+      return;
+    }
+    onDropPin?.({ lat: latitude, lng: longitude });
   };
 
   // ── Place search ─────────────────────────────────────────────────────────
@@ -190,13 +231,9 @@ export function MemoryMapNative({
         showsMyLocationButton
         showsCompass
         onRegionChangeComplete={handleRegionChangeComplete}
-        // Tap on map (not on a marker) → drop a new pin there.
-        onPress={(e: any) => {
-          if (!onDropPin) return;
-          const { latitude, longitude } = e.nativeEvent.coordinate ?? {};
-          if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
-          onDropPin({ lat: latitude, lng: longitude });
-        }}
+        // Forgiving handler: tap on a pin (or near one) opens the pin;
+        // tap elsewhere falls through to onDropPin if provided.
+        onPress={handleMapPress}
       >
         {/* Pending (draft) marker */}
         {pendingPoint ? (
@@ -221,6 +258,7 @@ export function MemoryMapNative({
             pin={pin}
             selected={pin.id === selectedId}
             showLabel={showLabels}
+            zoomedIn={latDelta < 0.3}
             onOpen={() => onOpenPin?.(pin)}
           />
         ))}
@@ -348,23 +386,24 @@ function iconForPlaceCategory(cat: string): string {
 // every marker) while still ensuring the image and label actually paint.
 
 function MemoryMarker({
-  pin, selected, showLabel, onOpen,
+  pin, selected, showLabel, zoomedIn, onOpen,
 }: {
   pin:       MemoryPin;
   selected:  boolean;
   showLabel: boolean;
+  zoomedIn:  boolean;
   onOpen:    () => void;
 }) {
   const [tracks, setTracks]         = useState(true);
   const [imageReady, setImageReady] = useState(false);
 
-  // When the label-visibility flips, give the marker a couple of frames to
-  // re-paint, then freeze again.
+  // When the label-visibility OR zoomed-in state flips, give the marker a
+  // couple of frames to re-paint at the new size, then freeze again.
   useEffect(() => {
     setTracks(true);
     const t = setTimeout(() => setTracks(false), 600);
     return () => clearTimeout(t);
-  }, [showLabel]);
+  }, [showLabel, zoomedIn]);
 
   // Same for image-ready transitions.
   useEffect(() => {
@@ -392,17 +431,27 @@ function MemoryMarker({
   })();
 
   const showPhoto = pin.hero_url && pin.hero_kind === 'photo';
-  const headSize  = selected ? styles.pinHeadSelected : styles.pinHead;
+  // Pin grows when the user has zoomed in past the parish threshold —
+  // visual confirmation that taps are now on bigger targets.
+  const headSize  = selected
+    ? styles.pinHeadSelected
+    : zoomedIn ? styles.pinHeadZoomed : styles.pinHead;
 
   return (
     <Marker
       coordinate={{ latitude: pin.lat, longitude: pin.lng }}
-      anchor={{ x: 0.5, y: 1 }}
+      // Anchor slightly higher than the geometric bottom because the
+      // larger touch halo below extends past the visible pin tail.
+      anchor={{ x: 0.5, y: 0.86 }}
       tracksViewChanges={tracks}
       onPress={onOpen}
       title={pin.title ?? 'Memory'}
       description={pin.place_name ?? undefined}
     >
+      {/* Transparent halo expands the touchable area to ~52 px without
+          changing the visible pin size. iOS hit-tests the entire view
+          tree, so taps in this padding open the memory just like taps on
+          the head. */}
       <View style={styles.pinWrap}>
         <View style={[headSize, { backgroundColor: accent, overflow: 'hidden' }]}>
           {showPhoto ? (
@@ -461,7 +510,11 @@ function MemoryMarker({
 
 const styles = StyleSheet.create({
   pinWrap: {
+    // Wider than the visible pin so iOS's marker hit-test catches taps
+    // around the edge of the pin head, not just dead-centre on it.
+    width: 56,
     alignItems: 'center',
+    paddingVertical: 6,
   },
   pinHead: {
     width: 28,
@@ -472,10 +525,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pinHeadSelected: {
+  pinHeadZoomed: {
+    // Mid-size used when the user has zoomed in close. Visual confirmation
+    // that pins are now bigger targets — no hover needed.
     width: 36,
     height: 36,
     borderRadius: 18,
+    borderWidth: 2.5,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinHeadSelected: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 3,
     borderColor: '#fff',
     alignItems: 'center',
