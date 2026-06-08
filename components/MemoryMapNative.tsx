@@ -25,15 +25,17 @@
  *   <Marker> child view.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ViewStyle, Platform, Image,
+  TextInput, TouchableOpacity, Keyboard,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors } from '@/constants/theme';
 import { MemoryPin } from '@/lib/memories-api';
 import { MEMORY_CATEGORY_BY_SLUG } from '@/constants/memory-categories';
+import { searchPlaces, ShetlandPlace, PLACE_CATEGORY_LABEL } from '@/lib/places-api';
 
 const SECTION = SECTIONS.memories;
 
@@ -120,9 +122,46 @@ export function MemoryMapNative({
     setShowLabels(region.latitudeDelta < 0.3);
   };
 
+  // ── Place search ─────────────────────────────────────────────────────────
+  // Search the seed shetland-places dataset; tap a result and we animate
+  // the map to that location. mapRef.current.animateToRegion is the
+  // smooth-pan call. Closed dropdown when the query is empty or a result
+  // is picked.
+  const mapRef = useRef<any>(null);
+  const [placeQuery, setPlaceQuery]     = useState('');
+  const [placeResults, setPlaceResults] = useState<ShetlandPlace[]>([]);
+  const [searchOpen, setSearchOpen]     = useState(false);
+
+  useEffect(() => {
+    const q = placeQuery.trim();
+    if (q.length < 2) { setPlaceResults([]); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const r = await searchPlaces(q);
+      if (!cancelled) setPlaceResults(r);
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [placeQuery]);
+
+  const flyToPlace = (place: ShetlandPlace) => {
+    setPlaceQuery(place.name);
+    setPlaceResults([]);
+    setSearchOpen(false);
+    Keyboard.dismiss();
+    mapRef.current?.animateToRegion?.({
+      latitude:       Number(place.lat),
+      longitude:      Number(place.lng),
+      // Roughly 6 km on a side — close enough to see streets / hamlets,
+      // wide enough to see neighbouring places.
+      latitudeDelta:  0.06,
+      longitudeDelta: 0.06,
+    }, 600);
+  };
+
   return (
     <View style={[{ height, borderRadius: 12, overflow: 'hidden' }, style]}>
       <MapView
+        ref={mapRef}
         style={StyleSheet.absoluteFill}
         // Android uses Google Maps; iOS keeps Apple Maps.
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
@@ -167,6 +206,61 @@ export function MemoryMapNative({
         ))}
       </MapView>
 
+      {/* ── Place search overlay ──────────────────────────────────────── */}
+      <View style={styles.searchOverlay} pointerEvents="box-none">
+        <View style={styles.searchBar}>
+          <FontAwesome5 name="search" size={13} color={colors.textMuted} />
+          <TextInput
+            value={placeQuery}
+            onChangeText={(t) => { setPlaceQuery(t); setSearchOpen(true); }}
+            onFocus={() => setSearchOpen(true)}
+            placeholder="Search the map — Lerwick, Brae, Sumburgh…"
+            placeholderTextColor={colors.textLight}
+            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="words"
+            returnKeyType="search"
+            onSubmitEditing={() => {
+              if (placeResults[0]) flyToPlace(placeResults[0]);
+            }}
+          />
+          {placeQuery ? (
+            <TouchableOpacity
+              onPress={() => { setPlaceQuery(''); setPlaceResults([]); setSearchOpen(false); Keyboard.dismiss(); }}
+              hitSlop={8}
+            >
+              <FontAwesome5 name="times-circle" size={14} color={colors.textMuted} solid />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {searchOpen && placeResults.length > 0 ? (
+          <View style={styles.searchResults}>
+            {placeResults.map((p, i) => (
+              <TouchableOpacity
+                key={p.id}
+                onPress={() => flyToPlace(p)}
+                style={[
+                  styles.searchResultRow,
+                  i < placeResults.length - 1 && styles.searchResultDivider,
+                ]}
+              >
+                <View style={styles.searchResultIcon}>
+                  <FontAwesome5 name={iconForPlaceCategory(p.category)} size={11} color={SECTION.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.searchResultName} numberOfLines={1}>{p.name}</Text>
+                  <Text style={styles.searchResultMeta} numberOfLines={1}>
+                    {PLACE_CATEGORY_LABEL[p.category] ?? p.category}
+                    {p.region ? ` · ${p.region.replace(/\b\w/g, c => c.toUpperCase())}` : ''}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+      </View>
+
       {/* Helper hint when the map is empty AND we're in drop mode */}
       {pins.length === 0 && onDropPin ? (
         <View pointerEvents="none" style={styles.emptyHint}>
@@ -176,6 +270,24 @@ export function MemoryMapNative({
       ) : null}
     </View>
   );
+}
+
+function iconForPlaceCategory(cat: string): string {
+  switch (cat) {
+    case 'settlement': return 'home';
+    case 'island':     return 'mountain';
+    case 'voe':        return 'water';
+    case 'loch':       return 'tint';
+    case 'beach':      return 'umbrella-beach';
+    case 'headland':   return 'flag';
+    case 'hill':       return 'mountain';
+    case 'lighthouse': return 'lightbulb';
+    case 'broch':      return 'archway';
+    case 'sound':      return 'water';
+    case 'geo':        return 'water';
+    case 'landmark':   return 'map-marker-alt';
+    default:           return 'map-marker-alt';
+  }
 }
 
 // ── One memory marker ───────────────────────────────────────────────────────
@@ -377,7 +489,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 0,
+    // Sits BELOW the search bar overlay when the map is empty.
+    top: 70,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -385,6 +498,70 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 20,
     gap: 10,
+  },
+
+  searchOverlay: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: 10,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.textPrimary,
+    paddingVertical: 0,
+  },
+  searchResults: {
+    marginTop: 6,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  searchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  searchResultDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  searchResultIcon: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: SECTION.light,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  searchResultName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  searchResultMeta: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
   },
   emptyHintText: {
     color: '#fff',
