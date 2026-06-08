@@ -26,13 +26,12 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { VIEW_BOUNDS } from '@/lib/shetland-geometry';
 import {
   createMemory, uploadMemoryMedia, requestTranscription,
   MediaKind, MemoryVisibility,
 } from '@/lib/memories-api';
 import { PickedFile } from '@/lib/image-upload';
-import MemoryMap from '@/components/MemoryMap';
+import MemoryMapNative from '@/components/MemoryMapNative';
 import VoiceRecorder from '@/components/VoiceRecorder';
 
 const SECTION = SECTIONS.memories;
@@ -239,10 +238,11 @@ export default function MemoryNewScreen() {
               Tap to place — or drag the map under the pin to refine.
             </Text>
             <View style={{ marginTop: spacing.sm }}>
-              <MemoryMap
+              <MemoryMapNative
                 pins={[]}
                 pendingPoint={point}
                 onDropPin={p => setPoint(p)}
+                height={260}
               />
             </View>
             <View style={styles.coordsRow}>

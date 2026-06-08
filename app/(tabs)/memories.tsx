@@ -26,7 +26,7 @@ import { VIEW_BOUNDS } from '@/lib/shetland-geometry';
 import {
   fetchMemoryPins, MemoryPin,
 } from '@/lib/memories-api';
-import MemoryMap from '@/components/MemoryMap';
+import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
 
 const SECTION = SECTIONS.memories;
@@ -118,11 +118,12 @@ export default function MemoriesScreen() {
               <ActivityIndicator color={SECTION.color} />
             </View>
           ) : (
-            <MemoryMap
+            <MemoryMapNative
               pins={pins}
               onOpenPin={onPinTap}
               onDropPin={onDropPin}
               selectedId={selectedId}
+              height={460}
             />
           )}
         </View>
@@ -211,7 +212,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   mapLoading: {
-    aspectRatio: 0.66,
+    height: 460,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#DCEEFF',
