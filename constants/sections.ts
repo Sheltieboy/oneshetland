@@ -62,8 +62,8 @@ export const SECTIONS = {
     color:       '#7C3AED',   // deep violet — fresh, premium, distinct from other sections
     light:       '#F3E8FF',
     icon:        'map-pin',
-    label:       'Local',
-    description: 'Loyalty, offers and rewards from Shetland businesses',
+    label:       'Marketplace',
+    description: 'Shops, services, loyalty and bookings from Shetland businesses',
     live:        true,
   },
 
@@ -146,6 +146,15 @@ export const SECTIONS = {
     label:       'Community Hubs',
     description: 'Connecting local groups and organisations',
     live:        false,
+  },
+
+  memories: {
+    color:       '#9F1239',   // rose-800 — warm, nostalgic, distinct from every other section
+    light:       '#FFE4E6',
+    icon:        'book-open',
+    label:       'Memories',
+    description: 'A living map of Shetland, pinned with stories, voices, photos and films',
+    live:        true,
   },
 
 } as const satisfies Record<string, SectionBrand>;
