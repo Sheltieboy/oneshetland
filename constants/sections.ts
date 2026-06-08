@@ -157,6 +157,15 @@ export const SECTIONS = {
     live:        true,
   },
 
+  daBoats: {
+    color:       '#1E3A8A',   // deep maritime blue — distinct from brand navy
+    light:       '#DBEAFE',
+    icon:        'ship',
+    label:       'Da Boats',
+    description: 'Shetland LK-registered vessels through the years',
+    live:        true,
+  },
+
 } as const satisfies Record<string, SectionBrand>;
 
 export type SectionKey = keyof typeof SECTIONS;

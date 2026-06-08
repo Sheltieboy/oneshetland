@@ -1,0 +1,468 @@
+id,vessel_key,canonical_name,primary_lk_number,built_year,built_decade,builder,yard_number,hull_material,country_of_build,status,identity_confidence,identity_notes,source_family
+cf6e72d3-7825-523a-b71b-4cf5f71f1390,rss:B11171,BRILLIANT,LK1,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+00164da2-08f6-5fb3-810d-06c1f079a539,rss:C18940,MY QUEST,LK2,2006,2000s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+aa895b8a-7cf4-5a42-bca7-7f48f65d9c4e,rss:B11270,UTILISE,LK3,,,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+190e626c-1e31-51e5-b0b3-844e12ba1631,rss:C16008,DRENGR,LK4,1983,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+22cceaf1-62b0-5f96-a4aa-60791ade8d9d,rss:C20612,MARGARET ROSE,LK4,1962,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b90213ec-4c40-58a0-a304-ab77f968df96,rss:B13533,FIDWAY,LK5,1992,1990s,,,F,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+cffccb74-f09d-5f9c-b59b-1dfb4bdbee75,rss:C17049,CEOL NA MARA,LK6,,,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+21bbca1a-5fc3-598e-96dd-a39e490bef39,rss:A11853,HOPEFUL,LK7,1933,1930s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+68fadc0c-88aa-5c67-871b-f3151241e4a7,rss:C21219,RAMNA,LK7,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7d12787a-2a2e-5b06-9eab-74cf3c5c56eb,rss:C19861,GIRL ISLA,LK8,1988,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a863f7a5-0807-53ae-9185-49d879509d66,rss:C20216,FRANCIS J,LK9,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b5938ed2-362b-5b0b-bad4-a26eb9265f03,rss:B14695,GIRL LYNSEY,LK10,1996,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+dcbcc449-4316-5290-8efe-6164534ad083,rss:C17567,ENDEAVOUR,LK11,2002,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7898bee0-9e64-52e0-a7ec-c4b0ea7f2e84,rss:C21259,ENDEAVOUR,LK11,2019,2010s,,,F,ISL,,confirmed,Created from consolidated official/public register row.,official_register_base
+6b036bee-2401-52cf-aa28-1f94e9a92881,rss:A12475,ANDERS,LK12,1986,1980s,,,F,EIR,,confirmed,Created from consolidated official/public register row.,official_register_base
+6bfb369a-2060-5731-a015-a692a905382e,rss:A12393,AUDACIOUS,LK14,1978,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+42039afd-4e25-54c5-ad27-7a5bc9e1f3fe,rss:C18035,AUDACIOUS,LK14,2003,2000s,,,F,ISL,,confirmed,Created from consolidated official/public register row.,official_register_base
+bf43b176-75d3-5e02-883c-61f8a1d01635,rss:C18558,VALDAR,LK15,2005,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+821accc5-c1c7-532b-8c93-765850f69be9,rss:A12120,BRIGHT RAY 11,LK16,1982,1980s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+a4ec0aaf-e54d-51b4-ad63-914852fe12ef,rss:A12449,SWIFT,LK17,1963,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d888d2ec-8486-5e65-8f0f-c6880ac8fd57,rss:A20306,AURORA,LK18,1988,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7979485b-9319-539f-a9fa-dbb6ae53d898,rss:A12451,FAIR TRY,LK19,1985,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b29c6358-48ad-5e61-b9b6-97ecf0fed826,rss:C19756,ANNIE B,LK20,1998,1990s,,,A,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4dabf836-2cc0-54bd-9371-683b5804c31f,rss:C20182,VALENTIA,LK21,2012,2010s,,,F,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+18148ad9-5cb6-578a-be7b-b01acdc90fef,rss:C20083,VALENTIA,LK21,2021,2020s,,,F,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+91e8ea83-867c-583b-8997-0c00129608b6,rss:C18795,LAEBRAK,LK22,2004,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+840ca2fd-3bcd-5441-8773-1b401cf029f3,rss:A12454,DELTA DAWN,LK23,1969,1960s,,,W,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cd821e73-7a4e-521f-aaad-ce8f1348474a,rss:A13401,BUDDING ROSE,LK24,1968,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2d811a6e-665b-5950-998f-5acc454768a9,rss:C16378,ELONA,LK25,1972,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+1674c2b4-0403-57eb-8be7-a50e56967d96,rss:A12457,HARVESTER,LK26,1982,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cf2ecbfb-a230-581e-aa12-052576080eb7,rss:C19383,SHEMARA II,LK27,2008,2000s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+9cbf141c-82f9-5015-86eb-fba7be082a95,rss:C17188,ADVANCE,LK28,2020,2020s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+561634c5-6649-5a05-9a8d-90c6859b3bbe,rss:C20277,NORWASTERN,LK29,2012,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cfc102a9-c9b5-59c6-9be3-dffc5511e5c6,rss:C20012,GOLDEN ROSE,LK30,1980,1980s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+3b652d95-a53d-5a9e-a040-551323de759e,rss:C20655,THREE JS,LK31,1993,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+9831d51d-16e9-5ea4-98ca-cb0b2f31fd69,rss:C20906,NICOLA ANNE,LK32,2016,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+788fbeb6-2953-51e2-bc09-e3823a081b4c,rss:A14573,KARANNA,LK33,1973,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+015aecb2-4d78-5a25-8691-15c8d4d02431,rss:A12463,SKIDBLADNIR,LK34,1949,1940s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d31e3b35-a325-5cb7-acb4-0d553178e20e,rss:A11048,AQUARIUS,LK35,1983,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+c3ce1b5f-e98c-5e8a-a593-f0076d960bfa,rss:C20453,AQUARIUS,LK35,2013,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+86ab66f5-a4b4-5687-a4a8-6870beae114e,rss:C20311,SERENITY,LK36,2012,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+28e7c653-97c9-5b00-8846-324970bc82c1,register:LK37:RENOWN:1981,Renown,LK37,1981,1980s,Shipyard J,,,,,probable,Created from consolidated official/public register row.,official_register_base
+7d630e67-63a6-5f18-8b93-a567351796a1,rss:C20645,SONYA,LK37,2011,2010s,,,F,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+cb3b6a68-0336-58cc-bbf0-fac6904f4a1a,rss:A12009,JUNA,LK38,1970,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+dc718f1a-d5c7-5c71-85de-25603ea288ee,rss:C20748,SPINDRIFT,LK39,2003,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a999723d-003e-5469-b394-7677eb6ce2a7,rss:C21041,SPINDRIFT,LK39,2017,2010s,,,F,ISL,,confirmed,Created from consolidated official/public register row.,official_register_base
+87531192-8cec-52f6-a7d6-4d4ec773339d,rss:B14991,ARCTIC SOLITAIRE,LK40,1997,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+0a7cb5b6-1f0f-55b9-931d-d0e6fa178669,rss:B13807,MAGDALEN ROSE,LK40,1979,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+03b3bbf9-82db-55cf-9e2c-67e40774af71,rss:A12468,LAUREN ROSE,LK41,1983,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b7f5e6fb-3ec4-5e4f-97f9-e9e213ef1837,rss:A12008,EVELYN,LK42,1970,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+ff6d64c4-b51a-5f87-bef0-e1af152ac88a,rss:C21034,AMBI,LK43,2017,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+9f34a540-eb56-532b-a127-48ec5c242865,rss:C19837,VALKYRIE,LK47,2007,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+296f42b6-804e-5171-87c4-1474883f0700,rss:B10300,AURIGA SH,LK50,1988,1980s,,,F,EIR,,confirmed,Created from consolidated official/public register row.,official_register_base
+c9eb7946-ca24-5e06-b29e-d421b0081cc9,rss:A12466,CRAIGNAIR,LK51,1974,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+43279dea-746a-50fe-ba57-43a1283550c0,rss:B10113,RENOWN J W,LK52,1989,1980s,,,S,,,confirmed,Created from consolidated official/public register row.,official_register_base
+6b33d09c-e27a-5f22-bab6-377f92bc22f7,rss:C20698,INVICTUS,LK53,2005,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+abba3d27-2a05-50f7-b084-c07e59190f80,rss:A12476,ADORN,LK54,,,,,U,,,confirmed,Created from consolidated official/public register row.,official_register_base
+58dd6f94-c98a-516c-97dc-af373db8d6fd,rss:C21152,CASSIE MAY,LK54,2010,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+0561cab6-04f7-5e3d-b9f3-f4ad3a582efe,rss:C20749,SEA SPRAY,LK55,2015,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b2cf9413-1add-507d-ad1c-1b51c76b85fc,rss:C19749,GANNET,LK56,1981,1980s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+06f997b0-c7fb-547a-9809-bca09226db03,rss:C17291,ALISON KAY,LK57,2001,2000s,Karstensens Skibsværft in Skagen,,S,DNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+0ada73c4-b19d-52e7-a7e6-4c7ec2c603f7,rss:A23596,FERN,LK58,1987,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e86a892a-4bca-5083-bfcd-c74dce22bc8e,rss:C16907,ARCTURUS,LK59,2000,2000s,Coastal Marine Boatbuilders in Eyemouth,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d941bf06-dbd1-5f99-bfa7-36d1f7e02c97,rss:C21153,RESEARCH,LK62,2018,2010s,,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7d17d094-7007-532f-b884-641eed4b235b,rss:C17971,RESEARCH W,LK62,2003,2000s,,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+9c8487b6-0a1c-541a-b996-f7b4543a35d6,rss:A12756,TRANQUILITY,LK63,1986,1980s,Jones Buckie Slip in Buckie; James N,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+646582c6-d889-5734-a167-7aeeccd713b9,rss:C21135,TRANQUILITY,LK63,2018,2010s,Jones Buckie Slip in Buckie; James N,,S,DNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+6b0bd0ea-f7e1-5fa5-a943-b4e07d82d6bd,rss:C21574,GRUFFALO,LK64,2023,2020s,,,A,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2f61366e-672e-50d6-951f-16592de5b8d9,rss:B14812,KATHLEEN,LK64,1996,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cbc75d89-99e8-5a70-8093-cacb09ee79ee,rss:C21248,LEAH ELOISE,LK65,2010,2010s,,,F,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+a8d60b34-51dc-5b82-9607-c1284cd79e43,rss:C20243,KATIE,LK67,2007,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+38128220-ef9d-59ae-a8ef-242ff86c22a0,rss:A12487,ORION,LK67,1987,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cbabe6ff-2187-5000-929a-2cd9b5e2a27a,rss:A12488,JANNY STAR,LK68,1984,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+dbd3f24a-3fc9-5184-ad36-30d62144198b,rss:C20686,MAVERICK,LK69,2009,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+13731cdd-9c9e-5510-a5bc-f3a42d6f8748,rss:A12490,CONTEST,LK70,1985,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+1253c331-1404-5fb9-83e3-7d92f76bcdab,rss:C20758,VOYAGER,LK70,2022,2020s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+5f31379f-e652-505e-a010-e026c9584b2c,rss:C19118,RADIANT STAR,LK71,2007,2000s,Parkol Marine Engineering in Whitby,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a09e975e-0ead-5958-b2a3-479712c0bdc7,rss:A21956,DONNA ROSE,LK72,1968,1960s,,,W,FRA,,confirmed,Created from consolidated official/public register row.,official_register_base
+202b07f9-1695-59f3-a406-8fee71908026,rss:C19810,CURLEW,LK73,1983,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e7a802b6-db7e-5a45-8573-bd85159eb28b,rss:B13349,CURLEW,LK73,1992,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+5f964c6e-19e3-5fce-8b29-e0b00c2f40b7,rss:C20139,CURLEW,LK73,2012,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+50fc9996-f2f0-58cb-8f7a-9d19d1ee6269,rss:B10814,VENTUROUS,LK75,1989,1980s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+0d0ac232-5128-5e45-bc14-09a505de49ff,rss:C20705,VENTUROUS,LK75,2015,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e822f3cd-1eb0-5b96-aff9-1fda3cb42583,rss:C16504,SIRIUS RP,LK76,1998,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+bbc8fe88-773c-5c74-9413-8c9ae5a67865,rss:C18648,ATHENA,LK77,2005,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+f982b1ae-c779-5ca7-8b91-445ccbbde72b,rss:C18806,PLANET,LK79,2006,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+f4e67da9-309c-5702-8769-433471520f04,rss:A12499,PLANET,LK79,1952,1950s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+6a0d6333-c05d-54d6-808d-398ab33b4e14,rss:A22610,POLARIS,LK82,1984,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7658c503-61e2-5184-bb6f-f120e72b8285,rss:A12503,GUIDING LIGHT,LK84,1986,1980s,J,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+81e033a8-9b27-5260-8974-b6617cb465fc,rss:C15997,THEA-ANN,LK85,2004,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+9ff4391e-4e7c-5281-8d75-7e36bd08ff86,rss:A12505,CAPELLA,LK86,1956,1950s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+45503728-3180-5a0c-8e2d-a4362e36f55a,rss:C18905,ASPIRE,LK88,1989,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b829672b-c0de-592c-ac6d-c0e14ad8911f,rss:B12452,DAYBREAK,LK92,1979,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+ab4f7387-aa37-585f-a47b-10e00fd7c855,rss:C21383,MAI LENA ROSE,LK94,2020,2020s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+0b9105ae-c209-56b2-9545-4028315672e8,rss:A12512,QUEEN OF HEARTS,LK95,1980,1980s,,,W,,,confirmed,Created from consolidated official/public register row.,official_register_base
+ed2bfc3e-1de2-53ba-9ebe-b288aa3f38bc,rss:B10767,BROTHERS,LK96,1989,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+5544bc08-12d7-539f-85cc-5bbc951ac3a3,rss:C20195,BOY STAN,LK97,1968,1960s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a68f6399-ffa0-5b7b-b9c2-e9c4c0340a22,rss:C18604,BRIGHTER HOPE,LK98,2006,2000s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+946ac361-1b10-567f-94e9-7a4cc2220e23,rss:A13622,RADIANCE,LK101,1968,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2eab52b6-65e6-52c4-9abe-8560310c48ba,rss:A12519,AEOLUS,LK102,1984,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7d4fc444-691a-5c9c-86c6-63ac44b9504a,rss:A12525,SAPPHIRE,LK108,1985,1980s,,,U,,,confirmed,Created from consolidated official/public register row.,official_register_base
+51958ebf-abd4-55ac-bfed-e107094d9a6a,rss:A12529,BOY ADRIAN,LK115,1985,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4f9a5af3-27d4-5e5c-9552-cece0b99ab01,rss:A22408,BOY PAUL,LK116,1977,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+1ea828cd-84cc-5da4-aab9-1a4df3e9a178,rss:A12506,PREVAIL,LK117,1981,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+be1b2c53-577e-563b-a82f-d1ae697a84d6,rss:C18341,MAREEL,LK119,2004,2000s,,,F,ISL,,confirmed,Created from consolidated official/public register row.,official_register_base
+f43acbe6-483e-5dd2-8c56-267632accfd6,rss:C19585,GOOD INTENT,LK120,2009,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e6e29c9b-eda5-52cc-924b-4171307d4203,rss:B14733,NISTA,LK121,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+61b1fe7e-7d7f-541b-8fad-5e80704ace56,rss:B12674,WESTERN VENTURE,LK122,1991,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3d357348-23a2-57d4-b495-8a3fbab758a6,rss:B11365,ISHBEL MAY,LK123,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+52841db7-7429-5694-af81-c8b93370248b,rss:A12535,ALERT,LK124,1969,1960s,,,U,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3b81d2a9-ce73-5bdf-acde-d8e94ae9fbeb,rss:B12672,ALERT II,LK124,1992,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cdf3a886-bb57-5fcd-bd4a-6946f40c578a,rss:A13304,REBECCA M,LK125,1982,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+125f245b-be8d-5c4d-9c7e-5f42b347363d,rss:A12537,ELSIE M,LK126,1984,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+ea6b2de2-8d58-5357-8b62-80daa9c7ee50,rss:C21086,ELSIE M,LK126,2003,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+8f7b6f26-8fc5-5350-a0a8-0548a3f66d48,rss:C20701,BOY FRAZER II,LK137,2015,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4d0db664-ce6a-5d06-82f7-bf37d6b3f86e,rss:A12545,CRYSTAL SEA,LK140,1972,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a24fbedf-f810-545b-a1f9-048105234b5b,rss:A12546,VAGRANT,LK141,1973,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+c17d4adc-4bca-53e8-bfe3-8f1fd1c5e364,rss:C21511,ANTARCTIC,LK145,2024,2020s,,,S,,,confirmed,Created from consolidated official/public register row.,official_register_base
+ec1e680c-ba5f-593d-a9c6-8f5a49639632,rss:C18113,ANTARCTIC II,LK145,2004,2000s,Sedef Gemi Endustrisi A,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+79c18b59-4563-5c14-8ab7-7ff6eed7708f,rss:C18610,LIANNE,LK149,1998,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7253645c-552b-5fa7-8127-69796abef4ab,rss:B14107,ASKARI,LK150,1994,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+f27718f0-9c2d-52ec-8dba-716b31dd7615,rss:A10679,KELLY,LK150,1982,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b91e4108-1c66-59af-a35d-2828a7bbc5cd,rss:C16006,ORCADIS,LK151,1997,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+396f58ca-d6cc-5ad2-b90c-c50993829c09,rss:A12458,STILL WATERS II,LK154,1967,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+78494aa7-ff76-5750-8f75-3e734c4c2440,rss:A12557,OSPREY,LK158,1983,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+c0e8ee21-9f32-564b-9e5d-7dec9f973afd,rss:B13893,NORT STAR,LK159,1992,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+be533569-91c9-5312-bf64-a986de697ea6,rss:B13948,SUSAN,LK159,1985,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+5d0a0d82-20e3-5c17-b060-d3fe47d71c6f,rss:A14680,KINDLY LIGHT,LK168,1963,1960s,,,W,,,confirmed,Created from consolidated official/public register row.,official_register_base
+b3c98e8d-b6df-55df-858c-3bd57481641a,rss:C21551,GUIDING STAR,LK170,2024,2020s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+dc28857b-a3e9-5f4e-8102-6389aa080369,rss:C20693,CONQUEST,LK171,2015,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+383b39ec-39f2-5f9d-b727-d926b9530e33,rss:A17773,ARNBORG,LK172,1974,1970s,,,W,GBS,,confirmed,Created from consolidated official/public register row.,official_register_base
+e68f1446-403f-52df-a74f-03a9ba9f5b16,register:LK172:ADONIS:1985,Adonis,LK172,1985,1980s,Campbeltown Shipyard in Campbeltown,,,,,probable,Created from consolidated official/public register row.,official_register_base
+35a4ea7c-e414-581e-a2be-708c2d65cda0,rss:A12478,MIZPAH LK,LK173,1988,1980s,Campbeltown Shipyard in Campbeltown,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+221e756a-5bca-5a54-9513-8b8eb87c8032,rss:A11754,AVRELLA,LK174,1988,1980s,,,S,GBS,,confirmed,Created from consolidated official/public register row.,official_register_base
+7932b0fc-e001-55e6-b1ce-e5f8280e227a,rss:C17006,AVRELLA,LK174,2000,2000s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4bced7b8-72dd-550a-bf56-03b60dc62844,rss:A12566,SHALIMAR,LK176,1975,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+f3a71f8e-cf61-50d7-b788-6ad0cb20fa83,rss:B14246,VIORA,LK177,1993,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e4e8cfdf-5555-53ce-b485-c9276fc560de,rss:A12798,WINDWARD,LK185,1984,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+011e0a83-9d58-5f89-9c5d-a9716641bf56,rss:C18062,ADENIA,LK193,2003,2000s,,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+6dadcca4-99b7-520f-b911-fcbe9d1128c5,rss:C21235,ADENIA,LK193,2019,2010s,,,S,ESP,,confirmed,Created from consolidated official/public register row.,official_register_base
+7b84e4dd-046e-5d69-8b43-60b860f263b2,rss:C16172,RESILIENT,LK195,1997,1990s,Macduff Shipyards Ltd,,S,GBS,,confirmed,Created from consolidated official/public register row.,official_register_base
+4f2c0e59-c451-5926-8bce-c7e6701425df,rss:C20831,RESILIENT,LK195,2015,2010s,Macduff Shipyards Ltd,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+75d6846d-f609-5a01-bd54-406b309dc192,rss:C17127,CONVALLARIA,LK198,2000,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+0e1c4e26-aaab-5ed9-8718-76fecda39041,rss:A12358,SOLSTICE,LK198,1980,1980s,,,U,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4b84fb82-c8cc-5879-ace0-a04a32cc79e1,rss:C16491,FAIRWAY,LK207,1998,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+03453e7c-22a3-511b-9a5b-ac1607094bd2,rss:B14623,OCEAN WAY,LK207,1996,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+957013ed-a2f7-5c7c-b1cd-66b0e19b8aaf,rss:B13825,OPPORTUNE,LK209,1984,1980s,Smògen Plåt & Svetsindustri A,,S,SWE,,confirmed,Created from consolidated official/public register row.,official_register_base
+18257789-0b9a-5f26-a594-fc7c9878686d,rss:C16444,OPPORTUNE,LK209,1998,1990s,Smògen Plåt & Svetsindustri A,,S,ESP,,confirmed,Created from consolidated official/public register row.,official_register_base
+e4621c62-3ce5-5437-ac1b-da7fe2a20cc5,rss:C19267,OPPORTUNE IV,LK209,2003,2000s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2a088b6d-3562-522a-ae69-fe2692afbc60,register:LK209:QUIETWATERS:1981,Quiet Waters,LK209,1981,1980s,Macduff Shipyard in Macduff,,,,,probable,Created from consolidated official/public register row.,official_register_base
+9b832782-47b2-5e2a-98e6-0d9b71895d8a,rss:C21311,WILLING BOYS,LK210,2020,2020s,,,U,,,confirmed,Created from consolidated official/public register row.,official_register_base
+f608220c-9786-5a21-84b4-136fff823867,rss:C17003,DODGER,LK211,1999,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+1186beb5-2625-50ca-88fd-f3bd84864544,rss:A11406,LOWRA MAY,LK213,1957,1950s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a89940cc-4fb6-5564-9460-4882949cf1be,rss:A13858,QUIET WATERS,LK214,1984,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+db9634fe-b86a-5aee-bc7f-559f5e3c25bc,rss:A14785,TRIDENT,LK217,,,,,W,FRA,,confirmed,Created from consolidated official/public register row.,official_register_base
+5ad17e80-1721-52f4-8306-1162f090efa2,rss:B13441,CORVUS,LK219,,,,,W,UNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+a05f6c6c-664f-5766-b046-45a7d03cbe63,rss:C21617,ORRICK,LK227,2025,2020s,,,A,,,confirmed,Created from consolidated official/public register row.,official_register_base
+b9c16382-1468-5136-b21e-5db4ad96464e,rss:C20545,DENISE,LK229,2014,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+de81b909-7b2e-5861-bfc9-cf0732115678,rss:C20734,HONESTAS,LK234,2006,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+78edc3db-6f16-5865-bfda-8b0aaa0e626d,rss:C20570,BOY WILLUM,LK237,2012,2010s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+f3b46933-7265-5bba-a781-d163a19fa67b,rss:C16068,BRIGHTER MORN,LK239,1997,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e22095f2-b17d-5cb3-a1d0-1c7892429822,rss:C20534,ALERT III,LK241,2014,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d819654f-5d03-52ff-917d-779f429c93ff,rss:C16836,FAITH EMILY,LK244,1999,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+baa1b448-35f5-59ef-ba93-05c6dcdd920c,rss:A10558,SHARYN LOUISE,LK250,1987,1980s,Macduff Shipyards Ltd,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3737d1e1-0aea-5234-91e9-e9167632ec2f,rss:C21377,OCEAN CHALLENGE,LK253,2020,2020s,,,S,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+96c09d7b-465e-585e-af98-36c31390b95c,rss:C16672,TREASURE,LK257,1999,1990s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+0798076a-203e-569c-a2bb-a16473c15032,rss:B14061,JESTER,LK258,1994,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7649f96d-8c3c-5160-9993-b98bd285efda,rss:C17070,KESTREL,LK268,2000,2000s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+993f45b5-ccec-5589-9cfc-3621f44d208f,rss:C18510,KESTREL,LK268,2005,2000s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2915e5bc-bb33-501d-83e8-82710ab0d644,rss:A13973,DAWN MIST 11,LK270,1982,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+eadaae8c-df48-5b2d-bb8b-78ebe86e87e5,rss:B10189,FAIRWAY II,LK270,1989,1980s,Simek A,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7f6a9d49-a528-5f99-a54d-9782fa9093ff,rss:C20869,PILOT US,LK271,2013,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+beb22a7b-e08d-5e4a-9518-ea15b7c738a6,rss:B12872,GUARDIAN ANGELL,LK272,1992,1990s,de Campbeltown Shipyard in Campbeltown b,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+bf0532d1-447e-5648-908f-ae1ee69ded64,rss:B12618,SEA STAR,LK273,1992,1990s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+51e35c89-f72d-5c2e-bd02-1772f621432d,rss:A12597,STAR OF HOPE,LK277,1985,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4e79408b-c587-56e8-97e8-980631b6fcea,rss:A12599,BOUNTIFUL,LK280,1930,1930s,,,W,GBS,,confirmed,Created from consolidated official/public register row.,official_register_base
+c56606dd-e7be-5fa0-ab05-f37c2df54442,rss:C21405,SYLVANUS,LK286,2004,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a552cfb7-3f43-55e5-8e19-e76255a7c5ac,rss:C20395,ECLIPSE,LK287,2004,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+1384f0d8-d437-52ff-8733-2652db9448b3,rss:B14554,AMETHYST,LK291,1983,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+68d56131-7eaa-5036-af75-a15ebc5d7aa2,rss:B15007,JULIE-ANN,LK292,1997,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a343ae13-8f52-5d31-8048-5edd7b51bce5,rss:A15569,VESPER,LK295,1981,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+95ca2f56-83c1-5e1a-a7fa-729ef2d98d4f,rss:C19520,SERENE,LK297,2008,2000s,,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+57bb1ab2-cd12-5548-a08f-393af8bd71b1,rss:C21150,SERENE,LK297,2018,2010s,,,F,DNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+80f23a1e-196d-539c-b72e-dc179d79b205,rss:C18167,VERANIA,LK298,2004,2000s,,,F,ISL,,confirmed,Created from consolidated official/public register row.,official_register_base
+88127959-1047-5769-82d7-62ddb23e8c3e,rss:B14724,VERANIA II,LK298,1996,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+8d868d2b-5a0f-5673-9562-41a7640fc80b,rss:A12608,GIRL LYNNE,LK301,1952,1950s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+00774302-916f-545b-b148-33a73b3a93d5,rss:C21228,ORION,LK304,2017,2010s,,,F,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+6aaf3825-9019-59fb-8a94-67545c5ee43b,rss:C17344,COMRADES,LK308,2000,2000s,,,S,ESP,,confirmed,Created from consolidated official/public register row.,official_register_base
+8314a5da-5e9f-5ae0-8bd1-a14d8addfde6,rss:C20098,LAURINA,LK310,1970,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d77b1e1f-41f0-5a9a-bdaa-93cc3c4b2332,rss:C20866,TRUST,LK311,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2e816920-c999-5ab1-99bd-ac69f3ad8059,rss:A12616,LUSTRE,LK315,1958,1950s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+db8b18a8-0793-5310-ac1c-cadf573d5623,rss:C16091,ROSEBANK,LK317,1984,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+51b74c61-5059-5cb1-8a42-5fd35ade09d3,rss:A23625,ARANATHA,LK318,1985,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3d4addb7-d75d-55cf-a6dc-6c149ac10087,rss:C21212,INCENTIVE,LK321,2009,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+93f8befa-696a-5d76-8466-6d15a7669110,rss:A12623,COMRADES,LK325,1958,1950s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2c1e8707-ff69-5231-afe5-7c35cf7e26c1,rss:B12167,COMET,LK326,1988,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+559d6904-5cf1-5cc9-880a-48614806c60f,rss:C16776,ACCORD,LK331,1999,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+c854111b-89a3-59e7-8edf-27b9e804fb53,rss:A11894,IVY LEAF,LK339,1973,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a8c20745-43a4-5a88-8b5c-4c72d128635f,rss:A12633,SILVER STAR,LK341,1955,1950s,,,W,GBS,,confirmed,Created from consolidated official/public register row.,official_register_base
+175070d1-de25-5fd9-9b26-349a11c770b2,rss:C17256,MELISSA LOUISE,LK347,,,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+a1ca1123-f3c3-5947-bfa7-7f041bc55c4e,rss:C16157,ANNABEL,LK349,1997,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e08dd5dc-a9cf-5346-9c1b-bc357b0c9f3d,rss:B10623,INTREPID,LK353,1978,1970s,,,W,,,confirmed,Created from consolidated official/public register row.,official_register_base
+08fb2109-243b-5ef3-97e0-763bdde14199,rss:A13165,LITA ROSE,LK354,1979,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a6227bb5-9bbc-5029-9270-7680dfd9fb6f,rss:A12638,VICTORY II,LK356,1950,1950s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+dc141360-6f2f-5ede-aa67-a9bd2c177e49,rss:C18033,CHARISMA,LK362,2003,2000s,,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+9afb22cf-0bcd-5da6-9736-fab0dc12a253,rss:C21332,CHARISMA,LK362,2019,2010s,,,S,DNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+eda923f2-cffc-557e-8454-2df6639fb1cf,rss:B11182,SONDRA,LK365,1989,1980s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+66f81341-1383-5181-9d46-8e62672234a7,rss:C17202,LIBERTY,LK369,2000,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+56814051-8935-57b3-8d13-301d9c454881,rss:A12643,DEFIANT,LK371,1987,1980s,Campbeltown Shipyard in Campbeltown b,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+1ce6cf2d-605f-5fe6-b172-3006c41cceb6,rss:B13332,CORNUCOPIA,LK372,1992,1990s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+53fcd03b-29ef-535f-9a23-0c3a357de9f6,rss:C20609,CORNUCOPIA,LK372,2014,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+61a7cd8e-0b29-5254-af26-c48cc51c5991,rss:C20688,FISHER LAD,LK378,2012,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3dfc4a50-6c61-589c-8a2e-9cbdabad4880,rss:C16102,KROSSFJORD,LK380,1997,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+c70c1c83-c4c7-5a8b-8d20-26aeec291e32,rss:B14874,ZEPHYR,LK394,1996,1990s,Flekkefjord Slipp,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+61ffd59e-55dc-5b8a-8f3a-b5f19438cc11,rss:C21275,ZEPHYR,LK394,2019,2010s,Flekkefjord Slipp,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+35eebc60-0c08-5c15-8f06-ad818c695cec,rss:B14689,RESOLUTE,LK395,1996,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+eb58fff5-cfe1-547e-a73b-b15e4adf3555,rss:C16282,REBECCA,LK396,1998,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+ca9622a8-cc02-51ff-8a04-8d7249b576b6,rss:B13781,SURMOUNT,LK400,1982,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+5e195f8f-d0a9-5e73-9f38-bb71a6b4c0c0,rss:B12778,AMAZING GRACE,LK406,1992,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+f89bf7a6-3032-54dc-a584-0fa87c43f4fd,rss:C21115,HELEN ANN,LK410,,,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+25e135cc-138a-5152-9833-261a879be209,rss:B14850,ANTARES,LK419,1996,1990s,,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a90c591a-7703-5954-aa1a-36b6c090b4db,rss:C20919,ANTARES,LK419,2016,2010s,,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+04bf6d3e-132b-518e-840b-686f8eddc034,rss:C20678,LILY MAY,LK420,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+f2ef0999-2a03-59fa-9b32-1e02e51bb424,rss:A12660,BLOSSOM,LK424,1962,1960s,,,U,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+308f194b-2353-58bb-9a00-2f9f88750a83,rss:C18297,ALTAIRE,LK429,2004,2000s,Langsten Slip; Sedef Shipbuilding in Istanbul,,S,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7f0d2960-6e1e-578a-9fb0-b021cac22410,rss:C21461,ALTAIRE,LK429,2023,2020s,Langsten Slip; Sedef Shipbuilding in Istanbul,,S,DNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+794a03df-931f-569d-9550-835720247ad8,rss:A14728,PATHFINDER,LK431,1977,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+fc939d09-7bb2-552a-b28e-f3910f04b855,rss:C21222,BANDIT,LK437,1901,1900s,,,W,,,confirmed,Created from consolidated official/public register row.,official_register_base
+1246b68e-006d-56c6-8d12-808c13d699be,rss:C20140,SCEPTRE,LK443,2011,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2296f983-25b7-5dae-b9cd-6a3a32c13648,rss:C15986,SCEPTRE,LK443,2010,2010s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+3401e89c-16df-540a-9e59-7cb8ddd58fc4,rss:B11212,ELYSIAN,LK444,1989,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e725110d-bd6c-5a43-bdac-ef801c58fb5b,rss:A12676,RESTLESS WAVE,LK466,1977,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+34a362a5-2761-5438-a276-ae11778cb047,rss:C19961,HALCYON,LK467,2011,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+ec8366ab-0fb4-5a8f-8254-550fab60b475,rss:C17224,COURAGEOUS,LK470,2021,2020s,,,S,DNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+e0185341-4f9e-5da1-bdc2-5e169e6b8462,rss:A12678,ARDENT,LK472,1981,1980s,,,S,SWE,,confirmed,Created from consolidated official/public register row.,official_register_base
+fc975a7a-88c7-52e3-b933-dfa83c5b0fdf,rss:B12261,MIZPAH,LK497,1991,1990s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3b1a00ce-d9bd-5894-85b8-99a15efc4cd6,rss:A22020,MONTANA,LK500,1987,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+f4eaf889-a4f0-516e-9fab-6b5a9b178210,rss:C16765,ATLANTIA II,LK502,1999,1990s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+53ea9917-b3d6-5019-ab3f-2ff5fd22acc6,rss:C21380,IONA MAE,LK512,2020,2020s,,,S,IRL,,confirmed,Created from consolidated official/public register row.,official_register_base
+e5151637-409f-5856-b3a1-465dd3f803df,rss:B10794,PEGASUS A,LK520,1988,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d5489d51-aef5-5451-a193-54bf5b051626,rss:C20362,ELLIE ROSE,LK530,1990,1990s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+baf34b41-bfb9-50a5-aa21-23f3c99b0f19,rss:A12689,GIRL LIZZIE,LK537,1933,1930s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3ca256e9-7c33-5251-bb35-2462903f5979,rss:C16727,GOLDEN SHORE,LK540,1999,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+8b2cf90f-eddf-5e85-8866-732b884b45a9,rss:C16518,ADVENTURE,LK560,1998,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+646f8aef-e931-566b-828b-2cf19c04f4e4,rss:C17884,GINA C,LK570,2003,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7eb502aa-d58a-5280-9ad5-e78e29d537e4,rss:C20876,EMERALD,LK581,2006,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+16899c50-9455-5d65-948a-0ba2ebe00494,rss:C19146,MARI DAWN,LK605,2007,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+97a24cdd-b83b-5701-bfb9-2cb035a918f0,rss:C20833,SEDICK,LK606,2015,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+6e83e585-18d6-5af1-af06-aaed88e05bc1,rss:A13060,MAY LILY,LK607,1978,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d96a3991-491f-5549-99cb-482837e2bb72,rss:C16317,JASPER,LK617,1998,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+54196b80-61a3-5f49-9bda-e4c4cbe817f8,rss:C18653,JASPER,LK617,2005,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+2ddb7cfb-5186-53e1-ab51-c371159684d2,rss:A12700,DIVINE STAR,LK624,1964,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7df95a7c-1edb-536f-b545-eaaba814aea9,rss:C16996,HOPE,LK626,1952,1950s,,,W,UNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+829734ab-d3e7-58d5-a16e-028505ec8f66,rss:B12204,VENTURE,LK641,1991,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7a2da77c-f3a3-59d7-a03f-248808471ebe,rss:C20491,UNISON,LK645,1984,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+786aa2b6-6f81-596b-915b-7cf9bd62eb0e,rss:B10147,SEDNA,LK655,1983,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a7b30cfe-89cf-598c-bb3d-70b7fa9bb86c,rss:A16327,MAJESTIC,LK678,1977,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+293e67c1-9848-5919-990b-00e259dd0f04,rss:A12708,ENTERPRISE,LK686,1966,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+565643c2-ca18-5b48-8fda-03263b29dfd3,rss:A13933,VALHALLA,LK687,1985,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+38ed4fc4-f20b-55c7-9fbe-ae123f360e2f,rss:C17874,VALHALLA,LK687,2003,2000s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+d1ad9a6c-93bd-576b-810d-aa0d632dc3c0,rss:B14193,CORAL C,LK695,1994,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cda23762-8f84-59a8-9bdb-5cb841dc996f,rss:C20943,CORAL,LK696,2016,2010s,,,U,,,confirmed,Created from consolidated official/public register row.,official_register_base
+334bb34f-580b-521d-8ace-15f7eb51d1d9,rss:C18880,QUANTUS,LK701,2006,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+57b7c643-4613-5c84-9709-24000a0643b7,rss:A11918,NORDIC BRIDE,LK703,1983,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+72bd51f1-4fb5-5dd3-b3ff-92ef0cd3f38f,rss:C16113,KORONA,LK704,1976,1970s,,,W,FRA,,confirmed,Created from consolidated official/public register row.,official_register_base
+b6ebbae6-738b-582c-98a7-9e635ccd4e4e,rss:B12491,VENTURE JH,LK712,1989,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+6ade0f36-8c41-54ff-85f5-b41ec35babd7,rss:C18543,TROJAN,LK726,1975,1970s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+465c2fe6-bcbd-51e6-a94a-0ab26b216a7e,rss:B11638,JOANN HENRY,LK727,1989,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+36915ee4-0bd3-5b9f-87f3-8fcd0f08900f,rss:C21067,OUR LASS,LK747,2009,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+8bf06f94-e39f-5aa0-99d0-ef41fe1ba188,rss:C19469,FAITH EMILY,LK750,2008,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3fa83a4f-aa53-5745-8ac6-ff2b1bf7546c,rss:B13081,DOLPHIN,LK755,1986,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b44a7599-63fe-577e-a551-e139899c9936,rss:B12549,ISLA K,LK776,1991,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+68f42c87-fb9e-57b2-a18f-ad3d9e44fac3,rss:A22990,JUNE ROSE,LK779,1977,1970s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+337b2081-b99f-5333-92c6-4038f1c920e0,rss:C20590,MERLIN,LK780,2014,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3aa0362d-c180-58bd-a486-be8c456e8b51,rss:B14042,LEONA JANE,LK783,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b1ac13be-564b-5f94-81c9-df5495c1bf2b,rss:B13887,DEVOTION,LK801,1993,1990s,Macduff Shipyards Ltd,,W,GBS,,confirmed,Created from consolidated official/public register row.,official_register_base
+f992ccc2-cd0a-594f-ba55-db87da78b80e,rss:A24604,SHALIMAR L.M,LK803,1988,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+76115629-ce8e-59f4-90e5-5fb1cdc96c79,rss:C16994,HEVDA,LK806,2021,2020s,,,U,,,confirmed,Created from consolidated official/public register row.,official_register_base
+36636775-d18e-50c3-95f9-56a5427e4d8e,rss:C17235,OLIVIA ROSE,LK806,2001,2000s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+a2ded06f-10aa-54d6-8905-edded296f945,rss:C16231,MAREA B,LK809,1997,1990s,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+cd076ce1-9c6e-510b-9442-2e7a67e0d6cf,rss:A21883,KIAMA,LK835,1978,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+097b7ab6-b104-518f-94e4-d0cc3053b1b2,rss:B14804,CRYSTAL ANN,LK836,1980,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+34d21d20-fac3-5041-8046-46e0403c0967,rss:A19943,FREEWARD,LK851,1972,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+98ac4b0f-0741-5469-83a0-c07ac3ff9856,rss:C20712,ARTEMIS,LK888,2015,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+656ee66e-82ff-5cf4-9539-4d8514ba8bf1,rss:B14865,EXCALIBUR,LK889,1996,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+c0768609-f00b-5a5e-8de9-60b144cfde02,rss:A21798,SMILING MORN,LK891,1978,1970s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+042f6ad7-3284-5b3c-91ec-3164bcdfa6e0,rss:B12377,SELINA MAY,LK897,1990,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+aa72730c-5997-508a-a083-e5510ecb4013,rss:B10417,SEA GULL,LK901,1989,1980s,,,F,EIR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e18c8787-db12-5ed8-aa69-b90b6b4c78fa,rss:C20945,EMELOU,LK902,1999,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+99237ff5-7b51-5ab9-b6d3-1979ef156af1,rss:C21168,BOY ROBERT,LK906,1987,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+8148aa28-1b16-56a8-8b50-05318983eea1,rss:B14266,RELIEF,LK968,1994,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4a0d2a6d-9dfb-5c6d-ae66-5e1edd1e03e8,rss:A20518,HARMONY JB,LK969,1984,1980s,,,F,UNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+0bc58d71-df57-59de-808c-c73b48a9865d,rss:B14660,BE READY,LK973,1996,1990s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b4f95613-3aa0-5ea2-b294-fa8a8503b78a,rss:C16439,JANMAR,LK980,1980,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+1c262f14-0ac7-53fc-8272-2eecedb118e4,rss:C20680,ALANA JANE,LK983,2014,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e0da901f-2d6a-5c92-8487-02fd48fecc40,rss:C20094,COPIOUS,LK985,2022,2020s,Parkol marine Eng,,S,HRV,,confirmed,Created from consolidated official/public register row.,official_register_base
+2648b76d-8816-5f46-ad65-d8d87cbd39b2,rss:C19237,PROLIFIC,LK986,2008,2000s,Parkol Marine Eng,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+470b55bc-a4ac-5b82-a690-56b4688b22ef,rss:C21385,PROLIFIC,LK986,2022,2020s,Parkol Marine Eng,,S,HRV,,confirmed,Created from consolidated official/public register row.,official_register_base
+bdfd6d84-4110-5bf3-84e0-258fff2064bd,rss:A11548,SADIE JOAN,LK987,1961,1960s,T,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+e20d1ad3-db09-5fdd-b172-8e3272f32072,rss:A16421,WEXFORDIAN 3,LK1011,1988,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+3e626895-59da-597b-920f-ca28848ca6f6,rss:C20250,LAIKA II,LK1017,2003,2000s,,,O,NOR,,confirmed,Created from consolidated official/public register row.,official_register_base
+bfbf61eb-5bac-5a99-9d5c-1936e597cc6e,rss:C20690,G JANE,LK1028,2015,2010s,,,A,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+b75e683a-7fb9-575a-b2d7-c1b564ccc700,rss:C20357,EXCELSIOR,LK1043,2013,2010s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+6bcbe968-9a93-561f-9b82-710734c6d263,rss:C21026,FISHER LASS,LK1046,1961,1960s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+dcf2485f-8687-5746-aafc-4d948cb60227,rss:C21165,VILLAGE STAR,LK1053,,,,,S,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+7631aaa3-3e48-53ea-add9-e2d3d7417d46,rss:C16117,MARANDA MAY,LK3374,1988,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+52723c68-afa7-5d67-8f35-422039353d72,register:LK3383:BOLDVENTURE:1998,Bold Venture,LK3383,1998,1990s,,,,,,probable,Created from consolidated official/public register row.,official_register_base
+256015df-cbe0-5395-9c44-9b6b490cf9b5,register:LK3390:WHITEHEATHER:1988,White Heather,LK3390,1988,1980s,Cygnus Marine in Penryn,,,,,probable,Created from consolidated official/public register row.,official_register_base
+d7de88e8-ff76-5c24-a0b9-bacc4f8de57b,rss:C16388,SPRIGHTLY,LK3395,,,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+4b6e42d9-ecba-515c-8dff-7305ef7c96fe,rss:C21225,SPRIGHTLY,LK3395,1984,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+dedc2280-515a-5d1e-9ee9-fe8ca7daaa67,rss:A10970,ONWARD,LK3398,1981,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+023ad7fc-46c2-5650-a486-b7c330e36fe0,rss:B11463,ALTAIR,LK3412,1989,1980s,,,W,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+573543bf-eaa6-5f56-8ae5-4b4b3a7add47,rss:C17004,KIA-ORA,LK3430,2000,2000s,,,,UNK,,confirmed,Created from consolidated official/public register row.,official_register_base
+67cfe097-3962-5398-b7ce-355263248149,rss:C17640,NYUGGEL,LK3440,1955,1950s,,,W,,,confirmed,Created from consolidated official/public register row.,official_register_base
+0a605edb-08a6-5d1f-885d-27a60e780e80,rss:C17967,REBEL,LK3447,1974,1970s,,,F,,,confirmed,Created from consolidated official/public register row.,official_register_base
+7878eed1-ba3e-5792-9c02-3b70130845e5,rss:C18176,LESLEY A,LK3452,1985,1980s,,,F,GBR,,confirmed,Created from consolidated official/public register row.,official_register_base
+331ade72-e6fb-568a-841c-7c44e9a9a2c3,photo_catalogue:LK272:MAGGIE:,MAGGIE,LK272,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+f253f040-56ae-5074-9cae-88600aef6659,photo_catalogue:LK2:GIRLMANDY:1990,GIRL MANDY,LK2,1990,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b01f5fab-dab1-5a8b-8725-1a17f6b8c753,photo_catalogue:LK4:LILAC:1934,LILAC,LK4,1934,1930s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+6c291c0f-130c-5488-822b-5e17064fc4e2,photo_catalogue:LK5::,LK5,LK5,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+0335bf24-8742-5d7b-9310-d2daa76cea9d,photo_catalogue:LK9:SEARCHER:1992,SEARCHER,LK9,1992,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+4bef7298-0f15-52cc-926e-166b4d65dc30,photo_catalogue:LK11:ABALONE:1964,ABALONE,LK11,1964,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+a2312d3c-c3a1-5685-8b82-5dd8bf26ea1b,photo_catalogue:LK15:ZENITH:1987,ZENITH,LK15,1987,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+4d6ac3c6-b105-5bda-92ab-af9656815be6,photo_catalogue:LK16:BRIGHTRAYII:1982,BRIGHT RAY II,LK16,1982,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+68d7fb53-75e4-5e9f-8443-c8984263fa1f,photo_catalogue:LK20:SANLORMARHO:1974,SANLORMARHO,LK20,1974,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+aa97b8a7-a815-5307-bb44-94e8c096d251,photo_catalogue:LK25:OSPREY:1984,OSPREY,LK25,1984,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+1ea01e06-c462-5724-acd9-59b2c44ef846,photo_catalogue:LK30:SALMAR:1989,SALMAR,LK30,1989,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+c22d4a36-0349-5562-954c-3d78fd8db6fd,photo_catalogue:LK36:TRANQUILITY:1969,TRANQUILITY,LK36,1969,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+27f06b05-b86e-5402-9248-9bf258d56354,photo_catalogue:LK37:RESPONSIVE:1944,RESPONSIVE,LK37,1944,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+3e433c49-9963-51a8-af28-a3356d725691,photo_catalogue:LK41:SUDAYRE:1983,SUD AYRE,LK41,1983,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b0bbf56f-cc15-5bf5-b208-04af8e63b798,photo_catalogue:LK45:GOLDENACRES:1943,GOLDEN ACRES,LK45,1943,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+25f0892c-9e7c-5d4f-bd8c-dc0afa0d4b74,photo_catalogue:LK47:BRIGHTERDAWN:1949,BRIGHTER DAWN,LK47,1949,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+a9f2619f-0f31-5ebb-a0c1-05a5780f2f0d,photo_catalogue:LK48:LILY:1975,LILY,LK48,1975,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+0db7f9ba-e93b-5628-9cd3-13bd7f0b06cc,photo_catalogue:LK51:ROCKHOPPER:,ROCKHOPPER,LK51,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+fb508298-af1f-527e-9175-9d2d6fc486fa,photo_catalogue:LK52:ARIANE:1984,ARIANE,LK52,1984,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+ec7639db-40b0-5f6b-8d5a-68d286c0a7ba,photo_catalogue:LK52:RENOWN:1989,RENOWN,LK52,1989,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+2c0a7726-9e1d-595c-b829-9e7dbe77623e,photo_catalogue:LK59:GIRLPAT:,GIRL PAT,LK59,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+48e577b7-0bd7-5d96-ad70-c0ad7d3235c5,photo_catalogue:LK59::1900,LK59,LK59,1900,1900s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+484659a5-dd3b-5dbc-a692-65c30ad45fcd,photo_catalogue:LK63:SERENE:1959,SERENE,LK63,1959,1950s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+f1215686-c17e-57c4-899e-47c023f39f0c,photo_catalogue:LK63:HARMONY:1974,HARMONY,LK63,1974,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+46721731-0a3a-5eda-a221-99fd9e587dee,photo_catalogue:LK64:OCEANREAPER:1944,OCEAN REAPER,LK64,1944,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+88dcee3c-c5de-5958-9a7c-be574d1d34e9,photo_catalogue:LK71:RADIANTSTARII:1981,RADIANT STAR II,LK71,1981,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+7ec86290-64ae-5aef-81a3-71e0726b3b5e,photo_catalogue:LK74:ROSEBANK:1981,ROSEBANK,LK74,1981,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+cec588f2-9da2-5131-ae00-e551563435a1,photo_catalogue:LK87:EVENINGSTAR:1981,EVENING STAR,LK87,1981,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+5c72e181-c3e2-53b8-9478-52b6f65e770d,photo_catalogue:LK88:FASTWORKER:1989,FASTWORKER,LK88,1989,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+41ee2ab4-0473-5a76-b3b5-1cab1fd5b914,photo_catalogue:LK90:NJORD:1992,NJORD,LK90,1992,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+aa1fdf49-282f-5bf1-9d8e-3764900e4baf,photo_catalogue:LK93:SEASPRAY:,SEASPRAY,LK93,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+59731569-5b0e-584a-bb95-14d45bf1fb7e,photo_catalogue:LK97:REPLENISH:,REPLENISH,LK97,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+318fdb9b-c97b-5a28-a1c9-18cc80bb4618,photo_catalogue:LK103:ROODEPOORT:,ROODEPOORT,LK103,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+dc8fe19b-9822-5238-8001-84313e775113,photo_catalogue:LK106:MILKYWAY:1934,MILKY WAY,LK106,1934,1930s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+4b9c475a-0579-5093-a642-3ad0d98ab464,photo_catalogue:LK117:EXCRAIGARY:1992,(ex) CRAIG-ARY,LK117,1992,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+7a994031-fc3b-5720-9698-52a109f4078f,photo_catalogue:LK121:JOHANNA:1994,JOHANNA,LK121,1994,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+dbc8d1ee-8d48-5c74-9799-4392e00bf422,photo_catalogue:LK126:VENTUROUS:1974,VENTUROUS,LK126,1974,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d7a98865-0b15-5e60-853b-d9557f12c45d,photo_catalogue:LK126:REDROCK:1984,RED ROCK,LK126,1984,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b50ebaae-ccb8-5a13-9f3c-a0c63cf2d393,photo_catalogue:LK128:DIAMOND:1987,DIAMOND,LK128,1987,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+5c6609d4-ac35-597f-b56e-1faa6e838729,photo_catalogue:LK131:PARAMOUNT:1968,PARAMOUNT,LK131,1968,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d2fde662-6b44-5a9e-a7d6-2ac30de7ff2b,photo_catalogue:LK133:SAMANDRA:1982,SAMANDRA,LK133,1982,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+ec3895fa-7459-5ee9-9f40-fc57882e4265,photo_catalogue:LK136:ASCONA:,ASCONA,LK136,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+edf485dc-6ec9-5eff-b65c-968babce3f13,photo_catalogue:LK137:PRESSON:,PRESS ON,LK137,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+282ee3f1-f5b1-5ef1-9729-9232e8e1c0b4,photo_catalogue:LK138:PECOSO:,PECOSO,LK138,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+610eadf5-3f80-541b-8c39-c37d5955d13f,photo_catalogue:LK142:RIVAL:1978,RIVAL,LK142,1978,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+1cc99e27-098a-5b73-8bfe-390ddade7e8e,photo_catalogue:LK143:HARVESTER:1973,HARVESTER,LK143,1973,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+6fd66c1e-743d-517e-a7db-468e9b917482,photo_catalogue:LK149:KORONA:1968,KORONA,LK149,1968,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+a4accc77-40f5-5acb-aff2-a612b5b361a7,photo_catalogue:LK159:CHELARIS:1971,CHELARIS,LK159,1971,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+8d6bc92b-cf88-5762-959c-054fa607b476,photo_catalogue:LK170:SJOSPROYT:,SJOSPROYT,LK170,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+ea2c311e-2d06-5d3b-93c2-b7da88ec1d55,photo_catalogue:LK171:CONNAUGHT:1986,CONNAUGHT,LK171,1986,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+0c74a8bc-8c6f-546e-be05-2983b014f147,photo_catalogue:LK173:ENDEAVOUR:1988,ENDEAVOUR,LK173,1988,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+47f1527a-f213-5c5c-b327-5aef118c5012,photo_catalogue:LK174:AVERELLA:2000,AVERELLA,LK174,2000,2000s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+f24b00cf-572d-50a1-a019-16abad906078,photo_catalogue:LK189:HELENA:,HELENA,LK189,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+184ff9f3-0e16-5285-809d-6893eb836ae6,photo_catalogue:LK189:KATIELOUISE:1975,KATIE LOUISE,LK189,1975,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+450d63b8-6d24-5cdb-8112-13c3893161bc,photo_catalogue:LK192:SWIFTWINGS:1926,SWIFT WINGS,LK192,1926,1920s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+58b37006-32b4-5618-a77e-4799abe09719,photo_catalogue:LK193:ADENIAII:1986,ADENIA II,LK193,1986,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+e29001a0-dccc-543d-a45b-c6335f411529,photo_catalogue:LK206:SIGMA:1988,SIGMA,LK206,1988,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+4766d919-0291-5b9d-b100-48aba00a9a38,photo_catalogue:LK209:SUNBEAM:1949,SUNBEAM,LK209,1949,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+8fe2ca2e-be04-5200-a11f-8f002e41b62c,photo_catalogue:LK214:ALISWOOD:1970,ALIS WOOD,LK214,1970,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+8a589649-c01c-5fb2-b689-1e057289f7b8,photo_catalogue:LK214:FEARNOT:1983,FEAR NOT,LK214,1983,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b984b26d-5abf-5fca-85aa-bb4e3058e95d,photo_catalogue:LK215:SURSUMCORDA:1981,SURSUM CORDA,LK215,1981,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+36240221-ec0e-58d9-9ff4-c5fc81257ecc,photo_catalogue:LK216:ELANCO:,ELANCO,LK216,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d466c52d-ba8d-5765-ac70-914e0c179171,photo_catalogue:LK224:NORTHSTAR:1958,NORTH STAR,LK224,1958,1950s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+eec50f23-c020-5f3e-b656-44adfe1af4de,photo_catalogue:LK229:ONWARD:1940,ONWARD,LK229,1940,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+4061491c-fb07-5edc-9936-56db1ec7cf88,photo_catalogue:LK231:VICTORY:1965,VICTORY,LK231,1965,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+71101a83-3596-584c-874b-90496ce44b0e,photo_catalogue:LK235:NILDESPERANDUM:1947,NIL DESPERANDUM,LK235,1947,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+5c5af608-1754-5b04-b48e-138681d614b1,photo_catalogue:LK237:ATHENA:1974,ATHENA,LK237,1974,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d57038b0-a234-5b38-88e2-86f2f49d526d,photo_catalogue:LK243:DEWYROSE:1952,DEWY ROSE,LK243,1952,1950s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+5499402a-6977-58a6-8198-1e4f00d9ab27,photo_catalogue:LK243:EXSWAN:1900,(ex) SWAN,LK243,1900,1900s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+3a5c196f-06ec-5e45-8cee-e30473e3e814,photo_catalogue:LK244:MERIDIAN:1980,MERIDIAN,LK244,1980,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+f250c23d-d653-59e7-a07f-ae06d5578f3d,photo_catalogue:LK250:STCLAIR:,ST. CLAIR,LK250,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+06a74f03-12b3-5991-87d0-bd1e28c95fc6,photo_catalogue:LK253:COMET:1971,COMET,LK253,1971,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+9b1aa7d2-6ac1-5fab-931f-610205075b48,photo_catalogue:LK257:SETTEMARI:1987,SETTE MARI,LK257,1987,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+4e5b43a8-6b1d-5aed-ab8e-d70a84c81d51,photo_catalogue:LK260:JACKIE:,JACKIE,LK260,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+94a22ed9-3485-53f3-a433-0a9ffc95d2b3,photo_catalogue:LK269:VINE:,VINE,LK269,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+aaed50e1-5f4e-53f6-8bc3-15503d34ac5d,photo_catalogue:LK270:CARMITA:1986,CARMITA,LK270,1986,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+579ef631-0550-5ef7-bec5-c4e0c6c05dfc,photo_catalogue:LK272:STVINCENT:1910,ST. VINCENT,LK272,1910,1910s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+a592e412-2e25-52a1-9893-aa4433900540,photo_catalogue:LK272:SOLSTICE:,SOLSTICE,LK272,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d6040145-07df-541f-8c68-6bb9e65b3ed1,photo_catalogue:LK276:WAVECREST:1969,WAVE CREST,LK276,1969,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+776aeeaa-203e-5dbf-ac0d-98061c53ea5a,photo_catalogue:LK296:BRANCH:,BRANCH,LK296,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+c51eca68-2ff9-5cd7-8393-5f5885ac241d,photo_catalogue:LK297:SERENE:1979,SERENE,LK297,1979,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+17517646-4834-56be-8ece-e47bb09cc0bc,photo_catalogue:LK307:UNITY:1970,UNITY,LK307,1970,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+7783092a-52ac-50b7-8713-9eaef64abb57,photo_catalogue:LK308:SEDULOUS:2000,SEDULOUS,LK308,2000,2000s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+c4940d93-b33f-593f-9a81-1cc96a483392,photo_catalogue:LK309:SATURN:,SATURN,LK309,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+822c7550-08b0-55bc-a927-367da03190da,photo_catalogue:LK316:FRIENDLYISLE:1961,FRIENDLY ISLE,LK316,1961,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b0484228-ca6d-58fd-ae0d-22d521c9b4aa,photo_catalogue:LK319:ZEPHYR:1976,ZEPHYR,LK319,1976,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+5b3d6be1-51cc-5758-9e8e-614368863fa1,photo_catalogue:LK328:ATLANTIA:,ATLANTIA,LK328,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+25f02b8d-ed2b-57a1-8cee-4775cd8b1bbe,photo_catalogue:LK330:VEGALK:1975,VEGA LK,LK330,1975,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+047d0bea-d6fe-5725-a1f8-5f06be56fecb,photo_catalogue:LK331:SCOTCHQUEEN:1944,SCOTCH QUEEN,LK331,1944,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+38370482-998e-5802-8a19-dde204ab058e,photo_catalogue:LK332:KOHOUTEK:1974,KOHOUTEK,LK332,1974,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d304948b-1b3a-5e50-a8f0-ceb0266f2cd8,photo_catalogue:LK334:SOLITAIRE:1986,SOLITAIRE,LK334,1986,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d33f5d95-1cc9-56e0-892a-ddb5aaedf620,photo_catalogue:LK335:SUNBEAM:1980,SUNBEAM,LK335,1980,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+0314b02f-c8a5-5207-ac2d-edd22e9b0953,photo_catalogue:LK337:VENTURE:1958,VENTURE,LK337,1958,1950s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+da00128a-242c-56a3-94ec-f146cd35c543,photo_catalogue:LK337:VANDAL:1997,VANDAL,LK337,1997,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+be5c4aea-c95a-533c-9d76-9da3580274aa,photo_catalogue:LK337:MARANTHA:1989,MARANTHA,LK337,1989,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+76b22589-be1d-5881-a4ff-ec2c14414614,photo_catalogue:LK347:STARINA:1976,STARINA,LK347,1976,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+671d824e-4c28-5f9a-89ea-d3884e778265,photo_catalogue:LK361:SANTOS:1987,SANTOS,LK361,1987,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+a15effd8-61f5-581f-bf2d-6ed7f398fdb9,photo_catalogue:LK362:CHARISMA:1979,CHARISMA,LK362,1979,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+138753fe-60f6-52dd-a8e3-c243b0e4fbb6,photo_catalogue:LK362:CHARISMA:1995,CHARISMA,LK362,1995,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+85bc59c7-b0e4-5e32-9054-85ca69858550,photo_catalogue:LK367:FREEDOM:1956,FREEDOM,LK367,1956,1950s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+bddd9e39-c297-59ed-9bc9-9cdc68c6650c,photo_catalogue:LK372:CORNUCOPIA:1991,CORNUCOPIA,LK372,1991,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+3983e427-81c0-512a-b952-b543e81ee08d,photo_catalogue:LK373:HERITAGE:1979,HERITAGE,LK373,1979,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+c79b08f0-d9da-5b7c-8114-ee477f1e8723,photo_catalogue:LK377:SCEPTRE:,SCEPTRE,LK377,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+330700bd-3893-5a64-a70d-64de3bc72a3e,photo_catalogue:LK377:BEREADY:1985,BE READY,LK377,1985,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+58292bb3-837e-56ce-87a0-70e09a6e83f5,photo_catalogue:LK377:ANGELINA:1989,ANGELINA,LK377,1989,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+101191e4-d60c-5a4c-8f86-b18c38062bc0,photo_catalogue:LK378:FRANCHISE:1969,FRANCHISE,LK378,1969,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+ec833dcb-0024-5aa0-a395-bb6bdb6e8b72,photo_catalogue:LK378:TELSTAR:1988,TELSTAR,LK378,1988,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b4f14855-6827-5b9c-bece-b77d3c8f7947,photo_catalogue:LK396:AZALEA:1980,AZALEA,LK396,1980,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+661f6541-d710-553a-8334-f1d5136cc8bc,photo_catalogue:LK405:GOLDENWAY:,GOLDEN WAY,LK405,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+06efed18-93a4-5e94-9927-e74eeebed920,photo_catalogue:LK423:WINDERMERE:1979,WINDERMERE,LK423,1979,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+50aa0abf-6749-5ce3-b03d-e9b1e3c56e1f,photo_catalogue:LK428:LAUNCHOUT:1937,LAUNCH OUT,LK428,1937,1930s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+2613131e-0f83-5abd-9a08-66f970e8e5f5,photo_catalogue:LK429:ALTAIRE:1987,ALTAIRE,LK429,1987,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b4424e95-9819-5eac-950c-36a513983b9b,photo_catalogue:LK435:LANGDALE:1974,LANGDALE,LK435,1974,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+6cf3ce5e-7f11-52fa-afbc-251adcf85449,photo_catalogue:LK447:ENTERPRISE:,ENTERPRISE,LK447,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+8eba5532-5f60-5d0e-81b2-e55e8858fc1b,photo_catalogue:LK455:XMASSTAR:,XMAS STAR,LK455,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+1f104c50-2c34-51fe-b86a-ffeab0c4bcae,photo_catalogue:LK472:EXARDENT:1981,(ex) ARDENT,LK472,1981,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+3b8be1eb-d15a-5c2d-9007-4f7636bd4fea,photo_catalogue:LK489:ANDROMEDA:1985,ANDROMEDA,LK489,1985,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+c653446b-cfe7-5720-8f2b-7063a1d82af8,photo_catalogue:LK503:JOLENE:,JOLENE,LK503,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d85e3c05-c588-5767-8b16-2739a954fba4,photo_catalogue:LK509:JESSIESINCLAIR:1945,JESSIE SINCLAIR,LK509,1945,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+80db9257-9272-5b78-b599-41396b2b8ea6,photo_catalogue:LK510:DEEDAWN:1972,DEE DAWN,LK510,1972,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+71b32cdd-5ea0-5541-adc9-9db2cad77c14,photo_catalogue:LK511:JOHNWEST:,JOHN WEST,LK511,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+0d309f5d-477f-5cc7-99b0-2dc37f25f3b9,photo_catalogue:LK511:WELFARE:1944,WELFARE,LK511,1944,1940s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+ccf1912e-d547-5f53-b1ad-c802d25fc268,photo_catalogue:LK514:LAUREEN:1992,LAUREEN,LK514,1992,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+821fe7d1-c4fd-5fba-a9bf-61980fad6d2c,photo_catalogue:LK535:REAPER:1960,REAPER,LK535,1960,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+099c00e5-b0f2-50f3-86ec-0f5b52ace9b1,photo_catalogue:LK570:JANET:,JANET,LK570,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+185b1046-f9fa-5074-9108-ceaf19c9bc0d,photo_catalogue:LK641:HELENUS:1987,HELENUS,LK641,1987,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+c2076a4f-a4b4-5447-9c42-c53f3d89a38a,photo_catalogue:LK657:CONCORD:1965,CONCORD,LK657,1965,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+2cf74f84-5688-50b0-a43a-bc52f801df84,photo_catalogue:LK687:EVENINGSTAR:1966,EVENING STAR,LK687,1966,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+0ed2fea3-886b-543a-b718-b70572d098cb,photo_catalogue:LK687:OPPORTUNE:1966,OPPORTUNE,LK687,1966,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b51169de-5d55-58e1-9bd2-182aec6d00d3,photo_catalogue:LK694:LEREVILLE:1973,LE REVILLE,LK694,1973,1970s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+19aaa04d-7b0a-5403-b200-6a62d06d2c89,photo_catalogue:LK704:WINSOME:1966,WINSOME,LK704,1966,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+4eaf8155-e91d-5794-86ca-b9436109ee2d,photo_catalogue:LK717:GOLDENGRAIN:,GOLDEN GRAIN,LK717,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+da31e3fb-6761-5ea5-9662-d47c150d3c02,photo_catalogue:LK731:DISCOVERY:1986,DISCOVERY,LK731,1986,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+d003bad4-b56b-54d2-b089-5113a22e5a12,photo_catalogue:LK760:LISTA:1964,LISTA,LK760,1964,1960s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+eb1984ad-d2c7-571a-9403-2392d1c2af19,photo_catalogue:LK771:SEVENSISTERS:1981,SEVEN SISTERS,LK771,1981,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+3a4baec8-4543-5149-9bd5-161a1a44d28f,photo_catalogue:LK902:SUNIGAR:,SUNIGAR,LK902,,,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+516438b9-ce9c-5285-a8d8-588958c4097a,photo_catalogue:LK946:BRAVEHEART:1988,BRAVEHEART,LK946,1988,1980s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+c589c07f-3585-5dcc-870e-5088ee513d6b,photo_catalogue:LK1004:JEMIMAANN:1892,JEMIMA ANN,LK1004,1892,1890s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b3db48a9-5d29-5b82-ba0e-c9dbe114c1ae,photo_catalogue:LK3357:LYNCRAIG:1993,LYN CRAIG,LK3357,1993,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+9066039b-c2f2-5787-91ec-492d353405fa,photo_catalogue:LK3376:JOANNECLAIRE:1997,JOANNE CLAIRE,LK3376,1997,1990s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+1ef81361-d601-57f5-80de-af0d9c1a1387,photo_catalogue:LK3380:ZUIDERZEE:1956,ZUIDERZEE,LK3380,1956,1950s,,,,,,possible,Created from photo_catalogue; not yet matched to an authoritative hull identity.,photo_catalogue
+b4f21faf-8541-59ae-a838-915590f29fa4,historic_note:LK63:TRANQUILITY:1981,Tranquility,LK63,1981,1980s,Jones Buckie Slip in Buckie,,,,,probable,Created from historic_note; not yet matched to an authoritative hull identity.,historic_note
+dc422216-3dc9-59ac-bbb1-d80a60db44b0,historic_note:LK429:ALTAIRE:1994,Altaire,LK429,1994,1990s,Langsten Slip,,,,,probable,Created from historic_note; not yet matched to an authoritative hull identity.,historic_note
+faf59926-5fe2-5443-bf41-447bc87ff79d,museum_history:LK419:ANTARES:,Antares,LK419,,,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
+78b1de55-7bf7-5e26-bfd1-2a4151579a43,museum_history:LK297:SERENE:1969,Serene,LK297,1969,1960s,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
+f5159e81-ee85-5115-94d4-d27fdeed7708,museum_history:LK394:ZEPHYR:1982,Zephyr,LK394,1982,1980s,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
+cbf0d686-596d-5bf1-9465-53c4fe09b8f4,museum_history:LK62:ANSTRUTHERHARBOUR1984:,"Anstruther Harbour, 1984.",LK62,,,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
+f7fda85d-802f-5fba-88ab-71bf0c87b0e2,museum_history:LK62:RESEARCHATLERWICK1963:,"Research at Lerwick, 1963.",LK62,,,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
+caa3d03d-b86c-5e1e-8dc2-2d4a78252779,museum_history:LK319:SCOTTISHANDIRISHVESSELSATSOUTHWESTMACKERELFISHING:,Scottish and Irish Vessels at south-west mackerel fishing,LK319,,,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
+4aa2e243-b467-54e0-9ec7-0a3fcaceb544,museum_history:LK137:DONVALE:1961,Donvale,LK137,1961,1960s,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
+5a164618-098e-58c0-be4a-f9dda2acf213,museum_history:LK243:SWAN:1900,Swan,LK243,1900,1900s,,,,,,probable,Created from museum_history; not yet matched to an authoritative hull identity.,museum_history
