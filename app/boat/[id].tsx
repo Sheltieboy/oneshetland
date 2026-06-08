@@ -19,10 +19,11 @@
  *     visible when expanded
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
-  TouchableOpacity, Image, Linking, Share,
+  TouchableOpacity, Image, Linking, Share, TextInput, Alert,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -31,12 +32,16 @@ import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import {
   fetchVesselProfile, fetchVesselTimeline,
-  VesselProfile, VesselTimelineEntry, Confidence,
+  fetchVesselComments, threadComments,
+  addVesselComment, editVesselComment, deleteVesselComment,
+  VesselProfile, VesselTimelineEntry, VesselComment, Confidence,
+  CommentSubject, COMMENT_SUBJECTS, commentSubjectLabel,
   vesselDisplayTitle, hullMaterialLabel, eventTypeLabel, confidenceLabel,
 } from '@/lib/boats-api';
 import {
   isBoatSaved, toggleSavedBoat, pushRecentBoat,
 } from '@/lib/boats-prefs';
+import { useAuth } from '@/context/AuthContext';
 
 const SECTION = SECTIONS.daBoats;
 
@@ -51,24 +56,43 @@ const CONFIDENCE_TONE: Record<Confidence, { bg: string; text: string }> = {
 export default function BoatProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { profile: viewer } = useAuth();
 
   const [profile, setProfile]       = useState<VesselProfile | null>(null);
   const [timeline, setTimeline]     = useState<VesselTimelineEntry[]>([]);
+  const [comments, setComments]     = useState<VesselComment[]>([]);
   const [loading, setLoading]       = useState(true);
   const [saved, setSaved]           = useState(false);
   const [showEvidence, setShowEv]   = useState(false);
 
+  // Composer state
+  const [draft, setDraft]                 = useState('');
+  const [draftSubject, setDraftSubject]   = useState<CommentSubject>('general');
+  const [replyTo, setReplyTo]             = useState<VesselComment | null>(null);
+  const [posting, setPosting]             = useState(false);
+  const [editingId, setEditingId]         = useState<string | null>(null);
+
+  const reloadComments = useCallback(async () => {
+    if (!id) return;
+    try {
+      const c = await fetchVesselComments(id);
+      setComments(c);
+    } catch { /* swallow */ }
+  }, [id]);
+
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [p, t, isSaved] = await Promise.all([
+      const [p, t, isSaved, c] = await Promise.all([
         fetchVesselProfile(id),
         fetchVesselTimeline(id),
         isBoatSaved(id),
+        fetchVesselComments(id),
       ]);
       setProfile(p);
       setTimeline(t);
       setSaved(isSaved);
+      setComments(c);
 
       // Stash a stub on the recently-viewed list for the landing screen.
       if (p) {
@@ -113,6 +137,79 @@ export default function BoatProfileScreen() {
     } catch { /* user cancelled */ }
   };
 
+  // ── Comments ────────────────────────────────────────────────────────────
+
+  const submitComment = async () => {
+    if (!viewer?.id) {
+      router.push('/(auth)/sign-in');
+      return;
+    }
+    if (!profile) return;
+    const body = draft.trim();
+    if (!body) return;
+
+    setPosting(true);
+    try {
+      if (editingId) {
+        await editVesselComment(editingId, body);
+      } else {
+        await addVesselComment({
+          vesselId:        profile.vessel.id,
+          authorId:        viewer.id,
+          body,
+          subjectType:     draftSubject,
+          parentCommentId: replyTo?.id ?? null,
+        });
+      }
+      setDraft('');
+      setReplyTo(null);
+      setEditingId(null);
+      setDraftSubject('general');
+      await reloadComments();
+    } catch (err: any) {
+      Alert.alert('Could not post', err?.message ?? '');
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const startEdit = (c: VesselComment) => {
+    setEditingId(c.id);
+    setDraftSubject(c.subject_type);
+    setDraft(c.body);
+    setReplyTo(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft('');
+    setReplyTo(null);
+    setDraftSubject('general');
+  };
+
+  const removeComment = (c: VesselComment) => {
+    Alert.alert(
+      'Delete comment?',
+      'This can\'t be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteVesselComment(c.id);
+              await reloadComments();
+            } catch (err: any) {
+              Alert.alert('Failed', err?.message ?? '');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const threaded = useMemo(() => threadComments(comments), [comments]);
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
@@ -140,7 +237,11 @@ export default function BoatProfileScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* Top bar */}
         <View style={styles.topBar}>
           <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} hitSlop={12}>
@@ -394,9 +495,255 @@ export default function BoatProfileScreen() {
         {vessel.identity_notes ? (
           <Text style={styles.footnote}>{vessel.identity_notes}</Text>
         ) : null}
+
+        {/* ── Discussion ──────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Discussion</Text>
+          <Text style={styles.sectionSubtitle}>
+            Share what you remember. Got a correction or a story — it belongs here.
+          </Text>
+
+          {/* Comments list */}
+          <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+            {threaded.length === 0 ? (
+              <Text style={styles.emptyComments}>
+                No one's added anything yet. Be the first.
+              </Text>
+            ) : (
+              threaded.map(c => (
+                <CommentNode
+                  key={c.id}
+                  comment={c}
+                  viewerId={viewer?.id ?? null}
+                  isAuthor={c.author_id === viewer?.id}
+                  onReply={() => { setReplyTo(c); setEditingId(null); setDraft(''); }}
+                  onEdit={() => startEdit(c)}
+                  onDelete={() => removeComment(c)}
+                  startEdit={startEdit}
+                  removeComment={removeComment}
+                  setReplyTo={(rt) => { setReplyTo(rt); setEditingId(null); setDraft(''); }}
+                />
+              ))
+            )}
+          </View>
+
+          {/* Composer */}
+          <View style={styles.composer}>
+            {/* Reply / edit banner */}
+            {(replyTo || editingId) ? (
+              <View style={styles.composerBanner}>
+                <Text style={styles.composerBannerText}>
+                  {editingId
+                    ? 'Editing your comment'
+                    : `Replying to ${replyTo?.author?.full_name ?? 'comment'}`}
+                </Text>
+                <TouchableOpacity onPress={cancelEdit} hitSlop={8}>
+                  <FontAwesome5 name="times" size={14} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {/* Subject chip row */}
+            {!editingId && !replyTo ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.subjectRow}
+              >
+                {COMMENT_SUBJECTS.map(s => {
+                  const active = draftSubject === s.slug;
+                  return (
+                    <TouchableOpacity
+                      key={s.slug}
+                      onPress={() => setDraftSubject(s.slug)}
+                      style={[
+                        styles.subjectChip,
+                        active && { backgroundColor: SECTION.color, borderColor: SECTION.color },
+                      ]}
+                    >
+                      <FontAwesome5
+                        name={s.icon}
+                        size={11}
+                        color={active ? '#fff' : SECTION.color}
+                        solid
+                      />
+                      <Text style={[styles.subjectChipText, active && { color: '#fff' }]}>
+                        {s.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : null}
+
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={
+                viewer
+                  ? editingId
+                    ? 'Update your comment…'
+                    : replyTo
+                      ? 'Write your reply…'
+                      : 'Share what you know about this boat…'
+                  : 'Sign in to add to the discussion'
+              }
+              placeholderTextColor={colors.textMuted}
+              multiline
+              editable={!!viewer}
+              style={styles.composerInput}
+            />
+
+            <View style={styles.composerActions}>
+              {!viewer ? (
+                <TouchableOpacity
+                  onPress={() => router.push('/(auth)/sign-in')}
+                  style={[styles.postBtn, { backgroundColor: SECTION.color }]}
+                >
+                  <FontAwesome5 name="sign-in-alt" size={14} color="#fff" />
+                  <Text style={styles.postBtnText}>Sign in</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={submitComment}
+                  disabled={!draft.trim() || posting}
+                  style={[
+                    styles.postBtn,
+                    { backgroundColor: SECTION.color, opacity: (!draft.trim() || posting) ? 0.45 : 1 },
+                  ]}
+                >
+                  {posting ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <FontAwesome5
+                        name={editingId ? 'check' : 'paper-plane'}
+                        size={14}
+                        color="#fff"
+                      />
+                      <Text style={styles.postBtnText}>
+                        {editingId ? 'Save' : replyTo ? 'Reply' : 'Post'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+// ── Comment thread node ─────────────────────────────────────────────────────
+
+function CommentNode({
+  comment, viewerId, isAuthor,
+  onReply, onEdit, onDelete,
+  startEdit, removeComment, setReplyTo,
+  depth = 0,
+}: {
+  comment: VesselComment;
+  viewerId: string | null;
+  isAuthor: boolean;
+  onReply: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  startEdit: (c: VesselComment) => void;
+  removeComment: (c: VesselComment) => void;
+  setReplyTo: (c: VesselComment | null) => void;
+  depth?: number;
+}) {
+  return (
+    <View style={[styles.commentNode, depth > 0 && styles.commentReply]}>
+      <View style={[styles.commentAvatar, { backgroundColor: SECTION.light }]}>
+        {comment.author?.avatar_url ? (
+          <Image source={{ uri: comment.author.avatar_url }} style={StyleSheet.absoluteFill} />
+        ) : (
+          <FontAwesome5 name="user" size={13} color={SECTION.color} />
+        )}
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <View style={styles.commentTopRow}>
+          <Text style={styles.commentAuthor}>
+            {comment.author?.full_name ?? 'Anonymous'}
+          </Text>
+          {comment.subject_type && comment.subject_type !== 'general' ? (
+            <View style={[styles.commentSubject, { backgroundColor: SECTION.light }]}>
+              <Text style={[styles.commentSubjectText, { color: SECTION.color }]}>
+                {commentSubjectLabel(comment.subject_type)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Text style={styles.commentBody}>{comment.body}</Text>
+
+        <View style={styles.commentMeta}>
+          <Text style={styles.commentTime}>
+            {fmtRelative(comment.created_at)}
+            {comment.edited_at ? ' · edited' : ''}
+          </Text>
+          {depth === 0 ? (
+            <TouchableOpacity onPress={onReply} hitSlop={6}>
+              <Text style={[styles.commentLink, { color: SECTION.color }]}>Reply</Text>
+            </TouchableOpacity>
+          ) : null}
+          {isAuthor ? (
+            <>
+              <TouchableOpacity onPress={onEdit} hitSlop={6}>
+                <Text style={styles.commentLink}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onDelete} hitSlop={6}>
+                <Text style={[styles.commentLink, { color: colors.error }]}>Delete</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+        </View>
+
+        {/* Nested replies */}
+        {comment.replies && comment.replies.length > 0 ? (
+          <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
+            {comment.replies.map(r => (
+              <CommentNode
+                key={r.id}
+                comment={r}
+                viewerId={viewerId}
+                isAuthor={r.author_id === viewerId}
+                onReply={() => setReplyTo(comment)}
+                onEdit={() => startEdit(r)}
+                onDelete={() => removeComment(r)}
+                startEdit={startEdit}
+                removeComment={removeComment}
+                setReplyTo={setReplyTo}
+                depth={depth + 1}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function fmtRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  const diff = Date.now() - t;
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1)    return 'just now';
+  if (mins < 60)   return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)    return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7)    return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5)   return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -732,5 +1079,143 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontStyle: 'italic',
     lineHeight: 18,
+  },
+
+  // ── Discussion ────────────────────────────────────────────────────────────
+  emptyComments: {
+    fontSize: 15,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    paddingVertical: spacing.sm,
+  },
+  commentNode: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: 8,
+  },
+  commentReply: {
+    paddingLeft: 0,
+  },
+  commentAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  commentTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  commentAuthor: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  commentSubject: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  commentSubjectText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  commentBody: {
+    fontSize: 16,
+    color: colors.textPrimary,
+    lineHeight: 22,
+    marginTop: 2,
+  },
+  commentMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  commentTime: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  commentLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+
+  composer: {
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
+  composerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.offWhite,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  composerBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  subjectRow: {
+    gap: 6,
+    paddingVertical: 4,
+  },
+  subjectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  subjectChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  composerInput: {
+    minHeight: 88,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 16,
+    color: colors.textPrimary,
+    backgroundColor: colors.white,
+    textAlignVertical: 'top',
+  },
+  composerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  postBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 999,
+  },
+  postBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

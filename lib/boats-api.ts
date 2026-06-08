@@ -53,6 +53,7 @@ export interface VesselSearchRow {
   all_registrations:    string | null;
   source_record_count:  number;
   media_asset_count:    number;
+  comment_count:        number;
 }
 
 export interface VesselName {
@@ -397,6 +398,144 @@ export function confidenceLabel(c: Confidence): string {
     case 'unmatched': return 'Not yet matched';
     case 'conflict':  return 'Sources disagree';
   }
+}
+
+// ── Comments / discussion ──────────────────────────────────────────────────
+
+export type CommentSubject =
+  | 'general'
+  | 'names'
+  | 'registrations'
+  | 'owners'
+  | 'photos'
+  | 'build'
+  | 'story'
+  | 'correction'
+  | 'addition';
+
+export const COMMENT_SUBJECTS: { slug: CommentSubject; label: string; icon: string }[] = [
+  { slug: 'general',       label: 'General',           icon: 'comment'      },
+  { slug: 'names',         label: 'About the names',    icon: 'tag'          },
+  { slug: 'registrations', label: 'About the numbers',  icon: 'hashtag'      },
+  { slug: 'owners',        label: 'About the owners',   icon: 'users'        },
+  { slug: 'photos',        label: 'About the photos',   icon: 'camera'       },
+  { slug: 'build',         label: 'About the build',    icon: 'hammer'       },
+  { slug: 'story',         label: 'Her story',          icon: 'book'         },
+  { slug: 'correction',    label: 'A correction',       icon: 'exclamation-triangle' },
+  { slug: 'addition',      label: 'An addition',        icon: 'plus-circle'  },
+];
+
+export function commentSubjectLabel(slug: string): string {
+  return COMMENT_SUBJECTS.find(s => s.slug === slug)?.label ?? 'General';
+}
+
+export interface VesselComment {
+  id:                 string;
+  vessel_id:          string;
+  author_id:          string | null;
+  author?:            { id: string; full_name: string | null; avatar_url: string | null } | null;
+  subject_type:       CommentSubject;
+  subject_row_id:     string | null;
+  parent_comment_id:  string | null;
+  body:               string;
+  is_hidden:          boolean;
+  edited_at:          string | null;
+  created_at:         string;
+
+  /** Filled client-side when comments are nested under their parent for rendering. */
+  replies?:           VesselComment[];
+}
+
+/**
+ * Fetch every comment on a vessel — both top-level and replies — joined
+ * with author summaries. Returned in chronological order; callers can
+ * thread by parent_comment_id client-side.
+ */
+export async function fetchVesselComments(vesselId: string): Promise<VesselComment[]> {
+  const { data, error } = await supabase
+    .from('vessel_comments')
+    .select(`
+      *,
+      author:profiles!vessel_comments_author_id_fkey(id, full_name, avatar_url)
+    `)
+    .eq('vessel_id', vesselId)
+    .eq('is_hidden', false)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as VesselComment[];
+}
+
+/**
+ * Thread a flat list into top-level + replies. Replies that lost their
+ * parent (e.g. parent was hidden) get promoted to top-level so they
+ * don't vanish.
+ */
+export function threadComments(flat: VesselComment[]): VesselComment[] {
+  const byId: Record<string, VesselComment> = {};
+  for (const c of flat) byId[c.id] = { ...c, replies: [] };
+
+  const top: VesselComment[] = [];
+  for (const c of flat) {
+    const node = byId[c.id];
+    if (c.parent_comment_id && byId[c.parent_comment_id]) {
+      byId[c.parent_comment_id].replies!.push(node);
+    } else {
+      top.push(node);
+    }
+  }
+  return top;
+}
+
+export async function addVesselComment(input: {
+  vesselId:         string;
+  authorId:         string;
+  body:             string;
+  subjectType?:     CommentSubject;
+  subjectRowId?:    string | null;
+  parentCommentId?: string | null;
+}): Promise<VesselComment> {
+  const { data, error } = await supabase
+    .from('vessel_comments')
+    .insert({
+      vessel_id:         input.vesselId,
+      author_id:         input.authorId,
+      body:              input.body.trim(),
+      subject_type:      input.subjectType ?? 'general',
+      subject_row_id:    input.subjectRowId ?? null,
+      parent_comment_id: input.parentCommentId ?? null,
+    })
+    .select(`
+      *,
+      author:profiles!vessel_comments_author_id_fkey(id, full_name, avatar_url)
+    `)
+    .single();
+  if (error) throw error;
+  return data as VesselComment;
+}
+
+export async function editVesselComment(
+  id: string,
+  body: string,
+): Promise<VesselComment> {
+  const { data, error } = await supabase
+    .from('vessel_comments')
+    .update({ body: body.trim(), edited_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(`
+      *,
+      author:profiles!vessel_comments_author_id_fkey(id, full_name, avatar_url)
+    `)
+    .single();
+  if (error) throw error;
+  return data as VesselComment;
+}
+
+export async function deleteVesselComment(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('vessel_comments')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
 }
 
 /**
