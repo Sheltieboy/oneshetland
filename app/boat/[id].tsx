@@ -38,12 +38,22 @@ import {
   CommentSubject, COMMENT_SUBJECTS, commentSubjectLabel,
   vesselDisplayTitle, hullMaterialLabel, eventTypeLabel, confidenceLabel,
 } from '@/lib/boats-api';
+import { PickedFile } from '@/lib/image-upload';
 import {
   isBoatSaved, toggleSavedBoat, pushRecentBoat,
 } from '@/lib/boats-prefs';
 import { useAuth } from '@/context/AuthContext';
 
 const SECTION = SECTIONS.daBoats;
+
+// Soft-load the picker so a missing dep alerts instead of crashing the bundle.
+let ImagePicker: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  ImagePicker = require('expo-image-picker');
+} catch {
+  ImagePicker = null;
+}
 
 const CONFIDENCE_TONE: Record<Confidence, { bg: string; text: string }> = {
   confirmed: { bg: '#D1FAE5', text: '#065F46' },
@@ -71,6 +81,51 @@ export default function BoatProfileScreen() {
   const [replyTo, setReplyTo]             = useState<VesselComment | null>(null);
   const [posting, setPosting]             = useState(false);
   const [editingId, setEditingId]         = useState<string | null>(null);
+
+  /** Local preview URI for a freshly-picked image (before upload). */
+  const [draftPhoto, setDraftPhoto]       = useState<PickedFile | null>(null);
+  /** When editing, the existing image_url + path so we can show or replace. */
+  const [editingPhotoUrl, setEditingPhotoUrl]   = useState<string | null>(null);
+  const [editingPhotoPath, setEditingPhotoPath] = useState<string | null>(null);
+  /** True when the user has explicitly removed an existing photo while editing. */
+  const [removeExistingPhoto, setRemoveExisting] = useState(false);
+
+  const pickPhoto = async () => {
+    if (!ImagePicker) {
+      Alert.alert(
+        'Setup needed',
+        'Run `npx expo install expo-image-picker` and rebuild.',
+      );
+      return;
+    }
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'OneShetland needs access to your photos.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions?.Images ?? ['images'],
+        allowsEditing: false,
+        quality: 0.85,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      setDraftPhoto({
+        uri:      asset.uri,
+        mimeType: asset.mimeType,
+        ext:      asset.fileName?.split('.').pop(),
+      });
+      setRemoveExisting(false);
+    } catch (err: any) {
+      Alert.alert('Could not pick a photo', err?.message ?? '');
+    }
+  };
+
+  const clearDraftPhoto = () => {
+    setDraftPhoto(null);
+    if (editingId) setRemoveExisting(true);
+  };
 
   const reloadComments = useCallback(async () => {
     if (!id) return;
@@ -146,12 +201,18 @@ export default function BoatProfileScreen() {
     }
     if (!profile) return;
     const body = draft.trim();
-    if (!body) return;
+    // Either body or a photo is enough to post; both is fine too.
+    if (!body && !draftPhoto && !editingPhotoUrl) return;
 
     setPosting(true);
     try {
       if (editingId) {
-        await editVesselComment(editingId, body);
+        await editVesselComment(editingId, body, {
+          newImageFile:      draftPhoto,
+          removeImage:       removeExistingPhoto && !draftPhoto,
+          authorId:          viewer.id,
+          previousImagePath: editingPhotoPath,
+        });
       } else {
         await addVesselComment({
           vesselId:        profile.vessel.id,
@@ -159,12 +220,17 @@ export default function BoatProfileScreen() {
           body,
           subjectType:     draftSubject,
           parentCommentId: replyTo?.id ?? null,
+          imageFile:       draftPhoto,
         });
       }
       setDraft('');
       setReplyTo(null);
       setEditingId(null);
       setDraftSubject('general');
+      setDraftPhoto(null);
+      setEditingPhotoUrl(null);
+      setEditingPhotoPath(null);
+      setRemoveExisting(false);
       await reloadComments();
     } catch (err: any) {
       Alert.alert('Could not post', err?.message ?? '');
@@ -178,6 +244,10 @@ export default function BoatProfileScreen() {
     setDraftSubject(c.subject_type);
     setDraft(c.body);
     setReplyTo(null);
+    setDraftPhoto(null);
+    setEditingPhotoUrl(c.image_url);
+    setEditingPhotoPath(c.image_path);
+    setRemoveExisting(false);
   };
 
   const cancelEdit = () => {
@@ -185,6 +255,10 @@ export default function BoatProfileScreen() {
     setDraft('');
     setReplyTo(null);
     setDraftSubject('general');
+    setDraftPhoto(null);
+    setEditingPhotoUrl(null);
+    setEditingPhotoPath(null);
+    setRemoveExisting(false);
   };
 
   const removeComment = (c: VesselComment) => {
@@ -594,7 +668,44 @@ export default function BoatProfileScreen() {
               style={styles.composerInput}
             />
 
+            {/* Photo preview — shows the new pick, OR the existing photo while
+                editing (unless the user has cleared it). */}
+            {(() => {
+              const previewUri = draftPhoto?.uri
+                ?? (editingId && !removeExistingPhoto ? editingPhotoUrl : null);
+              if (!previewUri) return null;
+              return (
+                <View style={styles.draftPhotoWrap}>
+                  <Image source={{ uri: previewUri }} style={styles.draftPhoto} resizeMode="cover" />
+                  <TouchableOpacity onPress={clearDraftPhoto} style={styles.draftPhotoClear} hitSlop={10}>
+                    <FontAwesome5 name="times" size={12} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
             <View style={styles.composerActions}>
+              {/* Photo button on the left */}
+              {viewer ? (
+                <TouchableOpacity
+                  onPress={pickPhoto}
+                  style={[styles.iconAction, { borderColor: SECTION.color }]}
+                  hitSlop={8}
+                >
+                  <FontAwesome5
+                    name="camera"
+                    size={18}
+                    color={SECTION.color}
+                  />
+                  {draftPhoto || (editingId && editingPhotoUrl && !removeExistingPhoto) ? (
+                    <Text style={[styles.iconActionText, { color: SECTION.color }]}>1</Text>
+                  ) : null}
+                </TouchableOpacity>
+              ) : null}
+
+              <View style={{ flex: 1 }} />
+
+              {/* Post / Sign-in on the right */}
               {!viewer ? (
                 <TouchableOpacity
                   onPress={() => router.push('/(auth)/sign-in')}
@@ -606,10 +717,13 @@ export default function BoatProfileScreen() {
               ) : (
                 <TouchableOpacity
                   onPress={submitComment}
-                  disabled={!draft.trim() || posting}
+                  disabled={posting || (!draft.trim() && !draftPhoto && !editingPhotoUrl)}
                   style={[
                     styles.postBtn,
-                    { backgroundColor: SECTION.color, opacity: (!draft.trim() || posting) ? 0.45 : 1 },
+                    {
+                      backgroundColor: SECTION.color,
+                      opacity: (posting || (!draft.trim() && !draftPhoto && !editingPhotoUrl)) ? 0.45 : 1,
+                    },
                   ]}
                 >
                   {posting ? (
@@ -680,7 +794,23 @@ function CommentNode({
           ) : null}
         </View>
 
-        <Text style={styles.commentBody}>{comment.body}</Text>
+        {comment.body ? (
+          <Text style={styles.commentBody}>{comment.body}</Text>
+        ) : null}
+
+        {comment.image_url ? (
+          <TouchableOpacity
+            onPress={() => Linking.openURL(comment.image_url!)}
+            activeOpacity={0.9}
+            style={styles.commentPhotoWrap}
+          >
+            <Image
+              source={{ uri: comment.image_url }}
+              style={styles.commentPhoto}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.commentMeta}>
           <Text style={styles.commentTime}>
@@ -1217,5 +1347,54 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '800',
+  },
+
+  // Composer photo
+  iconAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 2,
+    backgroundColor: colors.white,
+  },
+  iconActionText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  draftPhotoWrap: {
+    position: 'relative',
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
+    maxWidth: '60%',
+  },
+  draftPhoto: {
+    width: 220,
+    aspectRatio: 4 / 3,
+  },
+  draftPhotoClear: {
+    position: 'absolute',
+    top: 6, right: 6,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(15, 28, 38, 0.78)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Comment-rendered photo
+  commentPhotoWrap: {
+    marginTop: 8,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
+    maxWidth: '88%',
+  },
+  commentPhoto: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    maxWidth: 320,
+    minWidth: 200,
   },
 });

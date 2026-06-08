@@ -10,7 +10,8 @@
  * historical metadata, not identifiers — both get reused across boats.
  */
 
-import { supabase } from './supabase';
+import { supabase, SUPABASE_URL } from './supabase';
+import { PickedFile } from './image-upload';
 
 export type Confidence =
   | 'confirmed'
@@ -438,12 +439,70 @@ export interface VesselComment {
   subject_row_id:     string | null;
   parent_comment_id:  string | null;
   body:               string;
+  image_url:          string | null;
+  image_path:         string | null;
   is_hidden:          boolean;
   edited_at:          string | null;
   created_at:         string;
 
   /** Filled client-side when comments are nested under their parent for rendering. */
   replies?:           VesselComment[];
+}
+
+const COMMENT_BUCKET = 'boat-comment-media';
+
+/**
+ * Uploads a picked image to the boat-comment-media bucket under
+ * <author_id>/<uuid>.<ext> using the FormData REST pattern (the SDK's
+ * blob upload uploads 0-byte files on RN/iOS — see lib/image-upload.ts).
+ * Returns the persisted path + public URL.
+ */
+export async function uploadCommentPhoto(
+  authorId: string,
+  file: PickedFile,
+): Promise<{ path: string; publicUrl: string }> {
+  const ext =
+    (file.ext ?? file.mimeType?.split('/')[1] ?? file.uri.split('.').pop() ?? 'jpg')
+      .replace(/^\./, '').toLowerCase();
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  const path = `${authorId}/${filename}`;
+  const contentType = file.mimeType ?? `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not signed in.');
+
+  const form = new FormData();
+  form.append('file', {
+    uri:  file.uri,
+    name: filename,
+    type: contentType,
+  } as any);
+
+  const url = `${SUPABASE_URL}/storage/v1/object/${COMMENT_BUCKET}/${path}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      'x-upsert':    'true',
+    },
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Photo upload failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+
+  const { data: pub } = supabase.storage.from(COMMENT_BUCKET).getPublicUrl(path);
+  return { path, publicUrl: pub.publicUrl };
+}
+
+/**
+ * Delete a previously-uploaded comment photo from storage. Silently
+ * ignores "not found".
+ */
+export async function deleteCommentPhoto(path: string): Promise<void> {
+  const { error } = await supabase.storage.from(COMMENT_BUCKET).remove([path]);
+  if (error && !/not found/i.test(error.message)) throw error;
 }
 
 /**
@@ -493,7 +552,18 @@ export async function addVesselComment(input: {
   subjectType?:     CommentSubject;
   subjectRowId?:    string | null;
   parentCommentId?: string | null;
+  /** Optional photo to upload + attach. */
+  imageFile?:       PickedFile | null;
 }): Promise<VesselComment> {
+  // Upload first (if any) so the row carries a known-good URL.
+  let imagePath: string | null = null;
+  let imageUrl:  string | null = null;
+  if (input.imageFile) {
+    const up = await uploadCommentPhoto(input.authorId, input.imageFile);
+    imagePath = up.path;
+    imageUrl  = up.publicUrl;
+  }
+
   const { data, error } = await supabase
     .from('vessel_comments')
     .insert({
@@ -503,23 +573,60 @@ export async function addVesselComment(input: {
       subject_type:      input.subjectType ?? 'general',
       subject_row_id:    input.subjectRowId ?? null,
       parent_comment_id: input.parentCommentId ?? null,
+      image_url:         imageUrl,
+      image_path:        imagePath,
     })
     .select(`
       *,
       author:profiles!vessel_comments_author_id_fkey(id, full_name, avatar_url)
     `)
     .single();
-  if (error) throw error;
+
+  if (error) {
+    // Roll back the orphaned upload so we don't leak bytes.
+    if (imagePath) await deleteCommentPhoto(imagePath).catch(() => {});
+    throw error;
+  }
   return data as VesselComment;
 }
 
 export async function editVesselComment(
   id: string,
   body: string,
+  options?: {
+    /** Replace the photo with a freshly-picked file. */
+    newImageFile?:  PickedFile | null;
+    /** Set true to remove an existing photo with no replacement. */
+    removeImage?:   boolean;
+    /** Author id — needed when uploading a new photo, ignored otherwise. */
+    authorId?:      string;
+    /** Existing image_path so we can clean up storage when replacing. */
+    previousImagePath?: string | null;
+  },
 ): Promise<VesselComment> {
+  const patch: Record<string, any> = {
+    body: body.trim(),
+    edited_at: new Date().toISOString(),
+  };
+
+  if (options?.newImageFile && options.authorId) {
+    const up = await uploadCommentPhoto(options.authorId, options.newImageFile);
+    patch.image_url  = up.publicUrl;
+    patch.image_path = up.path;
+    if (options.previousImagePath) {
+      await deleteCommentPhoto(options.previousImagePath).catch(() => {});
+    }
+  } else if (options?.removeImage) {
+    patch.image_url  = null;
+    patch.image_path = null;
+    if (options.previousImagePath) {
+      await deleteCommentPhoto(options.previousImagePath).catch(() => {});
+    }
+  }
+
   const { data, error } = await supabase
     .from('vessel_comments')
-    .update({ body: body.trim(), edited_at: new Date().toISOString() })
+    .update(patch)
     .eq('id', id)
     .select(`
       *,
