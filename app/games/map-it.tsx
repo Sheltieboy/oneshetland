@@ -1234,7 +1234,7 @@ const placeCardStyles = StyleSheet.create({
 const mapStyles = StyleSheet.create({
   canvas: { flex: 1, overflow: 'hidden' },
   hintOverlay: {
-    position: 'absolute', left: 0, right: 0, top: '42%',
+    position: 'absolute', left: 0, right: 0, top: 0,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.6)',
     paddingVertical: 14, paddingHorizontal: 20,
