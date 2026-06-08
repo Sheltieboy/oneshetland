@@ -136,41 +136,21 @@ export function MemoryMapNative({
     setLatDelta(region.latitudeDelta);
   };
 
-  // ── Forgiving pin taps ───────────────────────────────────────────────────
+  // ── Map taps → onDropPin only ────────────────────────────────────────────
   //
-  // On iOS the marker hit-test is fussy: a tap that's a few pixels off the
-  // 28-px pin head goes to the map's onPress instead, which then fires
-  // onDropPin — i.e. you wanted to read a memory but you got the
-  // "create new memory" flow. Fix: in the map's onPress handler we first
-  // check whether the tap coordinate is within a small radius of any
-  // existing pin. If so, open that pin. Otherwise (and only then) treat
-  // it as a "drop new pin here" tap.
-  //
-  // The tolerance scales with zoom — at the archipelago level it's about
-  // 1 km, at parish level about 150 m, at street level about 30 m. Roughly
-  // proportional to one pin head's width in degrees.
-  const tapToleranceDeg = (latDelta / 60);
-
+  // Marker.onPress already handles taps on (or within the 56-px touch halo
+  // around) any existing pin. The map-level onPress only fires for genuine
+  // background taps and routes those to onDropPin. We previously tried to
+  // be "forgiving" here by also opening the nearest pin if the tap was
+  // close — but on iOS marker taps ALSO bubble up to the map, which then
+  // pushed the same memory onto the nav stack twice. The wider halo on
+  // pinWrap already makes pin-tap accuracy a non-issue, so we just stay
+  // out of the way here.
   const handleMapPress = (e: any) => {
+    if (!onDropPin) return;
     const { latitude, longitude } = e?.nativeEvent?.coordinate ?? {};
     if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
-
-    // Find the nearest pin to the tap.
-    let nearest: { pin: MemoryPin; d: number } | null = null;
-    for (const pin of pins) {
-      // Simple Euclidean in degrees — good enough at Shetland latitudes
-      // for a "did the user mean this pin?" check.
-      const dLat = pin.lat - latitude;
-      const dLng = pin.lng - longitude;
-      const d = Math.sqrt(dLat * dLat + dLng * dLng);
-      if (!nearest || d < nearest.d) nearest = { pin, d };
-    }
-
-    if (nearest && nearest.d <= tapToleranceDeg) {
-      onOpenPin?.(nearest.pin);
-      return;
-    }
-    onDropPin?.({ lat: latitude, lng: longitude });
+    onDropPin({ lat: latitude, lng: longitude });
   };
 
   // ── Place search ─────────────────────────────────────────────────────────
