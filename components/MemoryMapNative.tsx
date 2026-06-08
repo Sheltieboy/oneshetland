@@ -138,15 +138,25 @@ export function MemoryMapNative({
 
   // ── Map taps → onDropPin only ────────────────────────────────────────────
   //
-  // Marker.onPress already handles taps on (or within the 56-px touch halo
-  // around) any existing pin. The map-level onPress only fires for genuine
-  // background taps and routes those to onDropPin. We previously tried to
-  // be "forgiving" here by also opening the nearest pin if the tap was
-  // close — but on iOS marker taps ALSO bubble up to the map, which then
-  // pushed the same memory onto the nav stack twice. The wider halo on
-  // pinWrap already makes pin-tap accuracy a non-issue, so we just stay
-  // out of the way here.
+  // iOS bubbles marker taps up to the MapView too — so even when
+  // Marker.onPress fires correctly, the map's onPress runs immediately
+  // after with the same coordinate. Without a guard that fires onDropPin
+  // and pushes the new-memory screen *in addition* to the detail screen
+  // the marker already opened.
+  //
+  // Fix: a ref records the timestamp of the last marker tap. handleMapPress
+  // short-circuits if it's within 450 ms — that's long enough to catch
+  // the residual map event but short enough that a genuine second tap is
+  // still respected as a "drop here" gesture.
+  const markerTouchedAt = useRef(0);
+
+  const handleMarkerOpen = (pin: MemoryPin) => {
+    markerTouchedAt.current = Date.now();
+    onOpenPin?.(pin);
+  };
+
   const handleMapPress = (e: any) => {
+    if (Date.now() - markerTouchedAt.current < 450) return;
     if (!onDropPin) return;
     const { latitude, longitude } = e?.nativeEvent?.coordinate ?? {};
     if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
@@ -239,7 +249,7 @@ export function MemoryMapNative({
             selected={pin.id === selectedId}
             showLabel={showLabels}
             zoomedIn={latDelta < 0.3}
-            onOpen={() => onOpenPin?.(pin)}
+            onOpen={() => handleMarkerOpen(pin)}
           />
         ))}
       </MapView>
