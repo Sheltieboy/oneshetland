@@ -14,7 +14,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
-  TouchableOpacity, RefreshControl,
+  TouchableOpacity, RefreshControl, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
@@ -25,6 +25,7 @@ import { useAuth } from '@/context/AuthContext';
 import { VIEW_BOUNDS } from '@/lib/shetland-geometry';
 import {
   fetchMemoryPins, MemoryPin,
+  searchMemories, MemorySearchResult,
 } from '@/lib/memories-api';
 import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
@@ -39,6 +40,13 @@ export default function MemoriesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Search state. A non-empty query swaps the feed for search results
+  // and hides the "Latest" heading. Searches DB title/body/era/tags AND
+  // resolved photo-tag answers via the search_memories RPC.
+  const [query, setQuery]               = useState('');
+  const [results, setResults]           = useState<MemorySearchResult[] | null>(null);
+  const [searching, setSearching]       = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -62,6 +70,28 @@ export default function MemoriesScreen() {
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   useEffect(() => { void load(); }, [load]);
+
+  // ── Search (debounced) ───────────────────────────────────────────────────
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(async () => {
+      try {
+        const r = await searchMemories(q);
+        setResults(r);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 280);
+    return () => clearTimeout(handle);
+  }, [query]);
 
   const onPinTap = (pin: MemoryPin) => {
     setSelectedId(pin.id);
@@ -137,30 +167,135 @@ export default function MemoriesScreen() {
           <Text style={styles.dropCtaText}>Add a memory</Text>
         </TouchableOpacity>
 
-        {/* ── Recent feed ─────────────────────────────────────────────── */}
-        <Text style={styles.sectionHeading}>Latest from the islands</Text>
-
-        {recent.length === 0 && !loading ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="book-open" size={28} color={SECTION.color} />
-            <Text style={styles.emptyTitle}>No memories yet</Text>
-            <Text style={styles.emptyBody}>
-              Be the first. Tap anywhere on the map above to drop a pin and start a memory.
+        {/* ── Search ──────────────────────────────────────────────────── */}
+        <View style={styles.searchWrap}>
+          <View style={styles.searchBar}>
+            <FontAwesome5 name="search" size={14} color={colors.textMuted} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search memories — names, places, themes…"
+              placeholderTextColor={colors.textLight}
+              style={styles.searchInput}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+            />
+            {query ? (
+              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+                <FontAwesome5 name="times-circle" size={14} color={colors.textMuted} solid />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {query ? (
+            <Text style={styles.searchHint}>
+              Searches stories, eras, tags and the names tagged onto photos.
             </Text>
-          </View>
+          ) : null}
+        </View>
+
+        {/* ── Results OR recent feed ──────────────────────────────────── */}
+        {results !== null ? (
+          <>
+            <Text style={styles.sectionHeading}>
+              {searching
+                ? 'Searching…'
+                : results.length
+                  ? `${results.length} result${results.length === 1 ? '' : 's'}`
+                  : 'No matches'}
+            </Text>
+            <View style={styles.feed}>
+              {results.map(r => (
+                <SearchResultRow
+                  key={r.id}
+                  result={r}
+                  onPress={() => router.push(`/memory/${r.id}`)}
+                />
+              ))}
+            </View>
+          </>
         ) : (
-          <View style={styles.feed}>
-            {recent.map(pin => (
-              <MemoryCard
-                key={pin.id}
-                pin={pin}
-                onPress={() => router.push(`/memory/${pin.id}`)}
-              />
-            ))}
-          </View>
+          <>
+            <Text style={styles.sectionHeading}>Latest from the islands</Text>
+            {recent.length === 0 && !loading ? (
+              <View style={styles.empty}>
+                <FontAwesome5 name="book-open" size={28} color={SECTION.color} />
+                <Text style={styles.emptyTitle}>No memories yet</Text>
+                <Text style={styles.emptyBody}>
+                  Be the first. Tap anywhere on the map above to drop a pin and start a memory.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.feed}>
+                {recent.map(pin => (
+                  <MemoryCard
+                    key={pin.id}
+                    pin={pin}
+                    onPress={() => router.push(`/memory/${pin.id}`)}
+                  />
+                ))}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// ── Search result row ──────────────────────────────────────────────────────
+
+function SearchResultRow({
+  result, onPress,
+}: {
+  result: MemorySearchResult;
+  onPress: () => void;
+}) {
+  const matchLabel = (() => {
+    switch (result.matched_via) {
+      case 'title':      return 'Matched title';
+      case 'body':       return 'Matched story';
+      case 'era':        return 'Matched era';
+      case 'tag':        return 'Matched theme';
+      case 'photo_tag':  return 'Tagged in photo';
+      default:           return null;
+    }
+  })();
+
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.searchRow}>
+      <View style={[styles.searchThumb, { backgroundColor: SECTION.light }]}>
+        {result.hero_url && result.hero_kind === 'photo' ? null : (
+          <FontAwesome5
+            name={
+              result.hero_kind === 'audio' ? 'microphone' :
+              result.hero_kind === 'video' ? 'video' :
+              'book-open'
+            }
+            size={16}
+            color={SECTION.color}
+          />
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        {result.place_name ? (
+          <Text style={styles.searchPlace} numberOfLines={1}>
+            {result.place_name}
+          </Text>
+        ) : null}
+        <Text style={styles.searchTitle} numberOfLines={1}>
+          {result.title ?? result.body_excerpt ?? 'Untitled memory'}
+        </Text>
+        <View style={styles.searchMetaRow}>
+          {matchLabel ? (
+            <View style={[styles.matchChip, { backgroundColor: SECTION.light }]}>
+              <Text style={[styles.matchChipText, { color: SECTION.color }]}>{matchLabel}</Text>
+            </View>
+          ) : null}
+          {result.era ? <Text style={styles.searchMeta}>{result.era}</Text> : null}
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -244,6 +379,78 @@ const styles = StyleSheet.create({
   feed: {
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
+  },
+  searchWrap: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    paddingVertical: 0,
+  },
+  searchHint: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 6,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+  },
+  searchThumb: {
+    width: 48, height: 48, borderRadius: radius.sm,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  searchPlace: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: SECTION.color,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  searchTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  searchMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 3,
+  },
+  searchMeta: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  matchChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  matchChipText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   empty: {
     margin: spacing.lg,

@@ -82,6 +82,11 @@ export function ImageAnnotationOverlay({
       {size.w > 0 && pins.map(pin => {
         const cx = pin.x * size.w;
         const cy = pin.y * size.h;
+
+        // Flip the label to the left when the pin is on the right half of
+        // the image so it doesn't clip off the edge.
+        const labelOnRight = pin.x < 0.65;
+
         return (
           <Pressable
             key={pin.id}
@@ -92,24 +97,64 @@ export function ImageAnnotationOverlay({
               { left: cx - 14, top: cy - 14 },
             ]}
           >
-            <View
-              style={[
-                styles.pinHead,
-                {
-                  backgroundColor: pin.resolved ? colors.success : SECTION.color,
-                },
-              ]}
-            >
-              <FontAwesome5
-                name={pin.resolved ? 'check' : 'question'}
-                size={12}
-                color="#fff"
-                solid
-              />
+            <View style={styles.pinAndLabel}>
+              <View
+                style={[
+                  styles.pinHead,
+                  {
+                    backgroundColor: pin.resolved ? colors.success : SECTION.color,
+                  },
+                ]}
+              >
+                <FontAwesome5
+                  name={pin.resolved ? 'check' : 'question'}
+                  size={12}
+                  color="#fff"
+                  solid
+                />
+              </View>
+              {pin.resolved ? null : (
+                <View style={styles.pulseRing} />
+              )}
+
+              {/* Visible tag label when resolved */}
+              {pin.resolved && pin.resolved_answer ? (
+                <View
+                  style={[
+                    styles.tagLabel,
+                    labelOnRight
+                      ? { left: 32 }
+                      : { right: 32 },
+                  ]}
+                  pointerEvents="none"
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={styles.tagLabelText}
+                  >
+                    {pin.resolved_answer}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* "N suggestions" badge for unresolved pins */}
+              {!pin.resolved && pin.suggestions && pin.suggestions.length > 0 ? (
+                <View
+                  style={[
+                    styles.suggestBadge,
+                    labelOnRight
+                      ? { left: 32 }
+                      : { right: 32 },
+                  ]}
+                  pointerEvents="none"
+                >
+                  <FontAwesome5 name="lightbulb" size={9} color="#fff" solid />
+                  <Text style={styles.suggestBadgeText}>
+                    {pin.suggestions.length}
+                  </Text>
+                </View>
+              ) : null}
             </View>
-            {pin.resolved ? null : (
-              <View style={styles.pulseRing} />
-            )}
           </Pressable>
         );
       })}
@@ -139,6 +184,43 @@ const styles = StyleSheet.create({
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  pinAndLabel: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  tagLabel: {
+    position: 'absolute',
+    top: 2,
+    maxWidth: 160,
+    backgroundColor: 'rgba(15, 28, 38, 0.85)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  tagLabelText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  suggestBadge: {
+    position: 'absolute',
+    top: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: SECTION.color,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  suggestBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   pinHead: {
     width: 28,

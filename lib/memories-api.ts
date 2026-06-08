@@ -58,17 +58,46 @@ export interface MemoryMedia {
 }
 
 export interface MemoryImagePin {
-  id:               string;
-  media_id:         string;
-  author_id:        string;
-  x:                number;   // 0..1
-  y:                number;   // 0..1
-  prompt:           string;
-  resolved:         boolean;
-  resolved_answer:  string | null;
-  resolved_by:      string | null;
-  resolved_at:      string | null;
-  created_at:       string;
+  id:                     string;
+  media_id:               string;
+  author_id:              string;
+  x:                      number;   // 0..1
+  y:                      number;   // 0..1
+  prompt:                 string;
+  resolved:               boolean;
+  resolved_answer:        string | null;
+  resolved_by:            string | null;
+  resolved_at:            string | null;
+  accepted_suggestion_id: string | null;
+  created_at:             string;
+  /** Filled by fetchPinSuggestions / fetchMemoryDetail. */
+  suggestions?:           MemoryImagePinSuggestion[];
+}
+
+export interface MemoryImagePinSuggestion {
+  id:           string;
+  pin_id:       string;
+  suggester_id: string;
+  suggester?:   MemoryAuthor | null;
+  answer:       string;
+  is_accepted:  boolean;
+  accepted_at:  string | null;
+  created_at:   string;
+}
+
+export interface MemorySearchResult {
+  id:           string;
+  lat:          number | null;
+  lng:          number | null;
+  place_name:   string | null;
+  title:        string | null;
+  body_excerpt: string | null;
+  era:          string | null;
+  tags:         string[];
+  matched_via:  'title' | 'body' | 'era' | 'tag' | 'photo_tag';
+  hero_url:     string | null;
+  hero_kind:    MediaKind | null;
+  created_at:   string;
 }
 
 export interface MemoryComment {
@@ -205,6 +234,22 @@ export async function fetchMemoryDetail(id: string, userId: string | null): Prom
       .in('media_id', photoIds);
     if (pinErr) throw pinErr;
     pins = (pinData ?? []) as MemoryImagePin[];
+
+    // Hydrate community suggestions for every pin in one round-trip.
+    if (pins.length) {
+      const pinIds = pins.map(p => p.id);
+      const { data: sugData, error: sugErr } = await supabase
+        .from('memory_image_pin_suggestions')
+        .select('*, suggester:profiles!memory_image_pin_suggestions_suggester_id_fkey(id, full_name, avatar_url)')
+        .in('pin_id', pinIds)
+        .order('created_at');
+      if (sugErr) throw sugErr;
+      const byPin: Record<string, MemoryImagePinSuggestion[]> = {};
+      for (const s of (sugData ?? []) as MemoryImagePinSuggestion[]) {
+        (byPin[s.pin_id] ||= []).push(s);
+      }
+      pins = pins.map(p => ({ ...p, suggestions: byPin[p.id] ?? [] }));
+    }
   }
 
   const reactionsByKind: Record<ReactionKind, number> = {
@@ -399,6 +444,74 @@ export async function resolveImagePin(
 export async function deleteImagePin(pinId: string): Promise<void> {
   const { error } = await supabase.from('memory_image_pins').delete().eq('id', pinId);
   if (error) throw error;
+}
+
+// ── Community suggestions on image pins ─────────────────────────────────────
+
+/**
+ * Propose an answer to an open image pin ("who is this?", "what boat?").
+ * Anyone signed-in can suggest. The memory author later picks one with
+ * acceptImagePinSuggestion to make it the visible tag on the photo.
+ */
+export async function suggestImagePinAnswer(input: {
+  pinId:       string;
+  suggesterId: string;
+  answer:      string;
+}): Promise<MemoryImagePinSuggestion> {
+  const { data, error } = await supabase
+    .from('memory_image_pin_suggestions')
+    .insert({
+      pin_id:       input.pinId,
+      suggester_id: input.suggesterId,
+      answer:       input.answer.trim(),
+    })
+    .select('*, suggester:profiles!memory_image_pin_suggestions_suggester_id_fkey(id, full_name, avatar_url)')
+    .single();
+  if (error) throw error;
+  return data as MemoryImagePinSuggestion;
+}
+
+export async function deletePinSuggestion(suggestionId: string): Promise<void> {
+  const { error } = await supabase
+    .from('memory_image_pin_suggestions')
+    .delete()
+    .eq('id', suggestionId);
+  if (error) throw error;
+}
+
+/**
+ * Memory-author action: accept a suggestion. The DB function flips the
+ * accepted flag, stamps the pin with the answer + credits the suggester,
+ * and clears the accept flag on any sibling suggestions. Returns the
+ * freshly-resolved pin.
+ */
+export async function acceptImagePinSuggestion(suggestionId: string): Promise<MemoryImagePin> {
+  const { data, error } = await supabase.rpc('accept_image_pin_suggestion', {
+    suggestion_id: suggestionId,
+  });
+  if (error) throw error;
+  return data as MemoryImagePin;
+}
+
+// ── Search ──────────────────────────────────────────────────────────────────
+
+/**
+ * Searches memories by free text across title / body / era / tag slugs and
+ * resolved image-pin answers — so a photo tagged "John Anderson" surfaces
+ * when someone searches for him later. Backed by the search_memories RPC.
+ */
+export async function searchMemories(
+  query: string,
+  limit = 50,
+): Promise<MemorySearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { data, error } = await supabase.rpc('search_memories', {
+    q,
+    result_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as MemorySearchResult[];
 }
 
 // ── Comments ────────────────────────────────────────────────────────────────

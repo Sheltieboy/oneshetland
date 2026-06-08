@@ -31,6 +31,7 @@ import { useAuth } from '@/context/AuthContext';
 import {
   fetchMemoryDetail, Memory, MemoryMedia, MemoryImagePin,
   addImagePin, resolveImagePin, deleteImagePin,
+  suggestImagePinAnswer, deletePinSuggestion, acceptImagePinSuggestion,
   addComment, deleteComment,
   toggleReaction, ReactionKind,
   deleteMemory,
@@ -398,11 +399,49 @@ export default function MemoryDetailScreen() {
         {/* Active pin viewer */}
         {activePin ? (
           <ActivePinPanel
-            pin={activePin}
+            pin={
+              // Use the latest copy from memory.pins so suggestions stay
+              // fresh after a write — activePin is a snapshot.
+              memory.pins?.find(p => p.id === activePin.id) ?? activePin
+            }
             isAuthor={isAuthor}
+            viewerId={profile?.id ?? null}
             onClose={() => setActivePin(null)}
             onResolve={ans => onResolvePin(activePin, ans)}
             onDelete={() => onDeletePin(activePin)}
+            onSuggest={async (answer) => {
+              if (!profile?.id) {
+                router.push('/(auth)/sign-in');
+                return;
+              }
+              try {
+                await suggestImagePinAnswer({
+                  pinId: activePin.id,
+                  suggesterId: profile.id,
+                  answer,
+                });
+                void load();
+              } catch (err: any) {
+                Alert.alert('Could not suggest', err?.message ?? '');
+              }
+            }}
+            onAccept={async (suggestionId) => {
+              try {
+                await acceptImagePinSuggestion(suggestionId);
+                setActivePin(null);
+                void load();
+              } catch (err: any) {
+                Alert.alert('Could not accept', err?.message ?? '');
+              }
+            }}
+            onWithdrawSuggestion={async (suggestionId) => {
+              try {
+                await deletePinSuggestion(suggestionId);
+                void load();
+              } catch (err: any) {
+                Alert.alert('Could not withdraw', err?.message ?? '');
+              }
+            }}
           />
         ) : null}
 
@@ -580,15 +619,30 @@ function MediaTile({
 // ── Active pin panel ────────────────────────────────────────────────────────
 
 function ActivePinPanel({
-  pin, isAuthor, onClose, onResolve, onDelete,
+  pin, isAuthor, viewerId, onClose, onResolve, onDelete,
+  onSuggest, onAccept, onWithdrawSuggestion,
 }: {
-  pin:        MemoryImagePin;
-  isAuthor:   boolean;
-  onClose:    () => void;
-  onResolve:  (answer: string) => void;
-  onDelete:   () => void;
+  pin:                   MemoryImagePin;
+  isAuthor:              boolean;
+  viewerId:              string | null;
+  onClose:               () => void;
+  onResolve:             (answer: string) => void;
+  onDelete:              () => void;
+  onSuggest:             (answer: string) => void | Promise<void>;
+  onAccept:              (suggestionId: string) => void | Promise<void>;
+  onWithdrawSuggestion:  (suggestionId: string) => void | Promise<void>;
 }) {
-  const [answer, setAnswer] = useState(pin.resolved_answer ?? '');
+  const [answer, setAnswer]       = useState(pin.resolved_answer ?? '');
+  const [suggest, setSuggest]     = useState('');
+  const [busy, setBusy]           = useState(false);
+
+  const suggestions = pin.suggestions ?? [];
+  // Has this viewer already suggested? Used to swap the composer for a
+  // "you suggested X" row so we don't invite spam.
+  const mySuggestion = viewerId
+    ? suggestions.find(s => s.suggester_id === viewerId)
+    : null;
+
   return (
     <View style={styles.inlineSheet}>
       <View style={styles.pinSheetHeader}>
@@ -600,20 +654,106 @@ function ActivePinPanel({
           <FontAwesome5 name="times" size={16} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
+
+      {/* Resolved answer */}
       {pin.resolved ? (
         <Text style={styles.resolvedAnswer}>
-          <Text style={{ fontWeight: '700' }}>Answer: </Text>
+          <Text style={{ fontWeight: '700' }}>Identified as: </Text>
           {pin.resolved_answer}
         </Text>
-      ) : (
+      ) : null}
+
+      {/* Existing community suggestions */}
+      {!pin.resolved && suggestions.length > 0 ? (
+        <View style={{ gap: 6 }}>
+          <Text style={styles.sheetSubLabel}>
+            {suggestions.length === 1 ? '1 suggestion' : `${suggestions.length} suggestions`}
+          </Text>
+          {suggestions.map(s => {
+            const mine = s.suggester_id === viewerId;
+            return (
+              <View key={s.id} style={styles.suggestionRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.suggestionAnswer}>{s.answer}</Text>
+                  <Text style={styles.suggestionMeta}>
+                    {s.suggester?.full_name ?? 'Anonymous'}
+                  </Text>
+                </View>
+                {isAuthor ? (
+                  <TouchableOpacity
+                    onPress={async () => { setBusy(true); await onAccept(s.id); setBusy(false); }}
+                    disabled={busy}
+                    style={styles.acceptBtn}
+                  >
+                    <FontAwesome5 name="check" size={11} color="#fff" solid />
+                    <Text style={styles.acceptBtnText}>Accept</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {mine ? (
+                  <TouchableOpacity
+                    onPress={() => onWithdrawSuggestion(s.id)}
+                    hitSlop={8}
+                    style={{ paddingHorizontal: 6 }}
+                  >
+                    <FontAwesome5 name="times" size={12} color={colors.textMuted} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {/* Viewer is NOT author + pin NOT resolved → invite a suggestion */}
+      {!pin.resolved && !isAuthor && !mySuggestion ? (
+        <>
+          <Text style={styles.sheetHint}>
+            Recognise this? Help the author identify it — your suggestion goes to them to accept.
+          </Text>
+          <TextInput
+            value={suggest}
+            onChangeText={setSuggest}
+            placeholder="e.g. That's my grandfather, John Anderson"
+            placeholderTextColor={colors.textLight}
+            style={styles.input}
+            multiline
+          />
+          <View style={styles.sheetActions}>
+            <TouchableOpacity
+              onPress={async () => {
+                if (!suggest.trim()) return;
+                setBusy(true);
+                await onSuggest(suggest.trim());
+                setSuggest('');
+                setBusy(false);
+              }}
+              disabled={busy || !suggest.trim()}
+              style={[styles.actionBtn, (!suggest.trim() || busy) && { opacity: 0.5 }]}
+            >
+              <FontAwesome5 name="lightbulb" size={11} color="#fff" solid />
+              <Text style={styles.actionBtnText}>Suggest</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      ) : null}
+
+      {/* Already suggested (viewer is non-author) */}
+      {!pin.resolved && !isAuthor && mySuggestion ? (
         <Text style={styles.sheetHint}>
-          {isAuthor
-            ? 'When someone helps you in the comments, paste the answer here to mark this pin resolved.'
-            : 'Know the answer? Reply in the comments and the author can resolve it.'}
+          You've suggested "{mySuggestion.answer}". The author will see it next time they look.
         </Text>
-      )}
+      ) : null}
+
+      {/* Author actions: type your own answer OR remove the pin entirely */}
       {isAuthor ? (
         <>
+          {!pin.resolved ? (
+            <Text style={styles.sheetHint}>
+              {suggestions.length
+                ? 'Or type your own answer below.'
+                : 'When you know the answer, type it here to tag the photo for everyone.'}
+            </Text>
+          ) : null}
           <TextInput
             value={answer}
             onChangeText={setAnswer}
@@ -632,7 +772,7 @@ function ActivePinPanel({
               disabled={!answer.trim()}
               style={[styles.actionBtn, !answer.trim() && { opacity: 0.5 }]}
             >
-              <Text style={styles.actionBtnText}>{pin.resolved ? 'Update' : 'Mark resolved'}</Text>
+              <Text style={styles.actionBtnText}>{pin.resolved ? 'Update tag' : 'Tag photo'}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -813,6 +953,45 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { flex: 1, fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
   sheetHint:  { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
+  sheetSubLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: SECTION.color,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: SECTION.light,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  suggestionAnswer: {
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  suggestionMeta: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  acceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.success,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  acceptBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   sheetActions: {
     flexDirection: 'row',
     gap: spacing.sm,
