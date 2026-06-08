@@ -27,6 +27,7 @@ import {
   fetchMemoryPins, MemoryPin,
   searchMemories, MemorySearchResult,
 } from '@/lib/memories-api';
+import { ShetlandPlace, PLACE_CATEGORY_LABEL } from '@/lib/places-api';
 import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
 
@@ -47,6 +48,12 @@ export default function MemoriesScreen() {
   const [query, setQuery]               = useState('');
   const [results, setResults]           = useState<MemorySearchResult[] | null>(null);
   const [searching, setSearching]       = useState(false);
+
+  // When a place is picked from the map's search box, surface the memories
+  // sitting within a tight bbox around it ("Memories near Hillswick").
+  const [nearPlace, setNearPlace]       = useState<ShetlandPlace | null>(null);
+  const [nearby, setNearby]             = useState<MemoryPin[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -70,6 +77,32 @@ export default function MemoriesScreen() {
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   useEffect(() => { void load(); }, [load]);
+
+  // ── Memories near picked place ──────────────────────────────────────────
+  // Roughly ±0.04° → ~4.4 km north-south, ~2.2 km east-west at 60°N.
+  // Wide enough to cover a parish, narrow enough that we're talking about
+  // "near here", not "on this island".
+  useEffect(() => {
+    if (!nearPlace) { setNearby([]); return; }
+    setNearbyLoading(true);
+    void (async () => {
+      try {
+        const lat = Number(nearPlace.lat);
+        const lng = Number(nearPlace.lng);
+        const r = await fetchMemoryPins({
+          minLat: lat - 0.04,
+          maxLat: lat + 0.04,
+          minLng: lng - 0.04,
+          maxLng: lng + 0.04,
+        }, 30);
+        setNearby(r);
+      } catch {
+        setNearby([]);
+      } finally {
+        setNearbyLoading(false);
+      }
+    })();
+  }, [nearPlace]);
 
   // ── Search (debounced) ───────────────────────────────────────────────────
   useEffect(() => {
@@ -152,6 +185,7 @@ export default function MemoriesScreen() {
               pins={pins}
               onOpenPin={onPinTap}
               onDropPin={onDropPin}
+              onPlacePicked={(p) => setNearPlace(p)}
               selectedId={selectedId}
               height={460}
             />
@@ -193,6 +227,52 @@ export default function MemoriesScreen() {
             </Text>
           ) : null}
         </View>
+
+        {/* ── Memories near picked place ────────────────────────────── */}
+        {nearPlace ? (
+          <View style={styles.nearWrap}>
+            <View style={styles.nearHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.nearEyebrow}>Memories near</Text>
+                <Text style={styles.nearTitle}>
+                  {nearPlace.name}
+                  <Text style={styles.nearSub}>
+                    {nearPlace.region ? ` · ${nearPlace.region.replace(/\b\w/g, c => c.toUpperCase())}` : ''}
+                  </Text>
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setNearPlace(null)}
+                hitSlop={10}
+                style={styles.nearClose}
+              >
+                <FontAwesome5 name="times" size={14} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {nearbyLoading ? (
+              <ActivityIndicator color={SECTION.color} style={{ marginTop: spacing.sm }} />
+            ) : nearby.length === 0 ? (
+              <View style={[styles.empty, { marginHorizontal: 0, marginTop: spacing.sm }]}>
+                <FontAwesome5 name="book-open" size={22} color={SECTION.color} />
+                <Text style={styles.emptyTitle}>No memories here yet</Text>
+                <Text style={styles.emptyBody}>
+                  Be the first — tap on the map above to drop a pin near {nearPlace.name}.
+                </Text>
+              </View>
+            ) : (
+              <View style={[styles.feed, { paddingHorizontal: 0, marginTop: spacing.sm }]}>
+                {nearby.map(pin => (
+                  <MemoryCard
+                    key={pin.id}
+                    pin={pin}
+                    onPress={() => router.push(`/memory/${pin.id}`)}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        ) : null}
 
         {/* ── Results OR recent feed ──────────────────────────────────── */}
         {results !== null ? (
@@ -405,6 +485,42 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textMuted,
     marginTop: 6,
+  },
+  nearWrap: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  nearHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  nearEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: SECTION.color,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  nearTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+  nearSub: {
+    fontSize: fontSize.sm,
+    fontWeight: '500',
+    color: colors.textMuted,
+  },
+  nearClose: {
+    width: 32, height: 32,
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 16,
   },
   searchRow: {
     flexDirection: 'row',

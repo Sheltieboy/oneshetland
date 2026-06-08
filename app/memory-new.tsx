@@ -245,7 +245,15 @@ export default function MemoryNewScreen() {
                 pins={[]}
                 pendingPoint={point}
                 onDropPin={p => setPoint(p)}
-                height={260}
+                // Picking a place from the search box also drops the pin
+                // there, AND pre-fills the place_name field — so "find
+                // Hillswick → tap save" is now a viable one-tap flow when
+                // the location is good enough as-is.
+                onPlacePicked={p => {
+                  setPoint({ lat: Number(p.lat), lng: Number(p.lng) });
+                  if (!placeName.trim()) setPlaceName(p.name);
+                }}
+                height={300}
               />
             </View>
             <View style={styles.coordsRow}>

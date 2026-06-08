@@ -16,6 +16,7 @@
  * returning an empty list rather than crashing the search box.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
 export interface ShetlandPlace {
@@ -77,6 +78,49 @@ export async function searchPlaces(query: string, limit = 8): Promise<ShetlandPl
       return a.name.localeCompare(b.name);
     })
     .slice(0, limit);
+}
+
+// ── Recent searches (AsyncStorage) ──────────────────────────────────────────
+//
+// Persists the user's last five place picks so the search box can offer
+// them as one-tap chips before they type anything. Bump the version
+// suffix if the ShetlandPlace shape ever changes.
+
+const RECENT_KEY  = 'memories.recentPlaces.v1';
+const MAX_RECENT  = 5;
+
+export async function loadRecentPlaces(): Promise<ShetlandPlace[]> {
+  try {
+    const raw = await AsyncStorage.getItem(RECENT_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.slice(0, MAX_RECENT) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Prepend a freshly-picked place to the recents list, deduping on id and
+ * capping at MAX_RECENT. Returns the new list so callers can update state
+ * without re-reading.
+ */
+export async function pushRecentPlace(place: ShetlandPlace): Promise<ShetlandPlace[]> {
+  const current  = await loadRecentPlaces();
+  const filtered = current.filter(p => p.id !== place.id);
+  const next     = [place, ...filtered].slice(0, MAX_RECENT);
+  try {
+    await AsyncStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // Storage failures are non-fatal — search still works without history.
+  }
+  return next;
+}
+
+export async function clearRecentPlaces(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(RECENT_KEY);
+  } catch { /* ignore */ }
 }
 
 /**

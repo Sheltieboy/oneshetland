@@ -35,7 +35,10 @@ import { SECTIONS } from '@/constants/sections';
 import { colors } from '@/constants/theme';
 import { MemoryPin } from '@/lib/memories-api';
 import { MEMORY_CATEGORY_BY_SLUG } from '@/constants/memory-categories';
-import { searchPlaces, ShetlandPlace, PLACE_CATEGORY_LABEL } from '@/lib/places-api';
+import {
+  searchPlaces, ShetlandPlace, PLACE_CATEGORY_LABEL,
+  loadRecentPlaces, pushRecentPlace,
+} from '@/lib/places-api';
 
 const SECTION = SECTIONS.memories;
 
@@ -69,6 +72,12 @@ interface MemoryMapNativeProps {
   onDropPin?:     (point: { lat: number; lng: number }) => void;
   selectedId?:    string | null;
   pendingPoint?:  { lat: number; lng: number } | null;
+  /**
+   * Fired when the user picks a place from the search dropdown — the map
+   * has already animated to it by the time this fires. Memories tab uses
+   * it to surface a "Memories near {name}" feed under the map.
+   */
+  onPlacePicked?: (place: ShetlandPlace) => void;
   /** Fixed height for the map. Default 420. */
   height?:        number;
   style?:         ViewStyle;
@@ -80,6 +89,7 @@ export function MemoryMapNative({
   onDropPin,
   selectedId = null,
   pendingPoint = null,
+  onPlacePicked,
   height = 420,
   style,
 }: MemoryMapNativeProps) {
@@ -131,6 +141,12 @@ export function MemoryMapNative({
   const [placeQuery, setPlaceQuery]     = useState('');
   const [placeResults, setPlaceResults] = useState<ShetlandPlace[]>([]);
   const [searchOpen, setSearchOpen]     = useState(false);
+  const [recentPlaces, setRecentPlaces] = useState<ShetlandPlace[]>([]);
+
+  // Load recent picks on mount so the empty search box already has chips.
+  useEffect(() => {
+    void loadRecentPlaces().then(setRecentPlaces);
+  }, []);
 
   useEffect(() => {
     const q = placeQuery.trim();
@@ -156,6 +172,10 @@ export function MemoryMapNative({
       latitudeDelta:  0.06,
       longitudeDelta: 0.06,
     }, 600);
+    // Persist for the recents chip row, then bubble up so the screen can
+    // show "Memories near {name}" cards beside the map.
+    void pushRecentPlace(place).then(setRecentPlaces);
+    onPlacePicked?.(place);
   };
 
   return (
@@ -233,6 +253,29 @@ export function MemoryMapNative({
             </TouchableOpacity>
           ) : null}
         </View>
+
+        {/* Recents row — shown when the box is focused but empty. */}
+        {searchOpen && placeQuery.trim().length < 2 && recentPlaces.length > 0 ? (
+          <View style={styles.recentsWrap}>
+            <Text style={styles.recentsLabel}>Recent</Text>
+            <View style={styles.recentsRow}>
+              {recentPlaces.map(p => (
+                <TouchableOpacity
+                  key={p.id}
+                  onPress={() => flyToPlace(p)}
+                  style={styles.recentChip}
+                >
+                  <FontAwesome5
+                    name={iconForPlaceCategory(p.category)}
+                    size={10}
+                    color={SECTION.color}
+                  />
+                  <Text style={styles.recentChipText} numberOfLines={1}>{p.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {searchOpen && placeResults.length > 0 ? (
           <View style={styles.searchResults}>
@@ -536,6 +579,45 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
+  },
+  recentsWrap: {
+    marginTop: 6,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  recentsLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  recentsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  recentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: SECTION.light,
+    maxWidth: 180,
+  },
+  recentChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
   searchResultRow: {
     flexDirection: 'row',
