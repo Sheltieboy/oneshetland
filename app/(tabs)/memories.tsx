@@ -97,9 +97,6 @@ export default function MemoriesScreen() {
       >
         {/* ── Hero header ─────────────────────────────────────────────── */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
-            <FontAwesome5 name="chevron-left" size={18} color={colors.textPrimary} />
-          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.eyebrow}>The living map</Text>
             <Text style={styles.title}>Memories</Text>

@@ -57,6 +57,10 @@ export default function TabLayout() {
         options={tabOptions(SECTIONS.spik.icon, SECTIONS.spik.label, SECTIONS.spik.color)}
       />
       <Tabs.Screen
+        name="memories"
+        options={tabOptions(SECTIONS.memories.icon, SECTIONS.memories.label, SECTIONS.memories.color)}
+      />
+      <Tabs.Screen
         name="whats-on"
         options={tabOptions(SECTIONS.events.icon, 'Events', SECTIONS.events.color)}
       />
