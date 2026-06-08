@@ -52,7 +52,8 @@ BEGIN
 
   -- ── 1. Prehistoric / Neolithic ───────────────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 60.30150, -1.56600, 'Staneydale', 'Neolithic',
     ARRAY['folklore','faith','heritage-seed'],
@@ -80,7 +81,8 @@ BEGIN
 
   -- ── 2. Norse / Medieval ──────────────────────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 60.18700, -1.25300, 'Tingwall', 'Norse',
     ARRAY['folklore','faith','heritage-seed'],
@@ -96,7 +98,8 @@ BEGIN
 
   -- ── 3. Pre-1900 fishing, crofting, sea ──────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 60.61200, -1.29800, 'Fethaland', 'Pre-1900',
     ARRAY['fishing','boats','crofting','heritage-seed'],
@@ -136,7 +139,8 @@ BEGIN
 
   -- ── 4. Lighthouses + sea safety ─────────────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 59.85200, -1.27200, 'Sumburgh Head', '1820s',
     ARRAY['boats','wildlife','heritage-seed'],
@@ -152,7 +156,8 @@ BEGIN
 
   -- ── 5. Faith + community ────────────────────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 59.97100, -1.37100, 'St Ninian''s Isle', '1958',
     ARRAY['faith','folklore','school','heritage-seed'],
@@ -168,7 +173,8 @@ BEGIN
 
   -- ── 6. Music + culture ──────────────────────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 60.15700, -1.14600, 'Lerwick (Islesburgh)', '20th century',
     ARRAY['music','spik','heritage-seed'],
@@ -184,7 +190,8 @@ BEGIN
 
   -- ── 7. 20th century — war, oil, disaster ───────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 60.13500, -1.27500, 'Scalloway', 'WWII',
     ARRAY['wartime','boats','heritage-seed'],
@@ -212,7 +219,8 @@ BEGIN
 
   -- ── 8. Notable people ──────────────────────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 60.15500, -1.14500, 'Lerwick', 'Pre-1900',
     ARRAY['school','family','heritage-seed'],
@@ -222,7 +230,8 @@ BEGIN
 
   -- ── 9. Outer islands ───────────────────────────────────────────────────
 
-  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body, visibility)
+  -- visibility column omitted intentionally — DEFAULT 'public' applies to every row.
+  INSERT INTO public.memories (author_id, lat, lng, place_name, era, tags, title, body)
   VALUES (
     v_author, 60.13500, -2.06000, 'Foula', 'Multiple eras',
     ARRAY['spik','crofting','folklore','family','heritage-seed'],
