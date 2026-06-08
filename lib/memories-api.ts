@@ -25,6 +25,7 @@ export interface MemoryPin {
   place_name:     string | null;
   title:          string | null;
   era:            string | null;
+  tags:           string[];
   media_count:    number;
   comment_count:  number;
   reaction_count: number;
@@ -89,6 +90,7 @@ export interface Memory {
   place_name:     string | null;
   parent_id:      string | null;
   era:            string | null;
+  tags:           string[];
   title:          string | null;
   body:           string | null;
   visibility:     MemoryVisibility;
@@ -232,6 +234,7 @@ export interface CreateMemoryInput {
   place_name?: string | null;
   parent_id?:  string | null;
   era?:        string | null;
+  tags?:       string[];
   title?:      string | null;
   body?:       string | null;
   visibility?: MemoryVisibility;
@@ -247,6 +250,7 @@ export async function createMemory(input: CreateMemoryInput): Promise<Memory> {
       place_name: input.place_name ?? null,
       parent_id:  input.parent_id  ?? null,
       era:        input.era        ?? null,
+      tags:       input.tags       ?? [],
       title:      input.title      ?? null,
       body:       input.body       ?? null,
       visibility: input.visibility ?? 'public',
@@ -259,7 +263,7 @@ export async function createMemory(input: CreateMemoryInput): Promise<Memory> {
 
 export async function updateMemory(
   id: string,
-  patch: Partial<Pick<Memory, 'title' | 'body' | 'place_name' | 'era' | 'visibility' | 'lat' | 'lng'>>,
+  patch: Partial<Pick<Memory, 'title' | 'body' | 'place_name' | 'era' | 'tags' | 'visibility' | 'lat' | 'lng'>>,
 ): Promise<Memory> {
   const { data, error } = await supabase
     .from('memories')

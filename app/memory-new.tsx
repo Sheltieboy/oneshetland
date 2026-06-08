@@ -31,6 +31,7 @@ import {
   MediaKind, MemoryVisibility,
 } from '@/lib/memories-api';
 import { PickedFile } from '@/lib/image-upload';
+import { MEMORY_CATEGORIES } from '@/constants/memory-categories';
 import MemoryMapNative from '@/components/MemoryMapNative';
 import VoiceRecorder from '@/components/VoiceRecorder';
 
@@ -88,6 +89,7 @@ export default function MemoryNewScreen() {
   const [title, setTitle]           = useState('');
   const [body, setBody]             = useState('');
   const [era, setEra]               = useState('');
+  const [tags, setTags]             = useState<string[]>([]);
   const [visibility, setVisibility] = useState<MemoryVisibility>('public');
   const [drafts, setDrafts]         = useState<DraftMedia[]>([]);
   const [recording, setRecording]   = useState(false);
@@ -175,6 +177,7 @@ export default function MemoryNewScreen() {
         place_name: placeName.trim() || null,
         parent_id:  parentIdParam ?? null,
         era:        era.trim()        || null,
+        tags,
         title:      title.trim()      || null,
         body:       body.trim()       || null,
         visibility,
@@ -308,6 +311,51 @@ export default function MemoryNewScreen() {
             placeholderTextColor={colors.textLight}
             style={[styles.input, { marginTop: spacing.sm }]}
           />
+        </View>
+
+        {/* Categories */}
+        <View style={styles.cardSection}>
+          <Text style={styles.sectionLabel}>What's it about</Text>
+          <Text style={styles.sectionHint}>
+            Tag this memory so others can find it. Pick as many as fit.
+          </Text>
+          <View style={styles.tagGrid}>
+            {MEMORY_CATEGORIES.map(cat => {
+              const active = tags.includes(cat.slug);
+              const accent = cat.color ?? SECTION.color;
+              return (
+                <TouchableOpacity
+                  key={cat.slug}
+                  onPress={() =>
+                    setTags(prev =>
+                      prev.includes(cat.slug)
+                        ? prev.filter(s => s !== cat.slug)
+                        : [...prev, cat.slug],
+                    )
+                  }
+                  style={[
+                    styles.tagChip,
+                    active && { backgroundColor: accent + '15', borderColor: accent },
+                  ]}
+                >
+                  <FontAwesome5
+                    name={cat.icon}
+                    size={12}
+                    color={active ? accent : colors.textMuted}
+                    solid
+                  />
+                  <Text
+                    style={[
+                      styles.tagChipText,
+                      active && { color: accent, fontWeight: '700' },
+                    ]}
+                  >
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* Media */}
@@ -498,6 +546,28 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   eraChipText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  tagGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: spacing.sm,
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.offWhite,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tagChipText: {
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '600',

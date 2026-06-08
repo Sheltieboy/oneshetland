@@ -36,6 +36,7 @@ import {
   deleteMemory,
 } from '@/lib/memories-api';
 import ImageAnnotationOverlay from '@/components/ImageAnnotationOverlay';
+import { MEMORY_CATEGORY_BY_SLUG } from '@/constants/memory-categories';
 
 const SECTION = SECTIONS.memories;
 
@@ -296,6 +297,26 @@ export default function MemoryDetailScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Tags */}
+        {memory.tags?.length ? (
+          <View style={styles.tagRow}>
+            {memory.tags.map(slug => {
+              const cat = MEMORY_CATEGORY_BY_SLUG[slug];
+              if (!cat) return null;
+              const accent = cat.color ?? SECTION.color;
+              return (
+                <View
+                  key={slug}
+                  style={[styles.tagChip, { backgroundColor: accent + '15', borderColor: accent }]}
+                >
+                  <FontAwesome5 name={cat.icon} size={11} color={accent} solid />
+                  <Text style={[styles.tagChipText, { color: accent }]}>{cat.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
 
         {/* Body */}
         {memory.body ? (
@@ -668,6 +689,27 @@ const styles = StyleSheet.create({
   },
   authorName: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
   authorMeta: { fontSize: 11, color: colors.textMuted },
+
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  tagChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
 
   body: {
     paddingHorizontal: spacing.lg,
