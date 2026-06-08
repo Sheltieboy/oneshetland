@@ -319,6 +319,46 @@ export async function fetchVesselTimeline(id: string): Promise<VesselTimelineEnt
   return (data ?? []) as VesselTimelineEntry[];
 }
 
+/**
+ * Batch-fetch one hero image URL per vessel id. Picks the first media
+ * asset that has an actual image_url (not just a Wildmuir reference)
+ * with the best confidence. Returns a map vesselId → URL.
+ *
+ * Used by the landing page to give the cards a hero photo. We do it as a
+ * second round-trip (rather than baking it into the vessel_search view)
+ * so the view stays cheap and the heroes can be re-ranked over time
+ * without a schema migration.
+ */
+export async function fetchHeroPhotos(vesselIds: string[]): Promise<Record<string, string>> {
+  if (!vesselIds.length) return {};
+
+  const { data, error } = await supabase
+    .from('vessel_media_links')
+    .select('vessel_id, confidence, media:media_assets(image_url, thumbnail_url)')
+    .in('vessel_id', vesselIds);
+
+  if (error) return {};
+
+  // Per-vessel: highest confidence + non-null image_url wins. Walk once
+  // and prefer confirmed > probable > possible > anything else.
+  const confidenceRank: Record<string, number> = {
+    confirmed: 0, probable: 1, possible: 2, unmatched: 3, conflict: 4,
+  };
+
+  const best: Record<string, { url: string; rank: number }> = {};
+  for (const row of (data ?? []) as any[]) {
+    const url = row.media?.image_url ?? row.media?.thumbnail_url;
+    if (!url) continue;
+    const rank = confidenceRank[row.confidence] ?? 9;
+    const prev = best[row.vessel_id];
+    if (!prev || rank < prev.rank) {
+      best[row.vessel_id] = { url, rank };
+    }
+  }
+
+  return Object.fromEntries(Object.entries(best).map(([k, v]) => [k, v.url]));
+}
+
 // ── Formatting helpers ──────────────────────────────────────────────────────
 
 /**
@@ -341,6 +381,21 @@ export function hullMaterialLabel(code: string | null | undefined): string | nul
     case 'W': return 'Wood';
     case 'A': return 'Aluminium';
     default:  return c;
+  }
+}
+
+/**
+ * Plain-English confidence labels. The DB enums are fine for code but
+ * "probable" and "possible" mean little to a retired skipper. These
+ * read like a researcher friend would phrase it.
+ */
+export function confidenceLabel(c: Confidence): string {
+  switch (c) {
+    case 'confirmed': return 'Confirmed';
+    case 'probable':  return 'Almost certain';
+    case 'possible':  return 'Likely match';
+    case 'unmatched': return 'Not yet matched';
+    case 'conflict':  return 'Sources disagree';
   }
 }
 

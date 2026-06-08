@@ -1,16 +1,20 @@
 /**
  * app/(tabs)/da-boats.tsx
  *
- * Da Boats landing — search and browse the LK-registered Shetland fleet.
+ * Da Boats landing — scrapbook redesign for an older audience.
  *
- * Search box hits vessel_search via .or() across canonical name, all
- * historical names, all historical registrations and the primary LK
- * number. Empty query returns the most-recently-built confirmed boats
- * first as a default browse list. Tapping a card opens
- * /boat/[id] (the profile screen).
+ * Design priorities (compared with the original data-table look):
+ *   * BIG type. Body 17 px, titles 26 px+, no faint metas.
+ *   * Hero photo on every card that has one — boats people knew, not rows.
+ *   * Plain English everywhere (no jargon like "evidence drawer").
+ *   * Generous tap targets (cards 60 mm+ tall).
+ *   * "Saved boats" + "Recently viewed" rows so the men who use this can
+ *     return to "yon boat I was looking at" without searching again.
+ *   * One-tap decade chips at the top — pick "1980s" and the grid filters
+ *     in place; no separate search dance required.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TextInput, TouchableOpacity, RefreshControl,
@@ -21,42 +25,93 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import {
-  searchVessels, VesselSearchRow,
-  vesselDisplayTitle, hullMaterialLabel,
+  searchVessels, VesselSearchRow, fetchHeroPhotos,
 } from '@/lib/boats-api';
+import {
+  loadSavedBoats, loadRecentBoats, toggleSavedBoat, VesselStub,
+} from '@/lib/boats-prefs';
+import VesselCard from '@/components/VesselCard';
 
 const SECTION = SECTIONS.daBoats;
 
+const DECADES = ['1950s','1960s','1970s','1980s','1990s','2000s','2010s','2020s'];
+
+function decadeOf(year: number | null | undefined): string | null {
+  if (!year) return null;
+  const d = Math.floor(year / 10) * 10;
+  return `${d}s`;
+}
+
 export default function DaBoatsScreen() {
   const router = useRouter();
-  const [rows, setRows]                 = useState<VesselSearchRow[]>([]);
-  const [query, setQuery]               = useState('');
-  const [loading, setLoading]           = useState(true);
-  const [refreshing, setRefreshing]     = useState(false);
+  const [rows, setRows]                   = useState<VesselSearchRow[]>([]);
+  const [heroes, setHeroes]               = useState<Record<string, string>>({});
+  const [query, setQuery]                 = useState('');
+  const [decade, setDecade]               = useState<string | null>(null);
+  const [photosOnly, setPhotosOnly]       = useState(false);
+  const [loading, setLoading]             = useState(true);
+  const [refreshing, setRefreshing]       = useState(false);
+  const [saved, setSaved]                 = useState<VesselStub[]>([]);
+  const [recent, setRecent]               = useState<VesselStub[]>([]);
+  const [savedIds, setSavedIds]           = useState<Set<string>>(new Set());
+
+  const refreshPrefs = useCallback(async () => {
+    const [s, r] = await Promise.all([loadSavedBoats(), loadRecentBoats()]);
+    setSaved(s);
+    setRecent(r);
+    setSavedIds(new Set(s.map(b => b.id)));
+  }, []);
 
   const load = useCallback(async (q: string) => {
     try {
-      const data = await searchVessels(q);
+      const data = await searchVessels(q, 80);
       setRows(data);
+      // In parallel fetch hero photos for whatever's visible
+      const ids = data.map(d => d.id);
+      const h = await fetchHeroPhotos(ids);
+      setHeroes(h);
     } catch {
       setRows([]);
+      setHeroes({});
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  // Default browse on first focus.
-  useFocusEffect(useCallback(() => {
-    if (!query.trim()) void load('');
-  }, [load, query]));
+  useFocusEffect(useCallback(() => { void refreshPrefs(); }, [refreshPrefs]));
 
-  // Debounced search.
+  // Debounced search
   useEffect(() => {
     setLoading(true);
-    const t = setTimeout(() => { void load(query); }, 240);
+    const t = setTimeout(() => { void load(query); }, 250);
     return () => clearTimeout(t);
   }, [query, load]);
+
+  // Apply decade + photo filters in-memory (467 rows max — trivial cost)
+  const filtered = useMemo(() => {
+    let r = rows;
+    if (decade) r = r.filter(v => decadeOf(v.built_year) === decade);
+    if (photosOnly) r = r.filter(v => v.media_asset_count > 0);
+    return r;
+  }, [rows, decade, photosOnly]);
+
+  const handleToggleSave = async (row: VesselSearchRow) => {
+    const stub: VesselStub = {
+      id:             row.id,
+      lk_number:      row.primary_lk_number,
+      canonical_name: row.canonical_name,
+      built_year:     row.built_year,
+      hero_url:       heroes[row.id] ?? null,
+    };
+    const isNowSaved = await toggleSavedBoat(stub);
+    setSavedIds(prev => {
+      const next = new Set(prev);
+      if (isNowSaved) next.add(row.id); else next.delete(row.id);
+      return next;
+    });
+    void refreshPrefs();
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -68,7 +123,7 @@ export default function DaBoatsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); void load(query); }}
+            onRefresh={() => { setRefreshing(true); void load(query); void refreshPrefs(); }}
             tintColor={SECTION.color}
           />
         }
@@ -78,241 +133,297 @@ export default function DaBoatsScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[styles.eyebrow, { color: SECTION.color }]}>The fleet</Text>
             <Text style={styles.title}>Da Boats</Text>
+            <Text style={styles.subtitle}>
+              Shetland LK boats through the years
+            </Text>
           </View>
           <View style={[styles.iconBadge, { backgroundColor: SECTION.light }]}>
-            <FontAwesome5 name={SECTION.icon} size={20} color={SECTION.color} />
+            <FontAwesome5 name={SECTION.icon} size={26} color={SECTION.color} />
           </View>
         </View>
 
-        <Text style={styles.intro}>
-          Every Shetland LK-registered boat we've found a record of, with the names she
-          carried, the numbers she wore, the owners, the photographers, and the years.
-        </Text>
-
-        {/* Search */}
+        {/* Big search */}
         <View style={styles.searchWrap}>
           <View style={styles.searchBar}>
-            <FontAwesome5 name="search" size={14} color={colors.textMuted} />
+            <FontAwesome5 name="search" size={18} color={SECTION.color} />
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Search by name, LK number, owner…"
-              placeholderTextColor={colors.textLight}
+              placeholder="Search a boat — name or number"
+              placeholderTextColor={colors.textMuted}
               style={styles.searchInput}
               autoCorrect={false}
               autoCapitalize="characters"
               returnKeyType="search"
             />
             {query ? (
-              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
-                <FontAwesome5 name="times-circle" size={14} color={colors.textMuted} solid />
+              <TouchableOpacity onPress={() => setQuery('')} hitSlop={12}>
+                <FontAwesome5 name="times-circle" size={20} color={colors.textMuted} solid />
               </TouchableOpacity>
             ) : null}
           </View>
         </View>
 
-        {/* Results */}
-        <Text style={styles.heading}>
-          {loading
-            ? 'Searching…'
-            : query.trim()
-              ? `${rows.length} match${rows.length === 1 ? '' : 'es'}`
-              : 'Most-recent boats'}
-        </Text>
+        {/* Decade chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
+          <Chip
+            label="Any year"
+            active={decade === null}
+            onPress={() => setDecade(null)}
+          />
+          {DECADES.map(d => (
+            <Chip
+              key={d}
+              label={d}
+              active={decade === d}
+              onPress={() => setDecade(prev => prev === d ? null : d)}
+            />
+          ))}
+          <Chip
+            label={photosOnly ? 'With photos ✓' : 'With photos'}
+            active={photosOnly}
+            onPress={() => setPhotosOnly(p => !p)}
+          />
+        </ScrollView>
 
-        {loading ? (
-          <View style={{ paddingVertical: spacing.lg }}>
-            <ActivityIndicator color={SECTION.color} />
-          </View>
-        ) : rows.length === 0 ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="ship" size={28} color={SECTION.color} />
-            <Text style={styles.emptyTitle}>No matches</Text>
-            <Text style={styles.emptyBody}>
-              Try a different name or LK number — many boats also went by
-              an FR, BF or PD registration at some point.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {rows.map(r => (
-              <VesselRow key={r.id} row={r} onPress={() => router.push(`/boat/${r.id}`)} />
-            ))}
-          </View>
-        )}
+        {/* Saved boats row */}
+        {saved.length > 0 ? (
+          <Section title="Saved boats">
+            <View style={styles.list}>
+              {saved.map(s => (
+                <VesselCard
+                  key={s.id}
+                  data={{
+                    id: s.id,
+                    lk_number: s.lk_number,
+                    canonical_name: s.canonical_name,
+                    built_year: s.built_year,
+                    hero_url: s.hero_url,
+                  }}
+                  variant="row"
+                  saved
+                  onToggleSave={async () => {
+                    await toggleSavedBoat(s);
+                    void refreshPrefs();
+                  }}
+                  onPress={() => router.push(`/boat/${s.id}`)}
+                />
+              ))}
+            </View>
+          </Section>
+        ) : null}
+
+        {/* Recently viewed row (suppress when same as saved) */}
+        {recent.length > 0 ? (
+          <Section title="You looked at">
+            <View style={styles.list}>
+              {recent.map(r => (
+                <VesselCard
+                  key={r.id}
+                  data={{
+                    id: r.id,
+                    lk_number: r.lk_number,
+                    canonical_name: r.canonical_name,
+                    built_year: r.built_year,
+                    hero_url: r.hero_url,
+                  }}
+                  variant="row"
+                  saved={savedIds.has(r.id)}
+                  onToggleSave={async () => {
+                    await toggleSavedBoat(r);
+                    void refreshPrefs();
+                  }}
+                  onPress={() => router.push(`/boat/${r.id}`)}
+                />
+              ))}
+            </View>
+          </Section>
+        ) : null}
+
+        {/* Browse */}
+        <Section
+          title={
+            query.trim()
+              ? loading ? 'Searching…' : `${filtered.length} found`
+              : decade
+                ? `Boats from ${decade}`
+                : photosOnly
+                  ? 'Boats with photos'
+                  : 'The whole fleet'
+          }
+        >
+          {loading ? (
+            <View style={{ paddingVertical: spacing.lg }}>
+              <ActivityIndicator color={SECTION.color} />
+            </View>
+          ) : filtered.length === 0 ? (
+            <View style={styles.empty}>
+              <FontAwesome5 name="ship" size={36} color={SECTION.color} />
+              <Text style={styles.emptyTitle}>Nothing matches</Text>
+              <Text style={styles.emptyBody}>
+                Try a different name or number, or clear the filters above.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {filtered.map(r => (
+                <VesselCard
+                  key={r.id}
+                  data={{
+                    id:             r.id,
+                    lk_number:      r.primary_lk_number,
+                    canonical_name: r.canonical_name,
+                    built_year:     r.built_year,
+                    hull_material:  r.hull_material,
+                    hero_url:       heroes[r.id] ?? null,
+                    photo_count:    r.media_asset_count,
+                    alt_names:      buildAltLine(r),
+                  }}
+                  variant="hero"
+                  saved={savedIds.has(r.id)}
+                  onToggleSave={() => handleToggleSave(r)}
+                  onPress={() => router.push(`/boat/${r.id}`)}
+                />
+              ))}
+            </View>
+          )}
+        </Section>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ── Vessel result row ──────────────────────────────────────────────────────
-
-function VesselRow({ row, onPress }: { row: VesselSearchRow; onPress: () => void }) {
-  const title = vesselDisplayTitle({
-    canonical_name:    row.canonical_name,
-    primary_lk_number: row.primary_lk_number,
-  });
-  const hull = hullMaterialLabel(row.hull_material);
-
-  // "Also" line = the historical names + registrations stripped of the
-  // primary so we don't show "BRILLIANT · BRILLIANT".
-  const altNames = (row.all_names ?? '')
+function buildAltLine(r: VesselSearchRow): string | null {
+  const others = (r.all_names ?? '')
     .split(',').map(s => s.trim()).filter(Boolean)
-    .filter(n => n.toUpperCase() !== row.canonical_name.toUpperCase());
+    .filter(n => n.toUpperCase() !== r.canonical_name.toUpperCase());
+  if (others.length === 0) return null;
+  return others.slice(0, 3).join(', ');
+}
 
-  const altRegs = (row.all_registrations ?? '')
-    .split(',').map(s => s.trim()).filter(Boolean)
-    .filter(r => r !== row.primary_lk_number);
-
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.row}>
-      <View style={[styles.rowBadge, { backgroundColor: SECTION.light }]}>
-        <Text style={[styles.rowLk, { color: SECTION.color }]} numberOfLines={1}>
-          {row.primary_lk_number ?? '—'}
-        </Text>
-      </View>
+    <View>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
 
-      <View style={{ flex: 1 }}>
-        <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
-        <View style={styles.metaRow}>
-          {row.built_year ? (
-            <Text style={styles.meta}>Built {row.built_year}</Text>
-          ) : null}
-          {hull ? <Text style={styles.meta}>· {hull}</Text> : null}
-          {row.media_asset_count > 0 ? (
-            <Text style={styles.meta}>
-              · <FontAwesome5 name="image" size={9} color={colors.textMuted} solid />{' '}
-              {row.media_asset_count}
-            </Text>
-          ) : null}
-        </View>
-        {altNames.length || altRegs.length ? (
-          <Text style={styles.also} numberOfLines={1}>
-            {altNames.length ? `Also: ${altNames.slice(0, 3).join(', ')}` : ''}
-            {altNames.length && altRegs.length ? ' · ' : ''}
-            {altRegs.length  ? altRegs.slice(0, 3).join(', ') : ''}
-          </Text>
-        ) : null}
-      </View>
-
-      <FontAwesome5 name="chevron-right" size={12} color={colors.textLight} />
+function Chip({
+  label, active, onPress,
+}: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        styles.chip,
+        active && { backgroundColor: SECTION.color, borderColor: SECTION.color },
+      ]}
+    >
+      <Text style={[styles.chipText, active && { color: '#fff' }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.screenBackground },
-  scroll:    { paddingBottom: spacing.xxl },
+  scroll:    { paddingBottom: spacing.xxl, gap: spacing.lg },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
     gap: spacing.md,
   },
   eyebrow: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   title: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '900',
     color: colors.textPrimary,
     marginTop: 2,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    marginTop: 2,
+    fontWeight: '500',
   },
   iconBadge: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 56, height: 56, borderRadius: 28,
     alignItems: 'center', justifyContent: 'center',
   },
-  intro: {
-    paddingHorizontal: spacing.lg,
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    lineHeight: 19,
-    marginBottom: spacing.md,
-  },
 
-  searchWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.sm },
+  searchWrap: { paddingHorizontal: spacing.lg },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: colors.white,
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderWidth: 1.5,
     borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 18,
+    fontWeight: '600',
     color: colors.textPrimary,
     paddingVertical: 0,
   },
 
-  heading: {
+  chipRow: {
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-    fontSize: fontSize.md,
-    fontWeight: '800',
-    color: colors.textPrimary,
+    gap: 8,
   },
-
-  list: { paddingHorizontal: spacing.lg, gap: spacing.xs },
-
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
     backgroundColor: colors.white,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
   },
-  rowBadge: {
-    minWidth: 60,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-  },
-  rowLk: {
-    fontSize: fontSize.sm,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  rowTitle: {
-    fontSize: fontSize.md,
+  chipText: {
+    fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
+
+  sectionTitle: {
+    paddingHorizontal: spacing.lg,
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
-  meta: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
-  },
-  also: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginTop: 2,
-    fontStyle: 'italic',
+
+  list: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
   },
 
   empty: {
     margin: spacing.lg,
-    padding: spacing.lg,
+    padding: spacing.xl,
     backgroundColor: colors.white,
     borderRadius: radius.lg,
     alignItems: 'center',
@@ -321,14 +432,14 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   emptyTitle: {
-    fontSize: fontSize.md,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '900',
     color: colors.textPrimary,
   },
   emptyBody: {
-    fontSize: fontSize.sm,
+    fontSize: 16,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 19,
+    lineHeight: 22,
   },
 });
