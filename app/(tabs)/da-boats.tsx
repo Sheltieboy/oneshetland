@@ -64,7 +64,12 @@ export default function DaBoatsScreen() {
 
   const load = useCallback(async (q: string) => {
     try {
-      const data = await searchVessels(q, 80);
+      // Fetch up to 600 rows — the whole fleet currently sits at ~467
+      // vessels and the rows from vessel_search are lightweight (just
+      // canonical name + LK + counts + names string). Lower limits
+      // broke the decade chips because the ORDER BY built_year DESC
+      // default never reached the older decades before the cap.
+      const data = await searchVessels(q, 600);
       setRows(data);
       // In parallel fetch hero photos for whatever's visible
       const ids = data.map(d => d.id);
