@@ -25,14 +25,15 @@
  *   <Marker> child view.
  */
 
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ViewStyle, Platform, TouchableOpacity,
+  View, Text, StyleSheet, ViewStyle, Platform, Image,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors } from '@/constants/theme';
 import { MemoryPin } from '@/lib/memories-api';
+import { MEMORY_CATEGORY_BY_SLUG } from '@/constants/memory-categories';
 
 const SECTION = SECTIONS.memories;
 
@@ -109,6 +110,16 @@ export function MemoryMapNative({
     return SHETLAND_REGION;
   }, [pendingPoint]);
 
+  // When zoomed close enough, hover-style pills below each pin show the era
+  // / category so the map reads as a heritage atlas. We watch the
+  // latitudeDelta from onRegionChangeComplete — under ~0.3° (~33 km
+  // north-south) is roughly "looking at one parish".
+  const [showLabels, setShowLabels] = useState(false);
+  const handleRegionChangeComplete = (region: any) => {
+    if (!region) return;
+    setShowLabels(region.latitudeDelta < 0.3);
+  };
+
   return (
     <View style={[{ height, borderRadius: 12, overflow: 'hidden' }, style]}>
       <MapView
@@ -119,6 +130,7 @@ export function MemoryMapNative({
         showsUserLocation
         showsMyLocationButton
         showsCompass
+        onRegionChangeComplete={handleRegionChangeComplete}
         // Tap on map (not on a marker) → drop a new pin there.
         onPress={(e: any) => {
           if (!onDropPin) return;
@@ -144,43 +156,15 @@ export function MemoryMapNative({
         ) : null}
 
         {/* Memory pins */}
-        {pins.map(pin => {
-          const selected = pin.id === selectedId;
-          return (
-            <Marker
-              key={pin.id}
-              coordinate={{ latitude: pin.lat, longitude: pin.lng }}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
-              onPress={() => onOpenPin?.(pin)}
-              title={pin.title ?? 'Memory'}
-              description={pin.place_name ?? undefined}
-            >
-              <View style={styles.pinWrap}>
-                <View
-                  style={[
-                    selected ? styles.pinHeadSelected : styles.pinHead,
-                    { backgroundColor: SECTION.color },
-                  ]}
-                >
-                  {pin.media_count > 0 ? (
-                    <FontAwesome5
-                      name={
-                        pin.hero_kind === 'audio' ? 'microphone' :
-                        pin.hero_kind === 'video' ? 'video'      :
-                        'image'
-                      }
-                      size={selected ? 11 : 9}
-                      color="#fff"
-                      solid
-                    />
-                  ) : null}
-                </View>
-                <View style={[styles.pinTail, { borderTopColor: SECTION.color }]} />
-              </View>
-            </Marker>
-          );
-        })}
+        {pins.map(pin => (
+          <MemoryMarker
+            key={pin.id}
+            pin={pin}
+            selected={pin.id === selectedId}
+            showLabel={showLabels}
+            onOpen={() => onOpenPin?.(pin)}
+          />
+        ))}
       </MapView>
 
       {/* Helper hint when the map is empty AND we're in drop mode */}
@@ -191,6 +175,132 @@ export function MemoryMapNative({
         </View>
       ) : null}
     </View>
+  );
+}
+
+// ── One memory marker ───────────────────────────────────────────────────────
+//
+// Each marker manages its own tracksViewChanges flag because:
+//   1. The hero image inside the pin needs the marker to re-render once
+//      after it loads, otherwise iOS bakes the empty pin into a static
+//      bitmap and the photo never appears.
+//   2. When the zoom level crosses the showLabels threshold, the marker's
+//      view shape changes — same problem, fix the same way.
+//
+// We start with tracksViewChanges=true, flip it to false once the visual
+// is settled, and re-arm it whenever the image loads or the label
+// toggles. That keeps frame-rate sensible (otherwise every pan re-bitmaps
+// every marker) while still ensuring the image and label actually paint.
+
+function MemoryMarker({
+  pin, selected, showLabel, onOpen,
+}: {
+  pin:       MemoryPin;
+  selected:  boolean;
+  showLabel: boolean;
+  onOpen:    () => void;
+}) {
+  const [tracks, setTracks]         = useState(true);
+  const [imageReady, setImageReady] = useState(false);
+
+  // When the label-visibility flips, give the marker a couple of frames to
+  // re-paint, then freeze again.
+  useEffect(() => {
+    setTracks(true);
+    const t = setTimeout(() => setTracks(false), 600);
+    return () => clearTimeout(t);
+  }, [showLabel]);
+
+  // Same for image-ready transitions.
+  useEffect(() => {
+    if (imageReady) {
+      const t = setTimeout(() => setTracks(false), 300);
+      return () => clearTimeout(t);
+    }
+  }, [imageReady]);
+
+  // Build the visible label text. Prefer the era; otherwise fall back to
+  // the label of the first category tag.
+  const labelText = useMemo(() => {
+    if (pin.era) return pin.era;
+    const firstSlug = pin.tags?.[0];
+    return firstSlug ? MEMORY_CATEGORY_BY_SLUG[firstSlug]?.label ?? null : null;
+  }, [pin.era, pin.tags]);
+
+  // Border / accent: era-pin uses memories rose; otherwise use the first
+  // category colour. Subtle, but it makes the map read as a heat map.
+  const accent = (() => {
+    const firstSlug = pin.tags?.[0];
+    return firstSlug
+      ? MEMORY_CATEGORY_BY_SLUG[firstSlug]?.color ?? SECTION.color
+      : SECTION.color;
+  })();
+
+  const showPhoto = pin.hero_url && pin.hero_kind === 'photo';
+  const headSize  = selected ? styles.pinHeadSelected : styles.pinHead;
+
+  return (
+    <Marker
+      coordinate={{ latitude: pin.lat, longitude: pin.lng }}
+      anchor={{ x: 0.5, y: 1 }}
+      tracksViewChanges={tracks}
+      onPress={onOpen}
+      title={pin.title ?? 'Memory'}
+      description={pin.place_name ?? undefined}
+    >
+      <View style={styles.pinWrap}>
+        <View style={[headSize, { backgroundColor: accent, overflow: 'hidden' }]}>
+          {showPhoto ? (
+            <Image
+              source={{ uri: pin.hero_url! }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              onLoadEnd={() => setImageReady(true)}
+            />
+          ) : pin.media_count > 0 ? (
+            <FontAwesome5
+              name={
+                pin.hero_kind === 'audio' ? 'microphone' :
+                pin.hero_kind === 'video' ? 'video'      :
+                'image'
+              }
+              size={selected ? 11 : 9}
+              color="#fff"
+              solid
+            />
+          ) : (
+            <FontAwesome5
+              name="book-open"
+              size={selected ? 11 : 9}
+              color="#fff"
+              solid
+            />
+          )}
+
+          {/* Tiny media-kind badge in the corner if hero is photo but there
+              are also videos / audios — tells the viewer there's more
+              than the thumbnail suggests. */}
+          {showPhoto && (pin.hero_kind !== 'photo' || pin.media_count > 1) ? (
+            <View style={styles.kindBadge}>
+              <FontAwesome5
+                name={pin.hero_kind === 'audio' ? 'microphone' : pin.hero_kind === 'video' ? 'video' : 'plus'}
+                size={6}
+                color="#fff"
+                solid
+              />
+            </View>
+          ) : null}
+        </View>
+        <View style={[styles.pinTail, { borderTopColor: accent }]} />
+
+        {/* Zoom-aware label */}
+        {showLabel && labelText ? (
+          <View style={styles.pinLabel}>
+            <Text numberOfLines={1} style={styles.pinLabelText}>{labelText}</Text>
+          </View>
+        ) : null}
+      </View>
+    </Marker>
   );
 }
 
@@ -235,6 +345,33 @@ const styles = StyleSheet.create({
     borderTopWidth: 7,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
+  },
+  kindBadge: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(15, 28, 38, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
+  pinLabel: {
+    marginTop: 4,
+    backgroundColor: 'rgba(15, 28, 38, 0.85)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    maxWidth: 120,
+  },
+  pinLabelText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   emptyHint: {
     position: 'absolute',
