@@ -8,7 +8,7 @@
  * Schema lives in migration 038.
  */
 
-import { supabase } from './supabase';
+import { supabase, SUPABASE_URL } from './supabase';
 import { PickedFile } from './image-upload';
 
 // ── Types (kept loose; the DB is the source of truth) ───────────────────────
@@ -355,20 +355,53 @@ export interface UploadMemoryMediaInput {
  * For audio it also flips transcript_status to 'pending' so a background
  * job (or the transcribe-audio edge function called by the client) knows
  * to fill it in.
+ *
+ * Why the FormData REST path instead of supabase.storage.upload(blob)?
+ *   On React Native iOS, `fetch(file://…).blob()` resolves to a Blob
+ *   with size 0 even though the underlying file is intact — so the JS
+ *   SDK happily uploads a 0-byte file. The resulting URL works but the
+ *   asset is empty (renders as black for images). FormData with a
+ *   { uri, name, type } object lets the platform stream the real bytes.
+ *   This is the supabase-js-recommended pattern for React Native.
  */
 export async function uploadMemoryMedia(input: UploadMemoryMediaInput): Promise<MemoryMedia> {
   const extFallback = input.kind === 'audio' ? 'm4a' : input.kind === 'video' ? 'mp4' : 'jpg';
   const ext  = extFromFile(input.file, extFallback);
   const path = `${input.memoryId}/${input.kind}/${newFilename(ext)}`;
+  const contentType =
+    input.file.mimeType
+    ?? (input.kind === 'photo' ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
+       : input.kind === 'video' ? `video/${ext}`
+       : `audio/${ext}`);
 
-  const res = await fetch(input.file.uri);
-  const blob = await res.blob();
-  const contentType = input.file.mimeType ?? blob.type ?? `${input.kind}/${ext}`;
+  // ── Direct REST upload via FormData (RN-safe) ──────────────────────────
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not signed in — please sign in and try again.');
 
-  const { error: upErr } = await supabase.storage
-    .from(MEMORIES_BUCKET)
-    .upload(path, blob, { contentType, upsert: false, cacheControl: '3600' });
-  if (upErr) throw upErr;
+  const filename = path.split('/').pop() ?? `upload.${ext}`;
+  const form = new FormData();
+  form.append('file', {
+    // RN's FormData accepts this { uri, name, type } object even though
+    // TypeScript doesn't know about it.
+    uri:  input.file.uri,
+    name: filename,
+    type: contentType,
+  } as any);
+
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${MEMORIES_BUCKET}/${path}`;
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      'x-upsert':    'true',
+      // Note: don't set Content-Type — let RN fill in the multipart boundary.
+    },
+    body: form,
+  });
+  if (!uploadRes.ok) {
+    const text = await uploadRes.text().catch(() => '');
+    throw new Error(`Storage upload failed (${uploadRes.status}): ${text.slice(0, 200)}`);
+  }
 
   const { data: pub } = supabase.storage.from(MEMORIES_BUCKET).getPublicUrl(path);
 

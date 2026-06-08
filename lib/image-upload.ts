@@ -26,7 +26,7 @@
  * stay tiny — one line to upload.
  */
 
-import { supabase } from './supabase';
+import { supabase, SUPABASE_URL } from './supabase';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,27 +72,45 @@ function newFilename(ext: string): string {
   return `${Date.now()}-${r}.${ext}`;
 }
 
+/**
+ * Upload via FormData against the Supabase storage REST endpoint. The
+ * SDK's blob-based upload path produces 0-byte files on React Native iOS
+ * (fetch(file://…).blob() returns Blob with size 0 even though the file
+ * is intact). This streams the real bytes through RN's FormData → file
+ * URI bridge instead.
+ */
 async function uploadBlob(
   bucket: string,
   path: string,
   file: PickedFile,
 ): Promise<UploadedImage> {
-  // React Native fetch on a file:// URI returns a Blob — works in both
-  // simulator and on-device.
-  const res = await fetch(file.uri);
-  const blob = await res.blob();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not signed in — please sign in and try again.');
 
-  const contentType = file.mimeType ?? blob.type ?? 'image/jpeg';
+  const ext = path.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const contentType = file.mimeType ?? `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+  const filename = path.split('/').pop() ?? `upload.${ext}`;
 
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(path, blob, {
-      contentType,
-      upsert: true,            // re-uploading the same path overwrites — handy for retries
-      cacheControl: '3600',
-    });
+  const form = new FormData();
+  form.append('file', {
+    uri:  file.uri,
+    name: filename,
+    type: contentType,
+  } as any);
 
-  if (error) throw error;
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`;
+  const res = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      'x-upsert':    'true',
+    },
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Storage upload failed (${res.status}): ${text.slice(0, 200)}`);
+  }
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return { path, publicUrl: data.publicUrl };

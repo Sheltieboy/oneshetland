@@ -30,3 +30,11 @@ export const isSupabaseConfigured =
   Boolean(supabaseUrl) &&
   Boolean(supabaseAnonKey) &&
   supabaseUrl !== 'https://placeholder.supabase.co';
+
+/**
+ * Bare Supabase project URL — exported so helpers that need to hit the
+ * storage REST endpoint directly (e.g. React Native FormData uploads,
+ * where the JS SDK's blob path uploads 0-byte files on iOS) can compose
+ * URLs without re-reading the env var.
+ */
+export const SUPABASE_URL = supabaseUrl ?? 'https://placeholder.supabase.co';
