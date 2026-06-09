@@ -28,8 +28,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl,
+  RefreshControl, Image,
 } from 'react-native';
+
+// OneShetland brand mark used in the top app header.
+const LOGO = require('@/assets/icon.png');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -139,24 +142,54 @@ function Greeting({ name, status }: { name: string | null; status: string | null
 // Section row chrome
 // ──────────────────────────────────────────────────────────────────────────
 
+/**
+ * Each row sports the section's identity — a coloured icon medallion,
+ * a coloured "See all" link, and the cards underneath pick up a section-
+ * coloured top accent (handled per-row in their own styles).
+ */
 function SectionRow({
-  title, action, children,
+  title, action, sectionKey, children,
 }: {
-  title:   string;
-  action?: { label: string; onPress: () => void };
-  children: React.ReactNode;
+  title:      string;
+  action?:    { label: string; onPress: () => void };
+  sectionKey: SectionKey;
+  children:   React.ReactNode;
 }) {
+  const meta = SECTIONS[sectionKey];
   return (
     <View style={styles.row}>
       <View style={styles.rowHeader}>
-        <Text style={styles.rowTitle}>{title}</Text>
+        <View style={styles.rowHeaderLeft}>
+          <View style={[styles.rowIcon, { backgroundColor: meta.color }]}>
+            <FontAwesome5 name={meta.icon} size={13} color="#fff" solid />
+          </View>
+          <Text style={styles.rowTitle}>{title}</Text>
+        </View>
         {action ? (
           <TouchableOpacity onPress={action.onPress} hitSlop={8}>
-            <Text style={styles.rowAction}>{action.label}</Text>
+            <Text style={[styles.rowAction, { color: meta.color }]}>{action.label}</Text>
           </TouchableOpacity>
         ) : null}
       </View>
       {children}
+    </View>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// App header — logo + brand
+// ──────────────────────────────────────────────────────────────────────────
+
+function AppHeader() {
+  return (
+    <View style={styles.appHeader}>
+      <View style={styles.appHeaderLeft}>
+        <Image source={LOGO} style={styles.appLogo} resizeMode="contain" />
+        <View>
+          <DisplayText weight="black" style={styles.appBrand}>OneShetland</DisplayText>
+          <Text style={styles.appBrandTag}>For the islands</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -200,6 +233,7 @@ function ComingUpRow({ events }: { events: HomeEvent[] }) {
   return (
     <SectionRow
       title="Coming up this week"
+      sectionKey="events"
       action={{ label: 'See all', onPress: () => router.push('/(tabs)/whats-on') }}
     >
       {busy ? (
@@ -258,9 +292,13 @@ function WorkRow({ jobs, shifts }: { jobs: HomeJob[]; shifts: HomeShift[] }) {
   return (
     <SectionRow
       title="Work in Shetland"
+      sectionKey="shifts"
       action={{ label: 'See all', onPress: () => router.push('/(tabs)/shifts') }}
     >
-      <View style={[styles.workCard, { backgroundColor: SECTIONS.shifts.light }]}>
+      <View style={[
+        styles.workCard,
+        { backgroundColor: SECTIONS.shifts.light, borderTopColor: SECTIONS.shifts.color, borderTopWidth: 3 },
+      ]}>
         <View style={styles.workColumns}>
           <View style={{ flex: 1, gap: 6 }}>
             <Text style={styles.workColLabel}>JOBS</Text>
@@ -298,6 +336,7 @@ function NoticesRow({ notices }: { notices: HomeNotice[] }) {
   return (
     <SectionRow
       title="Notices"
+      sectionKey="notices"
       action={{ label: 'See all', onPress: () => router.push('/(tabs)/whats-on') }}
     >
       <View style={{ paddingHorizontal: spacing.lg, gap: spacing.xs }}>
@@ -343,6 +382,7 @@ function GamesRow() {
   return (
     <SectionRow
       title="Today's game"
+      sectionKey="games"
       action={{ label: 'All games', onPress: () => router.push('/games') }}
     >
       <View style={{ paddingHorizontal: spacing.lg }}>
@@ -379,7 +419,7 @@ interface ForYouTile {
 function ForYouRow({ tiles }: { tiles: ForYouTile[] }) {
   if (tiles.length === 0) return null;
   return (
-    <SectionRow title="For you">
+    <SectionRow title="For you" sectionKey="spik">
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -392,13 +432,13 @@ function ForYouRow({ tiles }: { tiles: ForYouTile[] }) {
               key={t.key}
               onPress={t.onPress}
               activeOpacity={0.85}
-              style={styles.foryouTile}
+              style={[styles.foryouTile, { borderTopColor: meta.color }]}
             >
-              <View style={[styles.foryouIcon, { backgroundColor: meta.light }]}>
-                <FontAwesome5 name={meta.icon} size={20} color={meta.color} solid />
+              <View style={[styles.foryouIcon, { backgroundColor: meta.color }]}>
+                <FontAwesome5 name={meta.icon} size={20} color="#fff" solid />
               </View>
               <Text style={styles.foryouLabel} numberOfLines={1}>{meta.label}</Text>
-              <Text style={styles.foryouSub}   numberOfLines={2}>{t.subtitle}</Text>
+              <Text style={[styles.foryouSub, { color: meta.color }]} numberOfLines={2}>{t.subtitle}</Text>
             </TouchableOpacity>
           );
         })}
@@ -575,6 +615,9 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
 
+      {/* App header — logo + brand. Above the sticky banner. */}
+      <AppHeader />
+
       {/* Sticky banner — prefer a live urgent notice from the DB if one
           exists, else fall back to the demo SAMPLE_URGENT_NOTICE (null
           in production unless explicitly enabled in seed-content). */}
@@ -701,13 +744,54 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  // App header
+  appHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
+    backgroundColor: colors.navy,
+  },
+  appHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  appLogo: {
+    width: 36, height: 36,
+    borderRadius: 8,
+  },
+  appBrand: {
+    fontSize: 20,
+    color: '#fff',
+    letterSpacing: -0.3,
+  },
+  appBrandTag: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '600',
+    marginTop: -1,
+    letterSpacing: 0.4,
+  },
+
   // Row chrome
   row: { gap: spacing.sm },
   rowHeader: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
+  },
+  rowHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  rowIcon: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
   },
   rowTitle: {
     fontSize: 18,
@@ -716,9 +800,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   rowAction: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '800',
   },
 
   // Event cards
@@ -729,6 +812,8 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    borderTopWidth: 3,
+    borderTopColor: SECTIONS.events.color,
     gap: 6,
   },
   eventCardFull: {
@@ -737,6 +822,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    borderTopWidth: 3,
+    borderTopColor: SECTIONS.events.color,
     gap: 8,
   },
   eventDayChip: {
@@ -801,6 +888,8 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    borderLeftWidth: 4,
+    borderLeftColor: SECTIONS.notices.color,
   },
   noticeDot: {
     width: 10, height: 10, borderRadius: 5,
@@ -844,12 +933,13 @@ const styles = StyleSheet.create({
 
   // For you
   foryouTile: {
-    width: 140,
+    width: 150,
     backgroundColor: colors.white,
     borderRadius: radius.md,
     padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    borderTopWidth: 4,
     gap: 6,
   },
   foryouIcon: {
