@@ -39,6 +39,7 @@ import {
   vesselDisplayTitle, hullMaterialLabel, eventTypeLabel, confidenceLabel,
 } from '@/lib/boats-api';
 import { PickedFile } from '@/lib/image-upload';
+import DisplayText from '@/components/DisplayText';
 import {
   isBoatSaved, toggleSavedBoat, pushRecentBoat,
 } from '@/lib/boats-prefs';
@@ -351,7 +352,7 @@ export default function BoatProfileScreen() {
           <Text style={[styles.lk, { color: SECTION.color }]}>
             {vessel.primary_lk_number ?? 'No LK number on file'}
           </Text>
-          <Text style={styles.title}>{vessel.canonical_name}</Text>
+          <DisplayText weight="black" style={styles.title}>{vessel.canonical_name}</DisplayText>
           {(vessel.built_year || hull) ? (
             <Text style={styles.subtitle}>
               {vessel.built_year ? `Built ${vessel.built_year}` : 'Year unknown'}

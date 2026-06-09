@@ -30,6 +30,13 @@ import {
 import { ShetlandPlace, PLACE_CATEGORY_LABEL } from '@/lib/places-api';
 import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
+import SectionHero from '@/components/SectionHero';
+
+// Soft-load hero photo — if assets/section-heroes/memories.jpg is missing the
+// landing falls back to a tinted-gradient hero. Drop the file in and the
+// require resolves automatically on next reload.
+let memoriesHero: any = null;
+try { memoriesHero = require('@/assets/section-heroes/memories.jpg'); } catch { /* using fallback */ }
 
 const SECTION = SECTIONS.memories;
 
@@ -158,16 +165,13 @@ export default function MemoriesScreen() {
           />
         }
       >
-        {/* ── Hero header ─────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.eyebrow}>The living map</Text>
-            <Text style={styles.title}>Memories</Text>
-          </View>
-          <View style={[styles.iconBadge, { backgroundColor: SECTION.light }]}>
-            <FontAwesome5 name={SECTION.icon} size={20} color={SECTION.color} />
-          </View>
-        </View>
+        {/* ── Hero photo strip ────────────────────────────────────────── */}
+        <SectionHero
+          section="memories"
+          title="Memories"
+          eyebrow="The living map"
+          photo={memoriesHero}
+        />
 
         <Text style={styles.intro}>
           Drop a pin anywhere on Shetland. Write a story, leave a voice note,

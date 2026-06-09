@@ -31,6 +31,10 @@ import {
   loadSavedBoats, loadRecentBoats, toggleSavedBoat, VesselStub,
 } from '@/lib/boats-prefs';
 import VesselCard from '@/components/VesselCard';
+import SectionHero from '@/components/SectionHero';
+
+let boatsHero: any = null;
+try { boatsHero = require('@/assets/section-heroes/da-boats.jpg'); } catch { /* using fallback */ }
 
 const SECTION = SECTIONS.daBoats;
 
@@ -133,19 +137,14 @@ export default function DaBoatsScreen() {
           />
         }
       >
-        {/* Hero header */}
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.eyebrow, { color: SECTION.color }]}>The fleet</Text>
-            <Text style={styles.title}>Da Boats</Text>
-            <Text style={styles.subtitle}>
-              Shetland LK boats through the years
-            </Text>
-          </View>
-          <View style={[styles.iconBadge, { backgroundColor: SECTION.light }]}>
-            <FontAwesome5 name={SECTION.icon} size={26} color={SECTION.color} />
-          </View>
-        </View>
+        {/* Hero photo strip */}
+        <SectionHero
+          section="daBoats"
+          title="Da Boats"
+          eyebrow="The fleet"
+          photo={boatsHero}
+          height={220}
+        />
 
         {/* Big search */}
         <View style={styles.searchWrap}>
