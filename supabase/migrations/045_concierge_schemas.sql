@@ -289,16 +289,16 @@ CREATE POLICY "jobs delete"
 -- against the count of eligible (approved/published) dictionary rows so
 -- the rotation walks the dictionary without bias.
 
+-- NOTE: 'meaning' was originally written here but spik_dictionary stores
+-- the text in 'definition'. The body below uses the real column name.
 CREATE OR REPLACE FUNCTION public.spik_daily()
 RETURNS TABLE (
   id                UUID,
   word              TEXT,
-  meaning           TEXT,
-  pos               TEXT,
-  example           TEXT
+  meaning           TEXT
 ) LANGUAGE sql STABLE SECURITY DEFINER AS $$
   WITH eligible AS (
-    SELECT id, word, meaning, pos, example
+    SELECT id, word, definition AS meaning
     FROM public.spik_dictionary
     WHERE word_status IN ('approved','published')
     ORDER BY id
@@ -309,7 +309,7 @@ RETURNS TABLE (
               % GREATEST((SELECT count(*) FROM eligible), 1)) + 1 AS target
     FROM eligible
   )
-  SELECT id, word, meaning, pos, example
+  SELECT id, word, meaning
   FROM rotated
   WHERE rn = target;
 $$;
