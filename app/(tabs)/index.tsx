@@ -39,27 +39,33 @@ import { useAuth } from '@/context/AuthContext';
 
 import DisplayText from '@/components/DisplayText';
 
+import { SAMPLE_URGENT_NOTICE } from '@/lib/seed-content';
 import {
-  SAMPLE_EVENTS, SAMPLE_NOTICES, SAMPLE_JOBS, SAMPLE_SHIFTS,
-  SAMPLE_URGENT_NOTICE, SampleEvent, SampleNotice, todaysSpik,
-} from '@/lib/seed-content';
+  fetchHomeEvents, fetchHomeNotices, fetchHomeJobs, fetchHomeShifts,
+  fetchTodaysSpik, fetchNearbyOffers,
+  HomeEvent, HomeNotice, HomeJob, HomeShift, NearbyOffer, SpikDaily,
+} from '@/lib/concierge-api';
 import { loadSavedBoats, loadRecentBoats, VesselStub } from '@/lib/boats-prefs';
 import {
   bumpSectionEngagement, getRecentEngagement, EngagementKey, EngagementEntry,
 } from '@/lib/engagement';
+
+// Soft-load expo-location so a missing dep gracefully degrades.
+let Location: any = null;
+try { Location = require('expo-location'); } catch { Location = null; }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Top banner
 // ──────────────────────────────────────────────────────────────────────────
 
 function TopBanner({
-  urgent, personalNote,
+  urgent, personalNote, spik,
 }: {
-  urgent:       SampleNotice | null;
+  urgent:       HomeNotice | null;
   personalNote: string | null;
+  spik:         SpikDaily;
 }) {
   const router = useRouter();
-  const spik = todaysSpik();
 
   return (
     <View style={styles.bannerWrap}>
@@ -178,14 +184,14 @@ function fmtEventDay(iso: string): { day: string; time: string } {
   return { day, time };
 }
 
-function ComingUpRow() {
+function ComingUpRow({ events }: { events: HomeEvent[] }) {
   const router = useRouter();
   const upcoming = useMemo(() => {
     const week = Date.now() + 7 * 86_400_000;
-    return SAMPLE_EVENTS
+    return events
       .filter(e => new Date(e.starts_at).getTime() < week)
       .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
-  }, []);
+  }, [events]);
 
   if (upcoming.length === 0) return null;
 
@@ -247,7 +253,7 @@ function EventCardFull({ event, onPress }: { event: SampleEvent; onPress: () => 
 // Work in Shetland
 // ──────────────────────────────────────────────────────────────────────────
 
-function WorkRow() {
+function WorkRow({ jobs, shifts }: { jobs: HomeJob[]; shifts: HomeShift[] }) {
   const router = useRouter();
   return (
     <SectionRow
@@ -258,7 +264,7 @@ function WorkRow() {
         <View style={styles.workColumns}>
           <View style={{ flex: 1, gap: 6 }}>
             <Text style={styles.workColLabel}>JOBS</Text>
-            {SAMPLE_JOBS.map(j => (
+            {jobs.map(j => (
               <View key={j.id} style={styles.workItem}>
                 <Text style={styles.workItemTitle} numberOfLines={1}>{j.title}</Text>
                 <Text style={styles.workItemMeta}  numberOfLines={1}>{j.employer}  ·  {j.pay}</Text>
@@ -268,7 +274,7 @@ function WorkRow() {
           <View style={styles.workDivider} />
           <View style={{ flex: 1, gap: 6 }}>
             <Text style={styles.workColLabel}>SHIFTS</Text>
-            {SAMPLE_SHIFTS.map(s => (
+            {shifts.map(s => (
               <View key={s.id} style={styles.workItem}>
                 <Text style={styles.workItemTitle} numberOfLines={1}>{s.title}</Text>
                 <Text style={styles.workItemMeta}  numberOfLines={1}>{s.when}  ·  {s.pay}</Text>
@@ -285,9 +291,9 @@ function WorkRow() {
 // Notices
 // ──────────────────────────────────────────────────────────────────────────
 
-function NoticesRow() {
+function NoticesRow({ notices }: { notices: HomeNotice[] }) {
   const router = useRouter();
-  const list = SAMPLE_NOTICES.slice(0, 3);
+  const list = notices.slice(0, 3);
 
   return (
     <SectionRow
@@ -440,6 +446,14 @@ export default function HomeScreen() {
   const [recentBoats, setRecentBoats]   = useState<VesselStub[]>([]);
   const [engagement, setEngagement]     = useState<Array<{ key: EngagementKey; entry: EngagementEntry }>>([]);
 
+  // Concierge content fetched from DB with seed fallback.
+  const [events,  setEvents]  = useState<HomeEvent[]>([]);
+  const [notices, setNotices] = useState<HomeNotice[]>([]);
+  const [jobs,    setJobs]    = useState<HomeJob[]>([]);
+  const [shifts,  setShifts]  = useState<HomeShift[]>([]);
+  const [spik,    setSpik]    = useState<SpikDaily>({ word: '…', meaning: '' });
+  const [nearby,  setNearby]  = useState<NearbyOffer[]>([]);
+
   const loadPrefs = useCallback(async () => {
     const [s, r, e] = await Promise.all([
       loadSavedBoats(),
@@ -452,11 +466,66 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { void loadPrefs(); }, [loadPrefs]));
+  const loadConcierge = useCallback(async () => {
+    const viewerParish =
+      (profile as any)?.parish ?? null;
+    const [evRes, ntRes, jbRes, shRes, spRes] = await Promise.all([
+      fetchHomeEvents(),
+      fetchHomeNotices({ viewerParish }),
+      fetchHomeJobs(),
+      fetchHomeShifts(),
+      fetchTodaysSpik(),
+    ]);
+    setEvents(evRes);
+    setNotices(ntRes);
+    setJobs(jbRes);
+    setShifts(shRes);
+    setSpik(spRes);
+  }, [profile]);
+
+  // GPS-aware local offers. Soft-checks current permission state — never
+  // pops the OS prompt automatically on Home; if the user's already
+  // granted location for another flow (Fetch / Memories), we use it.
+  const loadNearby = useCallback(async () => {
+    if (!Location) return;
+    try {
+      const perm = await Location.getForegroundPermissionsAsync?.();
+      if (!perm?.granted) return;
+      const pos = await Location.getCurrentPositionAsync?.({
+        accuracy: Location.Accuracy?.Balanced,
+      });
+      if (!pos?.coords) return;
+      const offers = await fetchNearbyOffers(pos.coords.latitude, pos.coords.longitude, 2);
+      setNearby(offers);
+    } catch { /* ignore */ }
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    void loadPrefs();
+    void loadConcierge();
+    void loadNearby();
+  }, [loadPrefs, loadConcierge, loadNearby]));
 
   // ── Build For-you tiles ────────────────────────────────────────────────
   const tiles = useMemo<ForYouTile[]>(() => {
     const out: ForYouTile[] = [];
+
+    // GPS-aware Local tile takes priority when we have proximity hits.
+    if (nearby.length > 0) {
+      const withLoyalty = nearby.filter(n => n.has_loyalty).length;
+      const withOffer   = nearby.filter(n => n.offer_title).length;
+      const place       = nearby[0].business_name?.split(' ')[0] ?? 'here';
+      out.push({
+        key: 'local',
+        iconKey: 'local',
+        label: SECTIONS.local.label,
+        subtitle:
+          withLoyalty > 0 ? `${withLoyalty} card${withLoyalty === 1 ? '' : 's'} near you`
+          : withOffer  > 0 ? `${withOffer} offer${withOffer === 1 ? '' : 's'} near ${place}`
+          : `${nearby.length} shop${nearby.length === 1 ? '' : 's'} nearby`,
+        onPress: () => router.push('/(tabs)/local'),
+      });
+    }
 
     if (savedBoats.length > 0 || recentBoats.length > 0) {
       const count = savedBoats.length;
@@ -472,7 +541,7 @@ export default function HomeScreen() {
     }
 
     for (const { key, entry } of engagement) {
-      if (key === 'daBoats') continue;
+      if (key === 'daBoats' || key === 'local') continue;
       if (out.some(t => t.key === key)) continue;
 
       const iconKey = ENGAGEMENT_TO_SECTION[key];
@@ -486,7 +555,7 @@ export default function HomeScreen() {
     }
 
     return out.slice(0, 5);
-  }, [savedBoats, recentBoats, engagement, router]);
+  }, [savedBoats, recentBoats, engagement, nearby, router]);
 
   // ── Personal note in the banner ────────────────────────────────────────
   const personalNote = useMemo(() => {
@@ -506,23 +575,34 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Sticky banner */}
-      <TopBanner urgent={SAMPLE_URGENT_NOTICE} personalNote={personalNote} />
+      {/* Sticky banner — prefer a live urgent notice from the DB if one
+          exists, else fall back to the demo SAMPLE_URGENT_NOTICE (null
+          in production unless explicitly enabled in seed-content). */}
+      <TopBanner
+        urgent={
+          notices.find(n => n.severity === 'urgent') ?? SAMPLE_URGENT_NOTICE
+        }
+        personalNote={personalNote}
+        spik={spik}
+      />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); void loadPrefs(); }}
+            onRefresh={() => {
+              setRefreshing(true);
+              void Promise.all([loadPrefs(), loadConcierge(), loadNearby()]);
+            }}
             tintColor={colors.accent}
           />
         }
       >
         <Greeting name={profile?.full_name ?? null} status={status} />
-        <ComingUpRow />
-        <WorkRow />
-        <NoticesRow />
+        <ComingUpRow events={events} />
+        <WorkRow jobs={jobs} shifts={shifts} />
+        <NoticesRow notices={notices} />
         <GamesRow />
         <ForYouRow tiles={tiles} />
       </ScrollView>
