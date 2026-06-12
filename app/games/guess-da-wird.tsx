@@ -26,6 +26,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 import { submitScore } from '@/lib/games-api';
+import { GameArt, GAME_COLORS, GAME_LIGHTS } from '@/components/GameArt';
 import {
   getDailyWird, checkGuess, buildKeyMap, buildClues, buildShareText,
   loadDailyState, saveDailyState, recordResult, loadStats, calcScore,
@@ -35,7 +36,7 @@ import {
   type DailyStats, type GdwClue, type WirdCandidate,
 } from '@/lib/guess-da-wird';
 
-const S = SECTIONS.games;
+const S = { ...SECTIONS.games, color: GAME_COLORS.guess_da_wird, light: GAME_LIGHTS.guess_da_wird };
 
 // ── Colour constants ──────────────────────────────────────────────────────────
 const ANCHORED   = '#12B3D6';   // OneShetland sea blue
@@ -293,6 +294,8 @@ export default function GuessDaWird() {
 
         {guesses.length === 0 && !gameOver && (
           <View style={styles.intro}>
+            <GameArt id="guess_da_wird" size={96} radius={24} />
+            <View style={{ height: 14 }} />
             <Text style={styles.introTitle}>Guess da Wird</Text>
             <Text style={styles.introSub}>Can you work oot today's Shetland wird?</Text>
             <View style={styles.introPills}>

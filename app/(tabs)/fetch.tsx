@@ -22,6 +22,7 @@ import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
@@ -65,6 +66,7 @@ export default function FetchTab() {
 
 function PublicFetchHub() {
   const router = useRouter();
+  const { isTablet } = useAppLayout();
   const [runs, setRuns]               = useState<LiveRun[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
 
@@ -95,7 +97,7 @@ function PublicFetchHub() {
         }
       />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, isTablet && styles.contentTablet]} showsVerticalScrollIndicator={false}>
 
         {/* Hero card */}
         <View style={[styles.heroCard, { backgroundColor: S.color }]}>
@@ -256,6 +258,7 @@ const styles = StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: 40 },
+  contentTablet: { maxWidth: 760, alignSelf: 'center', width: '100%' },
   bootCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBackground },
 
   headerBadge:     { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },

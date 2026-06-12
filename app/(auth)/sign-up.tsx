@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { logCompliance } from '@/lib/compliance';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +28,7 @@ export default function SignUpScreen() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [marketingOptIn, setMarketingOptIn] = useState(false); // GDPR: unticked by default
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -49,16 +51,24 @@ export default function SignUpScreen() {
       password,
       fullName.trim(),
       phone.trim() || undefined,
+      marketingOptIn,
     );
     setLoading(false);
 
     if (authError) {
       setError(authError);
     } else {
-      // Log compliance events — fire and forget, non-blocking
+      // Log compliance events — fire and forget, non-blocking. (Marketing
+      // consent is also stored in the sign-up metadata so it survives email
+      // confirmation even if there's no session yet to write the log.)
       logCompliance({ eventType: 'terms.accepted',   documentVersion: '1.0', description: 'Accepted OneShetland Terms of Service at sign-up', metadata: { screen: 'sign-up' } });
       logCompliance({ eventType: 'privacy.accepted', documentVersion: '1.0', description: 'Accepted OneShetland Privacy Policy at sign-up',   metadata: { screen: 'sign-up' } });
       logCompliance({ eventType: 'age.confirmed',                             description: 'Confirmed 18 or over at account creation',         metadata: { screen: 'sign-up' } });
+      logCompliance({
+        eventType:   marketingOptIn ? 'marketing.opted_in' : 'marketing.opted_out',
+        description: marketingOptIn ? 'Opted in to marketing emails at sign-up' : 'Did not opt in to marketing emails at sign-up',
+        metadata:    { screen: 'sign-up' },
+      });
       setSuccess(true);
     }
   }
@@ -201,6 +211,23 @@ export default function SignUpScreen() {
               />
             </View>
 
+            {/* GDPR marketing opt-in — explicit, unticked by default */}
+            <TouchableOpacity
+              style={styles.optInRow}
+              onPress={() => setMarketingOptIn(v => !v)}
+              activeOpacity={0.7}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: marketingOptIn }}
+            >
+              <View style={[styles.checkbox, marketingOptIn && styles.checkboxOn]}>
+                {marketingOptIn && <FontAwesome5 name="check" size={11} color="#fff" solid />}
+              </View>
+              <Text style={styles.optInText}>
+                Email me occasional OneShetland news, offers and updates.{' '}
+                <Text style={styles.optInOptional}>Optional — change it any time in settings.</Text>
+              </Text>
+            </TouchableOpacity>
+
             <Button
               label="Create account"
               onPress={handleSignUp}
@@ -304,6 +331,17 @@ const styles = StyleSheet.create({
   errorText: { flex: 1, color: colors.error, fontSize: fontSize.sm, lineHeight: 20 },
 
   fields: { gap: spacing.xs, marginBottom: spacing.sm },
+
+  // Marketing opt-in checkbox
+  optInRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: spacing.sm },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
+  checkboxOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  optInText: { flex: 1, fontSize: fontSize.sm, color: colors.textMuted, lineHeight: 19 },
+  optInOptional: { color: colors.textLight },
+
   submitBtn: { marginTop: spacing.md },
 
   divider: {

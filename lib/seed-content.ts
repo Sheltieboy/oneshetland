@@ -12,11 +12,15 @@
  */
 
 export interface SampleEvent {
-  id:        string;
-  title:     string;
-  starts_at: string;      // ISO
-  venue:     string;
-  category:  string;
+  id:          string;
+  title:       string;
+  starts_at:   string;      // ISO
+  venue:       string;
+  category:    string;
+  cover_url?:  string | null;
+  is_featured?: boolean;
+  price_text?:  string | null;
+  has_tickets?: boolean;
 }
 
 export interface SampleNotice {

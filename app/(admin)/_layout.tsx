@@ -26,6 +26,9 @@ export default function AdminLayout() {
       <Stack.Screen name="payments" />
       <Stack.Screen name="disputes" />
       <Stack.Screen name="regions" />
+      <Stack.Screen name="alert-approvals" />
+      <Stack.Screen name="alerts" />
+      <Stack.Screen name="business-claims" />
     </Stack>
   );
 }

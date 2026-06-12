@@ -6,22 +6,24 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchBusiness, createBusiness, updateBusiness,
-  CATEGORY_LABELS,
+  CATEGORY_LABELS, TRADE_TAGS,
   type LocalCategory, type BusinessUpsertInput,
 } from '@/lib/local-api';
+import { uploadBusinessImage, extractBrandColor, type PickedFile } from '@/lib/image-upload';
 
 const S = SECTIONS.local;
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
@@ -50,6 +52,14 @@ export default function BusinessRegisterScreen() {
   const [website, setWebsite]     = useState('');
   const [email, setEmail]         = useState('');
 
+  // Logo + brand colour. logoUrl = already-saved URL; logoFile = freshly picked
+  // local file pending upload on save.
+  const [logoUrl, setLogoUrl]     = useState<string | null>(null);
+  const [logoFile, setLogoFile]   = useState<PickedFile | null>(null);
+  const [brandColor, setBrandColor] = useState<string | null>(null);
+  const [tags, setTags]           = useState<string[]>([]);
+  const [customTag, setCustomTag] = useState('');
+
   // Payment / payout overrides — both off by default (use central card/bank)
   const [useBusinessPayment, setUseBusinessPayment] = useState(false);
   const [useBusinessPayout,  setUseBusinessPayout]  = useState(false);
@@ -70,12 +80,49 @@ export default function BusinessRegisterScreen() {
         setPhone(b.phone ?? '');
         setWebsite(b.website ?? '');
         setEmail(b.email ?? '');
+        setLogoUrl(b.logo_url ?? null);
+        setBrandColor(b.brand_color ?? null);
+        setTags(b.tags ?? []);
         setUseBusinessPayment((b as any).use_business_payment ?? false);
         setUseBusinessPayout((b as any).use_business_payout  ?? false);
       }
       setLoading(false);
     });
   }, [id]);
+
+  const pickLogo = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      return Alert.alert('Permission needed', 'Allow photo access to add a logo.');
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    Haptics.selectionAsync();
+    setLogoFile({ uri: a.uri, mimeType: a.mimeType, ext: a.fileName?.split('.').pop() });
+    // Preview immediately from the local file.
+    setLogoUrl(a.uri);
+    // Extract the dominant colour up-front so the owner can see the tint.
+    const color = await extractBrandColor(a.uri);
+    if (color) setBrandColor(color);
+  };
+
+  const toggleTag = (tag: string) => {
+    Haptics.selectionAsync();
+    setTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+  };
+
+  const addCustomTag = () => {
+    const t = customTag.trim();
+    if (!t) return;
+    if (!tags.some(x => x.toLowerCase() === t.toLowerCase())) setTags(prev => [...prev, t]);
+    setCustomTag('');
+  };
 
   const handleSave = async () => {
     if (!profile) return;
@@ -95,16 +142,36 @@ export default function BusinessRegisterScreen() {
       phone:   phone.trim()   || null,
       website: website.trim() || null,
       email:   email.trim()   || null,
+      tags,
       use_business_payment: useBusinessPayment,
       use_business_payout:  useBusinessPayout,
     };
 
     try {
+      let businessId = id;
       if (id) {
         await updateBusiness(id, payload);
       } else {
-        await createBusiness(profile.id, payload);
+        const created = await createBusiness(profile.id, payload);
+        businessId = created.id;
       }
+
+      // Upload a freshly-picked logo now that we have a business id, then
+      // persist its URL + the extracted brand colour.
+      if (logoFile && businessId) {
+        try {
+          const uploaded = await uploadBusinessImage(businessId, 'logo', logoFile);
+          const color = brandColor ?? (await extractBrandColor(logoFile.uri));
+          await updateBusiness(businessId, {
+            logo_url: uploaded.publicUrl,
+            brand_color: color ?? null,
+          });
+        } catch (imgErr: any) {
+          // Don't fail the whole save if only the image upload hiccups.
+          Alert.alert('Logo not saved', imgErr?.message ?? 'The details saved, but the logo upload failed. Try again from Edit.');
+        }
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         id ? 'Saved' : 'Business listed!',
@@ -177,6 +244,28 @@ export default function BusinessRegisterScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
+          {/* Logo + auto-tinted banner preview */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Logo</Text>
+            <View style={[styles.logoBanner, { backgroundColor: brandColor ?? S.color }]}>
+              <TouchableOpacity style={styles.logoPick} onPress={pickLogo} activeOpacity={0.85}>
+                {logoUrl ? (
+                  <Image source={{ uri: logoUrl }} style={styles.logoImg} />
+                ) : (
+                  <View style={[styles.logoImg, styles.logoPlaceholder]}>
+                    <FontAwesome5 name="camera" size={20} color={S.color} solid />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={pickLogo} activeOpacity={0.7}>
+              <Text style={styles.logoHint}>
+                {logoUrl ? 'Tap the logo to change it' : 'Tap to add a logo'}
+                {brandColor ? '  ·  banner tinted from your logo' : ''}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Business name *</Text>
             <TextInput
@@ -204,6 +293,63 @@ export default function BusinessRegisterScreen() {
                   </TouchableOpacity>
                 );
               })}
+            </View>
+          </View>
+
+          {/* Services & trades — powers directory search */}
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Services &amp; trades</Text>
+            <Text style={styles.fieldHint}>
+              Pick what you offer so customers find you when they search (e.g. “plumber”).
+            </Text>
+
+            {tags.length > 0 && (
+              <View style={[styles.tagWrap, { marginTop: 10 }]}>
+                {tags.map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.tagChip, { backgroundColor: S.color, borderColor: S.color }]}
+                    onPress={() => toggleTag(t)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.tagChipText, { color: '#fff' }]}>{t}</Text>
+                    <FontAwesome5 name="times" size={10} color="#fff" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <View style={[styles.tagWrap, { marginTop: 10 }]}>
+              {TRADE_TAGS.filter(t => !tags.includes(t)).slice(0, 24).map(t => (
+                <TouchableOpacity
+                  key={t}
+                  style={styles.tagChip}
+                  onPress={() => toggleTag(t)}
+                  activeOpacity={0.75}
+                >
+                  <FontAwesome5 name="plus" size={9} color={colors.textMuted} />
+                  <Text style={styles.tagChipText}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.tagAddRow}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={customTag}
+                onChangeText={setCustomTag}
+                placeholder="Add your own…"
+                placeholderTextColor={colors.textLight}
+                returnKeyType="done"
+                onSubmitEditing={addCustomTag}
+              />
+              <TouchableOpacity
+                style={[styles.tagAddBtn, { backgroundColor: customTag.trim() ? S.color : colors.border }]}
+                onPress={addCustomTag}
+                disabled={!customTag.trim()}
+              >
+                <FontAwesome5 name="plus" size={13} color="#fff" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -404,12 +550,39 @@ const styles = StyleSheet.create({
   field:      {},
   fieldLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   fieldHint:  { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 },
+
+  // Logo + banner preview
+  logoBanner: {
+    height: 110, borderRadius: radius.lg,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  logoPick: {},
+  logoImg: {
+    width: 76, height: 76, borderRadius: radius.lg,
+    borderWidth: 4, borderColor: '#fff', backgroundColor: '#fff',
+  },
+  logoPlaceholder: {
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
+  },
+  logoHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 8, textAlign: 'center' },
   input: {
     backgroundColor: '#fff', borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 12, paddingVertical: 12,
     fontSize: fontSize.sm, color: colors.textPrimary,
   },
+
+  tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tagChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', borderRadius: radius.full,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 12, paddingVertical: 7,
+  },
+  tagChipText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textPrimary },
+  tagAddRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  tagAddBtn: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
 
   categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryBtn: {

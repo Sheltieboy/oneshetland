@@ -13,7 +13,7 @@
 import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, NativeSyntheticEvent, NativeScrollEvent, StatusBar,
+  NativeSyntheticEvent, NativeScrollEvent, StatusBar, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -87,10 +87,9 @@ const SLIDES: Slide[] = [
   },
 ];
 
-const SCREEN_W = Dimensions.get('window').width;
-
 export default function IntroScreen() {
   const router = useRouter();
+  const { width: SCREEN_W } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
 

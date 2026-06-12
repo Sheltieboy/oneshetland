@@ -9,7 +9,7 @@
 -- avoids any other column that might be schema-variable.
 -- ────────────────────────────────────────────────────────────────────────────
 
-DROP FUNCTION IF EXISTS public.spik_daily();
+DROP FUNCTION IF EXISTS public.spik_daily() CASCADE;
 
 CREATE OR REPLACE FUNCTION public.spik_daily()
 RETURNS TABLE (

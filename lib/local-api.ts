@@ -30,6 +30,84 @@ export type DiscountType = 'percent' | 'fixed' | 'freebie' | 'bogo' | 'other';
 export type WalletTxType = 'topup' | 'spend' | 'refund' | 'cashback';
 export type LoyaltyTxType = 'stamp' | 'points_earn' | 'redeem' | 'reward';
 
+// ── Add-ons ───────────────────────────────────────────────────────────────────
+
+/** Premium add-ons: require Premium plan; 1 included, £15/mo each additional. */
+export const PREMIUM_ADDON_KEYS = ['bookings', 'services', 'events', 'membership', 'products'] as const;
+/** Standard add-ons: available on every plan, owner toggles visibility. */
+export const STANDARD_ADDON_KEYS = ['offers', 'stamps', 'enquiries', 'payments', 'featured'] as const;
+
+export type AddonKey =
+  | typeof PREMIUM_ADDON_KEYS[number]
+  | typeof STANDARD_ADDON_KEYS[number];
+
+export const EXTRA_ADDON_MONTHLY_PENCE = 1500; // £15 per additional premium add-on
+
+export interface AddonMeta {
+  label:       string;
+  description: string;
+  icon:        string;
+  isPremium:   boolean;
+}
+
+export const ADDON_META: Record<AddonKey, AddonMeta> = {
+  bookings:   { label: 'Bookings',   description: 'Let customers book slots, appointments and services online.',     icon: 'calendar-check', isPremium: true  },
+  services:   { label: 'Services',   description: 'Showcase what you offer with a browseable service catalogue.',    icon: 'tools',          isPremium: true  },
+  events:     { label: 'Events',     description: 'Post and promote events that appear in What\'s On.',              icon: 'calendar-alt',   isPremium: true  },
+  membership: { label: 'Membership', description: 'Offer exclusive access, prices or content to paying members.',   icon: 'id-card',        isPremium: true  },
+  products:   { label: 'Products',   description: 'Sell physical or digital products directly through your profile.',icon: 'shopping-bag',   isPremium: true  },
+  offers:     { label: 'Offers',     description: 'Publish time-limited discounts, BOGOs and vouchers.',             icon: 'tag',            isPremium: false },
+  stamps:     { label: 'Stamps & points', description: 'Run a loyalty stamp card or points programme.',             icon: 'stamp',          isPremium: false },
+  enquiries:  { label: 'Enquiries',  description: 'Accept contact and quote requests from customers.',               icon: 'envelope',       isPremium: false },
+  payments:   { label: 'Payments',   description: 'Accept wallet payments, NFC tap-to-pay and cashback.',           icon: 'credit-card',    isPremium: false },
+  featured:   { label: 'Featured promotion', description: 'Boost visibility with a featured listing or Boost.',     icon: 'star',           isPremium: false },
+};
+
+export interface BusinessAddon {
+  id:          string;
+  business_id: string;
+  addon_key:   AddonKey;
+  enabled:     boolean;
+  config:      Record<string, unknown>;
+  created_at:  string;
+}
+
+/** Returns how many premium add-ons are enabled beyond the first (i.e. billable extras). */
+export function countExtraPremiumAddons(addons: BusinessAddon[]): number {
+  const active = addons.filter(a => a.enabled && (PREMIUM_ADDON_KEYS as readonly string[]).includes(a.addon_key));
+  return Math.max(0, active.length - 1);
+}
+
+export async function fetchBusinessAddons(businessId: string): Promise<BusinessAddon[]> {
+  const { data, error } = await supabase
+    .from('business_addons')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('addon_key');
+  if (error) throw error;
+  return (data ?? []) as BusinessAddon[];
+}
+
+export async function toggleAddon(businessId: string, key: AddonKey, enabled: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('business_addons')
+    .update({ enabled })
+    .eq('business_id', businessId)
+    .eq('addon_key', key);
+  if (error) throw error;
+}
+
+export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness | null> {
+  const { data, error } = await supabase
+    .from('local_businesses')
+    .select('*')
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as LocalBusiness | null;
+}
+
 export interface OpeningHours {
   mon?: string; tue?: string; wed?: string; thu?: string;
   fri?: string; sat?: string; sun?: string;
@@ -46,6 +124,8 @@ export interface LocalBusiness {
   lng:               number | null;
   logo_url:          string | null;
   cover_url:         string | null;
+  brand_color:       string | null;
+  tags:              string[] | null;
   phone:             string | null;
   website:           string | null;
   email:             string | null;
@@ -65,7 +145,14 @@ export interface LocalBusiness {
   nfc_dispatched_at:      string | null;
   nfc_activated_at:       string | null;
   accepts_bookings:       boolean;
+  slug:                   string | null;
   subscription_cancel_at_period_end?: boolean;
+  // Directory seeding + claim flow (migration 062)
+  source:            'owner' | 'csv' | 'google' | 'wordpress';
+  place_id:          string | null;
+  is_claimed:        boolean;
+  claimed_at:        string | null;
+  verified_at:       string | null;
   created_at:        string;
   // computed
   is_followed?:      boolean;
@@ -161,11 +248,36 @@ export const CATEGORY_ICONS: Record<LocalCategory, string> = {
   other:         'store',
 };
 
-/** Format pence as "£12.34" */
+/**
+ * Curated trade/service tags offered to business owners in the register form.
+ * Owners may also add their own free-text tags. Directory search matches
+ * against whatever ends up in local_businesses.tags.
+ */
+export const TRADE_TAGS: string[] = [
+  // Trades
+  'Plumbing', 'Joinery', 'Building', 'Electrical', 'Roofing', 'Painting & Decorating',
+  'Plastering', 'Flooring', 'Landscaping', 'Fencing', 'Groundworks',
+  // Home & vehicle
+  'Cleaning', 'Window Cleaning', 'Garden Services', 'Removals', 'Car Repair & MOT',
+  'Tyres', 'Boat Repair', 'Welding', 'Heating & Plumbing',
+  // People services
+  'Hair & Beauty', 'Barber', 'Massage & Therapy', 'Fitness & Wellbeing',
+  'Childcare', 'Tutoring', 'Photography', 'Catering', 'Events & Entertainment',
+  // Professional
+  'Accountancy', 'Legal', 'IT & Web', 'Marketing & Design', 'Bookkeeping',
+  // Land & sea
+  'Crofting & Farming', 'Fishing Supplies', 'Agricultural Supplies', 'Vet & Animal Care',
+  // Retail & food
+  'Bakery', 'Butcher', 'Café', 'Bar & Pub', 'Restaurant', 'Takeaway',
+  'Gifts & Crafts', 'Clothing', 'Hardware', 'Groceries',
+];
+
+/** Format pence as "£1,234.56" (thousands grouped). */
 export function formatPence(pence: number): string {
-  const pounds = Math.abs(pence) / 100;
-  const sign   = pence < 0 ? '-' : '';
-  return `${sign}£${pounds.toFixed(2)}`;
+  const sign = pence < 0 ? '-' : '';
+  const [intPart, decPart] = (Math.abs(pence) / 100).toFixed(2).split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${sign}£${grouped}.${decPart}`;
 }
 
 /** Human-readable discount label */
@@ -251,6 +363,8 @@ export interface BusinessUpsertInput {
   lng?: number | null;
   logo_url?: string | null;
   cover_url?: string | null;
+  brand_color?: string | null;
+  tags?: string[] | null;
   phone?: string | null;
   website?: string | null;
   email?: string | null;
@@ -689,6 +803,47 @@ export async function fetchFeaturedOffer(): Promise<LocalOffer | null> {
   return offer;
 }
 
+/**
+ * Businesses for the homepage featured grid.
+ *
+ * Pro/Premium subscribers come first (that's the paid perk), then — so the grid
+ * is never empty while the directory is young — we backfill remaining slots with
+ * other active businesses (verified first, then newest). This means seeded
+ * listings surface here too, complete with their "Claim" pill.
+ */
+export async function fetchFeaturedBusinesses(limit = 12): Promise<LocalBusiness[]> {
+  const now = new Date().toISOString();
+
+  const { data: subs } = await supabase
+    .from('local_businesses')
+    .select('*')
+    .eq('is_active', true)
+    .in('subscription_tier', ['pro', 'premium'])
+    .or(`subscription_until.is.null,subscription_until.gt.${now}`)
+    .order('subscription_tier', { ascending: false }) // premium before pro
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  const featured = (subs ?? []) as LocalBusiness[];
+  if (featured.length >= limit) return featured;
+
+  // Backfill with other active businesses we haven't already included.
+  const have = new Set(featured.map(b => b.id));
+  const { data: rest } = await supabase
+    .from('local_businesses')
+    .select('*')
+    .eq('is_active', true)
+    .order('is_verified', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit * 3);
+
+  for (const b of (rest ?? []) as LocalBusiness[]) {
+    if (featured.length >= limit) break;
+    if (!have.has(b.id)) { featured.push(b); have.add(b.id); }
+  }
+  return featured;
+}
+
 // ── NFC tile ──────────────────────────────────────────────────────────────────
 
 /** Business owner requests an NFC tile — generates token, sets status to 'requested' */
@@ -987,6 +1142,169 @@ export async function fetchActiveBusinessCount(): Promise<number> {
     .select('id', { count: 'exact', head: true })
     .eq('is_active', true);
   return count ?? 0;
+}
+
+// ── Directory: claim-a-business + discount grants (migration 062) ─────────────
+
+export type ClaimStatus = 'pending' | 'approved' | 'rejected';
+
+export interface BusinessClaim {
+  id:            string;
+  business_id:   string;
+  user_id:       string;
+  status:        ClaimStatus;
+  contact_name:  string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  role:          string | null;
+  evidence:      string | null;
+  admin_note:    string | null;
+  created_at:    string;
+  reviewed_at:   string | null;
+  reviewed_by:   string | null;
+  // joined (admin list)
+  business?:     Pick<LocalBusiness, 'id' | 'name' | 'slug' | 'category'> | null;
+}
+
+export interface ClaimInput {
+  contact_name?:  string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  role?:          string | null;
+  evidence?:      string | null;
+}
+
+/** Submit a claim for an unclaimed listing. */
+export async function submitBusinessClaim(
+  userId: string,
+  businessId: string,
+  input: ClaimInput,
+): Promise<BusinessClaim> {
+  const { data, error } = await supabase
+    .from('business_claims')
+    .insert({ user_id: userId, business_id: businessId, ...input })
+    .select('*')
+    .single();
+  if (error) throw error;
+  // Fire-and-forget: ping admin (edge function added separately).
+  supabase.functions.invoke('notify-business-claim', { body: { claim_id: data.id } }).catch(() => {});
+  return data as BusinessClaim;
+}
+
+/** A user's own claim for a given business, if any (to show pending state). */
+export async function fetchMyClaim(userId: string, businessId: string): Promise<BusinessClaim | null> {
+  const { data } = await supabase
+    .from('business_claims')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('business_id', businessId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data ?? null) as BusinessClaim | null;
+}
+
+/** Admin: all claims, newest first, with business joined. */
+export async function fetchClaims(status?: ClaimStatus): Promise<BusinessClaim[]> {
+  let q = supabase
+    .from('business_claims')
+    .select('*, business:local_businesses ( id, name, slug, category )')
+    .order('created_at', { ascending: false });
+  if (status) q = q.eq('status', status);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as BusinessClaim[];
+}
+
+/** Admin: count of pending claims (badge). */
+export async function fetchPendingClaimCount(): Promise<number> {
+  const { count } = await supabase
+    .from('business_claims')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending');
+  return count ?? 0;
+}
+
+/** Admin: approve a claim (assigns owner, verifies, rejects rivals) via RPC. */
+export async function approveClaim(claimId: string): Promise<void> {
+  const { error } = await supabase.rpc('approve_business_claim', { p_claim_id: claimId });
+  if (error) throw error;
+}
+
+/** Admin: reject a claim with an optional note. */
+export async function rejectClaim(claimId: string, note?: string): Promise<void> {
+  const { error } = await supabase
+    .from('business_claims')
+    .update({ status: 'rejected', reviewed_at: new Date().toISOString(), admin_note: note ?? null })
+    .eq('id', claimId);
+  if (error) throw error;
+}
+
+// ── Discount grants ────────────────────────────────────────────────────────────
+
+export interface DiscountGrant {
+  id:              string;
+  business_id:     string;
+  tier:            'pro' | 'premium';
+  percent_off:     number;
+  duration_months: number;
+  applicable_from: string;
+  expires_at:      string;
+  status:          'active' | 'redeemed' | 'expired' | 'revoked';
+  stripe_coupon_id: string | null;
+  granted_by:      string | null;
+  created_at:      string;
+  redeemed_at:     string | null;
+}
+
+export interface DiscountGrantInput {
+  tier:         'pro' | 'premium';
+  percent_off:  number;
+  /** Days after the grant before it becomes applicable (default 7). */
+  delay_days?:  number;
+  duration_months?: number;
+}
+
+/** Admin: grant a discount that becomes applicable `delay_days` later (default a week). */
+export async function grantDiscount(
+  businessId: string,
+  input: DiscountGrantInput,
+): Promise<DiscountGrant> {
+  const delayDays = input.delay_days ?? 7;
+  const months    = input.duration_months ?? 12;
+  const applicableFrom = new Date(Date.now() + delayDays * 86_400_000);
+  const expiresAt      = new Date(applicableFrom.getTime());
+  expiresAt.setMonth(expiresAt.getMonth() + months);
+  const { data, error } = await supabase
+    .from('business_discount_grants')
+    .insert({
+      business_id:     businessId,
+      tier:            input.tier,
+      percent_off:     input.percent_off,
+      duration_months: months,
+      applicable_from: applicableFrom.toISOString(),
+      expires_at:      expiresAt.toISOString(),
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as DiscountGrant;
+}
+
+/** The live discount waiting for a business (to upsell the owner), if any. */
+export async function fetchActiveDiscount(businessId: string): Promise<DiscountGrant | null> {
+  const now = new Date().toISOString();
+  const { data } = await supabase
+    .from('business_discount_grants')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('status', 'active')
+    .lte('applicable_from', now)
+    .gte('expires_at', now)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data ?? null) as DiscountGrant | null;
 }
 
 // ── My Wallet hub: passes & gifts ─────────────────────────────────────────────

@@ -110,6 +110,15 @@ serve(async (req) => {
       .eq('id', request.run_id)
       .single();
 
+    // Authorisation (IDOR guard): the caller MUST be the driver assigned to this
+    // run. Without this, any approved driver could pre-authorise a charge against
+    // another driver's customer's card by passing an arbitrary request_id.
+    if (!run || run.driver_id !== user.id) {
+      return new Response(JSON.stringify({ error: 'Forbidden — not the assigned driver' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { data: driverProfile } = await supabase
       .from('driver_profiles')
       .select('stripe_account_id')

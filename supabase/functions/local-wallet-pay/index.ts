@@ -73,17 +73,6 @@ serve(async (req) => {
       return json({ error: 'Business hasn\'t finished Stripe onboarding' }, 400);
     }
 
-    // Check balance
-    const { data: balRow } = await svc
-      .from('local_wallet_balances')
-      .select('balance_pence')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    const currentBalance = balRow?.balance_pence ?? 0;
-    if (currentBalance < amount_pence) {
-      return json({ error: 'Insufficient balance — top up first' }, 402);
-    }
-
     // Cashback is BUSINESS-FUNDED — comes out of the merchant's transfer.
     // The customer's wallet still gets the credit; the business absorbs the
     // cost of the loyalty incentive they themselves set. See migration 034.
@@ -103,15 +92,15 @@ serve(async (req) => {
       }, 400);
     }
 
-    // Debit customer wallet
-    const newBalance = currentBalance - amount_pence + cashbackPence;
-    await svc
-      .from('local_wallet_balances')
-      .upsert({
-        user_id: user.id,
-        balance_pence: newBalance,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
+    // Atomically debit the spend and credit cashback in a single guarded
+    // statement (migration 065). Returns NULL if funds don't cover the spend —
+    // this prevents the lost-update race the old read-modify-write allowed.
+    const { data: newBalance, error: debitErr } = await svc
+      .rpc('wallet_debit', { p_user: user.id, p_spend: amount_pence, p_cashback: cashbackPence });
+    if (debitErr) throw debitErr;
+    if (newBalance == null) {
+      return json({ error: 'Insufficient balance — top up first' }, 402);
+    }
 
     // Stripe Connect transfer — raw fetch (no SDK) to avoid the esm.sh Stripe
     // build's Node-compat shim, which crashes under newer Supabase edge
@@ -136,6 +125,9 @@ serve(async (req) => {
           'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
           'Content-Type':   'application/x-www-form-urlencoded',
           'Stripe-Version': STRIPE_API_VERSION,
+          // Idempotency: protects against a duplicate transfer if this request is
+          // retried at the network layer within Stripe's 24h window.
+          'Idempotency-Key': crypto.randomUUID(),
         },
         body: transferBody,
       });
@@ -146,11 +138,9 @@ serve(async (req) => {
       transferId = transferJson.id;
     } catch (stripeErr) {
       console.error('[local-wallet-pay] Stripe transfer failed:', stripeErr);
-      // Refund customer
-      await svc
-        .from('local_wallet_balances')
-        .update({ balance_pence: currentBalance, updated_at: new Date().toISOString() })
-        .eq('user_id', user.id);
+      // Refund customer by reversing the net change atomically: we debited the
+      // spend and credited cashback, so the reversal credits (spend − cashback).
+      await svc.rpc('wallet_credit', { p_user: user.id, p_amount: amount_pence - cashbackPence });
       return json({ error: 'Payment to business failed — wallet refunded' }, 502);
     }
 

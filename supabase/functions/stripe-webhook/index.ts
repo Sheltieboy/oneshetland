@@ -126,6 +126,11 @@ serve(async (req) => {
       // Connect accounts (use_business_payout = true).
       case 'account.updated': {
         const accountId = eventData.id as string;
+        // We only ever create Express connected accounts. Ignore updates for any
+        // other account type defensively, so an unexpected event can't flip
+        // onboarding/payout flags.
+        const accountType = eventData.type as string | undefined;
+        if (accountType && accountType !== 'express') break;
         const payoutsEnabled   = eventData.payouts_enabled   as boolean;
         const chargesEnabled   = eventData.charges_enabled   as boolean;
         const detailsSubmitted = eventData.details_submitted as boolean;
@@ -159,6 +164,12 @@ serve(async (req) => {
           })
           .eq('business_stripe_account_id', accountId);
 
+        // 4. Hub Connect accounts (paid memberships)
+        await supabase
+          .from('hubs')
+          .update({ payout_enabled: payoutsEnabled })
+          .eq('stripe_account_id', accountId);
+
         break;
       }
 
@@ -169,6 +180,7 @@ serve(async (req) => {
         const customerId        = eventData.customer as string;
         const status            = eventData.status as string;
         const cancelAtPeriodEnd = Boolean(eventData.cancel_at_period_end);
+        const meta              = (eventData.metadata ?? {}) as Record<string, string>;
         const items             = eventData.items as {
           data: Array<{ price: { id: string }; current_period_end?: number }>
         };
@@ -183,6 +195,31 @@ serve(async (req) => {
           ? new Date(periodEndSec * 1000).toISOString()
           : null;
 
+        const isActive = ['active', 'trialing'].includes(status);
+
+        // ── Alert add-on subscription ────────────────────────────────────
+        if (meta.type === 'alert_addon' && meta.business_id) {
+          if (isActive) {
+            await supabase
+              .from('business_alert_access')
+              .update({
+                status:                 'active',
+                activated_at:           new Date().toISOString(),
+                stripe_subscription_id: subId,
+              })
+              .eq('business_id', meta.business_id);
+          } else {
+            // Payment failed or subscription went inactive — suspend access
+            await supabase
+              .from('business_alert_access')
+              .update({ status: 'suspended' })
+              .eq('business_id', meta.business_id)
+              .eq('stripe_subscription_id', subId);
+          }
+          break;
+        }
+
+        // ── Standard business tier subscription ──────────────────────────
         // Map Stripe price IDs to our tiers — read from admin_config first,
         // fall back to env vars so old deployments keep working.
         const proPrice     = await getConfig(supabase, 'stripe.price.local_pro',     Deno.env.get('STRIPE_PRICE_LOCAL_PRO')     ?? null);
@@ -191,8 +228,6 @@ serve(async (req) => {
         let tier: 'free' | 'pro' | 'premium' = 'free';
         if (priceId === premiumPrice) tier = 'premium';
         else if (priceId === proPrice) tier = 'pro';
-
-        const isActive = ['active', 'trialing'].includes(status);
 
         await supabase
           .from('local_businesses')
@@ -210,7 +245,20 @@ serve(async (req) => {
 
       // ── Subscription cancelled / lapsed ──────────────────────────────
       case 'customer.subscription.deleted': {
-        const subId = eventData.id as string;
+        const subId      = eventData.id as string;
+        const deleteMeta = (eventData.metadata ?? {}) as Record<string, string>;
+
+        // Alert add-on cancelled — suspend access
+        if (deleteMeta.type === 'alert_addon' && deleteMeta.business_id) {
+          await supabase
+            .from('business_alert_access')
+            .update({ status: 'suspended' })
+            .eq('business_id', deleteMeta.business_id)
+            .eq('stripe_subscription_id', subId);
+          break;
+        }
+
+        // Standard tier subscription cancelled
         await supabase
           .from('local_businesses')
           .update({
@@ -267,8 +315,11 @@ async function verifyStripeSignature(
   secret: string,
 ): Promise<Record<string, unknown>> {
   if (!secret) {
-    // Skip verification in development if no secret set
-    return JSON.parse(payload);
+    // Fail CLOSED. Previously this skipped verification when no secret was set,
+    // which means an unset STRIPE_WEBHOOK_SECRET in production would accept ANY
+    // forged payload (fake payments, free premium upgrades, payouts to attacker
+    // accounts). Never accept an unsigned webhook.
+    throw new Error('Webhook secret not configured — refusing to process unsigned event');
   }
 
   const parts = header.split(',');
@@ -276,6 +327,13 @@ async function verifyStripeSignature(
   const signature = parts.find((p) => p.startsWith('v1='))?.slice(3);
 
   if (!timestamp || !signature) throw new Error('Invalid signature header');
+
+  // Replay protection: reject events whose timestamp is outside a 5-minute
+  // tolerance (Stripe's recommended default).
+  const ts = parseInt(timestamp, 10);
+  if (!Number.isFinite(ts) || Math.abs(Math.floor(Date.now() / 1000) - ts) > 300) {
+    throw new Error('Webhook timestamp outside tolerance');
+  }
 
   const signedPayload = `${timestamp}.${payload}`;
   const key = await crypto.subtle.importKey(

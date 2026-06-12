@@ -11,16 +11,17 @@
  * an in-flight uncommitted edit to that file).
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
-  TouchableOpacity, RefreshControl, TextInput,
+  TouchableOpacity, RefreshControl, TextInput, Animated, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { VIEW_BOUNDS } from '@/lib/shetland-geometry';
 import {
@@ -31,6 +32,7 @@ import { ShetlandPlace, PLACE_CATEGORY_LABEL } from '@/lib/places-api';
 import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
 import SectionHero from '@/components/SectionHero';
+import MemoryDetailScreen from '../memory/[id]';
 
 // Soft-load hero photo — if assets/section-heroes/memories.jpg is missing the
 // landing falls back to a tinted-gradient hero. Drop the file in and the
@@ -43,6 +45,24 @@ const SECTION = SECTIONS.memories;
 export default function MemoriesScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { isTablet, screenWidth, screenHeight } = useAppLayout();
+  const isLandscape = screenWidth > screenHeight;
+  const twoPane = isTablet && isLandscape;
+  // In two-pane mode the selected memory opens in the right pane instead of
+  // navigating to its own screen.
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  // Subtle fade + slide whenever the right pane swaps between feed and detail.
+  const paneAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    paneAnim.setValue(0);
+    Animated.timing(paneAnim, {
+      toValue: 1,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [detailId, paneAnim]);
 
   const [pins, setPins]       = useState<MemoryPin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,10 +153,13 @@ export default function MemoriesScreen() {
     return () => clearTimeout(handle);
   }, [query]);
 
-  const onPinTap = (pin: MemoryPin) => {
-    setSelectedId(pin.id);
-    router.push(`/memory/${pin.id}`);
+  const openMemory = (mid: string) => {
+    setSelectedId(mid);
+    if (twoPane) setDetailId(mid);
+    else router.push(`/memory/${mid}`);
   };
+
+  const onPinTap = (pin: MemoryPin) => openMemory(pin.id);
 
   const onDropPin = (point: { lat: number; lng: number }) => {
     if (!profile?.id) {
@@ -151,60 +174,45 @@ export default function MemoriesScreen() {
 
   const recent = pins.slice(0, 12);
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <Stack.Screen options={{ headerShown: false }} />
-
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); void load(); }}
-            tintColor={SECTION.color}
+  const mapPane = (mapHeight: number) => (
+    <>
+      <View style={styles.mapWrap}>
+        {loading ? (
+          <View style={[styles.mapLoading, { height: mapHeight }]}>
+            <ActivityIndicator color={SECTION.color} />
+          </View>
+        ) : (
+          <MemoryMapNative
+            pins={pins}
+            onOpenPin={onPinTap}
+            onDropPin={onDropPin}
+            onPlacePicked={(p) => setNearPlace(p)}
+            selectedId={selectedId}
+            height={mapHeight}
           />
-        }
+        )}
+      </View>
+
+      <TouchableOpacity
+        onPress={() => router.push('/memory-new')}
+        style={[styles.dropCta, { backgroundColor: SECTION.color }]}
       >
-        {/* ── Hero photo strip ────────────────────────────────────────── */}
-        <SectionHero
-          section="memories"
-          title="Memories"
-          eyebrow="The living map"
-          photo={memoriesHero}
-        />
+        <FontAwesome5 name="plus" size={14} color="#fff" />
+        <Text style={styles.dropCtaText}>Add a memory</Text>
+      </TouchableOpacity>
+    </>
+  );
 
-        <Text style={styles.intro}>
-          Drop a pin anywhere on Shetland. Write a story, leave a voice note,
-          attach a photo or a film. Ask the community to help you remember.
-        </Text>
+  const refreshCtl = (
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={() => { setRefreshing(true); void load(); }}
+      tintColor={SECTION.color}
+    />
+  );
 
-        {/* ── The map ─────────────────────────────────────────────────── */}
-        <View style={styles.mapWrap}>
-          {loading ? (
-            <View style={styles.mapLoading}>
-              <ActivityIndicator color={SECTION.color} />
-            </View>
-          ) : (
-            <MemoryMapNative
-              pins={pins}
-              onOpenPin={onPinTap}
-              onDropPin={onDropPin}
-              onPlacePicked={(p) => setNearPlace(p)}
-              selectedId={selectedId}
-              height={460}
-            />
-          )}
-        </View>
-
-        {/* CTA underneath the map */}
-        <TouchableOpacity
-          onPress={() => router.push('/memory-new')}
-          style={[styles.dropCta, { backgroundColor: SECTION.color }]}
-        >
-          <FontAwesome5 name="plus" size={14} color="#fff" />
-          <Text style={styles.dropCtaText}>Add a memory</Text>
-        </TouchableOpacity>
-
+  const feedContent = (
+    <>
         {/* ── Search ──────────────────────────────────────────────────── */}
         <View style={styles.searchWrap}>
           <View style={styles.searchBar}>
@@ -270,7 +278,7 @@ export default function MemoriesScreen() {
                   <MemoryCard
                     key={pin.id}
                     pin={pin}
-                    onPress={() => router.push(`/memory/${pin.id}`)}
+                    onPress={() => openMemory(pin.id)}
                   />
                 ))}
               </View>
@@ -293,7 +301,7 @@ export default function MemoriesScreen() {
                 <SearchResultRow
                   key={r.id}
                   result={r}
-                  onPress={() => router.push(`/memory/${r.id}`)}
+                  onPress={() => openMemory(r.id)}
                 />
               ))}
             </View>
@@ -315,14 +323,78 @@ export default function MemoriesScreen() {
                   <MemoryCard
                     key={pin.id}
                     pin={pin}
-                    onPress={() => router.push(`/memory/${pin.id}`)}
+                    onPress={() => openMemory(pin.id)}
                   />
                 ))}
               </View>
             )}
           </>
         )}
-      </ScrollView>
+    </>
+  );
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {twoPane ? (
+        // Landscape tablet: map pinned left; right pane shows the feed, or the
+        // selected memory's full detail in place (no screen navigation).
+        <View style={styles.splitRow}>
+          <View style={styles.mapCol}>
+            {mapPane(screenHeight - 230)}
+          </View>
+          <View style={styles.feedCol}>
+            <Animated.View
+              style={{
+                flex: 1,
+                opacity: paneAnim,
+                transform: [{
+                  translateX: paneAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [detailId ? 16 : -16, 0],
+                  }),
+                }],
+              }}
+            >
+              {detailId ? (
+                <MemoryDetailScreen
+                  idOverride={detailId}
+                  embedded
+                  onClose={() => setDetailId(null)}
+                />
+              ) : (
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={styles.feedColContent}
+                  refreshControl={refreshCtl}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {feedContent}
+                </ScrollView>
+              )}
+            </Animated.View>
+          </View>
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={[styles.scroll, isTablet && styles.scrollTablet]}
+          refreshControl={refreshCtl}
+        >
+          <SectionHero
+            section="memories"
+            title="Memories"
+            eyebrow="The living map"
+            photo={memoriesHero}
+          />
+          <Text style={styles.intro}>
+            Drop a pin anywhere on Shetland. Write a story, leave a voice note,
+            attach a photo or a film. Ask the community to help you remember.
+          </Text>
+          {mapPane(460)}
+          {feedContent}
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -391,6 +463,12 @@ const styles = StyleSheet.create({
   scroll: {
     paddingBottom: spacing.xxl,
   },
+  scrollTablet: { maxWidth: 860, alignSelf: 'center', width: '100%' },
+  // Landscape tablet two-pane
+  splitRow: { flex: 1, flexDirection: 'row' },
+  mapCol: { width: '52%', paddingTop: spacing.md },
+  feedCol: { flex: 1, borderLeftWidth: 1, borderLeftColor: colors.border },
+  feedColContent: { paddingTop: spacing.md, paddingBottom: spacing.xxl },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

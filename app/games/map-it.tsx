@@ -30,6 +30,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { submitScore } from '@/lib/games-api';
+import { GameArt, GAME_COLORS, GAME_LIGHTS } from '@/components/GameArt';
 // shetland-geometry kept available for distance maths inside lib/map-it.ts
 import {
   loadPlacePool, pickDailyPlaces, resolveRound, scoreForDistance,
@@ -40,7 +41,7 @@ import {
   type Place, type RoundResult, type SessionState,
 } from '@/lib/map-it';
 
-const S = SECTIONS.games;
+const S = { ...SECTIONS.games, color: GAME_COLORS.map_it, light: GAME_LIGHTS.map_it };
 
 // ── Visual constants ─────────────────────────────────────────────────────────
 
@@ -366,9 +367,8 @@ function IntroScreen({ onPlay, onBack }: { onPlay: () => void; onBack: () => voi
         bounces={false}
       >
         <View style={introStyles.hero}>
-          <View style={introStyles.heroIconWrap}>
-            <FontAwesome5 name="map-marker-alt" size={36} color={ACCENT} solid />
-          </View>
+          <GameArt id="map_it" size={108} radius={28} />
+          <View style={{ height: 16 }} />
           <Text style={introStyles.title}>Map It</Text>
           <Text style={introStyles.sub}>
             Pin {ROUNDS_PER_DAY} Shetland places on the map.{'\n'}

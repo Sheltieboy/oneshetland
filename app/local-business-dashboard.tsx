@@ -17,7 +17,9 @@ import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { useStripe } from '@stripe/stripe-react-native';
 import { useAlert } from '@/components/BrandedAlert';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { NavRail } from '@/components/NavRail';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -32,10 +34,20 @@ import {
   isBusinessFeatured, TIER_LABELS, TIER_PRICE,
   formatOfferDiscount, daysRemaining,
   fetchBusinessWalletReceipts,
+  fetchBusinessAddons, toggleAddon,
+  ADDON_META, PREMIUM_ADDON_KEYS, EXTRA_ADDON_MONTHLY_PENCE, countExtraPremiumAddons,
   type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType,
-  type BusinessWalletReceipt,
+  type BusinessWalletReceipt, type BusinessAddon, type AddonKey,
 } from '@/lib/local-api';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { setAcceptsBookings, fetchBusinessServices } from '@/lib/book-api';
+import { fetchBusinessEvents, type OsEvent } from '@/lib/events-api';
+import {
+  fetchMyAlertAccess, requestAlertAccess,
+  sendAlert, cancelAlert, fetchMyBusinessAlerts, activateAlertAccess,
+  createAlertAddonIntent, fetchScheduledAlerts,
+  type PartnerAlert, type AlertAccess, type AlertType,
+} from '@/lib/alerts-api';
 import { supabase } from '@/lib/supabase';
 
 const S = SECTIONS.local;
@@ -62,6 +74,7 @@ const PLAN_FEATURES: { label: string; req: TierLevel }[] = [
 export default function BusinessDashboardScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { sidePadding, isTablet } = useAppLayout();
 
   const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
   const [activeBusiness, setActiveBusiness] = useState<LocalBusiness | null>(null);
@@ -87,9 +100,28 @@ export default function BusinessDashboardScreen() {
   const [boostPrices, setBoostPrices] = useState<{ one: number | null; two: number | null; three: number | null }>({ one: null, two: null, three: null });
   const [boostBusy,   setBoostBusy]   = useState<1 | 2 | 3 | null>(null);
 
+  const [addons, setAddons] = useState<BusinessAddon[]>([]);
+  const [addonsBusy, setAddonsBusy] = useState<AddonKey | null>(null);
+  const [bizEvents, setBizEvents] = useState<OsEvent[]>([]);
+
+  // Urgent alert state
+  const [alertAccess,      setAlertAccess]      = useState<AlertAccess | null>(null);
+  const [bizAlerts,        setBizAlerts]        = useState<PartnerAlert[]>([]);
+  const [scheduledAlerts,  setScheduledAlerts]  = useState<PartnerAlert[]>([]);
+  const [alertMessage,     setAlertMessage]     = useState('');
+  const [alertType,        setAlertType]        = useState<AlertType>('disruption');
+  const [alertBusy,        setAlertBusy]        = useState(false);
+  const [requestingAccess, setRequestingAccess] = useState(false);
+  const [sendLater,        setSendLater]        = useState(false);
+  const [scheduledFor,     setScheduledFor]     = useState<Date | null>(null);
+  const [showDatePicker,   setShowDatePicker]   = useState(false);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customPickerDate, setCustomPickerDate] = useState<Date>(new Date());
+  const [alertDuration,    setAlertDuration]    = useState<number | null>(2); // hours, null = no expiry
+
   // Collapsible cards — collapsed by default; the header still shows the key status.
-  const [expanded, setExpanded] = useState<{ pay: boolean; plan: boolean; nfc: boolean }>({ pay: false, plan: false, nfc: false });
-  const toggleCard = (key: 'pay' | 'plan' | 'nfc') => {
+  const [expanded, setExpanded] = useState<{ addons: boolean; pay: boolean; plan: boolean; nfc: boolean }>({ addons: false, pay: false, plan: false, nfc: false });
+  const toggleCard = (key: 'addons' | 'pay' | 'plan' | 'nfc') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
   };
@@ -110,7 +142,7 @@ export default function BusinessDashboardScreen() {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount, receipts] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, addonRows, evRows, alertAcc, alertRows, schedRows] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -129,6 +161,11 @@ export default function BusinessDashboardScreen() {
             .then(r => { console.log('[wallet receipts] got', r.length, 'rows'); return r; })
             .catch(e => { console.warn('[wallet receipts] fetch failed:', e); return [] as BusinessWalletReceipt[]; })
         : Promise.resolve([] as BusinessWalletReceipt[]),
+      fetchBusinessAddons(target.id).catch(() => [] as BusinessAddon[]),
+      fetchBusinessEvents(target.id).catch(() => [] as OsEvent[]),
+      fetchMyAlertAccess(target.id).catch(() => null),
+      fetchMyBusinessAlerts(target.id).catch(() => [] as PartnerAlert[]),
+      fetchScheduledAlerts(target.id).catch(() => [] as PartnerAlert[]),
     ]);
     setProgram(prog);
     setOffers(ofs);
@@ -136,6 +173,18 @@ export default function BusinessDashboardScreen() {
     setBookServiceCount(bookSvcs.length);
     setOrphanedShiftCount(orphanCount as number);
     setWalletReceipts(receipts);
+    setAddons(addonRows as BusinessAddon[]);
+    setAlertAccess(alertAcc as AlertAccess | null);
+    setBizAlerts((alertRows as PartnerAlert[]).filter(a => a.is_active));
+    setScheduledAlerts(schedRows as PartnerAlert[]);
+    // Show upcoming + ongoing events (starts in future, or ends in future)
+    const now = new Date();
+    setBizEvents(
+      (evRows as OsEvent[])
+        .filter(e => new Date(e.ends_at ?? e.starts_at) >= now)
+        .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+        .slice(0, 5),
+    );
     setLoading(false);
     setRefreshing(false);
   }, [profile?.id]);
@@ -521,6 +570,80 @@ export default function BusinessDashboardScreen() {
     }
   };
 
+  const handleAddonToggle = async (key: AddonKey, enabled: boolean) => {
+    if (!activeBusiness) return;
+    const isPremium = (PREMIUM_ADDON_KEYS as readonly string[]).includes(key);
+    if (isPremium && enabled && activeBusiness.subscription_tier !== 'premium') {
+      brandedAlert({
+        title: 'Premium required',
+        message: 'Upgrade to Premium to unlock this add-on.',
+        icon: 'crown',
+        accent: PREMIUM_PURPLE,
+        actions: [
+          { label: 'Not now', style: 'cancel' },
+          { label: 'See plans', style: 'primary', onPress: () => setExpanded(prev => ({ ...prev, plan: true })) },
+        ],
+      });
+      return;
+    }
+    if (isPremium && enabled) {
+      const currentEnabled = addons.filter(
+        a => a.enabled && (PREMIUM_ADDON_KEYS as readonly string[]).includes(a.addon_key),
+      );
+      if (currentEnabled.length >= 1) {
+        const extra = currentEnabled.length;
+        const monthlyCost = (extra * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(2);
+        brandedAlert({
+          title: `Add ${ADDON_META[key].label}?`,
+          message: `Your Premium plan includes 1 premium add-on. This is an extra, adding £${monthlyCost}/month to your subscription.`,
+          icon: ADDON_META[key].icon,
+          accent: PREMIUM_PURPLE,
+          actions: [
+            { label: 'Cancel', style: 'cancel' },
+            {
+              label: 'Enable (+£15/mo)',
+              style: 'primary',
+              onPress: async () => {
+                setAddonsBusy(key);
+                try {
+                  await toggleAddon(activeBusiness.id, key, true);
+                  setAddons(prev => prev.map(a => a.addon_key === key ? { ...a, enabled: true } : a));
+                  Haptics.selectionAsync();
+                } catch (e: any) {
+                  Alert.alert('Could not enable add-on', e?.message ?? 'Try again.');
+                } finally {
+                  setAddonsBusy(null);
+                }
+              },
+            },
+          ],
+        });
+        return;
+      }
+    }
+    setAddonsBusy(key);
+    try {
+      await toggleAddon(activeBusiness.id, key, enabled);
+      setAddons(prev => prev.map(a => a.addon_key === key ? { ...a, enabled } : a));
+      // Keep accepts_bookings in sync so isBookableLive() stays correct.
+      if (key === 'bookings') {
+        if (enabled && bookServiceCount === 0) {
+          Alert.alert('Add a service first', 'Tap "Services" in the Bookings section and add at least one before going live.');
+          await toggleAddon(activeBusiness.id, 'bookings', false);
+          setAddons(prev => prev.map(a => a.addon_key === 'bookings' ? { ...a, enabled: false } : a));
+        } else {
+          await setAcceptsBookings(activeBusiness.id, enabled);
+          setActiveBusiness(prev => prev ? { ...prev, accepts_bookings: enabled } as LocalBusiness : prev);
+        }
+      }
+      Haptics.selectionAsync();
+    } catch (e: any) {
+      Alert.alert('Could not update add-on', e?.message ?? 'Try again.');
+    } finally {
+      setAddonsBusy(null);
+    }
+  };
+
   const toggleBusinessPayout = async (value: boolean) => {
     if (!activeBusiness) return;
     setSavingPayoutToggle(true);
@@ -568,8 +691,14 @@ export default function BusinessDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <NavRail />
+      <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
       <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+          hitSlop={12}
+        >
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
           <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
@@ -585,7 +714,7 @@ export default function BusinessDashboardScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingHorizontal: Math.max(spacing.lg, sidePadding) }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(activeBusiness); }} tintColor={S.color} />}
       >
 
@@ -638,6 +767,107 @@ export default function BusinessDashboardScreen() {
               : <FontAwesome5 name="chevron-right" size={11} color={S.color} />}
           </TouchableOpacity>
         )}
+
+        {/* ── Add-ons & features ── */}
+        {(() => {
+          const isPremium = activeBusiness.subscription_tier === 'premium';
+          const enabledCount = addons.filter(a => a.enabled).length;
+          const extraCount = countExtraPremiumAddons(addons);
+          const premiumKeys = PREMIUM_ADDON_KEYS as readonly string[];
+          const addonGroups: Array<{ label: string; keys: AddonKey[] }> = [
+            { label: 'Premium add-ons', keys: ['bookings', 'services', 'events', 'membership', 'products'] },
+            { label: 'Standard add-ons', keys: ['offers', 'stamps', 'enquiries', 'payments', 'featured'] },
+          ];
+          return (
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.cardHeader} onPress={() => toggleCard('addons')} activeOpacity={0.7}>
+                <View style={[styles.cardIcon, { backgroundColor: PREMIUM_PURPLE + '18' }]}>
+                  <FontAwesome5 name="puzzle-piece" size={13} color={PREMIUM_PURPLE} solid />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Add-ons &amp; features</Text>
+                  <Text style={styles.cardSub}>
+                    {enabledCount} active · {isPremium ? `${extraCount} extra at £${(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo` : 'Premium unlocks more'}
+                  </Text>
+                </View>
+                <FontAwesome5 name={expanded.addons ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              {expanded.addons && (
+                <>
+                  {!isPremium && (
+                    <View style={styles.addonUpgradeBanner}>
+                      <FontAwesome5 name="crown" size={12} color={PREMIUM_PURPLE} solid />
+                      <Text style={styles.addonUpgradeText}>
+                        Upgrade to <Text style={{ fontWeight: '900' }}>Premium</Text> to enable Bookings, Services, Events, Membership and Products.
+                      </Text>
+                    </View>
+                  )}
+                  {isPremium && extraCount > 0 && (
+                    <View style={[styles.addonUpgradeBanner, { backgroundColor: PREMIUM_PURPLE + '10', borderColor: PREMIUM_PURPLE + '30' }]}>
+                      <FontAwesome5 name="info-circle" size={12} color={PREMIUM_PURPLE} />
+                      <Text style={[styles.addonUpgradeText, { color: PREMIUM_PURPLE }]}>
+                        1 premium add-on included · {extraCount} extra at £{(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo added to your subscription.
+                      </Text>
+                    </View>
+                  )}
+
+                  {addonGroups.map(group => (
+                    <View key={group.label} style={styles.addonGroup}>
+                      <Text style={styles.subSectionLabel}>{group.label}</Text>
+                      {group.keys.map(key => {
+                        const meta    = ADDON_META[key];
+                        const addon   = addons.find(a => a.addon_key === key);
+                        const on      = addon?.enabled ?? false;
+                        const locked  = premiumKeys.includes(key) && !isPremium;
+                        const busy    = addonsBusy === key;
+                        const enabledPremiumCount = addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key)).length;
+                        const isFirstPremium = on && premiumKeys.includes(key) &&
+                          addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key))[0]?.addon_key === key;
+                        return (
+                          <View key={key} style={styles.addonRow}>
+                            <View style={[styles.addonIconWrap, { backgroundColor: locked ? colors.border : PREMIUM_PURPLE + '14' }]}>
+                              <FontAwesome5 name={meta.icon} size={12} color={locked ? colors.textLight : PREMIUM_PURPLE} solid />
+                            </View>
+                            <View style={{ flex: 1, gap: 2 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={[styles.addonLabel, locked && { color: colors.textLight }]}>{meta.label}</Text>
+                                {premiumKeys.includes(key) && on && (
+                                  <View style={[styles.addonBadge, { backgroundColor: isFirstPremium ? PREMIUM_PURPLE + '20' : '#FEF3C7' }]}>
+                                    <Text style={[styles.addonBadgeText, { color: isFirstPremium ? PREMIUM_PURPLE : '#92400E' }]}>
+                                      {isFirstPremium ? 'Included' : '+£15/mo'}
+                                    </Text>
+                                  </View>
+                                )}
+                                {locked && (
+                                  <View style={[styles.addonBadge, { backgroundColor: colors.border }]}>
+                                    <Text style={[styles.addonBadgeText, { color: colors.textMuted }]}>Premium</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.addonDesc} numberOfLines={1}>{meta.description}</Text>
+                            </View>
+                            {busy
+                              ? <ActivityIndicator size="small" color={PREMIUM_PURPLE} />
+                              : <Switch
+                                  value={on}
+                                  onValueChange={v => handleAddonToggle(key, v)}
+                                  disabled={locked}
+                                  trackColor={{ false: colors.border, true: PREMIUM_PURPLE + '66' }}
+                                  thumbColor={on ? PREMIUM_PURPLE : colors.textLight}
+                                  ios_backgroundColor={colors.border}
+                                />
+                            }
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+          );
+        })()}
 
         {/* ── Plan, payments & payouts (merged) ── */}
         <View style={styles.card}>
@@ -1042,15 +1272,10 @@ export default function BusinessDashboardScreen() {
                   {activeBusiness.accepts_bookings
                     ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} · live for booking`
                     : bookServiceCount > 0
-                      ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} ready · toggle on to go live`
-                      : 'Let customers book slots in-app'}
+                      ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} ready · enable via Add-ons`
+                      : 'Manage services, schedule and bookings'}
                 </Text>
               </View>
-              <Switch
-                value={activeBusiness.accepts_bookings ?? false}
-                onValueChange={toggleAcceptsBookings}
-                trackColor={{ false: colors.border, true: S.color }}
-              />
             </View>
 
             <View style={styles.bookActionsRow}>
@@ -1091,6 +1316,302 @@ export default function BusinessDashboardScreen() {
             </View>
           </View>
         )}
+
+        {/* ── Events — shown when events add-on is enabled ── */}
+        {addons.find(a => a.addon_key === 'events')?.enabled && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIcon, { backgroundColor: SECTIONS.events.color + '18' }]}>
+                <FontAwesome5 name="calendar-alt" size={13} color={SECTIONS.events.color} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Events</Text>
+                <Text style={styles.cardSub}>
+                  {bizEvents.length > 0
+                    ? `${bizEvents.length} upcoming event${bizEvents.length !== 1 ? 's' : ''}`
+                    : 'Create and manage events, sell tickets'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.cardIconBtn, { backgroundColor: SECTIONS.events.color }]}
+                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
+              >
+                <FontAwesome5 name="plus" size={11} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Upcoming events list */}
+            {bizEvents.length > 0 && (
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                {bizEvents.map(ev => {
+                  const d = new Date(ev.starts_at);
+                  const dateStr = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+                  const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <View key={ev.id} style={styles.evRow}>
+                      <View style={[styles.evDatePill, { backgroundColor: SECTIONS.events.color + '18' }]}>
+                        <Text style={[styles.evDateText, { color: SECTIONS.events.color }]}>{dateStr}</Text>
+                        <Text style={[styles.evTimeText, { color: SECTIONS.events.color }]}>{timeStr}</Text>
+                      </View>
+                      <Text style={styles.evTitle} numberOfLines={1}>{ev.title}</Text>
+                      <View style={styles.evActions}>
+                        <TouchableOpacity
+                          style={[styles.evBtn, { backgroundColor: SECTIONS.events.color + '18' }]}
+                          onPress={() => router.push({ pathname: '/event-manage', params: { id: ev.id } })}
+                          hitSlop={8}
+                        >
+                          <FontAwesome5 name="cog" size={11} color={SECTIONS.events.color} />
+                        </TouchableOpacity>
+                        {ev.has_tickets && (
+                          <TouchableOpacity
+                            style={[styles.evBtn, { backgroundColor: SECTIONS.events.color }]}
+                            onPress={() => router.push({ pathname: '/event-scanner', params: { id: ev.id } })}
+                            hitSlop={8}
+                          >
+                            <FontAwesome5 name="qrcode" size={11} color="#fff" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            <View style={styles.bookActionsRow}>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
+                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="plus" size={11} color={SECTIONS.events.color} />
+                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>New event</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
+                onPress={() => router.push('/(tabs)/whats-on' as any)}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="calendar" size={11} color={SECTIONS.events.color} />
+                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>What's On</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ── Schedule picker modal ── */}
+        {/* ── Schedule presets modal ── */}
+        {showDatePicker && (
+          <Modal transparent animationType="slide" onRequestClose={() => { setShowDatePicker(false); setShowCustomPicker(false); }}>
+            <TouchableOpacity
+              style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+              activeOpacity={1}
+              onPress={() => { setShowDatePicker(false); setShowCustomPicker(false); }}
+            >
+              <TouchableOpacity activeOpacity={1}>
+                <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: spacing.lg, paddingBottom: 40 }}>
+                  <Text style={{ fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md }}>
+                    {showCustomPicker ? 'Pick a time' : 'Schedule alert'}
+                  </Text>
+
+                  {!showCustomPicker ? (
+                    <>
+                      {[
+                        { label: 'In 1 hour',     getDate: () => new Date(Date.now() + 3600000) },
+                        { label: 'In 2 hours',    getDate: () => new Date(Date.now() + 7200000) },
+                        { label: 'Tomorrow 9am',  getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; } },
+                        { label: 'Tomorrow noon', getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0); return d; } },
+                      ].map((p) => (
+                        <TouchableOpacity
+                          key={p.label}
+                          style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                          onPress={() => { setScheduledFor(p.getDate()); setShowDatePicker(false); }}
+                        >
+                          <Text style={{ fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '600' }}>{p.label}</Text>
+                          <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 }}>
+                            {p.getDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+
+                      <TouchableOpacity
+                        style={{ paddingVertical: 14 }}
+                        onPress={() => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + 1);
+                          d.setHours(9, 0, 0, 0);
+                          setCustomPickerDate(d);
+                          setShowCustomPicker(true);
+                        }}
+                      >
+                        <Text style={{ fontSize: fontSize.sm, color: colors.accent, fontWeight: '700' }}>Pick a custom time →</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <DateTimePicker
+                        value={customPickerDate}
+                        mode="datetime"
+                        display="spinner"
+                        minimumDate={new Date()}
+                        onChange={(_e, date) => { if (date) setCustomPickerDate(date); }}
+                        style={{ height: 180 }}
+                      />
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: spacing.md }}>
+                        <TouchableOpacity
+                          style={{ flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}
+                          onPress={() => setShowCustomPicker(false)}
+                        >
+                          <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.textMuted }}>Back</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{ flex: 2, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.navy, alignItems: 'center' }}
+                          onPress={() => { setScheduledFor(customPickerDate); setShowDatePicker(false); setShowCustomPicker(false); }}
+                        >
+                          <Text style={{ fontSize: fontSize.sm, fontWeight: '800', color: '#fff' }}>
+                            Confirm — {customPickerDate.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </Modal>
+        )}
+
+        {/* ── Urgent Alerts ── */}
+        <AlertsCard
+          access={alertAccess}
+          activeAlerts={bizAlerts}
+          scheduledAlerts={scheduledAlerts}
+          business={activeBusiness}
+          alertMessage={alertMessage}
+          alertType={alertType}
+          alertBusy={alertBusy}
+          requestingAccess={requestingAccess}
+          sendLater={sendLater}
+          scheduledFor={scheduledFor}
+          alertDuration={alertDuration}
+          onMessageChange={setAlertMessage}
+          onTypeChange={setAlertType}
+          onDurationChange={setAlertDuration}
+          onToggleSendLater={() => {
+            setSendLater(v => !v);
+            if (!sendLater) setScheduledFor(null);
+          }}
+          onPickTime={() => setShowDatePicker(true)}
+          onRequestAccess={async () => {
+            setRequestingAccess(true);
+            try {
+              await requestAlertAccess(activeBusiness.id);
+              await loadAll(activeBusiness);
+            } catch (e: any) {
+              Alert.alert('Error', e.message ?? 'Could not send request');
+            } finally {
+              setRequestingAccess(false);
+            }
+          }}
+          onSendAlert={async () => {
+            if (!alertMessage.trim()) return;
+            if (sendLater && !scheduledFor) {
+              Alert.alert('Pick a time', 'Please choose when you want this alert to go out.');
+              return;
+            }
+            setAlertBusy(true);
+            try {
+              const expiresAt = alertDuration
+                ? new Date(Date.now() + alertDuration * 3600 * 1000)
+                : null;
+              await sendAlert({
+                businessId:   activeBusiness.id,
+                businessName: activeBusiness.name,
+                message:      alertMessage.trim(),
+                type:         alertType,
+                scheduledFor: sendLater ? scheduledFor : null,
+                expiresAt,
+              });
+              setAlertMessage('');
+              setSendLater(false);
+              setScheduledFor(null);
+              await loadAll(activeBusiness);
+              if (sendLater && scheduledFor) {
+                const when = scheduledFor.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+                Alert.alert('Alert scheduled', `Your alert will go live on ${when}.`);
+              } else {
+                Alert.alert('Alert sent', 'Your alert is now live across OneShetland.');
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e.message ?? 'Could not send alert');
+            } finally {
+              setAlertBusy(false);
+            }
+          }}
+          onCancelAlert={async (id: string) => {
+            try {
+              await cancelAlert(id);
+              await loadAll(activeBusiness);
+            } catch {}
+          }}
+          onActivate={async () => {
+            setAlertBusy(true);
+            try {
+              const result = await createAlertAddonIntent(activeBusiness.id);
+
+              if ((result as any).activated) {
+                // Saved card charged silently — already active in DB
+                await loadAll(activeBusiness);
+                Alert.alert('Urgent Alerts activated!', 'You can now broadcast urgent messages to every OneShetland user.');
+                return;
+              }
+
+              // Needs Payment Sheet (no saved card, or card requires action)
+              const intent = result as any;
+              if (!intent.paymentIntent || !intent.ephemeralKey || !intent.customer) {
+                throw new Error('Payment details missing — please try again.');
+              }
+              const { error: initError } = await initPaymentSheet({
+                merchantDisplayName:         'OneShetland',
+                customerId:                  intent.customer,
+                customerEphemeralKeySecret:  intent.ephemeralKey,
+                paymentIntentClientSecret:   intent.paymentIntent,
+                allowsDelayedPaymentMethods: false,
+                returnURL: 'oneshetland-fetch://stripe-redirect',
+              });
+              if (initError) throw new Error(initError.message);
+
+              const { error: sheetError } = await presentPaymentSheet();
+              if (sheetError) {
+                if (sheetError.code !== 'Canceled') {
+                  Alert.alert('Payment failed', sheetError.message);
+                }
+                return;
+              }
+
+              // Sheet completed — webhook will flip status; poll until it lands
+              let retries = 0;
+              const poll = async () => {
+                await loadAll(activeBusiness);
+                retries++;
+                if (retries < 6) setTimeout(poll, 2000);
+              };
+              await poll();
+
+              Alert.alert('Urgent Alerts activated!', 'You can now broadcast urgent messages to every OneShetland user.');
+            } catch (e: any) {
+              // Already active means a previous payment succeeded but the UI
+              // didn't refresh — just reload silently rather than showing an error
+              if (e.message?.toLowerCase().includes('already active')) {
+                await loadAll(activeBusiness);
+              } else {
+                Alert.alert('Error', e.message ?? 'Could not start payment');
+              }
+            } finally {
+              setAlertBusy(false);
+            }
+          }}
+        />
 
         {/* ── Offers — Pro+ only ── */}
         {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
@@ -1154,6 +1675,7 @@ export default function BusinessDashboardScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </View>
 
       <LoyaltyModal
         visible={showLoyaltyModal}
@@ -1165,6 +1687,420 @@ export default function BusinessDashboardScreen() {
     </SafeAreaView>
   );
 }
+
+// ── Urgent Alerts card ────────────────────────────────────────────────────────
+
+const ALERT_COLORS = {
+  emergency:  { color: '#FF3B30', bg: '#FFF2F1', label: 'Emergency',  icon: 'exclamation-triangle' },
+  disruption: { color: '#FF9500', bg: '#FFF8EC', label: 'Disruption', icon: 'exclamation-circle'   },
+  info:       { color: '#0A84FF', bg: '#EEF5FF', label: 'Info',       icon: 'info-circle'           },
+} as const;
+
+const DURATION_OPTIONS: { label: string; hours: number | null }[] = [
+  { label: '1h',      hours: 1    },
+  { label: '2h',      hours: 2    },
+  { label: '4h',      hours: 4    },
+  { label: '8h',      hours: 8    },
+  { label: '24h',     hours: 24   },
+  { label: 'No expiry', hours: null },
+];
+
+function AlertsCard({
+  access, activeAlerts, scheduledAlerts, business,
+  alertMessage, alertType, alertBusy, requestingAccess,
+  sendLater, scheduledFor, alertDuration,
+  onMessageChange, onTypeChange,
+  onToggleSendLater, onPickTime, onDurationChange,
+  onRequestAccess, onSendAlert, onCancelAlert, onActivate,
+}: {
+  access:             AlertAccess | null;
+  activeAlerts:       PartnerAlert[];
+  scheduledAlerts:    PartnerAlert[];
+  business:           LocalBusiness;
+  alertMessage:       string;
+  alertType:          AlertType;
+  alertBusy:          boolean;
+  requestingAccess:   boolean;
+  sendLater:          boolean;
+  scheduledFor:       Date | null;
+  alertDuration:      number | null;
+  onMessageChange:    (v: string) => void;
+  onTypeChange:       (t: AlertType) => void;
+  onToggleSendLater:  () => void;
+  onPickTime:         () => void;
+  onDurationChange:   (hours: number | null) => void;
+  onRequestAccess:    () => void;
+  onSendAlert:        () => void;
+  onCancelAlert:      (id: string) => void;
+  onActivate:         () => void;
+}) {
+  const router = useRouter();
+  const ALERT_RED = '#FF3B30';
+
+  return (
+    <View style={[alertStyles.card, activeAlerts.length > 0 && alertStyles.cardActive]}>
+      {/* Header */}
+      <View style={alertStyles.header}>
+        <View style={[alertStyles.iconWrap, { backgroundColor: ALERT_RED + '14' }]}>
+          <FontAwesome5 name="broadcast-tower" size={14} color={ALERT_RED} solid />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={alertStyles.title}>Urgent Alerts</Text>
+          <Text style={alertStyles.sub}>
+            {access?.status === 'active'
+              ? activeAlerts.length > 0 ? `${activeAlerts.length} alert live` : 'Send real-time alerts to all users'
+              : 'Broadcast urgent messages across OneShetland'}
+          </Text>
+        </View>
+        {activeAlerts.length > 0 && (
+          <View style={alertStyles.liveBadge}>
+            <View style={alertStyles.liveDot} />
+            <Text style={alertStyles.liveText}>LIVE</Text>
+          </View>
+        )}
+      </View>
+
+      {/* State: no access request yet */}
+      {!access && (
+        <View style={alertStyles.stateBox}>
+          <Text style={alertStyles.stateDesc}>
+            Instantly push urgent messages — ferry updates, event changes, road closures — to every OneShetland user. Requires approval from OneShetland and a £10/month add-on.
+          </Text>
+          <TouchableOpacity
+            style={[alertStyles.requestBtn, requestingAccess && { opacity: 0.6 }]}
+            onPress={onRequestAccess}
+            disabled={requestingAccess}
+            activeOpacity={0.85}
+          >
+            {requestingAccess
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={alertStyles.requestBtnText}>Request access</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* State: pending approval */}
+      {access?.status === 'requested' && (
+        <View style={[alertStyles.stateBox, { backgroundColor: '#FFF8EC', borderColor: '#FF9500' + '30' }]}>
+          <FontAwesome5 name="clock" size={18} color="#FF9500" />
+          <Text style={[alertStyles.stateDesc, { textAlign: 'center' }]}>
+            Your request is with OneShetland for review. You'll be notified once approved.
+          </Text>
+        </View>
+      )}
+
+      {/* State: approved but not yet paying */}
+      {access?.status === 'approved' && (
+        <View style={[alertStyles.stateBox, { backgroundColor: '#F0FBF3', borderColor: '#34C759' + '40' }]}>
+          <FontAwesome5 name="check-circle" size={18} color="#34C759" />
+          <Text style={[alertStyles.stateDesc, { textAlign: 'center' }]}>
+            Approved! Activate the £10/month add-on to start sending alerts.
+          </Text>
+          <TouchableOpacity
+            style={[alertStyles.activateBtn, alertBusy && { opacity: 0.7 }]}
+            activeOpacity={0.85}
+            onPress={onActivate}
+            disabled={alertBusy}
+          >
+            {alertBusy ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <FontAwesome5 name="lock-open" size={11} color="#fff" />
+                <Text style={alertStyles.activateBtnText}>Activate — £10/month</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* State: active — compose + active alerts */}
+      {access?.status === 'active' && (
+        <View style={alertStyles.activeArea}>
+          {/* Active alerts */}
+          {activeAlerts.map(a => {
+            const meta = ALERT_COLORS[a.type];
+            return (
+              <View key={a.id} style={[alertStyles.activeAlert, { backgroundColor: meta.bg, borderColor: meta.color + '40' }]}>
+                <View style={[alertStyles.alertColorBar, { backgroundColor: meta.color }]} />
+                <FontAwesome5 name={meta.icon} size={12} color={meta.color} solid style={{ marginRight: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[alertStyles.alertTypeBadge, { color: meta.color }]}>{meta.label.toUpperCase()}</Text>
+                  <Text style={alertStyles.alertMsg} numberOfLines={2}>{a.message}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => Alert.alert('Cancel alert?', 'It will be removed from the app immediately.', [
+                    { text: 'Keep', style: 'cancel' },
+                    { text: 'Cancel alert', style: 'destructive', onPress: () => onCancelAlert(a.id) },
+                  ])}
+                  hitSlop={10}
+                >
+                  <FontAwesome5 name="times" size={12} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+
+          {/* View all link */}
+          <TouchableOpacity
+            style={alertStyles.viewAllRow}
+            onPress={() => router.push({ pathname: '/business-alerts', params: { businessId: business.id, businessName: business.name } } as any)}
+          >
+            <Text style={alertStyles.viewAllText}>View all alerts & history</Text>
+            <FontAwesome5 name="chevron-right" size={10} color={colors.accent} />
+          </TouchableOpacity>
+
+          {/* Compose */}
+          <Text style={alertStyles.composeLabel}>Send a new alert</Text>
+
+          {/* Type selector */}
+          <View style={alertStyles.typeRow}>
+            {(Object.entries(ALERT_COLORS) as [AlertType, typeof ALERT_COLORS[AlertType]][]).map(([key, meta]) => (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  alertStyles.typeChip,
+                  alertType === key && { backgroundColor: meta.color, borderColor: meta.color },
+                ]}
+                onPress={() => onTypeChange(key)}
+                activeOpacity={0.8}
+              >
+                <FontAwesome5 name={meta.icon} size={9} color={alertType === key ? '#fff' : meta.color} solid />
+                <Text style={[alertStyles.typeChipText, { color: alertType === key ? '#fff' : meta.color }]}>
+                  {meta.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Scheduled alerts */}
+          {scheduledAlerts.length > 0 && (
+            <View style={alertStyles.scheduledSection}>
+              <Text style={alertStyles.composeLabel}>SCHEDULED</Text>
+              {scheduledAlerts.map(a => {
+                const meta = ALERT_COLORS[a.type];
+                const when = new Date(a.starts_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+                return (
+                  <View key={a.id} style={[alertStyles.activeAlert, { backgroundColor: meta.bg, borderColor: meta.color + '40' }]}>
+                    <View style={[alertStyles.alertColorBar, { backgroundColor: meta.color }]} />
+                    <FontAwesome5 name="clock" size={12} color={meta.color} style={{ marginRight: 2 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[alertStyles.alertTypeBadge, { color: meta.color }]}>SCHEDULED · {when}</Text>
+                      <Text style={alertStyles.alertMsg} numberOfLines={2}>{a.message}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => Alert.alert('Cancel scheduled alert?', 'It will be deleted and never sent.', [
+                        { text: 'Keep', style: 'cancel' },
+                        { text: 'Delete', style: 'destructive', onPress: () => onCancelAlert(a.id) },
+                      ])}
+                      hitSlop={10}
+                    >
+                      <FontAwesome5 name="times" size={12} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Message input */}
+          <TextInput
+            style={alertStyles.messageInput}
+            placeholder="What do people need to know right now?"
+            placeholderTextColor={colors.textLight}
+            value={alertMessage}
+            onChangeText={onMessageChange}
+            multiline
+            maxLength={200}
+          />
+          <Text style={alertStyles.charCount}>{alertMessage.length}/200</Text>
+
+          {/* Duration selector */}
+          <View style={{ gap: 6 }}>
+            <Text style={alertStyles.composeLabel}>LASTS FOR</Text>
+            <View style={alertStyles.durationRow}>
+              {DURATION_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={String(opt.hours)}
+                  style={[alertStyles.durationChip, alertDuration === opt.hours && alertStyles.durationChipActive]}
+                  onPress={() => onDurationChange(opt.hours)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[alertStyles.durationChipText, alertDuration === opt.hours && alertStyles.durationChipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Send Later toggle */}
+          <TouchableOpacity style={alertStyles.sendLaterRow} onPress={onToggleSendLater} activeOpacity={0.7}>
+            <View style={{ flex: 1 }}>
+              <Text style={alertStyles.sendLaterLabel}>Send later</Text>
+              {sendLater && scheduledFor && (
+                <TouchableOpacity onPress={onPickTime} hitSlop={6}>
+                  <Text style={alertStyles.sendLaterTime}>
+                    {scheduledFor.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} · change
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {sendLater && !scheduledFor && (
+                <TouchableOpacity onPress={onPickTime} hitSlop={6}>
+                  <Text style={[alertStyles.sendLaterTime, { color: colors.accent }]}>Tap to pick a time →</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Switch
+              value={sendLater}
+              onValueChange={onToggleSendLater}
+              trackColor={{ true: colors.accent, false: colors.border }}
+              thumbColor="#fff"
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              alertStyles.sendBtn,
+              { backgroundColor: sendLater ? colors.navy : ALERT_COLORS[alertType].color },
+              (!alertMessage.trim() || alertBusy || (sendLater && !scheduledFor)) && { opacity: 0.5 },
+            ]}
+            onPress={onSendAlert}
+            disabled={!alertMessage.trim() || alertBusy || (sendLater && !scheduledFor)}
+            activeOpacity={0.85}
+          >
+            {alertBusy
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <>
+                  <FontAwesome5 name={sendLater ? 'clock' : 'broadcast-tower'} size={12} color="#fff" solid />
+                  <Text style={alertStyles.sendBtnText}>{sendLater ? 'Schedule alert' : 'Broadcast alert'}</Text>
+                </>
+            }
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const alertStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 14,
+    marginBottom: 0,
+  },
+  cardActive: {
+    borderColor: '#FF3B30' + '40',
+    borderWidth: 1.5,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  iconWrap: {
+    width: 38, height: 38, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  title: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  sub:   { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
+  liveBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#FF3B30' + '12',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full,
+  },
+  liveDot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF3B30' },
+  liveText: { fontSize: 9, fontWeight: '900', letterSpacing: 1, color: '#FF3B30' },
+
+  stateBox: {
+    backgroundColor: colors.screenBackground,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, gap: 12, alignItems: 'center',
+  },
+  stateDesc: {
+    fontSize: fontSize.sm, color: colors.textSecondary,
+    lineHeight: 19, textAlign: 'left',
+  },
+  requestBtn: {
+    backgroundColor: colors.navy,
+    borderRadius: radius.md, paddingVertical: 11, paddingHorizontal: 20,
+    alignSelf: 'stretch', alignItems: 'center',
+  },
+  requestBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+  activateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: '#34C759', borderRadius: radius.md,
+    paddingVertical: 11, paddingHorizontal: 20, alignSelf: 'stretch', justifyContent: 'center',
+  },
+  activateBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+
+  activeArea: { gap: 10 },
+  activeAlert: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderRadius: radius.md, borderWidth: 1,
+    paddingVertical: 10, paddingRight: 12, overflow: 'hidden',
+  },
+  alertColorBar:  { width: 4, alignSelf: 'stretch', minHeight: 36 },
+  alertTypeBadge: { fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  alertMsg:       { fontSize: fontSize.xs, color: colors.textPrimary, fontWeight: '600', marginTop: 1 },
+
+  composeLabel: {
+    fontSize: fontSize.xs, fontWeight: '900', color: colors.textMuted,
+    letterSpacing: 0.5, marginTop: 4,
+  },
+  typeRow: { flexDirection: 'row', gap: 8 },
+  typeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: '#fff',
+  },
+  typeChipText: { fontSize: 11, fontWeight: '800' },
+
+  messageInput: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    padding: 12, fontSize: fontSize.sm, color: colors.textPrimary,
+    minHeight: 80, textAlignVertical: 'top',
+    backgroundColor: colors.screenBackground,
+  },
+  charCount: { fontSize: 10, color: colors.textLight, textAlign: 'right', marginTop: -6 },
+  sendBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 13, borderRadius: radius.md,
+  },
+  sendBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '900' },
+
+  scheduledSection: { gap: 8 },
+
+  viewAllRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
+    paddingVertical: 4,
+  },
+  viewAllText: { fontSize: fontSize.xs, color: colors.accent, fontWeight: '700' },
+
+  durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  durationChip: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: '#fff',
+  },
+  durationChipActive: { borderColor: colors.navy, backgroundColor: colors.navy },
+  durationChipText:   { fontSize: 11, fontWeight: '700', color: colors.textMuted },
+  durationChipTextActive: { color: '#fff' },
+
+  sendLaterRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, paddingHorizontal: 12,
+    backgroundColor: colors.screenBackground,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    gap: 12,
+  },
+  sendLaterLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
+  sendLaterTime:  { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+});
 
 // ── Wallet payments received card ────────────────────────────────────────────
 //
@@ -1524,6 +2460,13 @@ const styles = StyleSheet.create({
   bookActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   bookActionBtn:  { flexGrow: 1, flexBasis: '47%', minWidth: 130, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 8, borderRadius: radius.md, borderWidth: 1.5, backgroundColor: '#fff' },
   bookActionText: { fontSize: fontSize.xs, fontWeight: '800' },
+  evRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  evDatePill:  { borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 4, minWidth: 72, alignItems: 'center' },
+  evDateText:  { fontSize: 10, fontWeight: '800' },
+  evTimeText:  { fontSize: 9, fontWeight: '600', opacity: 0.8 },
+  evTitle:     { flex: 1, fontSize: fontSize.xs, fontWeight: '700', color: colors.textPrimary },
+  evActions:   { flexDirection: 'row', gap: 6 },
+  evBtn:       { width: 30, height: 30, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
 
   offerLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border },
   offerLineTitle: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textPrimary },
@@ -1540,6 +2483,20 @@ const styles = StyleSheet.create({
 
   emptyIcon:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },
+
+  // Add-ons card
+  addonGroup:       { marginTop: 14, gap: 2 },
+  addonRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  addonIconWrap:    { width: 30, height: 30, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  addonLabel:       { fontSize: fontSize.xs, fontWeight: '800', color: colors.textPrimary },
+  addonDesc:        { fontSize: 10, color: colors.textMuted, lineHeight: 14 },
+  addonBadge:       { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
+  addonBadgeText:   { fontSize: 9, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.4 },
+  addonUpgradeBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 10, padding: 10,
+    backgroundColor: '#F3F0FF', borderRadius: radius.md, borderWidth: 1, borderColor: PREMIUM_PURPLE + '25',
+  },
+  addonUpgradeText: { flex: 1, fontSize: fontSize.xs, color: colors.textPrimary, lineHeight: 17 },
 });
 
 const modalStyles = StyleSheet.create({

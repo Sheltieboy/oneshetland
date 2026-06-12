@@ -20,7 +20,15 @@ import {
 // ── Types — keep the same shape the screen already renders ──────────────────
 
 export type HomeEvent   = SampleEvent   & { source: 'db' | 'seed' };
-export type HomeNotice  = SampleNotice  & { source: 'db' | 'seed' };
+export type HomeNotice  = SampleNotice  & {
+  source:       'db' | 'seed';
+  // Publisher branding (hub or business) + optional linked campaign.
+  logo_url?:    string | null;
+  brand_color?: string | null;
+  hub_id?:      string | null;
+  campaign_id?: string | null;
+  campaign?:    { id: string; raised_pence: number; goal_pence: number; donor_count: number; status: string } | null;
+};
 export type HomeJob     = SampleJob     & { source: 'db' | 'seed' };
 export type HomeShift   = SampleShift   & { source: 'db' | 'seed' };
 
@@ -48,10 +56,11 @@ export async function fetchHomeEvents(limit = 6): Promise<HomeEvent[]> {
   try {
     const { data, error } = await supabase
       .from('events')
-      .select('id, title, starts_at, venue, category')
+      .select('id, title, starts_at, venue, category, cover_url, is_featured, price_text, has_tickets')
       .eq('is_hidden', false)
       .gte('starts_at', new Date().toISOString())
-      .order('starts_at', { ascending: true })
+      .order('is_featured', { ascending: false })
+      .order('starts_at',   { ascending: true })
       .limit(limit);
     if (!error && data && data.length > 0) {
       return data.map((r: any) => ({ ...r, source: 'db' }));
@@ -76,8 +85,13 @@ export async function fetchHomeNotices(opts: {
   try {
     const { data, error } = await supabase
       .from('notices')
-      .select('id, severity, title, body, locality, published_at, publisher_business_id, publisher_user_id')
+      .select(`id, severity, title, body, locality, published_at,
+               publisher_business_id, publisher_user_id, publisher_hub_id, campaign_id,
+               hub:hubs ( id, name, logo_url, brand_color ),
+               business:local_businesses ( name, logo_url, brand_color ),
+               campaign:hub_campaigns ( id, raised_pence, goal_pence, donor_count, status )`)
       .eq('is_hidden', false)
+      .eq('visibility', 'public')   // never surface members-only hub notices in the public feed
       .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
       .order('is_pinned',    { ascending: false })
       .order('published_at', { ascending: false })
@@ -103,7 +117,14 @@ export async function fetchHomeNotices(opts: {
         body:      r.body ?? '',
         locality:  r.locality,
         posted_at: r.published_at,
-        publisher: r.publisher_business_id ? 'Local business' : 'Member',
+        // Real publisher name + branding (hub or business), falling back to a label.
+        publisher: r.hub?.name ?? r.business?.name
+                 ?? (r.publisher_hub_id ? 'Community hub' : r.publisher_business_id ? 'Local business' : 'Member'),
+        logo_url:    r.hub?.logo_url ?? r.business?.logo_url ?? null,
+        brand_color: r.hub?.brand_color ?? r.business?.brand_color ?? null,
+        hub_id:      r.hub?.id ?? null,
+        campaign_id: r.campaign_id ?? null,
+        campaign:    r.campaign ?? null,
         source:    'db' as const,
       }));
     }

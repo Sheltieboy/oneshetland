@@ -15,6 +15,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
@@ -32,6 +33,7 @@ const S = SECTIONS.local;
 export default function LocalHub() {
   const router      = useRouter();
   const { profile } = useAuth();
+  const { sidePadding } = useAppLayout();
 
   // Marketplace tab is pure discovery — no user-owned wallet items shown
   // (those live in My Wallet). Only browse-able data is fetched here.
@@ -82,7 +84,7 @@ export default function LocalHub() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingHorizontal: Math.max(spacing.lg, sidePadding) }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
       >
 
@@ -266,9 +268,10 @@ function ActionTile({ icon, label, sub, onPress }: {
 
 function MiniBookableCard({ business }: { business: LocalBusiness }) {
   const router = useRouter();
+  const { cardWidth } = useAppLayout();
   return (
     <TouchableOpacity
-      style={styles.miniBookable}
+      style={[styles.miniBookable, { width: cardWidth(0.42) }]}
       onPress={() => router.push({ pathname: '/local-book-business', params: { businessId: business.id } })}
       activeOpacity={0.85}
     >
@@ -293,10 +296,11 @@ function MiniBookableCard({ business }: { business: LocalBusiness }) {
 
 function OfferCard({ offer }: { offer: LocalOffer }) {
   const router = useRouter();
+  const { cardWidth } = useAppLayout();
   const days = daysRemaining(offer.valid_until);
   return (
     <TouchableOpacity
-      style={styles.offerCard}
+      style={[styles.offerCard, { width: cardWidth(0.55) }]}
       onPress={() => {
         if (offer.business && isBookableLive(offer.business)) {
           router.push({ pathname: '/local-book-business', params: { businessId: offer.business_id } });
@@ -327,9 +331,10 @@ function OfferCard({ offer }: { offer: LocalOffer }) {
 
 function UnitCard({ item }: { item: UnitItemWithBusiness }) {
   const router = useRouter();
+  const { cardWidth } = useAppLayout();
   return (
     <TouchableOpacity
-      style={styles.offerCard}
+      style={[styles.offerCard, { width: cardWidth(0.55) }]}
       onPress={() => router.push({ pathname: '/local-buy-unit', params: { itemId: item.id } })}
       activeOpacity={0.85}
     >

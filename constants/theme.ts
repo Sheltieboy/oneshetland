@@ -104,6 +104,28 @@ export const fontWeight = {
   heavy: '800' as const,
 };
 
+// ── Responsive layout ─────────────────────────────────────────────────────────
+// Use these instead of hardcoded widths so the app adapts to iPad.
+// TABLET_BREAKPOINT: screens wider than this are treated as tablets.
+// MAX_CONTENT_WIDTH:  content never stretches wider than this even on large iPads.
+// CARD_COLUMNS(w):    how many grid columns to use at a given screen width.
+
+export const TABLET_BREAKPOINT = 768;
+export const MAX_CONTENT_WIDTH = 840;
+/** Width of the persistent left navigation rail shown on tablets. */
+export const SIDEBAR_WIDTH = 240;
+
+export function isTabletWidth(screenWidth: number): boolean {
+  return screenWidth >= TABLET_BREAKPOINT;
+}
+
+/** Centred content container style — apply to ScrollView contentContainerStyle */
+export function contentContainer(screenWidth: number): object {
+  if (screenWidth <= MAX_CONTENT_WIDTH) return {};
+  const h = (screenWidth - MAX_CONTENT_WIDTH) / 2;
+  return { paddingHorizontal: h };
+}
+
 export const shadow = {
   xs: {
     shadowColor: '#0F1C26',

@@ -48,10 +48,25 @@ const REACTIONS: { kind: ReactionKind; icon: string; label: string }[] = [
   { kind: 'scroll',  icon: 'scroll',    label: 'Heritage'  },
 ];
 
-export default function MemoryDetailScreen() {
+export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
+  idOverride?: string;
+  embedded?: boolean;
+  onClose?: () => void;
+} = {}) {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: routeId } = useLocalSearchParams<{ id: string }>();
+  const id = idOverride ?? routeId;
   const { profile } = useAuth();
+
+  // Close: in embedded (right-pane) mode hand control back to the host;
+  // otherwise pop the navigation stack.
+  const goBack = useCallback(() => {
+    if (onClose) onClose();
+    else if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/memories');
+  }, [onClose, router]);
+
+  const edges = embedded ? [] as const : ['top'] as const;
 
   const [memory, setMemory] = useState<Memory | null>(null);
   const [loading, setLoading] = useState(true);
@@ -213,7 +228,7 @@ export default function MemoryDetailScreen() {
           onPress: async () => {
             try {
               await deleteMemory(memory.id);
-              router.back();
+              goBack();
             } catch (err: any) {
               Alert.alert('Failed', err?.message ?? '');
             }
@@ -227,7 +242,7 @@ export default function MemoryDetailScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, styles.centerFill]}>
+      <SafeAreaView style={[styles.container, styles.centerFill]} edges={edges}>
         <ActivityIndicator color={SECTION.color} />
       </SafeAreaView>
     );
@@ -235,10 +250,10 @@ export default function MemoryDetailScreen() {
 
   if (!memory) {
     return (
-      <SafeAreaView style={[styles.container, styles.centerFill]}>
-        <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={[styles.container, styles.centerFill]} edges={edges}>
+        {!embedded && <Stack.Screen options={{ headerShown: false }} />}
         <Text style={styles.bodyText}>Memory not found.</Text>
-        <TouchableOpacity onPress={() => router.back()} style={[styles.actionBtn, { marginTop: spacing.md }]}>
+        <TouchableOpacity onPress={goBack} style={[styles.actionBtn, { marginTop: spacing.md }]}>
           <Text style={styles.actionBtnText}>Go back</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -246,8 +261,8 @@ export default function MemoryDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <Stack.Screen options={{ headerShown: false }} />
+    <SafeAreaView style={styles.container} edges={edges}>
+      {!embedded && <Stack.Screen options={{ headerShown: false }} />}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -261,8 +276,8 @@ export default function MemoryDetailScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} hitSlop={10}>
-            <FontAwesome5 name="chevron-left" size={18} color={colors.textPrimary} />
+          <TouchableOpacity onPress={goBack} style={styles.iconBtn} hitSlop={10}>
+            <FontAwesome5 name={embedded ? 'times' : 'chevron-left'} size={18} color={colors.textPrimary} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             {memory.place_name ? (

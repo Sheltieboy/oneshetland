@@ -16,7 +16,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { NavRail } from '@/components/NavRail';
+import { GameArt } from '@/components/GameArt';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -30,6 +33,7 @@ const S = SECTIONS.games;
 export default function GamesCentre() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { isTablet } = useAppLayout();
 
   const [stats, setStats]         = useState<UserGameStats | null>(null);
   const [bestSprint, setBestSprint] = useState<number>(0);
@@ -79,8 +83,97 @@ export default function GamesCentre() {
   const xpNeeded  = xpToNext - xpForLevel(level);
   const progress  = Math.max(0, Math.min(1, xpInLevel / xpNeeded));
 
+  const GAME_TILES: { game: typeof GAMES[GameId]; best: number; accent: string; route: string }[] = [
+    { game: GAMES.spik_sprint,   best: bestSprint, accent: '#10B981', route: '/games/spik-sprint' },
+    { game: GAMES.spik_snap,     best: bestSnap,   accent: '#F59E0B', route: '/games/spik-snap' },
+    { game: GAMES.guess_da_wird, best: bestWird,   accent: '#0EA5E9', route: '/games/guess-da-wird' },
+    { game: GAMES.map_it,        best: bestMapIt,  accent: '#12B3D6', route: '/games/map-it' },
+  ];
+
+  const pickGameSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Pick a game</Text>
+      <View style={isTablet ? styles.gameGrid : { gap: 10 }}>
+        {GAME_TILES.map(t => (
+          isTablet ? (
+            <GameCard key={t.game.id} game={t.game} best={t.best} accent={t.accent}
+              onPress={() => { Haptics.selectionAsync(); router.push(t.route as any); }} />
+          ) : (
+            <GameRow key={t.game.id} game={t.game} best={t.best} accent={t.accent}
+              onPress={() => { Haptics.selectionAsync(); router.push(t.route as any); }} />
+          )
+        ))}
+      </View>
+    </View>
+  );
+
+  const leaderboardSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Leaderboard</Text>
+      <View style={styles.lbSwitch}>
+        {(['spik_sprint', 'spik_snap', 'guess_da_wird', 'map_it'] as const).map(gid => {
+          const active = leaderboardGame === gid;
+          return (
+            <TouchableOpacity key={gid}
+              style={[styles.lbSwitchBtn, active && { backgroundColor: S.color, borderColor: S.color }]}
+              onPress={() => { Haptics.selectionAsync(); setLeaderboardGame(gid); }}>
+              <GameArt id={gid} size={18} radius={5} />
+              <Text style={[styles.lbSwitchBtnText, active && { color: '#fff' }]}>{GAMES[gid].label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {loading ? (
+        <ActivityIndicator color={S.color} style={{ marginTop: 16 }} />
+      ) : leaderboard.length === 0 ? (
+        <View style={styles.lbEmpty}><Text style={styles.lbEmptyText}>No scores yet — be the first!</Text></View>
+      ) : (
+        <View style={styles.lbList}>
+          {leaderboard.map((row, i) => (
+            <View key={row.user_id} style={[styles.lbRow, i === 0 && styles.lbRowFirst]}>
+              <View style={[styles.lbRank, i === 0 && { backgroundColor: '#FBBF24' }]}>
+                <Text style={[styles.lbRankText, i === 0 && { color: '#fff' }]}>{i + 1}</Text>
+              </View>
+              <Text style={styles.lbName} numberOfLines={1}>
+                {row.games_handle ?? 'Anon'}
+                {profile?.id === row.user_id && (<Text style={[styles.lbYou, { color: S.color }]}> · you</Text>)}
+              </Text>
+              <Text style={styles.lbScore}>{row.best_score}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
+  const comingSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Coming soon</Text>
+      <View style={styles.comingGrid}>
+        {[
+          { icon: 'users',          label: 'Family Mode',  sub: 'Asymmetric difficulty' },
+          { icon: 'map-marked-alt', label: 'Wird Hunt',    sub: 'Geolocation game' },
+          { icon: 'school',         label: 'Class Mode',   sub: 'For Shetland schools' },
+          { icon: 'sword',          label: 'Spik Duel',    sub: 'Real-time 1v1' },
+          { icon: 'volume-up',      label: 'Hear-da-Wird', sub: 'Audio pronunciation' },
+          { icon: 'trophy',         label: 'Tournaments',  sub: 'Weekly prizes' },
+        ].map(item => (
+          <View key={item.label} style={styles.comingCard}>
+            <View style={[styles.comingIcon, { backgroundColor: S.light }]}>
+              <FontAwesome5 name={item.icon as any} size={13} color={S.color} solid />
+            </View>
+            <Text style={styles.comingLabel}>{item.label}</Text>
+            <Text style={styles.comingSub}>{item.sub}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <NavRail />
+      <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
 
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: S.color }]}>
@@ -106,6 +199,7 @@ export default function GamesCentre() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
       >
+        <View style={isTablet ? styles.inner : undefined}>
 
         {/* ── Stats card ── */}
         {profile ? (
@@ -172,122 +266,26 @@ export default function GamesCentre() {
           </View>
         )}
 
-        {/* ── Available games ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pick a game</Text>
-          <View style={{ gap: 10 }}>
-            <GameRow
-              game={GAMES.spik_sprint}
-              best={bestSprint}
-              accent="#10B981"
-              onPress={() => {
-                Haptics.selectionAsync();
-                router.push('/games/spik-sprint');
-              }}
-            />
-            <GameRow
-              game={GAMES.spik_snap}
-              best={bestSnap}
-              accent="#F59E0B"
-              onPress={() => {
-                Haptics.selectionAsync();
-                router.push('/games/spik-snap');
-              }}
-            />
-            <GameRow
-              game={GAMES.guess_da_wird}
-              best={bestWird}
-              accent="#0EA5E9"
-              onPress={() => {
-                Haptics.selectionAsync();
-                router.push('/games/guess-da-wird');
-              }}
-            />
-            <GameRow
-              game={GAMES.map_it}
-              best={bestMapIt}
-              accent="#12B3D6"
-              onPress={() => {
-                Haptics.selectionAsync();
-                router.push('/games/map-it' as any);
-              }}
-            />
-          </View>
-        </View>
-
-        {/* ── Leaderboard ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Leaderboard</Text>
-
-          {/* Game switcher */}
-          <View style={styles.lbSwitch}>
-            {(['spik_sprint', 'spik_snap', 'guess_da_wird', 'map_it'] as const).map(gid => {
-              const active = leaderboardGame === gid;
-              return (
-                <TouchableOpacity
-                  key={gid}
-                  style={[styles.lbSwitchBtn, active && { backgroundColor: S.color, borderColor: S.color }]}
-                  onPress={() => { Haptics.selectionAsync(); setLeaderboardGame(gid); }}
-                >
-                  <Text style={[styles.lbSwitchBtnText, active && { color: '#fff' }]}>
-                    {GAMES[gid].label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {loading ? (
-            <ActivityIndicator color={S.color} style={{ marginTop: 16 }} />
-          ) : leaderboard.length === 0 ? (
-            <View style={styles.lbEmpty}>
-              <Text style={styles.lbEmptyText}>No scores yet — be the first!</Text>
+        {isTablet ? (
+          <View style={styles.gColumns}>
+            <View style={styles.gMain}>{pickGameSection}</View>
+            <View style={styles.gSide}>
+              {leaderboardSection}
+              {comingSection}
             </View>
-          ) : (
-            <View style={styles.lbList}>
-              {leaderboard.map((row, i) => (
-                <View key={row.user_id} style={[styles.lbRow, i === 0 && styles.lbRowFirst]}>
-                  <View style={[styles.lbRank, i === 0 && { backgroundColor: '#FBBF24' }]}>
-                    <Text style={[styles.lbRankText, i === 0 && { color: '#fff' }]}>{i + 1}</Text>
-                  </View>
-                  <Text style={styles.lbName} numberOfLines={1}>
-                    {row.games_handle ?? 'Anon'}
-                    {profile?.id === row.user_id && (
-                      <Text style={[styles.lbYou, { color: S.color }]}> · you</Text>
-                    )}
-                  </Text>
-                  <Text style={styles.lbScore}>{row.best_score}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* ── Coming soon ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Coming soon</Text>
-          <View style={styles.comingGrid}>
-            {[
-              { icon: 'users',        label: 'Family Mode',   sub: 'Asymmetric difficulty' },
-              { icon: 'map-marked-alt', label: 'Wird Hunt',   sub: 'Geolocation game' },
-              { icon: 'school',       label: 'Class Mode',    sub: 'For Shetland schools' },
-              { icon: 'sword',        label: 'Spik Duel',     sub: 'Real-time 1v1' },
-              { icon: 'volume-up',    label: 'Hear-da-Wird',  sub: 'Audio pronunciation' },
-              { icon: 'trophy',       label: 'Tournaments',   sub: 'Weekly prizes' },
-            ].map(item => (
-              <View key={item.label} style={styles.comingCard}>
-                <View style={[styles.comingIcon, { backgroundColor: S.light }]}>
-                  <FontAwesome5 name={item.icon as any} size={13} color={S.color} solid />
-                </View>
-                <Text style={styles.comingLabel}>{item.label}</Text>
-                <Text style={styles.comingSub}>{item.sub}</Text>
-              </View>
-            ))}
           </View>
+        ) : (
+          <>
+            {pickGameSection}
+            {leaderboardSection}
+            {comingSection}
+          </>
+        )}
         </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -309,9 +307,7 @@ function GameRow({
       activeOpacity={0.85}
       disabled={!game.live}
     >
-      <View style={[styles.gameIcon, { backgroundColor: accent + '20' }]}>
-        <FontAwesome5 name={game.icon as any} size={18} color={accent} solid />
-      </View>
+      <GameArt id={game.id} size={56} radius={16} />
       <View style={{ flex: 1 }}>
         <View style={styles.gameTitleRow}>
           <Text style={styles.gameLabel}>{game.label}</Text>
@@ -327,6 +323,42 @@ function GameRow({
         )}
       </View>
       <FontAwesome5 name="chevron-right" size={12} color={colors.textLight} />
+    </TouchableOpacity>
+  );
+}
+
+// ── Game card (tablet grid) ───────────────────────────────────────────────────
+
+function GameCard({ game, best, accent, onPress }: {
+  game: typeof GAMES[GameId]; best: number | null; accent: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.gameCard, { borderColor: accent + '33' }, !game.live && { opacity: 0.6 }]}
+      onPress={onPress} activeOpacity={0.9} disabled={!game.live}
+    >
+      <View style={[styles.gameCardArt, { backgroundColor: accent + '14' }]}>
+        <GameArt id={game.id} size={64} radius={18} />
+      </View>
+      <View style={styles.gameTitleRow}>
+        <Text style={styles.gameLabel}>{game.label}</Text>
+        {!game.live && <View style={styles.soonPill}><Text style={styles.soonPillText}>Soon</Text></View>}
+      </View>
+      <Text style={styles.gameDesc} numberOfLines={2}>{game.description}</Text>
+      <View style={styles.gameCardFoot}>
+        {game.live && best !== null && best > 0 ? (
+          <View style={[styles.bestBadge, { backgroundColor: accent + '18' }]}>
+            <FontAwesome5 name="star" size={9} color={accent} solid />
+            <Text style={[styles.bestBadgeText, { color: accent }]}>Best {best}</Text>
+          </View>
+        ) : <View />}
+        {game.live ? (
+          <View style={[styles.playPill, { backgroundColor: accent }]}>
+            <FontAwesome5 name="play" size={9} color="#fff" solid />
+            <Text style={styles.playPillText}>Play</Text>
+          </View>
+        ) : null}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -396,6 +428,23 @@ const styles = StyleSheet.create({
   signInBtn:   { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.full },
   signInBtnText: { color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
 
+  // Tablet centring + game grid
+  inner:    { maxWidth: 1040, width: '100%', alignSelf: 'center' },
+  gColumns: { flexDirection: 'row', alignItems: 'flex-start' },
+  gMain:    { flex: 1 },
+  gSide:    { width: 380 },
+  gameGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  gameCard: {
+    width: '48.5%', backgroundColor: '#fff', borderRadius: radius.xl,
+    borderWidth: 1, padding: spacing.md, gap: 8,
+  },
+  gameCardArt: { width: 78, height: 78, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  gameCardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  bestBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
+  bestBadgeText: { fontSize: 11, fontWeight: '800' },
+  playPill: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 7 },
+  playPillText: { color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
+
   // Section
   section:      { paddingHorizontal: spacing.md, marginTop: spacing.lg },
   sectionTitle: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary, marginBottom: 12 },
@@ -415,8 +464,8 @@ const styles = StyleSheet.create({
   soonPillText: { fontSize: 9, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   // Leaderboard
-  lbSwitch:     { flexDirection: 'row', gap: 6, marginBottom: 12 },
-  lbSwitchBtn:  { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff', borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border },
+  lbSwitch:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  lbSwitchBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff', borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border },
   lbSwitchBtnText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted },
 
   lbList:    { backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },

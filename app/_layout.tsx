@@ -167,6 +167,14 @@ function RootNavigator() {
           <Stack.Screen name="(admin)" />
           <Stack.Screen name="account" />
           <Stack.Screen name="home" />
+          <Stack.Screen
+            name="search"
+            options={{
+              presentation: 'modal',
+              animation: 'slide_from_bottom',
+              gestureEnabled: true,
+            }}
+          />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="spik-detail" />
           <Stack.Screen name="spik-suggest" />
@@ -182,6 +190,24 @@ function RootNavigator() {
           <Stack.Screen name="local-businesses-browse" />
           <Stack.Screen name="local-business-detail" />
           <Stack.Screen name="local-business-register" />
+          <Stack.Screen name="business-claim" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="hubs/index" options={{ animation: 'none', gestureEnabled: false }} />
+          <Stack.Screen name="hubs/[id]" />
+          <Stack.Screen name="hub-register" />
+          <Stack.Screen name="hub-admin" />
+          <Stack.Screen name="hub-members" />
+          <Stack.Screen name="hub-notices-manage" />
+          <Stack.Screen name="hub-membership-types" />
+          <Stack.Screen name="hub-my-memberships" />
+          <Stack.Screen name="hub-directory" />
+          <Stack.Screen name="hub-documents" />
+          <Stack.Screen name="hub-broadcast" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="hub-campaigns" />
+          <Stack.Screen name="hub-campaign" />
+          <Stack.Screen name="hub-donate" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="give/[id]" />
+          <Stack.Screen name="notices" />
+          <Stack.Screen name="hub-notice-compose" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="local-business-dashboard" />
           <Stack.Screen name="local-my-cards" />
           <Stack.Screen name="local-my-passes" />
@@ -194,8 +220,25 @@ function RootNavigator() {
           <Stack.Screen name="nfc/[token]" />
           <Stack.Screen name="t/[token]" />
           <Stack.Screen name="g/[code]" />
+          <Stack.Screen name="b/[slug]" />
+          <Stack.Screen name="events/[id]" />
+          <Stack.Screen name="event-create" />
+          <Stack.Screen name="event-manage" />
+          <Stack.Screen name="event-scanner" />
+          <Stack.Screen
+            name="event-ticket-checkout"
+            options={{
+              presentation: 'formSheet',
+              sheetGrabberVisible: true,
+              sheetCornerRadius: 24,
+              sheetAllowedDetents: [0.7, 1],
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen name="my-event-tickets" />
+          <Stack.Screen name="my-event-ticket" />
           <Stack.Screen name="driver/connect-return" />
-          <Stack.Screen name="games/index" />
+          <Stack.Screen name="games/index" options={{ animation: 'none', gestureEnabled: false }} />
           <Stack.Screen name="games/spik-sprint" />
           <Stack.Screen name="games/spik-snap" />
           <Stack.Screen name="games/guess-da-wird" />

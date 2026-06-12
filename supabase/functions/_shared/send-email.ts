@@ -75,7 +75,7 @@ export async function sendEmail(
 
   // ── 3. Interpolate {{variables}} ──────────────────────────────────────────
   const subject  = interpolate(tmpl.subject,   variables);
-  const bodyHtml = interpolate(tmpl.body_html, variables);
+  const bodyHtml = interpolateHtml(tmpl.body_html, variables); // values HTML-escaped
   const bodyText = tmpl.body_text ? interpolate(tmpl.body_text, variables) : htmlToText(bodyHtml);
 
   // ── 4. Build footer HTML ──────────────────────────────────────────────────
@@ -139,6 +139,30 @@ function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
 
+/** Escape a value for safe insertion into HTML. */
+function escapeHtml(s: unknown): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Only allow http(s) URLs in href attributes (blocks javascript:/data: URIs). */
+function safeUrl(u: unknown): string {
+  const s = String(u ?? '').trim();
+  return /^https?:\/\//i.test(s) ? escapeHtml(s) : '#';
+}
+
+/** Like interpolate(), but HTML-escapes each value — for the HTML body only. */
+function interpolateHtml(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    const v = vars[key];
+    return v == null ? `{{${key}}}` : escapeHtml(v);
+  });
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
@@ -154,19 +178,19 @@ function htmlToText(html: string): string {
 function buildFooter(settings: Record<string, unknown> | null): string {
   if (!settings) return '';
   const parts: string[] = [];
-  if (settings.footer_sign_off)  parts.push(`<p style="margin:0">${settings.footer_sign_off}</p>`);
-  if (settings.footer_signature) parts.push(`<p style="margin:4px 0 0"><strong>${settings.footer_signature}</strong></p>`);
-  if (settings.footer_tagline)   parts.push(`<p style="margin:4px 0 0;color:#6B7280;font-size:13px">${settings.footer_tagline}</p>`);
+  if (settings.footer_sign_off)  parts.push(`<p style="margin:0">${escapeHtml(settings.footer_sign_off)}</p>`);
+  if (settings.footer_signature) parts.push(`<p style="margin:4px 0 0"><strong>${escapeHtml(settings.footer_signature)}</strong></p>`);
+  if (settings.footer_tagline)   parts.push(`<p style="margin:4px 0 0;color:#6B7280;font-size:13px">${escapeHtml(settings.footer_tagline)}</p>`);
   if (settings.footer_promo_text && settings.footer_promo_url) {
-    parts.push(`<p style="margin:16px 0 0"><a href="${settings.footer_promo_url}" style="color:#032F4C;font-weight:700">${settings.footer_promo_text}</a></p>`);
+    parts.push(`<p style="margin:16px 0 0"><a href="${safeUrl(settings.footer_promo_url)}" style="color:#032F4C;font-weight:700">${escapeHtml(settings.footer_promo_text)}</a></p>`);
   }
   const socials = Array.isArray(settings.footer_socials) ? settings.footer_socials as Array<{label:string;url:string}> : [];
   if (socials.length > 0) {
-    const links = socials.map(s => `<a href="${s.url}" style="color:#032F4C;margin-right:12px">${s.label}</a>`).join('');
+    const links = socials.map(s => `<a href="${safeUrl(s.url)}" style="color:#032F4C;margin-right:12px">${escapeHtml(s.label)}</a>`).join('');
     parts.push(`<p style="margin:12px 0 0">${links}</p>`);
   }
   if (settings.footer_legal) {
-    parts.push(`<p style="margin:16px 0 0;color:#9CA3AF;font-size:12px">${settings.footer_legal}</p>`);
+    parts.push(`<p style="margin:16px 0 0;color:#9CA3AF;font-size:12px">${escapeHtml(settings.footer_legal)}</p>`);
   }
   return parts.join('\n');
 }

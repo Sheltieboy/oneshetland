@@ -12,9 +12,12 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { fetchPendingAlertRequests } from '@/lib/alerts-api';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { NavRail } from '@/components/NavRail';
 
 // ─── Platform module definitions ──────────────────────────────────────────────
 
@@ -151,6 +154,7 @@ interface PlatformStats {
   pendingRequests: number | null;
   openRuns: number | null;
   pendingSpikSuggestions: number | null;
+  pendingAlertRequests: number | null;
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -158,24 +162,27 @@ interface PlatformStats {
 export default function AdminDashboard() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
+  const { sidePadding, isTablet } = useAppLayout();
   const [stats, setStats] = useState<PlatformStats>({
     totalUsers: null,
     pendingDrivers: null,
     pendingRequests: null,
     openRuns: null,
     pendingSpikSuggestions: null,
+    pendingAlertRequests: null,
   });
 
   const firstName = profile?.full_name?.split(' ')[0] || profile?.email || 'Admin';
 
   useEffect(() => {
     async function fetchStats() {
-      const [usersRes, driversRes, requestsRes, runsRes, spikRes] = await Promise.all([
+      const [usersRes, driversRes, requestsRes, runsRes, spikRes, alertReqs] = await Promise.all([
         supabase.from('profiles').select('*', { count: 'exact', head: true }),
         supabase.from('driver_profiles').select('*', { count: 'exact', head: true }).eq('driver_status', 'pending'),
         supabase.from('delivery_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('runs').select('*', { count: 'exact', head: true }).eq('status', 'open'),
         supabase.from('spik_suggestions').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        fetchPendingAlertRequests().catch(() => [] as any[]),
       ]);
       setStats({
         totalUsers: usersRes.count ?? 0,
@@ -183,6 +190,7 @@ export default function AdminDashboard() {
         pendingRequests: requestsRes.count ?? 0,
         openRuns: runsRes.count ?? 0,
         pendingSpikSuggestions: spikRes.count ?? 0,
+        pendingAlertRequests: (alertReqs as any[]).length,
       });
     }
     fetchStats();
@@ -190,9 +198,10 @@ export default function AdminDashboard() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <NavRail />
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
+        style={[styles.scroll, { paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }]}
+        contentContainerStyle={[styles.content, { paddingHorizontal: Math.max(spacing.lg, sidePadding) }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Header ── */}
@@ -382,6 +391,57 @@ export default function AdminDashboard() {
           </View>
         </View>
 
+        {/* ── Urgent Alerts management ── */}
+        <View style={styles.section}>
+          <View style={styles.fetchHeader}>
+            <View style={[styles.fetchStrip, { backgroundColor: '#FF3B30' }]} />
+            <View style={styles.fetchHeaderText}>
+              <Text style={styles.sectionTitle}>Urgent Alerts</Text>
+              <Text style={styles.sectionMeta}>Partner broadcast access</Text>
+            </View>
+          </View>
+
+          <View style={styles.managementList}>
+            <Card
+              style={styles.managementCard}
+              onPress={() => router.push('/(admin)/alert-approvals' as any)}
+            >
+              <View style={styles.managementRow}>
+                <Text style={styles.managementIcon}>📡</Text>
+                <View style={styles.managementBody}>
+                  <View style={styles.managementTitleRow}>
+                    <Text style={styles.managementTitle}>Alert access requests</Text>
+                    {(stats.pendingAlertRequests ?? 0) > 0 && (
+                      <View style={styles.alertBadge}>
+                        <Text style={styles.alertBadgeText}>{stats.pendingAlertRequests}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.managementDesc}>
+                    Approve or reject businesses requesting the £10/month alert add-on
+                  </Text>
+                </View>
+                <Text style={styles.arrow}>›</Text>
+              </View>
+            </Card>
+            <Card
+              style={styles.managementCard}
+              onPress={() => router.push('/(admin)/alerts' as any)}
+            >
+              <View style={styles.managementRow}>
+                <Text style={styles.managementIcon}>🔴</Text>
+                <View style={styles.managementBody}>
+                  <Text style={styles.managementTitle}>Live alerts overview</Text>
+                  <Text style={styles.managementDesc}>
+                    All active, scheduled and recent alerts across every business
+                  </Text>
+                </View>
+                <Text style={styles.arrow}>›</Text>
+              </View>
+            </Card>
+          </View>
+        </View>
+
         {/* ── Spik management ── */}
         <View style={styles.section}>
           <View style={styles.fetchHeader}>
@@ -442,6 +502,22 @@ export default function AdminDashboard() {
                   <Text style={styles.managementTitle}>Compliance Log</Text>
                   <Text style={styles.managementDesc}>
                     Search any member's email to view all their verifications, agreements and consents
+                  </Text>
+                </View>
+                <Text style={styles.arrow}>›</Text>
+              </View>
+            </Card>
+
+            <Card
+              style={styles.managementCard}
+              onPress={() => router.push('/(admin)/business-claims' as any)}
+            >
+              <View style={styles.managementRow}>
+                <Text style={styles.managementIcon}>🏪</Text>
+                <View style={styles.managementBody}>
+                  <Text style={styles.managementTitle}>Business claims</Text>
+                  <Text style={styles.managementDesc}>
+                    Verify directory claims, approve owners, and grant discounts
                   </Text>
                 </View>
                 <Text style={styles.arrow}>›</Text>

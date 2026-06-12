@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -1033,6 +1034,7 @@ function MiniPostedShiftCard({ shift }: { shift: any }) {
 function HubScreen({ onPostShift }: { onPostShift: () => void }) {
   const router      = useRouter();
   const { profile } = useAuth();
+  const { isTablet } = useAppLayout();
 
   const [previewShifts,      setPreviewShifts]      = useState<Shift[]>([]);
   const [shiftCount,         setShiftCount]          = useState<number | null>(null);
@@ -1081,7 +1083,7 @@ function HubScreen({ onPostShift }: { onPostShift: () => void }) {
   return (
     <ScrollView
       style={styles.hubScroll}
-      contentContainerStyle={styles.hubContent}
+      contentContainerStyle={[styles.hubContent, isTablet && styles.hubContentTablet]}
       showsVerticalScrollIndicator={false}
     >
       {/* ── Hero card ── */}
@@ -1414,6 +1416,7 @@ const styles = StyleSheet.create({
   // ── Hub ────────────────────────────────────────────────────────────────────
   hubScroll:  { flex: 1, backgroundColor: colors.screenBackground },
   hubContent: { paddingBottom: 60 },
+  hubContentTablet: { maxWidth: 760, alignSelf: 'center', width: '100%' },
 
   // Live strip
   liveStrip:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingTop: 14, paddingBottom: 2 },

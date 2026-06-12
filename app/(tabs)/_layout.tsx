@@ -1,9 +1,10 @@
 import { Tabs } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '@/constants/theme';
+import { colors, SIDEBAR_WIDTH } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { AppTabBar } from '@/components/AppTabBar';
+import { useAppLayout } from '@/hooks/useAppLayout';
 
 const INACTIVE = 'rgba(255,255,255,0.65)';
 
@@ -13,39 +14,24 @@ function tabOptions(icon: string, label: string, activeColor: string) {
     tabBarLabel: label,
     tabBarActiveTintColor: activeColor,
     tabBarInactiveTintColor: INACTIVE,
-    tabBarIcon: ({ focused }: { focused: boolean }) => (
-      <FontAwesome5 name={icon as any} size={15} color={focused ? activeColor : INACTIVE} solid />
+    tabBarIcon: ({ focused, color }: { focused: boolean; color: string }) => (
+      <FontAwesome5 name={icon as any} size={15} color={color} solid />
     ),
   };
 }
 
 export default function TabLayout() {
   const { profile } = useAuth();
-  const insets = useSafeAreaInsets();
-
-  // Without an explicit safe-area inset, the tab bar's lower edge overlaps the
-  // iOS home-indicator gesture region — touches near the bottom-left (the Home
-  // tab) get eaten by the system. Add the inset to the height AND mirror it as
-  // bottom padding so icons sit fully above the indicator.
+  const { isTablet } = useAppLayout();
 
   return (
     <Tabs
+      tabBar={(props) => <AppTabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.navy,
-          borderTopWidth: 0,
-          height: 60 + insets.bottom,
-          paddingBottom: insets.bottom,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 6,
-        },
-        tabBarLabelStyle: {
-          fontSize: 9,
-          fontWeight: '600',
-          marginTop: 2,
-        },
+        // On tablets the sidebar is an absolute left rail; offset every
+        // scene to the right so content never sits underneath it.
+        sceneStyle: { paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 },
       }}
     >
       <Tabs.Screen

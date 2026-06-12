@@ -22,8 +22,9 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { loadSpikGameWords, makeSprintQuestion, type SpikGameWord } from '@/lib/spik-games-data';
 import { submitScore, fetchTopScores, type LeaderboardRow } from '@/lib/games-api';
+import { GameArt, GAME_COLORS, GAME_LIGHTS } from '@/components/GameArt';
 
-const S = SECTIONS.games;
+const S = { ...SECTIONS.games, color: GAME_COLORS.spik_sprint, light: GAME_LIGHTS.spik_sprint };
 const ROUND_SECONDS = 60;
 const WRONG_PENALTY_SEC = 2;
 
@@ -262,9 +263,8 @@ export default function SpikSprintScreen() {
 
         {phase === 'ready' && (
           <View style={styles.intro}>
-            <View style={[styles.introIcon, { backgroundColor: S.light }]}>
-              <FontAwesome5 name="bolt" size={36} color={S.color} solid />
-            </View>
+            <GameArt id="spik_sprint" size={108} radius={28} />
+            <View style={{ height: 16 }} />
             <Text style={styles.introTitle}>Spik Sprint</Text>
             <Text style={styles.introSub}>
               How many can you get in {ROUND_SECONDS} seconds?{'\n'}

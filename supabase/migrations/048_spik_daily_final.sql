@@ -12,7 +12,7 @@
 -- Drops any earlier broken versions for cleanliness.
 -- ────────────────────────────────────────────────────────────────────────────
 
-DROP FUNCTION IF EXISTS public.spik_daily();
+DROP FUNCTION IF EXISTS public.spik_daily() CASCADE;
 
 CREATE OR REPLACE FUNCTION public.spik_daily()
 RETURNS TABLE (

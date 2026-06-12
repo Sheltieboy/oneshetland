@@ -361,6 +361,40 @@ export async function fetchHeroPhotos(vesselIds: string[]): Promise<Record<strin
   return Object.fromEntries(Object.entries(best).map(([k, v]) => [k, v.url]));
 }
 
+// ── Per-vessel metrics (for yard/fleet stats) ────────────────────────────────
+
+export interface VesselMetric {
+  length:  number | null;   // metres (max recorded)
+  tonnage: number | null;   // max recorded
+  engine:  number | null;   // kW (max recorded)
+}
+
+/**
+ * Best (max) length / tonnage / engine power per vessel, folded from the
+ * measurements table. Paginated because measurements exceeds the 1000-row
+ * PostgREST cap. Returns a map keyed by vessel_id.
+ */
+export async function fetchVesselMetrics(): Promise<Record<string, VesselMetric>> {
+  const out: Record<string, VesselMetric> = {};
+  const PAGE = 1000;
+  for (let from = 0; from < 6000; from += PAGE) {
+    const { data, error } = await supabase
+      .from('measurements')
+      .select('vessel_id, length_m, tonnage, engine_power_kw')
+      .range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    for (const m of data as any[]) {
+      const cur = out[m.vessel_id] ?? { length: null, tonnage: null, engine: null };
+      if (m.length_m != null)        cur.length  = Math.max(cur.length  ?? 0, m.length_m);
+      if (m.tonnage != null)         cur.tonnage = Math.max(cur.tonnage ?? 0, m.tonnage);
+      if (m.engine_power_kw != null) cur.engine  = Math.max(cur.engine  ?? 0, m.engine_power_kw);
+      out[m.vessel_id] = cur;
+    }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
 // ── Formatting helpers ──────────────────────────────────────────────────────
 
 /**
@@ -382,6 +416,8 @@ export function hullMaterialLabel(code: string | null | undefined): string | nul
     case 'S': return 'Steel';
     case 'W': return 'Wood';
     case 'A': return 'Aluminium';
+    case 'U': return 'Unknown';
+    case 'O': return 'Other';
     default:  return c;
   }
 }

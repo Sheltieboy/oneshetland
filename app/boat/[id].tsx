@@ -29,7 +29,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { NavRail } from '@/components/NavRail';
 import {
   fetchVesselProfile, fetchVesselTimeline,
   fetchVesselComments, threadComments,
@@ -68,6 +70,7 @@ export default function BoatProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { profile: viewer } = useAuth();
+  const { isTablet } = useAppLayout();
 
   const [profile, setProfile]       = useState<VesselProfile | null>(null);
   const [timeline, setTimeline]     = useState<VesselTimelineEntry[]>([]);
@@ -312,15 +315,23 @@ export default function BoatProfileScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
+      <NavRail />
+      <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* Top bar */}
+        {/* Top bar — anchored in the Da Boats section */}
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} hitSlop={12}>
-            <FontAwesome5 name="chevron-left" size={22} color={colors.textPrimary} />
+          <TouchableOpacity
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/da-boats'))}
+            style={styles.backToBoats}
+            hitSlop={12}
+          >
+            <FontAwesome5 name="chevron-left" size={16} color={SECTION.color} />
+            <FontAwesome5 name="ship" size={12} color={SECTION.color} solid />
+            <Text style={styles.backToBoatsText}>Da Boats</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={handleShare} style={styles.iconBtn} hitSlop={12}>
@@ -748,6 +759,7 @@ export default function BoatProfileScreen() {
         </View>
       </ScrollView>
       </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -973,6 +985,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderRadius: 22,
   },
+  backToBoats: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: radius.full, backgroundColor: SECTION.color + '14',
+  },
+  backToBoatsText: { color: SECTION.color, fontSize: fontSize.sm, fontWeight: '800' },
 
   heroWrap: {
     width: '100%',

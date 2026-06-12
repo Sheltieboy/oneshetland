@@ -51,16 +51,30 @@ serve(async (req) => {
     const { request_id } = await req.json();
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
 
-    // Fetch the request (+ customer_id for notification)
+    // Fetch the request (+ customer_id for notification, + run_id for the auth guard)
     const { data: request, error: reqError } = await supabase
       .from('delivery_requests')
-      .select('id, customer_id, payment_intent_id, base_fee_pence, waiting_fee_pence, payment_status')
+      .select('id, customer_id, payment_intent_id, base_fee_pence, waiting_fee_pence, payment_status, run_id')
       .eq('id', request_id)
       .single();
 
     if (reqError || !request) {
       return new Response(JSON.stringify({ error: 'Request not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Authorisation (IDOR guard): only the driver assigned to this delivery's run
+    // may capture the customer's card. Prevents a driver capturing a charge on
+    // someone else's delivery by passing an arbitrary request_id.
+    const { data: run } = await supabase
+      .from('runs')
+      .select('driver_id')
+      .eq('id', request.run_id)
+      .single();
+    if (!run || run.driver_id !== user.id) {
+      return new Response(JSON.stringify({ error: 'Forbidden — not the assigned driver' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 

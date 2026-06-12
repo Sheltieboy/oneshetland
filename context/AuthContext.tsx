@@ -20,6 +20,7 @@ interface AuthContextType {
     password: string,
     fullName: string,
     phone?: string,
+    marketingOptIn?: boolean,
   ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -90,12 +91,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return { error: error?.message ?? null };
   }
 
-  async function signUp(email: string, password: string, fullName: string, phone?: string) {
+  async function signUp(email: string, password: string, fullName: string, phone?: string, marketingOptIn = false) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName },
+        // Marketing consent is captured here so it survives email confirmation
+        // (there's no session immediately after sign-up). Terms/privacy/age are
+        // implied by the on-screen agreement and logged best-effort below.
+        data: { full_name: fullName, marketing_opt_in: marketingOptIn },
         // Deep link back into the app after email confirmation
         // Requires "oneshetland-fetch://**" in Supabase → Auth → URL Configuration
         emailRedirectTo: 'oneshetland-fetch://auth/confirm',

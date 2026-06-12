@@ -26,7 +26,8 @@
  * stay tiny — one line to upload.
  */
 
-import { supabase, SUPABASE_URL } from './supabase';
+import ImageColors from 'react-native-image-colors';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,6 +103,9 @@ async function uploadBlob(
   const res = await fetch(uploadUrl, {
     method: 'POST',
     headers: {
+      // apikey lets Supabase Storage resolve the JWT claims so RLS sees the
+      // correct auth.uid(); without it the request can fall back to anon.
+      apikey:        SUPABASE_ANON_KEY,
       Authorization: `Bearer ${session.access_token}`,
       'x-upsert':    'true',
     },
@@ -130,6 +134,20 @@ export async function uploadBusinessImage(
   const ext = extFromFile(file);
   const path = `${businessId}/${kind}/${newFilename(ext)}`;
   return uploadBlob(BUCKET_BUSINESS, path, file);
+}
+
+/**
+ * Upload a hub-owned image (logo or cover). Caller must be the hub owner or
+ * committee (RLS enforces this). Path: <hub_id>/<kind>/<uuid>.<ext>
+ */
+export async function uploadHubImage(
+  hubId: string,
+  kind: 'logo' | 'cover',
+  file: PickedFile,
+): Promise<UploadedImage> {
+  const ext = extFromFile(file);
+  const path = `${hubId}/${kind}/${newFilename(ext)}`;
+  return uploadBlob('hub-media', path, file);
 }
 
 /**
@@ -170,6 +188,79 @@ export async function deleteUploadedImage(
 ): Promise<void> {
   const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error && !/not found/i.test(error.message)) throw error;
+}
+
+// ── Brand colour extraction ────────────────────────────────────────────────
+
+function hexLuminance(hex: string): number {
+  const m = hex.replace('#', '');
+  if (m.length < 6) return 0.5;
+  const r = parseInt(m.slice(0, 2), 16) / 255;
+  const g = parseInt(m.slice(2, 4), 16) / 255;
+  const b = parseInt(m.slice(4, 6), 16) / 255;
+  // Perceived luminance
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function isUsableBannerColor(hex: string | undefined | null): hex is string {
+  if (!hex || !/^#?[0-9a-fA-F]{6}/.test(hex)) return false;
+  const lum = hexLuminance(hex);
+  // Reject near-white / near-black — they make a flat, lifeless banner.
+  return lum > 0.08 && lum < 0.92;
+}
+
+/**
+ * Turn a dominant colour into one that's legible with white text — light/pale
+ * colours get darkened toward their hue. Returns the input's hue, button-safe.
+ */
+export function readableAccent(hex: string | null | undefined, fallback: string): string {
+  if (!hex || !/^#?[0-9a-fA-F]{6}/.test(hex)) return fallback;
+  const m = hex.replace('#', '').slice(0, 6);
+  let r = parseInt(m.slice(0, 2), 16);
+  let g = parseInt(m.slice(2, 4), 16);
+  let b = parseInt(m.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  if (lum > 0.6) {
+    const f = 0.6 / lum;
+    r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f);
+  }
+  const h = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
+/**
+ * Pull the dominant colour out of an image (the uploaded logo) and return a
+ * banner-friendly hex string, or null if nothing usable could be extracted.
+ * Picks the most saturated/representative swatch per platform and skips
+ * near-white / near-black results.
+ */
+export async function extractBrandColor(uri: string): Promise<string | null> {
+  try {
+    const result = await ImageColors.getColors(uri, {
+      fallback: '#475569',
+      cache: true,
+      key: uri,
+    });
+
+    let candidates: (string | undefined)[] = [];
+    if (result.platform === 'ios') {
+      candidates = [result.primary, result.detail, result.secondary, result.background];
+    } else if (result.platform === 'android') {
+      candidates = [result.vibrant, result.dominant, result.darkVibrant, result.muted];
+    } else {
+      // web
+      candidates = [result.vibrant, result.dominant, result.darkVibrant, result.muted];
+    }
+
+    for (const c of candidates) {
+      if (isUsableBannerColor(c)) {
+        return c.startsWith('#') ? c : `#${c}`;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**

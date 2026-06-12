@@ -14,24 +14,27 @@
  *     in place; no separate search dance required.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
-  TextInput, TouchableOpacity, RefreshControl,
+  TextInput, TouchableOpacity, RefreshControl, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import {
-  searchVessels, VesselSearchRow, fetchHeroPhotos,
+  searchVessels, VesselSearchRow, fetchHeroPhotos, fetchVesselMetrics, type VesselMetric,
 } from '@/lib/boats-api';
 import {
   loadSavedBoats, loadRecentBoats, toggleSavedBoat, VesselStub,
 } from '@/lib/boats-prefs';
+import { computeFleetStats, matchBuildPlace, type BuildPlaceCount } from '@/lib/boats-stats';
 import VesselCard from '@/components/VesselCard';
 import SectionHero from '@/components/SectionHero';
+import { BoatBuildMap } from '@/components/BoatBuildMap';
 
 let boatsHero: any = null;
 try { boatsHero = require('@/assets/section-heroes/da-boats.jpg'); } catch { /* using fallback */ }
@@ -48,11 +51,15 @@ function decadeOf(year: number | null | undefined): string | null {
 
 export default function DaBoatsScreen() {
   const router = useRouter();
+  const { isTablet } = useAppLayout();
   const [rows, setRows]                   = useState<VesselSearchRow[]>([]);
   const [heroes, setHeroes]               = useState<Record<string, string>>({});
+  const [metrics, setMetrics]             = useState<Record<string, VesselMetric>>({});
   const [query, setQuery]                 = useState('');
   const [decade, setDecade]               = useState<string | null>(null);
   const [photosOnly, setPhotosOnly]       = useState(false);
+  const [buildPlace, setBuildPlace]       = useState<string | null>(null);  // place key
+  const [builderName, setBuilderName]     = useState<string | null>(null);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [saved, setSaved]                 = useState<VesselStub[]>([]);
@@ -75,14 +82,32 @@ export default function DaBoatsScreen() {
       // default never reached the older decades before the cap.
       const data = await searchVessels(q, 600);
       setRows(data);
-      // In parallel fetch hero photos for whatever's visible
+      // Show the cards straight away — don't block the list on photos.
+      setLoading(false);
+      setRefreshing(false);
+
+      // Hero photos are the expensive part (a big IN-join that returns
+      // every media link). Fetch them in the background and let them pop
+      // in: first the top batch the user actually sees, then the rest.
       const ids = data.map(d => d.id);
-      const h = await fetchHeroPhotos(ids);
-      setHeroes(h);
+      const FIRST_BATCH = 40;
+      void (async () => {
+        try {
+          const firstIds = ids.slice(0, FIRST_BATCH);
+          const restIds  = ids.slice(FIRST_BATCH);
+          const firstHeroes = await fetchHeroPhotos(firstIds);
+          setHeroes(prev => ({ ...prev, ...firstHeroes }));
+          if (restIds.length) {
+            const restHeroes = await fetchHeroPhotos(restIds);
+            setHeroes(prev => ({ ...prev, ...restHeroes }));
+          }
+        } catch {
+          /* heroes are best-effort — cards still render with placeholders */
+        }
+      })();
     } catch {
       setRows([]);
       setHeroes({});
-    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -90,20 +115,40 @@ export default function DaBoatsScreen() {
 
   useFocusEffect(useCallback(() => { void refreshPrefs(); }, [refreshPrefs]));
 
-  // Debounced search
+  // Search: fire immediately on first load, debounce subsequent keystrokes.
+  const didFirstLoad = useRef(false);
   useEffect(() => {
     setLoading(true);
+    if (!didFirstLoad.current) {
+      didFirstLoad.current = true;
+      void load(query);
+      return;
+    }
     const t = setTimeout(() => { void load(query); }, 250);
     return () => clearTimeout(t);
   }, [query, load]);
 
-  // Apply decade + photo filters in-memory (467 rows max — trivial cost)
+  // Per-vessel metrics (length / tonnage / engine) for yard stats — fetched once.
+  useEffect(() => { fetchVesselMetrics().then(setMetrics).catch(() => {}); }, []);
+
+  // Fleet-wide stats for the landing — recomputes as heroes/metrics arrive.
+  const stats = useMemo(() => computeFleetStats(rows, { metrics, heroes }), [rows, metrics, heroes]);
+
+  // Apply decade / photo / build-place / builder filters in-memory.
   const filtered = useMemo(() => {
     let r = rows;
     if (decade) r = r.filter(v => decadeOf(v.built_year) === decade);
     if (photosOnly) r = r.filter(v => v.media_asset_count > 0);
+    if (buildPlace) r = r.filter(v => matchBuildPlace(v.builder)?.key === buildPlace);
+    if (builderName) r = r.filter(v => (v.builder ?? '').trim() === builderName);
     return r;
-  }, [rows, decade, photosOnly]);
+  }, [rows, decade, photosOnly, buildPlace, builderName]);
+
+  // Pristine landing (stats + map + breakdowns) shows only with no filter/search.
+  const exploreActive = !query.trim() && !decade && !photosOnly && !buildPlace && !builderName;
+  const anyFilter = !!(decade || photosOnly || buildPlace || builderName);
+  const clearFilters = () => { setDecade(null); setPhotosOnly(false); setBuildPlace(null); setBuilderName(null); };
+  const buildPlaceLabel = buildPlace ? (stats.buildPlaces.find(p => p.key === buildPlace)?.label ?? 'this yard') : null;
 
   const handleToggleSave = async (row: VesselSearchRow) => {
     const stub: VesselStub = {
@@ -194,8 +239,139 @@ export default function DaBoatsScreen() {
           />
         </ScrollView>
 
+        {/* ── Explore landing (pristine state only) ── */}
+        {exploreActive && rows.length > 0 && (
+          <>
+            {/* Headline stats */}
+            <View style={[styles.statsBand, isTablet && styles.statsBandWide]}>
+              <StatTile value={stats.total} label="boats logged" />
+              <StatTile value={stats.yearMin && stats.yearMax ? `${stats.yearMin}–${stats.yearMax}` : '—'} label="spanning" />
+              <StatTile value={stats.withPhotos} label="with photos" />
+              <StatTile value={stats.buildPlaces.length} label="build ports" />
+            </View>
+
+            {/* Community note — help improve the archive */}
+            <View style={[styles.helpCard, isTablet && styles.statsBandWide]}>
+              <View style={styles.helpIcon}>
+                <FontAwesome5 name="hands-helping" size={14} color={SECTION.color} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.helpTitle}>Help keep da history right</Text>
+                <Text style={styles.helpBody}>
+                  This archive was gathered and researched to the best of OneShetland's knowledge —
+                  but there will be gaps and mistakes. If you know a boat, open its page and tap any
+                  detail to suggest a change, add a date, name an owner or share a photo. Every wee
+                  correction helps.
+                </Text>
+              </View>
+            </View>
+
+            {/* Build map */}
+            {stats.buildPlaces.length > 0 && (
+              <Section title="Where the boats were built">
+                <Text style={styles.exploreCaption}>
+                  {stats.placedBoats} boats traced to {stats.buildPlaces.length} yards — tap a port to see them.
+                </Text>
+                <View style={{ paddingHorizontal: spacing.lg, marginTop: 8 }}>
+                  <BoatBuildMap
+                    places={stats.buildPlaces}
+                    height={isTablet ? 360 : 280}
+                    onSelectPlace={(p) => setBuildPlace(p.key)}
+                  />
+                </View>
+              </Section>
+            )}
+
+            {/* Decade histogram */}
+            {stats.decades.length > 0 && (
+              <Section title="The fleet through time">
+                <View style={styles.histo}>
+                  {stats.decades.map(d => {
+                    const max = Math.max(...stats.decades.map(x => x.count));
+                    return (
+                      <TouchableOpacity key={d.key} style={styles.histoCol} onPress={() => setDecade(d.key)} activeOpacity={0.8}>
+                        <Text style={styles.histoCount}>{d.count}</Text>
+                        <View style={[styles.histoBar, { height: 10 + (d.count / max) * 96 }]} />
+                        <Text style={styles.histoLabel}>{d.key}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </Section>
+            )}
+
+            {/* Hull material split */}
+            {stats.hulls.length > 0 && (
+              <Section title="What they're built of">
+                <View style={{ paddingHorizontal: spacing.lg, gap: 8 }}>
+                  {stats.hulls.map(h => (
+                    <View key={h.key} style={styles.hullRow}>
+                      <Text style={styles.hullLabel}>{h.label}</Text>
+                      <View style={styles.hullTrack}>
+                        <View style={[styles.hullFill, { width: `${(h.count / stats.hulls[0].count) * 100}%` }]} />
+                      </View>
+                      <Text style={styles.hullCount}>{h.count}</Text>
+                    </View>
+                  ))}
+                </View>
+              </Section>
+            )}
+
+            {/* Top yards — rich cards, two per row on tablet */}
+            {stats.topBuilders.length > 0 && (
+              <Section title="Busiest yards">
+                <View style={styles.builderGrid}>
+                  {stats.topBuilders.map(b => {
+                    const span = b.yearMin && b.yearMax
+                      ? (b.yearMin === b.yearMax ? `${b.yearMin}` : `${b.yearMin}–${b.yearMax}`)
+                      : null;
+                    return (
+                      <TouchableOpacity
+                        key={b.name}
+                        style={[styles.builderCard, isTablet && styles.builderCardHalf]}
+                        onPress={() => setBuilderName(b.name)}
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.builderCardTop}>
+                          {b.heroUrl ? (
+                            <Image source={{ uri: b.heroUrl }} style={styles.builderThumb} />
+                          ) : (
+                            <View style={[styles.builderThumb, styles.builderThumbEmpty]}>
+                              <FontAwesome5 name="hammer" size={14} color={SECTION.color} solid />
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.builderCardName} numberOfLines={2}>{b.displayName}</Text>
+                            {b.place ? (
+                              <View style={styles.builderMetaChip}>
+                                <FontAwesome5 name="map-marker-alt" size={9} color={SECTION.color} solid />
+                                <Text style={styles.builderMetaChipText}>{b.place.label}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+                          <View style={styles.builderCountPill}>
+                            <Text style={styles.builderCountPillText}>{b.count}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.builderStatsRow}>
+                          {span ? <BuilderStat icon="calendar-alt" text={span} /> : null}
+                          {b.hullTop ? <BuilderStat icon="ship" text={b.hullTop} /> : null}
+                          {b.avgLength ? <BuilderStat icon="ruler-horizontal" text={`${b.avgLength.toFixed(1)} m avg`} /> : null}
+                          {b.maxEngine ? <BuilderStat icon="bolt" text={`${Math.round(b.maxEngine)} kW`} /> : null}
+                          {b.photos > 0 ? <BuilderStat icon="image" text={`${b.photos}`} /> : null}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </Section>
+            )}
+          </>
+        )}
+
         {/* Saved boats row */}
-        {saved.length > 0 ? (
+        {saved.length > 0 && !anyFilter && !query.trim() ? (
           <Section title="Saved boats">
             <View style={styles.list}>
               {saved.map(s => (
@@ -222,7 +398,7 @@ export default function DaBoatsScreen() {
         ) : null}
 
         {/* Recently viewed row (suppress when same as saved) */}
-        {recent.length > 0 ? (
+        {recent.length > 0 && !anyFilter && !query.trim() ? (
           <Section title="You looked at">
             <View style={styles.list}>
               {recent.map(r => (
@@ -248,17 +424,30 @@ export default function DaBoatsScreen() {
           </Section>
         ) : null}
 
+        {/* Back to the explore landing when a stat filter is active */}
+        {anyFilter && (
+          <TouchableOpacity style={styles.backBar} onPress={clearFilters} activeOpacity={0.75}>
+            <FontAwesome5 name="chevron-left" size={14} color={SECTION.color} />
+            <Text style={styles.backBarText}>Back to explore</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Browse */}
         <Section
           title={
             query.trim()
               ? loading ? 'Searching…' : `${filtered.length} found`
-              : decade
-                ? `Boats from ${decade}`
-                : photosOnly
-                  ? 'Boats with photos'
-                  : 'The whole fleet'
+              : builderName
+                ? `${filtered.length} from ${builderName}`
+                : buildPlace
+                  ? `${filtered.length} built in ${buildPlaceLabel}`
+                  : decade
+                    ? `Boats from ${decade}`
+                    : photosOnly
+                      ? 'Boats with photos'
+                      : 'The whole fleet'
           }
+          action={anyFilter ? { label: 'Show all', onPress: clearFilters } : undefined}
         >
           {loading ? (
             <View style={{ paddingVertical: spacing.lg }}>
@@ -273,10 +462,11 @@ export default function DaBoatsScreen() {
               </Text>
             </View>
           ) : (
-            <View style={styles.list}>
+            <View style={[styles.list, isTablet && styles.listGrid]}>
               {filtered.map(r => (
                 <VesselCard
                   key={r.id}
+                  style={isTablet ? styles.gridCard : undefined}
                   data={{
                     id:             r.id,
                     lk_number:      r.primary_lk_number,
@@ -309,11 +499,40 @@ function buildAltLine(r: VesselSearchRow): string | null {
   return others.slice(0, 3).join(', ');
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, action }: {
+  title: string;
+  children: React.ReactNode;
+  action?: { label: string; onPress: () => void };
+}) {
   return (
     <View>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {action ? (
+          <TouchableOpacity onPress={action.onPress} hitSlop={8}>
+            <Text style={styles.sectionAction}>{action.label}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       {children}
+    </View>
+  );
+}
+
+function StatTile({ value, label }: { value: string | number; label: string }) {
+  return (
+    <View style={styles.statTile}>
+      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function BuilderStat({ icon, text }: { icon: string; text: string }) {
+  return (
+    <View style={styles.builderStat}>
+      <FontAwesome5 name={icon as any} size={10} color={colors.textMuted} solid />
+      <Text style={styles.builderStatText}>{text}</Text>
     </View>
   );
 }
@@ -419,11 +638,102 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
+  backBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+    marginHorizontal: spacing.lg, marginTop: spacing.md,
+    paddingVertical: 8, paddingHorizontal: 14,
+    backgroundColor: SECTION.color + '14', borderRadius: radius.full,
+  },
+  backBarText: { color: SECTION.color, fontSize: fontSize.sm, fontWeight: '800' },
+
+  sectionHeaderRow: {
+    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
+    paddingRight: spacing.lg,
+  },
+  sectionAction: { color: SECTION.color, fontSize: fontSize.sm, fontWeight: '800' },
+
+  // ── Explore landing ──
+  statsBand: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
+    paddingHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.lg,
+  },
+  statsBandWide: { maxWidth: 900, alignSelf: 'center', width: '100%' },
+  statTile: {
+    flexGrow: 1, flexBasis: '22%', minWidth: 78,
+    backgroundColor: SECTION.color, borderRadius: radius.lg,
+    paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center',
+  },
+  statValue: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  statLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: '700', marginTop: 2, textAlign: 'center' },
+  exploreCaption: { paddingHorizontal: spacing.lg, fontSize: fontSize.sm, color: colors.textMuted },
+
+  // Community / help-improve note
+  helpCard: {
+    flexDirection: 'row', gap: 12, alignItems: 'flex-start',
+    marginHorizontal: spacing.lg, marginBottom: spacing.lg,
+    backgroundColor: SECTION.color + '10', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: SECTION.color + '24', padding: 14,
+  },
+  helpIcon: {
+    width: 34, height: 34, borderRadius: 17, flexShrink: 0,
+    backgroundColor: SECTION.color + '1F', alignItems: 'center', justifyContent: 'center',
+  },
+  helpTitle: { fontSize: fontSize.sm, fontWeight: '900', color: colors.textPrimary, marginBottom: 3 },
+  helpBody:  { fontSize: fontSize.xs, color: colors.textSecondary, lineHeight: 18 },
+
+  // Decade histogram
+  histo: {
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+    gap: 6, paddingHorizontal: spacing.lg, minHeight: 150,
+  },
+  histoCol: { flex: 1, alignItems: 'center', gap: 4 },
+  histoCount: { fontSize: 11, fontWeight: '800', color: colors.textSecondary },
+  histoBar: { width: '70%', backgroundColor: SECTION.color, borderRadius: 4, minHeight: 10 },
+  histoLabel: { fontSize: 9, fontWeight: '700', color: colors.textMuted },
+
+  // Hull split
+  hullRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  hullLabel: { width: 78, fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
+  hullTrack: { flex: 1, height: 14, backgroundColor: '#E5E9EF', borderRadius: 7, overflow: 'hidden' },
+  hullFill: { height: 14, backgroundColor: SECTION.color, borderRadius: 7 },
+  hullCount: { width: 34, textAlign: 'right', fontSize: fontSize.sm, fontWeight: '800', color: colors.textSecondary },
+
+  // Top yards — rich cards
+  builderGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  builderCard: {
+    width: '100%',
+    backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: 14, gap: 10,
+  },
+  builderCardHalf: { width: '48.7%' },
+  builderCardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  builderThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: '#dce6ef', flexShrink: 0 },
+  builderThumbEmpty: { backgroundColor: SECTION.color + '14', alignItems: 'center', justifyContent: 'center' },
+  builderIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: SECTION.color + '18', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  builderCardName: { flex: 1, fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, lineHeight: 19 },
+  builderCountPill: { backgroundColor: SECTION.color, borderRadius: radius.full, minWidth: 30, paddingHorizontal: 9, paddingVertical: 3, alignItems: 'center' },
+  builderCountPillText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '900' },
+  builderMetaChip: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', backgroundColor: SECTION.color + '12', borderRadius: radius.full, paddingHorizontal: 9, paddingVertical: 4, marginTop: 5 },
+  builderMetaChipText: { color: SECTION.color, fontSize: 11, fontWeight: '700' },
+  builderStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  builderStat: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  builderStatText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '600' },
 
   list: {
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
+  listGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: 1000,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  gridCard: { width: '48%' },
 
   empty: {
     margin: spacing.lg,

@@ -82,7 +82,7 @@ export const SECTIONS = {
     icon:        'calendar-alt',
     label:       "What's On",
     description: 'Events, gigs and things to do across Shetland',
-    live:        false,
+    live:        true,
   },
 
   services: {
@@ -143,9 +143,9 @@ export const SECTIONS = {
     color:       '#6B47BF',   // shares services purple — people/groups
     light:       '#EDE9FE',
     icon:        'users',
-    label:       'Community Hubs',
-    description: 'Connecting local groups and organisations',
-    live:        false,
+    label:       'Hubs',
+    description: 'A simple branded home for Shetland clubs, groups and community organisations',
+    live:        true,
   },
 
   memories: {

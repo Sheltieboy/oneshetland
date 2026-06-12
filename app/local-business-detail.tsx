@@ -19,19 +19,60 @@ import {
   fetchBusiness, fetchLoyaltyProgram, fetchMyLoyaltyCard,
   fetchBusinessOffers, isFollowing, followBusiness, unfollowBusiness,
   redeemReward, redeemOffer, fetchMyRedeemedOfferIds,
+  fetchBusinessAddons,
   CATEGORY_LABELS, CATEGORY_ICONS,
   formatOfferDiscount, daysRemaining,
-  type LocalBusiness, type LoyaltyProgram, type LoyaltyCard, type LocalOffer,
+  type LocalBusiness, type LoyaltyProgram, type LoyaltyCard, type LocalOffer, type BusinessAddon,
 } from '@/lib/local-api';
-import { isBookableLive, fetchBusinessUnitItems, formatPence, type BookUnitItem } from '@/lib/book-api';
+import { fetchPublishedEvents, formatShortDate, formatTime, type OsEvent } from '@/lib/events-api';
+import {
+  isBookableLive, fetchBusinessUnitItems, fetchBusinessServices,
+  formatPence, formatDuration,
+  type BookUnitItem, type BookService,
+} from '@/lib/book-api';
 import { supabase } from '@/lib/supabase';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { addRecentlyViewed, businessResult } from '@/lib/search';
+import { BusinessLocationMap } from '@/components/BusinessLocationMap';
 
 const S = SECTIONS.local;
+
+// Generic banner colour per business category — used when a business hasn't
+// uploaded their own cover photo, so even a free listing looks intentional.
+const CATEGORY_BANNER: Record<string, string> = {
+  food_drink:    '#C2410C', // warm terracotta
+  retail:        '#7C3AED', // violet
+  services:      '#0E7490', // teal
+  tourism:       '#15803D', // green
+  accommodation: '#4338CA', // indigo
+  other:         '#475569', // slate
+};
+
+/**
+ * Turn a logo's dominant colour into a page accent that's always legible with
+ * white text — light/pale colours get darkened toward their hue so buttons and
+ * chips stay readable. Returns null for invalid input (caller falls back).
+ */
+function readableAccent(hex?: string | null): string | null {
+  if (!hex || !/^#?[0-9a-fA-F]{6}/.test(hex)) return null;
+  const m = hex.replace('#', '').slice(0, 6);
+  let r = parseInt(m.slice(0, 2), 16);
+  let g = parseInt(m.slice(2, 4), 16);
+  let b = parseInt(m.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  if (lum > 0.6) {
+    const f = 0.6 / lum; // scale toward black until white text is readable
+    r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f);
+  }
+  const h = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
 
 export default function BusinessDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const { isTablet } = useAppLayout();
 
   const [business, setBusiness] = useState<LocalBusiness | null>(null);
   const [program,  setProgram]  = useState<LoyaltyProgram | null>(null);
@@ -51,12 +92,19 @@ export default function BusinessDetailScreen() {
     pay_amount: number | null;
     start_at: string | null;
   }>>([]);
-  const [unitItems, setUnitItems] = useState<BookUnitItem[]>([]);
+  const [unitItems, setUnitItems]   = useState<BookUnitItem[]>([]);
+  const [services, setServices]     = useState<BookService[]>([]);
+  const [addons, setAddons]         = useState<BusinessAddon[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<OsEvent[]>([]);
+
+  // Fail-open: if addons haven't loaded yet, show all sections.
+  const addonOn = (key: string) =>
+    addons.length === 0 || (addons.find(a => a.addon_key === key)?.enabled ?? true);
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [b, p, o, s, units] = await Promise.all([
+      const [b, p, o, s, units, svcs, addonRows, evs] = await Promise.all([
         fetchBusiness(id),
         fetchLoyaltyProgram(id),
         fetchBusinessOffers(id),
@@ -71,12 +119,19 @@ export default function BusinessDetailScreen() {
           .then(({ data }) => data ?? [])
           .catch(() => [] as any[]),
         fetchBusinessUnitItems(id, false).catch(() => [] as BookUnitItem[]),
+        fetchBusinessServices(id, false).catch(() => [] as BookService[]),
+        fetchBusinessAddons(id).catch(() => [] as BusinessAddon[]),
+        fetchPublishedEvents({ businessId: id, limit: 5 }).catch(() => [] as OsEvent[]),
       ]);
       setBusiness(b);
+      if (b) addRecentlyViewed(businessResult(b));
       setProgram(p);
       setOffers(o);
       setOpenShifts(s as any[]);
       setUnitItems(units);
+      setServices(svcs);
+      setAddons(addonRows as BusinessAddon[]);
+      setUpcomingEvents(evs);
 
       if (profile) {
         const [c, isF, ids] = await Promise.all([
@@ -172,65 +227,87 @@ export default function BusinessDetailScreen() {
   }
 
   const isOwner = profile?.id === business.owner_id;
+  // Page accent: derived from the logo colour (contrast-safe), else the
+  // Marketplace violet. Used for chips, badges, buttons and icons below.
+  const accent = readableAccent(business.brand_color) ?? S.color;
   const stamps  = card?.stamps_collected ?? 0;
   const needed  = program?.stamps_required ?? 10;
   const progress = Math.min(1, stamps / needed);
   const rewardReady = program?.type === 'stamps' && stamps >= needed;
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-
-        {/* ── Hero ── */}
-        <View style={[styles.hero, { borderBottomColor: S.color }]}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => {
-              if (router.canGoBack()) router.back();
-              else router.replace('/(tabs)/local');
-            }}
-            hitSlop={12}
-          >
-            <FontAwesome5 name="chevron-left" size={13} color={S.color} />
-            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-          </TouchableOpacity>
-
-          <View style={styles.heroTop}>
-            {business.logo_url ? (
-              <Image source={{ uri: business.logo_url }} style={styles.heroLogo} />
+  // ── Hero (always full-bleed) ───────────────────────────────────────────────
+  const heroSection = (
+    <View style={[styles.hero, { borderBottomColor: accent }]}>
+          {/* Banner — own cover photo, else logo-tinted, else category-themed */}
+          <View style={[styles.banner, { backgroundColor: business.brand_color || CATEGORY_BANNER[business.category] || CATEGORY_BANNER.other }]}>
+            {business.cover_url ? (
+              <Image source={{ uri: business.cover_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             ) : (
-              <View style={[styles.heroLogo, { backgroundColor: S.color + '33', alignItems: 'center', justifyContent: 'center' }]}>
-                <FontAwesome5 name={CATEGORY_ICONS[business.category] as any} size={26} color={S.color} solid />
-              </View>
+              <FontAwesome5
+                name={CATEGORY_ICONS[business.category] as any}
+                size={130}
+                color="rgba(255,255,255,0.14)"
+                solid
+                style={styles.bannerWatermark}
+              />
             )}
-            <View style={{ flex: 1 }}>
-              <View style={styles.heroNameRow}>
-                <Text style={styles.heroName} numberOfLines={2}>{business.name}</Text>
-                {business.is_verified && (
-                  <FontAwesome5 name="check-circle" size={14} color={S.color} solid />
-                )}
-              </View>
-              <Text style={styles.heroCategory}>{CATEGORY_LABELS[business.category]}</Text>
-            </View>
+            <View style={styles.bannerScrim} />
+
+            <TouchableOpacity
+              style={styles.backBtnOverlay}
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+                else router.replace('/(tabs)/local');
+              }}
+              hitSlop={12}
+            >
+              <FontAwesome5 name="chevron-left" size={13} color="#fff" />
+              <Text style={styles.backTextOverlay}>Back</Text>
+            </TouchableOpacity>
           </View>
 
-          {!isOwner && profile && (
-            <TouchableOpacity
-              style={[styles.followBtn, following && { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: S.color }]}
-              onPress={handleFollowToggle}
-              activeOpacity={0.85}
-            >
-              <FontAwesome5 name={following ? 'check' : 'plus'} size={11} color={following ? S.color : '#fff'} />
-              <Text style={[styles.followBtnText, { color: following ? S.color : '#fff' }]}>
-                {following ? 'Following' : 'Follow'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
+          {/* Identity — logo overlaps the banner, name + category + follow */}
+          <View style={styles.heroBody}>
+            <View style={styles.heroTop}>
+              {business.logo_url ? (
+                <Image source={{ uri: business.logo_url }} style={styles.heroLogo} />
+              ) : (
+                <View style={[styles.heroLogo, styles.heroLogoFallback, { backgroundColor: CATEGORY_BANNER[business.category] ?? CATEGORY_BANNER.other }]}>
+                  <FontAwesome5 name={CATEGORY_ICONS[business.category] as any} size={30} color="#fff" solid />
+                </View>
+              )}
 
-        {/* ── Book now (OneShetland Book) ── */}
-        {/* Shown to everyone (incl. owner — useful for previewing the profile) */}
-        {isBookableLive(business) && (
+              {!isOwner && profile && (
+                <TouchableOpacity
+                  style={[styles.followBtn, { backgroundColor: accent }, following && { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: accent }]}
+                  onPress={handleFollowToggle}
+                  activeOpacity={0.85}
+                >
+                  <FontAwesome5 name={following ? 'check' : 'plus'} size={11} color={following ? accent : '#fff'} />
+                  <Text style={[styles.followBtnText, { color: following ? accent : '#fff' }]}>
+                    {following ? 'Following' : 'Follow'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.heroNameRow}>
+              <Text style={styles.heroName} numberOfLines={2}>{business.name}</Text>
+              {business.is_verified && (
+                <FontAwesome5 name="check-circle" size={16} color={accent} solid />
+              )}
+            </View>
+
+            <View style={[styles.heroCategoryChip, { backgroundColor: accent + '14' }]}>
+              <FontAwesome5 name={CATEGORY_ICONS[business.category] as any} size={10} color={accent} solid />
+              <Text style={[styles.heroCategoryChipText, { color: accent }]}>{CATEGORY_LABELS[business.category]}</Text>
+            </View>
+          </View>
+        </View>
+  );
+
+  // ── Book now (OneShetland Book) ────────────────────────────────────────────
+  const bookCtaSection = isBookableLive(business) ? (
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.bookCtaBtn}
@@ -247,10 +324,10 @@ export default function BusinessDetailScreen() {
               <FontAwesome5 name="chevron-right" size={12} color="#fff" />
             </TouchableOpacity>
           </View>
-        )}
+  ) : null;
 
-        {/* ── Tickets & passes (non-time-based unit items) ── */}
-        {unitItems.length > 0 && (
+  // ── Tickets & passes (non-time-based unit items) ───────────────────────────
+  const ticketsSection = unitItems.length > 0 && addonOn('bookings') ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Tickets &amp; passes</Text>
             <View style={{ gap: 10 }}>
@@ -264,7 +341,7 @@ export default function BusinessDetailScreen() {
                         <Text style={styles.unitDesc} numberOfLines={2}>{it.description}</Text>
                       ) : null}
                       <View style={styles.unitMetaRow}>
-                        <Text style={[styles.unitPrice, { color: S.color }]}>{formatPence(it.price_pence)}</Text>
+                        <Text style={[styles.unitPrice, { color: accent }]}>{formatPence(it.price_pence)}</Text>
                         {it.uses_per_purchase > 1 && (
                           <Text style={styles.unitMetaText}>· {it.uses_per_purchase} uses</Text>
                         )}
@@ -280,7 +357,7 @@ export default function BusinessDetailScreen() {
                       <TouchableOpacity
                         style={[
                           styles.unitBuyBtn,
-                          { backgroundColor: soldOut ? colors.border : S.color },
+                          { backgroundColor: soldOut ? colors.border : accent },
                         ]}
                         onPress={() => router.push({ pathname: '/local-buy-unit', params: { itemId: it.id } })}
                         disabled={soldOut}
@@ -292,12 +369,12 @@ export default function BusinessDetailScreen() {
                       </TouchableOpacity>
                       {!soldOut && (
                         <TouchableOpacity
-                          style={[styles.unitGiftBtn, { borderColor: S.color }]}
+                          style={[styles.unitGiftBtn, { borderColor: accent }]}
                           onPress={() => router.push({ pathname: '/local-gift', params: { kind: 'unit', itemId: it.id } })}
                           activeOpacity={0.85}
                         >
-                          <FontAwesome5 name="gift" size={10} color={S.color} solid />
-                          <Text style={[styles.unitGiftText, { color: S.color }]}>Gift</Text>
+                          <FontAwesome5 name="gift" size={10} color={accent} solid />
+                          <Text style={[styles.unitGiftText, { color: accent }]}>Gift</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -306,17 +383,17 @@ export default function BusinessDetailScreen() {
               })}
             </View>
           </View>
-        )}
+  ) : null;
 
-        {/* ── Description ── */}
-        {business.description && (
+  // ── Description ────────────────────────────────────────────────────────────
+  const descriptionSection = business.description ? (
           <View style={styles.section}>
             <Text style={styles.descText}>{business.description}</Text>
           </View>
-        )}
+  ) : null;
 
-        {/* ── Loyalty card ── */}
-        {program && (
+  // ── Loyalty card ───────────────────────────────────────────────────────────
+  const loyaltySection = program && addonOn('stamps') ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Loyalty</Text>
             <View style={styles.loyaltyCard}>
@@ -324,7 +401,7 @@ export default function BusinessDetailScreen() {
                 <>
                   <Text style={styles.loyaltyReward}>{program.stamp_reward ?? 'Loyalty reward'}</Text>
                   <Text style={styles.loyaltyCount}>
-                    <Text style={[styles.loyaltyCountNum, { color: S.color }]}>{stamps}</Text>
+                    <Text style={[styles.loyaltyCountNum, { color: accent }]}>{stamps}</Text>
                     <Text style={styles.loyaltyCountRest}> / {needed} stamps</Text>
                   </Text>
                   <View style={styles.stampGrid}>
@@ -333,7 +410,7 @@ export default function BusinessDetailScreen() {
                       return (
                         <View
                           key={i}
-                          style={[styles.stamp, filled ? { backgroundColor: S.color, borderColor: S.color } : { borderColor: colors.border }]}
+                          style={[styles.stamp, filled ? { backgroundColor: accent, borderColor: accent } : { borderColor: colors.border }]}
                         >
                           {filled && <FontAwesome5 name="check" size={10} color="#fff" />}
                         </View>
@@ -342,7 +419,7 @@ export default function BusinessDetailScreen() {
                   </View>
                   {rewardReady && (
                     <TouchableOpacity
-                      style={[styles.redeemBtn, { backgroundColor: S.color }, busy && { opacity: 0.7 }]}
+                      style={[styles.redeemBtn, { backgroundColor: accent }, busy && { opacity: 0.7 }]}
                       onPress={handleRedeemReward}
                       disabled={busy}
                       activeOpacity={0.85}
@@ -358,7 +435,7 @@ export default function BusinessDetailScreen() {
                     Earn {program.points_per_pound} points per £1 · {program.points_for_pound} points = £1 off
                   </Text>
                   <Text style={styles.loyaltyCount}>
-                    <Text style={[styles.loyaltyCountNum, { color: S.color }]}>{card?.points_balance ?? 0}</Text>
+                    <Text style={[styles.loyaltyCountNum, { color: accent }]}>{card?.points_balance ?? 0}</Text>
                     <Text style={styles.loyaltyCountRest}> points</Text>
                   </Text>
                 </>
@@ -368,15 +445,15 @@ export default function BusinessDetailScreen() {
                 onPress={() => router.push('/local-stamp-scanner')}
                 activeOpacity={0.8}
               >
-                <FontAwesome5 name="qrcode" size={11} color={S.color} />
-                <Text style={[styles.collectBtnText, { color: S.color }]}>Collect a stamp</Text>
+                <FontAwesome5 name="qrcode" size={11} color={accent} />
+                <Text style={[styles.collectBtnText, { color: accent }]}>Collect a stamp</Text>
               </TouchableOpacity>
             </View>
           </View>
-        )}
+  ) : null;
 
-        {/* ── Offers ── */}
-        {offers.length > 0 && (
+  // ── Offers ─────────────────────────────────────────────────────────────────
+  const offersSection = offers.length > 0 && addonOn('offers') ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Current offers</Text>
             <View style={{ gap: 8 }}>
@@ -384,7 +461,7 @@ export default function BusinessDetailScreen() {
                 const claimed = redeemedIds.has(o.id);
                 return (
                   <View key={o.id} style={styles.offerRow}>
-                    <View style={[styles.offerBadge, { backgroundColor: S.color }]}>
+                    <View style={[styles.offerBadge, { backgroundColor: accent }]}>
                       <Text style={styles.offerBadgeText}>{formatOfferDiscount(o)}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
@@ -404,7 +481,7 @@ export default function BusinessDetailScreen() {
                         </View>
                       ) : (
                         <TouchableOpacity
-                          style={[styles.offerClaimBtn, { backgroundColor: S.color }]}
+                          style={[styles.offerClaimBtn, { backgroundColor: accent }]}
                           onPress={() => handleRedeemOffer(o)}
                           disabled={busy}
                         >
@@ -417,10 +494,10 @@ export default function BusinessDetailScreen() {
               })}
             </View>
           </View>
-        )}
+  ) : null;
 
-        {/* ── Open shifts posted by this business ── */}
-        {openShifts.length > 0 && (
+  // ── Open shifts posted by this business ────────────────────────────────────
+  const hiringSection = openShifts.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Hiring now</Text>
             <View style={{ gap: 8 }}>
@@ -472,19 +549,181 @@ export default function BusinessDetailScreen() {
               })}
             </View>
           </View>
-        )}
+  ) : null;
 
-        {/* ── Info ── */}
+  // ── Upcoming events (when events add-on enabled) ───────────────────────────
+  const eventsSection = upcomingEvents.length > 0 && addonOn('events') ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Upcoming events</Text>
+            <View style={{ gap: 8 }}>
+              {upcomingEvents.map(ev => (
+                <TouchableOpacity
+                  key={ev.id}
+                  style={styles.eventRow}
+                  onPress={() => router.push({ pathname: '/events/[id]', params: { id: ev.id } })}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.eventDatePill, { backgroundColor: SECTIONS.events.color }]}>
+                    <Text style={styles.eventDateDay}>{new Date(ev.starts_at).getDate()}</Text>
+                    <Text style={styles.eventDateMonth}>
+                      {new Date(ev.starts_at).toLocaleString('en-GB', { month: 'short' }).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.eventTitle} numberOfLines={1}>{ev.title}</Text>
+                    <Text style={styles.eventMeta}>{formatShortDate(ev.starts_at)} · {formatTime(ev.starts_at)}</Text>
+                  </View>
+                  {ev.has_tickets ? (
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                               backgroundColor: SECTIONS.events.color, borderRadius: 999,
+                               paddingHorizontal: 10, paddingVertical: 5 }}
+                      onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/event-ticket-checkout', params: { id: ev.id } }); }}
+                      hitSlop={8}
+                    >
+                      <FontAwesome5 name="ticket-alt" size={9} color="#fff" solid />
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>Tickets</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <FontAwesome5 name="chevron-right" size={11} color={colors.textLight} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+  ) : null;
+
+  // ── Services catalogue (when Services add-on enabled) ──────────────────────
+  const servicesSection = addonOn('services') && services.length > 0 ? (() => {
+          const bookable = addonOn('bookings') && isBookableLive(business);
+          return (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Services</Text>
+              <View style={{ gap: 8 }}>
+                {services.map(svc => {
+                  const priceLabel = svc.price_pence > 0 ? formatPence(svc.price_pence) : 'On request';
+                  const Row: any = bookable ? TouchableOpacity : View;
+                  return (
+                    <Row
+                      key={svc.id}
+                      style={styles.serviceRow}
+                      {...(bookable
+                        ? {
+                            activeOpacity: 0.85,
+                            onPress: () => router.push({
+                              pathname: '/local-book-business',
+                              params: { businessId: business.id, serviceId: svc.id },
+                            }),
+                          }
+                        : {})}
+                    >
+                      <View style={[styles.serviceIcon, { backgroundColor: accent + '14' }]}>
+                        <FontAwesome5 name="tools" size={13} color={accent} solid />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.serviceName}>{svc.name}</Text>
+                        {svc.description ? (
+                          <Text style={styles.serviceDesc} numberOfLines={2}>{svc.description}</Text>
+                        ) : null}
+                        <Text style={styles.serviceMeta}>
+                          {formatDuration(svc.duration_minutes)}  ·  {priceLabel}
+                        </Text>
+                      </View>
+                      {bookable ? (
+                        <View style={[styles.serviceBookBtn, { backgroundColor: accent }]}>
+                          <Text style={styles.serviceBookBtnText}>Book</Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.servicePrice, { color: accent }]}>{priceLabel}</Text>
+                      )}
+                    </Row>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })() : null;
+
+  // ── Add-on placeholder sections (for add-ons not yet fully built) ──────────
+  const placeholderSections = addons
+          .filter(a => a.enabled && ['products', 'membership', 'enquiries'].includes(a.addon_key))
+          .map(addon => {
+            const icons: Record<string, string> = {
+              products:   'shopping-bag',
+              membership: 'id-card',
+              enquiries:  'envelope',
+            };
+            const labels: Record<string, string> = {
+              products:   'Products',
+              membership: 'Membership',
+              enquiries:  'Enquiries',
+            };
+            return (
+              <View key={addon.addon_key} style={styles.section}>
+                <View style={styles.addonPlaceholderRow}>
+                  <View style={[styles.addonPlaceholderIcon, { backgroundColor: accent + '14' }]}>
+                    <FontAwesome5 name={icons[addon.addon_key] ?? 'star'} size={13} color={accent} solid />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.sectionTitle}>{labels[addon.addon_key] ?? addon.addon_key}</Text>
+                    <Text style={styles.addonPlaceholderSub}>Coming soon</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          });
+
+  // ── Info ───────────────────────────────────────────────────────────────────
+  // ── Opening hours (rendered inside the Info section) ─────────────────────────
+  const openingHoursSection = (() => {
+    const oh = business.opening_hours;
+    if (!oh) return null;
+    const days: { key: keyof typeof oh; label: string }[] = [
+      { key: 'mon', label: 'Mon' }, { key: 'tue', label: 'Tue' }, { key: 'wed', label: 'Wed' },
+      { key: 'thu', label: 'Thu' }, { key: 'fri', label: 'Fri' }, { key: 'sat', label: 'Sat' },
+      { key: 'sun', label: 'Sun' },
+    ];
+    if (days.every(d => !oh[d.key])) return null;
+    const todayIdx = (new Date().getDay() + 6) % 7; // Mon=0 … Sun=6
+    return (
+      <View style={styles.hoursCard}>
+        <Text style={styles.hoursHeading}>Opening hours</Text>
+        {days.map((d, i) => {
+          const val = oh[d.key];
+          if (!val) return null;
+          const isToday = i === todayIdx;
+          return (
+            <View key={d.key} style={styles.hoursRow}>
+              <Text style={[styles.hoursDay, isToday && { color: accent, fontWeight: '800' }]}>
+                {d.label}{isToday ? ' · Today' : ''}
+              </Text>
+              <Text style={[styles.hoursTime, isToday && { color: accent, fontWeight: '800' }]}>{val}</Text>
+            </View>
+          );
+        })}
+      </View>
+    );
+  })();
+
+  const infoSection = (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Info</Text>
+          <BusinessLocationMap
+            lat={business.lat}
+            lng={business.lng}
+            name={business.name}
+            address={business.address}
+            color={accent}
+          />
           <View style={styles.infoCard}>
-            <InfoRow icon="map-marker-alt" label="Address" value={business.address} />
+            <InfoRow icon="map-marker-alt" label="Address" value={business.address} accentColor={accent} />
             {business.phone && (
               <>
                 <View style={styles.infoDivider} />
                 <InfoRow
                   icon="phone" label="Phone" value={business.phone}
                   onPress={() => Linking.openURL(`tel:${business.phone}`)}
+                  accentColor={accent}
                 />
               </>
             )}
@@ -494,10 +733,11 @@ export default function BusinessDetailScreen() {
                 <InfoRow
                   icon="globe" label="Website" value={business.website}
                   onPress={() => Linking.openURL(business.website!)}
+                  accentColor={accent}
                 />
               </>
             )}
-            {business.accepts_wallet && (
+            {business.accepts_wallet && addonOn('payments') && (
               <>
                 <View style={styles.infoDivider} />
                 <InfoRow
@@ -506,16 +746,48 @@ export default function BusinessDetailScreen() {
                   value={(business.cashback_percent ?? 0) > 0
                     ? `Pay with wallet · ${business.cashback_percent}% cashback`
                     : 'Pay with wallet'}
+                  accentColor={accent}
                 />
               </>
             )}
           </View>
+          {openingHoursSection}
         </View>
+  );
 
-        {isOwner && (
+  // ── Claim this business (unclaimed seeded listings) ──────────────────────────
+  const claimSection = (!business.is_claimed && !isOwner) ? (
+          <View style={styles.section}>
+            <View style={[styles.claimCard, { borderColor: accent }]}>
+              <View style={[styles.claimIcon, { backgroundColor: accent }]}>
+                <FontAwesome5 name="store" size={16} color="#fff" solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.claimTitle}>Is this your business?</Text>
+                <Text style={styles.claimBody}>
+                  Claim this free listing to update your details, add offers and reach locals.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.claimBtn, { backgroundColor: accent }]}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  if (!profile) { router.push('/(auth)/sign-in'); return; }
+                  router.push(`/business-claim?id=${business.id}`);
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.claimBtnText}>Claim</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+  ) : null;
+
+  // ── Owner manage ───────────────────────────────────────────────────────────
+  const ownerSection = isOwner ? (
           <View style={styles.section}>
             <TouchableOpacity
-              style={[styles.ownerBtn, { backgroundColor: S.color }]}
+              style={[styles.ownerBtn, { backgroundColor: accent }]}
               onPress={() => router.push('/local-business-dashboard')}
               activeOpacity={0.85}
             >
@@ -523,7 +795,54 @@ export default function BusinessDetailScreen() {
               <Text style={styles.ownerBtnText}>Manage business</Text>
             </TouchableOpacity>
           </View>
-        )}
+  ) : null;
+
+  // ── Compose ────────────────────────────────────────────────────────────────
+  // Phone: single stacked column. Tablet: showcase content in a wide main
+  // column, with contact/info + hiring in a fixed-width sidebar, all centred
+  // within a max-width container so tiles never stretch edge-to-edge.
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        {heroSection}
+
+        <View style={[styles.body, isTablet && styles.bodyTablet]}>
+          {isTablet ? (
+            <View style={styles.columns}>
+              <View style={styles.mainCol}>
+                {claimSection}
+                {bookCtaSection}
+                {descriptionSection}
+                {servicesSection}
+                {ticketsSection}
+                {offersSection}
+                {loyaltySection}
+                {eventsSection}
+                {placeholderSections}
+              </View>
+              <View style={styles.sideCol}>
+                {infoSection}
+                {hiringSection}
+                {ownerSection}
+              </View>
+            </View>
+          ) : (
+            <>
+              {claimSection}
+              {bookCtaSection}
+              {ticketsSection}
+              {descriptionSection}
+              {loyaltySection}
+              {offersSection}
+              {hiringSection}
+              {eventsSection}
+              {servicesSection}
+              {placeholderSections}
+              {infoSection}
+              {ownerSection}
+            </>
+          )}
+        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -531,18 +850,18 @@ export default function BusinessDetailScreen() {
   );
 }
 
-function InfoRow({ icon, label, value, onPress }: {
-  icon: string; label: string; value: string; onPress?: () => void;
+function InfoRow({ icon, label, value, onPress, accentColor = S.color }: {
+  icon: string; label: string; value: string; onPress?: () => void; accentColor?: string;
 }) {
   const Wrap: any = onPress ? TouchableOpacity : View;
   return (
     <Wrap style={styles.infoRow} onPress={onPress} activeOpacity={0.7}>
-      <View style={[styles.infoIcon, { backgroundColor: S.color + '18' }]}>
-        <FontAwesome5 name={icon as any} size={12} color={S.color} solid />
+      <View style={[styles.infoIcon, { backgroundColor: accentColor + '18' }]}>
+        <FontAwesome5 name={icon as any} size={12} color={accentColor} solid />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={[styles.infoValue, onPress && { color: S.color }]}>{value}</Text>
+        <Text style={[styles.infoValue, onPress && { color: accentColor }]}>{value}</Text>
       </View>
       {onPress && <FontAwesome5 name="external-link-alt" size={10} color={colors.textLight} />}
     </Wrap>
@@ -553,26 +872,67 @@ const styles = StyleSheet.create({
   safe:    { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: 40 },
+
+  // Post-hero body. Phone: pass-through. Tablet: centred max-width canvas.
+  body: {},
+  bodyTablet: {
+    width: '100%', maxWidth: 1100, alignSelf: 'center',
+    paddingHorizontal: spacing.lg, paddingTop: spacing.sm,
+  },
+  columns: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xl },
+  mainCol: { flex: 1, minWidth: 0 },
+  sideCol: { width: 320 },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: colors.textMuted, fontSize: fontSize.md },
 
   hero: {
-    backgroundColor: colors.navy,
-    paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg,
-    gap: 14, borderBottomWidth: 3,
+    backgroundColor: colors.screenBackground,
+    borderBottomWidth: 3, borderBottomColor: S.color,
   },
-  backBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  heroTop:  { flexDirection: 'row', gap: 14, alignItems: 'center' },
-  heroLogo: { width: 72, height: 72, borderRadius: radius.lg },
-  heroNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  heroName: { color: '#fff', fontSize: 22, fontWeight: '900', lineHeight: 26, flexShrink: 1 },
-  heroCategory: { color: 'rgba(255,255,255,0.55)', fontSize: fontSize.xs, fontWeight: '600', marginTop: 2 },
+  banner: {
+    width: '100%', height: 168,
+    overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  bannerWatermark: {
+    position: 'absolute', right: -10, bottom: -16,
+    transform: [{ rotate: '-12deg' }],
+  },
+  bannerScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+  },
+  backBtnOverlay: {
+    position: 'absolute', top: spacing.sm, left: spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.full,
+  },
+  backTextOverlay: { color: '#fff', fontSize: fontSize.sm, fontWeight: '700' },
+
+  heroBody: {
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.lg,
+  },
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  heroLogo: {
+    width: 84, height: 84, borderRadius: radius.lg, marginTop: -42,
+    borderWidth: 4, borderColor: colors.screenBackground,
+    backgroundColor: '#fff',
+  },
+  heroLogoFallback: { alignItems: 'center', justifyContent: 'center' },
+  heroNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 },
+  heroName: { color: colors.textPrimary, fontSize: 24, fontWeight: '900', lineHeight: 28, flexShrink: 1 },
+  heroCategoryChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+    backgroundColor: S.color + '14', paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: radius.full, marginTop: 8,
+  },
+  heroCategoryChipText: { color: S.color, fontSize: fontSize.xs, fontWeight: '800' },
 
   followBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 10, borderRadius: radius.full,
-    backgroundColor: S.color, alignSelf: 'flex-start', paddingHorizontal: 16,
+    backgroundColor: S.color, paddingHorizontal: 18,
   },
   followBtnText: { fontSize: fontSize.xs, fontWeight: '800' },
 
@@ -648,6 +1008,24 @@ const styles = StyleSheet.create({
   offerTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   offerDesc:  { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1, lineHeight: 16 },
   offerExpiry:{ fontSize: 10, color: colors.textLight, fontWeight: '600', marginTop: 4 },
+  // Services on detail page
+  serviceRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#fff', borderRadius: radius.lg,
+    padding: 12, borderWidth: 1, borderColor: colors.border,
+  },
+  serviceIcon: {
+    width: 38, height: 38, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  serviceName:  { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  serviceDesc:  { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1, lineHeight: 16 },
+  serviceMeta:  { fontSize: 11, color: colors.textLight, fontWeight: '600', marginTop: 4 },
+  servicePrice: { fontSize: fontSize.sm, fontWeight: '900' },
+  serviceBookBtn: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.md, flexShrink: 0,
+  },
+  serviceBookBtnText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   // Shifts on detail page
   shiftRow:        { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
   shiftIcon:       { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
@@ -678,4 +1056,47 @@ const styles = StyleSheet.create({
     paddingVertical: 14, borderRadius: radius.lg,
   },
   ownerBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+
+  // Claim-this-business banner
+  claimCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1.5,
+    padding: spacing.md,
+  },
+  claimIcon: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  claimTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
+  claimBody:  { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2, lineHeight: 17 },
+  claimBtn:   { paddingHorizontal: 18, paddingVertical: 10, borderRadius: radius.md },
+  claimBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+
+  // Opening hours
+  hoursCard: {
+    marginTop: spacing.sm, backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+  },
+  hoursHeading: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
+  hoursRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  hoursDay:  { fontSize: fontSize.sm, color: colors.textMuted },
+  hoursTime: { fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '600' },
+
+  // Add-on placeholder sections
+  addonPlaceholderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  addonPlaceholderIcon:{ width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  addonPlaceholderSub: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
+
+  eventRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff', borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, padding: 10,
+  },
+  eventDatePill: {
+    width: 36, alignItems: 'center', borderRadius: radius.sm, paddingVertical: 4, flexShrink: 0,
+  },
+  eventDateDay:   { color: '#fff', fontSize: fontSize.md, fontWeight: '900', lineHeight: 18 },
+  eventDateMonth: { color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '700' },
+  eventTitle:     { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  eventMeta:      { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
 });

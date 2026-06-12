@@ -75,24 +75,13 @@ serve(async (req) => {
       return json({ balance_pence: bal?.balance_pence ?? 0 });
     }
 
+    // Amount comes from Stripe (server-verified), never the client.
     const amount = intent.amount;
 
-    // Read-modify-write the balance (acceptable at low scale; consider DB function later)
-    const { data: balRow } = await svc
-      .from('local_wallet_balances')
-      .select('balance_pence')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    const newBalance = (balRow?.balance_pence ?? 0) + amount;
-
-    await svc
-      .from('local_wallet_balances')
-      .upsert({
-        user_id: user.id,
-        balance_pence: newBalance,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
+    // Atomic credit — avoids the lost-update race when two top-ups land at once.
+    const { data: newBalance, error: creditErr } = await svc
+      .rpc('wallet_credit', { p_user: user.id, p_amount: amount });
+    if (creditErr) throw creditErr;
 
     await svc.from('local_wallet_transactions').insert({
       user_id: user.id,

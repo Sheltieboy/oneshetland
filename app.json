@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "OneShetland Fetch",
+    "name": "OneShetland",
     "slug": "oneshetland-delivers",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,17 +14,17 @@
       "backgroundColor": "#032F4C"
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.oneshetland.app",
       "buildNumber": "3",
       "icon": "./assets/icon.png",
       "associatedDomains": ["applinks:oneshetland.com"],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "OneShetland Fetch uses your camera to take photos of delivered items.",
-        "NSPhotoLibraryUsageDescription": "OneShetland Fetch uses your photo library to attach images to deliveries.",
+        "NSCameraUsageDescription": "OneShetland uses your camera to take photos of delivered items.",
+        "NSPhotoLibraryUsageDescription": "OneShetland uses your photo library to attach images to deliveries.",
         "NSLocationWhenInUseUsageDescription": "OneShetland uses your location to verify you're at a business when you tap a Local NFC tile, and to match you with nearby drivers.",
-        "NSMicrophoneUsageDescription": "OneShetland Fetch may use your microphone for video proof of delivery."
+        "NSMicrophoneUsageDescription": "OneShetland may use your microphone for video proof of delivery."
       }
     },
     "android": {
@@ -39,7 +39,8 @@
           "autoVerify": true,
           "data": [
             { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/t/" },
-            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/g/" }
+            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/g/" },
+            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/give/" }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         }
@@ -54,7 +55,7 @@
       [
         "expo-secure-store",
         {
-          "faceIDPermission": "Allow OneShetland Fetch to use Face ID to secure your account."
+          "faceIDPermission": "Allow OneShetland to use Face ID to secure your account."
         }
       ],
       [

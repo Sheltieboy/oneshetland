@@ -15,6 +15,8 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
+import { fetchMyHubMemberships, type HubMember } from '@/lib/hubs-api';
 import {
   fetchWalletBalance, fetchWalletTransactions,
   startWalletTopUp, confirmWalletTopUp,
@@ -27,6 +29,7 @@ import {
   fetchWorkSummary, fetchFetchSummary,
   type WorkSummary, type FetchSummary,
 } from '@/lib/wallet-hub';
+import { fetchMyUpcomingEventTickets, type EventTicket } from '@/lib/events-api';
 
 const S = SECTIONS.local;
 
@@ -47,6 +50,15 @@ export default function WalletScreen() {
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [toppingUp, setToppingUp] = useState<number | null>(null);
+  const [confirmAmount, setConfirmAmount] = useState<number | null>(null);
+
+  // Tapping an amount: if there's a saved card it would charge off-session with
+  // no Stripe UI, so show our confirm step first. With no card on file, fall
+  // through to handleTopUp which prompts to add one (or opens the Payment Sheet).
+  const requestTopUp = (amountPence: number) => {
+    if (profile?.has_payment_method) setConfirmAmount(amountPence);
+    else handleTopUp(amountPence);
+  };
 
   // My Wallet hub sections — each loads independently; failures degrade to empty.
   const [passes, setPasses]                 = useState<MyPass[]>([]);
@@ -55,13 +67,15 @@ export default function WalletScreen() {
   const [loyaltyCards, setLoyaltyCards]     = useState<LoyaltyCard[]>([]);
   const [work, setWork]   = useState<WorkSummary  | null>(null);
   const [fetch_, setFetch_] = useState<FetchSummary | null>(null);
+  const [upcomingEventTickets, setUpcomingEventTickets] = useState<EventTicket[]>([]);
+  const [membershipsCount, setMembershipsCount] = useState(0);
 
   const load = useCallback(async () => {
     if (!profile) return;
     try {
       // Each fetcher wrapped in .catch so a single failure (RLS, network) only
       // empties its own section, doesn't blank the screen.
-      const [b, t, ps, gs, bks, lcs, ws, fs] = await Promise.all([
+      const [b, t, ps, gs, bks, lcs, ws, fs, evTickets, mships] = await Promise.all([
         fetchWalletBalance(profile.id),
         fetchWalletTransactions(profile.id),
         fetchMyPasses(profile.id).catch(() => [] as MyPass[]),
@@ -70,7 +84,10 @@ export default function WalletScreen() {
         fetchMyLoyaltyCards(profile.id).catch(() => [] as LoyaltyCard[]),
         fetchWorkSummary(profile.id).catch(() => null),
         fetchFetchSummary(profile.id).catch(() => null),
+        fetchMyUpcomingEventTickets(profile.id).catch(() => [] as EventTicket[]),
+        fetchMyHubMemberships(profile.id).catch(() => [] as HubMember[]),
       ]);
+      setMembershipsCount(mships.length);
       setBalance(b);
       setTxs(t);
       setPasses(ps);
@@ -86,6 +103,7 @@ export default function WalletScreen() {
       setLoyaltyCards(lcs);
       setWork(ws);
       setFetch_(fs);
+      setUpcomingEventTickets(evTickets);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -194,7 +212,7 @@ export default function WalletScreen() {
               <TouchableOpacity
                 key={amt.pence}
                 style={[styles.topUpBtn, toppingUp === amt.pence && { opacity: 0.7 }]}
-                onPress={() => handleTopUp(amt.pence)}
+                onPress={() => requestTopUp(amt.pence)}
                 disabled={!!toppingUp}
                 activeOpacity={0.8}
               >
@@ -220,6 +238,15 @@ export default function WalletScreen() {
           />
         )}
 
+        {membershipsCount > 0 && (
+          <HubSection
+            icon="id-card"
+            title="My memberships"
+            countLabel={`${membershipsCount} ${membershipsCount === 1 ? 'hub' : 'hubs'}`}
+            onPress={() => router.push('/hub-my-memberships' as any)}
+          />
+        )}
+
         {giftsToClaim.length > 0 && (
           <HubSection
             icon="gift"
@@ -235,6 +262,15 @@ export default function WalletScreen() {
             title="Upcoming bookings"
             countLabel={`${upcomingBookings.length} ${upcomingBookings.length === 1 ? 'booking' : 'bookings'}`}
             onPress={() => router.push('/local-my-bookings')}
+          />
+        )}
+
+        {upcomingEventTickets.length > 0 && (
+          <HubSection
+            icon="ticket-alt"
+            title="Event tickets"
+            countLabel={`${upcomingEventTickets.length} upcoming`}
+            onPress={() => router.push('/my-event-tickets' as any)}
           />
         )}
 
@@ -332,6 +368,19 @@ export default function WalletScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <ConfirmPaymentSheet
+        visible={confirmAmount != null}
+        title="Top up your wallet"
+        itemName="OneShetland wallet top-up"
+        lineItems={[{ label: 'Top-up amount', amountPence: confirmAmount ?? 0 }]}
+        totalPence={confirmAmount ?? 0}
+        payingWith="your saved card"
+        policy={{ text: 'Wallet credit is non-refundable but can be spent at any participating Shetland business.' }}
+        loading={toppingUp != null}
+        onConfirm={() => { const amt = confirmAmount; setConfirmAmount(null); if (amt != null) handleTopUp(amt); }}
+        onCancel={() => setConfirmAmount(null)}
+      />
     </SafeAreaView>
   );
 }

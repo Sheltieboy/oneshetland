@@ -15,11 +15,14 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 serve((req) => {
   const url = new URL(req.url);
   const businessId = url.searchParams.get('business');
+  const hubId      = url.searchParams.get('hub');
   const retry      = url.searchParams.get('retry');
   const status     = url.searchParams.get('status') ?? 'return';
 
   let appScheme: string;
-  if (businessId) {
+  if (hubId) {
+    appScheme = `oneshetland-fetch://hub-membership-types?id=${hubId}&connect=${retry ? 'refresh' : 'return'}`;
+  } else if (businessId) {
     appScheme = retry
       ? `oneshetland-fetch://local-business-dashboard?connect=refresh&business=${businessId}`
       : `oneshetland-fetch://local-business-dashboard?connect=return&business=${businessId}`;

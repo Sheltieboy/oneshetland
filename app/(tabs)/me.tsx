@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -72,6 +73,7 @@ export default function MeTab() {
   const router = useRouter();
   const { session, profile, signOut, refreshProfile } = useAuth();
   const { alert } = useAlert();
+  const { isTablet } = useAppLayout();
 
   const [refreshing, setRefreshing] = useState(false);
   const [myBusinesses, setMyBusinesses] = useState<MyBusiness[]>([]);
@@ -158,6 +160,8 @@ export default function MeTab() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        style={{ backgroundColor: colors.screenBackground }}
+        contentContainerStyle={isTablet ? { maxWidth: 680, alignSelf: 'center', width: '100%' } : undefined}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }

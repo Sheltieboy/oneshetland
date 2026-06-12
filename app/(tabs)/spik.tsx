@@ -17,6 +17,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import {
   fetchSpikByLetter,
@@ -111,6 +112,8 @@ function WordCard({ item }: { item: SpikListItem }) {
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function SpikTab() {
+  const { isTablet } = useAppLayout();
+  const numCols = isTablet ? 2 : 1;
   const [activeLetter, setActiveLetter] = useState('a');
   const [searchQuery, setSearchQuery]   = useState('');
   const [words, setWords]               = useState<SpikListItem[]>([]);
@@ -188,8 +191,10 @@ export default function SpikTab() {
   }, []);
 
   const renderWord = useCallback(({ item }: { item: SpikListItem }) => (
-    <WordCard item={item} />
-  ), []);
+    isTablet
+      ? <View style={{ flex: 1, maxWidth: '50%' }}><WordCard item={item} /></View>
+      : <WordCard item={item} />
+  ), [isTablet]);
 
   const isSearching = debouncedQuery.trim().length >= 2;
 
@@ -268,9 +273,11 @@ export default function SpikTab() {
             ref={listRef}
             data={words}
             keyExtractor={item => String(item.id)}
+            key={numCols}
+            numColumns={numCols}
             renderItem={renderWord}
             ListHeaderComponent={listHeader}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, isTablet && styles.listContentTablet]}
             ListEmptyComponent={
               <View style={styles.center}>
                 <Text style={styles.emptyText}>{isSearching ? 'No words found' : `No words for ${activeLetter.toUpperCase()}`}</Text>
@@ -335,6 +342,7 @@ const styles = StyleSheet.create({
   letterTextActive: { color: '#fff' },
 
   listContent: { paddingBottom: 32 },
+  listContentTablet: { maxWidth: 900, alignSelf: 'center', width: '100%' },
 
   card: {
     backgroundColor: colors.cardBackground,

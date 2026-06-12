@@ -21,6 +21,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { type SpikStats } from '@/lib/oneshetland-api';
 
 const SUPABASE_URL     = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -151,6 +152,7 @@ interface Props {
 const NUM_CARDS = 4;
 
 export default function SpikStatsHeader({ stats, loading }: Props) {
+  const { isTablet } = useAppLayout();
   // One opacity+translateY pair per card for staggered entrance
   const cardAnims = useRef(
     Array.from({ length: NUM_CARDS }, () => ({
@@ -231,10 +233,10 @@ export default function SpikStatsHeader({ stats, loading }: Props) {
   if (!stats) return null;
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, isTablet && styles.wrapGrid]}>
 
       {/* ── Card 1: Total + Surprise ── */}
-      <Animated.View style={[styles.card, styles.totalCard, animStyle(0)]}>
+      <Animated.View style={[styles.card, styles.totalCard, isTablet && styles.colFull, animStyle(0)]}>
         <View style={styles.totalRow}>
           <View>
             <Text style={styles.totalNum}>{totalCount.toLocaleString()}</Text>
@@ -245,7 +247,7 @@ export default function SpikStatsHeader({ stats, loading }: Props) {
       </Animated.View>
 
       {/* ── Card 2: Origin breakdown — each row taps through to filtered list ── */}
-      <Animated.View style={[styles.card, animStyle(1)]}>
+      <Animated.View style={[styles.card, isTablet && styles.colHalf, animStyle(1)]}>
         <View style={styles.cardHeaderRow}>
           <View>
             <Text style={styles.cardTitle}>Origin</Text>
@@ -272,7 +274,7 @@ export default function SpikStatsHeader({ stats, loading }: Props) {
       </Animated.View>
 
       {/* ── Card 3: Usage mix — every stat taps through to its filtered list ── */}
-      <Animated.View style={[styles.card, animStyle(2)]}>
+      <Animated.View style={[styles.card, isTablet && styles.colHalf, animStyle(2)]}>
         <View style={styles.cardHeaderRow}>
           <View>
             <Text style={styles.cardTitle}>Usage mix</Text>
@@ -322,7 +324,7 @@ export default function SpikStatsHeader({ stats, loading }: Props) {
       </Animated.View>
 
       {/* ── Card 4: How to use ── */}
-      <Animated.View style={[styles.card, styles.howToCard, animStyle(3)]}>
+      <Animated.View style={[styles.card, styles.howToCard, isTablet && styles.colFull, animStyle(3)]}>
         <View style={styles.howToIcon}>
           <FontAwesome5 name="lightbulb" size={16} color={colors.accent} />
         </View>
@@ -378,6 +380,9 @@ function OriginRow({
 
 const styles = StyleSheet.create({
   wrap:        { paddingHorizontal: spacing.md, paddingTop: spacing.md, gap: 10 },
+  wrapGrid:    { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch' },
+  colFull:     { width: '100%' },
+  colHalf:     { width: '48.5%' },
   loadingWrap: { height: 80, justifyContent: 'center', alignItems: 'center' },
 
   card: {
