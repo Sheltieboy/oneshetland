@@ -6,13 +6,16 @@
 
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, ScrollView, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { fetchHub, fetchHubDirectory, type Hub, type HubDirectoryEntry } from '@/lib/hubs-api';
 
 const S = SECTIONS.community;
@@ -20,6 +23,7 @@ const S = SECTIONS.community;
 export default function HubDirectoryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const [hub, setHub] = useState<Hub | null>(null);
   const [rows, setRows] = useState<HubDirectoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,22 +48,15 @@ export default function HubDirectoryScreen() {
   const initial = (n: string) => (n.trim()[0] ?? '?').toUpperCase();
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{hub?.name ?? 'Members'}</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold
+      header={<ScreenHeader title={hub?.name ?? 'Members'} accent={S.color} onBack={() => router.back()} />}
+    >
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+          <LoadingState accent={S.color} />
         ) : error ? (
-          <View style={styles.empty}><FontAwesome5 name="lock" size={24} color={colors.textLight} /><Text style={styles.emptyBody}>{error}</Text></View>
+          <EmptyState icon="lock" title="Directory unavailable" body={error} accent={S.color} variant="card" />
         ) : (
           <>
             <Text style={styles.count}>{rows.length} member{rows.length === 1 ? '' : 's'}</Text>
@@ -81,24 +78,12 @@ export default function HubDirectoryScreen() {
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, flex: 1, textAlign: 'center' },
-
   content: { padding: spacing.md },
-  center: { paddingVertical: spacing.xl, alignItems: 'center' },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: 10 },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
   count: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: spacing.sm },
 
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 8 },

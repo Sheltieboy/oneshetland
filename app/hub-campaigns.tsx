@@ -7,16 +7,22 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, RefreshControl, Modal, KeyboardAvoidingView, Platform, Share, Switch,
+  Alert, RefreshControl, Modal, KeyboardAvoidingView, Platform, Share, Switch,
 } from 'react-native';
 import { Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { IconButton } from '@/components/ui/IconButton';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
 import { uploadHubImage, type PickedFile } from '@/lib/image-upload';
 import { formatPence } from '@/lib/local-api';
@@ -42,6 +48,7 @@ const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 export default function HubCampaignsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const [hub, setHub] = useState<Hub | null>(null);
   const [campaigns, setCampaigns] = useState<HubCampaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,37 +149,31 @@ export default function HubCampaignsScreen() {
   };
 
   if (loading) {
-    return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.center}><ActivityIndicator color={S.color} /></View></SafeAreaView>;
+    return <ScreenScaffold header={<ScreenHeader title="Fundraising" accent={accent} />}><LoadingState accent={accent} /></ScreenScaffold>;
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: accent }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={accent} />
-          <Text style={[styles.backText, { color: accent }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Fundraising</Text>
-        <TouchableOpacity onPress={openNew} hitSlop={12} style={{ width: 70, alignItems: 'flex-end' }}>
-          <FontAwesome5 name="plus" size={16} color={accent} solid />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Fundraising"
+          accent={accent}
+          onBack={() => router.back()}
+          rightElement={<IconButton icon="plus" color={accent} onPress={openNew} accessibilityLabel="New fundraiser" />}
+        />
+      }
+    >
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}>
 
         {hub?.is_charity && hub?.charity_number ? (
-          <TouchableOpacity style={[styles.giftAidBtn, { borderColor: accent }]} onPress={exportGiftAid} activeOpacity={0.85}>
-            <FontAwesome5 name="file-export" size={13} color={accent} solid />
-            <Text style={[styles.giftAidText, { color: accent }]}>Export Gift Aid claim</Text>
-          </TouchableOpacity>
+          <Button label="Export Gift Aid claim" icon="file-export" variant="outline" color={accent}
+            onPress={exportGiftAid} fullWidth style={styles.giftAidBtn} />
         ) : null}
 
         {campaigns.length === 0 ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="bullseye" size={26} color={colors.textLight} />
-            <Text style={styles.emptyBody}>No fundraisers yet. Start one to raise money for your hub.</Text>
-          </View>
+          <EmptyState icon="bullseye" title="No fundraisers yet"
+            body="Start one to raise money for your hub." accent={accent} variant="card" />
         ) : campaigns.map(c => (
           <View key={c.id} style={[styles.card, c.status === 'closed' && { opacity: 0.7 }]}>
             <TouchableOpacity onPress={() => router.push(`/hub-campaign?id=${c.id}`)} activeOpacity={0.8}>
@@ -247,32 +248,20 @@ export default function HubCampaignsScreen() {
                 </View>
               ) : null}
 
-              <TouchableOpacity style={[styles.saveBtn, { backgroundColor: accent }, saving && { opacity: 0.6 }]} onPress={save} disabled={saving} activeOpacity={0.85}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{editId ? 'Save' : 'Start fundraiser'}</Text>}
-              </TouchableOpacity>
+              <Button label={editId ? 'Save' : 'Start fundraiser'} onPress={save} color={accent}
+                loading={saving} disabled={saving} fullWidth style={styles.saveBtn} />
               <View style={{ height: 20 }} />
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md },
-  giftAidBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: radius.lg, paddingVertical: 12, marginBottom: spacing.md },
-  giftAidText: { fontSize: fontSize.sm, fontWeight: '800' },
-
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: 10 },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
+  giftAidBtn: { marginBottom: spacing.md },
 
   card: { backgroundColor: '#fff', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -300,6 +289,5 @@ const styles = StyleSheet.create({
   durRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   durBtn: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border },
   durText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textSecondary },
-  saveBtn: { marginTop: spacing.lg, borderRadius: radius.lg, paddingVertical: 15, alignItems: 'center' },
-  saveText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: spacing.lg },
 });

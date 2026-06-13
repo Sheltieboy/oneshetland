@@ -8,14 +8,20 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, RefreshControl, Linking, Modal, KeyboardAvoidingView, Platform,
+  Alert, RefreshControl, Linking, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { IconButton } from '@/components/ui/IconButton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchHub, fetchMyMembership, fetchHubDocuments, createHubDocument, deleteHubDocument,
@@ -34,6 +40,7 @@ export default function HubDocumentsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [hub, setHub] = useState<Hub | null>(null);
   const [docs, setDocs] = useState<HubDocument[]>([]);
@@ -85,29 +92,24 @@ export default function HubDocumentsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Documents</Text>
-        {isAdmin ? (
-          <TouchableOpacity onPress={() => setEditorOpen(true)} hitSlop={12} style={{ width: 70, alignItems: 'flex-end' }}>
-            <FontAwesome5 name="plus" size={16} color={S.color} solid />
-          </TouchableOpacity>
-        ) : <View style={{ width: 70 }} />}
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Documents"
+          accent={S.color}
+          onBack={() => router.back()}
+          rightElement={isAdmin ? (
+            <IconButton icon="plus" color={S.color} onPress={() => setEditorOpen(true)} />
+          ) : undefined}
+        />
+      }
+    >
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+          <LoadingState accent={S.color} />
         ) : docs.length === 0 ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="folder-open" size={26} color={colors.textLight} />
-            <Text style={styles.emptyBody}>No documents yet.</Text>
-          </View>
+          <EmptyState icon="folder-open" title="No documents yet." accent={S.color} variant="card" />
         ) : docs.map(d => (
           <View key={d.id} style={styles.docRow}>
             <TouchableOpacity style={styles.docMain} onPress={() => Linking.openURL(d.url)} activeOpacity={0.7}>
@@ -155,31 +157,17 @@ export default function HubDocumentsScreen() {
               ))}
             </View>
 
-            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.6 }]} onPress={save} disabled={saving} activeOpacity={0.85}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>Add document</Text>}
-            </TouchableOpacity>
+            <Button label="Add document" onPress={save} color={S.color} loading={saving} disabled={saving} fullWidth style={styles.saveBtn} />
             <View style={{ height: 12 }} />
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md },
-  center: { paddingVertical: spacing.xl, alignItems: 'center' },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: 10 },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted },
 
   docRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginBottom: 10 },
   docMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
@@ -198,6 +186,5 @@ const styles = StyleSheet.create({
   visRow: { flexDirection: 'row', gap: 8 },
   visBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: radius.md, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border },
   visText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textSecondary },
-  saveBtn: { marginTop: spacing.lg, borderRadius: radius.lg, paddingVertical: 15, alignItems: 'center' },
-  saveText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: spacing.lg },
 });

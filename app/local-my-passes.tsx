@@ -11,22 +11,26 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, ScrollView, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { fetchMyPasses, formatPence, type MyPass } from '@/lib/local-api';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 
 const S = SECTIONS.local;
 
 export default function MyPassesScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [passes, setPasses]       = useState<MyPass[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -48,37 +52,23 @@ export default function MyPassesScreen() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Passes & vouchers</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold header={<ScreenHeader title="Passes & vouchers" accent={S.color} />}>
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : passes.length === 0 ? (
-        <View style={styles.center}>
-          <FontAwesome5 name="ticket-alt" size={40} color={colors.textLight} solid />
-          <Text style={styles.emptyTitle}>Nothing yet</Text>
-          <Text style={styles.emptySub}>
-            Day passes, class packs and vouchers you buy from Shetland businesses appear here.
-          </Text>
-          <TouchableOpacity
-            style={[styles.browseBtn, { backgroundColor: S.color }]}
-            onPress={() => router.push('/(tabs)/local')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.browseBtnText}>Browse the Marketplace</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          icon="ticket-alt"
+          title="Nothing yet"
+          body="Day passes, class packs and vouchers you buy from Shetland businesses appear here."
+          accent={S.color}
+          variant="card"
+          actionLabel="Browse the Marketplace"
+          onAction={() => router.push('/(tabs)/local')}
+        />
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -91,7 +81,7 @@ export default function MyPassesScreen() {
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -143,25 +133,8 @@ function formatDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 12 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: 12 },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary, flex: 1, textAlign: 'center' },
-
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
-  emptySub:   { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 22 },
-  browseBtn:  { paddingVertical: 12, paddingHorizontal: 22, borderRadius: radius.md, marginTop: 8 },
-  browseBtnText: { color: '#fff', fontWeight: '800', fontSize: fontSize.sm },
 
   card: {
     backgroundColor: '#fff', borderRadius: radius.lg,

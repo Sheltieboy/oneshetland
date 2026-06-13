@@ -7,15 +7,18 @@
 
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchMyHubMemberships, isMembershipActive, formatMembershipPrice,
@@ -34,6 +37,7 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day
 export default function MyMembershipsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
   const [memberships, setMemberships] = useState<HubMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -49,30 +53,22 @@ export default function MyMembershipsScreen() {
   const onRefresh = useCallback(async () => { setRefreshing(true); await load(); setRefreshing(false); }, [load]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My memberships</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold header={<ScreenHeader title="My memberships" accent={S.color} />}>
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
 
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+          <LoadingState accent={S.color} />
         ) : memberships.length === 0 ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="id-card" size={28} color={colors.textLight} />
-            <Text style={styles.emptyTitle}>No memberships yet</Text>
-            <Text style={styles.emptyBody}>Join a Hub to get your membership card here.</Text>
-            <TouchableOpacity style={[styles.browseBtn, { backgroundColor: S.color }]} onPress={() => router.push('/hubs')} activeOpacity={0.85}>
-              <Text style={styles.browseText}>Browse Hubs</Text>
-            </TouchableOpacity>
-          </View>
+          <EmptyState
+            icon="id-card"
+            title="No memberships yet"
+            body="Join a Hub to get your membership card here."
+            accent={S.color}
+            variant="card"
+            actionLabel="Browse Hubs"
+            onAction={() => router.push('/hubs')}
+          />
         ) : memberships.map(m => {
           const accent = tint(m.hub?.brand_color);
           const valid = isMembershipActive(m);
@@ -119,27 +115,12 @@ export default function MyMembershipsScreen() {
         })}
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md, gap: spacing.md },
-  center: { paddingVertical: spacing.xxl, alignItems: 'center' },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: 10 },
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
-  browseBtn: { marginTop: spacing.md, paddingHorizontal: 22, paddingVertical: 12, borderRadius: radius.lg },
-  browseText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
 
   cardShadow: { borderRadius: radius.xl, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
   card: { borderRadius: radius.xl, padding: spacing.lg, gap: spacing.md },

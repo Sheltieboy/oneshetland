@@ -5,13 +5,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Image, ActivityIndicator, RefreshControl,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchActiveOffers, fetchMyRedeemedOfferIds,
@@ -25,6 +29,7 @@ const S = SECTIONS.local;
 export default function OffersScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
   const [offers, setOffers]     = useState<LocalOffer[]>([]);
   const [redeemed, setRedeemed] = useState<Set<string>>(new Set());
   const [loading, setLoading]   = useState(true);
@@ -47,40 +52,37 @@ export default function OffersScreen() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Offers</Text>
-          <Text style={styles.headerSub}>{offers.length} active</Text>
-        </View>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Offers"
+          subtitle={`${offers.length} active`}
+          accent={S.color}
+          onBack={() => router.back()}
+        />
+      }
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : (
         <FlatList
           data={offers}
           keyExtractor={o => o.id}
           renderItem={({ item }) => <OfferRow offer={item} claimed={redeemed.has(item.id)} />}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
-                <FontAwesome5 name="tags" size={28} color={S.color} solid />
-              </View>
-              <Text style={styles.emptyTitle}>No offers right now</Text>
-              <Text style={styles.emptyText}>Follow local businesses to be alerted when they post deals.</Text>
-            </View>
+            <EmptyState
+              icon="tags"
+              title="No offers right now"
+              body="Follow local businesses to be alerted when they post deals."
+              accent={S.color}
+              variant="card"
+            />
           }
         />
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -131,21 +133,6 @@ function OfferRow({ offer, claimed }: { offer: LocalOffer; claimed: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerCenter:{ alignItems: 'center', gap: 2 },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-  headerSub:   { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.xs, fontWeight: '600' },
-
   listContent: { padding: spacing.md, gap: 10, paddingBottom: 100, flexGrow: 1 },
 
   card: {
@@ -162,9 +149,4 @@ const styles = StyleSheet.create({
   expiry:   { fontSize: 10, color: colors.textLight, fontWeight: '600' },
   claimedPill: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.successLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full, marginLeft: 'auto' },
   claimedText: { fontSize: 9, fontWeight: '800', color: colors.success },
-
-  empty:      { alignItems: 'center', padding: spacing.xl, gap: 10, flex: 1, justifyContent: 'center' },
-  emptyIcon:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
-  emptyText:  { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
 });

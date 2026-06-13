@@ -9,11 +9,10 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, RefreshControl, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { Linking } from 'react-native';
 import {
@@ -21,6 +20,13 @@ import {
   createHubOnboardingLink, formatMembershipPrice,
   type Hub, type HubMembershipType, type MembershipPeriod,
 } from '@/lib/hubs-api';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { IconButton } from '@/components/ui/IconButton';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 
 const S = SECTIONS.community;
 
@@ -44,6 +50,7 @@ const EMPTY: FormState = { name: '', description: '', priceText: '', period: 'ye
 export default function HubMembershipTypesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [hub, setHub] = useState<Hub | null>(null);
   const [types, setTypes] = useState<HubMembershipType[]>([]);
@@ -122,23 +129,24 @@ export default function HubMembershipTypesScreen() {
   };
 
   if (loading) {
-    return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.center}><ActivityIndicator color={S.color} /></View></SafeAreaView>;
+    return (
+      <ScreenScaffold header={<ScreenHeader title="Membership tiers" accent={S.color} />}>
+        <LoadingState accent={S.color} />
+      </ScreenScaffold>
+    );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Membership tiers</Text>
-        <TouchableOpacity onPress={openNew} hitSlop={12} style={{ width: 70, alignItems: 'flex-end' }}>
-          <FontAwesome5 name="plus" size={16} color={S.color} solid />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Membership tiers"
+          accent={S.color}
+          rightElement={<IconButton icon="plus" color={S.color} onPress={openNew} />}
+        />
+      }
+    >
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
 
         <Text style={styles.intro}>
@@ -171,10 +179,13 @@ export default function HubMembershipTypesScreen() {
         ) : null}
 
         {types.length === 0 ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="id-card" size={26} color={colors.textLight} />
-            <Text style={styles.emptyBody}>No tiers yet. Add your first membership tier.</Text>
-          </View>
+          <EmptyState
+            icon="id-card"
+            title="No tiers yet"
+            body="Add your first membership tier."
+            accent={S.color}
+            variant="card"
+          />
         ) : types.map(t => (
           <TouchableOpacity key={t.id} style={styles.tierCard} onPress={() => openEdit(t)} activeOpacity={0.8}>
             <View style={{ flex: 1 }}>
@@ -192,10 +203,14 @@ export default function HubMembershipTypesScreen() {
           </TouchableOpacity>
         ))}
 
-        <TouchableOpacity style={[styles.addBtn, { borderColor: S.color }]} onPress={openNew} activeOpacity={0.8}>
-          <FontAwesome5 name="plus" size={12} color={S.color} solid />
-          <Text style={[styles.addBtnText, { color: S.color }]}>Add a tier</Text>
-        </TouchableOpacity>
+        <Button
+          label="Add a tier"
+          icon="plus"
+          color={S.color}
+          fullWidth
+          onPress={openNew}
+          style={styles.addBtnSpacing}
+        />
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -244,21 +259,11 @@ export default function HubMembershipTypesScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md },
   intro: { fontSize: fontSize.sm, color: colors.textMuted, lineHeight: 21, marginBottom: spacing.md },
 
@@ -269,9 +274,6 @@ const styles = StyleSheet.create({
   okCard: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#DCFCE7', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
   okText: { fontSize: fontSize.xs, color: '#15803D', fontWeight: '700' },
 
-  empty: { alignItems: 'center', paddingVertical: spacing.xl, gap: 10 },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted },
-
   tierCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: 10 },
   tierName: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
   tierDesc: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2, lineHeight: 17 },
@@ -279,8 +281,7 @@ const styles = StyleSheet.create({
   tierPrice: { fontSize: fontSize.sm, fontWeight: '800' },
   tierDel: { padding: 4 },
 
-  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: radius.lg, paddingVertical: 13, marginTop: 4 },
-  addBtnText: { fontSize: fontSize.sm, fontWeight: '800' },
+  addBtnSpacing: { marginTop: 4 },
 
   modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, paddingHorizontal: spacing.lg, paddingTop: 10, paddingBottom: spacing.lg, maxHeight: '88%' },

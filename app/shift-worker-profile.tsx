@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch,
+  TextInput, Alert, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
+import { LoadingState } from '@/components/ui/LoadingState';
 
 const S = SECTIONS.shifts;
 
@@ -110,6 +114,7 @@ function Chip({ label, active, color, onPress }: {
 export default function ShiftWorkerProfileScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [form, setForm]         = useState<WorkerProfile>(EMPTY);
   const [original, setOriginal] = useState<WorkerProfile>(EMPTY);
@@ -217,11 +222,11 @@ export default function ShiftWorkerProfileScreen() {
 
   if (fetching) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={S.color} />
-        </View>
-      </SafeAreaView>
+      <ScreenScaffold
+        header={<ScreenHeader title="Shift profile" accent={S.color} onBack={() => router.back()} />}
+      >
+        <LoadingState accent={S.color} />
+      </ScreenScaffold>
     );
   }
 
@@ -254,21 +259,13 @@ export default function ShiftWorkerProfileScreen() {
     : 'Complete your profile to improve your chances.';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Shift profile</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Shift profile" accent={S.color} onBack={() => router.back()} />}
+    >
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           showsVerticalScrollIndicator={false}
         >
           {/* ── Completeness card ─────────────────────────────────────────── */}
@@ -488,42 +485,26 @@ export default function ShiftWorkerProfileScreen() {
             )}
           </View>
 
-          <TouchableOpacity
-            style={[styles.saveBtn, (!isDirty || loading) && { opacity: 0.6 }, { backgroundColor: S.color }]}
+          <Button
+            label="Save shift profile"
+            icon="check"
+            color={S.color}
+            fullWidth
             onPress={handleSave}
             disabled={!isDirty || loading}
-            activeOpacity={0.85}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <FontAwesome5 name="check" size={14} color="#fff" />
-                  <Text style={styles.saveBtnText}>Save shift profile</Text>
-                </>
-            }
-          </TouchableOpacity>
+            loading={loading}
+            style={styles.saveBtn}
+          />
 
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  scroll:  { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  scroll:  { flex: 1 },
 
   content: { padding: spacing.md, gap: 0, paddingBottom: 60 },
 
@@ -611,9 +592,5 @@ const styles = StyleSheet.create({
   alertSectionLabel: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
   alertSectionHint:  { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 15 },
 
-  saveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, height: 52, borderRadius: radius.lg, marginTop: 8,
-  },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: 8 },
 });

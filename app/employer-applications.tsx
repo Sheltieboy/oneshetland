@@ -3,13 +3,16 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import {
   fetchEmployerApplications, updateApplicationStatus, formatShiftDate,
 } from '@/lib/shifts-api';
@@ -37,8 +40,8 @@ type Application = {
 };
 
 export default function EmployerApplicationsScreen() {
-  const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -252,59 +255,38 @@ export default function EmployerApplicationsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      <View style={[styles.backBar, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.screenTitle}>Applications</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Applications" accent={S.color} />}
+    >
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={S.color} />
-        </View>
+        <LoadingState accent={S.color} />
       ) : (
         <FlatList
           data={applications}
           keyExtractor={item => item.id}
           renderItem={renderItem}
-          contentContainerStyle={[styles.list, applications.length === 0 && { flex: 1 }]}
+          contentContainerStyle={[
+            styles.list,
+            applications.length === 0 && { flex: 1 },
+            contentContainer(screenWidth),
+          ]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
-                <FontAwesome5 name="inbox" size={28} color={S.color} />
-              </View>
-              <Text style={styles.emptyTitle}>No pending applications</Text>
-              <Text style={styles.emptyText}>
-                When workers submit interest in your shifts, they'll appear here.
-              </Text>
-            </View>
+            <EmptyState
+              icon="inbox"
+              title="No pending applications"
+              body="When workers submit interest in your shifts, they'll appear here."
+              accent={S.color}
+              variant="card"
+            />
           }
         />
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  backBar: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  screenTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-
   list: { padding: spacing.md, gap: 14, paddingBottom: 60 },
 
   card: {
@@ -396,10 +378,4 @@ const styles = StyleSheet.create({
   declineBtn:     { borderWidth: 1.5, borderColor: colors.border, backgroundColor: '#fff' },
   declineBtnText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textMuted },
   acceptBtnText:  { fontSize: fontSize.sm, fontWeight: '800', color: '#fff' },
-
-  // Empty
-  empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: 12 },
-  emptyIcon:  { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
-  emptyText:  { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
 });

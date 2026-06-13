@@ -5,14 +5,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Image,
+  RefreshControl, Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import {
   fetchMyEventTickets,
   formatShortDate, formatTime,
@@ -32,6 +36,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 export default function MyEventTicketsScreen() {
   const router    = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [tickets,   setTickets]   = useState<EventTicket[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -58,16 +63,7 @@ export default function MyEventTicketsScreen() {
   });
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Tickets</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <ScreenScaffold header={<ScreenHeader title="My Tickets" accent={S.color} />}>
       {/* Tabs */}
       <View style={styles.tabRow}>
         {(['upcoming', 'past'] as const).map(t => (
@@ -85,33 +81,28 @@ export default function MyEventTicketsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : filtered.length === 0 ? (
-        <View style={styles.center}>
-          <FontAwesome5 name="ticket-alt" size={36} color={S.color + '60'} solid />
-          <Text style={styles.emptyTitle}>No {tab} tickets</Text>
-          {tab === 'upcoming' && (
-            <TouchableOpacity
-              style={[styles.exploreBtn, { backgroundColor: S.color }]}
-              onPress={() => router.push('/(tabs)/whats-on')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.exploreBtnText}>Browse What's On</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        <EmptyState
+          icon="ticket-alt"
+          title={`No ${tab} tickets`}
+          accent={S.color}
+          variant="card"
+          actionLabel={tab === 'upcoming' ? "Browse What's On" : undefined}
+          onAction={tab === 'upcoming' ? () => router.push('/(tabs)/whats-on') : undefined}
+        />
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
           renderItem={({ item }) => (
             <TicketRow ticket={item} onPress={() => router.push({ pathname: '/my-event-ticket', params: { id: item.id } })} />
           )}
         />
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -150,25 +141,9 @@ function TicketRow({ ticket, onPress }: { ticket: EventTicket; onPress: () => vo
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: colors.screenBackground },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12, borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-
   tabRow:  { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: colors.border },
   tabBtn:  { flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textMuted },
-
-  emptyTitle:    { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  exploreBtn:    { marginTop: 8, paddingHorizontal: 20, paddingVertical: 12, borderRadius: radius.md },
-  exploreBtnText:{ color: '#fff', fontSize: fontSize.sm, fontWeight: '900' },
 
   list: { padding: spacing.md, gap: 10, backgroundColor: colors.screenBackground },
 

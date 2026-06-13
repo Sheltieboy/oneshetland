@@ -8,14 +8,18 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
-  ActivityIndicator, Animated, RefreshControl,
+  Animated, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import {
   fetchOpenShifts, formatPay, formatDuration, formatShiftDate,
   URGENCY_CONFIG, CATEGORY_LABELS, shiftDisplayBusiness, type Shift,
@@ -125,6 +129,7 @@ function ShiftCard({ shift }: { shift: Shift }) {
 
 export default function ShiftsBrowseScreen() {
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [shifts, setShifts]         = useState<Shift[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -152,24 +157,16 @@ export default function ShiftsBrowseScreen() {
   const filtered = filter ? shifts.filter(s => s.urgency === filter) : shifts;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Browse Shifts</Text>
-          {!loading && (
-            <Text style={styles.headerSub}>
-              {shifts.length} open right now
-            </Text>
-          )}
-        </View>
-        <View style={{ width: 70 }} />
-      </View>
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Browse Shifts"
+          subtitle={!loading ? `${shifts.length} open right now` : undefined}
+          accent={S.color}
+          onBack={() => router.back()}
+        />
+      }
+    >
 
       {/* Filter strip */}
       <ScrollView
@@ -195,61 +192,39 @@ export default function ShiftsBrowseScreen() {
 
       {/* List */}
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={S.color} />
-        </View>
+        <LoadingState accent={S.color} />
       ) : fetchError ? (
-        <View style={styles.center}>
-          <FontAwesome5 name="exclamation-circle" size={24} color={colors.error} />
-          <Text style={[styles.emptyTitle, { color: colors.error, marginTop: 10 }]}>Couldn't load shifts</Text>
-          <Text style={styles.emptyText}>{fetchError}</Text>
-          <TouchableOpacity
-            style={[styles.retryBtn, { backgroundColor: S.color }]}
-            onPress={() => { setLoading(true); load(); }}
-          >
-            <Text style={styles.retryText}>Try again</Text>
-          </TouchableOpacity>
-        </View>
+        <EmptyState
+          icon="exclamation-circle"
+          title="Couldn't load shifts"
+          body={fetchError}
+          accent={colors.error}
+          variant="card"
+          actionLabel="Try again"
+          onAction={() => { setLoading(true); load(); }}
+        />
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={item => item.id}
           renderItem={({ item }) => <ShiftCard shift={item} />}
-          contentContainerStyle={[styles.listContent, filtered.length === 0 && { flex: 1 }]}
+          contentContainerStyle={[styles.listContent, contentContainer(screenWidth), filtered.length === 0 && { flex: 1 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={[styles.emptyIconWrap, { backgroundColor: S.light }]}>
-                <FontAwesome5 name="briefcase" size={28} color={S.color} solid />
-              </View>
-              <Text style={styles.emptyTitle}>No shifts right now</Text>
-              <Text style={styles.emptyText}>
-                {filter ? 'Try a different filter above.' : 'Pull down to refresh or check back soon.'}
-              </Text>
-            </View>
+            <EmptyState
+              icon="briefcase"
+              title="No shifts right now"
+              body={filter ? 'Try a different filter above.' : 'Pull down to refresh or check back soon.'}
+              accent={S.color}
+            />
           }
         />
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:     { fontSize: fontSize.sm, fontWeight: '700' },
-  headerCenter: { alignItems: 'center', gap: 2 },
-  headerTitle:  { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-  headerSub:    { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.xs, fontWeight: '600' },
-
   filterBar:        { backgroundColor: colors.screenBackground, maxHeight: 52 },
   filterBarContent: { paddingHorizontal: spacing.md, paddingVertical: 10, gap: 8 },
   filterChip: {
@@ -295,12 +270,4 @@ const styles = StyleSheet.create({
   cardSpots:        { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cardSpotsText:    { fontSize: fontSize.xs, color: colors.textMuted },
   cardCta:          { fontSize: fontSize.xs, fontWeight: '800' },
-
-  // Empty / error
-  empty:        { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl, paddingTop: 60, gap: 12 },
-  emptyIconWrap:{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle:   { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },
-  emptyText:    { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
-  retryBtn:     { paddingHorizontal: 24, paddingVertical: 10, borderRadius: radius.full, marginTop: 8 },
-  retryText:    { color: '#fff', fontWeight: '700', fontSize: fontSize.sm },
 });
