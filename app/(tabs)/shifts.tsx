@@ -20,7 +20,7 @@ import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplet
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
@@ -1343,7 +1343,8 @@ function HubScreen({ onPostShift }: { onPostShift: () => void }) {
 // ── Main tab screen ────────────────────────────────────────────────────────────
 
 export default function ShiftsTab() {
-  const [mode, setMode]               = useState<'hub' | 'post'>('hub');
+  const { post } = useLocalSearchParams<{ post?: string }>();
+  const [mode, setMode]               = useState<'hub' | 'post'>(post ? 'post' : 'hub');
   const [boostShiftId, setBoostShiftId] = useState<string | null>(null);
   const router = useRouter();
 
@@ -1352,35 +1353,36 @@ export default function ShiftsTab() {
     setBoostShiftId(shiftId);
   };
 
+  // Post mode is reached from the Work hub — leaving returns there.
+  const exitPost = () => router.replace('/(tabs)/jobs?tab=shifts');
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
 
-      <TabScreenHeader
-        section={S}
-        right={
-          mode === 'post' ? (
-            <TouchableOpacity
-              style={[styles.headerBadge, { backgroundColor: S.color + '22' }]}
-              onPress={() => setMode('hub')}
-              hitSlop={8}
-            >
-              <FontAwesome5 name="times" size={11} color={S.color} />
-              <Text style={[styles.headerBadgeText, { color: S.color }]}>Cancel</Text>
+      {mode === 'post' ? (
+        <>
+          <View style={styles.postHeader}>
+            <TouchableOpacity onPress={exitPost} style={styles.postBackPill} hitSlop={12}>
+              <FontAwesome5 name="chevron-left" size={16} color={S.color} />
+              <FontAwesome5 name={S.icon as any} size={12} color={S.color} solid />
+              <Text style={styles.postBackText}>Shifts</Text>
             </TouchableOpacity>
-          ) : (
+            <Text style={styles.postHeaderTitle}>Post a shift</Text>
+            <View style={{ width: 86 }} />
+          </View>
+          <Text style={styles.postSubtitle}>Free to post — boost to alert matching workers</Text>
+        </>
+      ) : (
+        <TabScreenHeader
+          section={S}
+          right={
             <View style={[styles.headerBadge, { backgroundColor: S.color + '22' }]}>
               <View style={[styles.headerBadgeDot, { backgroundColor: S.color }]} />
               <Text style={[styles.headerBadgeText, { color: S.color }]}>Live</Text>
             </View>
-          )
-        }
-      >
-        {mode === 'post' && (
-          <Text style={styles.postFormSubtitle}>
-            Free to post — boost for £2.99 to alert matching workers
-          </Text>
-        )}
-      </TabScreenHeader>
+          }
+        />
+      )}
 
       <View style={{ flex: 1 }}>
         {mode === 'hub'
@@ -1412,6 +1414,12 @@ const styles = StyleSheet.create({
   headerBadgeText: { fontSize: 11, fontWeight: '700' },
   headerBadgeDot:  { width: 6, height: 6, borderRadius: 3 },
   postFormSubtitle: { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.xs, marginTop: 2 },
+  // Clean post-mode header (matches job-post)
+  postHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: colors.border },
+  postBackPill: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: S.color + '14' },
+  postBackText: { color: S.color, fontSize: fontSize.sm, fontWeight: '800' },
+  postHeaderTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
+  postSubtitle: { fontSize: fontSize.xs, color: colors.textMuted, paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: 2, backgroundColor: colors.screenBackground },
 
   // ── Hub ────────────────────────────────────────────────────────────────────
   hubScroll:  { flex: 1, backgroundColor: colors.screenBackground },
@@ -1662,7 +1670,7 @@ const styles = StyleSheet.create({
   formScroll:  { flex: 1, backgroundColor: colors.screenBackground },
   formContent: { padding: spacing.md, paddingBottom: 120 },
   fieldGroup:  { marginBottom: spacing.lg },
-  fieldLabel:  { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  fieldLabel:  { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
   fieldHint:   { fontSize: fontSize.xs, color: colors.textMuted, marginBottom: 10, lineHeight: 16 },
 
   inputWrap: {
@@ -1708,7 +1716,7 @@ const styles = StyleSheet.create({
 
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: S.color, borderRadius: radius.lg, height: 52, marginTop: 8,
+    backgroundColor: S.color, borderRadius: 999, height: 52, marginTop: 8,
   },
   submitText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 

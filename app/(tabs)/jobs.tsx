@@ -177,7 +177,7 @@ export default function WorkHubScreen() {
           {/* Employer CTA */}
           <TouchableOpacity
             style={[styles.hireCta, { borderColor: accent + '40', backgroundColor: accent + '14' }]}
-            onPress={() => router.push(tier === 'jobs' ? '/local-business-dashboard' : '/(tabs)/shifts')}
+            onPress={() => router.push(tier === 'jobs' ? '/local-business-dashboard' : '/(tabs)/shifts?post=1')}
             activeOpacity={0.85}
           >
             <FontAwesome5 name={tier === 'jobs' ? 'store' : 'plus-circle'} size={14} color={accent} solid />
