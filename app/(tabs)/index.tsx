@@ -431,7 +431,7 @@ function ComingUpRow({ events }: { events: HomeEvent[] }) {
             <Text style={styles.eventsEmptyTitle}>No events listed yet</Text>
             <Text style={styles.eventsEmptyDetail}>Tap to browse all upcoming events in Shetland</Text>
           </View>
-          <FontAwesome5 name="chevron-right" size={11} color={colors.textLight} />
+          <FontAwesome5 name="chevron-right" size={11} color={colors.textMuted} />
         </TouchableOpacity>
       ) : (
         <ScrollView
@@ -657,7 +657,7 @@ function NoticesRow({ notices }: { notices: HomeNotice[] }) {
                   </View>
                 ) : null}
               </View>
-              <FontAwesome5 name="chevron-right" size={10} color={colors.textLight} />
+              <FontAwesome5 name="chevron-right" size={10} color={colors.textMuted} />
             </TouchableOpacity>
           );
         })}

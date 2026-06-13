@@ -126,7 +126,7 @@ export default function LocalHub() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Bookable now</Text>
-              <TouchableOpacity onPress={() => router.push('/local-bookable-browse')}>
+              <TouchableOpacity onPress={() => router.push('/local-bookable-browse')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
                 <Text style={[styles.sectionLink, { color: S.color }]}>See all →</Text>
               </TouchableOpacity>
             </View>
@@ -143,7 +143,7 @@ export default function LocalHub() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Latest offers</Text>
-              <TouchableOpacity onPress={() => router.push('/local-offers')}>
+              <TouchableOpacity onPress={() => router.push('/local-offers')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
                 <Text style={[styles.sectionLink, { color: S.color }]}>All offers →</Text>
               </TouchableOpacity>
             </View>
@@ -170,7 +170,7 @@ export default function LocalHub() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Featured locals</Text>
-              <TouchableOpacity onPress={() => router.push('/local-businesses-browse')}>
+              <TouchableOpacity onPress={() => router.push('/local-businesses-browse')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
                 <Text style={[styles.sectionLink, { color: S.color }]}>Browse all →</Text>
               </TouchableOpacity>
             </View>
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   offerDiscountText:{ color: '#fff', fontSize: 11, fontWeight: '900', textAlign: 'center' },
   offerTitle:       { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   offerBusiness:    { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
-  offerExpiry:      { fontSize: 10, color: colors.textLight, marginTop: 3, fontWeight: '600' },
+  offerExpiry:      { fontSize: 10, color: colors.textMuted, marginTop: 3, fontWeight: '600' },
 
   // Business card
   businessList: { gap: 8 },

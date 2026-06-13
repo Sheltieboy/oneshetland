@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
   // Menu rows
   menuRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 11,
+    paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   menuIconWrap: {
@@ -562,7 +562,7 @@ const styles = StyleSheet.create({
   },
   bizPaymentRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 7,
+    paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   bizPaymentRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
   // Sign out
   signOutBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginTop: 10, paddingVertical: 4,
+    marginTop: 10, paddingVertical: 12,
   },
   signOutText: { fontSize: fontSize.sm, fontWeight: '700', color: '#DC2626' },
 });

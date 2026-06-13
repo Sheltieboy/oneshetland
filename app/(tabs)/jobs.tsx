@@ -166,7 +166,7 @@ export default function WorkHubScreen() {
               autoCorrect={false}
               returnKeyType="search"
             />
-            {query ? <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}><FontAwesome5 name="times-circle" size={14} color={colors.textMuted} solid /></TouchableOpacity> : null}
+            {query ? <TouchableOpacity onPress={() => setQuery('')} hitSlop={15}><FontAwesome5 name="times-circle" size={14} color={colors.textMuted} solid /></TouchableOpacity> : null}
           </View>
 
           {/* Category filter */}
@@ -237,7 +237,7 @@ export default function WorkHubScreen() {
                   {b.logo_url ? <Image source={{ uri: b.logo_url }} style={styles.bizLogoImg} /> : <FontAwesome5 name="store" size={15} color={JOBS.color} solid />}
                 </View>
                 <Text style={styles.bizName} numberOfLines={1}>{b.name}</Text>
-                <FontAwesome5 name="chevron-right" size={13} color={colors.textLight} />
+                <FontAwesome5 name="chevron-right" size={13} color={colors.textMuted} />
               </TouchableOpacity>
             ))}
           </View>

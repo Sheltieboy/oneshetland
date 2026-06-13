@@ -503,7 +503,7 @@ const styles = StyleSheet.create({
   tkImage: { width: '100%', height: 96 },
   tkTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, lineHeight: 17 },
   tkMeta: { fontSize: fontSize.xs, color: colors.textMuted },
-  tkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: S.color, borderRadius: radius.full, paddingVertical: 6, marginTop: 2 },
+  tkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: S.color, borderRadius: radius.full, paddingVertical: 10, paddingHorizontal: 12, marginTop: 2 },
   tkBtnText: { color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
 
   // Calendar mode

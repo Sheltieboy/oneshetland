@@ -230,7 +230,7 @@ export default function SpikTab() {
             returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => { setSearchQuery(''); loadLetter(activeLetter); }} hitSlop={8}>
+            <Pressable onPress={() => { setSearchQuery(''); loadLetter(activeLetter); }} hitSlop={15}>
               <FontAwesome5 name="times-circle" size={14} color="rgba(255,255,255,0.45)" />
             </Pressable>
           )}
@@ -247,6 +247,7 @@ export default function SpikTab() {
                 style={[styles.letterBtn, activeLetter === letter && styles.letterBtnActive]}
                 onPress={() => handleLetterPress(letter)}
                 activeOpacity={0.7}
+                hitSlop={7}
               >
                 <Text style={[styles.letterText, activeLetter === letter && styles.letterTextActive]}>
                   {letter.toUpperCase()}
@@ -365,7 +366,7 @@ const styles = StyleSheet.create({
   meaningText: { color: colors.textSecondary, fontSize: fontSize.sm, lineHeight: 20, marginBottom: 8 },
   pronChip:    { alignSelf: 'flex-start', backgroundColor: colors.offWhite, borderRadius: radius.full, paddingHorizontal: 9, paddingVertical: 3, marginBottom: 6 },
   pronChipText: { color: colors.textMuted, fontSize: fontSize.xs, fontStyle: 'italic' },
-  exampleText: { color: colors.textLight, fontSize: fontSize.xs, lineHeight: 18, fontStyle: 'italic', marginBottom: 4 },
+  exampleText: { color: colors.textMuted, fontSize: fontSize.xs, lineHeight: 18, fontStyle: 'italic', marginBottom: 4 },
   cardFooter:  { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   openEntry:   { fontSize: fontSize.xs, fontWeight: '700' },
 
