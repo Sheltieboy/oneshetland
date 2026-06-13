@@ -40,21 +40,28 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'event_id and (raw_token or backup_code) required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Verify scanner owns the event (server-side, before calling the RPC)
+    // Verify the scanner is allowed to scan this event (server-side, before the RPC).
     const { data: owns } = await supabase
       .from('events')
-      .select('organiser_business_id')
+      .select('organiser_business_id, organiser_hub_id, organiser_user_id')
       .eq('id', event_id)
       .single();
 
     if (!owns) return new Response(JSON.stringify({ error: 'Event not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    if (owns.organiser_business_id) {
+    let authorised = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      .then(r => r.data?.role === 'admin');
+    if (!authorised && owns.organiser_user_id === user.id) authorised = true;
+    if (!authorised && owns.organiser_business_id) {
       const { data: biz } = await supabase.from('local_businesses').select('owner_id').eq('id', owns.organiser_business_id).single();
-      const isAdmin = await supabase.from('profiles').select('role').eq('id', user.id).single().then(r => r.data?.role === 'admin');
-      if (!isAdmin && biz?.owner_id !== user.id) {
-        return new Response(JSON.stringify({ error: 'You are not authorised to scan tickets for this event' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
+      authorised = biz?.owner_id === user.id;
+    }
+    if (!authorised && owns.organiser_hub_id) {
+      const { data: isHubAdmin } = await supabase.rpc('is_hub_admin', { p_hub: owns.organiser_hub_id, p_user: user.id });
+      authorised = !!isHubAdmin;
+    }
+    if (!authorised) {
+      return new Response(JSON.stringify({ error: 'You are not authorised to scan tickets for this event' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     let result: any;

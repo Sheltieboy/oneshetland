@@ -377,6 +377,7 @@ export interface NoticeInput {
   locality?: string | null;
   expires_at?: string | null;
   campaign_id?: string | null;
+  event_id?: string | null;
 }
 
 /** Post a notice as a hub. */
@@ -394,6 +395,7 @@ export async function createHubNotice(hubId: string, input: NoticeInput): Promis
       locality: input.locality ?? null,
       expires_at: input.expires_at ?? null,
       campaign_id: input.campaign_id ?? null,
+      event_id: input.event_id ?? null,
     })
     .select('*')
     .single();

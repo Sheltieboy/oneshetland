@@ -131,6 +131,17 @@ export default function EventManageScreen() {
   const isCancelled = status === 'cancelled';
   const updates     = event.updates ?? [];
 
+  const editParams = event.organiser_hub_id
+    ? { hubId: event.organiser_hub_id, eventId: event.id }
+    : { businessId: event.organiser_business_id ?? '', eventId: event.id };
+
+  const hubReach = event.organiser_hub_id ? (
+    event.hub_visibility === 'members' ? { label: 'Members only', icon: 'user-friends', color: '#6D28D9', bg: '#F3E8FF' }
+    : event.hub_visibility === 'hub'   ? { label: 'On the hub page only', icon: 'store', color: S.color, bg: S.light }
+    : event.calendar_approved          ? { label: 'On the main calendar', icon: 'globe-europe', color: '#15803D', bg: '#DCFCE7' }
+    :                                    { label: 'Awaiting approval for the main calendar', icon: 'clock', color: '#92400E', bg: '#FEF3C7' }
+  ) : null;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -141,7 +152,7 @@ export default function EventManageScreen() {
         <Text style={styles.headerTitle} numberOfLines={1}>{event.title}</Text>
         <TouchableOpacity
           hitSlop={12}
-          onPress={() => router.push({ pathname: '/event-create', params: { businessId: event.organiser_business_id ?? '', eventId: event.id } })}
+          onPress={() => router.push({ pathname: '/event-create', params: editParams })}
         >
           <FontAwesome5 name="edit" size={15} color={S.color} />
         </TouchableOpacity>
@@ -154,6 +165,14 @@ export default function EventManageScreen() {
       >
         {/* Status strip */}
         <StatusStrip status={status} isBusy={statusBusy} onChangeStatus={handleStatusChange} />
+
+        {/* Hub event reach */}
+        {hubReach ? (
+          <View style={[styles.reachBanner, { backgroundColor: hubReach.bg }]}>
+            <FontAwesome5 name={hubReach.icon as any} size={12} color={hubReach.color} solid />
+            <Text style={[styles.reachBannerText, { color: hubReach.color }]}>{hubReach.label}</Text>
+          </View>
+        ) : null}
 
         {/* Date summary */}
         <View style={styles.dateSummary}>
@@ -190,7 +209,7 @@ export default function EventManageScreen() {
             <ActionBtn
               icon="edit" label="Edit event"
               color={SE.color}
-              onPress={() => router.push({ pathname: '/event-create', params: { businessId: event.organiser_business_id ?? '', eventId: event.id } })}
+              onPress={() => router.push({ pathname: '/event-create', params: editParams })}
             />
             <ActionBtn
               icon="bullhorn" label="Post update"
@@ -379,6 +398,8 @@ const styles = StyleSheet.create({
   },
   statusDot:   { width: 8, height: 8, borderRadius: 4 },
   statusLabel: { fontSize: fontSize.sm, fontWeight: '800', flex: 1 },
+  reachBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.md, marginTop: spacing.sm },
+  reachBannerText: { fontSize: fontSize.sm, fontWeight: '800' },
   publishNowBtn: { backgroundColor: colors.success, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
   publishNowText:{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
   unpublishBtn:  { borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },

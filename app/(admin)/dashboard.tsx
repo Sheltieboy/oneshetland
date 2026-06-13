@@ -523,6 +523,22 @@ export default function AdminDashboard() {
                 <Text style={styles.arrow}>›</Text>
               </View>
             </Card>
+
+            <Card
+              style={styles.managementCard}
+              onPress={() => router.push('/(admin)/event-approvals' as any)}
+            >
+              <View style={styles.managementRow}>
+                <Text style={styles.managementIcon}>📅</Text>
+                <View style={styles.managementBody}>
+                  <Text style={styles.managementTitle}>Hub event approvals</Text>
+                  <Text style={styles.managementDesc}>
+                    Approve unverified hubs' events for the islands-wide calendar
+                  </Text>
+                </View>
+                <Text style={styles.arrow}>›</Text>
+              </View>
+            </Card>
           </View>
         </View>
 

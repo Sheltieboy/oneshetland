@@ -114,6 +114,8 @@ export default function HubAdminScreen() {
           accent={accent} onPress={() => router.push(`/hub-notices-manage?id=${hub.id}`)} />
         <Tile icon="folder-open" title="Documents" sub="Policies, minutes, forms"
           accent={accent} onPress={() => router.push(`/hub-documents?id=${hub.id}`)} />
+        <Tile icon="calendar-alt" title="Events" sub="Create events & sell tickets"
+          accent={accent} onPress={() => router.push(`/hub-events?id=${hub.id}`)} />
         <Tile icon="hand-holding-heart" title="Fundraising" sub="Campaigns, donations & Gift Aid"
           accent={accent} onPress={() => router.push(`/hub-campaigns?id=${hub.id}`)} />
 

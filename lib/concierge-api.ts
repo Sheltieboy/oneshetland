@@ -28,6 +28,8 @@ export type HomeNotice  = SampleNotice  & {
   hub_id?:      string | null;
   campaign_id?: string | null;
   campaign?:    { id: string; raised_pence: number; goal_pence: number; donor_count: number; status: string } | null;
+  event_id?:    string | null;
+  event?:       { id: string; title: string; starts_at: string; venue: string | null; cover_url: string | null; has_tickets: boolean } | null;
 };
 export type HomeJob     = SampleJob     & { source: 'db' | 'seed' };
 export type HomeShift   = SampleShift   & { source: 'db' | 'seed' };
@@ -58,6 +60,8 @@ export async function fetchHomeEvents(limit = 6): Promise<HomeEvent[]> {
       .from('events')
       .select('id, title, starts_at, venue, category, cover_url, is_featured, price_text, has_tickets')
       .eq('is_hidden', false)
+      // Hub events only reach the islands-wide calendar once approved.
+      .or('organiser_hub_id.is.null,calendar_approved.eq.true')
       .gte('starts_at', new Date().toISOString())
       .order('is_featured', { ascending: false })
       .order('starts_at',   { ascending: true })
@@ -86,10 +90,11 @@ export async function fetchHomeNotices(opts: {
     const { data, error } = await supabase
       .from('notices')
       .select(`id, severity, title, body, locality, published_at,
-               publisher_business_id, publisher_user_id, publisher_hub_id, campaign_id,
+               publisher_business_id, publisher_user_id, publisher_hub_id, campaign_id, event_id,
                hub:hubs ( id, name, logo_url, brand_color ),
                business:local_businesses ( name, logo_url, brand_color ),
-               campaign:hub_campaigns ( id, raised_pence, goal_pence, donor_count, status )`)
+               campaign:hub_campaigns ( id, raised_pence, goal_pence, donor_count, status ),
+               event:events ( id, title, starts_at, venue, cover_url, has_tickets, calendar_approved )`)
       .eq('is_hidden', false)
       .eq('visibility', 'public')   // never surface members-only hub notices in the public feed
       .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
@@ -98,8 +103,10 @@ export async function fetchHomeNotices(opts: {
       .limit(40);
 
     if (!error && data && data.length > 0) {
-      // Local-first sort if we have a parish.
-      const ranked = (data as any[]).slice();
+      // Event-linked notices only belong in the islands-wide feed once their
+      // event is calendar-approved — keeps members/hub-tier event notices on
+      // the hub page only.
+      const ranked = (data as any[]).filter(r => !r.event_id || r.event?.calendar_approved);
       if (opts.viewerParish) {
         const p = opts.viewerParish.toLowerCase().trim();
         ranked.sort((a, b) => {
@@ -125,6 +132,11 @@ export async function fetchHomeNotices(opts: {
         hub_id:      r.hub?.id ?? null,
         campaign_id: r.campaign_id ?? null,
         campaign:    r.campaign ?? null,
+        event_id:    r.event_id ?? null,
+        event:       r.event ? {
+          id: r.event.id, title: r.event.title, starts_at: r.event.starts_at,
+          venue: r.event.venue, cover_url: r.event.cover_url, has_tickets: r.event.has_tickets,
+        } : null,
         source:    'db' as const,
       }));
     }

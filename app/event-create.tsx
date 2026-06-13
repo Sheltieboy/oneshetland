@@ -26,19 +26,27 @@ import {
   uploadEventImage,
   upsertTicketType, deleteTicketType,
   EVENT_CATEGORIES, AGE_RESTRICTIONS,
-  type EventUpsertInput, type EventTicketType,
+  type EventUpsertInput, type EventTicketType, type HubEventVisibility,
 } from '@/lib/events-api';
+import { fetchHub, createHubNotice } from '@/lib/hubs-api';
 
 const S = SECTIONS.events;
 
 const CATEGORY_OPTIONS = ['', ...EVENT_CATEGORIES];
 
 export default function EventCreateScreen() {
-  const { businessId, eventId } = useLocalSearchParams<{ businessId: string; eventId?: string }>();
+  const { businessId, hubId, eventId } = useLocalSearchParams<{ businessId?: string; hubId?: string; eventId?: string }>();
   const router  = useRouter();
   const { profile } = useAuth();
 
   const isEdit = !!eventId;
+  const isHub  = !!hubId;
+
+  // Hub-event reach + verification (drives the visibility picker + approval note)
+  const [hubVisibility, setHubVisibility] = useState<HubEventVisibility>('hub');
+  const [hubVerified,   setHubVerified]   = useState(false);
+  const [hubName,       setHubName]       = useState('');
+  const [postNotice,    setPostNotice]    = useState(true);
 
   const [loading,  setLoading]  = useState(isEdit);
   const [saving,   setSaving]   = useState(false);
@@ -91,6 +99,7 @@ export default function EventCreateScreen() {
     if (ev.ends_at) setEndsAt(new Date(ev.ends_at));
     if (ev.doors_open_at) setDoorsAt(new Date(ev.doors_open_at));
     setCoverUrl(ev.cover_url);
+    if (ev.hub_visibility) setHubVisibility(ev.hub_visibility);
     setHasTickets(ev.has_tickets);
     if (ev.ticket_types) setTicketTypes(ev.ticket_types);
     setAgeRestr(ev.age_restriction ?? 'All ages');
@@ -101,6 +110,15 @@ export default function EventCreateScreen() {
   }, [eventId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load the hub (verification + name) when creating/editing a hub event.
+  useEffect(() => {
+    if (!hubId) return;
+    void (async () => {
+      const h = await fetchHub(hubId);
+      if (h) { setHubVerified(h.is_verified); setHubName(h.name); }
+    })();
+  }, [hubId]);
 
   const pickCover = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -114,10 +132,11 @@ export default function EventCreateScreen() {
 
   const uploadCover = async (): Promise<string | null> => {
     if (!coverLocal) return coverUrl;
-    if (!businessId) return null;
     setUploadingImg(true);
     try {
-      const url = await uploadEventImage(businessId, coverLocal, 'cover');
+      // The event-media bucket keys on the signed-in user, so the folder id is
+      // irrelevant — works for both business and hub organisers.
+      const url = await uploadEventImage(businessId ?? hubId ?? '', coverLocal, 'cover');
       return url;
     } finally {
       setUploadingImg(false);
@@ -144,7 +163,9 @@ export default function EventCreateScreen() {
       const finalCover = await uploadCover();
 
       const payload: EventUpsertInput = {
-        organiser_business_id: businessId,
+        organiser_business_id: isHub ? undefined : businessId,
+        organiser_hub_id:      isHub ? hubId : undefined,
+        hub_visibility:        isHub ? hubVisibility : undefined,
         title:              title.trim(),
         description:        description.trim() || null,
         category:           category || null,
@@ -191,6 +212,21 @@ export default function EventCreateScreen() {
           sale_ends_at:             tt.sale_ends_at ?? null,
           display_order:            tt.display_order ?? 0,
         } as any);
+      }
+
+      // For a freshly-published hub event, optionally announce it as a notice.
+      // members → members-only notice; hub/islands → public notice (the home
+      // feed only surfaces it islands-wide once the event is calendar-approved).
+      if (isHub && hubId && publish && !isEdit && postNotice) {
+        try {
+          await createHubNotice(hubId, {
+            title:      `New event: ${title.trim()}`,
+            body:       description.trim() || null,
+            image_url:  finalCover,
+            visibility: hubVisibility === 'members' ? 'members' : 'public',
+            event_id:   targetId,
+          });
+        } catch { /* notice is best-effort */ }
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -267,6 +303,51 @@ export default function EventCreateScreen() {
             </ScrollView>
           </Field>
         </View>
+
+        {/* Hub event reach */}
+        {isHub ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Who can see this?</Text>
+            {([
+              { v: 'members' as const, icon: 'user-friends', title: 'Members only',  sub: 'Just your members — posts a notice to them.' },
+              { v: 'hub'     as const, icon: 'store',        title: 'On your hub page', sub: 'Public on your hub’s page, not the main calendar.' },
+              { v: 'islands' as const, icon: 'globe-europe', title: 'Islands-wide',   sub: 'Also on the main What’s On calendar.' },
+            ]).map(opt => {
+              const on = hubVisibility === opt.v;
+              return (
+                <TouchableOpacity
+                  key={opt.v}
+                  style={[styles.reachRow, on && { borderColor: S.color, backgroundColor: S.color + '0D' }]}
+                  onPress={() => setHubVisibility(opt.v)}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.reachIcon, { backgroundColor: on ? S.color : S.color + '1A' }]}>
+                    <FontAwesome5 name={opt.icon as any} size={14} color={on ? '#fff' : S.color} solid />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reachTitle}>{opt.title}</Text>
+                    <Text style={styles.reachSub}>{opt.sub}</Text>
+                  </View>
+                  <FontAwesome5 name={on ? 'check-circle' : 'circle'} size={18} color={on ? S.color : colors.border} solid={on} />
+                </TouchableOpacity>
+              );
+            })}
+            {hubVisibility === 'islands' && !hubVerified ? (
+              <Text style={styles.reachNote}>
+                <FontAwesome5 name="info-circle" size={11} color={colors.textMuted} solid />{'  '}
+                Your hub isn’t verified yet, so islands-wide events need a quick OK from the OneShetland team before they appear on the main calendar. It’ll show on your hub page in the meantime.
+              </Text>
+            ) : null}
+            <View style={styles.noticeToggleRow}>
+              <Text style={styles.reachTitle}>Announce with a notice</Text>
+              <Switch
+                value={postNotice}
+                onValueChange={setPostNotice}
+                trackColor={{ true: S.color }}
+              />
+            </View>
+          </View>
+        ) : null}
 
         {/* Location */}
         <View style={styles.section}>
@@ -611,6 +692,19 @@ const styles = StyleSheet.create({
 
   section:          { padding: spacing.md, paddingBottom: 4 },
   sectionTitle:     { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 },
+  reachRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md,
+    padding: 12, marginBottom: 8,
+  },
+  reachIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  reachTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  reachSub: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
+  reachNote: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 2, marginBottom: 4 },
+  noticeToggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 6, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
+  },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   fieldLabel:       { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
 

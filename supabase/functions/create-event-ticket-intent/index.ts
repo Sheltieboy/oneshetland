@@ -75,7 +75,7 @@ serve(async (req) => {
     // Load event
     const { data: event } = await supabase
       .from('events')
-      .select('id, title, starts_at, venue, formatted_address, status, organiser_business_id')
+      .select('id, title, starts_at, venue, formatted_address, status, organiser_business_id, organiser_hub_id')
       .eq('id', event_id)
       .single();
 
@@ -138,9 +138,19 @@ serve(async (req) => {
       .eq('id', user.id)
       .single();
 
-    // Load business Stripe account (for connected payout)
+    // Resolve the organiser's Connect account for the destination charge.
     let stripeAccountId: string | null = null;
-    if (event.organiser_business_id) {
+    if (event.organiser_hub_id) {
+      // Hub-organised event → pay out to the hub's connected account.
+      const { data: hub } = await supabase
+        .from('hubs')
+        .select('stripe_account_id, payout_enabled')
+        .eq('id', event.organiser_hub_id)
+        .single();
+      if (hub?.payout_enabled && hub?.stripe_account_id) {
+        stripeAccountId = hub.stripe_account_id;
+      }
+    } else if (event.organiser_business_id) {
       const { data: biz } = await supabase
         .from('local_businesses')
         .select('stripe_account_id, payout_enabled, use_business_payout, owner_id')

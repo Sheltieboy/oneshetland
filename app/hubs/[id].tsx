@@ -27,6 +27,7 @@ import {
   HUB_TYPE_LABELS, HUB_TYPE_ICONS,
   type Hub, type HubMember, type HubNotice, type HubMembershipType, type HubDocument, type HubCampaign,
 } from '@/lib/hubs-api';
+import { fetchHubEvents, type OsEvent } from '@/lib/events-api';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
 
 const S = SECTIONS.community;
@@ -53,6 +54,7 @@ export default function HubDetailScreen() {
   const [notices, setNotices] = useState<HubNotice[]>([]);
   const [docs, setDocs] = useState<HubDocument[]>([]);
   const [campaign, setCampaign] = useState<HubCampaign | null>(null);
+  const [events, setEvents] = useState<OsEvent[]>([]);
   const [types, setTypes] = useState<HubMembershipType[]>([]);
   const [payingType, setPayingType] = useState<HubMembershipType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ export default function HubDetailScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [h, mem, count, nts, tps, dcs, cmp] = await Promise.all([
+      const [h, mem, count, nts, tps, dcs, cmp, evs] = await Promise.all([
         fetchHub(id),
         profile ? fetchMyMembership(id, profile.id) : Promise.resolve(null),
         fetchMemberCount(id),
@@ -69,8 +71,9 @@ export default function HubDetailScreen() {
         fetchHubMembershipTypes(id),
         fetchHubDocuments(id).catch(() => [] as HubDocument[]),
         fetchActiveCampaign(id).catch(() => null),
+        fetchHubEvents(id).catch(() => [] as OsEvent[]),
       ]);
-      setHub(h); setMembership(mem); setMemberCount(count); setNotices(nts); setTypes(tps); setDocs(dcs); setCampaign(cmp);
+      setHub(h); setMembership(mem); setMemberCount(count); setNotices(nts); setTypes(tps); setDocs(dcs); setCampaign(cmp); setEvents(evs);
     } finally { setLoading(false); }
   }, [id, profile?.id]);
 
@@ -372,6 +375,50 @@ export default function HubDetailScreen() {
     </View>
   );
 
+  const upcomingEvents = events.filter(e =>
+    new Date(e.starts_at).getTime() >= Date.now() - 6 * 3600_000
+    && e.status !== 'cancelled' && e.status !== 'draft',
+  ).slice(0, 6);
+
+  const eventsBlock = (upcomingEvents.length > 0 || isAdmin) ? (
+    <View style={styles.section}>
+      <View style={styles.sectionHeadRow}>
+        <Text style={styles.sectionTitle}>Events</Text>
+        {isAdmin ? (
+          <TouchableOpacity onPress={() => router.push(`/hub-events?id=${hub.id}`)} hitSlop={8} style={styles.postBtn}>
+            <FontAwesome5 name="plus" size={11} color={accent} solid />
+            <Text style={[styles.postBtnText, { color: accent }]}>New</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {upcomingEvents.length === 0 ? (
+        <Text style={styles.muted}>No upcoming events.</Text>
+      ) : upcomingEvents.map(ev => (
+        <TouchableOpacity key={ev.id} style={styles.eventRow} onPress={() => router.push(`/events/${ev.id}`)} activeOpacity={0.8}>
+          <View style={[styles.eventDate, { backgroundColor: accent + '14' }]}>
+            <Text style={[styles.eventDay, { color: accent }]}>{new Date(ev.starts_at).getDate()}</Text>
+            <Text style={[styles.eventMon, { color: accent }]}>{new Date(ev.starts_at).toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eventTitle} numberOfLines={1}>{ev.title}</Text>
+            <Text style={styles.eventMeta} numberOfLines={1}>
+              {new Date(ev.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              {ev.venue ? `  ·  ${ev.venue}` : ''}
+            </Text>
+          </View>
+          {ev.has_tickets ? (
+            <View style={[styles.ticketTag, { backgroundColor: accent }]}>
+              <FontAwesome5 name="ticket-alt" size={10} color="#fff" solid />
+              <Text style={styles.ticketTagText}>Tickets</Text>
+            </View>
+          ) : (
+            <FontAwesome5 name="chevron-right" size={12} color={colors.textLight} />
+          )}
+        </TouchableOpacity>
+      ))}
+    </View>
+  ) : null;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -416,6 +463,7 @@ export default function HubDetailScreen() {
               <View style={styles.mainCol}>
                 {campaignBlock}
                 {aboutBlock}
+                {eventsBlock}
                 {noticesBlock}
               </View>
               <View style={styles.sideCol}>
@@ -428,6 +476,7 @@ export default function HubDetailScreen() {
             <>
               {campaignBlock}
               {aboutBlock}
+              {eventsBlock}
               {contactBlock}
               {directoryBlock}
               {documentsBlock}
@@ -521,6 +570,14 @@ const styles = StyleSheet.create({
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 8 },
   linkIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   linkText: { flex: 1, fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  eventDate: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  eventDay: { fontSize: 18, fontWeight: '900', lineHeight: 20 },
+  eventMon: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  eventTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  eventMeta: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  ticketTag: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999 },
+  ticketTagText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   sectionTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
   body2: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 22 },
   postBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingBottom: 8 },

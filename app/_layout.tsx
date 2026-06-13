@@ -204,6 +204,7 @@ function RootNavigator() {
           <Stack.Screen name="hub-broadcast" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="hub-campaigns" />
           <Stack.Screen name="hub-campaign" />
+          <Stack.Screen name="hub-events" />
           <Stack.Screen name="hub-donate" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="give/[id]" />
           <Stack.Screen name="notices" />
@@ -252,6 +253,7 @@ function RootNavigator() {
           <Stack.Screen name="local-gift" />
           <Stack.Screen name="(admin)/email-centre" />
           <Stack.Screen name="(admin)/compliance" />
+          <Stack.Screen name="(admin)/event-approvals" />
         </Stack>
       )}
 

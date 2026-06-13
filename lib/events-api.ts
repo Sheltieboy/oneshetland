@@ -22,10 +22,15 @@ export type EventCategory = typeof EVENT_CATEGORIES[number];
 
 export const AGE_RESTRICTIONS = ['All ages', '12+', '16+', '18+', 'Under 18 only'] as const;
 
+export type HubEventVisibility = 'members' | 'hub' | 'islands';
+
 export interface OsEvent {
   id:                  string;
   organiser_user_id:   string | null;
   organiser_business_id: string | null;
+  organiser_hub_id:    string | null;
+  hub_visibility:      HubEventVisibility | null;
+  calendar_approved:   boolean;
   title:               string;
   description:         string | null;
   category:            string | null;
@@ -58,6 +63,7 @@ export interface OsEvent {
   created_at:          string;
   // Optional joins
   business?:           { id: string; name: string; logo_url: string | null } | null;
+  hub?:                { id: string; name: string; logo_url: string | null; brand_color: string | null } | null;
   ticket_types?:       EventTicketType[];
   updates?:            EventUpdate[];
 }
@@ -220,8 +226,11 @@ export async function fetchPublishedEvents(opts: {
 }): Promise<OsEvent[]> {
   let q = supabase
     .from('events')
-    .select('*, business:local_businesses(id,name,logo_url)')
+    .select('*, business:local_businesses(id,name,logo_url), hub:hubs(id,name,logo_url,brand_color)')
     .eq('status', 'published')
+    // Hub events only reach the islands-wide calendar once approved; non-hub
+    // events (organiser_hub_id null) are governed by status alone.
+    .or('organiser_hub_id.is.null,calendar_approved.eq.true')
     .order('starts_at', { ascending: true });
 
   const now = new Date().toISOString();
@@ -276,8 +285,52 @@ export async function fetchBusinessEvents(businessId: string): Promise<OsEvent[]
   return (data ?? []) as OsEvent[];
 }
 
+/**
+ * Events organised by a hub. Admins (the hub's own page) get every event
+ * including drafts/members tiers — RLS already permits that for hub admins;
+ * non-admin viewers only get the rows RLS exposes (public/hub tiers, or
+ * members tiers if they're a member).
+ */
+export async function fetchHubEvents(hubId: string): Promise<OsEvent[]> {
+  const { data, error } = await supabase
+    .from('events')
+    .select('*')
+    .eq('organiser_hub_id', hubId)
+    .order('starts_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as OsEvent[];
+}
+
+/**
+ * Platform-admin approval of an unverified hub's islands-wide event. Stamps the
+ * approver; the events trigger validates the caller is an admin and flips
+ * calendar_approved on.
+ */
+export async function approveHubEvent(eventId: string, adminId: string): Promise<void> {
+  const { error } = await supabase
+    .from('events')
+    .update({ calendar_approved_by: adminId })
+    .eq('id', eventId);
+  if (error) throw error;
+}
+
+/** Events awaiting calendar approval (unverified hubs going islands-wide). */
+export async function fetchPendingHubEvents(): Promise<OsEvent[]> {
+  const { data, error } = await supabase
+    .from('events')
+    .select('*, hub:hubs(id,name,logo_url,brand_color,is_verified)')
+    .not('organiser_hub_id', 'is', null)
+    .eq('hub_visibility', 'islands')
+    .eq('calendar_approved', false)
+    .order('starts_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as OsEvent[];
+}
+
 export interface EventUpsertInput {
   organiser_business_id?: string;
+  organiser_hub_id?:    string;
+  hub_visibility?:      HubEventVisibility;
   title:                string;
   description?:         string | null;
   category?:            string | null;
@@ -315,7 +368,10 @@ export async function createEvent(userId: string, input: EventUpsertInput): Prom
   return data as OsEvent;
 }
 
-export async function updateEvent(id: string, patch: Partial<EventUpsertInput & { status: EventStatus }>): Promise<void> {
+export async function updateEvent(
+  id: string,
+  patch: Partial<EventUpsertInput & { status: EventStatus; calendar_approved_by: string }>,
+): Promise<void> {
   const { error } = await supabase.from('events').update(patch).eq('id', id);
   if (error) throw error;
 }
