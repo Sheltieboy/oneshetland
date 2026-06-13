@@ -14,8 +14,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { uploadHubImage, extractBrandColor, type PickedFile } from '@/lib/image-upload';
 import {
@@ -33,6 +36,7 @@ export default function HubRegisterScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
@@ -129,17 +133,10 @@ export default function HubRegisterScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{id ? 'Edit hub' : 'Start a hub'}</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title={id ? 'Edit hub' : 'Start a hub'} onClose={() => router.back()} accent={S.color} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
           {/* Logo — banner preview tints to the logo's dominant colour */}
           <View style={styles.field}>
@@ -270,10 +267,8 @@ export default function HubRegisterScreen() {
             </Field>
           ) : null}
 
-          <TouchableOpacity style={[styles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.6 }]}
-            onPress={save} disabled={saving} activeOpacity={0.85}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{id ? 'Save changes' : 'Create hub'}</Text>}
-          </TouchableOpacity>
+          <Button label={id ? 'Save changes' : 'Create hub'} icon="check" color={S.color} fullWidth
+            loading={saving} disabled={saving} onPress={save} style={styles.saveBtn} />
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -288,13 +283,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.screenBackground },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
 
   content: { padding: spacing.md },
   field: { marginBottom: spacing.md },
@@ -332,6 +320,5 @@ const styles = StyleSheet.create({
   joinModeSub: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2, lineHeight: 17 },
 
   note: { fontSize: fontSize.xs, color: colors.textLight, marginTop: spacing.md, fontStyle: 'italic' },
-  saveBtn: { marginTop: spacing.lg, borderRadius: radius.lg, paddingVertical: 16, alignItems: 'center' },
-  saveText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: spacing.lg },
 });

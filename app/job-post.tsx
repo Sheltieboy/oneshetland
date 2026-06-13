@@ -10,10 +10,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchJob, createJob, updateJob,
@@ -32,6 +34,7 @@ export default function JobPostScreen() {
   const { businessId, jobId } = useLocalSearchParams<{ businessId: string; jobId?: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
   const isEdit = !!jobId;
 
   const [loading, setLoading] = useState(isEdit);
@@ -120,17 +123,10 @@ export default function JobPostScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isEdit ? 'Edit job' : 'Post a job'}</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title={isEdit ? 'Edit job' : 'Post a job'} onClose={() => router.back()} accent={S.color} />
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
           <Field label="Job title *"><TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="e.g. Sous Chef" placeholderTextColor={colors.textLight} /></Field>
           <Field label="Description"><TextInput style={[styles.input, styles.multi]} value={desc} onChangeText={setDesc} placeholder="The role, who you're looking for, hours, perks…" placeholderTextColor={colors.textLight} multiline /></Field>
 
@@ -173,9 +169,7 @@ export default function JobPostScreen() {
           <Field label="Apply on a website (optional)"><TextInput style={styles.input} value={applyUrl} onChangeText={setApplyUrl} autoCapitalize="none" placeholder="https://…" placeholderTextColor={colors.textLight} /></Field>
           <Field label="Apply by email (optional)"><TextInput style={styles.input} value={applyEmail} onChangeText={setApplyEmail} autoCapitalize="none" keyboardType="email-address" placeholder="jobs@…" placeholderTextColor={colors.textLight} /></Field>
 
-          <TouchableOpacity style={[styles.saveBtn, { backgroundColor: S.color, opacity: saving ? 0.5 : 1 }]} onPress={save} disabled={saving} activeOpacity={0.9}>
-            {saving ? <ActivityIndicator color="#fff" /> : <><FontAwesome5 name="check" size={14} color="#fff" /><Text style={styles.saveBtnText}>{isEdit ? 'Save changes' : 'Publish job'}</Text></>}
-          </TouchableOpacity>
+          <Button label={isEdit ? 'Save changes' : 'Publish job'} icon="check" color={S.color} fullWidth loading={saving} disabled={saving} onPress={save} style={styles.saveBtn} />
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -212,11 +206,6 @@ function ChipRow({ items, value, onPick, label }: { items: readonly string[]; va
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.screenBackground },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md },
   field: { marginBottom: spacing.md },
   fieldLabel: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, marginBottom: 6 },
@@ -227,6 +216,5 @@ const styles = StyleSheet.create({
   chipText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary },
   payToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   payRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
-  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: spacing.md, borderRadius: 999, marginTop: spacing.sm },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: spacing.sm },
 });

@@ -15,8 +15,11 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchBusiness, createBusiness, updateBusiness,
@@ -40,6 +43,7 @@ const CATEGORIES: { id: LocalCategory; label: string; icon: string }[] = [
 export default function BusinessRegisterScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
   const { id } = useLocalSearchParams<{ id?: string }>();
 
   const [name, setName]           = useState('');
@@ -232,17 +236,14 @@ export default function BusinessRegisterScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{id ? 'Edit business' : 'List your business'}</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader
+        title={id ? 'Edit business' : 'List your business'}
+        onClose={() => router.back()}
+        accent={S.color}
+      />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
           {/* Logo + auto-tinted banner preview */}
           <View style={styles.field}>
@@ -489,20 +490,16 @@ export default function BusinessRegisterScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.7 }]}
-            onPress={handleSave}
+          <Button
+            label={id ? 'Save changes' : 'List my business'}
+            icon="check"
+            color={S.color}
+            fullWidth
+            loading={saving}
             disabled={saving}
-            activeOpacity={0.85}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <FontAwesome5 name="check" size={14} color="#fff" solid />
-                  <Text style={styles.saveBtnText}>{id ? 'Save changes' : 'List my business'}</Text>
-                </>
-            }
-          </TouchableOpacity>
+            onPress={handleSave}
+            style={styles.saveBtn}
+          />
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -594,8 +591,6 @@ const styles = StyleSheet.create({
   categoryText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textPrimary },
 
   saveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    paddingVertical: 16, borderRadius: radius.lg, marginTop: 12,
+    marginTop: spacing.lg,
   },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 });

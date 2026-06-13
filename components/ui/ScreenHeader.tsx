@@ -11,6 +11,15 @@ interface ScreenHeaderProps {
   showBack?: boolean;
   /** Custom back handler (defaults to router.back). */
   onBack?: () => void;
+  /**
+   * Render a dismiss control instead of a back chevron — for full-screen
+   * *create / compose* modals (which slide up and are dismissed, not "gone
+   * back" from). Takes precedence over the back chevron. Default icon is an X;
+   * pass `closeLabel` to show a text "Cancel" instead.
+   */
+  onClose?: () => void;
+  /** Text label for the close control (e.g. "Cancel"); omit for an X icon. */
+  closeLabel?: string;
   /** Section accent colour for the back control + bottom border. */
   accent?: string;
   /** Render the back control as a labelled pill (chevron + icon + label). */
@@ -24,7 +33,7 @@ interface ScreenHeaderProps {
 }
 
 export function ScreenHeader({
-  title, subtitle, showBack = true, onBack, accent,
+  title, subtitle, showBack = true, onBack, onClose, closeLabel, accent,
   backStyle = 'chevron', backLabel, backIcon, rightElement, dark = false,
 }: ScreenHeaderProps) {
   const router = useRouter();
@@ -36,7 +45,28 @@ export function ScreenHeader({
     else if (router.canGoBack()) router.back();
   };
 
+  const handleClose = () => {
+    haptic.light();
+    if (onClose) onClose();
+    else if (router.canGoBack()) router.back();
+  };
+
   const Back = () => {
+    // Modal dismiss control takes precedence over the back chevron.
+    if (onClose) {
+      if (closeLabel) {
+        return (
+          <Pressable onPress={handleClose} hitSlop={12} style={styles.side}>
+            <Text style={[styles.closeLabel, { color: tint }]}>{closeLabel}</Text>
+          </Pressable>
+        );
+      }
+      return (
+        <Pressable onPress={handleClose} hitSlop={14} style={[styles.side, styles.chevronBtn]}>
+          <FontAwesome5 name="times" size={20} color={tint} />
+        </Pressable>
+      );
+    }
     if (!showBack) return <View style={styles.side} />;
     if (backStyle === 'pill') {
       return (
@@ -91,6 +121,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   pillText: { fontSize: fontSize.sm, fontWeight: '800' },
+  closeLabel: { fontSize: fontSize.md, fontWeight: '700' },
   titleBlock: { flex: 1, alignItems: 'center' },
   title: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.2 },
   subtitle: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },

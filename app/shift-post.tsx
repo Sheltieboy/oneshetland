@@ -27,7 +27,7 @@ export default function ShiftPostScreen() {
         title="Post a shift"
         subtitle="Free to post — boost to alert matching workers"
         accent={S.color}
-        onBack={close}
+        onClose={() => router.back()}
       />
       <View style={{ flex: 1 }}>
         <PostShiftForm onSuccess={(id) => setBoostId(id)} />

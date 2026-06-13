@@ -6,14 +6,17 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { createHubNotice, type NoticeVisibility } from '@/lib/hubs-api';
 
 const S = SECTIONS.community;
@@ -28,6 +31,7 @@ const EXPIRY_OPTIONS: { label: string; days: number | null }[] = [
 export default function HubNoticeComposeScreen() {
   const { hub } = useLocalSearchParams<{ hub: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -51,16 +55,10 @@ export default function HubNoticeComposeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={{ width: 70 }}>
-          <Text style={[styles.cancel, { color: S.color }]}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>New notice</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title="New notice" onClose={() => router.back()} accent={S.color} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Title</Text>
           <TextInput style={styles.input} value={title} onChangeText={setTitle}
             placeholder="e.g. No session this Friday" placeholderTextColor={colors.textLight} />
@@ -90,10 +88,7 @@ export default function HubNoticeComposeScreen() {
             ))}
           </View>
 
-          <TouchableOpacity style={[styles.postBtn, { backgroundColor: S.color }, saving && { opacity: 0.6 }]}
-            onPress={post} disabled={saving} activeOpacity={0.85}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.postText}>Post notice</Text>}
-          </TouchableOpacity>
+          <Button label="Post notice" icon="check" color={S.color} fullWidth loading={saving} disabled={saving} onPress={post} style={styles.postBtn} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -102,12 +97,6 @@ export default function HubNoticeComposeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.screenBackground },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  cancel: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
 
   content: { padding: spacing.md },
   label: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, marginTop: spacing.md },
@@ -128,6 +117,5 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border },
   chipText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary },
 
-  postBtn: { marginTop: spacing.xl, borderRadius: radius.lg, paddingVertical: 16, alignItems: 'center' },
-  postText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  postBtn: { marginTop: spacing.xl },
 });

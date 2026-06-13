@@ -12,11 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useStripe } from '@stripe/stripe-react-native';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { formatPence } from '@/lib/local-api';
@@ -37,6 +39,7 @@ export default function HubDonateScreen() {
   const { campaign: campaignId } = useLocalSearchParams<{ campaign: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [campaign, setCampaign] = useState<HubCampaign | null>(null);
@@ -126,16 +129,10 @@ export default function HubDonateScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: accent }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={{ width: 70 }}>
-          <Text style={[styles.cancel, { color: accent }]}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Donate</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title="Donate" onClose={() => router.back()} accent={S.color} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
           <Text style={styles.campaign}>{campaign.title}</Text>
           <Text style={styles.sub}>{hub.name}</Text>
 
@@ -188,14 +185,7 @@ export default function HubDonateScreen() {
             </View>
           ) : null}
 
-          <TouchableOpacity style={[styles.donateBtn, { backgroundColor: accent }, paying && { opacity: 0.6 }]} onPress={onDonate} disabled={paying} activeOpacity={0.85}>
-            {paying ? <ActivityIndicator color="#fff" /> : (
-              <>
-                <FontAwesome5 name="heart" size={14} color="#fff" solid />
-                <Text style={styles.donateText}>Donate {formatPence(effectiveAmount)}</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <Button label={`Donate ${formatPence(effectiveAmount)}`} icon="heart" color={accent} fullWidth loading={paying} disabled={paying} onPress={onDonate} style={styles.donateBtn} />
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -220,9 +210,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.screenBackground },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   muted: { color: colors.textMuted, fontSize: fontSize.sm },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  cancel: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
 
   content: { padding: spacing.md },
   campaign: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
@@ -244,6 +231,5 @@ const styles = StyleSheet.create({
   gaNameRow: { flexDirection: 'row', gap: 8 },
   gaDeclaration: { fontSize: 11, color: colors.textMuted, lineHeight: 16, marginTop: 4 },
 
-  donateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: spacing.xl, borderRadius: radius.lg, paddingVertical: 16 },
-  donateText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  donateBtn: { marginTop: spacing.xl },
 });

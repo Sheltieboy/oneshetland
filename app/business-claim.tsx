@@ -7,15 +7,18 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView,
   TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchBusiness, fetchMyClaim, submitBusinessClaim,
@@ -28,6 +31,7 @@ export default function BusinessClaimScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [business, setBusiness] = useState<LocalBusiness | null>(null);
   const [existing, setExisting] = useState<BusinessClaim | null>(null);
@@ -101,14 +105,7 @@ export default function BusinessClaimScreen() {
   }
 
   const Header = (
-    <View style={[styles.header, { borderBottomColor: S.color }]}>
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-        <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-        <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-      </TouchableOpacity>
-      <Text style={styles.headerTitle}>Claim business</Text>
-      <View style={{ width: 70 }} />
-    </View>
+    <ScreenHeader title="Claim this business" onClose={() => router.back()} accent={S.color} />
   );
 
   // Already claimed by someone, or a pending/approved claim exists.
@@ -144,7 +141,7 @@ export default function BusinessClaimScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {Header}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
           <View style={[styles.bizCard, { borderColor: S.color }]}>
             <FontAwesome5 name="store" size={16} color={S.color} solid />
@@ -184,14 +181,10 @@ export default function BusinessClaimScreen() {
               placeholderTextColor={colors.textLight} multiline />
           </Field>
 
-          <TouchableOpacity
-            style={[styles.submitBtn, { backgroundColor: S.color }, saving && { opacity: 0.6 }]}
-            onPress={submit} disabled={saving} activeOpacity={0.85}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.submitText}>Submit claim</Text>}
-          </TouchableOpacity>
+          <Button
+            label="Submit claim" icon="check" color={S.color} fullWidth
+            loading={saving} disabled={saving} onPress={submit} style={styles.submitBtn}
+          />
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -214,14 +207,6 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: 12 },
   muted:  { color: colors.textMuted, fontSize: fontSize.sm, textAlign: 'center', lineHeight: 21 },
   stateTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2,
-  },
-  backBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
 
   scroll:  { flex: 1 },
   content: { padding: spacing.md },
@@ -247,8 +232,6 @@ const styles = StyleSheet.create({
   textarea: { minHeight: 90, textAlignVertical: 'top' },
 
   submitBtn: {
-    marginTop: spacing.lg, borderRadius: radius.lg, paddingVertical: 16,
-    alignItems: 'center', justifyContent: 'center',
+    marginTop: spacing.lg,
   },
-  submitText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 });

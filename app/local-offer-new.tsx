@@ -5,14 +5,17 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Modal,
+  Alert, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { SECTIONS } from '@/constants/sections';
 import { createOffer, type DiscountType } from '@/lib/local-api';
 
@@ -28,6 +31,7 @@ const DISCOUNT_TYPES: { id: DiscountType; label: string; icon: string }[] = [
 
 export default function NewOfferScreen() {
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
 
   const [title, setTitle]             = useState('');
@@ -74,17 +78,10 @@ export default function NewOfferScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>New offer</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title="New offer" onClose={() => router.back()} accent={S.color} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
           <View>
             <Text style={styles.label}>Title *</Text>
@@ -174,20 +171,16 @@ export default function NewOfferScreen() {
             />
           </View>
 
-          <TouchableOpacity
-            style={[styles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.7 }]}
-            onPress={submit}
+          <Button
+            label="Publish & notify followers"
+            icon="bullhorn"
+            color={S.color}
+            fullWidth
+            loading={saving}
             disabled={saving}
-            activeOpacity={0.85}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <FontAwesome5 name="bullhorn" size={13} color="#fff" solid />
-                  <Text style={styles.saveBtnText}>Publish & notify followers</Text>
-                </>
-            }
-          </TouchableOpacity>
+            onPress={submit}
+            style={styles.saveBtn}
+          />
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -224,16 +217,6 @@ const styles = StyleSheet.create({
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: spacing.md },
 
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-
   label: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   input: {
     backgroundColor: '#fff', borderRadius: radius.md,
@@ -254,10 +237,8 @@ const styles = StyleSheet.create({
   dateText: { fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '700' },
 
   saveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    paddingVertical: 16, borderRadius: radius.lg, marginTop: 12,
+    marginTop: 12,
   },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 32 },

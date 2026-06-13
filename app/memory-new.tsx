@@ -24,7 +24,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import {
   createMemory, uploadMemoryMedia, requestTranscription,
@@ -70,6 +73,7 @@ const VISIBILITY_OPTIONS: { value: MemoryVisibility; label: string; sub: string 
 export default function MemoryNewScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
   const { lat: latParam, lng: lngParam, parent_id: parentIdParam } =
     useLocalSearchParams<{ lat?: string; lng?: string; parent_id?: string }>();
 
@@ -217,22 +221,16 @@ export default function MemoryNewScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
+      <ScreenHeader
+        title={isChild ? 'Add to this memory' : 'New memory'}
+        onClose={() => router.back()}
+        accent={SECTION.color}
+      />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn} hitSlop={10}>
-            <FontAwesome5 name="chevron-left" size={18} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {isChild ? 'Add to this memory' : 'New memory'}
-          </Text>
-          <View style={{ width: 36 }} />
-        </View>
-
+      <ScrollView contentContainerStyle={[styles.scroll, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
         {/* Location picker (skip for sub-memories — they inherit) */}
         {!isChild ? (
           <View style={styles.cardSection}>
@@ -442,21 +440,16 @@ export default function MemoryNewScreen() {
         </View>
 
         {/* Save */}
-        <TouchableOpacity
-          onPress={handleSave}
+        <Button
+          label={isChild ? 'Add to memory' : 'Save memory'}
+          icon="check"
+          color={SECTION.color}
+          fullWidth
+          loading={saving}
           disabled={!canSave}
-          style={[
-            styles.saveBtn,
-            { backgroundColor: SECTION.color, opacity: canSave ? 1 : 0.45 },
-          ]}
-        >
-          {saving ? <ActivityIndicator color="#fff" /> : (
-            <>
-              <FontAwesome5 name="check" size={14} color="#fff" />
-              <Text style={styles.saveBtnText}>Save memory</Text>
-            </>
-          )}
-        </TouchableOpacity>
+          onPress={handleSave}
+          style={styles.saveBtn}
+        />
 
       </ScrollView>
       </KeyboardAvoidingView>
@@ -653,18 +646,7 @@ const styles = StyleSheet.create({
   visLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
   visSub:   { fontSize: 11, color: colors.textMuted },
   saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-  },
-  saveBtnText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: fontSize.md,
   },
 });

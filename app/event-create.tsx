@@ -15,7 +15,10 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
@@ -38,6 +41,7 @@ export default function EventCreateScreen() {
   const { businessId, hubId, eventId } = useLocalSearchParams<{ businessId?: string; hubId?: string; eventId?: string }>();
   const router  = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const isEdit = !!eventId;
   const isHub  = !!hubId;
@@ -250,16 +254,9 @@ export default function EventCreateScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isEdit ? 'Edit Event' : 'New Event'}</Text>
-        <View style={{ width: 60 }} />
-      </View>
+      <ScreenHeader title={isEdit ? 'Edit Event' : 'New Event'} onClose={() => router.back()} accent={S.color} />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
         {/* Cover image */}
         <TouchableOpacity style={styles.coverPicker} onPress={pickCover} activeOpacity={0.85}>
@@ -536,14 +533,16 @@ export default function EventCreateScreen() {
           >
             {saving ? <ActivityIndicator color={S.color} size="small" /> : <Text style={[styles.draftBtnText, { color: S.color }]}>Save as draft</Text>}
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.publishBtn, { backgroundColor: S.color }, saving && { opacity: 0.6 }]}
-            onPress={() => handleSave(true)}
+          <Button
+            label={isEdit ? 'Save & publish' : 'Publish event'}
+            icon="check"
+            color={S.color}
+            fullWidth
+            loading={saving}
             disabled={saving}
-            activeOpacity={0.85}
-          >
-            {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.publishBtnText}>{isEdit ? 'Save & publish' : 'Publish event'}</Text>}
-          </TouchableOpacity>
+            onPress={() => handleSave(true)}
+            style={styles.publishBtn}
+          />
         </View>
 
         <View style={{ height: 40 }} />
@@ -672,15 +671,6 @@ const styles = StyleSheet.create({
   content:{ paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.screenBackground },
 
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-
   coverPicker: { height: 180, backgroundColor: S.color + '18', position: 'relative' },
   coverPreview:{ width: '100%', height: '100%', resizeMode: 'cover' },
   coverPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
@@ -754,8 +744,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: S.color + '60', alignItems: 'center',
   },
   draftBtnText:   { fontSize: fontSize.sm, fontWeight: '800' },
-  publishBtn:     { paddingVertical: 14, borderRadius: radius.md, alignItems: 'center' },
-  publishBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '900' },
+  publishBtn:     { marginTop: 0 },
 
   placeConfirm: { gap: 4, marginTop: 6, paddingHorizontal: 2 },
   placeChip: {

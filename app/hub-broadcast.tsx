@@ -7,14 +7,17 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import { broadcastToHub } from '@/lib/hubs-api';
 
 const S = SECTIONS.community;
@@ -28,6 +31,7 @@ const CHANNELS: { key: 'push' | 'email' | 'both'; label: string; icon: string }[
 export default function HubBroadcastScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [channel, setChannel] = useState<'push' | 'email' | 'both'>('push');
@@ -57,16 +61,10 @@ export default function HubBroadcastScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={{ width: 70 }}>
-          <Text style={[styles.cancel, { color: S.color }]}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Message members</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title="Message members" onClose={() => router.back()} accent={S.color} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Subject</Text>
           <TextInput style={styles.input} value={title} onChangeText={setTitle}
             placeholder="e.g. AGM next Thursday" placeholderTextColor={colors.textLight} />
@@ -88,14 +86,7 @@ export default function HubBroadcastScreen() {
 
           <Text style={styles.note}>Goes to all current members of the hub. Keep it relevant — members can't opt out of hub messages individually yet.</Text>
 
-          <TouchableOpacity style={[styles.sendBtn, { backgroundColor: S.color }, sending && { opacity: 0.6 }]} onPress={send} disabled={sending} activeOpacity={0.85}>
-            {sending ? <ActivityIndicator color="#fff" /> : (
-              <>
-                <FontAwesome5 name="paper-plane" size={14} color="#fff" solid />
-                <Text style={styles.sendText}>Send to members</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <Button label="Send to members" icon="paper-plane" color={S.color} fullWidth loading={sending} disabled={sending} onPress={send} style={styles.sendBtn} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -104,12 +95,6 @@ export default function HubBroadcastScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.screenBackground },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  cancel: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
 
   content: { padding: spacing.md },
   label: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, marginTop: spacing.md },
@@ -121,6 +106,5 @@ const styles = StyleSheet.create({
   channelText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary },
 
   note: { fontSize: fontSize.xs, color: colors.textLight, marginTop: spacing.md, lineHeight: 17 },
-  sendBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: spacing.lg, borderRadius: radius.lg, paddingVertical: 16 },
-  sendText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  sendBtn: { marginTop: spacing.lg },
 });

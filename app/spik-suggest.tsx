@@ -20,13 +20,16 @@ import {
   Platform,
   Animated,
   Easing,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, router } from 'expo-router';
-import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import { colors, fontSize, radius, spacing, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
+import { SECTIONS } from '@/constants/sections';
 import { paletteFor } from '@/lib/spik-palette';
 
 const SUPABASE_URL      = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -290,6 +293,7 @@ export default function SpikSuggestScreen() {
   }>();
 
   const pal = paletteFor(params.pos);
+  const { screenWidth } = useAppLayout();
 
   const [suggestions, setSuggestions] = useState<Record<string, string>>(
     Object.fromEntries(FIELDS.map(f => [f.name, '']))
@@ -383,24 +387,15 @@ export default function SpikSuggestScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScreenHeader
+        title="Suggest an improvement"
+        subtitle={params.pos ? `${params.word} · ${params.pos}` : params.word}
+        onClose={() => router.back()}
+        accent={SECTIONS.spik.color}
+      />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-        <View style={[styles.header, { borderBottomColor: pal.bar }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-            <FontAwesome5 name="chevron-left" size={13} color={pal.bar} />
-            <Text style={[styles.backText, { color: pal.bar }]}>Back</Text>
-          </TouchableOpacity>
-          <View style={styles.headerMid}>
-            <Text style={styles.headerTitle}>Suggest an improvement</Text>
-            <View style={styles.wordPill}>
-              <View style={[styles.posDot, { backgroundColor: pal.bar }]} />
-              <Text style={styles.wordPillText}>{params.word}</Text>
-              {params.pos ? <Text style={[styles.wordPillPos, { color: pal.text }]}>{params.pos}</Text> : null}
-            </View>
-          </View>
-        </View>
-
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        <ScrollView contentContainerStyle={[styles.body, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
 
           <View style={styles.infoCard}>
             <View style={styles.infoBullets}>
@@ -456,24 +451,18 @@ export default function SpikSuggestScreen() {
             Community suggestions help keep Spik accurate and alive. Shetland dialect belongs to everyone — help us get it right.
           </Text>
 
-          <TouchableOpacity
-            style={[styles.submitBtn, { backgroundColor: hasSuggestions ? pal.bar : colors.border }]}
-            onPress={handleSubmit}
+          <Button
+            label={hasSuggestions
+              ? `Send ${suggestionCount} suggestion${suggestionCount > 1 ? 's' : ''} for review`
+              : 'Open a field above to get started'}
+            icon="paper-plane"
+            color={SECTIONS.spik.color}
+            fullWidth
+            loading={submitting}
             disabled={!hasSuggestions || submitting}
-            activeOpacity={0.85}
-          >
-            {submitting
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <FontAwesome5 name="paper-plane" size={14} color="#fff" />
-                  <Text style={styles.submitBtnText}>
-                    {hasSuggestions
-                      ? `Send ${suggestionCount} suggestion${suggestionCount > 1 ? 's' : ''} for review`
-                      : 'Open a field above to get started'}
-                  </Text>
-                </>
-            }
-          </TouchableOpacity>
+            onPress={handleSubmit}
+            style={styles.submitBtn}
+          />
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -581,10 +570,8 @@ const styles = StyleSheet.create({
     lineHeight: 18, textAlign: 'center', paddingHorizontal: spacing.md,
   },
   submitBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, borderRadius: radius.md, paddingVertical: 16, marginTop: 4,
+    marginTop: 4,
   },
-  submitBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '700' },
 
   // Success
   successWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 16 },
