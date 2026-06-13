@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -27,6 +27,9 @@ import {
   JOB_CATEGORIES, type Job,
 } from '@/lib/jobs-api';
 import { fetchOpenShifts, CATEGORY_LABELS, type Shift } from '@/lib/shifts-api';
+import { fetchMyBusinesses, toggleAddon, type LocalBusiness } from '@/lib/local-api';
+import { Sheet } from '@/components/ui/Sheet';
+import { Button } from '@/components/ui/Button';
 
 type Tier = 'jobs' | 'shifts';
 const JOBS = SECTIONS.jobs;
@@ -49,6 +52,8 @@ export default function WorkHubScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery]   = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  const [hireOpen, setHireOpen] = useState(false);
+  const [myBiz, setMyBiz]       = useState<LocalBusiness[] | null>(null);
 
   // React to nav (e.g. the "Shifts" item) targeting this hub with ?tab=shifts.
   useEffect(() => { if (tabParam === 'shifts' || tabParam === 'jobs') setTier(tabParam); }, [tabParam]);
@@ -86,6 +91,23 @@ export default function WorkHubScreen() {
     const next = new Set(saved);
     if (await toggleSavedJob(profile.id, jobId)) next.add(jobId); else next.delete(jobId);
     setSaved(next);
+  };
+
+  // "Post a job" — pick which business is hiring (jobs are posted by a business).
+  const openHire = () => {
+    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    setHireOpen(true);
+  };
+  useEffect(() => {
+    if (!hireOpen || !profile) return;
+    setMyBiz(null);
+    fetchMyBusinesses(profile.id).then(setMyBiz).catch(() => setMyBiz([]));
+  }, [hireOpen, profile?.id]);
+
+  const pickBusiness = async (b: LocalBusiness) => {
+    setHireOpen(false);
+    try { await toggleAddon(b.id, 'jobs', true); } catch { /* posting works regardless */ }
+    router.push(`/job-post?businessId=${b.id}`);
   };
 
   const cats = tier === 'jobs' ? JOB_CATS : SHIFT_CATS;
@@ -177,12 +199,12 @@ export default function WorkHubScreen() {
           {/* Employer CTA */}
           <TouchableOpacity
             style={[styles.hireCta, { borderColor: accent + '40', backgroundColor: accent + '14' }]}
-            onPress={() => router.push(tier === 'jobs' ? '/local-business-dashboard' : '/shift-post')}
+            onPress={() => (tier === 'jobs' ? openHire() : router.push('/shift-post'))}
             activeOpacity={0.85}
           >
             <FontAwesome5 name={tier === 'jobs' ? 'store' : 'plus-circle'} size={14} color={accent} solid />
             <Text style={[styles.hireCtaText, { color: accent }]}>
-              {tier === 'jobs' ? 'Hiring? Post a job from your business' : 'Need cover? Post a shift'}
+              {tier === 'jobs' ? 'Hiring? Post a job' : 'Need cover? Post a shift'}
             </Text>
             <FontAwesome5 name="chevron-right" size={12} color={accent} />
           </TouchableOpacity>
@@ -190,6 +212,34 @@ export default function WorkHubScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       </View>
+
+      {/* Post a job — business picker */}
+      <Sheet visible={hireOpen} onClose={() => setHireOpen(false)} title="Post a job">
+        {myBiz === null ? (
+          <View style={styles.hireLoading}><ActivityIndicator color={JOBS.color} /></View>
+        ) : myBiz.length === 0 ? (
+          <View style={{ gap: spacing.md, paddingBottom: spacing.sm }}>
+            <Text style={styles.hireBody}>
+              Jobs are posted by a business. You'll need a business profile first — it only takes a minute and it works right across OneShetland.
+            </Text>
+            <Button label="Register a business" icon="store" color={JOBS.color} fullWidth
+              onPress={() => { setHireOpen(false); router.push('/local-business-register'); }} />
+          </View>
+        ) : (
+          <View style={{ gap: spacing.sm, paddingBottom: spacing.sm }}>
+            <Text style={styles.hireBody}>Which business is hiring?</Text>
+            {myBiz.map(b => (
+              <TouchableOpacity key={b.id} style={styles.bizRow} onPress={() => pickBusiness(b)} activeOpacity={0.85}>
+                <View style={[styles.bizLogo, { backgroundColor: JOBS.light }]}>
+                  {b.logo_url ? <Image source={{ uri: b.logo_url }} style={styles.bizLogoImg} /> : <FontAwesome5 name="store" size={15} color={JOBS.color} solid />}
+                </View>
+                <Text style={styles.bizName} numberOfLines={1}>{b.name}</Text>
+                <FontAwesome5 name="chevron-right" size={13} color={colors.textLight} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -258,4 +308,10 @@ const styles = StyleSheet.create({
 
   hireCta: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: spacing.lg, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1.5 },
   hireCtaText: { flex: 1, fontSize: fontSize.sm, fontWeight: '800' },
+  hireLoading: { paddingVertical: spacing.lg, alignItems: 'center' },
+  hireBody: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20 },
+  bizRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
+  bizLogo: { width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  bizLogoImg: { width: 40, height: 40 },
+  bizName: { flex: 1, fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
 });
