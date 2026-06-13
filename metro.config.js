@@ -11,6 +11,11 @@ config.transformer.babelTransformerPath = require.resolve('react-native-svg-tran
 config.resolver.assetExts = config.resolver.assetExts.filter(ext => ext !== 'svg');
 config.resolver.sourceExts = [...config.resolver.sourceExts, 'svg'];
 
+// Make sure bundled video files resolve as assets.
+for (const ext of ['mp4', 'mov']) {
+  if (!config.resolver.assetExts.includes(ext)) config.resolver.assetExts.push(ext);
+}
+
 // ── Force @supabase/supabase-js to its CJS build ───────────────────────────
 // The .mjs build uses dynamic import() which Hermes rejects as invalid syntax.
 // All other packages keep normal resolution (including package exports).

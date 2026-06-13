@@ -18,7 +18,9 @@
       "bundleIdentifier": "com.oneshetland.app",
       "buildNumber": "3",
       "icon": "./assets/icon.png",
-      "associatedDomains": ["applinks:oneshetland.com"],
+      "associatedDomains": [
+        "applinks:oneshetland.com"
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "OneShetland uses your camera to take photos of delivered items.",
@@ -38,11 +40,26 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/t/" },
-            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/g/" },
-            { "scheme": "https", "host": "oneshetland.com", "pathPrefix": "/give/" }
+            {
+              "scheme": "https",
+              "host": "oneshetland.com",
+              "pathPrefix": "/t/"
+            },
+            {
+              "scheme": "https",
+              "host": "oneshetland.com",
+              "pathPrefix": "/g/"
+            },
+            {
+              "scheme": "https",
+              "host": "oneshetland.com",
+              "pathPrefix": "/give/"
+            }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -68,7 +85,8 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-video"
     ],
     "scheme": "oneshetland-fetch",
     "experiments": {
