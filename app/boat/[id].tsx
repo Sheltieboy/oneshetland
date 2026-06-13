@@ -32,6 +32,7 @@ import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
+import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import {
   fetchVesselProfile, fetchVesselTimeline,
   fetchVesselComments, threadComments,
@@ -490,15 +491,13 @@ export default function BoatProfileScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* Top bar — anchored in the Da Boats section */}
         <View style={styles.topBar}>
-          <TouchableOpacity
+          <HeroBackPill
+            variant="tint"
+            accent={SECTION.color}
+            icon="ship"
+            label="Da Boats"
             onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/da-boats'))}
-            style={styles.backToBoats}
-            hitSlop={12}
-          >
-            <FontAwesome5 name="chevron-left" size={16} color={SECTION.color} />
-            <FontAwesome5 name="ship" size={12} color={SECTION.color} solid />
-            <Text style={styles.backToBoatsText}>Da Boats</Text>
-          </TouchableOpacity>
+          />
           <View style={{ flex: 1 }} />
           <TouchableOpacity
             onPress={() => setEditMode(m => !m)}

@@ -13,6 +13,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { colors, fontSize, radius, spacing, shadow } from '@/constants/theme';
 import { fetchSpikEntry, decodeEntities, type SpikEntry } from '@/lib/oneshetland-api';
 import { paletteFor, type PosPalette } from '@/lib/spik-palette';
+import { HeroBackPill } from '@/components/ui/HeroBackPill';
 
 function stripHtml(str: string): string {
   return decodeEntities(str.replace(/<[^>]*>/g, '').trim());
@@ -225,10 +226,13 @@ export default function SpikDetailScreen() {
 
 function BackBar({ color }: { color: string }) {
   return (
-    <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-      <FontAwesome5 name="chevron-left" size={13} color={color} />
-      <Text style={[styles.backText, { color }]}>Back</Text>
-    </TouchableOpacity>
+    <HeroBackPill
+      variant="frost"
+      accent={color}
+      label="Back"
+      style={{ marginLeft: spacing.md, marginTop: 8 }}
+      onPress={() => router.back()}
+    />
   );
 }
 

@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { BusinessLocationMap } from '@/components/BusinessLocationMap';
 import { extractBrandColor, readableAccent } from '@/lib/image-upload';
 import { useAuth } from '@/context/AuthContext';
@@ -274,14 +275,12 @@ export default function EventDetailScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
+        <HeroBackPill
+          variant="frost"
+          accent={accent}
+          label="What's On"
           onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/whats-on'); }}
-          hitSlop={12}
-        >
-          <FontAwesome5 name="chevron-left" size={14} color={accent} />
-          <Text style={[styles.backText, { color: accent }]}>What's On</Text>
-        </TouchableOpacity>
+        />
         <TouchableOpacity
           hitSlop={12}
           onPress={() => Share.share({ message: `${event.title} — ${formatEventDate(event.starts_at, event.ends_at)}` })}

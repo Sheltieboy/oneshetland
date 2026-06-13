@@ -17,6 +17,7 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import {
@@ -427,9 +428,11 @@ export default function HubDetailScreen() {
           {hub.cover_url ? <Image source={{ uri: hub.cover_url }} style={StyleSheet.absoluteFill} /> : null}
           <View style={styles.bannerScrim} />
           <SafeAreaView edges={['top']} style={styles.bannerTop}>
-            <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/hubs'))} hitSlop={12} style={styles.bannerBack}>
-              <FontAwesome5 name="chevron-left" size={16} color="#fff" />
-            </TouchableOpacity>
+            <HeroBackPill
+              variant="overlay"
+              label="Hubs"
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/hubs'))}
+            />
           </SafeAreaView>
         </View>
 
