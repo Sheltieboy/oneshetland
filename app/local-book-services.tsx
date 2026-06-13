@@ -10,13 +10,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Switch, Modal, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { Sheet } from '@/components/ui/Sheet';
 import { SECTIONS } from '@/constants/sections';
 import {
   fetchBusinessServices, createService, updateService, deleteService,
@@ -299,18 +300,7 @@ function ServiceEditor({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
-            <View style={modalStyles.handle} />
-            <Text style={modalStyles.title}>
-              {isNew ? 'New service' : 'Edit service'}
-            </Text>
-
+    <Sheet visible={visible} onClose={onClose} title={isNew ? 'New service' : 'Edit service'}>
             <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
               <Text style={modalStyles.label}>Name</Text>
               <TextInput
@@ -418,10 +408,7 @@ function ServiceEditor({
                   : <Text style={modalStyles.saveText}>{isNew ? 'Add service' : 'Save changes'}</Text>}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -484,11 +471,6 @@ const styles = StyleSheet.create({
 });
 
 const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:   { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 40, gap: 10 },
-  handle:  { width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
-  title:   { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 },
-
   label:   { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginTop: 8, marginBottom: 4 },
   hintText:{ fontSize: 11, color: colors.textMuted, marginTop: 6, lineHeight: 16, fontStyle: 'italic' },
   input:   { backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 10, fontSize: fontSize.sm, color: colors.textPrimary },

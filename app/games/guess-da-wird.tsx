@@ -14,8 +14,8 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Share, Animated, Platform,
-  Modal, TextInput, FlatList,
+  ActivityIndicator, Share, Animated,
+  TextInput, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -27,6 +27,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 import { submitScore } from '@/lib/games-api';
 import { GameArt, GAME_COLORS, GAME_LIGHTS } from '@/components/GameArt';
+import { Sheet } from '@/components/ui/Sheet';
 import {
   getDailyWird, checkGuess, buildKeyMap, buildClues, buildShareText,
   loadDailyState, saveDailyState, recordResult, loadStats, calcScore,
@@ -777,81 +778,68 @@ function StuckBrowser({
   }, [allWords, search, lenFilter]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={browserStyles.overlay}>
-        <View style={browserStyles.sheet}>
-          <View style={browserStyles.handle} />
+    <Sheet visible={visible} onClose={onClose} title="Stuck?" maxHeightPct={0.85}>
+      <Text style={browserStyles.subtitle}>Browse Shetland words to spark an idea — you still need to type your guess.</Text>
 
-          <View style={browserStyles.headerRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={browserStyles.title}>Stuck?</Text>
-              <Text style={browserStyles.subtitle}>Browse Shetland words to spark an idea — you still need to type your guess.</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={16} accessibilityLabel="Close">
-              <FontAwesome5 name="times" size={16} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
+      <TextInput
+        style={browserStyles.search}
+        value={search}
+        onChangeText={setSearch}
+        placeholder={`Search ${lenFilter}-letter words…`}
+        placeholderTextColor={colors.textLight}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
 
-          <TextInput
-            style={browserStyles.search}
-            value={search}
-            onChangeText={setSearch}
-            placeholder={`Search ${lenFilter}-letter words…`}
-            placeholderTextColor={colors.textLight}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          <View style={browserStyles.chipsRow}>
-            <Text style={browserStyles.chipsLabel}>Length</Text>
-            {Array.from({ length: MAX_LEN - MIN_LEN + 1 }, (_, i) => MIN_LEN + i).map(n => {
-              const selected = n === lenFilter;
-              const isToday  = n === defaultLen;
-              return (
-                <TouchableOpacity
-                  key={n}
-                  style={[browserStyles.chip, selected && browserStyles.chipSelected]}
-                  onPress={() => { Haptics.selectionAsync(); setLenFilter(n); }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[browserStyles.chipText, selected && browserStyles.chipTextSelected]}>
-                    {n}{isToday ? '★' : ''}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {allWords === null ? (
-            <View style={browserStyles.loading}>
-              <ActivityIndicator color={ANCHORED} />
-            </View>
-          ) : filtered.length === 0 ? (
-            <View style={browserStyles.empty}>
-              <Text style={browserStyles.emptyText}>
-                {search ? 'No matches.' : 'No words at this length.'}
+      <View style={browserStyles.chipsRow}>
+        <Text style={browserStyles.chipsLabel}>Length</Text>
+        {Array.from({ length: MAX_LEN - MIN_LEN + 1 }, (_, i) => MIN_LEN + i).map(n => {
+          const selected = n === lenFilter;
+          const isToday  = n === defaultLen;
+          return (
+            <TouchableOpacity
+              key={n}
+              style={[browserStyles.chip, selected && browserStyles.chipSelected]}
+              onPress={() => { Haptics.selectionAsync(); setLenFilter(n); }}
+              activeOpacity={0.7}
+            >
+              <Text style={[browserStyles.chipText, selected && browserStyles.chipTextSelected]}>
+                {n}{isToday ? '★' : ''}
               </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={w => String(w.id)}
-              showsVerticalScrollIndicator
-              initialNumToRender={20}
-              windowSize={9}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => <BrowserCard w={item} />}
-              ItemSeparatorComponent={() => <View style={browserStyles.cardSep} />}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            />
-          )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-          <Text style={browserStyles.count}>
-            {allWords === null ? '…' : `${filtered.length} word${filtered.length === 1 ? '' : 's'}`}
+      {allWords === null ? (
+        <View style={browserStyles.loading}>
+          <ActivityIndicator color={ANCHORED} />
+        </View>
+      ) : filtered.length === 0 ? (
+        <View style={browserStyles.empty}>
+          <Text style={browserStyles.emptyText}>
+            {search ? 'No matches.' : 'No words at this length.'}
           </Text>
         </View>
-      </View>
-    </Modal>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={w => String(w.id)}
+          showsVerticalScrollIndicator
+          initialNumToRender={20}
+          windowSize={9}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => <BrowserCard w={item} />}
+          ItemSeparatorComponent={() => <View style={browserStyles.cardSep} />}
+          contentContainerStyle={{ paddingBottom: 24 }}
+          style={{ flexShrink: 1 }}
+        />
+      )}
+
+      <Text style={browserStyles.count}>
+        {allWords === null ? '…' : `${filtered.length} word${filtered.length === 1 ? '' : 's'}`}
+      </Text>
+    </Sheet>
   );
 }
 
@@ -994,19 +982,7 @@ const styles = StyleSheet.create({
 // ── Stuck? browser styles ─────────────────────────────────────────────────────
 
 const browserStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:   {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: spacing.lg, paddingBottom: 40,
-    maxHeight: '85%',
-    gap: 12,
-  },
-  handle:  { width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 4 },
-
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  title:     { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
-  subtitle:  { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 2 },
+  subtitle:  { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 2, marginBottom: 12 },
 
   search: {
     backgroundColor: '#F8FAFC',

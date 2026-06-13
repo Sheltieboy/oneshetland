@@ -8,7 +8,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, RefreshControl, Linking, Modal, KeyboardAvoidingView, Platform,
+  Alert, RefreshControl, Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -22,6 +22,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchHub, fetchMyMembership, fetchHubDocuments, createHubDocument, deleteHubDocument,
@@ -132,36 +133,27 @@ export default function HubDocumentsScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      <Modal visible={editorOpen} transparent animationType="slide" onRequestClose={() => setEditorOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => !saving && setEditorOpen(false)} />
-          <View style={styles.modalSheet}>
-            <View style={styles.grabber} />
-            <Text style={styles.modalTitle}>Add document</Text>
+      <Sheet visible={editorOpen} onClose={() => !saving && setEditorOpen(false)} title="Add document">
+        <Text style={styles.label}>Title</Text>
+        <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="e.g. Club constitution" placeholderTextColor={colors.textLight} />
 
-            <Text style={styles.label}>Title</Text>
-            <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="e.g. Club constitution" placeholderTextColor={colors.textLight} />
+        <Text style={styles.label}>Link (URL)</Text>
+        <TextInput style={styles.input} value={url} onChangeText={setUrl} placeholder="https://…  (Drive, Dropbox, a PDF link)" placeholderTextColor={colors.textLight} autoCapitalize="none" keyboardType="url" />
+        <Text style={styles.hint}>Paste a link to a file you host (Google Drive, Dropbox, your website).</Text>
 
-            <Text style={styles.label}>Link (URL)</Text>
-            <TextInput style={styles.input} value={url} onChangeText={setUrl} placeholder="https://…  (Drive, Dropbox, a PDF link)" placeholderTextColor={colors.textLight} autoCapitalize="none" keyboardType="url" />
-            <Text style={styles.hint}>Paste a link to a file you host (Google Drive, Dropbox, your website).</Text>
+        <Text style={styles.label}>Who can see it</Text>
+        <View style={styles.visRow}>
+          {VIS.map(v => (
+            <TouchableOpacity key={v.key} style={[styles.visBtn, vis === v.key && { backgroundColor: S.color, borderColor: S.color }]}
+              onPress={() => setVis(v.key)} activeOpacity={0.85}>
+              <FontAwesome5 name={v.icon as any} size={11} color={vis === v.key ? '#fff' : colors.textMuted} solid />
+              <Text style={[styles.visText, vis === v.key && { color: '#fff' }]}>{v.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-            <Text style={styles.label}>Who can see it</Text>
-            <View style={styles.visRow}>
-              {VIS.map(v => (
-                <TouchableOpacity key={v.key} style={[styles.visBtn, vis === v.key && { backgroundColor: S.color, borderColor: S.color }]}
-                  onPress={() => setVis(v.key)} activeOpacity={0.85}>
-                  <FontAwesome5 name={v.icon as any} size={11} color={vis === v.key ? '#fff' : colors.textMuted} solid />
-                  <Text style={[styles.visText, vis === v.key && { color: '#fff' }]}>{v.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Button label="Add document" onPress={save} color={S.color} loading={saving} disabled={saving} fullWidth style={styles.saveBtn} />
-            <View style={{ height: 12 }} />
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        <Button label="Add document" onPress={save} color={S.color} loading={saving} disabled={saving} fullWidth style={styles.saveBtn} />
+      </Sheet>
     </ScreenScaffold>
   );
 }
@@ -176,10 +168,6 @@ const styles = StyleSheet.create({
   docVis: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
   docDel: { padding: 14 },
 
-  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, paddingHorizontal: spacing.lg, paddingTop: 10, paddingBottom: spacing.lg },
-  grabber: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: spacing.md },
-  modalTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, marginBottom: spacing.sm },
   label: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, marginTop: spacing.md },
   input: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: fontSize.md, color: colors.textPrimary },
   hint: { fontSize: fontSize.xs, color: colors.textLight, marginTop: 4 },

@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking,
-  ActivityIndicator, Modal, TextInput, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, TextInput, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -15,6 +15,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { NavRail } from '@/components/NavRail';
+import { Sheet } from '@/components/ui/Sheet';
 import {
   fetchJob, hasApplied, applyToJob, ensureWorkerProfile, generateCoverLetter,
   fetchSavedJobIds, toggleSavedJob,
@@ -207,44 +208,35 @@ function ApplySheet({ job, userId, onClose, onApplied }: { job: Job; userId: str
   const thin = !profile || (!profile.summary && (profile.skills?.length ?? 0) === 0);
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <View style={styles.modalBackdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <Text style={styles.sheetTitle}>Apply — {job.title}</Text>
-            <Text style={styles.sheetSub}>Your work profile is sent with this application.</Text>
+    <Sheet visible onClose={onClose} title={`Apply — ${job.title}`} scroll>
+      <Text style={styles.sheetSub}>Your work profile is sent with this application.</Text>
 
-            {thin ? (
-              <View style={styles.warn}>
-                <FontAwesome5 name="info-circle" size={12} color="#92400E" solid />
-                <Text style={styles.warnText}>Your profile is light. A fuller profile/CV gets more replies — add skills & experience first.</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.coverHead}>
-              <Text style={styles.coverLabel}>Cover note (optional)</Text>
-              <TouchableOpacity onPress={draftAi} disabled={aiBusy} style={styles.aiBtn} hitSlop={8}>
-                {aiBusy ? <ActivityIndicator size="small" color={S.color} /> : <><FontAwesome5 name="magic" size={11} color={S.color} solid /><Text style={styles.aiBtnText}>Draft with AI</Text></>}
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              value={cover}
-              onChangeText={setCover}
-              placeholder="A few lines on why you're a good fit…"
-              placeholderTextColor={colors.textMuted}
-              style={styles.coverInput}
-              multiline
-            />
-
-            <TouchableOpacity style={[styles.submit, { backgroundColor: S.color, opacity: busy ? 0.5 : 1 }]} onPress={submit} disabled={busy} activeOpacity={0.9}>
-              {busy ? <ActivityIndicator color="#fff" /> : <><FontAwesome5 name="paper-plane" size={14} color="#fff" solid /><Text style={styles.submitText}>Send application</Text></>}
-            </TouchableOpacity>
-          </View>
+      {thin ? (
+        <View style={styles.warn}>
+          <FontAwesome5 name="info-circle" size={12} color="#92400E" solid />
+          <Text style={styles.warnText}>Your profile is light. A fuller profile/CV gets more replies — add skills & experience first.</Text>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      ) : null}
+
+      <View style={styles.coverHead}>
+        <Text style={styles.coverLabel}>Cover note (optional)</Text>
+        <TouchableOpacity onPress={draftAi} disabled={aiBusy} style={styles.aiBtn} hitSlop={8}>
+          {aiBusy ? <ActivityIndicator size="small" color={S.color} /> : <><FontAwesome5 name="magic" size={11} color={S.color} solid /><Text style={styles.aiBtnText}>Draft with AI</Text></>}
+        </TouchableOpacity>
+      </View>
+      <TextInput
+        value={cover}
+        onChangeText={setCover}
+        placeholder="A few lines on why you're a good fit…"
+        placeholderTextColor={colors.textMuted}
+        style={styles.coverInput}
+        multiline
+      />
+
+      <TouchableOpacity style={[styles.submit, { backgroundColor: S.color, opacity: busy ? 0.5 : 1 }]} onPress={submit} disabled={busy} activeOpacity={0.9}>
+        {busy ? <ActivityIndicator color="#fff" /> : <><FontAwesome5 name="paper-plane" size={14} color="#fff" solid /><Text style={styles.submitText}>Send application</Text></>}
+      </TouchableOpacity>
+    </Sheet>
   );
 }
 
@@ -296,10 +288,6 @@ const styles = StyleSheet.create({
   appliedPill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: spacing.md, borderRadius: 999, backgroundColor: '#DCFCE7' },
   appliedText: { color: '#15803D', fontSize: fontSize.sm, fontWeight: '800' },
 
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(11,31,42,0.45)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.screenBackground, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, gap: spacing.sm },
-  handle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: colors.border, marginBottom: spacing.sm },
-  sheetTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
   sheetSub: { fontSize: fontSize.sm, color: colors.textMuted },
   warn: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: '#FEF3C7', borderRadius: radius.md, padding: spacing.sm },
   warnText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 17 },

@@ -7,7 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, RefreshControl, Modal, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -27,6 +27,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { Sheet } from '@/components/ui/Sheet';
 
 const S = SECTIONS.community;
 
@@ -214,51 +215,48 @@ export default function HubMembershipTypesScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Editor modal */}
-      <Modal visible={editorOpen} transparent animationType="slide" onRequestClose={() => setEditorOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => !saving && setEditorOpen(false)} />
-          <View style={styles.modalSheet}>
-            <View style={styles.grabber} />
-            <Text style={styles.modalTitle}>{form.id ? 'Edit tier' : 'New tier'}</Text>
+      {/* Editor sheet */}
+      <Sheet
+        visible={editorOpen}
+        onClose={() => !saving && setEditorOpen(false)}
+        title={form.id ? 'Edit tier' : 'New tier'}
+        maxHeightPct={0.88}
+      >
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexShrink: 1 }}>
+          <Text style={styles.label}>Name</Text>
+          <TextInput style={styles.input} value={form.name} onChangeText={v => setForm(f => ({ ...f, name: v }))}
+            placeholder="e.g. Adult, Junior, Family" placeholderTextColor={colors.textLight} />
 
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>Name</Text>
-              <TextInput style={styles.input} value={form.name} onChangeText={v => setForm(f => ({ ...f, name: v }))}
-                placeholder="e.g. Adult, Junior, Family" placeholderTextColor={colors.textLight} />
+          <Text style={styles.label}>Price (£) — leave blank for free</Text>
+          <TextInput style={styles.input} value={form.priceText} onChangeText={v => setForm(f => ({ ...f, priceText: v.replace(/[^0-9.]/g, '') }))}
+            placeholder="0.00" placeholderTextColor={colors.textLight} keyboardType="decimal-pad" />
 
-              <Text style={styles.label}>Price (£) — leave blank for free</Text>
-              <TextInput style={styles.input} value={form.priceText} onChangeText={v => setForm(f => ({ ...f, priceText: v.replace(/[^0-9.]/g, '') }))}
-                placeholder="0.00" placeholderTextColor={colors.textLight} keyboardType="decimal-pad" />
-
-              <Text style={styles.label}>Period</Text>
-              <View style={styles.periodRow}>
-                {PERIODS.map(p => (
-                  <TouchableOpacity key={p.key}
-                    style={[styles.periodBtn, form.period === p.key && { backgroundColor: S.color, borderColor: S.color }]}
-                    onPress={() => setForm(f => ({ ...f, period: p.key }))} activeOpacity={0.8}>
-                    <Text style={[styles.periodText, form.period === p.key && { color: '#fff' }]}>{p.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>Description</Text>
-              <TextInput style={[styles.input, styles.textarea]} value={form.description} onChangeText={v => setForm(f => ({ ...f, description: v }))}
-                placeholder="Who is this tier for?" placeholderTextColor={colors.textLight} multiline />
-
-              <Text style={styles.label}>Benefits</Text>
-              <TextInput style={[styles.input, styles.textarea]} value={form.benefits} onChangeText={v => setForm(f => ({ ...f, benefits: v }))}
-                placeholder="What members get (one per line)" placeholderTextColor={colors.textLight} multiline />
-
-              <TouchableOpacity style={[styles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.6 }]}
-                onPress={save} disabled={saving} activeOpacity={0.85}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{form.id ? 'Save tier' : 'Add tier'}</Text>}
+          <Text style={styles.label}>Period</Text>
+          <View style={styles.periodRow}>
+            {PERIODS.map(p => (
+              <TouchableOpacity key={p.key}
+                style={[styles.periodBtn, form.period === p.key && { backgroundColor: S.color, borderColor: S.color }]}
+                onPress={() => setForm(f => ({ ...f, period: p.key }))} activeOpacity={0.8}>
+                <Text style={[styles.periodText, form.period === p.key && { color: '#fff' }]}>{p.label}</Text>
               </TouchableOpacity>
-              <View style={{ height: 24 }} />
-            </ScrollView>
+            ))}
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+
+          <Text style={styles.label}>Description</Text>
+          <TextInput style={[styles.input, styles.textarea]} value={form.description} onChangeText={v => setForm(f => ({ ...f, description: v }))}
+            placeholder="Who is this tier for?" placeholderTextColor={colors.textLight} multiline />
+
+          <Text style={styles.label}>Benefits</Text>
+          <TextInput style={[styles.input, styles.textarea]} value={form.benefits} onChangeText={v => setForm(f => ({ ...f, benefits: v }))}
+            placeholder="What members get (one per line)" placeholderTextColor={colors.textLight} multiline />
+
+          <TouchableOpacity style={[styles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.6 }]}
+            onPress={save} disabled={saving} activeOpacity={0.85}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{form.id ? 'Save tier' : 'Add tier'}</Text>}
+          </TouchableOpacity>
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      </Sheet>
     </ScreenScaffold>
   );
 }
@@ -282,11 +280,6 @@ const styles = StyleSheet.create({
   tierDel: { padding: 4 },
 
   addBtnSpacing: { marginTop: 4 },
-
-  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, paddingHorizontal: spacing.lg, paddingTop: 10, paddingBottom: spacing.lg, maxHeight: '88%' },
-  grabber: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: spacing.md },
-  modalTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, marginBottom: spacing.sm },
 
   label: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, marginTop: spacing.md },
   input: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: fontSize.md, color: colors.textPrimary },

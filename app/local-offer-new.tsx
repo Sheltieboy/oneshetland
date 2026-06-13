@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, KeyboardAvoidingView, Platform, Modal,
+  Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { SECTIONS } from '@/constants/sections';
 import { createOffer, type DiscountType } from '@/lib/local-api';
@@ -186,28 +187,16 @@ export default function NewOfferScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Modal visible={showDate} transparent animationType="slide" onRequestClose={() => setShowDate(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDate(false)} />
-        <View style={styles.modalSheet}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowDate(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Offer ends</Text>
-            <TouchableOpacity onPress={() => setShowDate(false)}>
-              <Text style={[styles.modalDone, { color: S.color }]}>Done</Text>
-            </TouchableOpacity>
-          </View>
-          <DateTimePicker
-            value={validUntil}
-            mode="date"
-            display="spinner"
-            onChange={(_, d) => { if (d) setValidUntil(d); }}
-            minimumDate={new Date()}
-            style={{ height: 220 }}
-          />
-        </View>
-      </Modal>
+      <Sheet visible={showDate} onClose={() => setShowDate(false)} title="Offer ends">
+        <DateTimePicker
+          value={validUntil}
+          mode="date"
+          display="spinner"
+          onChange={(_, d) => { if (d) setValidUntil(d); }}
+          minimumDate={new Date()}
+          style={{ height: 220 }}
+        />
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -239,11 +228,4 @@ const styles = StyleSheet.create({
   saveBtn: {
     marginTop: 12,
   },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 32 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
-  modalCancel: { fontSize: fontSize.sm, color: colors.textMuted, fontWeight: '600' },
-  modalTitle:  { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
-  modalDone:   { fontSize: fontSize.sm, fontWeight: '800' },
 });

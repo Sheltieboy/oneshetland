@@ -10,7 +10,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Modal, Platform, KeyboardAvoidingView,
+  ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -18,6 +18,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { Sheet } from '@/components/ui/Sheet';
 import { SECTIONS } from '@/constants/sections';
 import {
   fetchAvailabilityRules, createAvailabilityRule, deleteAvailabilityRule,
@@ -325,85 +326,73 @@ function WeeklyRuleEditor({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
-            <View style={modalStyles.handle} />
-            <Text style={modalStyles.title}>Weekly hours block</Text>
+    <Sheet visible={visible} onClose={onClose} title="Weekly hours block" scroll>
+      <Text style={modalStyles.label}>Days</Text>
+      <View style={modalStyles.dayPickerRow}>
+        {DAYS_OF_WEEK.map(d => (
+          <TouchableOpacity
+            key={d.idx}
+            style={[modalStyles.dayChip, days.includes(d.idx) && { backgroundColor: S.color, borderColor: S.color }]}
+            onPress={() => toggleDay(d.idx)}
+          >
+            <Text style={[modalStyles.dayChipText, days.includes(d.idx) && { color: '#fff' }]}>
+              {d.short}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-            <Text style={modalStyles.label}>Days</Text>
-            <View style={modalStyles.dayPickerRow}>
-              {DAYS_OF_WEEK.map(d => (
-                <TouchableOpacity
-                  key={d.idx}
-                  style={[modalStyles.dayChip, days.includes(d.idx) && { backgroundColor: S.color, borderColor: S.color }]}
-                  onPress={() => toggleDay(d.idx)}
-                >
-                  <Text style={[modalStyles.dayChipText, days.includes(d.idx) && { color: '#fff' }]}>
-                    {d.short}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={modalStyles.row2}>
-              <View style={{ flex: 1 }}>
-                <Text style={modalStyles.label}>Start</Text>
-                <TimePickerInline value={startHM} onChange={setStartHM} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={modalStyles.label}>End</Text>
-                <TimePickerInline value={endHM} onChange={setEndHM} />
-              </View>
-            </View>
-
-            <Text style={modalStyles.label}>Slot interval (mins)</Text>
-            <View style={modalStyles.intervalRow}>
-              {[15, 30, 45, 60].map(n => (
-                <TouchableOpacity
-                  key={n}
-                  style={[modalStyles.intervalChip, interval === String(n) && { backgroundColor: S.color, borderColor: S.color }]}
-                  onPress={() => setInterval(String(n))}
-                >
-                  <Text style={[modalStyles.intervalChipText, interval === String(n) && { color: '#fff' }]}>
-                    {n}m
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              <TextInput
-                style={[modalStyles.intervalCustom, ![15, 30, 45, 60].includes(parseInt(interval)) && { borderColor: S.color }]}
-                value={interval}
-                onChangeText={setInterval}
-                keyboardType="number-pad"
-                placeholder="custom"
-                placeholderTextColor={colors.textLight}
-                maxLength={3}
-              />
-            </View>
-
-            <View style={modalStyles.actions}>
-              <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn}>
-                <Text style={modalStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[modalStyles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.7 }]}
-                onPress={save}
-                disabled={saving}
-                activeOpacity={0.85}
-              >
-                {saving
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={modalStyles.saveText}>Add to schedule</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
+      <View style={modalStyles.row2}>
+        <View style={{ flex: 1 }}>
+          <Text style={modalStyles.label}>Start</Text>
+          <TimePickerInline value={startHM} onChange={setStartHM} />
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        <View style={{ flex: 1 }}>
+          <Text style={modalStyles.label}>End</Text>
+          <TimePickerInline value={endHM} onChange={setEndHM} />
+        </View>
+      </View>
+
+      <Text style={modalStyles.label}>Slot interval (mins)</Text>
+      <View style={modalStyles.intervalRow}>
+        {[15, 30, 45, 60].map(n => (
+          <TouchableOpacity
+            key={n}
+            style={[modalStyles.intervalChip, interval === String(n) && { backgroundColor: S.color, borderColor: S.color }]}
+            onPress={() => setInterval(String(n))}
+          >
+            <Text style={[modalStyles.intervalChipText, interval === String(n) && { color: '#fff' }]}>
+              {n}m
+            </Text>
+          </TouchableOpacity>
+        ))}
+        <TextInput
+          style={[modalStyles.intervalCustom, ![15, 30, 45, 60].includes(parseInt(interval)) && { borderColor: S.color }]}
+          value={interval}
+          onChangeText={setInterval}
+          keyboardType="number-pad"
+          placeholder="custom"
+          placeholderTextColor={colors.textLight}
+          maxLength={3}
+        />
+      </View>
+
+      <View style={modalStyles.actions}>
+        <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn}>
+          <Text style={modalStyles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[modalStyles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.7 }]}
+          onPress={save}
+          disabled={saving}
+          activeOpacity={0.85}
+        >
+          {saving
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={modalStyles.saveText}>Add to schedule</Text>}
+        </TouchableOpacity>
+      </View>
+    </Sheet>
   );
 }
 
@@ -460,86 +449,75 @@ function OverrideEditor({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
-            <View style={modalStyles.handle} />
-            <Text style={modalStyles.title}>{titleMap[type]}</Text>
-            <Text style={modalStyles.subtitle}>
-              {type === 'last_min'
-                ? 'Push a fresh opening to customers right now. Great for filling a no-show.'
-                : type === 'closed'
-                ? 'Block out a date range — bank holiday, sick day, family event.'
-                : 'Open extra hours outside your normal weekly schedule.'}
-            </Text>
+    <Sheet visible={visible} onClose={onClose} title={titleMap[type]} scroll>
+      <Text style={modalStyles.subtitle}>
+        {type === 'last_min'
+          ? 'Push a fresh opening to customers right now. Great for filling a no-show.'
+          : type === 'closed'
+          ? 'Block out a date range — bank holiday, sick day, family event.'
+          : 'Open extra hours outside your normal weekly schedule.'}
+      </Text>
 
-            <Text style={modalStyles.label}>From</Text>
-            <TouchableOpacity style={modalStyles.dateBtn} onPress={() => setShowStart(true)}>
-              <FontAwesome5 name="calendar-alt" size={12} color={colors.textMuted} />
-              <Text style={modalStyles.dateBtnText}>{formatDateTime(startsAt)}</Text>
-            </TouchableOpacity>
-            {showStart && (
-              <DateTimePicker
-                value={startsAt}
-                mode="datetime"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                onChange={(_, d) => { setShowStart(Platform.OS === 'ios'); if (d) setStartsAt(d); }}
-                minimumDate={new Date()}
-              />
-            )}
+      <Text style={modalStyles.label}>From</Text>
+      <TouchableOpacity style={modalStyles.dateBtn} onPress={() => setShowStart(true)}>
+        <FontAwesome5 name="calendar-alt" size={12} color={colors.textMuted} />
+        <Text style={modalStyles.dateBtnText}>{formatDateTime(startsAt)}</Text>
+      </TouchableOpacity>
+      {showStart && (
+        <DateTimePicker
+          value={startsAt}
+          mode="datetime"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={(_, d) => { setShowStart(Platform.OS === 'ios'); if (d) setStartsAt(d); }}
+          minimumDate={new Date()}
+        />
+      )}
 
-            <Text style={modalStyles.label}>To</Text>
-            <TouchableOpacity style={modalStyles.dateBtn} onPress={() => setShowEnd(true)}>
-              <FontAwesome5 name="calendar-alt" size={12} color={colors.textMuted} />
-              <Text style={modalStyles.dateBtnText}>{formatDateTime(endsAt)}</Text>
-            </TouchableOpacity>
-            {showEnd && (
-              <DateTimePicker
-                value={endsAt}
-                mode="datetime"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                onChange={(_, d) => { setShowEnd(Platform.OS === 'ios'); if (d) setEndsAt(d); }}
-                minimumDate={startsAt}
-              />
-            )}
+      <Text style={modalStyles.label}>To</Text>
+      <TouchableOpacity style={modalStyles.dateBtn} onPress={() => setShowEnd(true)}>
+        <FontAwesome5 name="calendar-alt" size={12} color={colors.textMuted} />
+        <Text style={modalStyles.dateBtnText}>{formatDateTime(endsAt)}</Text>
+      </TouchableOpacity>
+      {showEnd && (
+        <DateTimePicker
+          value={endsAt}
+          mode="datetime"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={(_, d) => { setShowEnd(Platform.OS === 'ios'); if (d) setEndsAt(d); }}
+          minimumDate={startsAt}
+        />
+      )}
 
-            <Text style={modalStyles.label}>Notes (optional)</Text>
-            <TextInput
-              style={[modalStyles.input, { height: 60, textAlignVertical: 'top' }]}
-              value={notes} onChangeText={setNotes}
-              placeholder={type === 'last_min'
-                ? 'e.g. cancellation just freed up'
-                : type === 'closed'
-                ? 'e.g. Up Helly Aa'
-                : 'e.g. extra Sunday hours'}
-              placeholderTextColor={colors.textLight}
-              multiline
-              maxLength={140}
-            />
+      <Text style={modalStyles.label}>Notes (optional)</Text>
+      <TextInput
+        style={[modalStyles.input, { height: 60, textAlignVertical: 'top' }]}
+        value={notes} onChangeText={setNotes}
+        placeholder={type === 'last_min'
+          ? 'e.g. cancellation just freed up'
+          : type === 'closed'
+          ? 'e.g. Up Helly Aa'
+          : 'e.g. extra Sunday hours'}
+        placeholderTextColor={colors.textLight}
+        multiline
+        maxLength={140}
+      />
 
-            <View style={modalStyles.actions}>
-              <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn}>
-                <Text style={modalStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[modalStyles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.7 }]}
-                onPress={save}
-                disabled={saving}
-                activeOpacity={0.85}
-              >
-                {saving
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={modalStyles.saveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      <View style={modalStyles.actions}>
+        <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn}>
+          <Text style={modalStyles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[modalStyles.saveBtn, { backgroundColor: S.color }, saving && { opacity: 0.7 }]}
+          onPress={save}
+          disabled={saving}
+          activeOpacity={0.85}
+        >
+          {saving
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={modalStyles.saveText}>Save</Text>}
+        </TouchableOpacity>
+      </View>
+    </Sheet>
   );
 }
 
@@ -670,10 +648,6 @@ const styles = StyleSheet.create({
 });
 
 const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:   { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 40, gap: 8 },
-  handle:  { width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
-  title:   { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
   subtitle:{ fontSize: fontSize.xs, color: colors.textMuted, marginBottom: 6, lineHeight: 17 },
 
   label:   { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginTop: 8, marginBottom: 4 },

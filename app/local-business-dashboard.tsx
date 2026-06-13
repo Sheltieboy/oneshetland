@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Switch, Linking, RefreshControl, Modal,
+  ActivityIndicator, Alert, Switch, Linking, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,6 +20,7 @@ import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
+import { Sheet } from '@/components/ui/Sheet';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -1424,14 +1425,10 @@ export default function BusinessDashboardScreen() {
         {/* ── Schedule picker modal ── */}
         {/* ── Schedule presets modal ── */}
         {showDatePicker && (
-          <Modal transparent animationType="slide" onRequestClose={() => { setShowDatePicker(false); setShowCustomPicker(false); }}>
-            <TouchableOpacity
-              style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
-              activeOpacity={1}
-              onPress={() => { setShowDatePicker(false); setShowCustomPicker(false); }}
-            >
-              <TouchableOpacity activeOpacity={1}>
-                <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: spacing.lg, paddingBottom: 40 }}>
+          <Sheet
+            visible={showDatePicker}
+            onClose={() => { setShowDatePicker(false); setShowCustomPicker(false); }}
+          >
                   <Text style={{ fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md }}>
                     {showCustomPicker ? 'Pick a time' : 'Schedule alert'}
                   </Text>
@@ -1497,10 +1494,7 @@ export default function BusinessDashboardScreen() {
                       </View>
                     </>
                   )}
-                </View>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </Modal>
+          </Sheet>
         )}
 
         {/* ── Urgent Alerts ── */}
@@ -2284,12 +2278,7 @@ function LoyaltyModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={modalStyles.overlay}>
-        <View style={modalStyles.sheet}>
-          <View style={modalStyles.handle} />
-          <Text style={modalStyles.title}>Loyalty programme</Text>
-
+    <Sheet visible={visible} onClose={onClose} title="Loyalty programme">
           <View style={modalStyles.typeRow}>
             {(['stamps', 'points'] as const).map(t => (
               <TouchableOpacity
@@ -2349,9 +2338,7 @@ function LoyaltyModal({
               {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={modalStyles.saveText}>Save</Text>}
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -2522,11 +2509,6 @@ const styles = StyleSheet.create({
 });
 
 const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 40, gap: 12 },
-  handle: { width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
-  title: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
-
   typeRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
   typeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md, backgroundColor: '#fff' },
   typeText: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textMuted },

@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, RefreshControl, KeyboardAvoidingView, Platform, Modal,
+  ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { Sheet } from '@/components/ui/Sheet';
 
 interface ConfigRow {
   key:         string;
@@ -281,60 +282,49 @@ function EditModal({
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.sheet}>
-            <View style={modalStyles.handle} />
-            <Text style={modalStyles.title}>{row.key}</Text>
-            {row.description ? (
-              <Text style={modalStyles.subtitle}>{row.description}</Text>
-            ) : null}
+    <Sheet visible={!!row} onClose={onClose} title={row.key} scroll>
+      {row.description ? (
+        <Text style={modalStyles.subtitle}>{row.description}</Text>
+      ) : null}
 
-            <Text style={modalStyles.label}>Value</Text>
-            <TextInput
-              style={modalStyles.input}
-              value={value}
-              onChangeText={setValue}
-              placeholder={placeholderForKey(row.key)}
-              placeholderTextColor={colors.textLight}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry={row.is_secret}
-              multiline={value.length > 60}
-            />
-            {hintForKey(row.key) && (
-              <Text style={modalStyles.hint}>{hintForKey(row.key)}</Text>
-            )}
+      <Text style={modalStyles.label}>Value</Text>
+      <TextInput
+        style={modalStyles.input}
+        value={value}
+        onChangeText={setValue}
+        placeholder={placeholderForKey(row.key)}
+        placeholderTextColor={colors.textLight}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry={row.is_secret}
+        multiline={value.length > 60}
+      />
+      {hintForKey(row.key) && (
+        <Text style={modalStyles.hint}>{hintForKey(row.key)}</Text>
+      )}
 
-            {row.updated_at && (
-              <Text style={modalStyles.meta}>
-                Last updated {new Date(row.updated_at).toLocaleString('en-GB')}
-              </Text>
-            )}
+      {row.updated_at && (
+        <Text style={modalStyles.meta}>
+          Last updated {new Date(row.updated_at).toLocaleString('en-GB')}
+        </Text>
+      )}
 
-            <View style={modalStyles.actions}>
-              <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn}>
-                <Text style={modalStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[modalStyles.saveBtn, saving && { opacity: 0.7 }]}
-                onPress={save}
-                disabled={saving}
-                activeOpacity={0.85}
-              >
-                {saving
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={modalStyles.saveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      <View style={modalStyles.actions}>
+        <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn}>
+          <Text style={modalStyles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[modalStyles.saveBtn, saving && { opacity: 0.7 }]}
+          onPress={save}
+          disabled={saving}
+          activeOpacity={0.85}
+        >
+          {saving
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={modalStyles.saveText}>Save</Text>}
+        </TouchableOpacity>
+      </View>
+    </Sheet>
   );
 }
 
@@ -402,10 +392,6 @@ const styles = StyleSheet.create({
 });
 
 const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:   { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 40, gap: 8 },
-  handle:  { width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
-  title:   { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, fontFamily: 'monospace' },
   subtitle:{ fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 18, marginBottom: 6 },
 
   label:   { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginTop: 8, marginBottom: 4 },

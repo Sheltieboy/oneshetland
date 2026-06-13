@@ -16,7 +16,7 @@
 
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Image, Modal, ScrollView,
+  View, Text, TouchableOpacity, StyleSheet, Image, ScrollView,
 } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,6 +26,7 @@ import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/th
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { GameArt } from '@/components/GameArt';
+import { Sheet } from '@/components/ui/Sheet';
 
 const INACTIVE  = 'rgba(255,255,255,0.55)';
 const SIDEBAR_W = SIDEBAR_WIDTH;
@@ -123,7 +124,6 @@ function BottomTabBar({ state, navigation, insets }: BottomTabBarProps & { inset
 
       <MoreSheet
         open={moreOpen}
-        insets={insets}
         focusedName={focusedName}
         onClose={() => setMoreOpen(false)}
         onSelect={(item) => { setMoreOpen(false); go(item); }}
@@ -133,42 +133,34 @@ function BottomTabBar({ state, navigation, insets }: BottomTabBarProps & { inset
 }
 
 function MoreSheet({
-  open, insets, focusedName, onClose, onSelect,
+  open, focusedName, onClose, onSelect,
 }: {
   open: boolean;
-  insets: any;
   focusedName?: string;
   onClose: () => void;
   onSelect: (item: NavDest) => void;
 }) {
   return (
-    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1 }}>
-        <TouchableOpacity style={styles.moreBackdrop} activeOpacity={1} onPress={onClose} />
-        <View style={[styles.moreSheet, { paddingBottom: insets.bottom + spacing.md }]}>
-          <View style={styles.moreHandle} />
-          <Text style={styles.moreTitle}>More</Text>
-          <View style={styles.moreGrid}>
-            {MORE_ITEMS.map(item => {
-              const active = item.route === focusedName;
-              return (
-                <TouchableOpacity
-                  key={item.label}
-                  style={styles.moreCell}
-                  onPress={() => onSelect(item)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.moreChip, { backgroundColor: active ? item.color : item.color + '1A' }]}>
-                    <FontAwesome5 name={item.icon as any} size={20} color={active ? '#fff' : item.color} solid />
-                  </View>
-                  <Text style={styles.moreLabel} numberOfLines={1}>{item.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+    <Sheet visible={open} onClose={onClose} title="More">
+      <View style={styles.moreGrid}>
+        {MORE_ITEMS.map(item => {
+          const active = item.route === focusedName;
+          return (
+            <TouchableOpacity
+              key={item.label}
+              style={styles.moreCell}
+              onPress={() => onSelect(item)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.moreChip, { backgroundColor: active ? item.color : item.color + '1A' }]}>
+                <FontAwesome5 name={item.icon as any} size={20} color={active ? '#fff' : item.color} solid />
+              </View>
+              <Text style={styles.moreLabel} numberOfLines={1}>{item.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -315,17 +307,6 @@ const styles = StyleSheet.create({
   bottomLabel: { fontSize: 10, fontWeight: '600' },
 
   // ── More sheet ─────────────────────────────────────────────────────────────
-  moreBackdrop: { flex: 1, backgroundColor: 'rgba(15, 28, 38, 0.45)' },
-  moreSheet: {
-    backgroundColor: colors.screenBackground,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: spacing.lg, paddingTop: 10,
-  },
-  moreHandle: {
-    alignSelf: 'center', width: 40, height: 5, borderRadius: 3,
-    backgroundColor: colors.border, marginBottom: spacing.sm,
-  },
-  moreTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, marginBottom: spacing.md },
   moreGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   moreCell: { width: '25%', alignItems: 'center', gap: 7, marginBottom: spacing.lg },
   moreChip: { width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },

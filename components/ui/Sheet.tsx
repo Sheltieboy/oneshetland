@@ -1,5 +1,8 @@
 import React, { PropsWithChildren } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView } from 'react-native';
+import {
+  View, Text, StyleSheet, Modal, Pressable, ScrollView,
+  KeyboardAvoidingView, Platform,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
@@ -24,7 +27,10 @@ export function Sheet({ visible, onClose, title, scroll = false, maxHeightPct = 
   const Body: any = scroll ? ScrollView : View;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.root}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.root}
+      >
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={[styles.sheet, { maxHeight: `${Math.round(maxHeightPct * 100)}%`, paddingBottom: insets.bottom + spacing.md }]}>
           <View style={styles.grabber} />
@@ -36,7 +42,7 @@ export function Sheet({ visible, onClose, title, scroll = false, maxHeightPct = 
             {children}
           </Body>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

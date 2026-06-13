@@ -7,7 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, RefreshControl, Modal, KeyboardAvoidingView, Platform, Share, Switch,
+  Alert, RefreshControl, Share, Switch,
 } from 'react-native';
 import { Image } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -21,6 +21,7 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IconButton } from '@/components/ui/IconButton';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
@@ -195,14 +196,8 @@ export default function HubCampaignsScreen() {
       </ScrollView>
 
       {/* Editor */}
-      <Modal visible={editorOpen} transparent animationType="slide" onRequestClose={() => setEditorOpen(false)}>
-        <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => !saving && setEditorOpen(false)} />
-          <View style={styles.modalSheet}>
-            <View style={styles.grabber} />
+      <Sheet visible={editorOpen} onClose={() => !saving && setEditorOpen(false)} title={editId ? 'Edit fundraiser' : 'New fundraiser'} maxHeightPct={0.9}>
             <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalTitle}>{editId ? 'Edit fundraiser' : 'New fundraiser'}</Text>
-
               <Text style={styles.label}>Cover photo</Text>
               <TouchableOpacity style={[styles.coverPick, { borderColor: accent }]} onPress={pickCover} activeOpacity={0.85}>
                 {coverUrl ? (
@@ -252,9 +247,7 @@ export default function HubCampaignsScreen() {
                 loading={saving} disabled={saving} fullWidth style={styles.saveBtn} />
               <View style={{ height: 20 }} />
             </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      </Sheet>
     </ScreenScaffold>
   );
 }
@@ -272,10 +265,6 @@ const styles = StyleSheet.create({
   actionText: { fontSize: fontSize.sm, fontWeight: '800' },
   actionMuted: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textMuted },
 
-  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, paddingHorizontal: spacing.lg, paddingTop: 10, paddingBottom: spacing.lg, maxHeight: '90%' },
-  grabber: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: spacing.md },
-  modalTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, marginBottom: spacing.sm },
   label: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary, marginBottom: 6, marginTop: spacing.md },
   coverPick: { height: 150, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
   coverImg: { width: '100%', height: '100%' },

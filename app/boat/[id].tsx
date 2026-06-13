@@ -23,7 +23,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TouchableOpacity, Image, Linking, Share, TextInput, Alert,
-  KeyboardAvoidingView, Platform, Modal,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -33,6 +33,7 @@ import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/th
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
+import { Sheet } from '@/components/ui/Sheet';
 import {
   fetchVesselProfile, fetchVesselTimeline,
   fetchVesselComments, threadComments,
@@ -1428,24 +1429,12 @@ function SuggestModal({
   };
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={styles.modalSheet}>
-          <View style={styles.modalHandle} />
-          <View style={styles.modalHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalTitle}>{target.label}</Text>
-              <Text style={styles.modalCurrent}>
-                {target.currentValue ? `Currently: ${target.currentValue}` : 'Not recorded yet'}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.modalCloseBtn}>
-              <FontAwesome5 name="times" size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
+    <Sheet visible onClose={onClose} title={target.label} maxHeightPct={0.88}>
+      <Text style={styles.modalCurrent}>
+        {target.currentValue ? `Currently: ${target.currentValue}` : 'Not recorded yet'}
+      </Text>
 
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: spacing.lg }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: spacing.lg }} style={{ flexShrink: 1 }}>
             {proposals.length > 0 ? (
               <View style={styles.modalSection}>
                 <Text style={styles.modalSectionTitle}>Suggestions so far</Text>
@@ -1527,9 +1516,7 @@ function SuggestModal({
               </Text>
             </View>
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -2090,21 +2077,7 @@ const styles = StyleSheet.create({
   addRowText: { fontSize: 14, fontWeight: '800' },
 
   // Modal
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 28, 38, 0.45)', justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: colors.screenBackground,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: spacing.lg, paddingTop: 10, paddingBottom: spacing.xl,
-    maxHeight: '88%',
-  },
-  modalHandle: {
-    alignSelf: 'center', width: 40, height: 5, borderRadius: 3,
-    backgroundColor: colors.border, marginBottom: spacing.sm,
-  },
-  modalHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.sm },
-  modalTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.3 },
-  modalCurrent: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
-  modalCloseBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  modalCurrent: { fontSize: 14, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.sm },
 
   modalSection: {
     backgroundColor: colors.white,
