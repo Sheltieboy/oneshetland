@@ -292,7 +292,7 @@ export default function CustomerDashboard() {
           ) : requests.length === 0 ? (
             <Card padded={false}>
               <EmptyState
-                icon="📭"
+                icon="inbox"
                 title="No active requests"
                 body="Your in-progress deliveries will appear here."
               />
@@ -402,7 +402,7 @@ export default function CustomerDashboard() {
           ) : availableRuns.length === 0 ? (
             <Card padded={false}>
               <EmptyState
-                icon="🚗"
+                icon="car"
                 title="No runs right now"
                 body="Check back soon — drivers post new runs daily."
               />

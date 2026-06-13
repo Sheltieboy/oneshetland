@@ -474,7 +474,7 @@ export default function DriverDashboard() {
           ) : runs.length === 0 ? (
             <Card padded={false}>
               <EmptyState
-                icon="🚗"
+                icon="car"
                 title="No upcoming runs"
                 body={isApproved
                   ? 'Create a run above to start accepting delivery requests.'
@@ -601,7 +601,7 @@ export default function DriverDashboard() {
             ) : pendingRequests.length === 0 ? (
               <Card padded={false}>
                 <EmptyState
-                  icon="📭"
+                  icon="inbox"
                   title="No open requests"
                   body="New delivery requests from customers will appear here."
                 />
@@ -695,7 +695,7 @@ export default function DriverDashboard() {
           ) : matchedRequests.length === 0 ? (
             <Card padded={false}>
               <EmptyState
-                icon="📦"
+                icon="box"
                 title="No active deliveries"
                 body="Requests you accept will appear here to track and complete."
               />
