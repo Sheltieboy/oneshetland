@@ -16,11 +16,19 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Image, Animated } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { fontSize, spacing } from '@/constants/theme';
 
-const LOGO  = require('../assets/icon.png');
-const WAVES = require('../assets/waves-crashing.mp4');
+const LOGO = require('../assets/icon.png');
+
+// Load the waves video defensively. Builds without the `expo-video` native
+// module (e.g. an older dev client / Expo Go) fall back to the navy splash
+// rather than crashing on launch. The video appears after a native rebuild.
+let SplashVideo: React.ComponentType | null = null;
+try {
+  SplashVideo = require('./SplashVideo').SplashVideo;
+} catch {
+  SplashVideo = null;
+}
 
 // Match the native splash background in app.json — no colour flash on transition
 const DEEP_NAVY = '#032F4C';
@@ -42,14 +50,6 @@ export function SplashAnimation({ ready, onDone }: Props) {
   const stripScale       = useRef(new Animated.Value(0)).current;
 
   const [entranceDone, setEntranceDone] = useState(false);
-
-  // Looping, muted waves video behind the wordmark. contentFit="cover" crops it
-  // to fill any aspect ratio (portrait phone or tablet).
-  const player = useVideoPlayer(WAVES, p => {
-    p.loop = true;
-    p.muted = true;
-    p.play();
-  });
 
   // Entrance + hold
   useEffect(() => {
@@ -91,16 +91,10 @@ export function SplashAnimation({ ready, onDone }: Props) {
   return (
     <Animated.View style={[styles.container, { opacity: containerOpacity }]}>
 
-      {/* Full-bleed waves video, cropped to fill */}
-      <VideoView
-        style={StyleSheet.absoluteFill}
-        player={player}
-        contentFit="cover"
-        nativeControls={false}
-        pointerEvents="none"
-      />
+      {/* Full-bleed waves video (when the native module is available), cropped to fill */}
+      {SplashVideo ? <SplashVideo /> : null}
       {/* Navy scrim keeps the white logo + wordmark legible over the waves */}
-      <View style={styles.scrim} pointerEvents="none" />
+      {SplashVideo ? <View style={styles.scrim} pointerEvents="none" /> : null}
 
       <View style={styles.center}>
         <Animated.View
