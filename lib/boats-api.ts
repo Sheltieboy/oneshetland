@@ -698,7 +698,158 @@ export function eventTypeLabel(type: string): string {
     case 'photo':                  return 'Photographed';
     case 'registration':           return 'Registration';
     case 'name':                   return 'Name';
+    case 'community_edit':         return 'Community correction';
     default:
       return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
+}
+
+// ── Community corrections (migration 076) ────────────────────────────────────
+//
+// Anyone signed in can suggest a change to a single fact. When CONFIRM_THRESHOLD
+// other people confirm it, the vote_vessel_edit RPC applies it automatically;
+// DISPUTE_THRESHOLD disagrees auto-rejects it. No admin in the loop.
+
+export const CONFIRM_THRESHOLD = 3;
+export const DISPUTE_THRESHOLD = 3;
+
+export type EditAction = 'edit' | 'add' | 'remove';
+export type EditVote   = 'confirm' | 'dispute';
+export type EditStatus = 'open' | 'applied' | 'rejected' | 'superseded';
+
+export type EditTable =
+  | 'vessels'
+  | 'vessel_names'
+  | 'registrations'
+  | 'ownership_periods'
+  | 'owners'
+  | 'measurements';
+
+export interface VesselEditProposal {
+  id:            string;
+  vessel_id:     string;
+  target_table:  EditTable;
+  target_row_id: string | null;
+  target_column: string | null;
+  action:        EditAction;
+  payload:       Record<string, any>;
+  current_value: string | null;
+  summary:       string;
+  note:          string | null;
+  proposed_by:   string | null;
+  status:        EditStatus;
+  confirm_count: number;
+  dispute_count: number;
+  created_at:    string;
+  applied_at:    string | null;
+  resolved_at:   string | null;
+}
+
+/** proposal_id → the viewer's vote on it. */
+export type MyEditVotes = Record<string, EditVote>;
+
+export type EditValueType = 'text' | 'year' | 'number';
+
+/** What kind of input a column wants in the suggest form. */
+export function editValueType(column: string | null | undefined): EditValueType {
+  if (!column) return 'text';
+  if (['built_year', 'start_year', 'end_year', 'measurement_year'].includes(column)) return 'year';
+  if (['length_m', 'tonnage', 'engine_power_kw'].includes(column)) return 'number';
+  return 'text';
+}
+
+/** Builds the human sentence stored on the proposal + shown in the audit trail. */
+export function buildEditSummary(args: {
+  action: EditAction;
+  label: string;
+  value?: string | null;
+  currentValue?: string | null;
+}): string {
+  const v = (args.value ?? '').trim();
+  if (args.action === 'edit') return `Change ${args.label} to “${v}”`;
+  if (args.action === 'add')  return `Add ${args.label}: “${v}”`;
+  return `Remove ${args.label}${args.currentValue ? `: “${args.currentValue}”` : ''}`;
+}
+
+/** Open + recently-applied proposals for a vessel (oldest first). */
+export async function fetchVesselEdits(vesselId: string): Promise<VesselEditProposal[]> {
+  const { data, error } = await supabase
+    .from('vessel_edit_proposals')
+    .select('*')
+    .eq('vessel_id', vesselId)
+    .in('status', ['open', 'applied'])
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as VesselEditProposal[];
+}
+
+/** The viewer's votes across the given proposals (votes are readable own-only). */
+export async function fetchMyEditVotes(proposalIds: string[], userId: string): Promise<MyEditVotes> {
+  if (proposalIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('vessel_edit_votes')
+    .select('proposal_id, vote')
+    .eq('user_id', userId)
+    .in('proposal_id', proposalIds);
+  if (error) throw error;
+  const map: MyEditVotes = {};
+  for (const r of (data ?? []) as any[]) map[r.proposal_id] = r.vote as EditVote;
+  return map;
+}
+
+/** Convenience: proposals + the viewer's votes in one call (used by the screen). */
+export async function fetchVesselEditState(
+  vesselId: string,
+  userId?: string | null,
+): Promise<{ proposals: VesselEditProposal[]; myVotes: MyEditVotes }> {
+  const proposals = await fetchVesselEdits(vesselId);
+  let myVotes: MyEditVotes = {};
+  if (userId) myVotes = await fetchMyEditVotes(proposals.map(p => p.id), userId);
+  return { proposals, myVotes };
+}
+
+export interface ProposeEditInput {
+  vesselId:      string;
+  userId:        string;
+  table:         EditTable;
+  rowId?:        string | null;
+  column?:       string | null;
+  action:        EditAction;
+  payload:       Record<string, any>;
+  currentValue?: string | null;
+  summary:       string;
+  note?:         string | null;
+}
+
+export async function proposeVesselEdit(input: ProposeEditInput): Promise<VesselEditProposal> {
+  const { data, error } = await supabase
+    .from('vessel_edit_proposals')
+    .insert({
+      vessel_id:     input.vesselId,
+      target_table:  input.table,
+      target_row_id: input.rowId ?? null,
+      target_column: input.column ?? null,
+      action:        input.action,
+      payload:       input.payload ?? {},
+      current_value: input.currentValue ?? null,
+      summary:       input.summary,
+      note:          input.note ?? null,
+      proposed_by:   input.userId,
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as VesselEditProposal;
+}
+
+export async function voteVesselEdit(
+  proposalId: string,
+  vote: EditVote,
+): Promise<{ status: EditStatus; confirm_count: number; dispute_count: number; applied: boolean }> {
+  const { data, error } = await supabase.rpc('vote_vessel_edit', {
+    p_proposal: proposalId,
+    p_vote: vote,
+  });
+  if (error) throw error;
+  return data as { status: EditStatus; confirm_count: number; dispute_count: number; applied: boolean };
 }

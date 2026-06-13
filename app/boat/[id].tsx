@@ -23,7 +23,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TouchableOpacity, Image, Linking, Share, TextInput, Alert,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -39,6 +39,9 @@ import {
   VesselProfile, VesselTimelineEntry, VesselComment, Confidence,
   CommentSubject, COMMENT_SUBJECTS, commentSubjectLabel,
   vesselDisplayTitle, hullMaterialLabel, eventTypeLabel, confidenceLabel,
+  fetchVesselEditState, proposeVesselEdit, voteVesselEdit,
+  buildEditSummary, CONFIRM_THRESHOLD,
+  VesselEditProposal, MyEditVotes, EditAction, EditTable, EditValueType,
 } from '@/lib/boats-api';
 import { PickedFile } from '@/lib/image-upload';
 import DisplayText from '@/components/DisplayText';
@@ -66,6 +69,77 @@ const CONFIDENCE_TONE: Record<Confidence, { bg: string; text: string }> = {
   conflict:  { bg: '#FEE2E2', text: '#991B1B' },
 };
 
+const VOTE_GREEN = '#16A34A';
+
+/**
+ * A single editable element on the screen. `table`/`rowId`/`column` describe the
+ * fact being changed; `actions` is which of correct/add/remove make sense here.
+ * `removeTable`/`removeRowId` let an owner row (whose name lives in `owners`) be
+ * removed via its `ownership_periods` row.
+ */
+interface EditTarget {
+  table:           EditTable;
+  rowId:           string | null;
+  column:          string | null;
+  label:           string;
+  valueType:       EditValueType;
+  currentValue:    string | null;
+  actions:         EditAction[];
+  addPayloadField?: string;
+  removeTable?:    EditTable;
+  removeRowId?:    string | null;
+}
+
+// ── Duplicate-row collapsing ────────────────────────────────────────────────
+// The register often holds the same fact several times over (e.g. one name
+// seen in many sources). We show the best-sourced copy and tuck the identical
+// duplicates behind a "show duplicates" toggle — the data is all still there.
+
+const CONF_RANK: Record<Confidence, number> = {
+  confirmed: 4, probable: 3, possible: 2, unmatched: 1, conflict: 0,
+};
+
+const normKey = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
+
+interface Grouped<T> { key: string; rep: T; others: T[] }
+
+/**
+ * Groups identical rows by `keyOf`, ordering groups by first appearance and
+ * choosing the highest-`rankOf` member of each group as the one to show.
+ */
+function dedupeRows<T>(items: T[], keyOf: (x: T) => string, rankOf: (x: T) => number): Grouped<T>[] {
+  const map = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const it of items) {
+    const k = keyOf(it);
+    if (!map.has(k)) { map.set(k, []); order.push(k); }
+    map.get(k)!.push(it);
+  }
+  return order.map(k => {
+    const arr = map.get(k)!.slice().sort((a, b) => rankOf(b) - rankOf(a));
+    return { key: k, rep: arr[0], others: arr.slice(1) };
+  });
+}
+
+/** Open proposals that belong to a given target (used for the pending pills). */
+function openForTarget(all: VesselEditProposal[], t: EditTarget): VesselEditProposal[] {
+  return all.filter(p => {
+    if (p.status !== 'open') return false;
+    if (p.action === 'remove') {
+      const tbl = t.removeTable ?? t.table;
+      const rid = t.removeRowId ?? t.rowId;
+      return t.actions.includes('remove') && p.target_table === tbl && p.target_row_id === rid;
+    }
+    if (p.action === 'add') {
+      return t.actions.includes('add') && t.rowId === null && t.column === null
+        && p.target_table === t.table;
+    }
+    return t.actions.includes('edit') && p.target_table === t.table
+      && p.target_row_id === t.rowId
+      && (t.column ? p.target_column === t.column : p.target_column === null);
+  });
+}
+
 export default function BoatProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -78,6 +152,12 @@ export default function BoatProfileScreen() {
   const [loading, setLoading]       = useState(true);
   const [saved, setSaved]           = useState(false);
   const [showEvidence, setShowEv]   = useState(false);
+
+  // Community corrections
+  const [proposals, setProposals]   = useState<VesselEditProposal[]>([]);
+  const [myVotes, setMyVotes]       = useState<MyEditVotes>({});
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const [editMode, setEditMode]     = useState(false);
 
   // Composer state
   const [draft, setDraft]                 = useState('');
@@ -142,16 +222,19 @@ export default function BoatProfileScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [p, t, isSaved, c] = await Promise.all([
+      const [p, t, isSaved, c, edits] = await Promise.all([
         fetchVesselProfile(id),
         fetchVesselTimeline(id),
         isBoatSaved(id),
         fetchVesselComments(id),
+        fetchVesselEditState(id, viewer?.id ?? null),
       ]);
       setProfile(p);
       setTimeline(t);
       setSaved(isSaved);
       setComments(c);
+      setProposals(edits.proposals);
+      setMyVotes(edits.myVotes);
 
       // Stash a stub on the recently-viewed list for the landing screen.
       if (p) {
@@ -169,9 +252,72 @@ export default function BoatProfileScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, viewer?.id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // ── Community corrections ─────────────────────────────────────────────────
+  const refreshEdits = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { proposals: ps, myVotes: mv } = await fetchVesselEditState(id, viewer?.id ?? null);
+      setProposals(ps);
+      setMyVotes(mv);
+    } catch { /* swallow */ }
+  }, [id, viewer?.id]);
+
+  const handleVote = useCallback(async (proposalId: string, vote: 'confirm' | 'dispute') => {
+    if (!viewer?.id) { router.push('/(auth)/sign-in'); return; }
+    try {
+      const res = await voteVesselEdit(proposalId, vote);
+      if (res.applied) {
+        setEditTarget(null);
+        await load();
+        Alert.alert('Updated', 'Enough folk agreed — the boat’s details have been updated.');
+      } else {
+        await refreshEdits();
+      }
+    } catch (err: any) {
+      Alert.alert('Could not record your vote', err?.message ?? '');
+    }
+  }, [viewer?.id, router, load, refreshEdits]);
+
+  const handlePropose = useCallback(async (
+    args: { action: EditAction; value: string; note: string },
+  ): Promise<boolean> => {
+    if (!viewer?.id) { setEditTarget(null); router.push('/(auth)/sign-in'); return false; }
+    const t = editTarget;
+    if (!t || !profile) return false;
+
+    const summary = buildEditSummary({
+      action: args.action, label: t.label, value: args.value, currentValue: t.currentValue,
+    });
+    let payload: Record<string, any> = {};
+    if (args.action === 'edit')      payload = { value: args.value };
+    else if (args.action === 'add')  payload = { [t.addPayloadField ?? 'value']: args.value };
+
+    try {
+      await proposeVesselEdit({
+        vesselId:     profile.vessel.id,
+        userId:       viewer.id,
+        table:        args.action === 'remove' ? (t.removeTable ?? t.table) : t.table,
+        rowId:        args.action === 'add'
+                        ? null
+                        : args.action === 'remove' ? (t.removeRowId ?? t.rowId) : t.rowId,
+        column:       args.action === 'edit' ? t.column : null,
+        action:       args.action,
+        payload,
+        currentValue: t.currentValue,
+        summary,
+        note:         args.note || null,
+      });
+      await refreshEdits();
+      return true;
+    } catch (err: any) {
+      Alert.alert('Could not send your suggestion', err?.message ?? '');
+      return false;
+    }
+  }, [viewer?.id, router, editTarget, profile, refreshEdits]);
 
   const handleSaveToggle = async () => {
     if (!profile) return;
@@ -312,6 +458,26 @@ export default function BoatProfileScreen() {
   const hull  = hullMaterialLabel(vessel.hull_material);
   const heroPhoto = media.find(m => m.media?.image_url)?.media;
 
+  // Vessel-level edit targets (the header fields)
+  const nameTarget: EditTarget = {
+    table: 'vessels', rowId: null, column: 'canonical_name', label: 'Name',
+    valueType: 'text', currentValue: vessel.canonical_name, actions: ['edit'],
+  };
+  const lkTarget: EditTarget = {
+    table: 'vessels', rowId: null, column: 'primary_lk_number', label: 'LK number',
+    valueType: 'text', currentValue: vessel.primary_lk_number, actions: ['edit'],
+  };
+  const builtTarget: EditTarget = {
+    table: 'vessels', rowId: null, column: 'built_year', label: 'Built year',
+    valueType: 'year', currentValue: vessel.built_year ? String(vessel.built_year) : null, actions: ['edit'],
+  };
+  const builderTarget: EditTarget = {
+    table: 'vessels', rowId: null, column: 'builder', label: 'Builder',
+    valueType: 'text', currentValue: vessel.builder, actions: ['edit'],
+  };
+
+  const openCount = proposals.filter(p => p.status === 'open').length;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -334,6 +500,27 @@ export default function BoatProfileScreen() {
             <Text style={styles.backToBoatsText}>Da Boats</Text>
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
+          <TouchableOpacity
+            onPress={() => setEditMode(m => !m)}
+            style={[styles.editPill, editMode && { backgroundColor: SECTION.color, borderColor: SECTION.color }]}
+            hitSlop={8}
+            activeOpacity={0.85}
+          >
+            <FontAwesome5
+              name={editMode ? 'check' : 'pencil-alt'}
+              size={12}
+              color={editMode ? '#fff' : SECTION.color}
+              solid
+            />
+            <Text style={[styles.editPillText, { color: editMode ? '#fff' : SECTION.color }]}>
+              {editMode ? 'Done' : 'Edit'}
+            </Text>
+            {!editMode && openCount > 0 ? (
+              <View style={styles.editBadge}>
+                <Text style={styles.editBadgeText}>{openCount}</Text>
+              </View>
+            ) : null}
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleShare} style={styles.iconBtn} hitSlop={12}>
             <FontAwesome5 name="share-alt" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -346,6 +533,16 @@ export default function BoatProfileScreen() {
             />
           </TouchableOpacity>
         </View>
+
+        {/* Edit-mode helper banner */}
+        {editMode ? (
+          <View style={[styles.editHelp, { backgroundColor: SECTION.light }]}>
+            <FontAwesome5 name="pencil-alt" size={12} color={SECTION.color} solid />
+            <Text style={[styles.editHelpText, { color: SECTION.color }]}>
+              Tap a pencil to suggest a change. Changes go live once {CONFIRM_THRESHOLD} people agree.
+            </Text>
+          </View>
+        ) : null}
 
         {/* Hero photo — proper aspect ratio, edge-to-edge */}
         {heroPhoto?.image_url ? (
@@ -360,16 +557,34 @@ export default function BoatProfileScreen() {
 
         {/* Name + LK */}
         <View style={styles.headerBlock}>
-          <Text style={[styles.lk, { color: SECTION.color }]}>
-            {vessel.primary_lk_number ?? 'No LK number on file'}
-          </Text>
-          <DisplayText weight="black" style={styles.title}>{vessel.canonical_name}</DisplayText>
-          {(vessel.built_year || hull) ? (
-            <Text style={styles.subtitle}>
-              {vessel.built_year ? `Built ${vessel.built_year}` : 'Year unknown'}
-              {hull ? `  ·  ${hull} hull` : ''}
-              {vessel.builder ? `  ·  ${vessel.builder}` : ''}
+          <View style={styles.lkRow}>
+            <Text style={[styles.lk, { color: SECTION.color }]}>
+              {vessel.primary_lk_number ?? 'No LK number on file'}
             </Text>
+            {editMode ? <SuggestPencil onPress={() => setEditTarget(lkTarget)} active={openForTarget(proposals, lkTarget).length > 0} /> : null}
+          </View>
+          <View style={styles.titleRow}>
+            <DisplayText weight="black" style={[styles.title, { flexShrink: 1 }]}>{vessel.canonical_name}</DisplayText>
+            {editMode ? <SuggestPencil onPress={() => setEditTarget(nameTarget)} active={openForTarget(proposals, nameTarget).length > 0} /> : null}
+          </View>
+          {(vessel.built_year || hull || vessel.builder) ? (
+            <View style={styles.subtitleRow}>
+              <FactChip
+                text={vessel.built_year ? `Built ${vessel.built_year}` : 'Year unknown'}
+                onSuggest={editMode ? () => setEditTarget(builtTarget) : undefined}
+                active={openForTarget(proposals, builtTarget).length > 0}
+              />
+              {hull ? <Text style={styles.subtitleDot}>·</Text> : null}
+              {hull ? <FactChip text={`${hull} hull`} /> : null}
+              {vessel.builder ? <Text style={styles.subtitleDot}>·</Text> : null}
+              {vessel.builder ? (
+                <FactChip
+                  text={vessel.builder}
+                  onSuggest={editMode ? () => setEditTarget(builderTarget) : undefined}
+                  active={openForTarget(proposals, builderTarget).length > 0}
+                />
+              ) : null}
+            </View>
           ) : null}
         </View>
 
@@ -390,69 +605,171 @@ export default function BoatProfileScreen() {
         </View>
 
         {/* Names she went by */}
-        {names.length ? (
-          <Section title="Names she went by" subtitle={names.length === 1 ? '' : `${names.length} known`}>
-            {names.map(n => (
+        {names.length ? (() => {
+          const groups = dedupeRows(
+            names,
+            n => `${normKey(n.normalised_name || n.name)}|${n.start_year ?? ''}|${n.end_year ?? ''}|${normKey(n.date_text)}`,
+            n => CONF_RANK[n.confidence] * 1_000_000 + (n.is_primary ? 100_000 : 0) + (n.source_record_id ? 1_000 : 0),
+          );
+          const renderName = (n: (typeof names)[number], dup: boolean) => {
+            const t: EditTarget = {
+              table: 'vessel_names', rowId: n.id, column: 'name',
+              label: `Name “${n.name}”`, valueType: 'text', currentValue: n.name,
+              actions: ['edit', 'remove'],
+            };
+            return (
               <BigRow
                 key={n.id}
                 primary={n.name}
                 secondary={fmtYears(n.start_year, n.end_year, n.date_text)}
-                badge={n.is_primary ? 'main name' : undefined}
+                badge={!dup && n.is_primary ? 'main name' : undefined}
                 confidence={n.confidence}
+                onSuggest={editMode ? () => setEditTarget(t) : undefined}
+                pending={openForTarget(proposals, t).length}
               />
-            ))}
-          </Section>
-        ) : null}
+            );
+          };
+          return (
+            <Section title="Names she went by" subtitle={groups.length === 1 ? '' : `${groups.length} known`}>
+              {groups.map(g => (
+                <DedupGroup key={g.key} rep={renderName(g.rep, false)} others={g.others.map(o => renderName(o, true))} />
+              ))}
+              {editMode ? (() => {
+                const addT: EditTarget = {
+                  table: 'vessel_names', rowId: null, column: null, label: 'a name she went by',
+                  valueType: 'text', currentValue: null, actions: ['add'], addPayloadField: 'name',
+                };
+                return <AddSuggestRow label="a name she went by" onPress={() => setEditTarget(addT)} pending={openForTarget(proposals, addT).length} />;
+              })() : null}
+            </Section>
+          );
+        })() : null}
 
         {/* Numbers she carried */}
-        {registrations.length ? (
-          <Section title="Numbers she carried" subtitle={registrations.length === 1 ? '' : `${registrations.length} known`}>
-            {registrations.map(r => (
+        {registrations.length ? (() => {
+          const groups = dedupeRows(
+            registrations,
+            r => `${normKey(r.registration)}|${r.start_year ?? ''}|${r.end_year ?? ''}|${normKey(r.date_text)}`,
+            r => CONF_RANK[r.confidence] * 1_000_000 + (r.is_primary ? 100_000 : 0) + (r.source_record_id ? 1_000 : 0),
+          );
+          const renderReg = (r: (typeof registrations)[number], dup: boolean) => {
+            const t: EditTarget = {
+              table: 'registrations', rowId: r.id, column: 'registration',
+              label: `Number “${r.registration}”`, valueType: 'text', currentValue: r.registration,
+              actions: ['edit', 'remove'],
+            };
+            return (
               <BigRow
                 key={r.id}
                 primary={r.registration}
                 secondary={fmtYears(r.start_year, r.end_year, r.date_text)}
                 pillColor={SECTION.color}
-                badge={r.is_primary ? 'main number' : undefined}
+                badge={!dup && r.is_primary ? 'main number' : undefined}
                 confidence={r.confidence}
+                onSuggest={editMode ? () => setEditTarget(t) : undefined}
+                pending={openForTarget(proposals, t).length}
               />
-            ))}
-          </Section>
-        ) : null}
+            );
+          };
+          return (
+            <Section title="Numbers she carried" subtitle={groups.length === 1 ? '' : `${groups.length} known`}>
+              {groups.map(g => (
+                <DedupGroup key={g.key} rep={renderReg(g.rep, false)} others={g.others.map(o => renderReg(o, true))} />
+              ))}
+              {editMode ? (() => {
+                const addT: EditTarget = {
+                  table: 'registrations', rowId: null, column: null, label: 'a number she carried',
+                  valueType: 'text', currentValue: null, actions: ['add'], addPayloadField: 'registration',
+                };
+                return <AddSuggestRow label="a number she carried" onPress={() => setEditTarget(addT)} pending={openForTarget(proposals, addT).length} />;
+              })() : null}
+            </Section>
+          );
+        })() : null}
 
         {/* Owners through the years */}
-        {ownerships.length ? (
-          <Section title="Owners through the years">
-            {ownerships.map(o => (
+        {ownerships.length ? (() => {
+          const groups = dedupeRows(
+            ownerships,
+            o => `${normKey(o.owner?.name)}|${o.start_year ?? ''}|${o.end_year ?? ''}|${normKey(o.date_text)}`,
+            o => CONF_RANK[o.confidence] * 1_000_000 + (o.source_record_id ? 1_000 : 0),
+          );
+          const renderOwner = (o: (typeof ownerships)[number]) => {
+            const t: EditTarget = o.owner?.id ? {
+              table: 'owners', rowId: o.owner.id, column: 'name',
+              label: `Owner “${o.owner.name}”`, valueType: 'text', currentValue: o.owner.name,
+              actions: ['edit', 'remove'], removeTable: 'ownership_periods', removeRowId: o.id,
+            } : {
+              table: 'ownership_periods', rowId: o.id, column: null,
+              label: 'this owner entry', valueType: 'text', currentValue: null, actions: ['remove'],
+            };
+            return (
               <BigRow
                 key={o.id}
                 primary={o.owner?.name ?? 'Unknown owner'}
                 secondary={fmtYears(o.start_year, o.end_year, o.date_text) || (o.notes ?? '')}
                 confidence={o.confidence}
+                onSuggest={editMode ? () => setEditTarget(t) : undefined}
+                pending={openForTarget(proposals, t).length}
               />
-            ))}
-          </Section>
-        ) : null}
+            );
+          };
+          return (
+            <Section title="Owners through the years">
+              {groups.map(g => (
+                <DedupGroup key={g.key} rep={renderOwner(g.rep)} others={g.others.map(o => renderOwner(o))} />
+              ))}
+              {editMode ? (() => {
+                const addT: EditTarget = {
+                  table: 'ownership_periods', rowId: null, column: null, label: 'a previous owner',
+                  valueType: 'text', currentValue: null, actions: ['add'], addPayloadField: 'owner',
+                };
+                return <AddSuggestRow label="a previous owner" onPress={() => setEditTarget(addT)} pending={openForTarget(proposals, addT).length} />;
+              })() : null}
+            </Section>
+          );
+        })() : null}
 
         {/* Her size */}
-        {measurements.length ? (
-          <Section title="Her size">
-            {measurements.map(m => {
-              const bits: string[] = [];
-              if (m.length_m)      bits.push(`${Number(m.length_m).toFixed(1)} m long`);
-              if (m.tonnage_text)  bits.push(m.tonnage_text);
-              else if (m.tonnage)  bits.push(`${m.tonnage} tons`);
-              if (m.engine_power_kw) bits.push(`${m.engine_power_kw} kW`);
-              return (
-                <BigRow
-                  key={m.id}
-                  primary={bits.join('  ·  ') || 'Measurement on record'}
-                  secondary={[m.measurement_year, m.notes].filter(Boolean).join(' · ')}
-                />
-              );
-            })}
-          </Section>
-        ) : null}
+        {measurements.length ? (() => {
+          const measureText = (m: (typeof measurements)[number]) => {
+            const bits: string[] = [];
+            if (m.length_m)        bits.push(`${Number(m.length_m).toFixed(1)} m long`);
+            if (m.tonnage_text)    bits.push(m.tonnage_text);
+            else if (m.tonnage)    bits.push(`${m.tonnage} tons`);
+            if (m.engine_power_kw) bits.push(`${m.engine_power_kw} kW`);
+            return bits.join('  ·  ') || 'Measurement on record';
+          };
+          const groups = dedupeRows(
+            measurements,
+            m => `${normKey(measureText(m))}|${m.measurement_year ?? ''}`,
+            m => (m.source_record_id ? 1_000 : 0) + (m.measurement_year ?? 0),
+          );
+          const renderMeasure = (m: (typeof measurements)[number]) => {
+            const primaryVal = measureText(m);
+            const t: EditTarget = {
+              table: 'measurements', rowId: m.id, column: null,
+              label: 'this measurement', valueType: 'text', currentValue: primaryVal,
+              actions: ['remove'],
+            };
+            return (
+              <BigRow
+                key={m.id}
+                primary={primaryVal}
+                secondary={[m.measurement_year, m.notes].filter(Boolean).join(' · ')}
+                onSuggest={editMode ? () => setEditTarget(t) : undefined}
+                pending={openForTarget(proposals, t).length}
+              />
+            );
+          };
+          return (
+            <Section title="Her size">
+              {groups.map(g => (
+                <DedupGroup key={g.key} rep={renderMeasure(g.rep)} others={g.others.map(o => renderMeasure(o))} />
+              ))}
+            </Section>
+          );
+        })() : null}
 
         {/* Photos */}
         {media.length ? (
@@ -760,6 +1077,18 @@ export default function BoatProfileScreen() {
       </ScrollView>
       </KeyboardAvoidingView>
       </View>
+
+      {editTarget ? (
+        <SuggestModal
+          target={editTarget}
+          proposals={openForTarget(proposals, editTarget)}
+          myVotes={myVotes}
+          viewerId={viewer?.id ?? null}
+          onClose={() => setEditTarget(null)}
+          onVote={handleVote}
+          onPropose={handlePropose}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -927,34 +1256,118 @@ function Section({
 }
 
 function BigRow({
-  primary, secondary, badge, pillColor, confidence,
+  primary, secondary, badge, pillColor, confidence, onSuggest, pending = 0,
 }: {
   primary: string;
   secondary?: string;
   badge?: string;
   pillColor?: string;
   confidence?: Confidence;
+  onSuggest?: () => void;
+  pending?: number;
 }) {
   return (
-    <View style={styles.bigRow}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {pillColor ? (
-            <View style={[styles.regPill, { backgroundColor: pillColor }]}>
-              <Text style={styles.regPillText} numberOfLines={1}>{primary}</Text>
-            </View>
-          ) : (
-            <Text style={styles.bigPrimary}>{primary}</Text>
-          )}
-          {badge ? (
-            <View style={styles.badgeChip}>
-              <Text style={styles.badgeChipText}>{badge}</Text>
-            </View>
-          ) : null}
+    <View style={styles.bigRowWrap}>
+      <View style={styles.bigRow}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {pillColor ? (
+              <View style={[styles.regPill, { backgroundColor: pillColor }]}>
+                <Text style={styles.regPillText} numberOfLines={1}>{primary}</Text>
+              </View>
+            ) : (
+              <Text style={styles.bigPrimary}>{primary}</Text>
+            )}
+            {badge ? (
+              <View style={styles.badgeChip}>
+                <Text style={styles.badgeChipText}>{badge}</Text>
+              </View>
+            ) : null}
+          </View>
+          {secondary ? <Text style={styles.bigSecondary}>{secondary}</Text> : null}
         </View>
-        {secondary ? <Text style={styles.bigSecondary}>{secondary}</Text> : null}
+        {confidence ? <ConfidencePill value={confidence} /> : null}
+        {onSuggest ? <SuggestPencil onPress={onSuggest} active={pending > 0} /> : null}
       </View>
-      {confidence ? <ConfidencePill value={confidence} /> : null}
+      {onSuggest && pending > 0 ? <PendingPill count={pending} onPress={onSuggest} /> : null}
+    </View>
+  );
+}
+
+/** Faint pencil affordance — turns the section colour when a change is pending. */
+function SuggestPencil({ onPress, active }: { onPress: () => void; active?: boolean }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      hitSlop={12}
+      style={styles.pencilBtn}
+      accessibilityLabel="Suggest a change"
+    >
+      <FontAwesome5
+        name="pencil-alt"
+        size={12}
+        color={active ? SECTION.color : colors.textMuted}
+        style={{ opacity: active ? 1 : 0.45 }}
+      />
+    </TouchableOpacity>
+  );
+}
+
+/** Quiet "N changes suggested · tap to review" pill under a row. */
+function PendingPill({ count, onPress }: { count: number; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.pendingPill, { backgroundColor: SECTION.light }]}
+      activeOpacity={0.8}
+    >
+      <FontAwesome5 name="users" size={10} color={SECTION.color} solid />
+      <Text style={[styles.pendingPillText, { color: SECTION.color }]}>
+        {count === 1 ? '1 change suggested' : `${count} changes suggested`} · tap to review
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+/** A section-level "suggest something missing" link (drives an 'add' target). */
+function AddSuggestRow({ label, onPress, pending }: { label: string; onPress: () => void; pending: number }) {
+  return (
+    <TouchableOpacity onPress={onPress} style={styles.addRow} activeOpacity={0.7}>
+      <FontAwesome5 name="plus" size={11} color={SECTION.color} />
+      <Text style={[styles.addRowText, { color: SECTION.color }]}>
+        Suggest {label}{pending > 0 ? `  ·  ${pending} pending` : ''}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+/** Header fact (built year / builder) rendered with its own faint pencil. */
+function FactChip({ text, onSuggest, active }: { text: string; onSuggest?: () => void; active?: boolean }) {
+  return (
+    <View style={styles.factChip}>
+      <Text style={styles.subtitle}>{text}</Text>
+      {onSuggest ? <SuggestPencil onPress={onSuggest} active={active} /> : null}
+    </View>
+  );
+}
+
+/**
+ * Shows the representative row, with a quiet toggle to reveal identical
+ * duplicates beneath it (kept dimmed + indented so the screen stays clean).
+ */
+function DedupGroup({ rep, others }: { rep: React.ReactNode; others: React.ReactNode[] }) {
+  const [open, setOpen] = useState(false);
+  if (others.length === 0) return <>{rep}</>;
+  return (
+    <View>
+      {rep}
+      <TouchableOpacity onPress={() => setOpen(o => !o)} style={styles.dupToggle} activeOpacity={0.7}>
+        <FontAwesome5 name={open ? 'chevron-up' : 'layer-group'} size={11} color={SECTION.color} solid />
+        <Text style={[styles.dupToggleText, { color: SECTION.color }]}>
+          {open ? 'Hide duplicates' : `Show ${others.length} duplicate${others.length === 1 ? '' : 's'}`}
+        </Text>
+      </TouchableOpacity>
+      {open ? <View style={styles.dupWrap}>{others}</View> : null}
     </View>
   );
 }
@@ -964,6 +1377,209 @@ function ConfidencePill({ value }: { value: Confidence }) {
   return (
     <View style={[styles.confPill, { backgroundColor: t.bg }]}>
       <Text style={[styles.confPillText, { color: t.text }]}>{confidenceLabel(value)}</Text>
+    </View>
+  );
+}
+
+// ── Suggest / review change sheet ───────────────────────────────────────────
+
+function SuggestModal({
+  target, proposals, myVotes, viewerId, onClose, onVote, onPropose,
+}: {
+  target: EditTarget;
+  proposals: VesselEditProposal[];
+  myVotes: MyEditVotes;
+  viewerId: string | null;
+  onClose: () => void;
+  onVote: (proposalId: string, vote: 'confirm' | 'dispute') => void;
+  onPropose: (args: { action: EditAction; value: string; note: string }) => Promise<boolean>;
+}) {
+  const defaultAction: EditAction = target.actions.includes('edit') ? 'edit' : target.actions[0];
+  const [action, setAction] = useState<EditAction>(defaultAction);
+  const [value, setValue]   = useState(
+    defaultAction === 'edit' && target.currentValue ? target.currentValue : '',
+  );
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const keyboard = (target.valueType === 'year' || target.valueType === 'number')
+    ? 'number-pad' : 'default';
+  const needsValue = action !== 'remove';
+  const isValid = needsValue ? value.trim().length > 0 : true;
+
+  const onChangeAction = (a: EditAction) => {
+    setAction(a);
+    if (a === 'edit' && target.currentValue) setValue(target.currentValue);
+    else if (a !== 'remove') setValue('');
+  };
+
+  const submit = async () => {
+    if (busy || !isValid) return;
+    setBusy(true);
+    const ok = await onPropose({ action, value: value.trim(), note: note.trim() });
+    setBusy(false);
+    if (ok) {
+      setNote('');
+      if (action !== 'edit') setValue('');
+    }
+  };
+
+  const actionLabel: Record<EditAction, string> = {
+    edit: 'Correct it', add: 'Add it', remove: 'Remove it',
+  };
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>{target.label}</Text>
+              <Text style={styles.modalCurrent}>
+                {target.currentValue ? `Currently: ${target.currentValue}` : 'Not recorded yet'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.modalCloseBtn}>
+              <FontAwesome5 name="times" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: spacing.lg }}>
+            {proposals.length > 0 ? (
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Suggestions so far</Text>
+                <Text style={styles.modalHint}>
+                  {CONFIRM_THRESHOLD} people need to agree before a change goes live.
+                </Text>
+                {proposals.map(p => (
+                  <ProposalCard
+                    key={p.id}
+                    p={p}
+                    mine={myVotes[p.id] ?? null}
+                    isProposer={!!viewerId && p.proposed_by === viewerId}
+                    onVote={onVote}
+                  />
+                ))}
+              </View>
+            ) : null}
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalSectionTitle}>
+                {proposals.length > 0 ? 'Suggest a different change' : 'Suggest a change'}
+              </Text>
+
+              {target.actions.length > 1 ? (
+                <View style={styles.actionChipRow}>
+                  {target.actions.map(a => {
+                    const on = action === a;
+                    return (
+                      <TouchableOpacity
+                        key={a}
+                        onPress={() => onChangeAction(a)}
+                        style={[styles.actionChip, on && { backgroundColor: SECTION.color, borderColor: SECTION.color }]}
+                      >
+                        <Text style={[styles.actionChipText, on && { color: '#fff' }]}>{actionLabel[a]}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              {needsValue ? (
+                <TextInput
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder={action === 'add' ? `New ${target.label.toLowerCase()}…` : 'Corrected value…'}
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType={keyboard as any}
+                  style={styles.valueInput}
+                />
+              ) : (
+                <Text style={styles.removeNote}>
+                  You’re suggesting this is removed because it doesn’t belong to this boat.
+                </Text>
+              )}
+
+              <TextInput
+                value={note}
+                onChangeText={setNote}
+                placeholder="Add a note (optional) — how do you know?"
+                placeholderTextColor={colors.textMuted}
+                style={styles.noteInput}
+                multiline
+              />
+
+              <TouchableOpacity
+                onPress={submit}
+                disabled={busy || !isValid}
+                style={[styles.submitBtn, { backgroundColor: SECTION.color, opacity: (busy || !isValid) ? 0.45 : 1 }]}
+              >
+                {busy ? <ActivityIndicator color="#fff" /> : (
+                  <>
+                    <FontAwesome5 name="paper-plane" size={13} color="#fff" />
+                    <Text style={styles.submitBtnText}>Send suggestion</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <Text style={styles.modalFinePrint}>
+                Suggestions are settled by the community — others confirm or correct them, and you can’t vote on your own.
+              </Text>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ProposalCard({
+  p, mine, isProposer, onVote,
+}: {
+  p: VesselEditProposal;
+  mine: 'confirm' | 'dispute' | null;
+  isProposer: boolean;
+  onVote: (proposalId: string, vote: 'confirm' | 'dispute') => void;
+}) {
+  const remaining = Math.max(0, CONFIRM_THRESHOLD - p.confirm_count);
+  return (
+    <View style={styles.proposalCard}>
+      <Text style={styles.proposalSummary}>{p.summary}</Text>
+      {p.note ? <Text style={styles.proposalNote}>“{p.note}”</Text> : null}
+      <Text style={styles.proposalMeta}>
+        {p.confirm_count} of {CONFIRM_THRESHOLD} confirmed
+        {p.dispute_count > 0 ? `  ·  ${p.dispute_count} disagree` : ''}
+      </Text>
+
+      {isProposer ? (
+        <Text style={styles.proposalMine}>
+          Your suggestion — waiting for {remaining} more {remaining === 1 ? 'person' : 'people'} to agree.
+        </Text>
+      ) : (
+        <View style={styles.voteRow}>
+          <TouchableOpacity
+            onPress={() => onVote(p.id, 'confirm')}
+            style={[styles.voteBtn, mine === 'confirm' && { backgroundColor: VOTE_GREEN, borderColor: VOTE_GREEN }]}
+            activeOpacity={0.85}
+          >
+            <FontAwesome5 name="check" size={12} color={mine === 'confirm' ? '#fff' : VOTE_GREEN} />
+            <Text style={[styles.voteBtnText, { color: mine === 'confirm' ? '#fff' : VOTE_GREEN }]}>
+              Yes, that’s right
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onVote(p.id, 'dispute')}
+            style={[styles.voteBtn, mine === 'dispute' && { backgroundColor: colors.error, borderColor: colors.error }]}
+            activeOpacity={0.85}
+          >
+            <FontAwesome5 name="times" size={12} color={mine === 'dispute' ? '#fff' : colors.error} />
+            <Text style={[styles.voteBtnText, { color: mine === 'dispute' ? '#fff' : colors.error }]}>
+              No, that’s wrong
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -1066,13 +1682,16 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  bigRowWrap: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingBottom: 6,
+  },
   bigRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
     gap: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
   },
   bigPrimary: {
     fontSize: 18,
@@ -1416,4 +2035,127 @@ const styles = StyleSheet.create({
     maxWidth: 320,
     minWidth: 200,
   },
+
+  // ── Community corrections ───────────────────────────────────────────────────
+  editPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+    borderWidth: 1.5, borderColor: SECTION.color, backgroundColor: SECTION.color + '14',
+  },
+  editPillText: { fontSize: 13, fontWeight: '800' },
+  editBadge: {
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    backgroundColor: SECTION.color, alignItems: 'center', justifyContent: 'center', marginLeft: 2,
+  },
+  editBadgeText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  editHelp: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: spacing.lg, marginTop: spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md,
+  },
+  editHelpText: { flex: 1, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+
+  dupToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingVertical: 8, alignSelf: 'flex-start',
+  },
+  dupToggleText: { fontSize: 13, fontWeight: '800' },
+  dupWrap: {
+    borderLeftWidth: 2, borderLeftColor: colors.border,
+    paddingLeft: spacing.sm, marginLeft: 2, marginBottom: 4, opacity: 0.7,
+  },
+
+  lkRow:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  subtitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 4 },
+  subtitleDot: { fontSize: 17, color: colors.textMuted, marginHorizontal: 6 },
+  factChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+
+  pencilBtn: {
+    paddingHorizontal: 4, paddingVertical: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  pendingPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 999, marginBottom: 8,
+  },
+  pendingPillText: { fontSize: 12, fontWeight: '800' },
+
+  addRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 10, marginTop: 2,
+  },
+  addRowText: { fontSize: 14, fontWeight: '800' },
+
+  // Modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(15, 28, 38, 0.45)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: colors.screenBackground,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: spacing.lg, paddingTop: 10, paddingBottom: spacing.xl,
+    maxHeight: '88%',
+  },
+  modalHandle: {
+    alignSelf: 'center', width: 40, height: 5, borderRadius: 3,
+    backgroundColor: colors.border, marginBottom: spacing.sm,
+  },
+  modalHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.sm },
+  modalTitle: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.3 },
+  modalCurrent: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+  modalCloseBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+
+  modalSection: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginTop: spacing.sm, gap: spacing.sm,
+  },
+  modalSectionTitle: { fontSize: 16, fontWeight: '900', color: colors.textPrimary },
+  modalHint: { fontSize: 13, color: colors.textMuted, marginTop: -4 },
+  modalFinePrint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 2 },
+
+  proposalCard: {
+    backgroundColor: colors.offWhite,
+    borderRadius: radius.md, padding: spacing.md, gap: 6,
+  },
+  proposalSummary: { fontSize: 15, fontWeight: '800', color: colors.textPrimary, lineHeight: 21 },
+  proposalNote: { fontSize: 14, color: colors.textSecondary, fontStyle: 'italic', lineHeight: 19 },
+  proposalMeta: { fontSize: 13, color: colors.textMuted, fontWeight: '700' },
+  proposalMine: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
+
+  voteRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  voteBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: 999,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  voteBtnText: { fontSize: 13, fontWeight: '800' },
+
+  actionChipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  actionChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
+    backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border,
+  },
+  actionChipText: { fontSize: 13, fontWeight: '800', color: colors.textSecondary },
+
+  valueInput: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    fontSize: 16, color: colors.textPrimary, backgroundColor: colors.white,
+  },
+  noteInput: {
+    minHeight: 60, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    fontSize: 15, color: colors.textPrimary, backgroundColor: colors.white,
+    textAlignVertical: 'top',
+  },
+  removeNote: { fontSize: 15, color: colors.textSecondary, lineHeight: 21 },
+
+  submitBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: spacing.md, borderRadius: 999, marginTop: 2,
+  },
+  submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
 });
