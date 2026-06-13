@@ -14,13 +14,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import { fetchMyGiftsReceived, type MyGiftReceived } from '@/lib/local-api';
 
@@ -29,6 +33,7 @@ const S = SECTIONS.local;
 export default function MyGiftsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [gifts, setGifts]         = useState<MyGiftReceived[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -54,30 +59,23 @@ export default function MyGiftsScreen() {
   const used    = gifts.filter(g => g.status === 'used');
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Gifts received</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Gifts received" accent={S.color} onBack={() => router.back()} />}
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : gifts.length === 0 ? (
-        <View style={styles.center}>
-          <FontAwesome5 name="gift" size={40} color={colors.textLight} solid />
-          <Text style={styles.emptyTitle}>No gifts yet</Text>
-          <Text style={styles.emptySub}>
-            When someone sends you a gift through OneShetland, it'll appear here ready to claim.
-          </Text>
-        </View>
+        <EmptyState
+          icon="gift"
+          title="No gifts yet"
+          body="When someone sends you a gift through OneShetland, it'll appear here ready to claim."
+          accent={S.color}
+          variant="card"
+        />
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -103,7 +101,7 @@ export default function MyGiftsScreen() {
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 
   function pickSlot(g: MyGiftReceived) {
@@ -169,23 +167,8 @@ function GiftCard({ gift, onPickSlot }: { gift: MyGiftReceived; onPickSlot: (g: 
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 12 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: 12 },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary, flex: 1, textAlign: 'center' },
-
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
-  emptySub:   { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 22 },
 
   sectionLabel: { fontSize: 11, fontWeight: '900', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', paddingHorizontal: spacing.xs, marginBottom: -4 },
 

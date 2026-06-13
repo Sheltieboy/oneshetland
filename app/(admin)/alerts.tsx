@@ -8,12 +8,16 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
+  Alert, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { fetchAllAlertsAdmin, forceExpireAlert, type PartnerAlert } from '@/lib/alerts-api';
 
 const TYPE_META = {
@@ -46,7 +50,7 @@ function fmtDate(iso: string) {
 }
 
 export default function AdminAlertsScreen() {
-  const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const [alerts,     setAlerts]     = useState<PartnerAlert[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -82,27 +86,24 @@ export default function AdminAlertsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <FontAwesome5 name="chevron-left" size={14} color="#fff" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Platform Alerts</Text>
-          {live.length > 0
-            ? <Text style={styles.headerSub}>{live.length} live right now</Text>
-            : <Text style={styles.headerSub}>No alerts live</Text>
-          }
-        </View>
-        <View style={{ width: 36 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Platform Alerts"
+          subtitle={live.length > 0 ? `${live.length} live right now` : 'No alerts live'}
+          accent={colors.accent}
+        />
+      }
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View>
+        <LoadingState accent={colors.accent} />
       ) : (
         <ScrollView
           style={{ flex: 1, backgroundColor: colors.screenBackground }}
-          contentContainerStyle={{ padding: spacing.md, gap: spacing.md, paddingBottom: 40 }}
+          contentContainerStyle={[
+            { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
+            contentContainer(screenWidth),
+          ]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
         >
           {live.length > 0 && (
@@ -133,14 +134,16 @@ export default function AdminAlertsScreen() {
           )}
 
           {alerts.length === 0 && (
-            <View style={styles.empty}>
-              <FontAwesome5 name="broadcast-tower" size={32} color={colors.textMuted} />
-              <Text style={styles.emptyText}>No alerts this week</Text>
-            </View>
+            <EmptyState
+              icon="broadcast-tower"
+              title="No alerts this week"
+              accent={colors.accent}
+              variant="card"
+            />
           )}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -209,18 +212,6 @@ function AdminAlertCard({ alert: a, status, onForceExpire }: {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: spacing.md, paddingVertical: 14,
-    backgroundColor: colors.navy,
-  },
-  backBtn:     { width: 36 },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
-  headerSub:   { color: 'rgba(255,255,255,0.55)', fontSize: fontSize.xs, marginTop: 1 },
-
   section:       { gap: 8 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
   sectionBar:    { width: 4, height: 16, borderRadius: 2 },
@@ -245,7 +236,4 @@ const styles = StyleSheet.create({
   statusLine: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
 
   forceBtn: { padding: spacing.sm, alignSelf: 'center', marginRight: 4 },
-
-  empty:     { alignItems: 'center', gap: 12, paddingTop: 60 },
-  emptyText: { fontSize: fontSize.md, color: colors.textMuted, fontWeight: '700' },
 });

@@ -16,11 +16,16 @@ import {
   TextInput, Switch, ActivityIndicator, Alert, RefreshControl,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -93,6 +98,7 @@ interface EmailLogEntry {
 export default function EmailCentreScreen() {
   const router = useRouter();
   const { session } = useAuth();
+  const { screenWidth } = useAppLayout();
   const [tab, setTab] = useState<Tab>('templates');
 
   // Templates
@@ -251,20 +257,15 @@ export default function EmailCentreScreen() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color="#fff" />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <FontAwesome5 name="envelope" size={14} color="#fff" solid />
-          <Text style={styles.headerTitle}>Email Centre</Text>
-        </View>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Email Centre"
+          accent={colors.accent}
+          onBack={() => router.back()}
+        />
+      }
+    >
       {/* Tab bar */}
       <View style={styles.tabBar}>
         {(['templates', 'footer', 'log', 'settings'] as Tab[]).map(t => (
@@ -282,7 +283,7 @@ export default function EmailCentreScreen() {
 
       {/* ── TEMPLATES TAB ── */}
       {tab === 'templates' && (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]}>
           {/* Test email input — global for all templates */}
           <View style={styles.testEmailCard}>
             <FontAwesome5 name="flask" size={12} color={colors.accent} solid />
@@ -298,7 +299,7 @@ export default function EmailCentreScreen() {
           </View>
 
           {loadingTemplates
-            ? <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
+            ? <LoadingState accent={colors.accent} />
             : Object.entries(CATEGORY_LABELS).map(([cat, catLabel]) => {
                 const catTemplates = grouped[cat];
                 if (!catTemplates?.length) return null;
@@ -429,9 +430,9 @@ export default function EmailCentreScreen() {
       {/* ── FOOTER TAB ── */}
       {tab === 'footer' && (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+          <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]}>
             {loadingSettings
-              ? <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
+              ? <LoadingState accent={colors.accent} />
               : (
                 <>
                   <View style={styles.settingsCard}>
@@ -460,16 +461,15 @@ export default function EmailCentreScreen() {
                     ))}
                   </View>
 
-                  <TouchableOpacity
-                    style={[styles.saveBtn, savingSettings && { opacity: 0.7 }]}
+                  <Button
+                    label="Save footer"
                     onPress={saveSettings}
+                    color={colors.accent}
+                    loading={savingSettings}
                     disabled={savingSettings}
-                  >
-                    {savingSettings
-                      ? <ActivityIndicator color="#fff" />
-                      : <Text style={styles.saveBtnText}>Save footer</Text>
-                    }
-                  </TouchableOpacity>
+                    fullWidth
+                    style={styles.saveBtn}
+                  />
                 </>
               )
             }
@@ -482,7 +482,7 @@ export default function EmailCentreScreen() {
       {tab === 'log' && (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadLog(); }} tintColor={colors.accent} />}
         >
           {/* Filter */}
@@ -501,9 +501,9 @@ export default function EmailCentreScreen() {
           </ScrollView>
 
           {loadingLog
-            ? <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
+            ? <LoadingState accent={colors.accent} />
             : log.length === 0
-              ? <View style={styles.empty}><Text style={styles.emptyText}>No emails logged yet.</Text></View>
+              ? <EmptyState icon="inbox" title="No emails logged yet" body="Sent, bounced and failed emails will appear here." accent={colors.accent} variant="card" />
               : log.map(entry => (
                 <View key={entry.id} style={styles.logRow}>
                   <View style={styles.logRowLeft}>
@@ -534,9 +534,9 @@ export default function EmailCentreScreen() {
       {/* ── SETTINGS TAB ── */}
       {tab === 'settings' && (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+          <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]}>
             {loadingSettings
-              ? <ActivityIndicator color={colors.accent} style={{ marginTop: 40 }} />
+              ? <LoadingState accent={colors.accent} />
               : (
                 <>
                   <View style={styles.settingsCard}>
@@ -575,16 +575,15 @@ export default function EmailCentreScreen() {
                     </View>
                   </View>
 
-                  <TouchableOpacity
-                    style={[styles.saveBtn, { marginTop: 12 }, savingSettings && { opacity: 0.7 }]}
+                  <Button
+                    label="Save settings"
                     onPress={saveSettings}
+                    color={colors.accent}
+                    loading={savingSettings}
                     disabled={savingSettings}
-                  >
-                    {savingSettings
-                      ? <ActivityIndicator color="#fff" />
-                      : <Text style={styles.saveBtnText}>Save settings</Text>
-                    }
-                  </TouchableOpacity>
+                    fullWidth
+                    style={{ ...styles.saveBtn, marginTop: 12 }}
+                  />
                 </>
               )
             }
@@ -592,31 +591,21 @@ export default function EmailCentreScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.md },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-  },
-  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:     { fontSize: fontSize.sm, fontWeight: '700', color: '#fff' },
-  headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle:  { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
 
   tabBar: {
     flexDirection: 'row',
     backgroundColor: colors.navyDark,
     paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xs,
     gap: 4,
   },
@@ -694,12 +683,7 @@ const styles = StyleSheet.create({
   postmarkInfo: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 8 },
   postmarkInfoText: { flex: 1, fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 17 },
 
-  saveBtn: {
-    backgroundColor: colors.navy, borderRadius: radius.lg,
-    paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
-    marginTop: spacing.md,
-  },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: spacing.md },
 
   // Log
   filterRow:        { marginBottom: spacing.md },
@@ -722,7 +706,4 @@ const styles = StyleSheet.create({
 
   statusPill:     { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full },
   statusPillText: { fontSize: 10, fontWeight: '800' },
-
-  empty:     { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: fontSize.sm, color: colors.textMuted },
 });

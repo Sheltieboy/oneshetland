@@ -8,15 +8,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, Share,
+  Alert, Share,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import QRCode from 'react-native-qrcode-svg';
-import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { IconButton } from '@/components/ui/IconButton';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchTicketWithToken,
@@ -37,6 +42,7 @@ export default function MyEventTicketScreen() {
   const { id }    = useLocalSearchParams<{ id: string }>();
   const router    = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [ticket,   setTicket]   = useState<EventTicket | null>(null);
   const [rawToken, setRawToken] = useState<string | null>(null);
@@ -61,22 +67,24 @@ export default function MyEventTicketScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}><ActivityIndicator size="large" color={S.color} /></View>
-      </SafeAreaView>
+      <ScreenScaffold header={<ScreenHeader title="My Ticket" accent={S.color} />}>
+        <LoadingState accent={S.color} />
+      </ScreenScaffold>
     );
   }
 
   if (!ticket) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>Ticket not found.</Text>
-          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 8 }}>
-            <Text style={[styles.linkText, { color: S.color }]}>Go back</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <ScreenScaffold header={<ScreenHeader title="My Ticket" accent={S.color} />}>
+        <EmptyState
+          icon="ticket-alt"
+          title="Ticket not found"
+          accent={S.color}
+          variant="card"
+          actionLabel="Go back"
+          onAction={() => router.back()}
+        />
+      </ScreenScaffold>
     );
   }
 
@@ -87,21 +95,23 @@ export default function MyEventTicketScreen() {
   const isPending    = ticket.status === 'pending_payment';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>My Tickets</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          hitSlop={12}
-          onPress={() => Share.share({ message: `My ticket for ${event?.title ?? 'an event'}. Backup code: ${ticket.backup_code}` })}
-        >
-          <FontAwesome5 name="share-alt" size={15} color={S.color} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="My Ticket"
+          accent={S.color}
+          rightElement={
+            <IconButton
+              icon="share-alt"
+              color={S.color}
+              onPress={() => Share.share({ message: `My ticket for ${event?.title ?? 'an event'}. Backup code: ${ticket.backup_code}` })}
+              accessibilityLabel="Share ticket"
+            />
+          }
+        />
+      }
+    >
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]}>
 
         {/* Status banners */}
         {isPending && (
@@ -243,25 +253,13 @@ export default function MyEventTicketScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content:{ paddingBottom: 40 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: colors.screenBackground },
-  errorText: { fontSize: fontSize.md, color: colors.textMuted },
-  linkText:  { fontSize: fontSize.sm, fontWeight: '700' },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
 
   banner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

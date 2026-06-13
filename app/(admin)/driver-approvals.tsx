@@ -5,16 +5,18 @@ import {
   ScrollView,
   RefreshControl,
   StyleSheet,
-  TouchableOpacity,
   Alert,
-  Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 
 interface Application {
   id: string;
@@ -31,6 +33,7 @@ interface Application {
 
 export default function DriverApprovalsScreen() {
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
@@ -99,41 +102,32 @@ export default function DriverApprovalsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Driver applications"
+          subtitle="Review and approve drivers before they can create runs."
+          accent={colors.accent}
+          onBack={() => router.back()}
+        />
+      }
+    >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.navy} />}
       >
-
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>‹ Back</Text>
-          </TouchableOpacity>
-          <View style={styles.brandRow}>
-            <View style={styles.logoCircle}>
-              <Image source={require('../../assets/icon.png')} style={styles.logoImage} resizeMode="contain" />
-            </View>
-            <Text style={styles.brandName}>OneShetland Fetch</Text>
-          </View>
-          <Text style={styles.title}>Driver applications</Text>
-          <Text style={styles.subtitle}>
-            Review and approve drivers before they can create runs.
-          </Text>
-        </View>
-
         <View style={styles.body}>
           {loading ? (
-            <Card style={styles.emptyCard}>
-              <Text style={styles.emptyBody}>Loading applications…</Text>
-            </Card>
+            <LoadingState accent={colors.accent} />
           ) : applications.length === 0 ? (
-            <Card style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>🎉</Text>
-              <Text style={styles.emptyTitle}>All caught up</Text>
-              <Text style={styles.emptyBody}>No pending driver applications right now.</Text>
-            </Card>
+            <EmptyState
+              icon="check-circle"
+              title="All caught up"
+              body="No pending driver applications right now."
+              accent={colors.accent}
+              variant="card"
+            />
           ) : (
             <>
               <Text style={styles.count}>
@@ -208,36 +202,12 @@ export default function DriverApprovalsScreen() {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
   content: { backgroundColor: colors.screenBackground, paddingBottom: spacing.xxl, flexGrow: 1 },
-
-  header: {
-    backgroundColor: colors.navy,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  backLink: { marginBottom: spacing.md },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  logoCircle: {
-    width: 36, height: 36,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  logoImage: { width: 36, height: 36, borderRadius: 9 },
-  brandName: { color: colors.white, fontSize: fontSize.sm, fontWeight: '700', opacity: 0.9 },
-  title: { color: colors.white, fontSize: fontSize.xxl, fontWeight: '800', marginBottom: spacing.xs },
-  subtitle: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, lineHeight: 20 },
 
   body: { padding: spacing.lg },
   count: {
@@ -246,11 +216,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginBottom: spacing.md,
   },
-
-  emptyCard: { alignItems: 'center', paddingVertical: spacing.xxl },
-  emptyIcon: { fontSize: 36, marginBottom: spacing.sm },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.navy, marginBottom: spacing.xs },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
 
   appCard: { marginBottom: spacing.md },
   applicantRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

@@ -17,12 +17,16 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { colors, fontSize, radius, spacing, shadow } from '@/constants/theme';
+import { colors, fontSize, radius, spacing, shadow, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 type Status = 'pending' | 'reviewed' | 'all';
 
@@ -200,6 +204,7 @@ function WordGroupBlock({
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function SpikSuggestionsScreen() {
+  const { screenWidth } = useAppLayout();
   const [filter, setFilter]       = useState<Status>('pending');
   const [groups, setGroups]       = useState<WordGroup[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -265,20 +270,16 @@ export default function SpikSuggestionsScreen() {
   ];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <FontAwesome5 name="chevron-left" size={13} color="rgba(255,255,255,0.8)" />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerTitles}>
-          <Text style={styles.headerTitle}>Spik Suggestions</Text>
-          <Text style={styles.headerSub}>Review · copy · paste into WordPress</Text>
-        </View>
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Spik Suggestions"
+          subtitle="Review · copy · paste into WordPress"
+          accent={colors.accent}
+          onBack={() => router.back()}
+        />
+      }
+    >
       {/* Filter tabs */}
       <View style={styles.filterRow}>
         {FILTERS.map(f => (
@@ -304,22 +305,18 @@ export default function SpikSuggestionsScreen() {
 
       {/* Content */}
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        <LoadingState accent={colors.accent} />
       ) : groups.length === 0 ? (
-        <View style={styles.center}>
-          <FontAwesome5 name="check-circle" size={36} color={colors.border} style={{ marginBottom: 12 }} />
-          <Text style={styles.emptyTitle}>
-            {filter === 'pending' ? 'No pending suggestions' : 'Nothing here yet'}
-          </Text>
-          <Text style={styles.emptyBody}>
-            {filter === 'pending' ? 'All caught up.' : 'Suggestions will appear here once submitted.'}
-          </Text>
-        </View>
+        <EmptyState
+          icon="check-circle"
+          title={filter === 'pending' ? 'No pending suggestions' : 'Nothing here yet'}
+          body={filter === 'pending' ? 'All caught up.' : 'Suggestions will appear here once submitted.'}
+          accent={colors.accent}
+          variant="card"
+        />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, contentContainer(screenWidth)]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -339,42 +336,28 @@ export default function SpikSuggestionsScreen() {
           ))}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
-
-  header: {
-    backgroundColor: colors.navy,
-    paddingHorizontal: spacing.md,
-    paddingTop: 8,
-    paddingBottom: 16,
-    gap: 10,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
-  backText:    { color: 'rgba(255,255,255,0.8)', fontSize: fontSize.sm, fontWeight: '600' },
-  headerTitles:{ gap: 2 },
-  headerTitle: { color: '#fff', fontSize: fontSize.xl, fontWeight: '800' },
-  headerSub:   { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.xs },
-
   filterRow: {
     flexDirection: 'row',
-    backgroundColor: colors.navyDark,
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
+    paddingTop: 12,
     paddingBottom: 12,
     gap: 8,
   },
   filterTab: {
     paddingHorizontal: 14, paddingVertical: 7,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: colors.offWhite,
   },
   filterTabActive: { backgroundColor: colors.accent },
-  filterTabText:   { color: 'rgba(255,255,255,0.6)', fontSize: fontSize.sm, fontWeight: '600' },
+  filterTabText:   { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '600' },
   filterTabTextActive: { color: '#fff' },
 
   workflowHint: {
@@ -450,8 +433,4 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: colors.border,
   },
   undoBtnText: { color: colors.textMuted, fontSize: fontSize.sm },
-
-  center:     { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
-  emptyTitle: { color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: '700', marginBottom: 6 },
-  emptyBody:  { color: colors.textMuted, fontSize: fontSize.sm },
 });

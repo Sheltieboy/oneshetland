@@ -9,13 +9,17 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert,
+  TextInput, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { supabase } from '@/lib/supabase';
 import { COMPLIANCE_EVENT_LABELS, type ComplianceEventType } from '@/lib/compliance';
 
@@ -70,6 +74,7 @@ interface ComplianceEntry {
 
 export default function ComplianceScreen() {
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [searchEmail, setSearchEmail] = useState('');
   const [results,     setResults]     = useState<ComplianceEntry[] | null>(null);
@@ -117,20 +122,15 @@ export default function ComplianceScreen() {
   const user = results?.[0];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color="#fff" />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <FontAwesome5 name="shield-alt" size={14} color="#fff" solid />
-          <Text style={styles.headerTitle}>Compliance Log</Text>
-        </View>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Compliance Log"
+          accent={colors.accent}
+          onBack={() => router.back()}
+        />
+      }
+    >
       {/* Search */}
       <View style={styles.searchBar}>
         <FontAwesome5 name="search" size={13} color={colors.textMuted} />
@@ -161,7 +161,7 @@ export default function ComplianceScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
         {/* Not searched yet */}
         {!searched && (
@@ -189,10 +189,7 @@ export default function ComplianceScreen() {
 
         {/* Loading */}
         {loading && (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={colors.navy} />
-            <Text style={styles.loadingText}>Searching compliance log...</Text>
-          </View>
+          <LoadingState accent={colors.accent} />
         )}
 
         {/* Results */}
@@ -219,11 +216,13 @@ export default function ComplianceScreen() {
 
             {/* No results */}
             {results.length === 0 && (
-              <View style={styles.empty}>
-                <FontAwesome5 name="search" size={20} color={colors.textLight} />
-                <Text style={styles.emptyTitle}>No records found</Text>
-                <Text style={styles.emptyText}>No compliance events logged for this email address.</Text>
-              </View>
+              <EmptyState
+                icon="search"
+                title="No records found"
+                body="No compliance events logged for this email address."
+                accent={colors.accent}
+                variant="card"
+              />
             )}
 
             {/* Grouped records */}
@@ -314,24 +313,13 @@ export default function ComplianceScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.md },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-  },
-  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:     { fontSize: fontSize.sm, fontWeight: '700', color: '#fff' },
-  headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle:  { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
 
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -359,9 +347,6 @@ const styles = StyleSheet.create({
   legendDot:   { width: 8, height: 8, borderRadius: 4 },
   legendLabel: { fontSize: fontSize.xs, color: colors.textPrimary, fontWeight: '600' },
 
-  loadingWrap: { paddingVertical: 60, alignItems: 'center', gap: 12 },
-  loadingText: { fontSize: fontSize.sm, color: colors.textMuted },
-
   // User card
   userCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -375,11 +360,6 @@ const styles = StyleSheet.create({
   userCount:       { alignItems: 'center' },
   userCountNum:    { color: '#fff', fontSize: fontSize.xl, fontWeight: '900' },
   userCountLabel:  { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700' },
-
-  // Empty
-  empty:      { alignItems: 'center', paddingVertical: 60, gap: 8 },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  emptyText:  { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
 
   // Day group
   dayGroup:  { marginBottom: spacing.md },

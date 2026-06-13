@@ -7,13 +7,16 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useStripe } from '@stripe/stripe-react-native';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchMyHubMemberships, type HubMember } from '@/lib/hubs-api';
@@ -44,6 +47,7 @@ export default function WalletScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { screenWidth } = useAppLayout();
 
   const [balance, setBalance]   = useState<number>(0);
   const [txs, setTxs]           = useState<WalletTransaction[]>([]);
@@ -174,19 +178,18 @@ export default function WalletScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Wallet</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="My Wallet"
+          accent={S.color}
+          onBack={() => router.back()}
+        />
+      }
+    >
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
       >
         {/* Balance card */}
@@ -356,9 +359,12 @@ export default function WalletScreen() {
           {loading ? (
             <ActivityIndicator color={S.color} style={{ marginTop: 20 }} />
           ) : txs.length === 0 ? (
-            <View style={styles.emptyTx}>
-              <Text style={styles.emptyTxText}>No transactions yet</Text>
-            </View>
+            <EmptyState
+              icon="receipt"
+              title="No transactions yet"
+              accent={S.color}
+              variant="card"
+            />
           ) : (
             <View style={styles.txList}>
               {txs.map(tx => <TransactionRow key={tx.id} tx={tx} />)}
@@ -381,7 +387,7 @@ export default function WalletScreen() {
         onConfirm={() => { const amt = confirmAmount; setConfirmAmount(null); if (amt != null) handleTopUp(amt); }}
         onCancel={() => setConfirmAmount(null)}
       />
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -477,19 +483,8 @@ function TransactionRow({ tx }: { tx: WalletTransaction }) {
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ paddingBottom: 40 },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 
   balanceCard: {
     margin: spacing.md, padding: spacing.lg, gap: 12,
@@ -523,9 +518,6 @@ const styles = StyleSheet.create({
   txLabel:  { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
   txDate:   { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
   txAmount: { fontSize: fontSize.sm, fontWeight: '900' },
-
-  emptyTx: { padding: spacing.lg, alignItems: 'center' },
-  emptyTxText: { fontSize: fontSize.sm, color: colors.textMuted },
 
   // ── My Wallet hub sections ───────────────────────────────────────────────
   hubSection: {

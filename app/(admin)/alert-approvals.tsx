@@ -10,11 +10,15 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, TextInput, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import {
   fetchAllAlertAccess, reviewAlertRequest,
   type AlertAccessWithBusiness, type AlertAccessStatus,
@@ -29,7 +33,7 @@ const STATUS_META: Record<AlertAccessStatus, { label: string; color: string; bg:
 };
 
 export default function AdminAlertApprovalsScreen() {
-  const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [requests, setRequests]   = useState<AlertAccessWithBusiness[]>([]);
   const [loading,  setLoading]    = useState(true);
@@ -66,27 +70,21 @@ export default function AdminAlertApprovalsScreen() {
   const rest     = requests.filter(r => r.status !== 'requested');
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <FontAwesome5 name="chevron-left" size={14} color="#fff" />
-        </TouchableOpacity>
-        <View>
-          <Text style={styles.headerTitle}>Alert Requests</Text>
-          {pending.length > 0 && (
-            <Text style={styles.headerSub}>{pending.length} awaiting review</Text>
-          )}
-        </View>
-        <View style={{ width: 36 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Alert Requests"
+          subtitle={pending.length > 0 ? `${pending.length} awaiting review` : undefined}
+          accent={colors.accent}
+        />
+      }
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View>
+        <LoadingState accent={colors.accent} />
       ) : (
         <ScrollView
           style={{ flex: 1, backgroundColor: colors.screenBackground }}
-          contentContainerStyle={{ padding: spacing.md, gap: spacing.md, paddingBottom: 40 }}
+          contentContainerStyle={[{ padding: spacing.md, gap: spacing.md, paddingBottom: 40 }, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
         >
           {/* Pending section */}
@@ -124,14 +122,16 @@ export default function AdminAlertApprovalsScreen() {
           )}
 
           {requests.length === 0 && (
-            <View style={styles.empty}>
-              <FontAwesome5 name="bell-slash" size={32} color={colors.textMuted} />
-              <Text style={styles.emptyText}>No requests yet</Text>
-            </View>
+            <EmptyState
+              icon="bell-slash"
+              title="No requests yet"
+              accent={colors.accent}
+              variant="card"
+            />
           )}
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -225,19 +225,6 @@ function RequestCard({
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: colors.screenBackground },
-  gateText: { fontSize: fontSize.md, color: colors.textMuted, fontWeight: '700' },
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 14,
-    backgroundColor: colors.navy,
-  },
-  backBtn:     { width: 36, alignItems: 'flex-start' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '900', textAlign: 'center' },
-  headerSub:   { color: 'rgba(255,255,255,0.6)', fontSize: fontSize.xs, textAlign: 'center', marginTop: 1 },
-
   sectionLabel: {
     fontSize: 10, fontWeight: '900', letterSpacing: 1.2,
     color: colors.textMuted, marginBottom: 8, marginLeft: 2,
@@ -286,7 +273,4 @@ const styles = StyleSheet.create({
 
   reviewTrigger: { alignItems: 'flex-end' },
   reviewTriggerText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.accent },
-
-  empty:      { alignItems: 'center', gap: 12, paddingTop: 60 },
-  emptyText:  { fontSize: fontSize.md, color: colors.textMuted, fontWeight: '700' },
 });

@@ -8,14 +8,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, RefreshControl,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { fetchHomeNotices, type HomeNotice } from '@/lib/concierge-api';
 import { formatPence } from '@/lib/local-api';
 
@@ -28,7 +31,7 @@ function tint(hex?: string | null): string {
 
 export default function NoticesScreen() {
   const router = useRouter();
-  const { isTablet, screenWidth } = useAppLayout();
+  const { screenWidth } = useAppLayout();
   const [notices, setNotices] = useState<HomeNotice[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,30 +44,24 @@ export default function NoticesScreen() {
   useEffect(() => { load(); }, [load]);
   const onRefresh = useCallback(async () => { setRefreshing(true); await load(); setRefreshing(false); }, [load]);
 
-  const maxW = isTablet ? Math.min(760, screenWidth - spacing.lg * 2) : undefined;
-
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Local Notices</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Local Notices"
+          accent={S.color}
+          onBack={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+        />
+      }
+    >
       <ScrollView
-        contentContainerStyle={[styles.content, maxW ? { width: maxW, alignSelf: 'center' } : null]}
+        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
 
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+          <LoadingState accent={S.color} />
         ) : notices.length === 0 ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="bullhorn" size={26} color={colors.textLight} />
-            <Text style={styles.emptyBody}>No notices right now.</Text>
-          </View>
+          <EmptyState icon="bullhorn" title="No notices right now." accent={S.color} variant="card" />
         ) : notices.map(n => {
           const accent = tint(n.brand_color);
           const c = n.campaign && n.campaign.status === 'active' ? n.campaign : null;
@@ -103,21 +100,12 @@ export default function NoticesScreen() {
         })}
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md, gap: spacing.sm },
-  center: { paddingVertical: spacing.xxl, alignItems: 'center' },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: 10 },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted },
 
   card: { backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   cardTop: { flexDirection: 'row', gap: 12, alignItems: 'center' },

@@ -9,11 +9,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import {
   fetchClaims, approveClaim, rejectClaim, grantDiscount,
   type BusinessClaim, type ClaimStatus,
@@ -33,7 +36,7 @@ const DISCOUNT_PRESETS: { tier: 'pro' | 'premium'; percent: number; label: strin
 ];
 
 export default function BusinessClaimsScreen() {
-  const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const [filter, setFilter] = useState<ClaimStatus | 'all'>('pending');
   const [claims, setClaims] = useState<BusinessClaim[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,42 +124,44 @@ export default function BusinessClaimsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Business claims"
+          subtitle="Verify directory claims and grant discounts."
+          accent={colors.accent}
+        />
+      }
+    >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>‹ Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Business claims</Text>
-          <Text style={styles.subtitle}>Verify directory claims and grant discounts.</Text>
-
-          <View style={styles.tabs}>
-            {FILTERS.map(f => (
-              <TouchableOpacity
-                key={f.key}
-                style={[styles.tab, filter === f.key && styles.tabActive]}
-                onPress={() => setFilter(f.key)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.tabText, filter === f.key && styles.tabTextActive]}>{f.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        <View style={styles.tabs}>
+          {FILTERS.map(f => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.tab, filter === f.key && styles.tabActive]}
+              onPress={() => setFilter(f.key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabText, filter === f.key && styles.tabTextActive]}>{f.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         <View style={styles.body}>
           {loading ? (
-            <Card style={styles.emptyCard}><Text style={styles.emptyBody}>Loading…</Text></Card>
+            <LoadingState accent={colors.accent} />
           ) : claims.length === 0 ? (
-            <Card style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>🎉</Text>
-              <Text style={styles.emptyTitle}>All caught up</Text>
-              <Text style={styles.emptyBody}>No {filter === 'all' ? '' : filter} claims right now.</Text>
-            </Card>
+            <EmptyState
+              icon="check-circle"
+              title="All caught up"
+              body={`No ${filter === 'all' ? '' : filter} claims right now.`}
+              accent={colors.accent}
+              variant="card"
+            />
           ) : (
             claims.map(c => (
               <Card key={c.id} style={styles.claimCard}>
@@ -201,7 +206,7 @@ export default function BusinessClaimsScreen() {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -223,29 +228,18 @@ function badgeStyle(status: ClaimStatus) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
   content: { paddingBottom: spacing.xxl },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.lg },
-  backLink: { paddingVertical: 6 },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '600' },
-  title: { color: '#fff', fontSize: fontSize.xxl, fontWeight: '800', marginTop: 4 },
-  subtitle: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, marginTop: 4 },
 
-  tabs: { flexDirection: 'row', gap: 8, marginTop: spacing.md },
+  tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
   tab: {
     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.offWhite, borderWidth: 1, borderColor: colors.border,
   },
-  tabActive: { backgroundColor: '#fff' },
-  tabText: { color: 'rgba(255,255,255,0.85)', fontSize: fontSize.sm, fontWeight: '700' },
-  tabTextActive: { color: colors.navy },
+  tabActive: { backgroundColor: colors.navy },
+  tabText: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700' },
+  tabTextActive: { color: colors.white },
 
   body: { paddingHorizontal: spacing.lg, gap: spacing.md },
-
-  emptyCard: { alignItems: 'center', paddingVertical: spacing.xl, gap: 8 },
-  emptyIcon: { fontSize: 36 },
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
 
   claimCard: { padding: spacing.md, gap: 4 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
