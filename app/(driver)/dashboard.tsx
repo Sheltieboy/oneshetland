@@ -10,7 +10,6 @@ import {
   Animated,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -21,10 +20,12 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius, shadow, fontWeight } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { haptic } from '@/lib/haptics';
 import { getCategoryName } from '@/constants/categories';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { useAppLayout } from '@/hooks/useAppLayout';
 
 interface Run {
   id: string;
@@ -72,6 +73,7 @@ function getGreeting() {
 export default function DriverDashboard() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [loadingDriver, setLoadingDriver] = useState(true);
@@ -300,10 +302,10 @@ export default function DriverDashboard() {
   const canAccept = isApproved && isBankConnected;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <ScreenScaffold>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
@@ -766,12 +768,11 @@ export default function DriverDashboard() {
           <Button label="Sign out" onPress={signOut} variant="ghost" size="sm" />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: spacing.xxl },
 

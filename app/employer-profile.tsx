@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, ScrollView,
+  TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { useAppLayout } from '@/hooks/useAppLayout';
 
 const S = SECTIONS.shifts;
 
@@ -24,6 +28,7 @@ const EMPTY: EmployerForm = { business_name: '', description: '' };
 export default function EmployerProfileScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [form, setForm]       = useState<EmployerForm>(EMPTY);
   const [original, setOriginal] = useState<EmployerForm>(EMPTY);
@@ -83,32 +88,20 @@ export default function EmployerProfileScreen() {
 
   if (fetching) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={S.color} />
-        </View>
-      </SafeAreaView>
+      <ScreenScaffold header={<ScreenHeader title="Business profile" accent={S.color} />}>
+        <LoadingState accent={S.color} />
+      </ScreenScaffold>
     );
   }
 
   const isDirty = JSON.stringify(form) !== JSON.stringify(original);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Business profile</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <ScreenScaffold header={<ScreenHeader title="Business profile" accent={S.color} />}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           showsVerticalScrollIndicator={false}
         >
 
@@ -166,47 +159,26 @@ export default function EmployerProfileScreen() {
           </View>
 
           {/* Save */}
-          <TouchableOpacity
-            style={[
-              styles.saveBtn,
-              { backgroundColor: S.color },
-              (!isDirty || saving) && { opacity: 0.6 },
-            ]}
+          <Button
+            label="Save business profile"
             onPress={handleSave}
-            disabled={!isDirty || saving}
-            activeOpacity={0.85}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <FontAwesome5 name="check" size={14} color="#fff" />
-                  <Text style={styles.saveBtnText}>Save business profile</Text>
-                </>
-            }
-          </TouchableOpacity>
+            icon="check"
+            color={S.color}
+            fullWidth
+            loading={saving}
+            disabled={!isDirty}
+          />
 
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.md, paddingBottom: 60 },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 
   introCard: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
@@ -236,10 +208,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   verifiedText: { flex: 1, fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
-
-  saveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, height: 52, borderRadius: radius.lg,
-  },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 });

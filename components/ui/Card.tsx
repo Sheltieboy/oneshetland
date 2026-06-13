@@ -1,10 +1,10 @@
 import React, { PropsWithChildren, useRef } from 'react';
-import { Animated, Pressable, View, StyleSheet, ViewStyle } from 'react-native';
+import { Animated, Pressable, View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, spacing, shadow } from '@/constants/theme';
 
 interface CardProps extends PropsWithChildren {
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   padded?: boolean;
   haptic?: boolean;

@@ -13,17 +13,18 @@ import {
   Image,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius, shadow, fontWeight } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { haptic } from '@/lib/haptics';
 
@@ -71,6 +72,7 @@ const STATUS_LABEL: Record<string, string> = {
 export default function CustomerDashboard() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [requests, setRequests] = useState<DeliveryRequest[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -183,10 +185,10 @@ export default function CustomerDashboard() {
   }, [fetchData]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <ScreenScaffold>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -519,7 +521,7 @@ export default function CustomerDashboard() {
           />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -530,7 +532,6 @@ const QUICK_LINKS = [
 ];
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: spacing.xxl },
 

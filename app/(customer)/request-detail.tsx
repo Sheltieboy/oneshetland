@@ -4,17 +4,22 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Button } from '@/components/ui/Button';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { SECTIONS } from '@/constants/sections';
+
+const S = SECTIONS.fetch;
 
 interface RequestDetail {
   id: string;
@@ -69,6 +74,7 @@ function penceToGBP(pence: number): string {
 
 export default function RequestDetailScreen() {
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const params = useLocalSearchParams<{
     id: string;
     pickup_name?: string;
@@ -192,21 +198,27 @@ export default function RequestDetailScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color={colors.accent} size="large" />
-        </View>
-      </SafeAreaView>
+      <ScreenScaffold
+        header={<ScreenHeader title="Delivery request" accent={S.color} onBack={() => router.back()} />}
+      >
+        <LoadingState accent={S.color} />
+      </ScreenScaffold>
     );
   }
 
   if (!request) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>Request not found.</Text>
-        </View>
-      </SafeAreaView>
+      <ScreenScaffold
+        header={<ScreenHeader title="Delivery request" accent={S.color} onBack={() => router.back()} />}
+      >
+        <EmptyState
+          icon="exclamation-circle"
+          title="Request not found"
+          body="We couldn't find this delivery request. It may have been removed."
+          accent={S.color}
+          variant="card"
+        />
+      </ScreenScaffold>
     );
   }
 
@@ -280,19 +292,20 @@ export default function RequestDetailScreen() {
     : (baseFee ?? 0) + waitFee;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-            <Text style={styles.backLinkText}>‹ Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Delivery request</Text>
-          <View style={styles.statusRow}>
-            <StatusBadge status={`request_${request.status}`} />
-          </View>
-        </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Delivery request"
+          accent={S.color}
+          onBack={() => router.back()}
+          rightElement={<StatusBadge status={`request_${request.status}`} />}
+        />
+      }
+    >
+      <ScrollView
+        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.body}>
 
           {/* ── Waiting fee alert ── */}
@@ -498,7 +511,7 @@ export default function RequestDetailScreen() {
           <Text style={styles.refreshNote}>🔴 Live updates</Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -614,21 +627,7 @@ const detailStyles = StyleSheet.create({
 
 // ── Main styles ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
   content: { backgroundColor: colors.screenBackground, paddingBottom: spacing.xxl, flexGrow: 1 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.navy },
-  errorText: { color: colors.white, fontSize: fontSize.md },
-
-  header: {
-    backgroundColor: colors.navy,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  backLink: { marginBottom: spacing.md },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm, fontWeight: '500' },
-  title: { color: colors.white, fontSize: fontSize.xxl, fontWeight: '800', marginBottom: spacing.sm },
-  statusRow: { alignSelf: 'flex-start' },
 
   body: { padding: spacing.lg, gap: spacing.md },
 

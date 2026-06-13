@@ -7,10 +7,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, TextInput,
+  Alert, Keyboard, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -18,6 +17,10 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { fetchWalletBalance, payWithWallet, formatPence } from '@/lib/local-api';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
+import { LoadingState } from '@/components/ui/LoadingState';
 
 const S = SECTIONS.local;
 
@@ -85,16 +88,9 @@ export default function PayScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Pay at till</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Pay at till" accent={S.color} onBack={() => router.back()} />}
+    >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -126,15 +122,16 @@ export default function PayScreen() {
               <Text style={styles.errorText}>Not enough credit — top up first</Text>
             )}
 
-            <TouchableOpacity
-              style={[styles.continueBtn, { backgroundColor: S.color }, !amountValid && { opacity: 0.4 }]}
-              onPress={proceedToCode}
-              disabled={!amountValid}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.continueBtnText}>Continue</Text>
-              <FontAwesome5 name="arrow-right" size={13} color="#fff" />
-            </TouchableOpacity>
+            <View style={styles.ctaWrap}>
+              <Button
+                label="Continue"
+                onPress={proceedToCode}
+                icon="arrow-right"
+                color={S.color}
+                disabled={!amountValid}
+                fullWidth
+              />
+            </View>
           </View>
         )}
 
@@ -164,19 +161,22 @@ export default function PayScreen() {
               ))}
             </View>
 
-            <TouchableOpacity
-              style={styles.changeAmountBtn}
-              onPress={() => setStep('amount')}
-            >
-              <Text style={styles.changeAmountText}>← Change amount</Text>
-            </TouchableOpacity>
+            <View style={styles.changeAmountBtn}>
+              <Button
+                label="← Change amount"
+                onPress={() => setStep('amount')}
+                variant="ghost"
+                size="sm"
+                haptic={false}
+              />
+            </View>
           </View>
         )}
 
         {/* ── Step: paying ── */}
         {step === 'paying' && (
           <View style={[styles.content, { justifyContent: 'center', alignItems: 'center' }]}>
-            <ActivityIndicator color={S.color} size="large" />
+            <LoadingState accent={S.color} />
             <Text style={[styles.title, { marginTop: 16 }]}>Processing payment…</Text>
           </View>
         )}
@@ -198,34 +198,23 @@ export default function PayScreen() {
               </View>
             )}
             <Text style={styles.subtitle}>New balance: {formatPence(result.balance_pence)}</Text>
-            <TouchableOpacity
-              style={[styles.continueBtn, { backgroundColor: S.color, marginTop: 32 }]}
-              onPress={() => router.back()}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.continueBtnText}>Done</Text>
-            </TouchableOpacity>
+            <View style={styles.doneCtaWrap}>
+              <Button
+                label="Done"
+                onPress={() => router.back()}
+                color={S.color}
+                fullWidth
+              />
+            </View>
           </View>
         )}
 
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-
   content:  { flex: 1, paddingTop: 32, paddingHorizontal: spacing.xl, gap: 14 },
   iconWrap: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
   title:    { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
@@ -238,11 +227,7 @@ const styles = StyleSheet.create({
   balanceHint: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
   errorText:   { fontSize: fontSize.sm, color: colors.error, textAlign: 'center', fontWeight: '600' },
 
-  continueBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    paddingVertical: 16, borderRadius: radius.lg, marginTop: 'auto', marginBottom: 24,
-  },
-  continueBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  ctaWrap: { marginTop: 'auto', marginBottom: 24 },
 
   digitsRow: { flexDirection: 'row', gap: 8, marginTop: 16, justifyContent: 'center' },
   digit: {
@@ -253,9 +238,9 @@ const styles = StyleSheet.create({
   },
 
   changeAmountBtn: { alignItems: 'center', marginTop: 16 },
-  changeAmountText: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '600' },
 
   successAmount: { fontSize: 44, fontWeight: '900', color: colors.success, marginTop: 4 },
   cashbackBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: S.light, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.full, marginTop: 4 },
   cashbackText: { fontSize: fontSize.sm, fontWeight: '800' },
+  doneCtaWrap: { marginTop: 32, alignSelf: 'stretch' },
 });

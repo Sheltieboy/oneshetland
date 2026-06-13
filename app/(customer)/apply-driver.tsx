@@ -7,7 +7,6 @@ import {
   Switch,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { logCompliance } from '@/lib/compliance';
@@ -16,7 +15,13 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+
+const S = SECTIONS.fetch;
 
 const VEHICLE_TYPES = [
   'Car',
@@ -30,6 +35,7 @@ const VEHICLE_TYPES = [
 export default function ApplyDriverScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [vehicleType, setVehicleType] = useState('');
   const [vehicleReg, setVehicleReg] = useState('');
@@ -108,22 +114,23 @@ export default function ApplyDriverScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Apply to drive"
+          subtitle="Become a Fetch driver"
+          accent={S.color}
+          onBack={() => router.back()}
+        />
+      }
+    >
       <KeyboardDoneBar />
-      <FormScrollView contentContainerStyle={styles.content}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-              <Text style={styles.backLinkText}>‹ Back</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Apply to drive</Text>
-            <Text style={styles.subtitle}>
+      <FormScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}>
+          <View style={styles.body}>
+            <Text style={styles.intro}>
               Tell us about yourself and your vehicle. Applications are reviewed by our team
               — you'll be able to create runs once approved.
             </Text>
-          </View>
-
-          <View style={styles.body}>
 
             {/* What drivers do */}
             <Card style={styles.infoCard}>
@@ -248,33 +255,17 @@ export default function ApplyDriverScreen() {
             </Text>
           </View>
       </FormScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
   content: {
-    backgroundColor: colors.screenBackground,
     paddingBottom: spacing.xxl,
     flexGrow: 1,
   },
-  header: {
-    backgroundColor: colors.navy,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  backLink: { marginBottom: spacing.md },
-  backLinkText: { color: 'rgba(255,255,255,0.7)', fontSize: fontSize.sm },
-  title: {
-    color: colors.white,
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    color: 'rgba(255,255,255,0.7)',
+  intro: {
+    color: colors.textSecondary,
     fontSize: fontSize.sm,
     lineHeight: 20,
   },

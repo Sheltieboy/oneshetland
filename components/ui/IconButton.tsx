@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, radius } from '@/constants/theme';
@@ -14,7 +14,7 @@ interface IconButtonProps {
   size?: number;       // icon size; the touch target stays ≥ 40
   solid?: boolean;
   accessibilityLabel?: string;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   haptic?: boolean;
 }
 

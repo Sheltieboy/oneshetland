@@ -3,14 +3,17 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
 import {
   validateHandle, isHandleAvailable, HANDLE_MAX,
 } from '@/lib/games-handle';
@@ -38,6 +41,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 export default function EditProfileScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [fullName,     setFullName]     = useState(profile?.full_name     ?? '');
   const [bio,          setBio]          = useState(profile?.bio           ?? '');
@@ -148,22 +152,13 @@ export default function EditProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color="#fff" />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit profile</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Edit profile" accent={colors.accent} onBack={() => router.back()} />}
+    >
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -303,41 +298,25 @@ export default function EditProfileScreen() {
             <Text style={styles.hint}>Not shown publicly. Used only for account recovery.</Text>
           </Field>
 
-          <TouchableOpacity
-            style={[styles.saveBtn, (!isDirty || saving || !handleSaveable) && { opacity: 0.6 }]}
+          <Button
+            label="Save changes"
+            icon="check"
             onPress={handleSave}
-            disabled={!isDirty || saving || !handleSaveable}
-            activeOpacity={0.85}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <>
-                  <FontAwesome5 name="check" size={14} color="#fff" />
-                  <Text style={styles.saveBtnText}>Save changes</Text>
-                </>
-            }
-          </TouchableOpacity>
+            disabled={!isDirty || !handleSaveable}
+            loading={saving}
+            fullWidth
+            style={styles.saveBtn}
+          />
 
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2, borderBottomColor: colors.accent,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700', color: '#fff' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 
   content: { padding: spacing.md, gap: 0, paddingBottom: 60 },
 
@@ -366,10 +345,5 @@ const styles = StyleSheet.create({
   },
   areaOptionText: { fontSize: fontSize.sm, color: colors.textPrimary },
 
-  saveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, height: 52, borderRadius: radius.lg,
-    backgroundColor: colors.navy, marginTop: 8,
-  },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: 8 },
 });

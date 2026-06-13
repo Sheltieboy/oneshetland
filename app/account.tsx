@@ -7,7 +7,6 @@ import {
   Image,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -15,7 +14,9 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { haptic } from '@/lib/haptics';
 import { useAlert } from '@/components/BrandedAlert';
 
@@ -71,6 +72,7 @@ export default function AccountScreen() {
   const router = useRouter();
   const { session, profile, signOut, refreshProfile } = useAuth();
   const { alert } = useAlert();
+  const { screenWidth } = useAppLayout();
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [phone, setPhone] = useState(profile?.phone ?? '');
@@ -209,9 +211,9 @@ export default function AccountScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <ScreenScaffold>
       <KeyboardDoneBar />
-      <FormScrollView contentContainerStyle={styles.content}>
+      <FormScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}>
 
         {/* ── Header ───────────────────────────────────────────────────── */}
         <View style={styles.header}>
@@ -537,12 +539,11 @@ export default function AccountScreen() {
 
         </View>
       </FormScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
   content: {
     backgroundColor: colors.screenBackground,
     paddingBottom: spacing.xxl,
