@@ -14,6 +14,8 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import {
   fetchActiveBusinesses, CATEGORY_LABELS, CATEGORY_ICONS,
   type LocalBusiness, type LocalCategory,
@@ -58,20 +60,22 @@ export default function BrowseBusinessesScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
+      <View>
+        <TabScreenHeader
+          section={S}
+          title="Directory"
+          eyebrow="Shop local"
+          right={
+            <Text style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' }}>
+              {visibleBusinesses.length} business{visibleBusinesses.length !== 1 ? 'es' : ''}
+            </Text>
+          }
+        />
         {router.canGoBack() ? (
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 70 }} />
-        )}
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Directory</Text>
-          <Text style={styles.headerSub}>{visibleBusinesses.length} business{visibleBusinesses.length !== 1 ? 'es' : ''}</Text>
-        </View>
-        <View style={{ width: 70 }} />
+          <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+            <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
+          </View>
+        ) : null}
       </View>
 
       {/* Filter strip */}

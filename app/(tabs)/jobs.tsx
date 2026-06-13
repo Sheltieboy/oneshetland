@@ -22,6 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { NavRail } from '@/components/NavRail';
 import { JobCard } from '@/components/JobCard';
 import { ShiftCard } from '@/components/ShiftCard';
+import { TabScreenHeader } from '@/components/TabScreenHeader';
 import {
   fetchJobs, fetchSavedJobIds, toggleSavedJob,
   JOB_CATEGORIES, type Job,
@@ -122,6 +123,8 @@ export default function WorkHubScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <NavRail />
       <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
+        {/* Cinematic banner — tints to the active tier; "Work" over it */}
+        <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Find work" />
         {/* Work switch */}
         <View style={styles.header}>
           <View style={styles.switchRow}>

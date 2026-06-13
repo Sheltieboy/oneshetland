@@ -19,6 +19,8 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
+import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { GameArt } from '@/components/GameArt';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
@@ -175,23 +177,12 @@ export default function GamesCentre() {
       <NavRail />
       <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
 
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => { Haptics.selectionAsync(); router.back(); }}
-          hitSlop={12}
-        >
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <View style={[styles.headerIconPill, { backgroundColor: S.color + '28' }]}>
-            <FontAwesome5 name={S.icon as any} size={13} color={S.color} solid />
-          </View>
-          <Text style={styles.headerTitle}>Games</Text>
+      {/* Cinematic header — banner with a floating back (Games is reached via More) */}
+      <View>
+        <TabScreenHeader section={S} eyebrow="Play & compete" />
+        <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+          <HeroBackPill variant="overlay" label="Back" onPress={() => { Haptics.selectionAsync(); router.back(); }} />
         </View>
-        <View style={{ width: 70 }} />
       </View>
 
       <ScrollView
