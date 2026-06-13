@@ -10,6 +10,7 @@ import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { registerPushToken } from '@/lib/notifications';
+import { SCREEN_PUSH, MODAL_PRESENT, SECTION_ROOT } from '@/constants/nav';
 import { SplashAnimation } from '@/components/SplashAnimation';
 import { BrandedAlertProvider } from '@/components/BrandedAlert';
 import { INTRO_SEEN_KEY } from './intro';
@@ -158,7 +159,7 @@ function RootNavigator() {
   return (
     <>
       {!loading && (
-        <Stack screenOptions={{ headerShown: false }}>
+        <Stack screenOptions={{ headerShown: false, ...SCREEN_PUSH }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="intro" />
           <Stack.Screen name="(auth)" />
@@ -167,14 +168,7 @@ function RootNavigator() {
           <Stack.Screen name="(admin)" />
           <Stack.Screen name="account" />
           <Stack.Screen name="home" />
-          <Stack.Screen
-            name="search"
-            options={{
-              presentation: 'modal',
-              animation: 'slide_from_bottom',
-              gestureEnabled: true,
-            }}
-          />
+          <Stack.Screen name="search" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="spik-detail" />
           <Stack.Screen name="spik-suggest" />
@@ -190,10 +184,10 @@ function RootNavigator() {
           <Stack.Screen name="local-businesses-browse" />
           <Stack.Screen name="local-business-detail" />
           <Stack.Screen name="local-business-register" />
-          <Stack.Screen name="business-claim" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-          <Stack.Screen name="hubs/index" options={{ animation: 'none', gestureEnabled: false }} />
+          <Stack.Screen name="business-claim" options={{ ...MODAL_PRESENT }} />
+          <Stack.Screen name="hubs/index" options={{ ...SECTION_ROOT }} />
           <Stack.Screen name="hubs/[id]" />
-          <Stack.Screen name="hub-register" />
+          <Stack.Screen name="hub-register" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="hub-admin" />
           <Stack.Screen name="hub-members" />
           <Stack.Screen name="hub-notices-manage" />
@@ -201,27 +195,28 @@ function RootNavigator() {
           <Stack.Screen name="hub-my-memberships" />
           <Stack.Screen name="hub-directory" />
           <Stack.Screen name="hub-documents" />
-          <Stack.Screen name="hub-broadcast" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="hub-broadcast" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="hub-campaigns" />
           <Stack.Screen name="hub-campaign" />
           <Stack.Screen name="hub-events" />
           <Stack.Screen name="job/[id]" />
-          <Stack.Screen name="job-post" />
+          <Stack.Screen name="job-post" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="job-applicants" />
           <Stack.Screen name="business-jobs" />
           <Stack.Screen name="my-job-applications" />
           <Stack.Screen name="work-profile" />
-          <Stack.Screen name="hub-donate" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="hub-donate" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="give/[id]" />
           <Stack.Screen name="notices" />
-          <Stack.Screen name="hub-notice-compose" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="memory-new" options={{ ...MODAL_PRESENT }} />
+          <Stack.Screen name="hub-notice-compose" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="local-business-dashboard" />
           <Stack.Screen name="local-my-cards" />
           <Stack.Screen name="local-my-passes" />
           <Stack.Screen name="local-my-gifts" />
           <Stack.Screen name="local-stamp-scanner" />
           <Stack.Screen name="local-offers" />
-          <Stack.Screen name="local-offer-new" />
+          <Stack.Screen name="local-offer-new" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="local-wallet" />
           <Stack.Screen name="local-pay" />
           <Stack.Screen name="nfc/[token]" />
@@ -229,7 +224,7 @@ function RootNavigator() {
           <Stack.Screen name="g/[code]" />
           <Stack.Screen name="b/[slug]" />
           <Stack.Screen name="events/[id]" />
-          <Stack.Screen name="event-create" />
+          <Stack.Screen name="event-create" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="event-manage" />
           <Stack.Screen name="event-scanner" />
           <Stack.Screen
@@ -237,7 +232,7 @@ function RootNavigator() {
             options={{
               presentation: 'formSheet',
               sheetGrabberVisible: true,
-              sheetCornerRadius: 24,
+              sheetCornerRadius: 28,
               sheetAllowedDetents: [0.7, 1],
               animation: 'slide_from_bottom',
             }}
@@ -245,7 +240,7 @@ function RootNavigator() {
           <Stack.Screen name="my-event-tickets" />
           <Stack.Screen name="my-event-ticket" />
           <Stack.Screen name="driver/connect-return" />
-          <Stack.Screen name="games/index" options={{ animation: 'none', gestureEnabled: false }} />
+          <Stack.Screen name="games/index" options={{ ...SECTION_ROOT }} />
           <Stack.Screen name="games/spik-sprint" />
           <Stack.Screen name="games/spik-snap" />
           <Stack.Screen name="games/guess-da-wird" />

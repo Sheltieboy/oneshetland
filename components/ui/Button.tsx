@@ -8,6 +8,7 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, fontSize, fontWeight, shadow } from '@/constants/theme';
 
@@ -19,6 +20,10 @@ interface ButtonProps {
   onPress: () => void;
   variant?: Variant;
   size?: Size;
+  /** Optional FontAwesome5 icon name shown before the label. */
+  icon?: string;
+  /** Override the fill (primary/secondary) — e.g. tint to a SECTION colour. */
+  color?: string;
   loading?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;
@@ -26,11 +31,15 @@ interface ButtonProps {
   haptic?: boolean;
 }
 
+const ICON_SIZE: Record<Size, number> = { sm: 12, md: 14, lg: 15 };
+
 export function Button({
   label,
   onPress,
   variant = 'primary',
   size = 'md',
+  icon,
+  color,
   loading = false,
   disabled = false,
   fullWidth = false,
@@ -39,6 +48,8 @@ export function Button({
 }: ButtonProps) {
   const isDisabled = disabled || loading;
   const scale = useRef(new Animated.Value(1)).current;
+  const onDark = variant === 'primary' || variant === 'secondary' || variant === 'danger';
+  const fg = onDark ? colors.white : colors.navy;
 
   const handlePressIn = () => {
     Animated.spring(scale, {
@@ -82,20 +93,21 @@ export function Button({
           styles.base,
           styles[variant],
           styles[size],
+          color ? { backgroundColor: color } : null,
           fullWidth && styles.fullWidth,
           isDisabled && styles.disabled,
           hasShadow && (variant === 'secondary' ? shadow.accent : shadow.xs),
         ]}
       >
         {loading ? (
-          <ActivityIndicator
-            color={variant === 'outline' || variant === 'ghost' ? colors.navy : colors.white}
-            size="small"
-          />
+          <ActivityIndicator color={fg} size="small" />
         ) : (
-          <Text style={[styles.text, styles[`${variant}Text`] as TextStyle, styles[`${size}Text`] as TextStyle]}>
-            {label}
-          </Text>
+          <>
+            {icon ? <FontAwesome5 name={icon as any} size={ICON_SIZE[size]} color={fg} solid style={styles.icon} /> : null}
+            <Text style={[styles.text, styles[`${variant}Text`] as TextStyle, styles[`${size}Text`] as TextStyle]}>
+              {label}
+            </Text>
+          </>
         )}
       </Pressable>
     </Animated.View>
@@ -104,11 +116,13 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
-    borderRadius: radius.lg,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+    gap: 8,
   },
+  icon: {},
   primary: { backgroundColor: colors.navy },
   secondary: { backgroundColor: colors.accent },
   outline: {
