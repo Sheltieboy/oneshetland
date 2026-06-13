@@ -3,12 +3,16 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchMyApplications, checkIn, checkOut,
@@ -186,6 +190,7 @@ function CheckInCard({
 export default function MyShiftApplicationsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [applications, setApplications] = useState<MyApplication[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -355,21 +360,17 @@ export default function MyShiftApplicationsScreen() {
   ];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My applications</Text>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="My applications"
+          accent={S.color}
+          onBack={() => router.back()}
+        />
+      }
+    >
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={S.color} />
-        </View>
+        <LoadingState accent={S.color} />
       ) : (
         <FlatList
           data={filtered}
@@ -396,43 +397,26 @@ export default function MyShiftApplicationsScreen() {
               })}
             </View>
           }
-          contentContainerStyle={[styles.list, filtered.length === 0 && { flex: 1 }]}
+          contentContainerStyle={[styles.list, filtered.length === 0 && { flex: 1 }, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
-                <FontAwesome5 name="paper-plane" size={28} color={S.color} />
-              </View>
-              <Text style={styles.emptyTitle}>
-                {filter === 'all' ? 'No applications yet' : `No ${filter} applications`}
-              </Text>
-              <Text style={styles.emptyText}>
-                {filter === 'all'
-                  ? "When you submit interest in a shift, it'll appear here."
-                  : 'Try a different filter above.'}
-              </Text>
-            </View>
+            <EmptyState
+              icon="paper-plane"
+              title={filter === 'all' ? 'No applications yet' : `No ${filter} applications`}
+              body={filter === 'all'
+                ? "When you submit interest in a shift, it'll appear here."
+                : 'Try a different filter above.'}
+              accent={S.color}
+              variant="card"
+            />
           }
         />
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-
   filterBar: {
     flexDirection: 'row', flexWrap: 'wrap',
     gap: 8, padding: spacing.md, paddingBottom: 4,
@@ -508,10 +492,4 @@ const styles = StyleSheet.create({
   checkInStartBtn: { backgroundColor: S.color },
   checkOutBtn:     { backgroundColor: colors.jobs },
   checkInBtnText:  { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
-
-  // ── Empty state ────────────────────────────────────────────────────────────
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: 12 },
-  emptyIcon:  { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
-  emptyText:  { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
 });

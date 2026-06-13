@@ -7,13 +7,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
+  Alert, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { IconButton } from '@/components/ui/IconButton';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchHub, fetchHubMembers, approveMember, rejectMember, setMemberRole, notifyHub,
@@ -26,6 +31,7 @@ const S = SECTIONS.community;
 export default function HubMembersScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const { profile } = useAuth();
   const [hub, setHub] = useState<Hub | null>(null);
   const [members, setMembers] = useState<HubMember[]>([]);
@@ -67,23 +73,27 @@ export default function HubMembersScreen() {
   };
 
   if (loading) {
-    return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.center}><ActivityIndicator color={S.color} /></View></SafeAreaView>;
+    return (
+      <ScreenScaffold header={<ScreenHeader title="Members" accent={S.color} onBack={() => router.back()} />}>
+        <LoadingState accent={S.color} />
+      </ScreenScaffold>
+    );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{hub?.name ?? 'Members'}</Text>
-        <TouchableOpacity onPress={() => id && router.push(`/hub-register?id=${id}`)} hitSlop={12} style={{ width: 70, alignItems: 'flex-end' }}>
-          <FontAwesome5 name="cog" size={16} color={S.color} solid />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title={hub?.name ?? 'Members'}
+          accent={S.color}
+          onBack={() => router.back()}
+          rightElement={
+            id ? <IconButton icon="cog" color={S.color} onPress={() => router.push(`/hub-register?id=${id}`)} /> : undefined
+          }
+        />
+      }
+    >
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
 
         {pending.length > 0 && (
@@ -109,7 +119,7 @@ export default function HubMembersScreen() {
 
         <Text style={styles.sectionLabel}>Members ({active.length})</Text>
         {active.length === 0 ? (
-          <Text style={styles.muted}>No members yet.</Text>
+          <EmptyState icon="users" title="No members yet" body="When people join this hub they'll appear here." accent={S.color} variant="card" />
         ) : active.map(m => (
           <View key={m.id} style={styles.row}>
             <Avatar name={m.profile?.full_name} />
@@ -150,7 +160,7 @@ export default function HubMembersScreen() {
         </Text>
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -160,19 +170,8 @@ function Avatar({ name }: { name?: string | null }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, flex: 1, textAlign: 'center' },
-
   content: { padding: spacing.md },
   sectionLabel: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: spacing.md, marginBottom: spacing.sm },
-  muted: { fontSize: fontSize.sm, color: colors.textMuted },
 
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 8 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: S.color, alignItems: 'center', justifyContent: 'center' },

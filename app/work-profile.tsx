@@ -6,14 +6,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import {
   ensureWorkerProfile, upsertWorkerProfile,
   fetchCvDocuments, saveCvDocument, deleteCvDocument,
@@ -26,6 +32,7 @@ const splitList = (s: string) => s.split(',').map(x => x.trim()).filter(Boolean)
 export default function WorkProfileScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -92,25 +99,26 @@ export default function WorkProfileScreen() {
   };
 
   if (!profile) {
-    return <SafeAreaView style={[styles.safe, styles.center]}><Text style={styles.muted}>Sign in to build your work profile.</Text></SafeAreaView>;
+    return (
+      <ScreenScaffold header={<ScreenHeader title="My work profile" accent={S.color} onBack={() => router.back()} />}>
+        <EmptyState
+          icon="id-badge"
+          title="Sign in required"
+          body="Sign in to build your work profile."
+          accent={S.color}
+          variant="card"
+        />
+      </ScreenScaffold>
+    );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My work profile</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold header={<ScreenHeader title="My work profile" accent={S.color} onBack={() => router.back()} />}>
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
             <Text style={styles.intro}>This is your CV across OneShetland — it's sent with every job application. Fill it out once.</Text>
 
             <Field label="Headline"><TextInput style={styles.input} value={headline} onChangeText={setHeadline} placeholder="e.g. Experienced chef · Lerwick" placeholderTextColor={colors.textLight} /></Field>
@@ -128,9 +136,7 @@ export default function WorkProfileScreen() {
               <Switch value={diaspora} onValueChange={setDiaspora} trackColor={{ true: S.color }} />
             </View>
 
-            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: S.color, opacity: saving ? 0.5 : 1 }]} onPress={save} disabled={saving} activeOpacity={0.9}>
-              {saving ? <ActivityIndicator color="#fff" /> : <><FontAwesome5 name="check" size={14} color="#fff" /><Text style={styles.saveBtnText}>Save profile</Text></>}
-            </TouchableOpacity>
+            <Button label="Save profile" icon="check" color={S.color} fullWidth onPress={save} loading={saving} style={styles.saveBtn} />
 
             {/* Saved cover letters */}
             <View style={styles.sectionHead}>
@@ -141,7 +147,7 @@ export default function WorkProfileScreen() {
             </View>
             <Text style={styles.intro}>Reusable templates. You can also draft a tailored one with AI when you apply.</Text>
             {docs.length === 0 ? (
-              <Text style={styles.muted}>None yet.</Text>
+              <EmptyState icon="file-alt" title="No saved cover letters" body="None yet." accent={S.color} variant="card" />
             ) : docs.map(d => (
               <View key={d.id} style={styles.docRow}>
                 <FontAwesome5 name="file-alt" size={14} color={S.color} solid />
@@ -154,7 +160,7 @@ export default function WorkProfileScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -163,14 +169,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  muted: { color: colors.textMuted, fontSize: fontSize.sm },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md },
   intro: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.md },
   field: { marginBottom: spacing.md },
@@ -180,8 +178,7 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   switchLabel: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   switchHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
-  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: spacing.md, borderRadius: 999, marginTop: spacing.sm },
-  saveBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  saveBtn: { marginTop: spacing.sm },
 
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.xl, marginBottom: 4 },
   sectionTitle: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary },

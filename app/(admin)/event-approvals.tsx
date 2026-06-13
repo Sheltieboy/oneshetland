@@ -10,10 +10,14 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Alert, Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
 import { fetchPendingHubEvents, approveHubEvent, type OsEvent } from '@/lib/events-api';
 
@@ -26,6 +30,7 @@ function fmtWhen(iso: string): string {
 export default function EventApprovalsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [events, setEvents] = useState<OsEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,28 +59,23 @@ export default function EventApprovalsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={colors.accent} />
-          <Text style={[styles.backText, { color: colors.accent }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Event approvals</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Event approvals" accent={colors.accent} onBack={() => router.back()} />}
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
+        <LoadingState accent={colors.accent} />
       ) : (
-        <ScrollView contentContainerStyle={styles.content}
+        <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}>
 
           {events.length === 0 ? (
-            <View style={styles.empty}>
-              <FontAwesome5 name="check-circle" size={28} color="#15803D" solid />
-              <Text style={styles.emptyTitle}>All clear</Text>
-              <Text style={styles.emptyBody}>No hub events waiting for the main calendar.</Text>
-            </View>
+            <EmptyState
+              icon="check-circle"
+              title="All clear"
+              body="No hub events waiting for the main calendar."
+              accent="#15803D"
+              variant="card"
+            />
           ) : (
             events.map(ev => {
               const hub = (ev as any).hub as { name?: string; logo_url?: string | null } | null;
@@ -121,22 +121,11 @@ export default function EventApprovalsScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2,
-    borderBottomColor: colors.accent, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md, gap: spacing.sm },
   card: { backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
@@ -152,8 +141,4 @@ const styles = StyleSheet.create({
   viewBtnText: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textSecondary },
   approveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 11, borderRadius: 999, backgroundColor: '#15803D' },
   approveBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
-
-  empty: { alignItems: 'center', gap: 8, padding: spacing.xl, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginTop: spacing.sm },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
 });

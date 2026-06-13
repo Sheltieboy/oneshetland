@@ -7,13 +7,17 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, RefreshControl, Alert,
+  RefreshControl, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import {
   fetchJob, fetchJobApplications, updateApplicationStatus,
   PIPELINE_STAGES, APPLICATION_STATUS_LABELS,
@@ -32,7 +36,7 @@ const NEXT_ACTIONS: { status: ApplicationStatus; label: string; color: string }[
 
 export default function JobApplicantsScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
-  const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [job, setJob]   = useState<Job | null>(null);
   const [apps, setApps] = useState<JobApplication[]>([]);
@@ -70,18 +74,11 @@ export default function JobApplicantsScreen() {
   const counts = (s: ApplicationStatus | 'all') => s === 'all' ? apps.length : apps.filter(a => a.status === s).length;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{job?.title ?? 'Applicants'}</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title={job?.title ?? 'Applicants'} accent={S.color} />}
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : (
         <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={{ gap: 8, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
@@ -97,14 +94,16 @@ export default function JobApplicantsScreen() {
             })}
           </ScrollView>
 
-          <ScrollView contentContainerStyle={styles.content}
+          <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={S.color} />}>
             {visible.length === 0 ? (
-              <View style={styles.empty}>
-                <FontAwesome5 name="users" size={26} color={S.color} />
-                <Text style={styles.emptyTitle}>{apps.length === 0 ? 'No applicants yet' : 'None in this stage'}</Text>
-                <Text style={styles.emptyBody}>{apps.length === 0 ? 'Share the role — applications appear here instantly.' : ''}</Text>
-              </View>
+              <EmptyState
+                icon="users"
+                title={apps.length === 0 ? 'No applicants yet' : 'None in this stage'}
+                body={apps.length === 0 ? 'Share the role — applications appear here instantly.' : undefined}
+                accent={S.color}
+                variant="card"
+              />
             ) : visible.map(a => {
               const snap = a.profile_snapshot ?? {};
               const skills: string[] = Array.isArray(snap.skills) ? snap.skills : [];
@@ -159,18 +158,11 @@ export default function JobApplicantsScreen() {
           </ScrollView>
         </>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   filterBar: { backgroundColor: '#fff', maxHeight: 52, borderBottomWidth: 1, borderBottomColor: colors.border },
   filterChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, height: 34 },
   filterText: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textSecondary },
@@ -200,8 +192,4 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   actionBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5 },
   actionText: { fontSize: fontSize.xs, fontWeight: '800' },
-
-  empty: { alignItems: 'center', gap: 8, padding: spacing.xl, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
 });

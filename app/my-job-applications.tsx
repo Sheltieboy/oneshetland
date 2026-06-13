@@ -6,13 +6,17 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, RefreshControl, Alert,
+  RefreshControl, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchMyApplications, withdrawApplication,
@@ -36,6 +40,7 @@ function statusTone(s: ApplicationStatus): { color: string; bg: string } {
 
 export default function MyJobApplicationsScreen() {
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const { profile } = useAuth();
   const [apps, setApps] = useState<JobApplication[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,30 +63,24 @@ export default function MyJobApplicationsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My applications</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="My applications" accent={S.color} onBack={() => router.back()} />}
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : (
-        <ScrollView contentContainerStyle={styles.content}
+        <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={S.color} />}>
           {apps.length === 0 ? (
-            <View style={styles.empty}>
-              <FontAwesome5 name="clipboard-list" size={28} color={S.color} />
-              <Text style={styles.emptyTitle}>No applications yet</Text>
-              <Text style={styles.emptyBody}>Find a role in Jobs and apply — they'll show here with live status.</Text>
-              <TouchableOpacity style={[styles.browseBtn, { backgroundColor: S.color }]} onPress={() => router.replace('/(tabs)/jobs')}>
-                <Text style={styles.browseBtnText}>Browse jobs</Text>
-              </TouchableOpacity>
-            </View>
+            <EmptyState
+              icon="clipboard-list"
+              title="No applications yet"
+              body="Find a role in Jobs and apply — they'll show here with live status."
+              accent={S.color}
+              variant="card"
+              actionLabel="Browse jobs"
+              onAction={() => router.replace('/(tabs)/jobs')}
+            />
           ) : apps.map(a => {
             const tone = statusTone(a.status);
             const reached = PIPELINE_STAGES.indexOf(a.status);
@@ -131,18 +130,11 @@ export default function MyJobApplicationsScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md, gap: spacing.sm },
   card: { backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -160,10 +152,4 @@ const styles = StyleSheet.create({
   cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   foot: { fontSize: fontSize.xs, color: colors.textMuted },
   withdraw: { fontSize: fontSize.xs, fontWeight: '800', color: colors.error },
-
-  empty: { alignItems: 'center', gap: 10, padding: spacing.xl, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
-  browseBtn: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: 999, marginTop: 4 },
-  browseBtnText: { color: '#fff', fontWeight: '800' },
 });

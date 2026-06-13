@@ -5,14 +5,18 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { fetchBusinessJobs, formatJobPay, CONTRACT_LABELS, type Job, type JobStatus } from '@/lib/jobs-api';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { useAppLayout } from '@/hooks/useAppLayout';
 
 const S = SECTIONS.jobs;
 
@@ -26,6 +30,7 @@ function statusTone(s: JobStatus, hidden: boolean): { label: string; color: stri
 export default function BusinessJobsScreen() {
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,20 +46,13 @@ export default function BusinessJobsScreen() {
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Jobs</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Jobs" accent={S.color} onBack={() => router.back()} />}
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : (
-        <ScrollView contentContainerStyle={styles.content}
+        <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={S.color} />}>
 
           <TouchableOpacity style={[styles.createCard, { backgroundColor: S.color }]} onPress={() => router.push(`/job-post?businessId=${businessId}`)} activeOpacity={0.9}>
@@ -67,11 +65,13 @@ export default function BusinessJobsScreen() {
           </TouchableOpacity>
 
           {jobs.length === 0 ? (
-            <View style={styles.empty}>
-              <FontAwesome5 name="briefcase" size={28} color={S.color} />
-              <Text style={styles.emptyTitle}>No jobs yet</Text>
-              <Text style={styles.emptyBody}>Post your first role to start taking applications.</Text>
-            </View>
+            <EmptyState
+              icon="briefcase"
+              title="No jobs yet"
+              body="Post your first role to start taking applications."
+              accent={S.color}
+              variant="card"
+            />
           ) : jobs.map(j => {
             const tone = statusTone(j.status, j.is_hidden);
             return (
@@ -99,18 +99,11 @@ export default function BusinessJobsScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md, gap: spacing.sm },
   createCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.xs },
   createIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
@@ -126,8 +119,4 @@ const styles = StyleSheet.create({
   appCount: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   editBtn: { padding: 2 },
-
-  empty: { alignItems: 'center', gap: 8, padding: spacing.xl, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
 });

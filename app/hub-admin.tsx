@@ -8,13 +8,17 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, RefreshControl,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import {
   fetchHub, fetchHubMembers, fetchHubNotices,
   HUB_TYPE_LABELS, HUB_TYPE_ICONS,
@@ -31,6 +35,7 @@ function tint(hex?: string | null): string {
 export default function HubAdminScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [hub, setHub] = useState<Hub | null>(null);
   const [pending, setPending] = useState(0);
@@ -56,26 +61,25 @@ export default function HubAdminScreen() {
   const onRefresh = useCallback(async () => { setRefreshing(true); await load(); setRefreshing(false); }, [load]);
 
   if (loading) {
-    return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.center}><ActivityIndicator color={S.color} /></View></SafeAreaView>;
+    return (
+      <ScreenScaffold header={<ScreenHeader title="Manage" accent={S.color} onBack={() => router.back()} />}>
+        <LoadingState accent={S.color} />
+      </ScreenScaffold>
+    );
   }
   if (!hub) {
-    return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.center}><Text style={styles.muted}>Hub not found.</Text></View></SafeAreaView>;
+    return (
+      <ScreenScaffold header={<ScreenHeader title="Manage" accent={S.color} onBack={() => router.back()} />}>
+        <EmptyState icon="store-slash" title="Hub not found" body="This Hub may have been removed or the link is out of date." accent={S.color} variant="card" />
+      </ScreenScaffold>
+    );
   }
 
   const accent = tint(hub.brand_color);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: accent }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={accent} />
-          <Text style={[styles.backText, { color: accent }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Manage</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold header={<ScreenHeader title="Manage" accent={accent} onBack={() => router.back()} />}>
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}>
 
         {/* Identity */}
@@ -131,7 +135,7 @@ export default function HubAdminScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -163,17 +167,6 @@ function Tile({ icon, title, sub, badge, accent, onPress }: {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  muted: { color: colors.textMuted, fontSize: fontSize.sm },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md, gap: spacing.sm },
   identity: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: spacing.xs },
   logo: { width: 52, height: 52, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },

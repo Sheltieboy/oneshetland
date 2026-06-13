@@ -5,13 +5,17 @@ import {
 } from 'react-native';
 import { useStripe } from '@stripe/stripe-react-native';
 import { supabase } from '@/lib/supabase';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import {
   fetchEmployerShifts, cancelShift, confirmShiftComplete,
   formatShiftDate, formatDuration, formatPay,
@@ -38,6 +42,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
 export default function MyPostedShiftsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { screenWidth } = useAppLayout();
 
   const [shifts, setShifts]         = useState<ShiftWithStats[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -337,70 +342,52 @@ export default function MyPostedShiftsScreen() {
   const pendingTotal  = shifts.reduce((n, s) => n + s.pending_count, 0);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>My Shifts</Text>
-          {shifts.length > 0 && (
-            <Text style={styles.headerSub}>
-              {openCount} open{pendingTotal > 0 ? `  ·  ${pendingTotal} to review` : ''}
-            </Text>
-          )}
-        </View>
-        <View style={{ width: 60 }} />
-      </View>
-
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="My Shifts"
+          subtitle={
+            shifts.length > 0
+              ? `${openCount} open${pendingTotal > 0 ? `  ·  ${pendingTotal} to review` : ''}`
+              : undefined
+          }
+          accent={S.color}
+          backStyle="chevron"
+          onBack={() => router.back()}
+        />
+      }
+    >
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={S.color} />
-        </View>
+        <LoadingState accent={S.color} />
       ) : (
         <FlatList
           data={shifts}
           keyExtractor={item => item.id}
           renderItem={renderItem}
-          contentContainerStyle={[styles.list, shifts.length === 0 && { flex: 1 }]}
+          contentContainerStyle={[
+            styles.list,
+            shifts.length === 0 && { flex: 1 },
+            contentContainer(screenWidth),
+          ]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />
           }
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
-                <FontAwesome5 name="briefcase" size={28} color={S.color} />
-              </View>
-              <Text style={styles.emptyTitle}>No shifts posted yet</Text>
-              <Text style={styles.emptyText}>
-                Use the Shifts tab to post your first shift. It will appear here once submitted.
-              </Text>
-            </View>
+            <EmptyState
+              icon="briefcase"
+              title="No shifts posted yet"
+              body="Use the Shifts tab to post your first shift. It will appear here once submitted."
+              accent={S.color}
+              variant="card"
+            />
           }
         />
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.navy },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
-  backText:     { fontSize: fontSize.sm, fontWeight: '700' },
-  headerCenter: { alignItems: 'center', gap: 2 },
-  headerTitle:  { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-  headerSub:    { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.xs, fontWeight: '600' },
-
   list: { padding: spacing.md, gap: 14, paddingBottom: 60 },
 
   card: {
@@ -454,9 +441,4 @@ const styles = StyleSheet.create({
   completeBtnText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.jobs },
   boostBtn:        { borderWidth: 1.5, borderColor: '#FDE68A', backgroundColor: '#FFFBEB' },
   boostBtnText:    { fontSize: fontSize.sm, fontWeight: '700', color: colors.shifts },
-
-  empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: 12 },
-  emptyIcon:  { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
-  emptyText:  { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
 });

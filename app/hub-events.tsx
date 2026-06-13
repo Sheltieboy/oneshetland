@@ -7,13 +7,17 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { fetchHub, type Hub } from '@/lib/hubs-api';
 import { fetchHubEvents, type OsEvent } from '@/lib/events-api';
 
@@ -42,6 +46,7 @@ function eventBadge(ev: OsEvent): { label: string; color: string; bg: string } {
 export default function HubEventsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
 
   const [hub, setHub]       = useState<Hub | null>(null);
   const [events, setEvents] = useState<OsEvent[]>([]);
@@ -65,20 +70,13 @@ export default function HubEventsScreen() {
   const past     = events.filter(e => new Date(e.starts_at).getTime() <  now - 6 * 3600_000);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Events</Text>
-        <View style={{ width: 70 }} />
-      </View>
-
+    <ScreenScaffold
+      header={<ScreenHeader title="Events" accent={S.color} />}
+    >
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+        <LoadingState accent={S.color} />
       ) : (
-        <ScrollView contentContainerStyle={styles.content}
+        <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
 
           <TouchableOpacity
@@ -95,11 +93,13 @@ export default function HubEventsScreen() {
           </TouchableOpacity>
 
           {events.length === 0 ? (
-            <View style={styles.empty}>
-              <FontAwesome5 name="calendar-alt" size={28} color={S.color} />
-              <Text style={styles.emptyTitle}>No events yet</Text>
-              <Text style={styles.emptyBody}>Create your first event — a social, a fundraiser, a gig.</Text>
-            </View>
+            <EmptyState
+              icon="calendar-alt"
+              title="No events yet"
+              body="Create your first event — a social, a fundraiser, a gig."
+              accent={S.color}
+              variant="card"
+            />
           ) : (
             <>
               {upcoming.length > 0 ? (
@@ -120,7 +120,7 @@ export default function HubEventsScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
@@ -149,16 +149,6 @@ function EventRow({ ev, onPress }: { ev: OsEvent; onPress: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md, gap: spacing.sm },
   createCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -177,8 +167,4 @@ const styles = StyleSheet.create({
   statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   statusPillText: { fontSize: 10, fontWeight: '800' },
   rowStat: { fontSize: fontSize.xs, color: colors.textMuted },
-
-  empty: { alignItems: 'center', gap: 8, padding: spacing.xl, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginTop: spacing.sm },
-  emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 19 },
 });

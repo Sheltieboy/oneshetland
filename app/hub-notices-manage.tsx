@@ -7,20 +7,27 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, Alert, RefreshControl,
+  Alert, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { fetchHubNotices, deleteNotice, type HubNotice } from '@/lib/hubs-api';
+import { useAppLayout } from '@/hooks/useAppLayout';
+import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { IconButton } from '@/components/ui/IconButton';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingState } from '@/components/ui/LoadingState';
 
 const S = SECTIONS.community;
 
 export default function HubNoticesManageScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { screenWidth } = useAppLayout();
   const [notices, setNotices] = useState<HubNotice[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -48,34 +55,39 @@ export default function HubNoticesManageScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notices</Text>
-        <TouchableOpacity onPress={() => id && router.push(`/hub-notice-compose?hub=${id}`)} hitSlop={12} style={{ width: 70, alignItems: 'flex-end' }}>
-          <FontAwesome5 name="plus" size={16} color={S.color} solid />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}
+    <ScreenScaffold
+      header={
+        <ScreenHeader
+          title="Notices"
+          accent={S.color}
+          rightElement={
+            <IconButton icon="plus" color={S.color} onPress={() => id && router.push(`/hub-notice-compose?hub=${id}`)} />
+          }
+        />
+      }
+    >
+      <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
 
-        <TouchableOpacity style={[styles.postBtn, { backgroundColor: S.color }]}
-          onPress={() => id && router.push(`/hub-notice-compose?hub=${id}`)} activeOpacity={0.85}>
-          <FontAwesome5 name="plus" size={13} color="#fff" solid />
-          <Text style={styles.postBtnText}>Post a notice</Text>
-        </TouchableOpacity>
+        <Button
+          label="Post a notice"
+          icon="plus"
+          color={S.color}
+          fullWidth
+          onPress={() => id && router.push(`/hub-notice-compose?hub=${id}`)}
+          style={styles.postBtnSpacing}
+        />
 
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+          <LoadingState accent={S.color} />
         ) : notices.length === 0 ? (
-          <View style={styles.empty}>
-            <FontAwesome5 name="bullhorn" size={26} color={colors.textLight} />
-            <Text style={styles.emptyBody}>No notices yet. Post your first update.</Text>
-          </View>
+          <EmptyState
+            icon="bullhorn"
+            title="No notices yet"
+            body="Post your first update."
+            accent={S.color}
+            variant="card"
+          />
         ) : notices.map(n => (
           <View key={n.id} style={styles.notice}>
             {n.image_url ? <Image source={{ uri: n.image_url }} style={styles.noticeImg} /> : null}
@@ -102,27 +114,13 @@ export default function HubNoticesManageScreen() {
         ))}
         <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
-  center: { paddingVertical: spacing.xl, alignItems: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
-  },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 },
-  backText: { fontSize: fontSize.sm, fontWeight: '700' },
-  headerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-
   content: { padding: spacing.md },
-  postBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.lg, paddingVertical: 14, marginBottom: spacing.md },
-  postBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: 10 },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted },
+  postBtnSpacing: { marginBottom: spacing.md },
 
   notice: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 10 },
   noticeImg: { width: 52, height: 52, borderRadius: 10 },
