@@ -59,12 +59,16 @@ export default function BrowseBusinessesScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: S.color }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-          <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-        </TouchableOpacity>
+        {router.canGoBack() ? (
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
+            <FontAwesome5 name="chevron-left" size={14} color={S.color} />
+            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 70 }} />
+        )}
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Browse</Text>
+          <Text style={styles.headerTitle}>Directory</Text>
           <Text style={styles.headerSub}>{visibleBusinesses.length} business{visibleBusinesses.length !== 1 ? 'es' : ''}</Text>
         </View>
         <View style={{ width: 70 }} />

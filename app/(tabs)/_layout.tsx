@@ -56,11 +56,11 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="shifts"
-        options={tabOptions(SECTIONS.shifts.icon, SECTIONS.shifts.label, SECTIONS.shifts.color)}
+        options={tabOptions(SECTIONS.shifts.icon, 'Jobs', SECTIONS.shifts.color)}
       />
       <Tabs.Screen
         name="services"
-        options={{ href: null }}
+        options={tabOptions(SECTIONS.services.icon, 'Directory', SECTIONS.services.color)}
       />
       <Tabs.Screen
         name="local"

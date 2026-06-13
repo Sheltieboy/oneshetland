@@ -31,17 +31,20 @@ interface NavItem {
   href:   Href;
 }
 
+// Mirrors the NAV model in AppTabBar so the standalone tablet rail matches the
+// in-tab sidebar: Home · Events · Directory · Local · Jobs, then the rest.
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Home',        icon: 'home',                color: colors.accent,         href: '/(tabs)' },
-  { label: SECTIONS.spik.label,    icon: SECTIONS.spik.icon,    color: SECTIONS.spik.color,    href: '/(tabs)/spik' },
+  { label: 'Home',                  icon: 'home',                 color: colors.accent,           href: '/(tabs)' },
+  { label: 'Events',                icon: SECTIONS.events.icon,   color: SECTIONS.events.color,   href: '/(tabs)/whats-on' },
+  { label: 'Directory',             icon: SECTIONS.services.icon, color: SECTIONS.services.color, href: '/(tabs)/services' },
+  { label: SECTIONS.local.label,    icon: SECTIONS.local.icon,    color: SECTIONS.local.color,    href: '/(tabs)/local' },
+  { label: 'Jobs',                  icon: SECTIONS.shifts.icon,   color: SECTIONS.shifts.color,   href: '/(tabs)/shifts' },
   { label: SECTIONS.memories.label, icon: SECTIONS.memories.icon, color: SECTIONS.memories.color, href: '/(tabs)/memories' },
-  { label: SECTIONS.daBoats.label, icon: SECTIONS.daBoats.icon, color: SECTIONS.daBoats.color, href: '/(tabs)/da-boats' },
-  { label: 'Events',      icon: SECTIONS.events.icon,  color: SECTIONS.events.color, href: '/(tabs)/whats-on' },
-  { label: SECTIONS.shifts.label,  icon: SECTIONS.shifts.icon,  color: SECTIONS.shifts.color,  href: '/(tabs)/shifts' },
-  { label: SECTIONS.local.label,   icon: SECTIONS.local.icon,   color: SECTIONS.local.color,   href: '/(tabs)/local' },
-  { label: SECTIONS.fetch.label,   icon: SECTIONS.fetch.icon,   color: SECTIONS.fetch.color,   href: '/(tabs)/fetch' },
-  { label: 'Games',       icon: 'gamepad',             color: SECTIONS.games?.color ?? colors.accent, href: '/games' },
-  { label: 'Hubs',        icon: 'users',               color: SECTIONS.community.color, href: '/hubs' },
+  { label: SECTIONS.spik.label,     icon: SECTIONS.spik.icon,     color: SECTIONS.spik.color,     href: '/(tabs)/spik' },
+  { label: SECTIONS.daBoats.label,  icon: SECTIONS.daBoats.icon,  color: SECTIONS.daBoats.color,  href: '/(tabs)/da-boats' },
+  { label: SECTIONS.fetch.label,    icon: SECTIONS.fetch.icon,    color: SECTIONS.fetch.color,    href: '/(tabs)/fetch' },
+  { label: SECTIONS.community.label, icon: SECTIONS.community.icon, color: SECTIONS.community.color, href: '/hubs' },
+  { label: SECTIONS.games.label,    icon: SECTIONS.games.icon,    color: SECTIONS.games.color,    href: '/games' },
 ];
 
 export function NavRail() {

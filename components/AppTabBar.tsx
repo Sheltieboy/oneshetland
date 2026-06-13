@@ -1,28 +1,65 @@
 /**
  * AppTabBar
  *
- * Adaptive tab navigation:
- *   iPhone  → standard bottom bar (existing behaviour)
- *   iPad    → left sidebar with icon + label, fixed 220px wide
+ * Adaptive navigation built from a single NAV model:
+ *   iPhone → bottom bar with the first 5 destinations + a "More" sheet
+ *            holding the rest (Memories, Spik, Da Boats, Fetch, Hubs, Games,
+ *            Profile). Five tabs is the most a phone bar can show with
+ *            readable labels.
+ *   iPad   → left sidebar listing every destination (vertical, has the room).
+ *
+ * Rendering from the model — not from the raw tab routes — also means hidden
+ * utility routes (services/me) can never leak into the bar.
  *
  * Passed as the `tabBar` prop on the Tabs navigator in app/(tabs)/_layout.tsx.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Image,
+  View, Text, TouchableOpacity, StyleSheet, Image, Modal, ScrollView,
 } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname, type Href } from 'expo-router';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { GameArt } from '@/components/GameArt';
 
-const INACTIVE   = 'rgba(255,255,255,0.55)';
-const SIDEBAR_W  = SIDEBAR_WIDTH;
+const INACTIVE  = 'rgba(255,255,255,0.55)';
+const SIDEBAR_W = SIDEBAR_WIDTH;
+
+/** One navigation destination. `route` = a (tabs) screen; `path` = a stack push. */
+interface NavDest {
+  label: string;
+  icon:  string;
+  color: string;
+  route?: string;   // name of a screen in the (tabs) navigator
+  path?:  Href;     // a route outside the tab navigator
+}
+
+// The canonical order. First PHONE_PRIMARY entries are the phone bottom bar;
+// everything after spills into the "More" sheet. The tablet sidebar shows all.
+const NAV: NavDest[] = [
+  { label: 'Home',                  icon: 'home',                 color: colors.accent,           route: 'index' },
+  { label: 'Events',                icon: SECTIONS.events.icon,   color: SECTIONS.events.color,   route: 'whats-on' },
+  { label: 'Directory',             icon: SECTIONS.services.icon, color: SECTIONS.services.color, route: 'services' },
+  { label: 'Local',                 icon: SECTIONS.local.icon,    color: SECTIONS.local.color,    route: 'local' },
+  { label: 'Jobs',                  icon: SECTIONS.shifts.icon,   color: SECTIONS.shifts.color,   route: 'shifts' },
+  { label: SECTIONS.memories.label, icon: SECTIONS.memories.icon, color: SECTIONS.memories.color, route: 'memories' },
+  { label: SECTIONS.spik.label,     icon: SECTIONS.spik.icon,     color: SECTIONS.spik.color,     route: 'spik' },
+  { label: SECTIONS.daBoats.label,  icon: SECTIONS.daBoats.icon,  color: SECTIONS.daBoats.color,  route: 'da-boats' },
+  { label: SECTIONS.fetch.label,    icon: SECTIONS.fetch.icon,    color: SECTIONS.fetch.color,    route: 'fetch' },
+  { label: SECTIONS.community.label, icon: SECTIONS.community.icon, color: SECTIONS.community.color, path: '/hubs' },
+  { label: SECTIONS.games.label,    icon: SECTIONS.games.icon,    color: SECTIONS.games.color,    path: '/games' },
+];
+
+const PROFILE: NavDest = { label: 'Profile', icon: 'user', color: colors.accent, route: 'me' };
+
+const PHONE_PRIMARY = 5;
+const PRIMARY    = NAV.slice(0, PHONE_PRIMARY);
+const MORE_ITEMS = [...NAV.slice(PHONE_PRIMARY), PROFILE];
 
 export function AppTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { isTablet } = useAppLayout();
@@ -34,76 +71,152 @@ export function AppTabBar({ state, descriptors, navigation }: BottomTabBarProps)
   return <BottomTabBar state={state} descriptors={descriptors} navigation={navigation} insets={insets} />;
 }
 
-// ── Sidebar (iPad) ─────────────────────────────────────────────────────────────
+// ── Bottom bar (iPhone) ──────────────────────────────────────────────────────
 
-function SidebarTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps & { insets: any }) {
+function BottomTabBar({ state, navigation, insets }: BottomTabBarProps & { insets: any }) {
   const router = useRouter();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const focusedName = state.routes[state.index]?.name;
+
+  const go = (item: NavDest) => {
+    if (item.route) navigation.navigate(item.route as never);
+    else if (item.path) router.push(item.path);
+  };
+
+  const moreActive = MORE_ITEMS.some(i => i.route && i.route === focusedName);
+
+  return (
+    <View style={[styles.bottomBar, { height: 60 + insets.bottom, paddingBottom: insets.bottom }]}>
+      {PRIMARY.map(item => {
+        const focused = item.route === focusedName;
+        return (
+          <TouchableOpacity
+            key={item.label}
+            style={styles.bottomItem}
+            onPress={() => go(item)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.bottomChip, { backgroundColor: focused ? item.color : item.color + '26' }]}>
+              <FontAwesome5 name={item.icon as any} size={15} color={focused ? '#fff' : item.color} solid />
+            </View>
+            <Text
+              style={[styles.bottomLabel, { color: focused ? '#fff' : INACTIVE, fontWeight: focused ? '800' : '600' }]}
+              numberOfLines={1}
+            >
+              {item.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+
+      <TouchableOpacity style={styles.bottomItem} onPress={() => setMoreOpen(true)} activeOpacity={0.7}>
+        <View style={[styles.bottomChip, { backgroundColor: moreActive ? colors.accent : 'rgba(255,255,255,0.14)' }]}>
+          <FontAwesome5 name="ellipsis-h" size={15} color={moreActive ? '#fff' : INACTIVE} solid />
+        </View>
+        <Text
+          style={[styles.bottomLabel, { color: moreActive ? '#fff' : INACTIVE, fontWeight: moreActive ? '800' : '600' }]}
+        >
+          More
+        </Text>
+      </TouchableOpacity>
+
+      <MoreSheet
+        open={moreOpen}
+        insets={insets}
+        focusedName={focusedName}
+        onClose={() => setMoreOpen(false)}
+        onSelect={(item) => { setMoreOpen(false); go(item); }}
+      />
+    </View>
+  );
+}
+
+function MoreSheet({
+  open, insets, focusedName, onClose, onSelect,
+}: {
+  open: boolean;
+  insets: any;
+  focusedName?: string;
+  onClose: () => void;
+  onSelect: (item: NavDest) => void;
+}) {
+  return (
+    <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1 }}>
+        <TouchableOpacity style={styles.moreBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={[styles.moreSheet, { paddingBottom: insets.bottom + spacing.md }]}>
+          <View style={styles.moreHandle} />
+          <Text style={styles.moreTitle}>More</Text>
+          <View style={styles.moreGrid}>
+            {MORE_ITEMS.map(item => {
+              const active = item.route === focusedName;
+              return (
+                <TouchableOpacity
+                  key={item.label}
+                  style={styles.moreCell}
+                  onPress={() => onSelect(item)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.moreChip, { backgroundColor: active ? item.color : item.color + '1A' }]}>
+                    <FontAwesome5 name={item.icon as any} size={20} color={active ? '#fff' : item.color} solid />
+                  </View>
+                  <Text style={styles.moreLabel} numberOfLines={1}>{item.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Sidebar (iPad) ────────────────────────────────────────────────────────────
+
+function SidebarTabBar({ state, navigation, insets }: BottomTabBarProps & { insets: any }) {
+  const router      = useRouter();
+  const pathname    = usePathname();
+  const focusedName = state.routes[state.index]?.name;
+
+  const isActive = (item: NavDest) => {
+    if (item.route) return item.route === focusedName;
+    if (item.path)  return pathname === String(item.path) || pathname.startsWith(String(item.path) + '/');
+    return false;
+  };
+
+  const go = (item: NavDest) => {
+    if (item.route) navigation.navigate(item.route as never);
+    else if (item.path) router.push(item.path);
+  };
 
   return (
     <View style={[styles.sidebar, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md }]}>
-      {/* Logo */}
       <View style={styles.sidebarBrand}>
-        <Image
-          source={require('../assets/icon.png')}
-          style={styles.sidebarLogo}
-          resizeMode="contain"
-        />
+        <Image source={require('../assets/icon.png')} style={styles.sidebarLogo} resizeMode="contain" />
         <Text style={styles.sidebarBrandText}>OneShetland</Text>
       </View>
-
       <View style={styles.sidebarDivider} />
 
-      {/* Nav items */}
-      <View style={{ flex: 1, gap: 4 }}>
-        {state.routes.map((route, index) => {
-          const { options } = descriptors[route.key];
-          // Skip hidden/utility routes (href: null) and any route that
-          // doesn't define a tab icon (e.g. `services`, `me`).
-          if (options.href === null || options.tabBarIcon == null) return null;
-
-          const focused = state.index === index;
-          const label   = typeof options.tabBarLabel === 'string'
-            ? options.tabBarLabel
-            : options.title ?? route.name;
-          const itemColor = (options.tabBarActiveTintColor as string) ?? colors.accent;
-
-          const onPress = () => {
-            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
-          };
-
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 4 }} showsVerticalScrollIndicator={false}>
+        {[...NAV, PROFILE].map(item => {
+          const active = isActive(item);
           return (
             <TouchableOpacity
-              key={route.key}
-              style={[styles.sidebarItem, focused && styles.sidebarItemActive]}
-              onPress={onPress}
+              key={item.label}
+              style={[styles.sidebarItem, active && styles.sidebarItemActive]}
+              onPress={() => go(item)}
               activeOpacity={0.7}
             >
-              <View style={[styles.navChip, { backgroundColor: focused ? itemColor : itemColor + '26' }]}>
-                {options.tabBarIcon?.({ focused, color: focused ? '#fff' : itemColor, size: 14 })}
+              <View style={[styles.navChip, { backgroundColor: active ? item.color : item.color + '26' }]}>
+                <FontAwesome5 name={item.icon as any} size={14} color={active ? '#fff' : item.color} solid />
               </View>
-              <Text style={[styles.sidebarLabel, focused && styles.sidebarLabelActive]}>{label}</Text>
-              {focused ? <View style={[styles.activeDot, { backgroundColor: itemColor }]} /> : null}
+              <Text style={[styles.sidebarLabel, active && styles.sidebarLabelActive]}>{item.label}</Text>
+              {active ? <View style={[styles.activeDot, { backgroundColor: item.color }]} /> : null}
             </TouchableOpacity>
           );
         })}
+      </ScrollView>
 
-        {/* Games + Hubs live outside the tab group — link explicitly */}
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => router.push('/games')} activeOpacity={0.7}>
-          <View style={[styles.navChip, { backgroundColor: '#10B981' + '26' }]}>
-            <FontAwesome5 name="gamepad" size={14} color="#10B981" solid />
-          </View>
-          <Text style={styles.sidebarLabel}>Games</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.sidebarItem} onPress={() => router.push('/hubs')} activeOpacity={0.7}>
-          <View style={[styles.navChip, { backgroundColor: '#6B47BF' + '26' }]}>
-            <FontAwesome5 name="users" size={14} color="#6B47BF" solid />
-          </View>
-          <Text style={styles.sidebarLabel}>Hubs</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Today's game — fills the space below the nav on tablet */}
       <TodaysGameTile />
     </View>
   );
@@ -134,51 +247,11 @@ function TodaysGameTile() {
   );
 }
 
-// ── Bottom bar (iPhone) ────────────────────────────────────────────────────────
-
-function BottomTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps & { insets: any }) {
-  return (
-    <View style={[styles.bottomBar, { height: 60 + insets.bottom, paddingBottom: insets.bottom }]}>
-      {state.routes.map((route, index) => {
-        const { options } = descriptors[route.key];
-        if (options.href === null) return null;
-
-        const focused = state.index === index;
-        const label   = typeof options.tabBarLabel === 'string'
-          ? options.tabBarLabel
-          : options.title ?? route.name;
-        const color   = focused
-          ? (options.tabBarActiveTintColor as string ?? colors.accent)
-          : INACTIVE;
-
-        const onPress = () => {
-          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
-        };
-
-        return (
-          <TouchableOpacity
-            key={route.key}
-            style={styles.bottomItem}
-            onPress={onPress}
-            activeOpacity={0.7}
-          >
-            {options.tabBarIcon?.({ focused, color, size: 15 })}
-            <Text style={[styles.bottomLabel, { color }]}>{label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   // ── Sidebar ──────────────────────────────────────────────────────────────────
   sidebar: {
     position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
+    left: 0, top: 0, bottom: 0,
     width: SIDEBAR_W,
     backgroundColor: colors.navy,
     paddingHorizontal: spacing.md,
@@ -202,9 +275,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 8,
     borderRadius: radius.md,
   },
-  sidebarItemActive: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
+  sidebarItemActive: { backgroundColor: 'rgba(255,255,255,0.08)' },
   navChip: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   sidebarLabel: { flex: 1, fontSize: fontSize.sm, fontWeight: '600', color: 'rgba(255,255,255,0.72)' },
   sidebarLabelActive: { color: '#fff', fontWeight: '800' },
@@ -233,7 +304,29 @@ const styles = StyleSheet.create({
   },
   bottomItem: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 6, gap: 3,
+    paddingVertical: 5, gap: 3,
   },
-  bottomLabel: { fontSize: 9, fontWeight: '600' },
+  bottomChip: {
+    minWidth: 42, height: 26, borderRadius: 9,
+    paddingHorizontal: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  bottomLabel: { fontSize: 10, fontWeight: '600' },
+
+  // ── More sheet ─────────────────────────────────────────────────────────────
+  moreBackdrop: { flex: 1, backgroundColor: 'rgba(15, 28, 38, 0.45)' },
+  moreSheet: {
+    backgroundColor: colors.screenBackground,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: spacing.lg, paddingTop: 10,
+  },
+  moreHandle: {
+    alignSelf: 'center', width: 40, height: 5, borderRadius: 3,
+    backgroundColor: colors.border, marginBottom: spacing.sm,
+  },
+  moreTitle: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, marginBottom: spacing.md },
+  moreGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  moreCell: { width: '25%', alignItems: 'center', gap: 7, marginBottom: spacing.lg },
+  moreChip: { width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  moreLabel: { fontSize: 12, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
 });
