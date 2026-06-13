@@ -33,6 +33,7 @@ import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
 import SectionHero from '@/components/SectionHero';
 import MemoryDetailScreen from '../memory/[id]';
+import { eraTone } from '@/lib/memory-eras';
 
 // Soft-load hero photo — if assets/section-heroes/memories.jpg is missing the
 // landing falls back to a tinted-gradient hero. Drop the file in and the
@@ -173,6 +174,8 @@ export default function MemoriesScreen() {
   };
 
   const recent = pins.slice(0, 12);
+  // Distinct eras present, for the "Explore by era" chip row.
+  const eras = Array.from(new Set(pins.map(p => p.era).filter(Boolean) as string[])).slice(0, 10);
 
   const mapPane = (mapHeight: number) => (
     <>
@@ -308,7 +311,40 @@ export default function MemoriesScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.sectionHeading}>Latest from the islands</Text>
+            {/* Explore by era — quick filters drawn from what's actually pinned */}
+            {eras.length > 1 ? (
+              <View style={styles.eraRowWrap}>
+                <Text style={styles.eraRowLabel}>Explore by era</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.eraRow}
+                >
+                  {eras.map(era => {
+                    const tone = eraTone(era);
+                    return (
+                      <TouchableOpacity
+                        key={era}
+                        onPress={() => setQuery(era)}
+                        activeOpacity={0.8}
+                        style={[styles.eraPill, { backgroundColor: tone.light, borderColor: tone.color + '33' }]}
+                      >
+                        <FontAwesome5 name={tone.icon as any} size={11} color={tone.color} solid />
+                        <Text style={[styles.eraPillText, { color: tone.color }]}>{era}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : null}
+
+            <View style={styles.headingRow}>
+              <Text style={styles.sectionHeading}>Latest from the islands</Text>
+              {recent.length > 0 ? (
+                <Text style={styles.headingCount}>{pins.length} pinned</Text>
+              ) : null}
+            </View>
+
             {recent.length === 0 && !loading ? (
               <View style={styles.empty}>
                 <FontAwesome5 name="book-open" size={28} color={SECTION.color} />
@@ -319,7 +355,15 @@ export default function MemoriesScreen() {
               </View>
             ) : (
               <View style={styles.feed}>
-                {recent.map(pin => (
+                {recent[0] ? (
+                  <MemoryCard
+                    key={recent[0].id}
+                    pin={recent[0]}
+                    variant="full"
+                    onPress={() => openMemory(recent[0].id)}
+                  />
+                ) : null}
+                {recent.slice(1).map(pin => (
                   <MemoryCard
                     key={pin.id}
                     pin={pin}
@@ -524,6 +568,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: radius.md,
     gap: 10,
+    shadowColor: SECTION.color,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   dropCtaText: {
     color: '#fff',
@@ -531,12 +580,51 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
   },
   sectionHeading: {
-    marginTop: spacing.xl,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
     fontSize: fontSize.lg,
     fontWeight: '800',
     color: colors.textPrimary,
+  },
+  headingRow: {
+    marginTop: spacing.xl,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  headingCount: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: SECTION.color,
+  },
+  eraRowWrap: {
+    marginTop: spacing.xl,
+  },
+  eraRowLabel: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  eraRow: {
+    paddingHorizontal: spacing.lg,
+    gap: 8,
+  },
+  eraPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  eraPillText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
   },
   feed: {
     paddingHorizontal: spacing.lg,

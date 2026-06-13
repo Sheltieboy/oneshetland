@@ -293,7 +293,7 @@ function HeroSection({
             <Image source={LOGO} style={styles.heroLogo} resizeMode="contain" />
             <View>
               <DisplayText weight="black" style={styles.heroBrand}>OneShetland</DisplayText>
-              <Text style={styles.heroBrandTag}>Everything Shetland, in one place</Text>
+              <Text style={styles.heroBrandTag}>Everything Shetland,{'\n'}in one place</Text>
             </View>
           </View>
           <View style={styles.heroHeaderActions}>
@@ -1182,6 +1182,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontWeight: '500',
     marginTop: -1,
+    lineHeight: 14,
   },
   heroHeaderActions: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
