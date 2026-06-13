@@ -118,7 +118,7 @@ export const SECTIONS = {
     icon:        'briefcase',
     label:       'Jobs',
     description: 'Employment opportunities across Shetland',
-    live:        false,
+    live:        true,
   },
 
   cruise: {

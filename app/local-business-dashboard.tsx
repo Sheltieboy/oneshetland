@@ -1317,6 +1317,28 @@ export default function BusinessDashboardScreen() {
           </View>
         )}
 
+        {/* ── Jobs — shown when the (free) jobs add-on is enabled ── */}
+        {addons.find(a => a.addon_key === 'jobs')?.enabled && (
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push({ pathname: '/business-jobs', params: { businessId: activeBusiness.id } } as any)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIcon, { backgroundColor: SECTIONS.jobs.color + '18' }]}>
+                <FontAwesome5 name="briefcase" size={13} color={SECTIONS.jobs.color} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Jobs</Text>
+                <Text style={styles.cardSub}>Post roles, take applications, manage hiring — free</Text>
+              </View>
+              <View style={[styles.cardIconBtn, { backgroundColor: SECTIONS.jobs.color }]}>
+                <FontAwesome5 name="chevron-right" size={11} color="#fff" />
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* ── Events — shown when events add-on is enabled ── */}
         {addons.find(a => a.addon_key === 'events')?.enabled && (
           <View style={styles.card}>

@@ -35,7 +35,7 @@ export type LoyaltyTxType = 'stamp' | 'points_earn' | 'redeem' | 'reward';
 /** Premium add-ons: require Premium plan; 1 included, £15/mo each additional. */
 export const PREMIUM_ADDON_KEYS = ['bookings', 'services', 'events', 'membership', 'products'] as const;
 /** Standard add-ons: available on every plan, owner toggles visibility. */
-export const STANDARD_ADDON_KEYS = ['offers', 'stamps', 'enquiries', 'payments', 'featured'] as const;
+export const STANDARD_ADDON_KEYS = ['offers', 'stamps', 'enquiries', 'payments', 'featured', 'jobs'] as const;
 
 export type AddonKey =
   | typeof PREMIUM_ADDON_KEYS[number]
@@ -61,6 +61,7 @@ export const ADDON_META: Record<AddonKey, AddonMeta> = {
   enquiries:  { label: 'Enquiries',  description: 'Accept contact and quote requests from customers.',               icon: 'envelope',       isPremium: false },
   payments:   { label: 'Payments',   description: 'Accept wallet payments, NFC tap-to-pay and cashback.',           icon: 'credit-card',    isPremium: false },
   featured:   { label: 'Featured promotion', description: 'Boost visibility with a featured listing or Boost.',     icon: 'star',           isPremium: false },
+  jobs:       { label: 'Jobs',       description: 'Post jobs, take applications and manage hiring — free.',     icon: 'briefcase',      isPremium: false },
 };
 
 export interface BusinessAddon {

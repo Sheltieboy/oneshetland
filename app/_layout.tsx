@@ -205,6 +205,12 @@ function RootNavigator() {
           <Stack.Screen name="hub-campaigns" />
           <Stack.Screen name="hub-campaign" />
           <Stack.Screen name="hub-events" />
+          <Stack.Screen name="job/[id]" />
+          <Stack.Screen name="job-post" />
+          <Stack.Screen name="job-applicants" />
+          <Stack.Screen name="business-jobs" />
+          <Stack.Screen name="my-job-applications" />
+          <Stack.Screen name="work-profile" />
           <Stack.Screen name="hub-donate" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="give/[id]" />
           <Stack.Screen name="notices" />

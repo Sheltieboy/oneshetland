@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, Animated,
+  TextInput, ActivityIndicator, Alert, Animated, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -99,107 +99,53 @@ export default function ShiftDetailScreen() {
   const isOwnShift = profile?.id === shift.employer_id;
   const isBoosted  = !!(shift.boosted_until && shift.boosted_until > new Date().toISOString());
 
+  const biz = shiftDisplayBusiness(shift);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      {/* Top bar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/jobs?tab=shifts'))} style={styles.backPill} hitSlop={12}>
+          <FontAwesome5 name="chevron-left" size={16} color={S.color} />
+          <FontAwesome5 name={S.icon as any} size={12} color={S.color} solid />
+          <Text style={styles.backPillText}>Shifts</Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* ── Hero (back button + title live together in one block) ── */}
-        <View style={[styles.hero, { borderBottomColor: S.color }]}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-          {/* Back */}
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <FontAwesome5 name="chevron-left" size={13} color={S.color} />
-            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-          </TouchableOpacity>
-
-          {/* Badges row */}
-          <View style={styles.heroBadges}>
-            {isBoosted && (
-              <View style={styles.featuredBadge}>
-                <FontAwesome5 name="bolt" size={9} color={colors.shifts} solid />
-                <Text style={styles.featuredText}>Featured</Text>
-              </View>
-            )}
-            <View style={[styles.urgencyBadge, { backgroundColor: urgency.bg }]}>
-              <Text style={[styles.urgencyText, { color: urgency.color }]}>{urgency.label}</Text>
-            </View>
-            <Text style={styles.categoryText}>
-              {CATEGORY_LABELS[shift.category] ?? shift.category}
-            </Text>
+        {/* Head — logo + title + employer */}
+        <View style={styles.head}>
+          <View style={[styles.logo, { backgroundColor: S.light }]}>
+            {biz.logo_url
+              ? <Image source={{ uri: biz.logo_url }} style={styles.logoImg} />
+              : <FontAwesome5 name="briefcase" size={22} color={S.color} solid />}
           </View>
-
-          {/* Title */}
-          <Text style={styles.heroTitle}>{shift.title}</Text>
-
-          {/* Pay + spots — hero highlight strip */}
-          <View style={styles.heroStats}>
-            <View style={styles.heroStat}>
-              <Text style={[styles.heroStatValue, { color: S.color }]}>
-                {formatPay(shift.pay_type, shift.pay_amount)}
-              </Text>
-              <Text style={styles.heroStatLabel}>pay</Text>
+          <View style={{ flex: 1 }}>
+            <View style={styles.headBadges}>
+              {isBoosted ? <View style={styles.featuredBadge}><FontAwesome5 name="bolt" size={9} color={S.color} solid /><Text style={styles.featuredText}>Boosted</Text></View> : null}
+              <View style={[styles.urgencyBadge, { backgroundColor: urgency.bg }]}><Text style={[styles.urgencyText, { color: urgency.color }]}>{urgency.label}</Text></View>
             </View>
-            <View style={styles.heroStatDivider} />
-            <View style={styles.heroStat}>
-              <Text style={[styles.heroStatValue, { color: '#fff' }]}>
-                {formatDuration(shift.start_at, shift.end_at)}
-              </Text>
-              <Text style={styles.heroStatLabel}>duration</Text>
-            </View>
-            <View style={styles.heroStatDivider} />
-            <View style={styles.heroStat}>
-              <Text style={[styles.heroStatValue, { color: spotsLeft > 0 ? '#fff' : colors.error }]}>
-                {spotsLeft}/{shift.positions_total}
-              </Text>
-              <Text style={styles.heroStatLabel}>spots left</Text>
-            </View>
+            <Text style={styles.title}>{shift.title}</Text>
+            <Text style={styles.org}>{biz.name}{biz.is_verified ? '  ·  ✓ Verified' : ''}</Text>
           </View>
-
-          {/* Employer / linked Local business */}
-          {(() => {
-            const biz = shiftDisplayBusiness(shift);
-            return (
-              <View style={styles.employerRow}>
-                <View style={[styles.employerAvatar, { backgroundColor: S.color + '22' }]}>
-                  <FontAwesome5 name="building" size={11} color={S.color} />
-                </View>
-                <Text style={styles.employerName}>{biz.name}</Text>
-                {biz.is_verified && (
-                  <View style={styles.verifiedBadge}>
-                    <FontAwesome5 name="check-circle" size={11} color={S.color} solid />
-                    <Text style={[styles.verifiedText, { color: S.color }]}>Verified</Text>
-                  </View>
-                )}
-              </View>
-            );
-          })()}
         </View>
 
-        {/* ── When & where card ── */}
-        <View style={styles.card}>
-          <View style={styles.cardRow}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5 name="calendar-alt" size={13} color={S.color} solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardRowLabel}>Date & time</Text>
-              <Text style={styles.cardRowValue}>{formatShiftDate(shift.start_at)}</Text>
-            </View>
-          </View>
-          <View style={styles.cardDivider} />
-          <View style={styles.cardRow}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5 name="map-marker-alt" size={13} color={S.color} solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardRowLabel}>Location</Text>
-              <Text style={styles.cardRowValue}>{shift.location_text}</Text>
-            </View>
-          </View>
+        {/* Pay card */}
+        <View style={[styles.payCard, { backgroundColor: S.light }]}>
+          <FontAwesome5 name="coins" size={14} color={S.color} solid />
+          <Text style={[styles.payText, { color: S.color }]}>{formatPay(shift.pay_type, shift.pay_amount)}</Text>
+          <Text style={[styles.spots, spotsLeft === 0 && { color: colors.error }]}>
+            {spotsLeft > 0 ? `${spotsLeft} of ${shift.positions_total} spot${shift.positions_total === 1 ? '' : 's'} left` : 'Full'}
+          </Text>
+        </View>
+
+        {/* Fact grid */}
+        <View style={styles.factGrid}>
+          <Fact icon="calendar-day" label={formatShiftDate(shift.start_at)} />
+          <Fact icon="hourglass-half" label={formatDuration(shift.start_at, shift.end_at)} />
+          {shift.location_text ? <Fact icon="map-marker-alt" label={shift.location_text} /> : null}
+          {CATEGORY_LABELS[shift.category] ? <Fact icon="tag" label={CATEGORY_LABELS[shift.category]} /> : null}
         </View>
 
         {/* ── Description ── */}
@@ -379,14 +325,40 @@ function AcceptedBlock({ cis }: { cis: CheckInStatus }) {
   );
 }
 
+function Fact({ icon, label }: { icon: string; label: string }) {
+  return (
+    <View style={styles.fact}>
+      <FontAwesome5 name={icon as any} size={12} color={S.color} solid />
+      <Text style={styles.factText}>{label}</Text>
+    </View>
+  );
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: colors.navy },
+  safe:    { flex: 1, backgroundColor: colors.screenBackground },
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
-  content: { paddingBottom: 40 },
+  content: { paddingTop: spacing.sm, paddingBottom: 40 },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   errorText: { color: colors.textMuted, fontSize: fontSize.md },
+
+  // Header (matches job/[id])
+  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  backPill: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: S.color + '14' },
+  backPillText: { color: S.color, fontSize: fontSize.sm, fontWeight: '800' },
+  head: { flexDirection: 'row', gap: 14, alignItems: 'flex-start', paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  logo: { width: 56, height: 56, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  logoImg: { width: 56, height: 56 },
+  headBadges: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  title: { fontSize: 24, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.4 },
+  org: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: '600', marginTop: 4 },
+  payCard: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: spacing.lg, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md },
+  payText: { fontSize: fontSize.lg, fontWeight: '900' },
+  spots: { fontSize: fontSize.xs, color: colors.textMuted, marginLeft: 'auto', fontWeight: '700' },
+  factGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginHorizontal: spacing.lg, marginTop: spacing.md },
+  fact: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  factText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary },
 
   // Hero — single cohesive navy block
   hero: {

@@ -55,8 +55,12 @@ export default function TabLayout() {
         options={tabOptions(SECTIONS.events.icon, 'Events', SECTIONS.events.color)}
       />
       <Tabs.Screen
+        name="jobs"
+        options={tabOptions(SECTIONS.jobs.icon, 'Jobs', SECTIONS.jobs.color)}
+      />
+      <Tabs.Screen
         name="shifts"
-        options={tabOptions(SECTIONS.shifts.icon, 'Jobs', SECTIONS.shifts.color)}
+        options={tabOptions(SECTIONS.shifts.icon, 'Shifts', SECTIONS.shifts.color)}
       />
       <Tabs.Screen
         name="services"
