@@ -20,7 +20,7 @@ import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplet
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
@@ -219,7 +219,7 @@ function CustomTimePicker({ value, onChange, color }: {
 
 // ── Post-shift boost sheet ────────────────────────────────────────────────────
 
-function BoostSheet({
+export function BoostSheet({
   shiftId,
   onDismiss,
   onBoosted,
@@ -334,7 +334,7 @@ function BoostSheet({
 
 // ── Post shift form ────────────────────────────────────────────────────────────
 
-function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => void }) {
+export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => void }) {
   const { profile } = useAuth();
   const [submitting, setSubmitting] = useState(false);
 
@@ -1343,63 +1343,21 @@ function HubScreen({ onPostShift }: { onPostShift: () => void }) {
 // ── Main tab screen ────────────────────────────────────────────────────────────
 
 export default function ShiftsTab() {
-  const { post } = useLocalSearchParams<{ post?: string }>();
-  const [mode, setMode]               = useState<'hub' | 'post'>(post ? 'post' : 'hub');
-  const [boostShiftId, setBoostShiftId] = useState<string | null>(null);
   const router = useRouter();
-
-  const handlePostSuccess = (shiftId: string) => {
-    setMode('hub');
-    setBoostShiftId(shiftId);
-  };
-
-  // Post mode is reached from the Work hub — leaving returns there.
-  const exitPost = () => router.replace('/(tabs)/jobs?tab=shifts');
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-
-      {mode === 'post' ? (
-        <>
-          <View style={styles.postHeader}>
-            <TouchableOpacity onPress={exitPost} style={styles.postBackPill} hitSlop={12}>
-              <FontAwesome5 name="chevron-left" size={16} color={S.color} />
-              <FontAwesome5 name={S.icon as any} size={12} color={S.color} solid />
-              <Text style={styles.postBackText}>Shifts</Text>
-            </TouchableOpacity>
-            <Text style={styles.postHeaderTitle}>Post a shift</Text>
-            <View style={{ width: 86 }} />
+      <TabScreenHeader
+        section={S}
+        right={
+          <View style={[styles.headerBadge, { backgroundColor: S.color + '22' }]}>
+            <View style={[styles.headerBadgeDot, { backgroundColor: S.color }]} />
+            <Text style={[styles.headerBadgeText, { color: S.color }]}>Live</Text>
           </View>
-          <Text style={styles.postSubtitle}>Free to post — boost to alert matching workers</Text>
-        </>
-      ) : (
-        <TabScreenHeader
-          section={S}
-          right={
-            <View style={[styles.headerBadge, { backgroundColor: S.color + '22' }]}>
-              <View style={[styles.headerBadgeDot, { backgroundColor: S.color }]} />
-              <Text style={[styles.headerBadgeText, { color: S.color }]}>Live</Text>
-            </View>
-          }
-        />
-      )}
-
-      <View style={{ flex: 1 }}>
-        {mode === 'hub'
-          ? <HubScreen onPostShift={() => setMode('post')} />
-          : <PostShiftForm onSuccess={handlePostSuccess} />
         }
+      />
+      <View style={{ flex: 1 }}>
+        <HubScreen onPostShift={() => router.push('/shift-post')} />
       </View>
-
-      {/* Boost sheet — shown after a successful post */}
-      {boostShiftId && (
-        <BoostSheet
-          shiftId={boostShiftId}
-          onDismiss={() => setBoostShiftId(null)}
-          onBoosted={() => setBoostShiftId(null)}
-        />
-      )}
-
     </SafeAreaView>
   );
 }

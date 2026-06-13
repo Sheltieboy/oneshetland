@@ -171,9 +171,10 @@ function RootNavigator() {
           <Stack.Screen name="search" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="spik-detail" />
-          <Stack.Screen name="spik-suggest" />
+          <Stack.Screen name="spik-suggest" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="spik-filter" />
           <Stack.Screen name="shift-detail" />
+          <Stack.Screen name="shift-post" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="shifts-browse" />
           <Stack.Screen name="employer-applications" />
           <Stack.Screen name="employer-profile" />
@@ -183,7 +184,7 @@ function RootNavigator() {
           <Stack.Screen name="edit-profile" />
           <Stack.Screen name="local-businesses-browse" />
           <Stack.Screen name="local-business-detail" />
-          <Stack.Screen name="local-business-register" />
+          <Stack.Screen name="local-business-register" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="business-claim" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="hubs/index" options={{ ...SECTION_ROOT }} />
           <Stack.Screen name="hubs/[id]" />
