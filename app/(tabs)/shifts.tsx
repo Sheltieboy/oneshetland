@@ -33,6 +33,7 @@ import {
   URGENCY_CONFIG, CATEGORY_LABELS, type Shift,
 } from '@/lib/shifts-api';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.shifts;
@@ -1351,6 +1352,7 @@ export default function ShiftsTab() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <TabScreenHeader
         section={S}
+        photo={SECTION_HEROES.shifts}
         right={
           <View style={[styles.headerBadge, { backgroundColor: S.color + '22' }]}>
             <View style={[styles.headerBadgeDot, { backgroundColor: S.color }]} />

@@ -16,6 +16,7 @@ import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/th
 import { NavRail } from '@/components/NavRail';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
@@ -59,7 +60,7 @@ export default function HubsScreen() {
       <NavRail />
       <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0, backgroundColor: colors.screenBackground }}>
       <View>
-        <TabScreenHeader section={S} eyebrow="Community" />
+        <TabScreenHeader section={S} eyebrow="Community" photo={SECTION_HEROES.community} />
         {!isTablet && router.canGoBack() ? (
           <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
             <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />

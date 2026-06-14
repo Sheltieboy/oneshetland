@@ -29,6 +29,7 @@ import {
 import { paletteFor } from '@/lib/spik-palette';
 import SpikStatsHeader from '@/components/SpikStatsHeader';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz'.split('');
 
@@ -208,6 +209,7 @@ export default function SpikTab() {
       {/* Header */}
       <TabScreenHeader
         section={SECTIONS.spik}
+        photo={SECTION_HEROES.spik}
         right={
           <View style={styles.wordCountBox}>
             <Text style={[styles.wordCountNum, { color: SECTIONS.spik.color }]}>

@@ -26,6 +26,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import { supabase } from '@/lib/supabase';
 import CustomerDashboard from '../(customer)/dashboard';
 import DriverDashboard from '../(driver)/dashboard';
@@ -89,6 +90,7 @@ function PublicFetchHub() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <TabScreenHeader
         section={S}
+        photo={SECTION_HEROES.fetch}
         right={
           <View style={[styles.headerBadge, { backgroundColor: S.color + '22' }]}>
             <View style={[styles.headerBadgeDot, { backgroundColor: S.color }]} />

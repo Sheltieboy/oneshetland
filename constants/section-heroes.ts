@@ -17,11 +17,11 @@ export const SECTION_HEROES: Record<string, any> = {
   events:    require('@/assets/section-heroes/events.jpg'),
   local:     require('@/assets/section-heroes/local.jpeg'),    // note: .jpeg
   directory: require('@/assets/section-heroes/directory.jpg'),
+  fetch:     require('@/assets/section-heroes/fetch.jpeg'),    // note: .jpeg
+  jobs:      require('@/assets/section-heroes/jobs.webp'),     // note: .webp
   // Add as you create them (the file must exist before uncommenting):
   // spik:      require('@/assets/section-heroes/spik.jpg'),
-  // fetch:     require('@/assets/section-heroes/fetch.jpg'),
   // shifts:    require('@/assets/section-heroes/shifts.jpg'),
-  // jobs:      require('@/assets/section-heroes/jobs.jpg'),
   // community: require('@/assets/section-heroes/community.jpg'),
   // games:     require('@/assets/section-heroes/games.jpg'),
 };

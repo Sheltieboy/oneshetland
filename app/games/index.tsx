@@ -20,6 +20,7 @@ import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/th
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { GameArt } from '@/components/GameArt';
 import { SECTIONS } from '@/constants/sections';
@@ -179,7 +180,7 @@ export default function GamesCentre() {
 
       {/* Cinematic header — banner with a floating back (Games is reached via More) */}
       <View>
-        <TabScreenHeader section={S} eyebrow="Play & compete" />
+        <TabScreenHeader section={S} eyebrow="Play & compete" photo={SECTION_HEROES.games} />
         <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
           <HeroBackPill variant="overlay" label="Back" onPress={() => { Haptics.selectionAsync(); router.back(); }} />
         </View>

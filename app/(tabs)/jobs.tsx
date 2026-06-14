@@ -22,6 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import { JobCard } from '@/components/JobCard';
 import { ShiftCard } from '@/components/ShiftCard';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import {
   fetchJobs, fetchSavedJobIds, toggleSavedJob,
   JOB_CATEGORIES, type Job,
@@ -122,7 +123,7 @@ export default function WorkHubScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={{ flex: 1, backgroundColor: colors.screenBackground }}>
         {/* Cinematic banner — tints to the active tier; "Work" over it */}
-        <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Find work" />
+        <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Find work" photo={SECTION_HEROES.jobs} />
         {/* Work switch */}
         <View style={styles.header}>
           <View style={styles.switchRow}>
