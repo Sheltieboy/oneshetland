@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TextInput, Alert, KeyboardAvoidingView, Platform,
+  TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.shifts;
 
@@ -29,6 +30,7 @@ export default function EmployerProfileScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [form, setForm]       = useState<EmployerForm>(EMPTY);
   const [original, setOriginal] = useState<EmployerForm>(EMPTY);
@@ -57,7 +59,7 @@ export default function EmployerProfileScreen() {
   const handleSave = async () => {
     if (!profile?.id) return;
     if (!form.business_name.trim()) {
-      return Alert.alert('Required', 'Please enter a business or trading name.');
+      return alert({ title: 'Required', message: 'Please enter a business or trading name.' });
     }
 
     setSaving(true);
@@ -76,13 +78,17 @@ export default function EmployerProfileScreen() {
     setSaving(false);
 
     if (error) {
-      Alert.alert('Could not save', error.message);
+      alert({ title: 'Could not save', message: error.message });
     } else {
       setOriginal(form);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Saved', 'Your business profile has been updated.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      alert({
+        title: 'Saved',
+        message: 'Your business profile has been updated.',
+        actions: [
+          { label: 'OK', style: 'primary', onPress: () => router.back() },
+        ],
+      });
     }
   };
 

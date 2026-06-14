@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { broadcastToHub } from '@/lib/hubs-api';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.community;
 
@@ -32,6 +33,7 @@ export default function HubBroadcastScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [channel, setChannel] = useState<'push' | 'email' | 'both'>('push');
@@ -39,24 +41,31 @@ export default function HubBroadcastScreen() {
 
   const send = async () => {
     if (!id) return;
-    if (!title.trim() || !message.trim()) { Alert.alert('Add a subject and message', 'Both are needed.'); return; }
-    Alert.alert('Send to all members?', `This will ${channel === 'push' ? 'push-notify' : channel === 'email' ? 'email' : 'push and email'} every active member.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Send', onPress: async () => {
-          setSending(true);
-          try {
-            const res = await broadcastToHub(id, { title: title.trim(), message: message.trim(), channel });
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            Alert.alert('Sent', `Reached ${res.members} member${res.members === 1 ? '' : 's'}` +
-              `${channel !== 'email' ? ` · ${res.push} push` : ''}${channel !== 'push' ? ` · ${res.email} email` : ''}.`,
-              [{ text: 'Done', onPress: () => router.back() }]);
-          } catch (e: any) {
-            Alert.alert('Could not send', e?.message ?? 'Please try again.');
-          } finally { setSending(false); }
+    if (!title.trim() || !message.trim()) { alert({ title: 'Add a subject and message', message: 'Both are needed.' }); return; }
+    alert({
+      title: 'Send to all members?',
+      message: `This will ${channel === 'push' ? 'push-notify' : channel === 'email' ? 'email' : 'push and email'} every active member.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        {
+          label: 'Send', style: 'primary', onPress: async () => {
+            setSending(true);
+            try {
+              const res = await broadcastToHub(id, { title: title.trim(), message: message.trim(), channel });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              alert({
+                title: 'Sent',
+                message: `Reached ${res.members} member${res.members === 1 ? '' : 's'}` +
+                  `${channel !== 'email' ? ` · ${res.push} push` : ''}${channel !== 'push' ? ` · ${res.email} email` : ''}.`,
+                actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }],
+              });
+            } catch (e: any) {
+              alert({ title: 'Could not send', message: e?.message ?? 'Please try again.' });
+            } finally { setSending(false); }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   return (

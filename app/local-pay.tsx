@@ -8,7 +8,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput,
-  Alert, Keyboard, KeyboardAvoidingView, Platform,
+  Keyboard, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.local;
 
@@ -29,6 +30,7 @@ type Step = 'amount' | 'code' | 'paying' | 'done';
 export default function PayScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   const [step, setStep]       = useState<Step>('amount');
   const [amount, setAmount]   = useState('');
@@ -80,7 +82,7 @@ export default function PayScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Payment failed', e.message ?? 'Try again');
+      alert({ title: 'Payment failed', message: e.message ?? 'Try again' });
       setDigits(['', '', '', '', '', '']);
       setStep('code');
       setTimeout(() => inputs.current[0]?.focus(), 100);

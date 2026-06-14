@@ -5,10 +5,10 @@ import {
   StyleSheet,
   Pressable,
   Switch,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { haptic } from '@/lib/haptics';
+import { useAlert } from '@/components/BrandedAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useRequest } from '@/context/RequestContext';
@@ -52,6 +52,7 @@ export default function Step4ReviewScreen() {
   const router = useRouter();
   const { formData, update, reset } = useRequest();
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -139,11 +140,11 @@ export default function Step4ReviewScreen() {
     }
 
     if (!isSupabaseConfigured) {
-      Alert.alert(
-        'Supabase not configured',
-        'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file. See README.md for setup instructions.',
-        [{ text: 'OK' }],
-      );
+      alert({
+        title: 'Supabase not configured',
+        message: 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env file. See README.md for setup instructions.',
+        actions: [{ label: 'OK', style: 'primary' }],
+      });
       return;
     }
 
@@ -219,16 +220,17 @@ export default function Step4ReviewScreen() {
 
     reset();
     haptic.success();
-    Alert.alert(
-      'Request submitted! 🎉',
-      "Your delivery request is live. You'll be notified when a driver picks it up.",
-      [
+    alert({
+      title: 'Request submitted! 🎉',
+      message: "Your delivery request is live. You'll be notified when a driver picks it up.",
+      actions: [
         {
-          text: 'Back to dashboard',
+          label: 'Back to dashboard',
+          style: 'primary',
           onPress: () => router.replace('/(customer)/dashboard'),
         },
       ],
-    );
+    });
   }
 
   return (

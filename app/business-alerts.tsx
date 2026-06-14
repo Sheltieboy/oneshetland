@@ -8,12 +8,13 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
+import { useAlert } from '@/components/BrandedAlert';
 import { fetchAllBusinessAlerts, cancelAlert, forceExpireAlert, type PartnerAlert } from '@/lib/alerts-api';
 
 const TYPE_META = {
@@ -49,6 +50,7 @@ function fmtDate(iso: string): string {
 
 export default function BusinessAlertsScreen() {
   const router    = useRouter();
+  const { alert } = useAlert();
   const { businessId, businessName } = useLocalSearchParams<{ businessId: string; businessName: string }>();
 
   const [alerts,     setAlerts]     = useState<PartnerAlert[]>([]);
@@ -71,15 +73,15 @@ export default function BusinessAlertsScreen() {
 
   const handleCancel = (a: PartnerAlert) => {
     const isLive = alertStatus(a) === 'live';
-    Alert.alert(
-      isLive ? 'End alert now?' : 'Delete scheduled alert?',
-      isLive
+    alert({
+      title: isLive ? 'End alert now?' : 'Delete scheduled alert?',
+      message: isLive
         ? 'It will be removed from the app immediately.'
         : 'It will be deleted and never sent.',
-      [
-        { text: 'Keep', style: 'cancel' },
+      actions: [
+        { label: 'Keep', style: 'cancel' },
         {
-          text: isLive ? 'End alert' : 'Delete',
+          label: isLive ? 'End alert' : 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -90,7 +92,7 @@ export default function BusinessAlertsScreen() {
           },
         },
       ],
-    );
+    });
   };
 
   return (

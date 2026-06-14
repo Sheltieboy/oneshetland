@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, Animated, Image,
+  TextInput, ActivityIndicator, Animated, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchShift, fetchMyApplication, submitInterest, withdrawApplication,
   formatPay, formatDuration, formatShiftDate, URGENCY_CONFIG, CATEGORY_LABELS,
@@ -23,6 +24,7 @@ export default function ShiftDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router  = useRouter();
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   const [shift, setShift]             = useState<Shift | null>(null);
   const [application, setApplication] = useState<ShiftApplication | null>(null);
@@ -41,7 +43,7 @@ export default function ShiftDetailScreen() {
     ]).then(([s, app]) => {
       setShift(s);
       setApplication(app);
-    }).catch(() => Alert.alert('Error', 'Could not load shift.'))
+    }).catch(() => alert({ title: 'Error', message: 'Could not load shift.' }))
       .finally(() => setLoading(false));
   }, [id, profile]);
 
@@ -57,23 +59,27 @@ export default function ShiftDetailScreen() {
       Animated.spring(successAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      alert({ title: 'Error', message: e.message });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleWithdraw = () => {
-    Alert.alert('Withdraw interest?', 'You can re-apply at any time.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Withdraw', style: 'destructive', onPress: async () => {
-        if (!application) return;
-        await withdrawApplication(application.id, shift?.id, application.status === 'accepted');
-        setApplication(null);
-        successAnim.setValue(0);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }},
-    ]);
+    alert({
+      title: 'Withdraw interest?',
+      message: 'You can re-apply at any time.',
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Withdraw', style: 'destructive', onPress: async () => {
+          if (!application) return;
+          await withdrawApplication(application.id, shift?.id, application.status === 'accepted');
+          setApplication(null);
+          successAnim.setValue(0);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }},
+      ],
+    });
   };
 
   if (loading) {

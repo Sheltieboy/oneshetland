@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Switch,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,6 +16,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchJob, createJob, updateJob,
@@ -33,6 +34,7 @@ const EXPIRY = [{ label: 'No close date', days: 0 }, { label: '30 days', days: 3
 export default function JobPostScreen() {
   const { businessId, jobId } = useLocalSearchParams<{ businessId: string; jobId?: string }>();
   const router = useRouter();
+  const { alert } = useAlert();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
   const isEdit = !!jobId;
@@ -78,7 +80,7 @@ export default function JobPostScreen() {
   useEffect(() => { void load(); }, [load]);
 
   const save = async () => {
-    if (!title.trim()) { Alert.alert('Title needed', 'Give the role a title.'); return; }
+    if (!title.trim()) { alert({ title: 'Title needed', message: 'Give the role a title.' }); return; }
     if (!profile) return;
     setSaving(true);
     try {
@@ -113,7 +115,7 @@ export default function JobPostScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/job-applicants?jobId=${targetId}`);
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message ?? '');
+      alert({ title: 'Could not save', message: e?.message ?? '' });
     } finally { setSaving(false); }
   };
 

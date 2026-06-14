@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch,
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import { uploadHubImage, extractBrandColor, type PickedFile } from '@/lib/image-upload';
 import {
@@ -37,6 +38,7 @@ export default function HubRegisterScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
@@ -77,7 +79,7 @@ export default function HubRegisterScreen() {
 
   const pickLogo = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return Alert.alert('Permission needed', 'Allow photo access to add a logo.');
+    if (!perm.granted) return alert({ title: 'Permission needed', message: 'Allow photo access to add a logo.' });
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85,
     });
@@ -93,7 +95,7 @@ export default function HubRegisterScreen() {
 
   const save = async () => {
     if (!profile) { router.push('/(auth)/sign-in'); return; }
-    if (!name.trim()) { Alert.alert('Name needed', 'Give your hub a name.'); return; }
+    if (!name.trim()) { alert({ title: 'Name needed', message: 'Give your hub a name.' }); return; }
     setSaving(true);
     const input = {
       name: name.trim(), type, description: description.trim() || null,
@@ -115,7 +117,7 @@ export default function HubRegisterScreen() {
           const color = brandColor ?? (await extractBrandColor(logoFile.uri));
           await updateHub(hubId, { logo_url: uploaded.publicUrl, brand_color: color ?? null });
         } catch (imgErr: any) {
-          Alert.alert('Logo not saved', imgErr?.message ?? 'The details saved, but the logo upload failed — try again from settings.');
+          alert({ title: 'Logo not saved', message: imgErr?.message ?? 'The details saved, but the logo upload failed — try again from settings.' });
         }
       }
 
@@ -123,7 +125,7 @@ export default function HubRegisterScreen() {
       if (id) router.back();
       else    router.replace(`/hubs/${hubId}`);
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message ?? 'Please try again.');
+      alert({ title: 'Could not save', message: e?.message ?? 'Please try again.' });
     } finally { setSaving(false); }
   };
 

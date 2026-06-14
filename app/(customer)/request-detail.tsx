@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -18,6 +17,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.fetch;
 
@@ -74,6 +74,7 @@ function penceToGBP(pence: number): string {
 
 export default function RequestDetailScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const { screenWidth } = useAppLayout();
   const params = useLocalSearchParams<{
     id: string;
@@ -241,15 +242,15 @@ export default function RequestDetailScreen() {
 
     const isMatched = status === 'matched';
 
-    Alert.alert(
-      isMatched ? 'Cancel this request?' : 'Cancel this request?',
-      isMatched
+    alert({
+      title: isMatched ? 'Cancel this request?' : 'Cancel this request?',
+      message: isMatched
         ? 'A driver has already accepted this request. They will be notified of the cancellation. Please only cancel if absolutely necessary.'
         : 'This will remove your request and no driver will be sent.',
-      [
-        { text: 'Keep request', style: 'cancel' },
+      actions: [
+        { label: 'Keep request', style: 'cancel' },
         {
-          text: 'Yes, cancel it',
+          label: 'Yes, cancel it',
           style: 'destructive',
           onPress: async () => {
             setCancelling(true);
@@ -260,7 +261,7 @@ export default function RequestDetailScreen() {
 
             if (error) {
               setCancelling(false);
-              Alert.alert('Error', 'Could not cancel the request. Please try again.');
+              alert({ title: 'Error', message: 'Could not cancel the request. Please try again.' });
               return;
             }
 
@@ -282,7 +283,7 @@ export default function RequestDetailScreen() {
           },
         },
       ],
-    );
+    });
   }
 
   const baseFee = request.base_fee_pence;
@@ -338,13 +339,14 @@ export default function RequestDetailScreen() {
                 <Button
                   label="I've confirmed collection is ready"
                   onPress={() =>
-                    Alert.alert(
-                      'Confirm collection ready?',
-                      'This lets your driver know the item is definitely ready for collection and stops any further waiting fee.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
+                    alert({
+                      title: 'Confirm collection ready?',
+                      message: 'This lets your driver know the item is definitely ready for collection and stops any further waiting fee.',
+                      actions: [
+                        { label: 'Cancel', style: 'cancel' },
                         {
-                          text: 'Yes, confirm',
+                          label: 'Yes, confirm',
+                          style: 'primary',
                           onPress: async () => {
                             await supabase
                               .from('delivery_requests')
@@ -354,7 +356,7 @@ export default function RequestDetailScreen() {
                           },
                         },
                       ],
-                    )
+                    })
                   }
                   variant="secondary"
                   size="sm"

@@ -8,7 +8,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert, Image,
+  ActivityIndicator, RefreshControl, Image,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/components/BrandedAlert';
 import { fetchPendingHubEvents, approveHubEvent, type OsEvent } from '@/lib/events-api';
 
 function fmtWhen(iso: string): string {
@@ -31,6 +32,7 @@ export default function EventApprovalsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [events, setEvents] = useState<OsEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +54,7 @@ export default function EventApprovalsScreen() {
       await approveHubEvent(ev.id, profile.id);
       setEvents(prev => prev.filter(e => e.id !== ev.id));
     } catch (e: any) {
-      Alert.alert('Could not approve', e?.message ?? '');
+      alert({ title: 'Could not approve', message: e?.message ?? '' });
     } finally {
       setBusyId(null);
     }

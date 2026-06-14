@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, KeyboardAvoidingView, Platform, Switch,
+  TextInput, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.shifts;
 
@@ -115,6 +116,7 @@ export default function ShiftWorkerProfileScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert: showAlert } = useAlert();
 
   const [form, setForm]         = useState<WorkerProfile>(EMPTY);
   const [original, setOriginal] = useState<WorkerProfile>(EMPTY);
@@ -209,14 +211,18 @@ export default function ShiftWorkerProfileScreen() {
     setSaving(false);
 
     if (error || alertError) {
-      Alert.alert('Could not save', (error ?? alertError)!.message);
+      showAlert({ title: 'Could not save', message: (error ?? alertError)!.message });
     } else {
       setOriginal(form);
       setOrigAlert(alert);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Saved', 'Your shift profile has been updated.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      showAlert({
+        title: 'Saved',
+        message: 'Your shift profile has been updated.',
+        actions: [
+          { label: 'OK', style: 'primary', onPress: () => router.back() },
+        ],
+      });
     }
   };
 

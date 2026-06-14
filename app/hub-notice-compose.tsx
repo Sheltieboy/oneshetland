@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, KeyboardAvoidingView, Platform,
+  TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -17,6 +17,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 import { createHubNotice, type NoticeVisibility } from '@/lib/hubs-api';
 
 const S = SECTIONS.community;
@@ -32,6 +33,7 @@ export default function HubNoticeComposeScreen() {
   const { hub } = useLocalSearchParams<{ hub: string }>();
   const router = useRouter();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -41,7 +43,7 @@ export default function HubNoticeComposeScreen() {
 
   const post = async () => {
     if (!hub) return;
-    if (!title.trim()) { Alert.alert('Title needed', 'Give your notice a title.'); return; }
+    if (!title.trim()) { alert({ title: 'Title needed', message: 'Give your notice a title.' }); return; }
     setSaving(true);
     try {
       const expires_at = expiryDays != null ? new Date(Date.now() + expiryDays * 86_400_000).toISOString() : null;
@@ -49,7 +51,7 @@ export default function HubNoticeComposeScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e: any) {
-      Alert.alert('Could not post', e?.message ?? 'Please try again.');
+      alert({ title: 'Could not post', message: e?.message ?? 'Please try again.' });
     } finally { setSaving(false); }
   };
 

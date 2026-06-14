@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +15,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchEvent, updateEvent, postEventUpdate, fetchScannerStats,
@@ -31,6 +32,7 @@ export default function EventManageScreen() {
   const { id }   = useLocalSearchParams<{ id: string }>();
   const router   = useRouter();
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   const [event,     setEvent]     = useState<OsEvent | null>(null);
   const [stats,     setStats]     = useState<ScannerStats | null>(null);
@@ -70,17 +72,21 @@ export default function EventManageScreen() {
       postponed: 'Mark as postponed',
       archived:  'Archive event',
     };
-    Alert.alert(labels[newStatus], `Change event status to "${newStatus}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', style: newStatus === 'cancelled' ? 'destructive' : 'default',
-        onPress: async () => {
-          setStatusBusy(true);
-          await updateEvent(event.id, { status: newStatus }).catch(e => Alert.alert('Error', e.message));
-          await load();
-          setStatusBusy(false);
+    alert({
+      title: labels[newStatus],
+      message: `Change event status to "${newStatus}"?`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Confirm', style: newStatus === 'cancelled' ? 'destructive' : 'primary',
+          onPress: async () => {
+            setStatusBusy(true);
+            await updateEvent(event.id, { status: newStatus }).catch(e => alert({ title: 'Error', message: e.message }));
+            await load();
+            setStatusBusy(false);
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   const handlePostUpdate = async () => {
@@ -104,7 +110,7 @@ export default function EventManageScreen() {
       setUpdateUrgent(false);
       await load();
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      alert({ title: 'Error', message: e.message });
     } finally {
       setPostingUpdate(false);
     }

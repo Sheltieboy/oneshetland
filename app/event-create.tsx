@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Switch, Image, Modal, Platform,
+  ActivityIndicator, Switch, Image, Modal, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/c
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
@@ -42,6 +43,7 @@ export default function EventCreateScreen() {
   const router  = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const isEdit = !!eventId;
   const isHub  = !!hubId;
@@ -160,7 +162,7 @@ export default function EventCreateScreen() {
   };
 
   const handleSave = async (publish = false) => {
-    if (!title.trim()) { Alert.alert('Title required'); return; }
+    if (!title.trim()) { alert({ title: 'Title required' }); return; }
     if (!profile) return;
     setSaving(true);
     try {
@@ -236,7 +238,7 @@ export default function EventCreateScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace({ pathname: '/event-manage', params: { id: targetId } });
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Please try again');
+      alert({ title: 'Error', message: e.message ?? 'Please try again' });
     } finally {
       setSaving(false);
     }

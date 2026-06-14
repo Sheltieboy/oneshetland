@@ -7,7 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import {
   type Hub, type HubMembershipType, type MembershipPeriod,
 } from '@/lib/hubs-api';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useAlert } from '@/components/BrandedAlert';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IconButton } from '@/components/ui/IconButton';
@@ -52,6 +53,7 @@ export default function HubMembershipTypesScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [hub, setHub] = useState<Hub | null>(null);
   const [types, setTypes] = useState<HubMembershipType[]>([]);
@@ -85,9 +87,9 @@ export default function HubMembershipTypesScreen() {
 
   const save = async () => {
     if (!id) return;
-    if (!form.name.trim()) { Alert.alert('Name needed', 'Give this tier a name.'); return; }
+    if (!form.name.trim()) { alert({ title: 'Name needed', message: 'Give this tier a name.' }); return; }
     const pricePence = Math.round((parseFloat(form.priceText) || 0) * 100);
-    if (pricePence < 0) { Alert.alert('Invalid price', 'Price cannot be negative.'); return; }
+    if (pricePence < 0) { alert({ title: 'Invalid price', message: 'Price cannot be negative.' }); return; }
     setSaving(true);
     const input = {
       name: form.name.trim(),
@@ -103,15 +105,19 @@ export default function HubMembershipTypesScreen() {
       setEditorOpen(false);
       load();
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message ?? '');
+      alert({ title: 'Could not save', message: e?.message ?? '' });
     } finally { setSaving(false); }
   };
 
   const remove = (t: HubMembershipType) => {
-    Alert.alert('Remove tier?', `"${t.name}" will be hidden. Existing members keep their membership.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => { try { await deleteMembershipType(t.id); load(); } catch (e: any) { Alert.alert('Could not remove', e?.message ?? ''); } } },
-    ]);
+    alert({
+      title: 'Remove tier?',
+      message: `"${t.name}" will be hidden. Existing members keep their membership.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Remove', style: 'destructive', onPress: async () => { try { await deleteMembershipType(t.id); load(); } catch (e: any) { alert({ title: 'Could not remove', message: e?.message ?? '' }); } } },
+      ],
+    });
   };
 
   const [onboarding, setOnboarding] = useState(false);
@@ -125,7 +131,7 @@ export default function HubMembershipTypesScreen() {
       const { url } = await createHubOnboardingLink(id);
       await Linking.openURL(url);
     } catch (e: any) {
-      Alert.alert('Could not start payout setup', e?.message ?? 'Please try again.');
+      alert({ title: 'Could not start payout setup', message: e?.message ?? 'Please try again.' });
     } finally { setOnboarding(false); }
   };
 

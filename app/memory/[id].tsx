@@ -19,7 +19,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
-  TouchableOpacity, Image, TextInput, Alert,
+  TouchableOpacity, Image, TextInput,
   KeyboardAvoidingView, Platform, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -38,6 +38,7 @@ import {
 } from '@/lib/memories-api';
 import ImageAnnotationOverlay from '@/components/ImageAnnotationOverlay';
 import { MEMORY_CATEGORY_BY_SLUG } from '@/constants/memory-categories';
+import { useAlert } from '@/components/BrandedAlert';
 
 const SECTION = SECTIONS.memories;
 
@@ -57,6 +58,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
   const { id: routeId } = useLocalSearchParams<{ id: string }>();
   const id = idOverride ?? routeId;
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   // Close: in embedded (right-pane) mode hand control back to the host;
   // otherwise pop the navigation stack.
@@ -122,7 +124,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
     try {
       await toggleReaction(memory.id, profile.id, kind);
     } catch (err: any) {
-      Alert.alert('Could not react', err?.message ?? '');
+      alert({ title: 'Could not react', message: err?.message ?? '' });
       void load();
     }
   };
@@ -149,7 +151,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
       setPinPromptDraft('');
       void load();
     } catch (err: any) {
-      Alert.alert('Could not save pin', err?.message ?? '');
+      alert({ title: 'Could not save pin', message: err?.message ?? '' });
     }
   };
 
@@ -162,26 +164,30 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
       setActivePin(null);
       void load();
     } catch (err: any) {
-      Alert.alert('Could not resolve', err?.message ?? '');
+      alert({ title: 'Could not resolve', message: err?.message ?? '' });
     }
   };
 
   const onDeletePin = async (pin: MemoryImagePin) => {
-    Alert.alert('Remove pin?', 'This deletes the question, not the photo.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove', style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteImagePin(pin.id);
-            setActivePin(null);
-            void load();
-          } catch (err: any) {
-            Alert.alert('Failed', err?.message ?? '');
-          }
+    alert({
+      title: 'Remove pin?',
+      message: 'This deletes the question, not the photo.',
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        {
+          label: 'Remove', style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteImagePin(pin.id);
+              setActivePin(null);
+              void load();
+            } catch (err: any) {
+              alert({ title: 'Failed', message: err?.message ?? '' });
+            }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   // ── Comments ─────────────────────────────────────────────────────────────
@@ -199,7 +205,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
       setCommentDraft('');
       void load();
     } catch (err: any) {
-      Alert.alert('Could not post', err?.message ?? '');
+      alert({ title: 'Could not post', message: err?.message ?? '' });
     } finally {
       setCommenting(false);
     }
@@ -210,7 +216,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
       await deleteComment(commentId);
       void load();
     } catch (err: any) {
-      Alert.alert('Failed', err?.message ?? '');
+      alert({ title: 'Failed', message: err?.message ?? '' });
     }
   };
 
@@ -218,24 +224,24 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
 
   const onDeleteMemory = () => {
     if (!memory) return;
-    Alert.alert(
-      'Delete this memory?',
-      'Photos, voice notes, comments and child memories will be removed. This can\'t be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Delete this memory?',
+      message: 'Photos, voice notes, comments and child memories will be removed. This can\'t be undone.',
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete', style: 'destructive',
+          label: 'Delete', style: 'destructive',
           onPress: async () => {
             try {
               await deleteMemory(memory.id);
               goBack();
             } catch (err: any) {
-              Alert.alert('Failed', err?.message ?? '');
+              alert({ title: 'Failed', message: err?.message ?? '' });
             }
           },
         },
       ],
-    );
+    });
   };
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -437,7 +443,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
                 });
                 void load();
               } catch (err: any) {
-                Alert.alert('Could not suggest', err?.message ?? '');
+                alert({ title: 'Could not suggest', message: err?.message ?? '' });
               }
             }}
             onAccept={async (suggestionId) => {
@@ -446,7 +452,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
                 setActivePin(null);
                 void load();
               } catch (err: any) {
-                Alert.alert('Could not accept', err?.message ?? '');
+                alert({ title: 'Could not accept', message: err?.message ?? '' });
               }
             }}
             onWithdrawSuggestion={async (suggestionId) => {
@@ -454,7 +460,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
                 await deletePinSuggestion(suggestionId);
                 void load();
               } catch (err: any) {
-                Alert.alert('Could not withdraw', err?.message ?? '');
+                alert({ title: 'Could not withdraw', message: err?.message ?? '' });
               }
             }}
           />

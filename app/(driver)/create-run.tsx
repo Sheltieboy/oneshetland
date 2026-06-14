@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   Switch,
-  Alert,
   Platform,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -17,6 +16,7 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { useAlert } from '@/components/BrandedAlert';
 import { REGIONS } from '@/constants/regions';
 import { DELIVERY_CATEGORIES } from '@/constants/categories';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -88,6 +88,7 @@ function makeInitialForm(): RunForm {
 export default function CreateRunScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   const [form, setForm]           = useState<RunForm>(makeInitialForm);
   const [errors, setErrors]       = useState<Record<string, string>>({});
@@ -177,12 +178,12 @@ export default function CreateRunScreen() {
     if (!validate()) return;
 
     if (!isSupabaseConfigured) {
-      Alert.alert('Supabase not configured', 'Add your keys to .env.');
+      alert({ title: 'Supabase not configured', message: 'Add your keys to .env.' });
       return;
     }
 
     if (!profile?.id) {
-      Alert.alert('Error', 'You must be signed in to create a run.');
+      alert({ title: 'Error', message: 'You must be signed in to create a run.' });
       return;
     }
 
@@ -210,15 +211,17 @@ export default function CreateRunScreen() {
     setSubmitting(false);
 
     if (error) {
-      Alert.alert('Could not create run', error.message);
+      alert({ title: 'Could not create run', message: error.message });
       return;
     }
 
-    Alert.alert(
-      'Run created! 🚗',
-      'Your run is now visible to customers. Matched requests will appear on your dashboard.',
-      [{ text: 'Back to dashboard', onPress: () => router.replace('/(driver)/dashboard') }],
-    );
+    alert({
+      title: 'Run created! 🚗',
+      message: 'Your run is now visible to customers. Matched requests will appear on your dashboard.',
+      actions: [
+        { label: 'Back to dashboard', style: 'primary', onPress: () => router.replace('/(driver)/dashboard') },
+      ],
+    });
   }
 
   const originRegion = REGIONS.find((r) => r.slug === form.originRegionSlug);

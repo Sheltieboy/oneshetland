@@ -8,7 +8,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, RefreshControl,
+  ActivityIndicator, TextInput, RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/c
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { useAlert } from '@/components/BrandedAlert';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import {
@@ -34,6 +35,7 @@ const STATUS_META: Record<AlertAccessStatus, { label: string; color: string; bg:
 
 export default function AdminAlertApprovalsScreen() {
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [requests, setRequests]   = useState<AlertAccessWithBusiness[]>([]);
   const [loading,  setLoading]    = useState(true);
@@ -60,7 +62,7 @@ export default function AdminAlertApprovalsScreen() {
       setReviewingId(null);
       await load();
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Could not save decision');
+      alert({ title: 'Error', message: e.message ?? 'Could not save decision' });
     } finally {
       setBusy(false);
     }

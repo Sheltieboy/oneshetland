@@ -8,9 +8,10 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, RefreshControl,
+  RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { useAlert } from '@/components/BrandedAlert';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
@@ -51,6 +52,7 @@ function fmtDate(iso: string) {
 
 export default function AdminAlertsScreen() {
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [alerts,     setAlerts]     = useState<PartnerAlert[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,20 +71,20 @@ export default function AdminAlertsScreen() {
   const ended     = alerts.filter(a => alertStatus(a) === 'ended');
 
   const handleForceExpire = (a: PartnerAlert) => {
-    Alert.alert(
-      'Force end this alert?',
-      `"${a.business_name}" — ${a.message.slice(0, 60)}${a.message.length > 60 ? '…' : ''}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Force end this alert?',
+      message: `"${a.business_name}" — ${a.message.slice(0, 60)}${a.message.length > 60 ? '…' : ''}`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'End alert',
+          label: 'End alert',
           style: 'destructive',
           onPress: async () => {
             try { await forceExpireAlert(a.id); await load(); } catch {}
           },
         },
       ],
-    );
+    });
   };
 
   return (

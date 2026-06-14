@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   Share,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -27,6 +26,7 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useAlert } from '@/components/BrandedAlert';
 
 type Status = 'pending' | 'reviewed' | 'all';
 
@@ -205,6 +205,7 @@ function WordGroupBlock({
 
 export default function SpikSuggestionsScreen() {
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [filter, setFilter]       = useState<Status>('pending');
   const [groups, setGroups]       = useState<WordGroup[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -236,7 +237,7 @@ export default function SpikSuggestionsScreen() {
       setTotalPending(count ?? 0);
 
     } catch (e) {
-      Alert.alert('Error', 'Could not load suggestions');
+      alert({ title: 'Error', message: 'Could not load suggestions' });
     } finally {
       setLoading(false);
       setRefreshing(false);

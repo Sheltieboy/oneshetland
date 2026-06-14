@@ -6,12 +6,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
+import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
 interface DisputeRow {
@@ -47,6 +47,7 @@ function minutesBetween(a: string, b: string | null): string {
 
 export default function AdminDisputesScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const [rows, setRows] = useState<DisputeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,16 +84,16 @@ export default function AdminDisputesScreen() {
   }, [fetchDisputes]);
 
   async function handleResolve(id: string, confirm: boolean) {
-    Alert.alert(
-      confirm ? 'Confirm fee' : 'Waive fee',
-      confirm
+    alert({
+      title: confirm ? 'Confirm fee' : 'Waive fee',
+      message: confirm
         ? 'Mark the waiting fee as confirmed and accepted by the customer?'
         : 'Dismiss this dispute and waive the waiting fee?',
-      [
-        { text: 'Cancel', style: 'cancel' },
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: confirm ? 'Confirm fee' : 'Waive fee',
-          style: confirm ? 'default' : 'destructive',
+          label: confirm ? 'Confirm fee' : 'Waive fee',
+          style: confirm ? 'primary' : 'destructive',
           onPress: async () => {
             setResolving(id);
             const updates: Record<string, unknown> = { customer_confirmed: confirm };
@@ -103,14 +104,14 @@ export default function AdminDisputesScreen() {
               .eq('id', id);
             setResolving(null);
             if (error) {
-              Alert.alert('Error', error.message);
+              alert({ title: 'Error', message: error.message });
             } else {
               fetchDisputes();
             }
           },
         },
       ],
-    );
+    });
   }
 
   const openCount = rows.filter((r) => r.customer_confirmed === null).length;

@@ -10,7 +10,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Platform,
+  ActivityIndicator, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -276,6 +276,7 @@ function WeeklyRuleEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { alert } = useAlert();
   const [days, setDays]         = useState<number[]>([1, 2, 3, 4, 5]); // Mon–Fri default
   const [startHM, setStartHM]   = useState({ h: 9,  m: 0 });
   const [endHM, setEndHM]       = useState({ h: 17, m: 0 });
@@ -297,12 +298,12 @@ function WeeklyRuleEditor({
   };
 
   const save = async () => {
-    if (days.length === 0) return Alert.alert('Pick at least one day');
+    if (days.length === 0) return alert({ title: 'Pick at least one day' });
     const startMins = startHM.h * 60 + startHM.m;
     const endMins   = endHM.h   * 60 + endHM.m;
-    if (endMins <= startMins) return Alert.alert('End must be after start');
+    if (endMins <= startMins) return alert({ title: 'End must be after start' });
     const ivl = parseInt(interval);
-    if (!ivl || ivl < 5 || ivl > 240) return Alert.alert('Slot interval must be 5–240 minutes');
+    if (!ivl || ivl < 5 || ivl > 240) return alert({ title: 'Slot interval must be 5–240 minutes' });
 
     setSaving(true);
     try {
@@ -319,7 +320,7 @@ function WeeklyRuleEditor({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
     } catch (e: any) {
-      Alert.alert('Save failed', e?.message ?? 'Try again.');
+      alert({ title: 'Save failed', message: e?.message ?? 'Try again.' });
     } finally {
       setSaving(false);
     }
@@ -407,6 +408,7 @@ function OverrideEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { alert } = useAlert();
   const [startsAt, setStartsAt] = useState<Date>(() => roundToNextHalf(new Date(Date.now() + 60 * 60_000)));
   const [endsAt, setEndsAt]     = useState<Date>(() => roundToNextHalf(new Date(Date.now() + 2 * 60 * 60_000)));
   const [notes, setNotes]       = useState('');
@@ -424,7 +426,7 @@ function OverrideEditor({
   }, [visible, type]);
 
   const save = async () => {
-    if (endsAt <= startsAt) return Alert.alert('End must be after start');
+    if (endsAt <= startsAt) return alert({ title: 'End must be after start' });
     setSaving(true);
     try {
       await createOverride(businessId, {
@@ -436,7 +438,7 @@ function OverrideEditor({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
     } catch (e: any) {
-      Alert.alert('Save failed', e?.message ?? 'Try again.');
+      alert({ title: 'Save failed', message: e?.message ?? 'Try again.' });
     } finally {
       setSaving(false);
     }

@@ -14,7 +14,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -82,7 +82,7 @@ export default function GiftScreen() {
 
     const emailTrim = recipientEmail.trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(emailTrim)) {
-      return Alert.alert('Email needed', 'Please enter the recipient\'s email address.');
+      return alert({ title: 'Email needed', message: 'Please enter the recipient\'s email address.' });
     }
 
     if (!profile.has_payment_method) {
@@ -156,7 +156,7 @@ export default function GiftScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDoneState({ code: confirm.code, recipientEmail: emailTrim });
     } catch (e: any) {
-      Alert.alert('Gift failed', e?.message ?? 'Please try again.');
+      alert({ title: 'Gift failed', message: e?.message ?? 'Please try again.' });
     } finally {
       setSubmitting(false);
     }

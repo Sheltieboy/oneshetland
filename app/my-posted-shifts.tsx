@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useStripe } from '@stripe/stripe-react-native';
 import { supabase } from '@/lib/supabase';
@@ -12,6 +12,7 @@ import { colors, fontSize, spacing, radius, contentContainer } from '@/constants
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useAlert } from '@/components/BrandedAlert';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -43,6 +44,7 @@ export default function MyPostedShiftsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [shifts, setShifts]         = useState<ShiftWithStats[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -58,7 +60,7 @@ export default function MyPostedShiftsScreen() {
       const data = await fetchEmployerShifts(profile.id);
       setShifts(data as ShiftWithStats[]);
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not load shifts.');
+      alert({ title: 'Error', message: e?.message ?? 'Could not load shifts.' });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -70,13 +72,13 @@ export default function MyPostedShiftsScreen() {
   const onRefresh = () => { setRefreshing(true); load(); };
 
   const handleCancel = (shiftId: string, title: string) => {
-    Alert.alert(
-      'Cancel this shift?',
-      `"${title}" will be closed and no new applications can be received.`,
-      [
-        { text: 'Keep it open', style: 'cancel' },
+    alert({
+      title: 'Cancel this shift?',
+      message: `"${title}" will be closed and no new applications can be received.`,
+      actions: [
+        { label: 'Keep it open', style: 'cancel' },
         {
-          text: 'Yes, cancel it',
+          label: 'Yes, cancel it',
           style: 'destructive',
           onPress: async () => {
             setCancelling(shiftId);
@@ -88,14 +90,14 @@ export default function MyPostedShiftsScreen() {
               );
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (e: any) {
-              Alert.alert('Error', e?.message);
+              alert({ title: 'Error', message: e?.message });
             } finally {
               setCancelling(null);
             }
           },
         },
-      ]
-    );
+      ],
+    });
   };
 
   const handleConfirmComplete = (shiftId: string, title: string, checkedOutCount: number) => {
@@ -103,40 +105,45 @@ export default function MyPostedShiftsScreen() {
       ? `${checkedOutCount} worker${checkedOutCount > 1 ? 's have' : ' has'} finished. Mark "${title}" as complete and notify them?`
       : `Mark "${title}" as complete? This will notify all confirmed workers.`;
 
-    Alert.alert('Mark shift complete?', msg, [
-      { text: 'Not yet', style: 'cancel' },
-      {
-        text: 'Confirm complete',
-        onPress: async () => {
-          setConfirming(shiftId);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          try {
-            await confirmShiftComplete(shiftId);
-            setShifts(prev =>
-              prev.map(s => s.id === shiftId ? { ...s, status: 'completed' } : s)
-            );
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          } catch (e: any) {
-            Alert.alert('Error', e?.message ?? 'Could not mark complete.');
-          } finally {
-            setConfirming(null);
-          }
+    alert({
+      title: 'Mark shift complete?',
+      message: msg,
+      actions: [
+        { label: 'Not yet', style: 'cancel' },
+        {
+          label: 'Confirm complete',
+          style: 'primary',
+          onPress: async () => {
+            setConfirming(shiftId);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            try {
+              await confirmShiftComplete(shiftId);
+              setShifts(prev =>
+                prev.map(s => s.id === shiftId ? { ...s, status: 'completed' } : s)
+              );
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (e: any) {
+              alert({ title: 'Error', message: e?.message ?? 'Could not mark complete.' });
+            } finally {
+              setConfirming(null);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   const handleBoost = async (shiftId: string) => {
     // Pre-flight: card must be set up centrally in Me before boosting
     if (!profile?.has_payment_method) {
-      Alert.alert(
-        'Payment card needed',
-        'Add a payment card in your account before boosting a shift.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/payment-setup') },
+      alert({
+        title: 'Payment card needed',
+        message: 'Add a payment card in your account before boosting a shift.',
+        actions: [
+          { label: 'Not now', style: 'cancel' },
+          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup') },
         ],
-      );
+      });
       return;
     }
 
@@ -158,13 +165,13 @@ export default function MyPostedShiftsScreen() {
       const boostedUntil = confirmData?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString();
       setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, boosted_until: boostedUntil } : s));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        '⚡ Shift boosted!',
-        'Matching workers have been alerted. Your shift is pinned to the top for 24 hours.',
-        [{ text: 'Great' }]
-      );
+      alert({
+        title: '⚡ Shift boosted!',
+        message: 'Matching workers have been alerted. Your shift is pinned to the top for 24 hours.',
+        actions: [{ label: 'Great', style: 'primary' }],
+      });
     } catch (e: any) {
-      Alert.alert('Boost failed', e?.message ?? 'Please try again.');
+      alert({ title: 'Boost failed', message: e?.message ?? 'Please try again.' });
     } finally {
       setBoosting(null);
     }

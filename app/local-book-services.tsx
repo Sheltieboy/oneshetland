@@ -10,7 +10,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Switch,
+  ActivityIndicator, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -218,6 +218,7 @@ function ServiceEditor({
   onSaved: () => void;
 }) {
   const isNew = !service;
+  const { alert } = useAlert();
 
   const [name, setName]           = useState('');
   const [description, setDesc]    = useState('');
@@ -244,33 +245,33 @@ function ServiceEditor({
 
   const save = async () => {
     const trimmedName = name.trim();
-    if (!trimmedName) return Alert.alert('Name required', 'Give your service a short name.');
+    if (!trimmedName) return alert({ title: 'Name required', message: 'Give your service a short name.' });
 
     const duration = parseInt(durationMin);
     if (!duration || duration < 5 || duration > 600) {
-      return Alert.alert('Invalid duration', 'Between 5 minutes and 10 hours.');
+      return alert({ title: 'Invalid duration', message: 'Between 5 minutes and 10 hours.' });
     }
     const buffer = parseInt(bufferMin) || 0;
-    if (buffer < 0) return Alert.alert('Invalid buffer');
+    if (buffer < 0) return alert({ title: 'Invalid buffer' });
 
     const capacity = parseInt(capacityText) || 1;
     if (capacity < 1 || capacity > 999) {
-      return Alert.alert('Invalid capacity', 'Between 1 and 999.');
+      return alert({ title: 'Invalid capacity', message: 'Between 1 and 999.' });
     }
 
     const priceNum = parseFloat(priceText || '0');
-    if (Number.isNaN(priceNum) || priceNum < 0) return Alert.alert('Invalid price');
+    if (Number.isNaN(priceNum) || priceNum < 0) return alert({ title: 'Invalid price' });
     const pricePence = Math.round(priceNum * 100);
 
     let depositPence = 0;
     if (requiresDep) {
       const depNum = parseFloat(depositText || '0');
       if (Number.isNaN(depNum) || depNum <= 0) {
-        return Alert.alert('Deposit needed', 'Enter a deposit amount, or turn the deposit toggle off.');
+        return alert({ title: 'Deposit needed', message: 'Enter a deposit amount, or turn the deposit toggle off.' });
       }
       depositPence = Math.round(depNum * 100);
       if (pricePence > 0 && depositPence > pricePence) {
-        return Alert.alert('Deposit too high', 'Deposit can\'t exceed the service price.');
+        return alert({ title: 'Deposit too high', message: 'Deposit can\'t exceed the service price.' });
       }
     }
 
@@ -293,7 +294,7 @@ function ServiceEditor({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
     } catch (e: any) {
-      Alert.alert('Save failed', e?.message ?? 'Try again.');
+      alert({ title: 'Save failed', message: e?.message ?? 'Try again.' });
     } finally {
       setSaving(false);
     }

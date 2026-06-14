@@ -11,7 +11,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Switch,
+  ActivityIndicator, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -215,6 +215,7 @@ function UnitEditor({
   onSaved: () => void;
 }) {
   const isNew = !item;
+  const { alert } = useAlert();
 
   const [name, setName]           = useState('');
   const [description, setDesc]    = useState('');
@@ -241,11 +242,11 @@ function UnitEditor({
 
   const save = async () => {
     const trimmedName = name.trim();
-    if (!trimmedName) return Alert.alert('Name required', 'Give your unit a short name.');
+    if (!trimmedName) return alert({ title: 'Name required', message: 'Give your unit a short name.' });
 
     const priceNum = parseFloat(priceText || '0');
     if (Number.isNaN(priceNum) || priceNum <= 0) {
-      return Alert.alert('Invalid price', 'Enter a price greater than zero.');
+      return alert({ title: 'Invalid price', message: 'Enter a price greater than zero.' });
     }
     const pricePence = Math.round(priceNum * 100);
 
@@ -253,7 +254,7 @@ function UnitEditor({
     if (limitStock) {
       const stockNum = parseInt(stockText);
       if (Number.isNaN(stockNum) || stockNum < 0) {
-        return Alert.alert('Stock needed', 'Enter a stock number, or turn the stock limit off.');
+        return alert({ title: 'Stock needed', message: 'Enter a stock number, or turn the stock limit off.' });
       }
       stock = stockNum;
     }
@@ -262,14 +263,14 @@ function UnitEditor({
     if (hasExpiry) {
       const vd = parseInt(validDaysText);
       if (Number.isNaN(vd) || vd <= 0) {
-        return Alert.alert('Validity needed', 'Enter how many days the unit is valid, or turn the expiry off.');
+        return alert({ title: 'Validity needed', message: 'Enter how many days the unit is valid, or turn the expiry off.' });
       }
       validDays = vd;
     }
 
     const uses = parseInt(usesText) || 1;
     if (uses < 1 || uses > 999) {
-      return Alert.alert('Invalid uses', 'Between 1 and 999.');
+      return alert({ title: 'Invalid uses', message: 'Between 1 and 999.' });
     }
 
     const payload: UnitItemUpsertInput = {
@@ -289,7 +290,7 @@ function UnitEditor({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
     } catch (e: any) {
-      Alert.alert('Save failed', e?.message ?? 'Try again.');
+      alert({ title: 'Save failed', message: e?.message ?? 'Try again.' });
     } finally {
       setSaving(false);
     }

@@ -8,7 +8,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchBusiness, fetchMyClaim, submitBusinessClaim,
@@ -32,6 +33,7 @@ export default function BusinessClaimScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [business, setBusiness] = useState<LocalBusiness | null>(null);
   const [existing, setExisting] = useState<BusinessClaim | null>(null);
@@ -63,7 +65,7 @@ export default function BusinessClaimScreen() {
   const submit = async () => {
     if (!profile || !business) return;
     if (!contactName.trim() || !contactEmail.trim()) {
-      Alert.alert('Missing details', 'Please give your name and a contact email so we can verify you.');
+      alert({ title: 'Missing details', message: 'Please give your name and a contact email so we can verify you.' });
       return;
     }
     setSaving(true);
@@ -76,13 +78,13 @@ export default function BusinessClaimScreen() {
         evidence:      evidence.trim() || null,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        'Claim submitted',
-        `Thanks! We'll verify your connection to ${business.name} and get back to you. Once approved you can edit your listing and unlock Pro features.`,
-        [{ text: 'Done', onPress: () => router.back() }],
-      );
+      alert({
+        title: 'Claim submitted',
+        message: `Thanks! We'll verify your connection to ${business.name} and get back to you. Once approved you can edit your listing and unlock Pro features.`,
+        actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }],
+      });
     } catch (e: any) {
-      Alert.alert('Could not submit', e?.message ?? 'Please try again.');
+      alert({ title: 'Could not submit', message: e?.message ?? 'Please try again.' });
     } finally {
       setSaving(false);
     }

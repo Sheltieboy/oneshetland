@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -9,6 +9,7 @@ import { colors, fontSize, spacing, radius, contentContainer } from '@/constants
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useAlert } from '@/components/BrandedAlert';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -42,6 +43,7 @@ type Application = {
 export default function EmployerApplicationsScreen() {
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -54,7 +56,7 @@ export default function EmployerApplicationsScreen() {
       const data = await fetchEmployerApplications(profile.id);
       setApplications((data ?? []) as Application[]);
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not load applications.');
+      alert({ title: 'Error', message: e?.message ?? 'Could not load applications.' });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -71,11 +73,14 @@ export default function EmployerApplicationsScreen() {
       ? `Accept ${workerName} for this shift? They'll be notified.`
       : `Decline ${workerName}'s application?`;
 
-    Alert.alert(label, msg, [
-      { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: label,
+      message: msg,
+      actions: [
+      { label: 'Cancel', style: 'cancel' },
       {
-        text: label,
-        style: status === 'rejected' ? 'destructive' : 'default',
+        label: label,
+        style: status === 'rejected' ? 'destructive' : 'primary',
         onPress: async () => {
           setActioning(appId);
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -85,13 +90,14 @@ export default function EmployerApplicationsScreen() {
             setApplications(prev => prev.filter(a => a.id !== appId));
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } catch (e: any) {
-            Alert.alert('Error', e?.message);
+            alert({ title: 'Error', message: e?.message });
           } finally {
             setActioning(null);
           }
         },
       },
-    ]);
+      ],
+    });
   };
 
   const renderItem = ({ item }: { item: Application }) => {

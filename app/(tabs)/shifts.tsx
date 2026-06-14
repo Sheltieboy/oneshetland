@@ -13,7 +13,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Pressable, Animated, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Alert, Modal, Switch,
+  KeyboardAvoidingView, Platform, Modal, Switch,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
@@ -33,6 +33,7 @@ import {
   URGENCY_CONFIG, CATEGORY_LABELS, type Shift,
 } from '@/lib/shifts-api';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.shifts;
 
@@ -231,6 +232,7 @@ export function BoostSheet({
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const { profile } = useAuth();
   const router = useRouter();
+  const { alert } = useAlert();
   const [loading, setLoading] = useState(false);
 
   const hasSavedCard = !!profile?.has_payment_method;
@@ -238,14 +240,14 @@ export function BoostSheet({
   const handleBoost = async () => {
     // Pre-flight: redirect to card setup if no card on file
     if (!hasSavedCard) {
-      Alert.alert(
-        'Payment card needed',
-        'Add a payment card in your account before boosting a shift.',
-        [
-          { text: 'Not now', style: 'cancel', onPress: onDismiss },
-          { text: 'Add card', onPress: () => { onDismiss(); router.push('/payment-setup'); } },
+      alert({
+        title: 'Payment card needed',
+        message: 'Add a payment card in your account before boosting a shift.',
+        actions: [
+          { label: 'Not now', style: 'cancel', onPress: onDismiss },
+          { label: 'Add card', style: 'primary', onPress: () => { onDismiss(); router.push('/payment-setup'); } },
         ],
-      );
+      });
       return;
     }
 
@@ -266,7 +268,7 @@ export function BoostSheet({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onBoosted(confirmData?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString());
     } catch (e: any) {
-      Alert.alert('Boost failed', e?.message ?? 'Try again.');
+      alert({ title: 'Boost failed', message: e?.message ?? 'Try again.' });
     } finally {
       setLoading(false);
     }
@@ -336,6 +338,7 @@ export function BoostSheet({
 
 export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => void }) {
   const { profile } = useAuth();
+  const { alert } = useAlert();
   const [submitting, setSubmitting] = useState(false);
 
   // Post-as picker: load any Local businesses this user owns so they can
@@ -433,9 +436,9 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
   };
 
   const handleSubmit = async () => {
-    if (!title.trim())    return Alert.alert('Missing info', 'Please add a shift title.');
-    if (!category)        return Alert.alert('Missing info', 'Please select a category.');
-    if (!location.trim()) return Alert.alert('Missing info', 'Please add a location.');
+    if (!title.trim())    return alert({ title: 'Missing info', message: 'Please add a shift title.' });
+    if (!category)        return alert({ title: 'Missing info', message: 'Please select a category.' });
+    if (!location.trim()) return alert({ title: 'Missing info', message: 'Please add a location.' });
 
     const start_at = new Date(
       startDate.getFullYear(), startDate.getMonth(), startDate.getDate(),
@@ -449,7 +452,7 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
     ).toISOString();
 
     if (new Date(end_at) <= new Date(start_at)) {
-      return Alert.alert('Invalid times', 'End time must be after start time.');
+      return alert({ title: 'Invalid times', message: 'End time must be after start time.' });
     }
 
     // If the user has no Local business yet, require a business name + category
@@ -459,10 +462,10 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
     const needsInlineCreate = myBusinesses.length === 0 && !businessIdForShift;
     if (needsInlineCreate) {
       if (!inlineBusinessName.trim()) {
-        return Alert.alert('Business name required', 'What name should workers see on this shift?');
+        return alert({ title: 'Business name required', message: 'What name should workers see on this shift?' });
       }
       if (!inlineBusinessCategory) {
-        return Alert.alert('Category required', 'Pick a category for your business.');
+        return alert({ title: 'Category required', message: 'Pick a category for your business.' });
       }
     }
 
@@ -486,7 +489,7 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
         .single();
       if (bizErr || !created) {
         setSubmitting(false);
-        return Alert.alert('Could not create business', bizErr?.message ?? 'Try again.');
+        return alert({ title: 'Could not create business', message: bizErr?.message ?? 'Try again.' });
       }
       businessIdForShift = created.id;
       // Refresh local cache so the new business shows in the picker next time
@@ -521,7 +524,7 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
     setSubmitting(false);
 
     if (error) {
-      Alert.alert('Error', error.message);
+      alert({ title: 'Error', message: error.message });
     } else {
       // NOTE: notify-matching-workers is NOT fired here — it only fires on boost.
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

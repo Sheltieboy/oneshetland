@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { colors, fontSize, spacing, radius, contentContainer } from '@/constants
 import { SECTIONS } from '@/constants/sections';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { useAlert } from '@/components/BrandedAlert';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
@@ -48,6 +49,7 @@ export default function WalletScreen() {
   const { profile } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [balance, setBalance]   = useState<number>(0);
   const [txs, setTxs]           = useState<WalletTransaction[]>([]);
@@ -119,14 +121,14 @@ export default function WalletScreen() {
   const handleTopUp = async (amountPence: number) => {
     // Pre-flight: card must be set up centrally in Me before topping up
     if (!profile?.has_payment_method) {
-      Alert.alert(
-        'Payment card needed',
-        'Add a payment card in your account before topping up your wallet.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/payment-setup') },
+      alert({
+        title: 'Payment card needed',
+        message: 'Add a payment card in your account before topping up your wallet.',
+        actions: [
+          { label: 'Not now', style: 'cancel' },
+          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup') },
         ],
-      );
+      });
       return;
     }
 
@@ -168,10 +170,10 @@ export default function WalletScreen() {
       const { balance_pence } = await confirmWalletTopUp(piId);
       setBalance(balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Topped up!', `New balance: ${formatPence(balance_pence)}`);
+      alert({ title: 'Topped up!', message: `New balance: ${formatPence(balance_pence)}` });
       load();
     } catch (e: any) {
-      Alert.alert('Top-up failed', e.message ?? 'Try again');
+      alert({ title: 'Top-up failed', message: e.message ?? 'Try again' });
     } finally {
       setToppingUp(null);
     }

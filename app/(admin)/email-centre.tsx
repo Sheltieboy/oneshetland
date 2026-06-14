@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Switch, ActivityIndicator, Alert, RefreshControl,
+  TextInput, Switch, ActivityIndicator, RefreshControl,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -26,6 +26,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useAlert } from '@/components/BrandedAlert';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -99,6 +100,7 @@ export default function EmailCentreScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [tab, setTab] = useState<Tab>('templates');
 
   // Templates
@@ -178,9 +180,9 @@ export default function EmailCentreScreen() {
       setTemplates(prev => prev.map(t => t.id === editingTemplate.id ? editingTemplate : t));
       setEditingTemplate(null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Saved', 'Template updated.');
+      alert({ title: 'Saved', message: 'Template updated.' });
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not save.');
+      alert({ title: 'Error', message: e?.message ?? 'Could not save.' });
     } finally {
       setSavingTemplate(false);
     }
@@ -189,7 +191,7 @@ export default function EmailCentreScreen() {
   const sendTestEmail = async (tmpl: EmailTemplate) => {
     const email = testEmail.trim();
     if (!email) {
-      Alert.alert('Email needed', 'Enter a test email address above.');
+      alert({ title: 'Email needed', message: 'Enter a test email address above.' });
       return;
     }
     setSendingTest(tmpl.id);
@@ -219,13 +221,13 @@ export default function EmailCentreScreen() {
       const json = await res.json() as { ok?: boolean; error?: string; skipped?: boolean };
       if (!res.ok || !json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       if (json.skipped) {
-        Alert.alert('Skipped', 'This template is disabled. Enable it first.');
+        alert({ title: 'Skipped', message: 'This template is disabled. Enable it first.' });
         return;
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Test sent!', `Check ${email} for the email.`);
+      alert({ title: 'Test sent!', message: `Check ${email} for the email.` });
     } catch (e: any) {
-      Alert.alert('Send failed', e?.message ?? 'Try again');
+      alert({ title: 'Send failed', message: e?.message ?? 'Try again' });
     } finally {
       setSendingTest(null);
     }
@@ -238,9 +240,9 @@ export default function EmailCentreScreen() {
       await supabase.from('email_settings').update({ ...settingsDraft, updated_at: new Date().toISOString() }).eq('id', settings.id);
       setSettings({ ...settings, ...settingsDraft } as EmailSettings);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Saved', 'Email settings updated.');
+      alert({ title: 'Saved', message: 'Email settings updated.' });
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not save.');
+      alert({ title: 'Error', message: e?.message ?? 'Could not save.' });
     } finally {
       setSavingSettings(false);
     }

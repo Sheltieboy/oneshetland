@@ -7,7 +7,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  RefreshControl, Alert,
+  RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -18,6 +18,7 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchJob, fetchJobApplications, updateApplicationStatus,
   PIPELINE_STAGES, APPLICATION_STATUS_LABELS,
@@ -37,6 +38,7 @@ const NEXT_ACTIONS: { status: ApplicationStatus; label: string; color: string }[
 export default function JobApplicantsScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [job, setJob]   = useState<Job | null>(null);
   const [apps, setApps] = useState<JobApplication[]>([]);
@@ -60,14 +62,18 @@ export default function JobApplicantsScreen() {
     try {
       await updateApplicationStatus(a.id, status);
       setApps(prev => prev.map(x => x.id === a.id ? { ...x, status } : x));
-    } catch (e: any) { Alert.alert('Could not update', e?.message ?? ''); }
+    } catch (e: any) { alert({ title: 'Could not update', message: e?.message ?? '' }); }
   };
 
   const decline = (a: JobApplication) => {
-    Alert.alert('Not selected?', 'Mark this applicant as not selected? They\'ll see the update.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', style: 'destructive', onPress: () => move(a, 'declined') },
-    ]);
+    alert({
+      title: 'Not selected?',
+      message: 'Mark this applicant as not selected? They\'ll see the update.',
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Confirm', style: 'destructive', onPress: () => move(a, 'declined') },
+      ],
+    });
   };
 
   const visible = filter === 'all' ? apps : apps.filter(a => a.status === filter);

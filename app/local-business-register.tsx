@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch,
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,6 +20,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchBusiness, createBusiness, updateBusiness,
@@ -45,6 +46,7 @@ export default function BusinessRegisterScreen() {
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
   const { id } = useLocalSearchParams<{ id?: string }>();
+  const { alert } = useAlert();
 
   const [name, setName]           = useState('');
   const [category, setCategory]   = useState<LocalCategory | null>(null);
@@ -97,7 +99,7 @@ export default function BusinessRegisterScreen() {
   const pickLogo = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      return Alert.alert('Permission needed', 'Allow photo access to add a logo.');
+      return alert({ title: 'Permission needed', message: 'Allow photo access to add a logo.' });
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -130,9 +132,9 @@ export default function BusinessRegisterScreen() {
 
   const handleSave = async () => {
     if (!profile) return;
-    if (!name.trim())  return Alert.alert('Name required', 'Please enter your business name.');
-    if (!category)     return Alert.alert('Category required', 'Pick a category.');
-    if (!address.trim()) return Alert.alert('Address required', 'Pick your address from the dropdown.');
+    if (!name.trim())  return alert({ title: 'Name required', message: 'Please enter your business name.' });
+    if (!category)     return alert({ title: 'Category required', message: 'Pick a category.' });
+    if (!address.trim()) return alert({ title: 'Address required', message: 'Pick your address from the dropdown.' });
 
     setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -172,18 +174,18 @@ export default function BusinessRegisterScreen() {
           });
         } catch (imgErr: any) {
           // Don't fail the whole save if only the image upload hiccups.
-          Alert.alert('Logo not saved', imgErr?.message ?? 'The details saved, but the logo upload failed. Try again from Edit.');
+          alert({ title: 'Logo not saved', message: imgErr?.message ?? 'The details saved, but the logo upload failed. Try again from Edit.' });
         }
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        id ? 'Saved' : 'Business listed!',
-        id ? 'Your changes are live.' : 'Your business is now visible in the Local directory.',
-        [{ text: 'OK', onPress: () => router.replace('/local-business-dashboard') }],
-      );
+      alert({
+        title: id ? 'Saved' : 'Business listed!',
+        message: id ? 'Your changes are live.' : 'Your business is now visible in the Local directory.',
+        actions: [{ label: 'OK', style: 'primary', onPress: () => router.replace('/local-business-dashboard') }],
+      });
     } catch (e: any) {
-      Alert.alert('Could not save', e.message ?? 'Try again');
+      alert({ title: 'Could not save', message: e.message ?? 'Try again' });
     } finally {
       setSaving(false);
     }

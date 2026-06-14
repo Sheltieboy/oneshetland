@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { colors, fontSize, spacing, radius, contentContainer } from '@/constants
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
+import { useAlert } from '@/components/BrandedAlert';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -191,6 +192,7 @@ export default function MyShiftApplicationsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [applications, setApplications] = useState<MyApplication[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -226,20 +228,21 @@ export default function MyShiftApplicationsScreen() {
       ));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not check in. Try again.');
+      alert({ title: 'Error', message: e?.message ?? 'Could not check in. Try again.' });
     } finally {
       setCheckInLoading(null);
     }
   };
 
   const handleCheckOut = async (appId: string) => {
-    Alert.alert(
-      'Finished your shift?',
-      "This will notify the employer to confirm the shift is complete.",
-      [
-        { text: 'Not yet', style: 'cancel' },
+    alert({
+      title: 'Finished your shift?',
+      message: "This will notify the employer to confirm the shift is complete.",
+      actions: [
+        { label: 'Not yet', style: 'cancel' },
         {
-          text: "Yes, I'm done",
+          label: "Yes, I'm done",
+          style: 'primary',
           onPress: async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             setCheckInLoading(appId);
@@ -252,14 +255,14 @@ export default function MyShiftApplicationsScreen() {
               ));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (e: any) {
-              Alert.alert('Error', e?.message ?? 'Could not mark as finished. Try again.');
+              alert({ title: 'Error', message: e?.message ?? 'Could not mark as finished. Try again.' });
             } finally {
               setCheckInLoading(null);
             }
           },
         },
-      ]
-    );
+      ],
+    });
   };
 
   const filtered = filter === 'all'

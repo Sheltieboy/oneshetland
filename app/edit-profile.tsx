@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 import {
   validateHandle, isHandleAvailable, HANDLE_MAX,
 } from '@/lib/games-handle';
@@ -42,6 +43,7 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [fullName,     setFullName]     = useState(profile?.full_name     ?? '');
   const [bio,          setBio]          = useState(profile?.bio           ?? '');
@@ -114,8 +116,8 @@ export default function EditProfileScreen() {
     handleStatus.kind !== 'invalid' && handleStatus.kind !== 'taken';
 
   const handleSave = async () => {
-    if (!fullName.trim()) return Alert.alert('Required', 'Please enter your full name.');
-    if (!handleSaveable) return Alert.alert('Fix your handle', 'Pick a different Games handle before saving.');
+    if (!fullName.trim()) return alert({ title: 'Required', message: 'Please enter your full name.' });
+    if (!handleSaveable) return alert({ title: 'Fix your handle', message: 'Pick a different Games handle before saving.' });
 
     setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -143,7 +145,7 @@ export default function EditProfileScreen() {
       const msg = isUniqueViolation
         ? 'That Games handle was just taken. Try another.'
         : error.message;
-      Alert.alert('Could not save', msg);
+      alert({ title: 'Could not save', message: msg });
     } else {
       await refreshProfile();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

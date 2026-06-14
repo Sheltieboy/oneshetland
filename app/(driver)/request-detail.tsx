@@ -16,6 +16,7 @@ import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
 // ── Waiting fee constants ─────────────────────────────────────────────────────
@@ -79,6 +80,7 @@ export default function DriverRequestDetailScreen() {
   const router  = useRouter();
   const { id }  = useLocalSearchParams<{ id: string }>();
   const { session } = useAuth();
+  const { alert } = useAlert();
 
   const [request, setRequest]           = useState<RequestDetail | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
@@ -144,7 +146,7 @@ export default function DriverRequestDetailScreen() {
       .select()
       .single();
     setUpdating(false);
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) { alert({ title: 'Error', message: error.message }); return; }
     setWaitingEvent(data as WaitingEvent);
   }
 
@@ -162,13 +164,14 @@ export default function DriverRequestDetailScreen() {
       ? `A waiting fee of £${(feePence / 100).toFixed(2)} will be added (${Math.floor((collectedAt.getTime() - arrivedAt.getTime()) / 60000)} mins wait).`
       : '';
 
-    Alert.alert(
-      'Mark as collected?',
-      `Confirm you've collected the item.${feeLabel ? '\n\n' + feeLabel : ''}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Mark as collected?',
+      message: `Confirm you've collected the item.${feeLabel ? '\n\n' + feeLabel : ''}`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm collected',
+          label: 'Confirm collected',
+          style: 'primary',
           onPress: async () => {
             setUpdating(true);
             // Update waiting event
@@ -198,19 +201,20 @@ export default function DriverRequestDetailScreen() {
           },
         },
       ],
-    );
+    });
   }
 
   // ── Mark delivered + capture payment ────────────────────────────────────
   async function handleDelivered() {
     if (!request) return;
-    Alert.alert(
-      'Mark as delivered?',
-      "Confirm you've delivered the item to the customer. Payment will be taken now.",
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Mark as delivered?',
+      message: "Confirm you've delivered the item to the customer. Payment will be taken now.",
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm delivered',
+          label: 'Confirm delivered',
+          style: 'primary',
           onPress: async () => {
             setUpdating(true);
             try {
@@ -231,20 +235,20 @@ export default function DriverRequestDetailScreen() {
               const payMsg = result.total_fee_pence
                 ? `£${(result.total_fee_pence / 100).toFixed(2)} has been charged to the customer.`
                 : 'Delivery marked as complete.';
-              Alert.alert(
-                'Delivered! 🎉',
-                `${payMsg} You'll receive your payout within 2 working days.`,
-                [{ text: 'Back to dashboard', onPress: () => router.replace('/(driver)/dashboard') }],
-              );
+              alert({
+                title: 'Delivered! 🎉',
+                message: `${payMsg} You'll receive your payout within 2 working days.`,
+                actions: [{ label: 'Back to dashboard', style: 'primary', onPress: () => router.replace('/(driver)/dashboard') }],
+              });
             } catch (err) {
-              Alert.alert('Payment error', err instanceof Error ? err.message : 'Could not capture payment.');
+              alert({ title: 'Payment error', message: err instanceof Error ? err.message : 'Could not capture payment.' });
             } finally {
               setUpdating(false);
             }
           },
         },
       ],
-    );
+    });
   }
 
   // ── Render ────────────────────────────────────────────────────────────────

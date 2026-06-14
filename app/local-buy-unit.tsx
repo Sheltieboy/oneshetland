@@ -12,7 +12,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -135,7 +135,7 @@ export default function BuyUnitScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDone(true);
     } catch (e: any) {
-      Alert.alert('Purchase failed', e?.message ?? 'Please try again.');
+      alert({ title: 'Purchase failed', message: e?.message ?? 'Please try again.' });
     } finally {
       setSubmitting(false);
     }

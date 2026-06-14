@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/components/BrandedAlert';
 import { Sheet } from '@/components/ui/Sheet';
 
 interface ConfigRow {
@@ -70,6 +71,7 @@ function hintForKey(key: string): string | null {
 export default function AdminConfigScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   const [rows, setRows]           = useState<ConfigRow[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -86,7 +88,7 @@ export default function AdminConfigScreen() {
       if (error) throw error;
       setRows((data ?? []) as ConfigRow[]);
     } catch (e: any) {
-      Alert.alert('Could not load config', e?.message ?? 'Try again.');
+      alert({ title: 'Could not load config', message: e?.message ?? 'Try again.' });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -257,6 +259,7 @@ function EditModal({
   onSaved: () => void;
   userId: string | null;
 }) {
+  const { alert } = useAlert();
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -275,7 +278,7 @@ function EditModal({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message ?? 'Try again.');
+      alert({ title: 'Could not save', message: e?.message ?? 'Try again.' });
     } finally {
       setSaving(false);
     }

@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -18,6 +18,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { SECTIONS } from '@/constants/sections';
+import { useAlert } from '@/components/BrandedAlert';
 import { createOffer, type DiscountType } from '@/lib/local-api';
 
 const S = SECTIONS.local;
@@ -34,6 +35,7 @@ export default function NewOfferScreen() {
   const router = useRouter();
   const { screenWidth } = useAppLayout();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
+  const { alert } = useAlert();
 
   const [title, setTitle]             = useState('');
   const [description, setDescription] = useState('');
@@ -49,9 +51,9 @@ export default function NewOfferScreen() {
 
   const submit = async () => {
     if (!businessId) return;
-    if (!title.trim())  return Alert.alert('Title required', 'Give your offer a short title.');
-    if (valueNeeded && !value) return Alert.alert('Value required', 'Enter the discount amount.');
-    if (validUntil < new Date()) return Alert.alert('End date in the past', 'Pick a future date.');
+    if (!title.trim())  return alert({ title: 'Title required', message: 'Give your offer a short title.' });
+    if (valueNeeded && !value) return alert({ title: 'Value required', message: 'Enter the discount amount.' });
+    if (validUntil < new Date()) return alert({ title: 'End date in the past', message: 'Pick a future date.' });
 
     setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -67,11 +69,15 @@ export default function NewOfferScreen() {
         max_redemptions: maxRedemptions ? parseInt(maxRedemptions) : null,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Offer live!', 'Followers have been notified.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      alert({
+        title: 'Offer live!',
+        message: 'Followers have been notified.',
+        actions: [
+          { label: 'OK', style: 'primary', onPress: () => router.back() },
+        ],
+      });
     } catch (e: any) {
-      Alert.alert('Could not save', e.message ?? 'Try again');
+      alert({ title: 'Could not save', message: e.message ?? 'Try again' });
     } finally {
       setSaving(false);
     }

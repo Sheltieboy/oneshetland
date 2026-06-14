@@ -5,7 +5,6 @@ import {
   ScrollView,
   RefreshControl,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -16,6 +15,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 
 interface Application {
@@ -33,6 +33,7 @@ interface Application {
 
 export default function DriverApprovalsScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const { screenWidth } = useAppLayout();
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,16 +63,16 @@ export default function DriverApprovalsScreen() {
     const name = applications.find((a) => a.id === id)?.profile?.full_name ?? 'this driver';
     const label = decision === 'approved' ? 'Approve' : 'Reject';
 
-    Alert.alert(
-      `${label} application?`,
-      decision === 'approved'
+    alert({
+      title: `${label} application?`,
+      message: decision === 'approved'
         ? `${name} will be able to create runs immediately.`
         : `${name}'s application will be marked as rejected.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: label,
-          style: decision === 'rejected' ? 'destructive' : 'default',
+          label: label,
+          style: decision === 'rejected' ? 'destructive' : 'primary',
           onPress: async () => {
             setActing(id);
 
@@ -83,22 +84,22 @@ export default function DriverApprovalsScreen() {
             setActing(null);
 
             if (error) {
-              Alert.alert('Could not update application', error.message);
+              alert({ title: 'Could not update application', message: error.message });
               return;
             }
 
             // Remove from list
             setApplications((prev) => prev.filter((a) => a.id !== id));
-            Alert.alert(
-              decision === 'approved' ? 'Driver approved ✅' : 'Application rejected',
-              decision === 'approved'
+            alert({
+              title: decision === 'approved' ? 'Driver approved ✅' : 'Application rejected',
+              message: decision === 'approved'
                 ? `${name} can now create runs.`
                 : `${name} has been notified.`,
-            );
+            });
           },
         },
       ],
-    );
+    });
   }
 
   return (

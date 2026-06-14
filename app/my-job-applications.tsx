@@ -6,7 +6,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  RefreshControl, Alert,
+  RefreshControl,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchMyApplications, withdrawApplication,
@@ -40,6 +41,7 @@ function statusTone(s: ApplicationStatus): { color: string; bg: string } {
 
 export default function MyJobApplicationsScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const { screenWidth } = useAppLayout();
   const { profile } = useAuth();
   const [apps, setApps] = useState<JobApplication[]>([]);
@@ -56,10 +58,14 @@ export default function MyJobApplicationsScreen() {
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const withdraw = (a: JobApplication) => {
-    Alert.alert('Withdraw application?', 'The employer will see this as withdrawn.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Withdraw', style: 'destructive', onPress: async () => { try { await withdrawApplication(a.id); await load(); } catch (e: any) { Alert.alert('Failed', e?.message ?? ''); } } },
-    ]);
+    alert({
+      title: 'Withdraw application?',
+      message: 'The employer will see this as withdrawn.',
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Withdraw', style: 'destructive', onPress: async () => { try { await withdrawApplication(a.id); await load(); } catch (e: any) { alert({ title: 'Failed', message: e?.message ?? '' }); } } },
+      ],
+    });
   };
 
   return (

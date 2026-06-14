@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Switch, Linking, RefreshControl,
+  ActivityIndicator, Switch, Linking, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -155,8 +155,7 @@ export default function BusinessDashboardScreen() {
         .select('id', { count: 'exact', head: true })
         .eq('employer_id', profile!.id)
         .is('posted_as_business_id', null)
-        .then(({ count }) => count ?? 0)
-        .catch(() => 0),
+        .then(({ count }) => count ?? 0, () => 0),
       target.accepts_wallet
         ? fetchBusinessWalletReceipts(target.id, 20)
             .then(r => { console.log('[wallet receipts] got', r.length, 'rows'); return r; })
@@ -219,7 +218,7 @@ export default function BusinessDashboardScreen() {
       const preview = await previewSubscriptionChange(activeBusiness.id, newTier);
 
       if (preview.noChange) {
-        Alert.alert('Already on this plan', 'No changes made.');
+        brandedAlert({ title: 'Already on this plan', message: 'No changes made.' });
         return;
       }
 
@@ -269,7 +268,7 @@ export default function BusinessDashboardScreen() {
         ],
       });
     } catch (e: any) {
-      Alert.alert('Could not preview', e?.message ?? 'Try again.');
+      brandedAlert({ title: 'Could not preview', message: e?.message ?? 'Try again.' });
       setUpgradeBusy(false);
     }
   };
@@ -297,14 +296,14 @@ export default function BusinessDashboardScreen() {
 
     // Pre-flight: card must be set up centrally in Me before subscribing
     if (!profile?.has_payment_method) {
-      Alert.alert(
-        'Payment card needed',
-        'Add a payment card in your account before subscribing.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/payment-setup') },
+      brandedAlert({
+        title: 'Payment card needed',
+        message: 'Add a payment card in your account before subscribing.',
+        actions: [
+          { label: 'Not now', style: 'cancel' },
+          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup') },
         ],
-      );
+      });
       return;
     }
 
@@ -348,16 +347,16 @@ export default function BusinessDashboardScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setActiveBusiness(prev => prev ? { ...prev, subscription_tier: tier } as LocalBusiness : prev);
 
-      Alert.alert(
-        `Welcome to ${tier === 'premium' ? 'Premium' : 'Pro'}!`,
-        'Your subscription is active. The new features are unlocked below.',
-      );
+      brandedAlert({
+        title: `Welcome to ${tier === 'premium' ? 'Premium' : 'Pro'}!`,
+        message: 'Your subscription is active. The new features are unlocked below.',
+      });
 
       // Poll up to ~20 seconds for the webhook to confirm the tier in the DB
       pollForTier(activeBusiness.id, tier);
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Could not start checkout', e?.message ?? 'Try again');
+      brandedAlert({ title: 'Could not start checkout', message: e?.message ?? 'Try again' });
     } finally {
       setUpgradeBusy(false);
     }
@@ -409,14 +408,14 @@ export default function BusinessDashboardScreen() {
 
     // Pre-flight: card must be set up in Me before purchasing a boost
     if (!profile?.has_payment_method) {
-      Alert.alert(
-        'Payment card needed',
-        'Add a payment card in your account before purchasing a boost.',
-        [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Add card', onPress: () => router.push('/payment-setup') },
+      brandedAlert({
+        title: 'Payment card needed',
+        message: 'Add a payment card in your account before purchasing a boost.',
+        actions: [
+          { label: 'Not now', style: 'cancel' },
+          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup') },
         ],
-      );
+      });
       return;
     }
 
@@ -494,7 +493,7 @@ export default function BusinessDashboardScreen() {
       // cancellation pending state shows up immediately.
       loadAll(activeBusiness);
     } catch (e: any) {
-      Alert.alert('Could not open billing', e?.message ?? 'Try again');
+      brandedAlert({ title: 'Could not open billing', message: e?.message ?? 'Try again' });
     }
   };
 
@@ -515,14 +514,14 @@ export default function BusinessDashboardScreen() {
       // approved the account.
       loadAll(activeBusiness);
     } catch (e: any) {
-      Alert.alert('Stripe onboarding failed', e?.message ?? 'Try again later');
+      brandedAlert({ title: 'Stripe onboarding failed', message: e?.message ?? 'Try again later' });
     }
   };
 
   const toggleAcceptWallet = async (value: boolean) => {
     if (!activeBusiness) return;
     if (value && !activeBusiness.payout_enabled) {
-      return Alert.alert('Complete Stripe first', 'Connect your Stripe account before accepting wallet payments.');
+      return brandedAlert({ title: 'Complete Stripe first', message: 'Connect your Stripe account before accepting wallet payments.' });
     }
     await updateBusiness(activeBusiness.id, { accepts_wallet: value });
     setActiveBusiness({ ...activeBusiness, accepts_wallet: value });
@@ -537,23 +536,23 @@ export default function BusinessDashboardScreen() {
   const toggleAcceptsBookings = async (value: boolean) => {
     if (!activeBusiness) return;
     if (activeBusiness.subscription_tier !== 'premium') {
-      return Alert.alert(
-        'Premium feature',
-        'In-app bookings are part of the Premium tier (£49.99/mo). Upgrade to enable.',
-      );
+      return brandedAlert({
+        title: 'Premium feature',
+        message: 'In-app bookings are part of the Premium tier (£49.99/mo). Upgrade to enable.',
+      });
     }
     if (value && bookServiceCount === 0) {
-      return Alert.alert(
-        'Add a service first',
-        'Tap "Services" below and add at least one bookable thing before turning bookings on.',
-      );
+      return brandedAlert({
+        title: 'Add a service first',
+        message: 'Tap "Services" below and add at least one bookable thing before turning bookings on.',
+      });
     }
     try {
       await setAcceptsBookings(activeBusiness.id, value);
       setActiveBusiness({ ...activeBusiness, accepts_bookings: value } as LocalBusiness);
       Haptics.selectionAsync();
     } catch (e: any) {
-      Alert.alert('Could not update', e?.message ?? 'Try again.');
+      brandedAlert({ title: 'Could not update', message: e?.message ?? 'Try again.' });
     }
   };
 
@@ -565,7 +564,7 @@ export default function BusinessDashboardScreen() {
       setActiveBusiness({ ...activeBusiness, use_business_payment: value } as any);
       Haptics.selectionAsync();
     } catch (e: any) {
-      Alert.alert('Could not update', e?.message ?? 'Try again.');
+      brandedAlert({ title: 'Could not update', message: e?.message ?? 'Try again.' });
     } finally {
       setSavingPaymentToggle(false);
     }
@@ -611,7 +610,7 @@ export default function BusinessDashboardScreen() {
                   setAddons(prev => prev.map(a => a.addon_key === key ? { ...a, enabled: true } : a));
                   Haptics.selectionAsync();
                 } catch (e: any) {
-                  Alert.alert('Could not enable add-on', e?.message ?? 'Try again.');
+                  brandedAlert({ title: 'Could not enable add-on', message: e?.message ?? 'Try again.' });
                 } finally {
                   setAddonsBusy(null);
                 }
@@ -629,7 +628,7 @@ export default function BusinessDashboardScreen() {
       // Keep accepts_bookings in sync so isBookableLive() stays correct.
       if (key === 'bookings') {
         if (enabled && bookServiceCount === 0) {
-          Alert.alert('Add a service first', 'Tap "Services" in the Bookings section and add at least one before going live.');
+          brandedAlert({ title: 'Add a service first', message: 'Tap "Services" in the Bookings section and add at least one before going live.' });
           await toggleAddon(activeBusiness.id, 'bookings', false);
           setAddons(prev => prev.map(a => a.addon_key === 'bookings' ? { ...a, enabled: false } : a));
         } else {
@@ -639,7 +638,7 @@ export default function BusinessDashboardScreen() {
       }
       Haptics.selectionAsync();
     } catch (e: any) {
-      Alert.alert('Could not update add-on', e?.message ?? 'Try again.');
+      brandedAlert({ title: 'Could not update add-on', message: e?.message ?? 'Try again.' });
     } finally {
       setAddonsBusy(null);
     }
@@ -653,7 +652,7 @@ export default function BusinessDashboardScreen() {
       setActiveBusiness({ ...activeBusiness, use_business_payout: value } as any);
       Haptics.selectionAsync();
     } catch (e: any) {
-      Alert.alert('Could not update', e?.message ?? 'Try again.');
+      brandedAlert({ title: 'Could not update', message: e?.message ?? 'Try again.' });
     } finally {
       setSavingPayoutToggle(false);
     }
@@ -1142,21 +1141,21 @@ export default function BusinessDashboardScreen() {
                 style={[styles.upgradeBtn, { backgroundColor: S.color }]}
                 onPress={async () => {
                   if (!activeBusiness.lat || !activeBusiness.lng) {
-                    return Alert.alert(
-                      'Address needed',
-                      'Pick your address from the dropdown when editing your business — the location is used to verify customers are on-site when they tap.',
-                    );
+                    return brandedAlert({
+                      title: 'Address needed',
+                      message: 'Pick your address from the dropdown when editing your business — the location is used to verify customers are on-site when they tap.',
+                    });
                   }
                   try {
                     await requestNfcTile(activeBusiness.id);
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    Alert.alert(
-                      'Tile requested!',
-                      'We\'ll print your branded NFC tile and post it within 3 working days. You\'ll get a notification when it ships.',
-                    );
+                    brandedAlert({
+                      title: 'Tile requested!',
+                      message: 'We\'ll print your branded NFC tile and post it within 3 working days. You\'ll get a notification when it ships.',
+                    });
                     loadAll(activeBusiness);
                   } catch (e: any) {
-                    Alert.alert('Could not request', e.message ?? 'Try again');
+                    brandedAlert({ title: 'Could not request', message: e.message ?? 'Try again' });
                   }
                 }}
                 activeOpacity={0.85}
@@ -1524,7 +1523,7 @@ export default function BusinessDashboardScreen() {
               await requestAlertAccess(activeBusiness.id);
               await loadAll(activeBusiness);
             } catch (e: any) {
-              Alert.alert('Error', e.message ?? 'Could not send request');
+              brandedAlert({ title: 'Error', message: e.message ?? 'Could not send request' });
             } finally {
               setRequestingAccess(false);
             }
@@ -1532,7 +1531,7 @@ export default function BusinessDashboardScreen() {
           onSendAlert={async () => {
             if (!alertMessage.trim()) return;
             if (sendLater && !scheduledFor) {
-              Alert.alert('Pick a time', 'Please choose when you want this alert to go out.');
+              brandedAlert({ title: 'Pick a time', message: 'Please choose when you want this alert to go out.' });
               return;
             }
             setAlertBusy(true);
@@ -1554,12 +1553,12 @@ export default function BusinessDashboardScreen() {
               await loadAll(activeBusiness);
               if (sendLater && scheduledFor) {
                 const when = scheduledFor.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
-                Alert.alert('Alert scheduled', `Your alert will go live on ${when}.`);
+                brandedAlert({ title: 'Alert scheduled', message: `Your alert will go live on ${when}.` });
               } else {
-                Alert.alert('Alert sent', 'Your alert is now live across OneShetland.');
+                brandedAlert({ title: 'Alert sent', message: 'Your alert is now live across OneShetland.' });
               }
             } catch (e: any) {
-              Alert.alert('Error', e.message ?? 'Could not send alert');
+              brandedAlert({ title: 'Error', message: e.message ?? 'Could not send alert' });
             } finally {
               setAlertBusy(false);
             }
@@ -1578,7 +1577,7 @@ export default function BusinessDashboardScreen() {
               if ((result as any).activated) {
                 // Saved card charged silently — already active in DB
                 await loadAll(activeBusiness);
-                Alert.alert('Urgent Alerts activated!', 'You can now broadcast urgent messages to every OneShetland user.');
+                brandedAlert({ title: 'Urgent Alerts activated!', message: 'You can now broadcast urgent messages to every OneShetland user.' });
                 return;
               }
 
@@ -1600,7 +1599,7 @@ export default function BusinessDashboardScreen() {
               const { error: sheetError } = await presentPaymentSheet();
               if (sheetError) {
                 if (sheetError.code !== 'Canceled') {
-                  Alert.alert('Payment failed', sheetError.message);
+                  brandedAlert({ title: 'Payment failed', message: sheetError.message });
                 }
                 return;
               }
@@ -1614,14 +1613,14 @@ export default function BusinessDashboardScreen() {
               };
               await poll();
 
-              Alert.alert('Urgent Alerts activated!', 'You can now broadcast urgent messages to every OneShetland user.');
+              brandedAlert({ title: 'Urgent Alerts activated!', message: 'You can now broadcast urgent messages to every OneShetland user.' });
             } catch (e: any) {
               // Already active means a previous payment succeeded but the UI
               // didn't refresh — just reload silently rather than showing an error
               if (e.message?.toLowerCase().includes('already active')) {
                 await loadAll(activeBusiness);
               } else {
-                Alert.alert('Error', e.message ?? 'Could not start payment');
+                brandedAlert({ title: 'Error', message: e.message ?? 'Could not start payment' });
               }
             } finally {
               setAlertBusy(false);
@@ -1661,13 +1660,17 @@ export default function BusinessDashboardScreen() {
                   </View>
                   {o.is_active && (
                     <TouchableOpacity onPress={() => {
-                      Alert.alert('End this offer?', 'It will no longer be visible to customers.', [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'End', style: 'destructive', onPress: async () => {
-                          await deactivateOffer(o.id);
-                          loadAll(activeBusiness);
-                        }},
-                      ]);
+                      brandedAlert({
+                        title: 'End this offer?',
+                        message: 'It will no longer be visible to customers.',
+                        actions: [
+                          { label: 'Cancel', style: 'cancel' },
+                          { label: 'End', style: 'destructive', onPress: async () => {
+                            await deactivateOffer(o.id);
+                            loadAll(activeBusiness);
+                          }},
+                        ],
+                      });
                     }}>
                       <FontAwesome5 name="times" size={12} color={colors.textMuted} />
                     </TouchableOpacity>
@@ -1751,6 +1754,7 @@ function AlertsCard({
   onActivate:         () => void;
 }) {
   const router = useRouter();
+  const { alert } = useAlert();
   const ALERT_RED = '#FF3B30';
 
   return (
@@ -1846,10 +1850,14 @@ function AlertsCard({
                   <Text style={alertStyles.alertMsg} numberOfLines={2}>{a.message}</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => Alert.alert('Cancel alert?', 'It will be removed from the app immediately.', [
-                    { text: 'Keep', style: 'cancel' },
-                    { text: 'Cancel alert', style: 'destructive', onPress: () => onCancelAlert(a.id) },
-                  ])}
+                  onPress={() => alert({
+                    title: 'Cancel alert?',
+                    message: 'It will be removed from the app immediately.',
+                    actions: [
+                      { label: 'Keep', style: 'cancel' },
+                      { label: 'Cancel alert', style: 'destructive', onPress: () => onCancelAlert(a.id) },
+                    ],
+                  })}
                   hitSlop={10}
                 >
                   <FontAwesome5 name="times" size={12} color={colors.textMuted} />
@@ -1906,10 +1914,14 @@ function AlertsCard({
                       <Text style={alertStyles.alertMsg} numberOfLines={2}>{a.message}</Text>
                     </View>
                     <TouchableOpacity
-                      onPress={() => Alert.alert('Cancel scheduled alert?', 'It will be deleted and never sent.', [
-                        { text: 'Keep', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => onCancelAlert(a.id) },
-                      ])}
+                      onPress={() => alert({
+                        title: 'Cancel scheduled alert?',
+                        message: 'It will be deleted and never sent.',
+                        actions: [
+                          { label: 'Keep', style: 'cancel' },
+                          { label: 'Delete', style: 'destructive', onPress: () => onCancelAlert(a.id) },
+                        ],
+                      })}
                       hitSlop={10}
                     >
                       <FontAwesome5 name="times" size={12} color={colors.textMuted} />
@@ -2240,6 +2252,7 @@ function LoyaltyModal({
   const [pointsPer, setPointsPer] = useState('10');
   const [pointsFor, setPointsFor] = useState('100');
   const [saving, setSaving]       = useState(false);
+  const { alert } = useAlert();
 
   useEffect(() => {
     if (program) {
@@ -2253,11 +2266,11 @@ function LoyaltyModal({
 
   const save = async () => {
     if (type === 'stamps') {
-      if (!reward.trim()) return Alert.alert('Reward required', 'Describe what the customer gets.');
-      const n = parseInt(stamps); if (!n || n < 2) return Alert.alert('Min 2 stamps', 'Try 5–10');
+      if (!reward.trim()) return alert({ title: 'Reward required', message: 'Describe what the customer gets.' });
+      const n = parseInt(stamps); if (!n || n < 2) return alert({ title: 'Min 2 stamps', message: 'Try 5–10' });
     } else {
       const pp = parseFloat(pointsPer); const pf = parseInt(pointsFor);
-      if (!pp || pp <= 0 || !pf || pf <= 0) return Alert.alert('Invalid points config');
+      if (!pp || pp <= 0 || !pf || pf <= 0) return alert({ title: 'Invalid points config' });
     }
     setSaving(true);
     try {
@@ -2271,7 +2284,7 @@ function LoyaltyModal({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
     } catch (e: any) {
-      Alert.alert('Save failed', e.message);
+      alert({ title: 'Save failed', message: e.message });
     } finally {
       setSaving(false);
     }

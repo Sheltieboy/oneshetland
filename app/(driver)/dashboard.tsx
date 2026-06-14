@@ -6,7 +6,6 @@ import {
   RefreshControl,
   StyleSheet,
   Pressable,
-  Alert,
   Animated,
   Image,
 } from 'react-native';
@@ -26,6 +25,7 @@ import { haptic } from '@/lib/haptics';
 import { getCategoryName } from '@/constants/categories';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useAlert } from '@/components/BrandedAlert';
 
 interface Run {
   id: string;
@@ -74,6 +74,7 @@ export default function DriverDashboard() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [loadingDriver, setLoadingDriver] = useState(true);
@@ -146,12 +147,13 @@ export default function DriverDashboard() {
       const req = pendingRequests.find((r) => r.id === requestId);
       const destination = req?.destination_area || req?.destination_address?.split(',')[0] || 'Unknown';
 
-      Alert.alert(
-        'Accept this delivery?',
-        `We'll create a run to ${destination} and assign this delivery to it.`,
-        [
+      alert({
+        title: 'Accept this delivery?',
+        message: `We'll create a run to ${destination} and assign this delivery to it.`,
+        actions: [
           {
-            text: 'Accept & start run',
+            label: 'Accept & start run',
+            style: 'primary',
             onPress: async () => {
               const now = new Date();
               const threeHoursLater = new Date(now.getTime() + 3 * 60 * 60 * 1000);
@@ -169,7 +171,7 @@ export default function DriverDashboard() {
                 .select('id')
                 .single();
               if (runError || !newRun) {
-                Alert.alert('Could not create run', runError?.message ?? 'Unknown error');
+                alert({ title: 'Could not create run', message: runError?.message ?? 'Unknown error' });
                 return;
               }
               setRuns((prev) => [...prev, {
@@ -184,26 +186,26 @@ export default function DriverDashboard() {
               acceptRequest(requestId, newRun.id);
             },
           },
-          { text: 'Cancel', style: 'cancel' },
+          { label: 'Cancel', style: 'cancel' },
         ],
-      );
+      });
       return;
     }
 
     if (openRuns.length > 1) {
-      Alert.alert(
-        'Which run?',
-        'Choose the run to link this request to:',
-        [
+      alert({
+        title: 'Which run?',
+        message: 'Choose the run to link this request to:',
+        actions: [
           ...openRuns.map((run) => {
             const noteLines = (run.notes ?? '').split('\n');
             const dest = noteLines.find((l) => l.startsWith('Destination:'))?.replace('Destination: ', '') ?? 'Unknown';
             const time = new Date(run.departure_start).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-            return { text: `→ ${dest} at ${time}`, onPress: () => acceptRequest(requestId, run.id) };
+            return { label: `→ ${dest} at ${time}`, style: 'primary' as const, onPress: () => acceptRequest(requestId, run.id) };
           }),
-          { text: 'Cancel', style: 'cancel' as const },
+          { label: 'Cancel', style: 'cancel' as const },
         ],
-      );
+      });
       return;
     }
 
@@ -227,16 +229,16 @@ export default function DriverDashboard() {
         const result = await res.json();
         setUpdating(null);
         if (!res.ok) {
-          Alert.alert('Payment capture failed', result?.error ?? `Error ${res.status}`);
+          alert({ title: 'Payment capture failed', message: result?.error ?? `Error ${res.status}` });
           return;
         }
         setMatchedRequests((prev) => prev.filter((r) => r.id !== requestId));
         haptic.success();
         const total = result.total_fee_pence ? `£${(result.total_fee_pence / 100).toFixed(2)} charged.` : 'Payment captured.';
-        Alert.alert('Delivered! 🎉', `The customer has been notified. ${total}`);
+        alert({ title: 'Delivered! 🎉', message: `The customer has been notified. ${total}` });
       } catch (e) {
         setUpdating(null);
-        Alert.alert('Payment capture failed', e instanceof Error ? e.message : 'Network error');
+        alert({ title: 'Payment capture failed', message: e instanceof Error ? e.message : 'Network error' });
       }
       return;
     }
@@ -246,7 +248,7 @@ export default function DriverDashboard() {
       .update({ status: newStatus })
       .eq('id', requestId);
     setUpdating(null);
-    if (error) { Alert.alert('Could not update status', error.message); return; }
+    if (error) { alert({ title: 'Could not update status', message: error.message }); return; }
     setMatchedRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: newStatus } : r)));
     haptic.medium();
 
@@ -267,11 +269,11 @@ export default function DriverDashboard() {
       .eq('status', 'pending')
       .select('id');
 
-    if (error) { setAccepting(null); Alert.alert('Could not accept request', error.message); return; }
+    if (error) { setAccepting(null); alert({ title: 'Could not accept request', message: error.message }); return; }
     if (!updated || updated.length === 0) {
       setAccepting(null);
       setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
-      Alert.alert('Already taken', 'Another driver accepted this just now.');
+      alert({ title: 'Already taken', message: 'Another driver accepted this just now.' });
       return;
     }
 
@@ -293,7 +295,7 @@ export default function DriverDashboard() {
     setAccepting(null);
     setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
     haptic.success();
-    Alert.alert('Request accepted! 📦', 'The customer has been notified and their card pre-authorised.');
+    alert({ title: 'Request accepted! 📦', message: 'The customer has been notified and their card pre-authorised.' });
     fetchData();
   }
 
@@ -505,21 +507,21 @@ export default function DriverDashboard() {
                   style={styles.runCard}
                   onPress={() => {
                     haptic.light();
-                    Alert.alert(
-                      `${originLine} → ${destLine}`,
-                      `${dayLabel} · ${timeRange}`,
-                      [
+                    alert({
+                      title: `${originLine} → ${destLine}`,
+                      message: `${dayLabel} · ${timeRange}`,
+                      actions: [
                         canCancel ? {
-                          text: 'Cancel this run',
+                          label: 'Cancel this run',
                           style: 'destructive',
                           onPress: () => {
-                            Alert.alert(
-                              'Cancel run?',
-                              'This will remove the run. Any accepted requests will be returned to pending.',
-                              [
-                                { text: 'Keep run', style: 'cancel' },
+                            alert({
+                              title: 'Cancel run?',
+                              message: 'This will remove the run. Any accepted requests will be returned to pending.',
+                              actions: [
+                                { label: 'Keep run', style: 'cancel' },
                                 {
-                                  text: 'Yes, cancel run',
+                                  label: 'Yes, cancel run',
                                   style: 'destructive',
                                   onPress: async () => {
                                     await supabase
@@ -530,12 +532,12 @@ export default function DriverDashboard() {
                                   },
                                 },
                               ],
-                            );
+                            });
                           },
                         } : null,
-                        { text: 'Dismiss', style: 'cancel' },
+                        { label: 'Dismiss', style: 'cancel' },
                       ].filter(Boolean) as any[],
-                    );
+                    });
                   }}
                 >
                   <View style={styles.runHeader}>

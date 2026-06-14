@@ -8,7 +8,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Switch,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,6 +21,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
+import { useAlert } from '@/components/BrandedAlert';
 import { formatPence } from '@/lib/local-api';
 import {
   fetchCampaign, fetchHub, startHubDonation, confirmHubDonation,
@@ -41,6 +42,7 @@ export default function HubDonateScreen() {
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { alert } = useAlert();
 
   const [campaign, setCampaign] = useState<HubCampaign | null>(null);
   const [hub, setHub] = useState<Hub | null>(null);
@@ -81,11 +83,11 @@ export default function HubDonateScreen() {
   };
 
   const validate = (): boolean => {
-    if (effectiveAmount < 100) { Alert.alert('Amount too small', 'Minimum donation is £1.'); return false; }
-    if (effectiveAmount > 1_000_000) { Alert.alert('Amount too large', 'Maximum donation is £10,000.'); return false; }
+    if (effectiveAmount < 100) { alert({ title: 'Amount too small', message: 'Minimum donation is £1.' }); return false; }
+    if (effectiveAmount > 1_000_000) { alert({ title: 'Amount too large', message: 'Maximum donation is £10,000.' }); return false; }
     if (giftAidOn && isCharity) {
       if (!gaFirst.trim() || !gaLast.trim() || !gaAddress.trim() || !gaPostcode.trim()) {
-        Alert.alert('Gift Aid details needed', 'Please complete your name, address and postcode for the Gift Aid declaration.');
+        alert({ title: 'Gift Aid details needed', message: 'Please complete your name, address and postcode for the Gift Aid declaration.' });
         return false;
       }
     }
@@ -114,9 +116,9 @@ export default function HubDonateScreen() {
       }
       await confirmHubDonation(start.payment_intent_id, { message: message.trim() || undefined, anonymous, giftAid: buildGiftAid() });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Thank you! 💜', `Your ${formatPence(effectiveAmount)} donation to ${hub?.name ?? 'the hub'} means a lot.`, [{ text: 'Done', onPress: () => router.back() }]);
+      alert({ title: 'Thank you! 💜', message: `Your ${formatPence(effectiveAmount)} donation to ${hub?.name ?? 'the hub'} means a lot.`, actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }] });
     } catch (e: any) {
-      Alert.alert('Donation failed', e?.message ?? 'Please try again.');
+      alert({ title: 'Donation failed', message: e?.message ?? 'Please try again.' });
     } finally { setPaying(false); setConfirming(false); }
   };
 

@@ -7,7 +7,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, Alert, Linking,
+  ActivityIndicator, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -30,6 +30,7 @@ import {
 } from '@/lib/hubs-api';
 import { fetchHubEvents, type OsEvent } from '@/lib/events-api';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.community;
 
@@ -48,6 +49,7 @@ export default function HubDetailScreen() {
   const { profile } = useAuth();
   const { isTablet, screenWidth } = useAppLayout();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { alert } = useAlert();
 
   const [hub, setHub] = useState<Hub | null>(null);
   const [membership, setMembership] = useState<HubMember | null>(null);
@@ -96,15 +98,15 @@ export default function HubDetailScreen() {
       const m = await joinHub(hub.id, profile.id, type?.id ?? null);
       setMembership(m);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        m.status === 'active' ? 'You\'re in 🎉' : 'Request sent',
-        m.status === 'active'
+      alert({
+        title: m.status === 'active' ? 'You\'re in 🎉' : 'Request sent',
+        message: m.status === 'active'
           ? `You're now a member of ${hub.name}.`
           : `${hub.name} approves new members — we'll let you in once they confirm.`,
-      );
+      });
       load();
     } catch (e: any) {
-      Alert.alert('Could not join', e?.message ?? '');
+      alert({ title: 'Could not join', message: e?.message ?? '' });
     } finally { setActing(false); }
   };
 
@@ -139,26 +141,30 @@ export default function HubDetailScreen() {
       }
       await confirmHubMembership(start.payment_intent_id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('You\'re in 🎉', `You're now a member of ${hub.name}.`);
+      alert({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
       load();
     } catch (e: any) {
-      Alert.alert('Payment failed', e?.message ?? 'Please try again.');
+      alert({ title: 'Payment failed', message: e?.message ?? 'Please try again.' });
     } finally { setActing(false); }
   };
 
   const onLeave = () => {
     if (!hub || !profile) return;
-    Alert.alert('Leave hub?', `Leave ${hub.name}? You can re-join any time.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Leave', style: 'destructive',
-        onPress: async () => {
-          setActing(true);
-          try { await leaveHub(hub.id, profile.id); setMembership(null); load(); }
-          finally { setActing(false); }
+    alert({
+      title: 'Leave hub?',
+      message: `Leave ${hub.name}? You can re-join any time.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        {
+          label: 'Leave', style: 'destructive',
+          onPress: async () => {
+            setActing(true);
+            try { await leaveHub(hub.id, profile.id); setMembership(null); load(); }
+            finally { setActing(false); }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   if (loading) {

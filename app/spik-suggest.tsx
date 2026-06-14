@@ -15,7 +15,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Switch,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Animated,
@@ -29,6 +28,7 @@ import { colors, fontSize, radius, spacing, contentContainer } from '@/constants
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
+import { useAlert } from '@/components/BrandedAlert';
 import { SECTIONS } from '@/constants/sections';
 import { paletteFor } from '@/lib/spik-palette';
 
@@ -294,6 +294,7 @@ export default function SpikSuggestScreen() {
 
   const pal = paletteFor(params.pos);
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [suggestions, setSuggestions] = useState<Record<string, string>>(
     Object.fromEntries(FIELDS.map(f => [f.name, '']))
@@ -353,7 +354,7 @@ export default function SpikSuggestScreen() {
 
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Something went wrong', 'Please try again in a moment.');
+      alert({ title: 'Something went wrong', message: 'Please try again in a moment.' });
     } finally {
       setSubmitting(false);
     }

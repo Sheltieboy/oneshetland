@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, Alert, Linking,
+  ActivityIndicator, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,6 +34,7 @@ import { supabase } from '@/lib/supabase';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { addRecentlyViewed, businessResult } from '@/lib/search';
 import { BusinessLocationMap } from '@/components/BusinessLocationMap';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.local;
 
@@ -73,6 +74,7 @@ export default function BusinessDetailScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { isTablet } = useAppLayout();
+  const { alert } = useAlert();
 
   const [business, setBusiness] = useState<LocalBusiness | null>(null);
   const [program,  setProgram]  = useState<LoyaltyProgram | null>(null);
@@ -164,48 +166,48 @@ export default function BusinessDetailScreen() {
 
   const handleRedeemReward = async () => {
     if (!card) return;
-    Alert.alert(
-      'Redeem reward?',
-      'Show this to staff to claim. The card will reset to 0 stamps once redeemed.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Redeem', onPress: async () => {
+    alert({
+      title: 'Redeem reward?',
+      message: 'Show this to staff to claim. The card will reset to 0 stamps once redeemed.',
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Redeem', style: 'primary', onPress: async () => {
           setBusy(true);
           try {
             await redeemReward(card.id);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             await load();
-            Alert.alert('Redeemed!', 'Show staff your card. Enjoy 🎉');
+            alert({ title: 'Redeemed!', message: 'Show staff your card. Enjoy 🎉' });
           } catch (e: any) {
-            Alert.alert('Error', e.message);
+            alert({ title: 'Error', message: e.message });
           } finally {
             setBusy(false);
           }
         }},
       ],
-    );
+    });
   };
 
   const handleRedeemOffer = async (offer: LocalOffer) => {
-    Alert.alert(
-      'Claim this offer?',
-      `Show staff to use "${offer.title}". You can only use this offer once.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Claim', onPress: async () => {
+    alert({
+      title: 'Claim this offer?',
+      message: `Show staff to use "${offer.title}". You can only use this offer once.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Claim', style: 'primary', onPress: async () => {
           setBusy(true);
           try {
             await redeemOffer(offer.id);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             await load();
           } catch (e: any) {
-            Alert.alert('Error', e.message);
+            alert({ title: 'Error', message: e.message });
           } finally {
             setBusy(false);
           }
         }},
       ],
-    );
+    });
   };
 
   if (loading) {

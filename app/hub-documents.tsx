@@ -8,7 +8,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, RefreshControl, Linking,
+  RefreshControl, Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchHub, fetchMyMembership, fetchHubDocuments, createHubDocument, deleteHubDocument,
@@ -42,6 +43,7 @@ export default function HubDocumentsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [hub, setHub] = useState<Hub | null>(null);
   const [docs, setDocs] = useState<HubDocument[]>([]);
@@ -73,7 +75,7 @@ export default function HubDocumentsScreen() {
 
   const save = async () => {
     if (!id) return;
-    if (!title.trim() || !url.trim()) { Alert.alert('Title and link needed', 'Add a title and a link.'); return; }
+    if (!title.trim() || !url.trim()) { alert({ title: 'Title and link needed', message: 'Add a title and a link.' }); return; }
     const link = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
     setSaving(true);
     try {
@@ -81,15 +83,15 @@ export default function HubDocumentsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditorOpen(false); setTitle(''); setUrl(''); setVis('members');
       load();
-    } catch (e: any) { Alert.alert('Could not add', e?.message ?? ''); }
+    } catch (e: any) { alert({ title: 'Could not add', message: e?.message ?? '' }); }
     finally { setSaving(false); }
   };
 
   const remove = (d: HubDocument) => {
-    Alert.alert('Remove document?', `"${d.title}" will be removed.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => { try { await deleteHubDocument(d.id); load(); } catch (e: any) { Alert.alert('Could not remove', e?.message ?? ''); } } },
-    ]);
+    alert({ title: 'Remove document?', message: `"${d.title}" will be removed.`, actions: [
+      { label: 'Cancel', style: 'cancel' },
+      { label: 'Remove', style: 'destructive', onPress: async () => { try { await deleteHubDocument(d.id); load(); } catch (e: any) { alert({ title: 'Could not remove', message: e?.message ?? '' }); } } },
+    ] });
   };
 
   return (

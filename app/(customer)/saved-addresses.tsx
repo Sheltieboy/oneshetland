@@ -5,7 +5,6 @@ import {
 
   StyleSheet,
   TouchableOpacity,
-  Alert,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +15,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
+import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
 interface SavedAddress {
@@ -30,6 +30,7 @@ interface SavedAddress {
 export default function SavedAddressesScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { alert } = useAlert();
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,11 +67,11 @@ export default function SavedAddressesScreen() {
 
   async function handleSave() {
     if (!address.trim()) {
-      Alert.alert('Address required', 'Please enter an address before saving.');
+      alert({ title: 'Address required', message: 'Please enter an address before saving.' });
       return;
     }
     if (!label.trim()) {
-      Alert.alert('Label required', 'Give this address a name, e.g. "Home" or "Mum\'s house".');
+      alert({ title: 'Label required', message: 'Give this address a name, e.g. "Home" or "Mum\'s house".' });
       return;
     }
 
@@ -85,7 +86,7 @@ export default function SavedAddressesScreen() {
     setSaving(false);
 
     if (error) {
-      Alert.alert('Could not save address', error.message);
+      alert({ title: 'Could not save address', message: error.message });
       return;
     }
 
@@ -98,13 +99,13 @@ export default function SavedAddressesScreen() {
   }
 
   async function handleDelete(id: string, addressLabel: string) {
-    Alert.alert(
-      'Remove address?',
-      `Remove "${addressLabel}" from your saved addresses?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Remove address?',
+      message: `Remove "${addressLabel}" from your saved addresses?`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Remove',
+          label: 'Remove',
           style: 'destructive',
           onPress: async () => {
             await supabase.from('saved_addresses').delete().eq('id', id);
@@ -112,7 +113,7 @@ export default function SavedAddressesScreen() {
           },
         },
       ],
-    );
+    });
   }
 
   return (

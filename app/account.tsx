@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Pressable,
   Image,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
@@ -118,7 +117,7 @@ export default function AccountScreen() {
 
   async function handleSaveVehicle() {
     if (!profile?.id || !vehicleType || !vehicleReg.trim()) {
-      Alert.alert('Missing details', 'Please select a vehicle type and enter your registration.');
+      alert({ title: 'Missing details', message: 'Please select a vehicle type and enter your registration.' });
       return;
     }
     setSavingVehicle(true);
@@ -128,7 +127,7 @@ export default function AccountScreen() {
       .eq('id', profile.id);
     setSavingVehicle(false);
     if (error) {
-      Alert.alert('Could not save', error.message);
+      alert({ title: 'Could not save', message: error.message });
     } else {
       setDriverProfile((prev) =>
         prev ? { ...prev, vehicle_type: vehicleType, vehicle_reg: vehicleReg.trim().toUpperCase() } : prev,
@@ -148,7 +147,7 @@ export default function AccountScreen() {
       .eq('id', profile.id);
     setSavingNotes(false);
     if (error) {
-      Alert.alert('Could not save', error.message);
+      alert({ title: 'Could not save', message: error.message });
     } else {
       setDriverProfile((prev) => prev ? { ...prev, notes: driverNotes.trim() || null } : prev);
       setNotesSaved(true);
@@ -173,7 +172,7 @@ export default function AccountScreen() {
       .eq('id', profile.id);
     setSaving(false);
     if (error) {
-      Alert.alert('Could not save changes', error.message);
+      alert({ title: 'Could not save changes', message: error.message });
     } else {
       await refreshProfile();
       setSaved(true);

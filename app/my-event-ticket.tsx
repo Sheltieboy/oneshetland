@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Share,
+  Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -23,6 +23,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchTicketWithToken,
   formatEventDate,
@@ -43,6 +44,7 @@ export default function MyEventTicketScreen() {
   const router    = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [ticket,   setTicket]   = useState<EventTicket | null>(null);
   const [rawToken, setRawToken] = useState<string | null>(null);
@@ -186,7 +188,7 @@ export default function MyEventTicketScreen() {
             <Text style={styles.backupLabel}>Backup code</Text>
             <TouchableOpacity
               onPress={() => {
-                Alert.alert('Backup code', ticket.backup_code, [{ text: 'OK' }]);
+                alert({ title: 'Backup code', message: ticket.backup_code, actions: [{ label: 'OK', style: 'primary' }] });
               }}
               activeOpacity={0.8}
             >

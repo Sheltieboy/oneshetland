@@ -22,7 +22,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
-  TouchableOpacity, Image, Linking, Share, TextInput, Alert,
+  TouchableOpacity, Image, Linking, Share, TextInput,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -51,6 +51,7 @@ import {
   isBoatSaved, toggleSavedBoat, pushRecentBoat,
 } from '@/lib/boats-prefs';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/components/BrandedAlert';
 
 const SECTION = SECTIONS.daBoats;
 
@@ -147,6 +148,7 @@ export default function BoatProfileScreen() {
   const router = useRouter();
   const { profile: viewer } = useAuth();
   const { isTablet } = useAppLayout();
+  const { alert } = useAlert();
 
   const [profile, setProfile]       = useState<VesselProfile | null>(null);
   const [timeline, setTimeline]     = useState<VesselTimelineEntry[]>([]);
@@ -178,16 +180,16 @@ export default function BoatProfileScreen() {
 
   const pickPhoto = async () => {
     if (!ImagePicker) {
-      Alert.alert(
-        'Setup needed',
-        'Run `npx expo install expo-image-picker` and rebuild.',
-      );
+      alert({
+        title: 'Setup needed',
+        message: 'Run `npx expo install expo-image-picker` and rebuild.',
+      });
       return;
     }
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'OneShetland needs access to your photos.');
+        alert({ title: 'Permission needed', message: 'OneShetland needs access to your photos.' });
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -204,7 +206,7 @@ export default function BoatProfileScreen() {
       });
       setRemoveExisting(false);
     } catch (err: any) {
-      Alert.alert('Could not pick a photo', err?.message ?? '');
+      alert({ title: 'Could not pick a photo', message: err?.message ?? '' });
     }
   };
 
@@ -275,12 +277,12 @@ export default function BoatProfileScreen() {
       if (res.applied) {
         setEditTarget(null);
         await load();
-        Alert.alert('Updated', 'Enough folk agreed — the boat’s details have been updated.');
+        alert({ title: 'Updated', message: 'Enough folk agreed — the boat’s details have been updated.' });
       } else {
         await refreshEdits();
       }
     } catch (err: any) {
-      Alert.alert('Could not record your vote', err?.message ?? '');
+      alert({ title: 'Could not record your vote', message: err?.message ?? '' });
     }
   }, [viewer?.id, router, load, refreshEdits]);
 
@@ -316,7 +318,7 @@ export default function BoatProfileScreen() {
       await refreshEdits();
       return true;
     } catch (err: any) {
-      Alert.alert('Could not send your suggestion', err?.message ?? '');
+      alert({ title: 'Could not send your suggestion', message: err?.message ?? '' });
       return false;
     }
   }, [viewer?.id, router, editTarget, profile, refreshEdits]);
@@ -385,7 +387,7 @@ export default function BoatProfileScreen() {
       setRemoveExisting(false);
       await reloadComments();
     } catch (err: any) {
-      Alert.alert('Could not post', err?.message ?? '');
+      alert({ title: 'Could not post', message: err?.message ?? '' });
     } finally {
       setPosting(false);
     }
@@ -414,24 +416,24 @@ export default function BoatProfileScreen() {
   };
 
   const removeComment = (c: VesselComment) => {
-    Alert.alert(
-      'Delete comment?',
-      'This can\'t be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Delete comment?',
+      message: 'This can\'t be undone.',
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete', style: 'destructive',
+          label: 'Delete', style: 'destructive',
           onPress: async () => {
             try {
               await deleteVesselComment(c.id);
               await reloadComments();
             } catch (err: any) {
-              Alert.alert('Failed', err?.message ?? '');
+              alert({ title: 'Failed', message: err?.message ?? '' });
             }
           },
         },
       ],
-    );
+    });
   };
 
   const threaded = useMemo(() => threadComments(comments), [comments]);

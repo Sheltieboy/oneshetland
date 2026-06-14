@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking,
-  ActivityIndicator, TextInput, Alert,
+  ActivityIndicator, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -16,6 +16,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { NavRail } from '@/components/NavRail';
 import { Sheet } from '@/components/ui/Sheet';
+import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchJob, hasApplied, applyToJob, ensureWorkerProfile, generateCoverLetter,
   fetchSavedJobIds, toggleSavedJob,
@@ -176,6 +177,7 @@ export default function JobDetailScreen() {
 }
 
 function ApplySheet({ job, userId, onClose, onApplied }: { job: Job; userId: string; onClose: () => void; onApplied: () => void }) {
+  const { alert } = useAlert();
   const [profile, setProfile] = useState<WorkerProfile | null>(null);
   const [cover, setCover]     = useState('');
   const [aiBusy, setAiBusy]   = useState(false);
@@ -186,7 +188,7 @@ function ApplySheet({ job, userId, onClose, onApplied }: { job: Job; userId: str
   const draftAi = async () => {
     setAiBusy(true);
     try { setCover(await generateCoverLetter(job.id)); }
-    catch (e: any) { Alert.alert('Could not draft', e?.message ?? 'Try again, or write your own.'); }
+    catch (e: any) { alert({ title: 'Could not draft', message: e?.message ?? 'Try again, or write your own.' }); }
     finally { setAiBusy(false); }
   };
 
@@ -201,7 +203,7 @@ function ApplySheet({ job, userId, onClose, onApplied }: { job: Job; userId: str
       await applyToJob({ jobId: job.id, userId, coverLetter: cover.trim() || null, snapshot });
       onApplied();
     } catch (e: any) {
-      Alert.alert('Could not apply', e?.message ?? '');
+      alert({ title: 'Could not apply', message: e?.message ?? '' });
     } finally { setBusy(false); }
   };
 

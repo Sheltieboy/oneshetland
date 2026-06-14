@@ -7,8 +7,9 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity, Alert,
+  View, Text, ScrollView, RefreshControl, StyleSheet, TouchableOpacity,
 } from 'react-native';
+import { useAlert } from '@/components/BrandedAlert';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
@@ -37,6 +38,7 @@ const DISCOUNT_PRESETS: { tier: 'pro' | 'premium'; percent: number; label: strin
 
 export default function BusinessClaimsScreen() {
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [filter, setFilter] = useState<ClaimStatus | 'all'>('pending');
   const [claims, setClaims] = useState<BusinessClaim[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,7 @@ export default function BusinessClaimsScreen() {
     try {
       setClaims(await fetchClaims(filter === 'all' ? undefined : filter));
     } catch (e: any) {
-      Alert.alert('Could not load claims', e?.message ?? '');
+      alert({ title: 'Could not load claims', message: e?.message ?? '' });
     } finally {
       setLoading(false);
     }
@@ -61,66 +63,76 @@ export default function BusinessClaimsScreen() {
   }, [load]);
 
   function confirmApprove(c: BusinessClaim) {
-    Alert.alert(
-      'Approve claim?',
-      `${c.contact_name ?? 'This person'} will become the owner of ${c.business?.name ?? 'this business'} and the listing will be marked verified.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Approve claim?',
+      message: `${c.contact_name ?? 'This person'} will become the owner of ${c.business?.name ?? 'this business'} and the listing will be marked verified.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Approve',
+          label: 'Approve',
+          style: 'primary',
           onPress: async () => {
             setActing(c.id);
             try {
               await approveClaim(c.id);
-              Alert.alert('Approved ✅', `${c.business?.name ?? 'The business'} is now owned and verified.`, [
-                { text: 'Grant discount', onPress: () => offerDiscount(c) },
-                { text: 'Done' },
-              ]);
+              alert({
+                title: 'Approved ✅',
+                message: `${c.business?.name ?? 'The business'} is now owned and verified.`,
+                actions: [
+                  { label: 'Grant discount', style: 'primary', onPress: () => offerDiscount(c) },
+                  { label: 'Done', style: 'secondary' },
+                ],
+              });
               await load();
             } catch (e: any) {
-              Alert.alert('Could not approve', e?.message ?? '');
+              alert({ title: 'Could not approve', message: e?.message ?? '' });
             } finally { setActing(null); }
           },
         },
       ],
-    );
+    });
   }
 
   function confirmReject(c: BusinessClaim) {
-    Alert.alert('Reject claim?', `${c.business?.name ?? 'This claim'} will be marked rejected.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reject', style: 'destructive',
-        onPress: async () => {
-          setActing(c.id);
-          try { await rejectClaim(c.id); await load(); }
-          catch (e: any) { Alert.alert('Could not reject', e?.message ?? ''); }
-          finally { setActing(null); }
+    alert({
+      title: 'Reject claim?',
+      message: `${c.business?.name ?? 'This claim'} will be marked rejected.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        {
+          label: 'Reject', style: 'destructive',
+          onPress: async () => {
+            setActing(c.id);
+            try { await rejectClaim(c.id); await load(); }
+            catch (e: any) { alert({ title: 'Could not reject', message: e?.message ?? '' }); }
+            finally { setActing(null); }
+          },
         },
-      },
-    ]);
+      ],
+    });
   }
 
   function offerDiscount(c: BusinessClaim) {
     if (!c.business_id) return;
-    Alert.alert(
-      'Grant discount',
-      `Applies one week after today, valid for a year. Choose a tier and rate for ${c.business?.name ?? 'this business'}:`,
-      [
+    alert({
+      title: 'Grant discount',
+      message: `Applies one week after today, valid for a year. Choose a tier and rate for ${c.business?.name ?? 'this business'}:`,
+      actions: [
         ...DISCOUNT_PRESETS.map(p => ({
-          text: p.label,
+          label: p.label,
+          style: 'primary' as const,
           onPress: async () => {
             try {
               await grantDiscount(c.business_id, { tier: p.tier, percent_off: p.percent });
-              Alert.alert('Discount granted 🎉', `${p.label} — applicable in 7 days.`);
+              alert({ title: 'Discount granted 🎉', message: `${p.label} — applicable in 7 days.` });
             } catch (e: any) {
-              Alert.alert('Could not grant', e?.message ?? '');
+              alert({ title: 'Could not grant', message: e?.message ?? '' });
             }
           },
         })),
-        { text: 'Cancel', style: 'cancel' as const },
+        { label: 'Cancel', style: 'cancel' as const },
       ],
-    );
+    });
   }
 
   return (

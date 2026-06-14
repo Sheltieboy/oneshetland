@@ -7,7 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, RefreshControl, Share, Switch,
+  RefreshControl, Share, Switch,
 } from 'react-native';
 import { Image } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -25,6 +25,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
+import { useAlert } from '@/components/BrandedAlert';
 import { uploadHubImage, type PickedFile } from '@/lib/image-upload';
 import { formatPence } from '@/lib/local-api';
 import {
@@ -50,6 +51,7 @@ export default function HubCampaignsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [hub, setHub] = useState<Hub | null>(null);
   const [campaigns, setCampaigns] = useState<HubCampaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +88,7 @@ export default function HubCampaignsScreen() {
 
   const pickCover = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return Alert.alert('Permission needed', 'Allow photo access to add a cover.');
+    if (!perm.granted) return alert({ title: 'Permission needed', message: 'Allow photo access to add a cover.' });
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.85 });
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
@@ -97,9 +99,9 @@ export default function HubCampaignsScreen() {
 
   const save = async () => {
     if (!id) return;
-    if (!title.trim()) { Alert.alert('Title needed', 'Give your fundraiser a title.'); return; }
+    if (!title.trim()) { alert({ title: 'Title needed', message: 'Give your fundraiser a title.' }); return; }
     const goalPence = Math.round((parseFloat(goalText) || 0) * 100);
-    if (goalPence < 100) { Alert.alert('Goal needed', 'Set a goal of at least £1.'); return; }
+    if (goalPence < 100) { alert({ title: 'Goal needed', message: 'Set a goal of at least £1.' }); return; }
     setSaving(true);
     const days = DURATIONS[durationIdx].days;
     const ends_at = days ? new Date(Date.now() + days * 86_400_000).toISOString() : null;
@@ -122,20 +124,20 @@ export default function HubCampaignsScreen() {
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditorOpen(false); load();
-    } catch (e: any) { Alert.alert('Could not save', e?.message ?? ''); }
+    } catch (e: any) { alert({ title: 'Could not save', message: e?.message ?? '' }); }
     finally { setSaving(false); }
   };
 
   const toggleStatus = (c: HubCampaign) => {
     const next = c.status === 'active' ? 'closed' : 'active';
-    updateCampaign(c.id, { status: next }).then(load).catch(e => Alert.alert('Could not update', e?.message ?? ''));
+    updateCampaign(c.id, { status: next }).then(load).catch(e => alert({ title: 'Could not update', message: e?.message ?? '' }));
   };
 
   const exportGiftAid = async () => {
     if (!id || !hub) return;
     try {
       const donations = await fetchHubDonations(id, true);
-      if (donations.length === 0) { Alert.alert('No Gift Aid donations', 'There are no Gift Aid declarations to export yet.'); return; }
+      if (donations.length === 0) { alert({ title: 'No Gift Aid donations', message: 'There are no Gift Aid declarations to export yet.' }); return; }
       const header = ['Title', 'First name', 'Last name', 'House no. / address', 'Postcode', 'Donation date', 'Amount (£)'];
       const rows = donations.map(d => [
         d.ga_title ?? '', d.ga_first_name ?? '', d.ga_last_name ?? '', d.ga_address ?? '', d.ga_postcode ?? '',
@@ -146,7 +148,7 @@ export default function HubCampaignsScreen() {
         title: `Gift Aid claim — ${hub.name}`,
         message: `Gift Aid declarations for ${hub.name}${hub.charity_number ? ` (${hub.charity_number})` : ''}\n\n${csv}`,
       });
-    } catch (e: any) { Alert.alert('Could not export', e?.message ?? ''); }
+    } catch (e: any) { alert({ title: 'Could not export', message: e?.message ?? '' }); }
   };
 
   if (loading) {

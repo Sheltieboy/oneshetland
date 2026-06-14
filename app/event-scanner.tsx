@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Vibration,
+  ActivityIndicator, Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -29,6 +29,7 @@ const useCameraPermissions = _useCameraPermissions;
 const CAMERA_NATIVE_AVAILABLE = _CameraView !== View;
 
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAlert } from '@/components/BrandedAlert';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { fetchScannerStats, type ScannerStats } from '@/lib/events-api';
@@ -69,6 +70,7 @@ export default function EventScannerScreen() {
   const { id: eventId } = useLocalSearchParams<{ id: string }>();
   const router           = useRouter();
   const { profile }      = useAuth();
+  const { alert }        = useAlert();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning,  setScanning]  = useState(true);
@@ -116,7 +118,7 @@ export default function EventScannerScreen() {
 
       loadStats();
     } catch (e: any) {
-      Alert.alert('Scan error', e.message ?? 'Try again');
+      alert({ title: 'Scan error', message: e.message ?? 'Try again' });
     } finally {
       setBusy(false);
       // Allow rescanning after 2.5s

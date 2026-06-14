@@ -7,7 +7,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, RefreshControl,
+  RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IconButton } from '@/components/ui/IconButton';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchHub, fetchHubMembers, approveMember, rejectMember, setMemberRole, notifyHub,
@@ -33,6 +34,7 @@ export default function HubMembersScreen() {
   const router = useRouter();
   const { screenWidth } = useAppLayout();
   const { profile } = useAuth();
+  const { alert } = useAlert();
   const [hub, setHub] = useState<Hub | null>(null);
   const [members, setMembers] = useState<HubMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,7 @@ export default function HubMembersScreen() {
 
   const act = async (fn: () => Promise<void>) => {
     try { await fn(); await load(); }
-    catch (e: any) { Alert.alert('Could not update', e?.message ?? ''); }
+    catch (e: any) { alert({ title: 'Could not update', message: e?.message ?? '' }); }
   };
 
   const approve = (m: HubMember) => act(async () => {
@@ -65,11 +67,14 @@ export default function HubMembersScreen() {
 
   const promote = (m: HubMember) => {
     const next: HubRole = m.role === 'committee' ? 'member' : 'committee';
-    Alert.alert(
-      next === 'committee' ? 'Make committee?' : 'Remove from committee?',
-      `${m.profile?.full_name ?? 'This member'} will ${next === 'committee' ? 'be able to help run the hub' : 'become a normal member'}.`,
-      [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', onPress: () => act(() => setMemberRole(m.id, next)) }],
-    );
+    alert({
+      title: next === 'committee' ? 'Make committee?' : 'Remove from committee?',
+      message: `${m.profile?.full_name ?? 'This member'} will ${next === 'committee' ? 'be able to help run the hub' : 'become a normal member'}.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Confirm', style: 'primary', onPress: () => act(() => setMemberRole(m.id, next)) },
+      ],
+    });
   };
 
   if (loading) {

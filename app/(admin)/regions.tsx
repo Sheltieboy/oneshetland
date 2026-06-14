@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   TextInput,
   RefreshControl,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
+import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
 interface Region {
@@ -34,6 +34,7 @@ function toSlug(name: string): string {
 
 export default function AdminRegionsScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const [regions, setRegions] = useState<Region[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -81,7 +82,7 @@ export default function AdminRegionsScreen() {
     setAdding(false);
 
     if (error) {
-      Alert.alert('Error', error.message.includes('unique') ? `A region with slug "${slug}" already exists.` : error.message);
+      alert({ title: 'Error', message: error.message.includes('unique') ? `A region with slug "${slug}" already exists.` : error.message });
     } else {
       setAddName('');
       setAddOrder('');
@@ -118,7 +119,7 @@ export default function AdminRegionsScreen() {
     setSaving(false);
 
     if (error) {
-      Alert.alert('Error', error.message);
+      alert({ title: 'Error', message: error.message });
     } else {
       cancelEdit();
       fetchRegions();
@@ -126,25 +127,25 @@ export default function AdminRegionsScreen() {
   }
 
   function handleDelete(region: Region) {
-    Alert.alert(
-      'Delete region',
-      `Remove "${region.name}"? This can't be undone and may affect delivery requests that reference this region.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    alert({
+      title: 'Delete region',
+      message: `Remove "${region.name}"? This can't be undone and may affect delivery requests that reference this region.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          label: 'Delete',
           style: 'destructive',
           onPress: async () => {
             const { error } = await supabase.from('regions').delete().eq('id', region.id);
             if (error) {
-              Alert.alert('Error', error.message);
+              alert({ title: 'Error', message: error.message });
             } else {
               fetchRegions();
             }
           },
         },
       ],
-    );
+    });
   }
 
   return (

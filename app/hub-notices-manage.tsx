@@ -7,7 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  Alert, RefreshControl,
+  RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.community;
 
@@ -28,6 +29,7 @@ export default function HubNoticesManageScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [notices, setNotices] = useState<HubNotice[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -42,16 +44,20 @@ export default function HubNoticesManageScreen() {
   const onRefresh = useCallback(async () => { setRefreshing(true); await load(); setRefreshing(false); }, [load]);
 
   const remove = (n: HubNotice) => {
-    Alert.alert('Delete notice?', `"${n.title}" will be removed.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try { await deleteNotice(n.id); load(); }
-          catch (e: any) { Alert.alert('Could not delete', e?.message ?? ''); }
+    alert({
+      title: 'Delete notice?',
+      message: `"${n.title}" will be removed.`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        {
+          label: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try { await deleteNotice(n.id); load(); }
+            catch (e: any) { alert({ title: 'Could not delete', message: e?.message ?? '' }); }
+          },
         },
-      },
-    ]);
+      ],
+    });
   };
 
   return (

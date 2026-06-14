@@ -18,6 +18,7 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { useAlert } from '@/components/BrandedAlert';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import {
@@ -33,6 +34,7 @@ export default function WorkProfileScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -75,9 +77,9 @@ export default function WorkProfileScreen() {
         willing_to_relocate: relocate,
         is_diaspora: diaspora,
       } as Partial<WorkerProfile>);
-      Alert.alert('Saved', 'Your work profile is up to date.');
+      alert({ title: 'Saved', message: 'Your work profile is up to date.' });
     } catch (e: any) {
-      Alert.alert('Could not save', e?.message ?? '');
+      alert({ title: 'Could not save', message: e?.message ?? '' });
     } finally { setSaving(false); }
   };
 
@@ -87,15 +89,19 @@ export default function WorkProfileScreen() {
       try {
         const d = await saveCvDocument(profile.id, { kind: 'cover_letter', label: label.trim(), body: '' });
         setDocs(prev => [d, ...prev]);
-      } catch (e: any) { Alert.alert('Failed', e?.message ?? ''); }
+      } catch (e: any) { alert({ title: 'Failed', message: e?.message ?? '' }); }
     });
   };
 
   const removeDoc = (d: CvDocument) => {
-    Alert.alert('Delete?', `Remove "${d.label}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => { try { await deleteCvDocument(d.id); setDocs(prev => prev.filter(x => x.id !== d.id)); } catch {} } },
-    ]);
+    alert({
+      title: 'Delete?',
+      message: `Remove "${d.label}"?`,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Delete', style: 'destructive', onPress: async () => { try { await deleteCvDocument(d.id); setDocs(prev => prev.filter(x => x.id !== d.id)); } catch {} } },
+      ],
+    });
   };
 
   if (!profile) {

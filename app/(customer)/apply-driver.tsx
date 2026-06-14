@@ -5,9 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   Switch,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import { logCompliance } from '@/lib/compliance';
 import { supabase } from '@/lib/supabase';
@@ -34,6 +34,7 @@ const VEHICLE_TYPES = [
 
 export default function ApplyDriverScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const { profile, refreshProfile } = useAuth();
   const { screenWidth } = useAppLayout();
 
@@ -63,7 +64,7 @@ export default function ApplyDriverScreen() {
 
     console.log('[apply-driver] profile:', profile?.id);
     if (!profile?.id) {
-      Alert.alert('Not signed in', 'Could not find your profile. Please sign out and back in.');
+      alert({ title: 'Not signed in', message: 'Could not find your profile. Please sign out and back in.' });
       return;
     }
 
@@ -84,7 +85,7 @@ export default function ApplyDriverScreen() {
 
     if (dpError) {
       setSubmitting(false);
-      Alert.alert('Could not submit application', dpError.message);
+      alert({ title: 'Could not submit application', message: dpError.message });
       return;
     }
 
@@ -98,7 +99,7 @@ export default function ApplyDriverScreen() {
 
     if (profileError) {
       setSubmitting(false);
-      Alert.alert('Could not update profile', profileError.message);
+      alert({ title: 'Could not update profile', message: profileError.message });
       return;
     }
 

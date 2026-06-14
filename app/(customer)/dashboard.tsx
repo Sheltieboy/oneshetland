@@ -11,7 +11,6 @@ import {
   Platform,
   UIManager,
   Image,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
@@ -27,6 +26,7 @@ import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/c
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { haptic } from '@/lib/haptics';
+import { useAlert } from '@/components/BrandedAlert';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -73,6 +73,7 @@ export default function CustomerDashboard() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [requests, setRequests] = useState<DeliveryRequest[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -341,15 +342,15 @@ export default function CustomerDashboard() {
                           e.stopPropagation();
                           haptic.warning();
                           const isMatched = req.status === 'matched';
-                          Alert.alert(
-                            'Cancel this request?',
-                            isMatched
+                          alert({
+                            title: 'Cancel this request?',
+                            message: isMatched
                               ? 'A driver has already accepted this. They will be notified of the cancellation.'
                               : 'This will remove your request and no driver will be sent.',
-                            [
-                              { text: 'Keep it', style: 'cancel' },
+                            actions: [
+                              { label: 'Keep it', style: 'cancel' },
                               {
-                                text: 'Yes, cancel',
+                                label: 'Yes, cancel',
                                 style: 'destructive',
                                 onPress: async () => {
                                   await supabase
@@ -368,7 +369,7 @@ export default function CustomerDashboard() {
                                 },
                               },
                             ],
-                          );
+                          });
                         }}
                         hitSlop={8}
                         style={({ pressed }) => [styles.cancelChip, pressed && { opacity: 0.7 }]}

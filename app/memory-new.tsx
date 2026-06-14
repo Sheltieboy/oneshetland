@@ -18,7 +18,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -37,6 +37,7 @@ import { PickedFile } from '@/lib/image-upload';
 import { MEMORY_CATEGORIES } from '@/constants/memory-categories';
 import MemoryMapNative from '@/components/MemoryMapNative';
 import VoiceRecorder from '@/components/VoiceRecorder';
+import { useAlert } from '@/components/BrandedAlert';
 
 const SECTION = SECTIONS.memories;
 
@@ -73,6 +74,7 @@ const VISIBILITY_OPTIONS: { value: MemoryVisibility; label: string; sub: string 
 export default function MemoryNewScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { alert } = useAlert();
   const { screenWidth } = useAppLayout();
   const { lat: latParam, lng: lngParam, parent_id: parentIdParam } =
     useLocalSearchParams<{ lat?: string; lng?: string; parent_id?: string }>();
@@ -103,7 +105,7 @@ export default function MemoryNewScreen() {
 
   const pickPhoto = async () => {
     if (!ImagePicker) {
-      Alert.alert('Setup needed', 'Run `npx expo install expo-image-picker` and rebuild.');
+      alert({ title: 'Setup needed', message: 'Run `npx expo install expo-image-picker` and rebuild.' });
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -125,7 +127,7 @@ export default function MemoryNewScreen() {
 
   const pickVideo = async () => {
     if (!ImagePicker) {
-      Alert.alert('Setup needed', 'Run `npx expo install expo-image-picker` and rebuild.');
+      alert({ title: 'Setup needed', message: 'Run `npx expo install expo-image-picker` and rebuild.' });
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -163,11 +165,11 @@ export default function MemoryNewScreen() {
 
   const handleSave = async () => {
     if (!profile?.id) {
-      Alert.alert('Sign in first', 'You need to be signed in to add a memory.');
+      alert({ title: 'Sign in first', message: 'You need to be signed in to add a memory.' });
       return;
     }
     if (!isChild && !point) {
-      Alert.alert('Pin missing', 'Tap on the map to set where this memory belongs.');
+      alert({ title: 'Pin missing', message: 'Tap on the map to set where this memory belongs.' });
       return;
     }
 
@@ -210,7 +212,7 @@ export default function MemoryNewScreen() {
       //    of the map screen too (it reloads on focus).
       router.replace(`/memory/${memory.id}`);
     } catch (err: any) {
-      Alert.alert('Could not save', err?.message ?? 'Please try again.');
+      alert({ title: 'Could not save', message: err?.message ?? 'Please try again.' });
     } finally {
       setSaving(false);
     }

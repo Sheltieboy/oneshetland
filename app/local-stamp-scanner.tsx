@@ -8,7 +8,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput,
-  Alert, ActivityIndicator, Keyboard,
+  ActivityIndicator, Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -18,11 +18,13 @@ import { SECTIONS } from '@/constants/sections';
 import { collectStamp } from '@/lib/local-api';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.local;
 
 export default function StampScannerScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [submitting, setSubmitting] = useState(false);
   const inputs = useRef<(TextInput | null)[]>([]);
@@ -60,22 +62,26 @@ export default function StampScannerScreen() {
       const result = await collectStamp(code);
       if (result.reward_ready) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          '🎉 Reward unlocked!',
-          `You have ${result.stamps} of ${result.needed} stamps. Show your card to claim your reward!`,
-          [{ text: 'View card', onPress: () => router.replace('/local-my-cards') }],
-        );
+        alert({
+          title: '🎉 Reward unlocked!',
+          message: `You have ${result.stamps} of ${result.needed} stamps. Show your card to claim your reward!`,
+          actions: [
+            { label: 'View card', style: 'primary', onPress: () => router.replace('/local-my-cards') },
+          ],
+        });
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          'Stamp collected!',
-          `${result.stamps} of ${result.needed} stamps.`,
-          [{ text: 'Done', onPress: () => router.back() }],
-        );
+        alert({
+          title: 'Stamp collected!',
+          message: `${result.stamps} of ${result.needed} stamps.`,
+          actions: [
+            { label: 'Done', style: 'primary', onPress: () => router.back() },
+          ],
+        });
       }
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Could not collect stamp', e.message ?? 'Try again.');
+      alert({ title: 'Could not collect stamp', message: e.message ?? 'Try again.' });
       setDigits(['', '', '', '', '', '']);
       setTimeout(() => inputs.current[0]?.focus(), 100);
     } finally {

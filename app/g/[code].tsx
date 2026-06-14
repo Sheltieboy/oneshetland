@@ -18,13 +18,14 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAlert } from '@/components/BrandedAlert';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -49,6 +50,7 @@ export default function ClaimGiftScreen() {
   const router = useRouter();
   const { code } = useLocalSearchParams<{ code: string }>();
   const { profile, loading: authLoading, session } = useAuth();
+  const { alert } = useAlert();
 
   const [gift, setGift]       = useState<GiftPreview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,7 +144,7 @@ export default function ClaimGiftScreen() {
         : code.includes('auth_required')      ? 'Please sign in to claim this gift.'
         : 'Couldn\'t claim the gift. Please try again.';
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Claim failed', friendly);
+      alert({ title: 'Claim failed', message: friendly });
     } finally {
       setClaiming(false);
     }

@@ -9,12 +9,13 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
@@ -75,6 +76,7 @@ interface ComplianceEntry {
 export default function ComplianceScreen() {
   const router = useRouter();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
 
   const [searchEmail, setSearchEmail] = useState('');
   const [results,     setResults]     = useState<ComplianceEntry[] | null>(null);
@@ -85,7 +87,7 @@ export default function ComplianceScreen() {
   const handleSearch = useCallback(async () => {
     const q = searchEmail.trim().toLowerCase();
     if (!q) {
-      Alert.alert('Enter an email', 'Type a member email address to search.');
+      alert({ title: 'Enter an email', message: 'Type a member email address to search.' });
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -102,7 +104,7 @@ export default function ComplianceScreen() {
       if (error) throw error;
       setResults((data ?? []) as ComplianceEntry[]);
     } catch (e: any) {
-      Alert.alert('Search failed', e?.message ?? 'Try again.');
+      alert({ title: 'Search failed', message: e?.message ?? 'Try again.' });
       setResults([]);
     } finally {
       setLoading(false);

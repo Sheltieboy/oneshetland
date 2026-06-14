@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,6 +16,7 @@ import * as SecureStore from 'expo-secure-store';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchEvent,
   purchaseTickets, confirmTicketPurchase,
@@ -42,6 +43,7 @@ export default function EventTicketCheckoutScreen() {
   const router   = useRouter();
   const { profile } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { alert } = useAlert();
 
   const [event,   setEvent]   = useState<OsEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -120,7 +122,7 @@ export default function EventTicketCheckoutScreen() {
       const { error: sheetErr } = await presentPaymentSheet();
       if (sheetErr) {
         if (sheetErr.code !== 'Canceled') {
-          Alert.alert('Payment failed', sheetErr.message);
+          alert({ title: 'Payment failed', message: sheetErr.message });
         }
         setBuying(false);
         return;
@@ -131,14 +133,16 @@ export default function EventTicketCheckoutScreen() {
       await confirmTicketPurchase({ order_id, payment_intent_id: piId });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        'Tickets booked! 🎟',
-        `${totalTickets} ticket${totalTickets !== 1 ? 's' : ''} confirmed. Find them in My Wallet.`,
-        [{ text: 'View tickets', onPress: () => router.replace({ pathname: '/my-event-tickets' } as any) }],
-      );
+      alert({
+        title: 'Tickets booked! 🎟',
+        message: `${totalTickets} ticket${totalTickets !== 1 ? 's' : ''} confirmed. Find them in My Wallet.`,
+        actions: [
+          { label: 'View tickets', style: 'primary', onPress: () => router.replace({ pathname: '/my-event-tickets' } as any) },
+        ],
+      });
 
     } catch (e: any) {
-      Alert.alert('Could not complete booking', e.message ?? 'Please try again');
+      alert({ title: 'Could not complete booking', message: e.message ?? 'Please try again' });
     } finally {
       setBuying(false);
     }
