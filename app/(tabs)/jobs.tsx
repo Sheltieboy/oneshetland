@@ -15,11 +15,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
+import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
-import { NavRail } from '@/components/NavRail';
 import { JobCard } from '@/components/JobCard';
 import { ShiftCard } from '@/components/ShiftCard';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
@@ -121,8 +120,7 @@ export default function WorkHubScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <NavRail />
-      <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
+      <View style={{ flex: 1 }}>
         {/* Cinematic banner — tints to the active tier; "Work" over it */}
         <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Find work" />
         {/* Work switch */}
