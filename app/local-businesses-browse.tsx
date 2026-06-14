@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import {
   fetchActiveBusinesses, CATEGORY_LABELS, CATEGORY_ICONS,
@@ -63,6 +64,7 @@ export default function BrowseBusinessesScreen() {
       <View>
         <TabScreenHeader
           section={S}
+          photo={SECTION_HEROES.directory}
           title="Directory"
           eyebrow="Shop local"
           right={

@@ -19,6 +19,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import {
   fetchActiveBusinesses, fetchActiveOffers,
   fetchMyBusinesses,
@@ -74,6 +75,7 @@ export default function LocalHub() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <TabScreenHeader
         section={S}
+        photo={SECTION_HEROES.local}
         right={
           <View style={[styles.headerBadge, { backgroundColor: S.color + '22' }]}>
             <View style={[styles.headerBadgeDot, { backgroundColor: S.color }]} />

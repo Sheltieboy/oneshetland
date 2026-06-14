@@ -33,14 +33,11 @@ import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
 import SectionHero from '@/components/SectionHero';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import MemoryDetailScreen from '../memory/[id]';
 import { eraTone } from '@/lib/memory-eras';
 
-// Soft-load hero photo — if assets/section-heroes/memories.jpg is missing the
-// landing falls back to a tinted-gradient hero. Drop the file in and the
-// require resolves automatically on next reload.
-let memoriesHero: any = null;
-try { memoriesHero = require('@/assets/section-heroes/memories.jpg'); } catch { /* using fallback */ }
+const memoriesHero = SECTION_HEROES.memories;
 
 const SECTION = SECTIONS.memories;
 

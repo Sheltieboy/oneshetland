@@ -35,9 +35,7 @@ import { computeFleetStats, matchBuildPlace, type BuildPlaceCount } from '@/lib/
 import VesselCard from '@/components/VesselCard';
 import SectionHero from '@/components/SectionHero';
 import { BoatBuildMap } from '@/components/BoatBuildMap';
-
-let boatsHero: any = null;
-try { boatsHero = require('@/assets/section-heroes/da-boats.jpg'); } catch { /* using fallback */ }
+import { SECTION_HEROES } from '@/constants/section-heroes';
 
 const SECTION = SECTIONS.daBoats;
 
@@ -188,7 +186,7 @@ export default function DaBoatsScreen() {
           section="daBoats"
           title="Da Boats"
           eyebrow="The fleet"
-          photo={boatsHero}
+          photo={SECTION_HEROES.daBoats}
           height={220}
         />
 

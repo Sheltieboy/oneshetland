@@ -14,6 +14,7 @@ import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { SECTION_HEROES } from '@/constants/section-heroes';
 import { EventsCalendar, dayKey } from '@/components/EventsCalendar';
 import {
   fetchPublishedEvents,
@@ -193,7 +194,7 @@ export default function WhatsOnTab() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <TabScreenHeader section={S} />
+      <TabScreenHeader section={S} photo={SECTION_HEROES.events} />
 
       {/* View toggle + filters */}
       <View style={styles.filtersWrap}>
