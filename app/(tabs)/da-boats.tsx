@@ -172,6 +172,7 @@ export default function DaBoatsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView
+        style={styles.scrollBg}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -554,7 +555,8 @@ function Chip({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.screenBackground },
+  container: { flex: 1, backgroundColor: colors.navy },
+  scrollBg:  { flex: 1, backgroundColor: colors.screenBackground },
   scroll:    { paddingBottom: spacing.xxl, gap: spacing.lg },
 
   header: {

@@ -32,6 +32,7 @@ import { ShetlandPlace, PLACE_CATEGORY_LABEL } from '@/lib/places-api';
 import MemoryMapNative from '@/components/MemoryMapNative';
 import MemoryCard from '@/components/MemoryCard';
 import SectionHero from '@/components/SectionHero';
+import { TabScreenHeader } from '@/components/TabScreenHeader';
 import MemoryDetailScreen from '../memory/[id]';
 import { eraTone } from '@/lib/memory-eras';
 
@@ -382,11 +383,13 @@ export default function MemoriesScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       {twoPane ? (
-        // Landscape tablet: map pinned left; right pane shows the feed, or the
-        // selected memory's full detail in place (no screen navigation).
-        <View style={styles.splitRow}>
+        // Landscape tablet: cinematic header on top; map pinned left; right pane
+        // shows the feed, or the selected memory's full detail in place.
+        <View style={styles.twoPaneWrap}>
+          <TabScreenHeader section={SECTIONS.memories} photo={memoriesHero} eyebrow="The living map" />
+          <View style={styles.splitRow}>
           <View style={styles.mapCol}>
-            {mapPane(screenHeight - 230)}
+            {mapPane(screenHeight - 368)}
           </View>
           <View style={styles.feedCol}>
             <Animated.View
@@ -420,8 +423,10 @@ export default function MemoriesScreen() {
             </Animated.View>
           </View>
         </View>
+        </View>
       ) : (
         <ScrollView
+          style={styles.twoPaneWrap}
           contentContainerStyle={[styles.scroll, isTablet && styles.scrollTablet]}
           refreshControl={refreshCtl}
         >
@@ -502,8 +507,9 @@ function SearchResultRow({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.screenBackground,
+    backgroundColor: colors.navy,
   },
+  twoPaneWrap: { flex: 1, backgroundColor: colors.screenBackground },
   scroll: {
     paddingBottom: spacing.xxl,
   },

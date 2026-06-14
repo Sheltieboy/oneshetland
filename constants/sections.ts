@@ -62,7 +62,7 @@ export const SECTIONS = {
     color:       '#7C3AED',   // deep violet — fresh, premium, distinct from other sections
     light:       '#F3E8FF',
     icon:        'map-pin',
-    label:       'Marketplace',
+    label:       'Local',
     description: 'Shops, services, loyalty and bookings from Shetland businesses',
     live:        true,
   },

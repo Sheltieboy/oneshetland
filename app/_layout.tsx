@@ -169,7 +169,7 @@ function RootNavigator() {
           <Stack.Screen name="account" />
           <Stack.Screen name="home" />
           <Stack.Screen name="search" options={{ ...MODAL_PRESENT }} />
-          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="(tabs)" options={{ ...SECTION_ROOT }} />
           <Stack.Screen name="spik-detail" />
           <Stack.Screen name="spik-suggest" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="spik-filter" />

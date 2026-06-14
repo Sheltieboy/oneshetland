@@ -120,7 +120,7 @@ export default function WorkHubScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: colors.screenBackground }}>
         {/* Cinematic banner — tints to the active tier; "Work" over it */}
         <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Find work" />
         {/* Work switch */}
@@ -282,7 +282,7 @@ function Empty({ icon, color, title, body }: { icon: string; color: string; titl
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
   header: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: colors.border },
   switchRow: { flexDirection: 'row', gap: 8, backgroundColor: colors.offWhite, borderRadius: 999, padding: 4, alignSelf: 'center' },
   switchPill: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 999 },

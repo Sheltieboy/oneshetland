@@ -14,6 +14,8 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { NavRail } from '@/components/NavRail';
+import { TabScreenHeader } from '@/components/TabScreenHeader';
+import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
@@ -55,16 +57,14 @@ export default function HubsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <NavRail />
-      <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
-      <View style={[styles.header, { borderBottomColor: S.color }]}>
-        {isTablet ? <View style={{ width: 70 }} /> : (
-          <TouchableOpacity style={styles.backBtn} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))} hitSlop={12}>
-            <FontAwesome5 name="chevron-left" size={14} color={S.color} />
-            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
-          </TouchableOpacity>
-        )}
-        <Text style={styles.headerTitle}>Hubs</Text>
-        <View style={{ width: 70 }} />
+      <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0, backgroundColor: colors.screenBackground }}>
+      <View>
+        <TabScreenHeader section={S} eyebrow="Community" />
+        {!isTablet && router.canGoBack() ? (
+          <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+            <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
+          </View>
+        ) : null}
       </View>
 
       <ScrollView
@@ -158,7 +158,7 @@ function HubCard({ hub, width, onPress }: { hub: Hub; width: any; onPress: () =>
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.screenBackground },
+  safe: { flex: 1, backgroundColor: colors.navy },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 2, backgroundColor: '#fff',
