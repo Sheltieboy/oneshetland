@@ -124,8 +124,10 @@ export default function SearchScreen() {
 
   const ResultRow = ({ item }: { item: SearchResult }) => (
     <TouchableOpacity style={styles.resultRow} onPress={() => openResult(item)} activeOpacity={0.7}>
-      <View style={[styles.resultIcon, { backgroundColor: item.color + '18' }]}>
-        <FontAwesome5 name={item.icon as any} size={15} color={item.color} solid />
+      <View style={[styles.resultIcon, { backgroundColor: item.logoUrl ? '#fff' : item.color + '18' }]}>
+        {item.logoUrl
+          ? <Image source={{ uri: item.logoUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          : <FontAwesome5 name={item.icon as any} size={15} color={item.color} solid />}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.resultTitle} numberOfLines={1}>{item.title}</Text>
@@ -351,7 +353,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 8,
   },
-  resultIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  resultIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   resultTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   resultSub: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
 

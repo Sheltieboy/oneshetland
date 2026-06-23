@@ -3,7 +3,15 @@ import { View, Text, Pressable, StyleSheet, Modal, FlatList, LogBox } from 'reac
 
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 import { haptic } from '@/lib/haptics';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import {
+  GooglePlacesAutocomplete as GooglePlacesAutocompleteRaw,
+  type GooglePlaceData,
+  type GooglePlaceDetail,
+} from 'react-native-google-places-autocomplete';
+
+// This package version's type defs omit `flatListProps` (valid at runtime —
+// needed so the results dropdown scrolls correctly inside the form ScrollView).
+const GooglePlacesAutocomplete = GooglePlacesAutocompleteRaw as unknown as React.ComponentType<any>;
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
@@ -122,7 +130,7 @@ export default function RequestStep3() {
           <GooglePlacesAutocomplete
             placeholder="e.g. 4 Harbour View, Scalloway"
             minLength={2}
-            onPress={(data, details) => {
+            onPress={(data: GooglePlaceData, details: GooglePlaceDetail | null) => {
               const full = details?.formatted_address ?? data.description;
               const postcode = (details?.address_components ?? [])
                 .find((c: any) => c.types.includes('postal_code'))?.long_name ?? '';

@@ -1,16 +1,19 @@
 /**
  * components/VoiceRecorder.tsx
  *
- * Drop-in voice-note recorder for memory creation. Records via expo-av,
- * shows an elapsed-time read-out and a level meter, and calls back with
- * a PickedFile when the user finishes recording.
+ * Drop-in voice-note recorder for memory creation. Records via expo-audio
+ * (the SDK 54+ replacement for the removed expo-av), shows an elapsed-time
+ * read-out, and calls back with a PickedFile when the user finishes.
  *
- * Why soft-load expo-av?
- *   The app may not yet have the dependency installed when this commit
- *   first lands. Instead of crashing the screen at import time we
- *   gracefully alert the user and rendering shows a disabled state.
+ * expo-audio is a NATIVE module: it only works once it has been compiled
+ * into the dev client / app build. We therefore *soft-load* it with a
+ * try/catch require — if the running build predates the install, the module
+ * throws "Cannot find native module 'ExpoAudio'" at import time. Catching it
+ * lets the rest of the screen (create / edit a memory, add photos & video)
+ * keep working; we just show a "needs the latest build" notice in place of
+ * the record button instead of red-screening the whole screen.
  *
- *   Run:   npx expo install expo-av
+ *   npx expo install expo-audio   →   rebuild the dev client / EAS build.
  *
  * Output:
  *   onFinish(file, durationSeconds)  — pass to uploadMemoryMedia() with
@@ -26,6 +29,18 @@ import { SECTIONS } from '@/constants/sections';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { PickedFile } from '@/lib/image-upload';
 
+// Soft-load the native audio module. A build that predates the expo-audio
+// install throws synchronously here; we degrade gracefully instead.
+let ExpoAudio: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  ExpoAudio = require('expo-audio');
+} catch {
+  ExpoAudio = null;
+}
+
+const AUDIO_AVAILABLE = !!ExpoAudio?.useAudioRecorder;
+
 interface VoiceRecorderProps {
   onFinish:  (file: PickedFile, durationSeconds: number) => void;
   onCancel?: () => void;
@@ -35,109 +50,98 @@ interface VoiceRecorderProps {
 
 const SECTION = SECTIONS.memories;
 
-// Soft-load expo-av.
-let Audio: any = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  Audio = require('expo-av').Audio;
-} catch {
-  Audio = null;
-}
-
 function fmtTime(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export function VoiceRecorder({ onFinish, onCancel, maxSeconds = 600 }: VoiceRecorderProps) {
+/**
+ * Public component. When the native module is missing we render a friendly
+ * notice; otherwise we mount the real recorder, which calls expo-audio
+ * hooks. Splitting like this keeps the hook calls unconditional inside the
+ * inner component (so we never break the rules of hooks).
+ */
+export function VoiceRecorder(props: VoiceRecorderProps) {
+  if (!AUDIO_AVAILABLE) {
+    return (
+      <View style={styles.unavailableWrap}>
+        <FontAwesome5 name="microphone-slash" size={18} color={colors.textMuted} />
+        <Text style={styles.unavailableTitle}>Voice recording needs the latest build</Text>
+        <Text style={styles.unavailableBody}>
+          Your app is running an older build that doesn&apos;t include the voice
+          module yet. Update to the newest OneShetland build to record voice
+          notes. You can still add photos, video and text.
+        </Text>
+        {props.onCancel ? (
+          <TouchableOpacity onPress={props.onCancel} style={styles.cancelBtn}>
+            <Text style={styles.cancelBtnText}>Close</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  }
+  return <VoiceRecorderInner {...props} />;
+}
+
+function VoiceRecorderInner({ onFinish, onCancel, maxSeconds = 600 }: VoiceRecorderProps) {
+  const recorder                = ExpoAudio.useAudioRecorder(ExpoAudio.RecordingPresets.HIGH_QUALITY);
   const [state, setState]       = useState<'idle' | 'preparing' | 'recording' | 'stopping'>('idle');
   const [elapsed, setElapsed]   = useState(0);
-  const [meter, setMeter]       = useState(0);   // 0..1 for the bar
-  const recordingRef            = useRef<any>(null);
+  const meter = state === 'recording' ? 0.55 : 0;
   const tickRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingFlag           = useRef(false);
 
   useEffect(() => {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
-      // Best-effort tidy up if the user navigates away mid-recording.
-      if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync?.().catch(() => {});
-      }
+      if (recordingFlag.current) recorder.stop().catch(() => {});
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const start = async () => {
-    if (!Audio) {
-      Alert.alert(
-        'Setup needed',
-        'Voice recording is not installed yet. Run `npx expo install expo-av` and rebuild the app.',
-      );
-      return;
-    }
     try {
       setState('preparing');
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await ExpoAudio.requestRecordingPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert(
-          'Microphone needed',
-          'OneShetland needs microphone access to record voice notes.',
-        );
+        Alert.alert('Microphone needed', 'OneShetland needs microphone access to record voice notes.');
         setState('idle');
         return;
       }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-
-      recording.setOnRecordingStatusUpdate((status: any) => {
-        if (typeof status?.metering === 'number') {
-          // metering is in dB; map roughly -60..0 → 0..1
-          const norm = Math.max(0, Math.min(1, (status.metering + 60) / 60));
-          setMeter(norm);
-        }
-      });
-      await recording.startAsync();
-
-      recordingRef.current = recording;
+      await ExpoAudio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      recordingFlag.current = true;
       setState('recording');
       setElapsed(0);
 
       tickRef.current = setInterval(() => {
         setElapsed(prev => {
           const next = prev + 1;
-          if (next >= maxSeconds) {
-            void stop();
-          }
+          if (next >= maxSeconds) void stop();
           return next;
         });
       }, 1000);
     } catch (err: any) {
-      Alert.alert('Could not start recording', err?.message ?? 'Please try again.');
+      Alert.alert('Could not start recording', err?.message ?? 'Please update to the latest app build and try again.');
       setState('idle');
     }
   };
 
   const stop = async () => {
-    if (!recordingRef.current) return;
+    if (!recordingFlag.current) return;
     setState('stopping');
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      const status = await recordingRef.current.getStatusAsync().catch(() => null);
-      const duration = status?.durationMillis ? Math.round(status.durationMillis / 1000) : elapsed;
-      const file: PickedFile = {
-        uri,
-        mimeType: 'audio/m4a',
-        ext: 'm4a',
-      };
-      recordingRef.current = null;
+      const duration = recorder.getStatus?.()?.durationMillis
+        ? Math.round(recorder.getStatus().durationMillis / 1000)
+        : elapsed;
+      await recorder.stop();
+      recordingFlag.current = false;
+      const uri = recorder.uri;
+      if (!uri) throw new Error('No recording was captured.');
+      const file: PickedFile = { uri, mimeType: 'audio/m4a', ext: 'm4a' };
       setState('idle');
       onFinish(file, duration);
     } catch (err: any) {
@@ -216,6 +220,28 @@ const styles = StyleSheet.create({
   idleWrap: {
     gap: spacing.sm,
     alignItems: 'center',
+  },
+  unavailableWrap: {
+    gap: spacing.xs,
+    alignItems: 'center',
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.offWhite,
+  },
+  unavailableTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  unavailableBody: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: spacing.sm,
   },
   recBtn: {
     flexDirection: 'row',

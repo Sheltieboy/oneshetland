@@ -59,10 +59,8 @@ export default function ApplyDriverScreen() {
 
   async function handleSubmit() {
     const valid = validate();
-    console.log('[apply-driver] validate():', valid, 'errors:', errors);
     if (!valid) return;
 
-    console.log('[apply-driver] profile:', profile?.id);
     if (!profile?.id) {
       alert({ title: 'Not signed in', message: 'Could not find your profile. Please sign out and back in.' });
       return;
@@ -70,40 +68,25 @@ export default function ApplyDriverScreen() {
 
     setSubmitting(true);
 
-    // 1. Create the driver_profiles row
-    const { error: dpError } = await supabase
-      .from('driver_profiles')
-      .upsert({
-        id: profile.id,
-        driver_status: 'pending',
-        vehicle_type: vehicleType.trim(),
-        vehicle_reg: vehicleReg.trim().toUpperCase(),
-        notes: statement.trim(),
-      });
-
-    console.log('[apply-driver] upsert error:', dpError);
-
-    if (dpError) {
+    // Submit via the become-driver edge function. This MUST be server-side:
+    // migration 064 locks profiles.role on user-initiated updates, so a
+    // client-side role write is silently reverted (the old bug). The function
+    // (service role) creates the driver_profiles row + promotes role to driver.
+    const { data: result, error: fnError } = await supabase.functions.invoke('become-driver', {
+      body: { vehicle_type: vehicleType.trim(), vehicle_reg: vehicleReg.trim(), statement: statement.trim() },
+    });
+    if (fnError || (result as any)?.error) {
+      let msg = (result as any)?.error ?? fnError?.message ?? 'Could not submit application.';
+      try {
+        const ctx = (fnError as any)?.context;
+        if (ctx && typeof ctx.json === 'function') { const b = await ctx.json(); if (b?.error) msg = b.error; }
+      } catch { /* keep generic */ }
       setSubmitting(false);
-      alert({ title: 'Could not submit application', message: dpError.message });
+      alert({ title: 'Could not submit application', message: msg });
       return;
     }
 
-    // 2. Update profile role to driver
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ role: 'driver' })
-      .eq('id', profile.id);
-
-    console.log('[apply-driver] profile update error:', profileError);
-
-    if (profileError) {
-      setSubmitting(false);
-      alert({ title: 'Could not update profile', message: profileError.message });
-      return;
-    }
-
-    // 3. Log compliance — driver terms accepted at point of application
+    // Log compliance — driver terms accepted at point of application
     logCompliance({ eventType: 'driver.terms_accepted', documentVersion: '1.0', description: 'Accepted Fetch driver terms at application', metadata: { screen: 'apply-driver' } });
 
     // 4. Refresh profile in context so the app re-routes correctly

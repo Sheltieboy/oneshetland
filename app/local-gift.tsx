@@ -25,8 +25,9 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { supabase } from '@/lib/supabase';
-import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
+import { fetchBusiness, fetchWalletBalance, type LocalBusiness } from '@/lib/local-api';
 import { formatPence, type BookUnitItem, type BookService } from '@/lib/book-api';
 
 const S = SECTIONS.local;
@@ -51,8 +52,12 @@ export default function GiftScreen() {
   const [recipientEmail, setRecipientEmail] = useState('');
   const [message, setMessage]               = useState('');
   const [submitting, setSubmitting]         = useState(false);
+  const [confirming, setConfirming]         = useState(false);
+  const [walletBalance, setWalletBalance]   = useState<number | null>(null);
 
-  const [doneState, setDoneState] = useState<{ code: string; recipientEmail: string } | null>(null);
+  useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
+
+  const [doneState, setDoneState] = useState<{ code: string; recipientEmail: string; emailed: boolean } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -77,7 +82,9 @@ export default function GiftScreen() {
   const price = (item as any)?.price_pence as number | undefined;
   const itemName = (item as any)?.name as string | undefined;
 
-  const submit = useCallback(async () => {
+  // Validate + gate, then show the confirm step (gifts always charge a saved
+  // card off-session, so a single tap would otherwise move money silently).
+  const submit = useCallback(() => {
     if (!session || !profile || !item || !kind || !targetId) return;
 
     const emailTrim = recipientEmail.trim().toLowerCase();
@@ -99,6 +106,13 @@ export default function GiftScreen() {
       return;
     }
 
+    setConfirming(true);
+  }, [session, profile, item, kind, targetId, recipientEmail, router, alert]);
+
+  const runGift = useCallback(async (viaWallet = false) => {
+    if (!session || !profile || !item || !kind || !targetId) return;
+    const emailTrim = recipientEmail.trim().toLowerCase();
+
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
@@ -106,7 +120,7 @@ export default function GiftScreen() {
         recipient_email: emailTrim,
         recipient_name:  recipientName.trim() || null,
         message:         message.trim() || null,
-        use_saved_card:  true,
+        ...(viaWallet ? { pay_with_wallet: true } : { use_saved_card: true }),
       };
       if (kind === 'unit')    body.unit_item_id = targetId;
       if (kind === 'booking') body.service_id   = targetId;
@@ -117,7 +131,16 @@ export default function GiftScreen() {
         { body, headers: { Authorization: `Bearer ${session.access_token}` } },
       );
 
-      if (intentErr || !intent) throw new Error(intentErr?.message ?? 'Could not start gift.');
+      if (intentErr || !intent) {
+        // supabase.functions.invoke gives a generic "non-2xx" message — the real
+        // reason is in the response body. Surface it.
+        let msg = intentErr?.message ?? 'Could not start gift.';
+        try {
+          const ctx = (intentErr as any)?.context;
+          if (ctx && typeof ctx.json === 'function') { const b = await ctx.json(); if (b?.error) msg = b.error; }
+        } catch { /* keep generic */ }
+        throw new Error(msg);
+      }
       if (intent.error) throw new Error(intent.error);
 
       let paymentIntentId: string | undefined = intent.payment_intent_id;
@@ -154,11 +177,16 @@ export default function GiftScreen() {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setDoneState({ code: confirm.code, recipientEmail: emailTrim });
+      // Only claim the email went out if the server actually sent it. The
+      // already-sent (idempotent) path doesn't re-send, so treat that as "share
+      // the code yourself" too — don't over-promise (QA L5).
+      const emailed = confirm.email_sent === true;
+      setDoneState({ code: confirm.code, recipientEmail: emailTrim, emailed });
     } catch (e: any) {
       alert({ title: 'Gift failed', message: e?.message ?? 'Please try again.' });
     } finally {
       setSubmitting(false);
+      setConfirming(false);
     }
   }, [
     session, profile, item, kind, targetId, recipientEmail, recipientName, message,
@@ -201,7 +229,11 @@ export default function GiftScreen() {
               </View>
               <Text style={styles.successTitle}>Gift on its way</Text>
               <Text style={styles.successSub}>
-                We've emailed <Text style={{ fontWeight: '900' }}>{doneState.recipientEmail}</Text> with a claim link.
+                {doneState.emailed ? (
+                  <>We've emailed <Text style={{ fontWeight: '900' }}>{doneState.recipientEmail}</Text> with a claim link.</>
+                ) : (
+                  <>Your gift is paid for. We couldn't confirm the email to <Text style={{ fontWeight: '900' }}>{doneState.recipientEmail}</Text> went out — share the code below with them so they can claim it.</>
+                )}
               </Text>
               <View style={styles.codeBox}>
                 <Text style={styles.codeLabel}>Their code</Text>
@@ -290,6 +322,21 @@ export default function GiftScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ConfirmPaymentSheet
+        visible={confirming}
+        itemName={`Gift: ${item?.name ?? 'item'}${business ? ` — ${business.name}` : ''}`}
+        lineItems={[{ label: 'Gift', amountPence: price ?? 0 }]}
+        totalPence={price ?? 0}
+        payingWith="Saved card"
+        policy={{ text: 'Gifts are non-refundable once sent.' }}
+        loading={submitting}
+        onConfirm={() => runGift(false)}
+        onCancel={() => setConfirming(false)}
+        walletBalancePence={walletBalance}
+        onConfirmWallet={() => runGift(true)}
+        onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}
+      />
     </SafeAreaView>
   );
 }

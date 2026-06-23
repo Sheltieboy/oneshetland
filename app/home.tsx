@@ -38,7 +38,6 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isDriver = profile?.role === 'driver';
   const isAdmin  = profile?.role === 'admin';
 
   const loadFeed = useCallback(async () => {
@@ -94,13 +93,10 @@ export default function HomeScreen() {
             activeOpacity={0.88}
             onPress={() => {
               haptic.medium();
-              if (isAdmin) {
-                router.push('/(admin)/dashboard');
-              } else if (isDriver) {
-                router.push('/(driver)/dashboard');
-              } else {
-                router.push('/(customer)/dashboard');
-              }
+              // Fetch is a section — everyone lands in the Fetch tab and toggles
+              // Requester/Driver there. (Admins still have their own dashboard
+              // reachable from Me → Admin.)
+              router.push('/(tabs)/fetch');
             }}
           >
             <View style={styles.fetchCardLeft}>
@@ -110,11 +106,7 @@ export default function HomeScreen() {
               <View>
                 <Text style={styles.fetchCardTitle}>OneShetland Fetch</Text>
                 <Text style={styles.fetchCardSub}>
-                  {isDriver
-                    ? 'View your driver dashboard'
-                    : isAdmin
-                    ? 'View admin dashboard'
-                    : 'Request a community delivery'}
+                  Request a community delivery
                 </Text>
               </View>
             </View>

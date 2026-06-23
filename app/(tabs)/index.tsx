@@ -31,8 +31,8 @@ import {
   RefreshControl, Image, ImageBackground, Platform,
 } from 'react-native';
 
-// OneShetland brand mark used in the top app header.
-const LOGO = require('@/assets/icon.png');
+// OneShetland brand mark (transparent rings) used in the top app header.
+const LOGO = require('@/assets/logo-mark-keyed.png');
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -41,6 +41,8 @@ import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { GameArt } from '@/components/GameArt';
 import { FeaturedBusinessesBar } from '@/components/FeaturedBusinessesBar';
+import { BrushAccent, BrushDivider } from '@/components/Brush';
+import { CruiseTodayCard } from '@/components/CruiseTodayCard';
 import { TodayAtAGlance } from '@/components/TodayAtAGlance';
 import { useAuth } from '@/context/AuthContext';
 
@@ -120,63 +122,8 @@ function pickHeroImage(weather: { code: number; windKph: number } | null): HeroK
   return 'day-calm';
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Top banner
-// ──────────────────────────────────────────────────────────────────────────
-
-function TopBanner({
-  urgent, personalNote, spik,
-}: {
-  urgent:       HomeNotice | null;
-  personalNote: string | null;
-  spik:         SpikDaily;
-}) {
-  const router = useRouter();
-
-  return (
-    <View style={styles.bannerWrap}>
-      {/* Urgent zone — only rendered when there's an active alert */}
-      {urgent ? (
-        <TouchableOpacity
-          onPress={() => router.push('/(tabs)/whats-on')}
-          style={styles.bannerUrgent}
-          activeOpacity={0.85}
-        >
-          <FontAwesome5 name="exclamation-triangle" size={11} color="#fff" solid />
-          <Text style={styles.bannerUrgentText} numberOfLines={1}>
-            {urgent.title}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-
-      {/* Personal + Spik strip */}
-      <View style={styles.bannerStrip}>
-        {personalNote ? (
-          <View style={styles.bannerPersonal}>
-            <View style={styles.bannerPersonalDot} />
-            <Text style={styles.bannerPersonalText} numberOfLines={1}>{personalNote}</Text>
-          </View>
-        ) : (
-          <View style={{ flex: 1 }} />
-        )}
-
-        <TouchableOpacity
-          onPress={() => router.push('/(tabs)/spik')}
-          style={styles.bannerSpik}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.bannerSpikLabel}>SPIK</Text>
-          <Text style={styles.bannerSpikWord} numberOfLines={1}>
-            {spik.word}
-          </Text>
-          <Text style={styles.bannerSpikMeaning} numberOfLines={1}>
-            · {spik.meaning}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
+// (Removed: dead TopBanner component — it was never rendered; the home banner
+//  is HeroSection. It referenced ~11 styles that don't exist.)
 
 // ──────────────────────────────────────────────────────────────────────────
 // Greeting
@@ -224,7 +171,7 @@ function SectionRow({
   return (
     <View style={styles.row}>
       <View style={styles.rowHeader}>
-        <View style={[styles.rowAccentBar, { backgroundColor: accent }]} />
+        <BrushAccent color={accent} />
         <View style={{ flexShrink: 1 }}>
           <Text style={styles.rowTitle}>{title}</Text>
           {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
@@ -290,10 +237,12 @@ function HeroSection({
         {/* Logo row */}
         <View style={styles.heroTopRow}>
           <View style={styles.heroLogoRow}>
-            <Image source={LOGO} style={styles.heroLogo} resizeMode="contain" />
-            <View>
-              <DisplayText weight="black" style={styles.heroBrand}>OneShetland</DisplayText>
-              <Text style={styles.heroBrandTag}>Everything Shetland,{'\n'}in one place</Text>
+            <View style={styles.heroLogoMedallion}>
+              <Image source={LOGO} style={styles.heroLogo} resizeMode="contain" />
+            </View>
+            <View style={styles.heroBrandBlock}>
+              <DisplayText weight="black" style={styles.heroBrand} numberOfLines={1}>OneShetland</DisplayText>
+              <Text style={styles.heroBrandTag} numberOfLines={2}>Everything Shetland,{'\n'}in one place</Text>
             </View>
           </View>
           <View style={styles.heroHeaderActions}>
@@ -304,9 +253,11 @@ function HeroSection({
               hitSlop={8}
               accessibilityLabel="My Wallet"
             >
-              <FontAwesome5 name="wallet" size={15} color="#fff" solid />
+              <FontAwesome5 name="wallet" size={13} color={colors.navy} solid />
               {walletPence != null && (
-                <Text style={styles.walletBtnText}>{formatPence(walletPence)}</Text>
+                <Text style={styles.walletBtnText}>
+                  {walletPence % 100 === 0 ? `£${Math.round(walletPence / 100)}` : formatPence(walletPence)}
+                </Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity
@@ -414,7 +365,7 @@ function ComingUpRow({ events }: { events: HomeEvent[] }) {
 
   return (
     <SectionRow
-      title="Events"
+      title={SECTIONS.events.label}
       sectionKey="events"
       action={{ label: 'See all', onPress: () => router.push('/(tabs)/whats-on') }}
     >
@@ -964,7 +915,7 @@ export default function HomeScreen() {
         id: 'boats',
         iconKey: 'daBoats',
         tag: 'SAVED',
-        headline: first.name ?? `${savedBoats.length} saved vessel${savedBoats.length === 1 ? '' : 's'}`,
+        headline: first.canonical_name ?? `${savedBoats.length} saved vessel${savedBoats.length === 1 ? '' : 's'}`,
         detail: savedBoats.length > 1 ? `+ ${savedBoats.length - 1} more saved` : 'Tap to track movements',
         onPress: () => router.push('/(tabs)/da-boats'),
       });
@@ -973,7 +924,7 @@ export default function HomeScreen() {
         id: 'boats-recent',
         iconKey: 'daBoats',
         tag: 'RECENTLY VIEWED',
-        headline: recentBoats[0].name ?? 'A vessel you looked at',
+        headline: recentBoats[0].canonical_name ?? 'A vessel you looked at',
         detail: 'Tap to see live position',
         onPress: () => router.push('/(tabs)/da-boats'),
       });
@@ -1091,7 +1042,7 @@ export default function HomeScreen() {
         <HeroSection
           name={profile?.full_name ?? null}
           spik={spik}
-          urgent={urgentNotice}
+          urgent={urgentNotice as unknown as HomeNotice | null}
           heroKey={heroKey}
         />
 
@@ -1106,24 +1057,26 @@ export default function HomeScreen() {
             <FontAwesome5 name="search" size={15} color={colors.textMuted} />
             <Text style={styles.searchEntryText}>Search businesses, trades, services…</Text>
           </TouchableOpacity>
+          {/* Cruise — in port today / next call (hidden when no calls) */}
+          <CruiseTodayCard style={{ marginHorizontal: spacing.lg, marginBottom: spacing.lg }} />
           {/* 1. For you */}
           <ForYouRow tiles={tiles} />
-          <View style={styles.sectionDivider} />
+          <BrushDivider />
           {/* 2. Events */}
           <ComingUpRow events={events} />
-          <View style={styles.sectionDivider} />
+          <BrushDivider />
           {/* 3. Directory / featured listings */}
           <FeaturedBusinessesBar />
-          <View style={styles.sectionDivider} />
+          <BrushDivider />
           {/* 4. Work / shifts */}
           <WorkRow jobs={jobs} shifts={shifts} />
-          <View style={styles.sectionDivider} />
+          <BrushDivider />
           {/* 5. Local notices */}
           <NoticesRow notices={notices} />
           {/* 6. Today's game — phone only; on tablet it lives below the left nav */}
           {!isTablet && (
             <>
-              <View style={styles.sectionDivider} />
+              <BrushDivider />
               <GamesRow />
             </>
           )}
@@ -1162,52 +1115,71 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.lg,
+    // Frosted light panel — same colour as the logo backing, photo shows through
+    backgroundColor: 'rgba(240,242,245,0.82)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    paddingVertical: 8,
+    paddingLeft: 8,
+    paddingRight: 12,
   },
   heroLogoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 9,
     flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  heroBrandBlock: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  heroLogoMedallion: {
+    width: 64, height: 64,
+    alignItems: 'center', justifyContent: 'center',
   },
   heroLogo: {
-    width: 36, height: 36, borderRadius: 8,
+    width: 62, height: 62,
   },
   heroBrand: {
-    fontSize: 20,
-    color: '#fff',
+    fontSize: 18,
+    color: colors.navy,
     letterSpacing: -0.3,
   },
   heroBrandTag: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(3,47,76,0.6)',
     fontWeight: '500',
     marginTop: -1,
     lineHeight: 14,
   },
   heroHeaderActions: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexShrink: 0,
   },
   walletBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    height: 40, borderRadius: 20, paddingHorizontal: 13,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    height: 34, borderRadius: 17, paddingHorizontal: 11,
+    backgroundColor: 'rgba(255,255,255,0.72)',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: 'rgba(3,47,76,0.12)',
   },
-  walletBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  walletBtnText: { color: colors.navy, fontSize: 13, fontWeight: '800' },
   profileAvatar: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 34, height: 34, borderRadius: 17,
     backgroundColor: colors.accent,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.55)',
   },
   profileAvatarText: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   heroLowerRow: {
     flexDirection: 'row',

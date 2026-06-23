@@ -81,8 +81,9 @@ export default function EventCreateScreen() {
   const [uploadingImg,setUploadingImg]= useState(false);
 
   // Tickets
-  const [hasTickets,  setHasTickets]  = useState(false);
+  const [ticketMode,  setTicketMode]  = useState<'none' | 'oneshetland' | 'external'>('none');
   const [ticketTypes, setTicketTypes] = useState<(Partial<EventTicketType> & { _local?: boolean })[]>([]);
+  const [ticketUrl,   setTicketUrl]   = useState('');
 
   // Misc
   const [refundPolicy, setRefundPolicy] = useState('');
@@ -106,8 +107,15 @@ export default function EventCreateScreen() {
     if (ev.doors_open_at) setDoorsAt(new Date(ev.doors_open_at));
     setCoverUrl(ev.cover_url);
     if (ev.hub_visibility) setHubVisibility(ev.hub_visibility);
-    setHasTickets(ev.has_tickets);
-    if (ev.ticket_types) setTicketTypes(ev.ticket_types);
+    if (ev.ticket_url) {
+      setTicketMode('external');
+      setTicketUrl(ev.ticket_url);
+    } else if (ev.has_tickets || (ev.ticket_types && ev.ticket_types.length > 0)) {
+      setTicketMode('oneshetland');
+      if (ev.ticket_types) setTicketTypes(ev.ticket_types);
+    } else {
+      setTicketMode('none');
+    }
     setAgeRestr(ev.age_restriction ?? 'All ages');
     setRefundPolicy(ev.refund_policy ?? '');
     setContactInfo(ev.contact_info ?? '');
@@ -185,7 +193,8 @@ export default function EventCreateScreen() {
         ends_at:            endsAt?.toISOString() ?? null,
         doors_open_at:      doorsAt?.toISOString() ?? null,
         cover_url:          finalCover,
-        has_tickets:        hasTickets,
+        has_tickets:        ticketMode !== 'none',
+        ticket_url:         ticketMode === 'external' ? ticketUrl.trim() || null : null,
         age_restriction:    ageRestr !== 'All ages' ? ageRestr : null,
         refund_policy:      refundPolicy.trim() || null,
         contact_info:       contactInfo.trim() || null,
@@ -201,7 +210,8 @@ export default function EventCreateScreen() {
         targetId = ev.id;
       }
 
-      // Upsert ticket types
+      // Upsert ticket types (only when using OneShetland ticketing)
+      if (ticketMode !== 'oneshetland') ticketTypes.length = 0;
       for (const tt of ticketTypes) {
         if (!tt.name?.trim()) continue;
         await upsertTicketType({
@@ -453,11 +463,37 @@ export default function EventCreateScreen() {
 
         {/* Tickets */}
         <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Tickets</Text>
-            <Switch value={hasTickets} onValueChange={setHasTickets} trackColor={{ true: S.color }} />
+          <Text style={styles.sectionTitle}>Tickets</Text>
+          <View style={styles.ticketModeRow}>
+            {(['none', 'oneshetland', 'external'] as const).map(mode => (
+              <TouchableOpacity
+                key={mode}
+                onPress={() => setTicketMode(mode)}
+                style={[styles.ticketModeBtn, ticketMode === mode && { backgroundColor: S.color, borderColor: S.color }]}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.ticketModeBtnText, ticketMode === mode && { color: '#fff' }]}>
+                  {mode === 'none' ? 'None' : mode === 'oneshetland' ? 'OneShetland' : 'External link'}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-          {hasTickets && (
+
+          {ticketMode === 'external' && (
+            <Field label="Ticket URL">
+              <TextInput
+                style={styles.input}
+                value={ticketUrl}
+                onChangeText={setTicketUrl}
+                placeholder="https://..."
+                placeholderTextColor={colors.textLight}
+                keyboardType="url"
+                autoCapitalize="none"
+              />
+            </Field>
+          )}
+
+          {ticketMode === 'oneshetland' && (
             <>
               {ticketTypes.map((tt, i) => (
                 <View key={i} style={styles.ticketTypeCard}>
@@ -722,6 +758,16 @@ const styles = StyleSheet.create({
   },
   dateBtnLabel: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '700', width: 100 },
   dateBtnValue: { flex: 1, fontSize: fontSize.sm, fontWeight: '600' },
+
+  ticketModeRow: {
+    flexDirection: 'row', gap: 8, marginBottom: 12,
+  },
+  ticketModeBtn: {
+    flex: 1, paddingVertical: 9, paddingHorizontal: 4,
+    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center',
+  },
+  ticketModeBtnText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted },
 
   ticketTypeCard: {
     backgroundColor: '#fff', borderRadius: radius.lg,

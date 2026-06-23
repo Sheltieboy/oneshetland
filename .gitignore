@@ -28,3 +28,10 @@ service_key.txt
 
 # local-only DB connection string for one-off pg_dump (never commit)
 supabase/.db_url
+
+# Large local-only cruise data dumps + source image pile (served from
+# Supabase storage; not bundled in the app — keep out of git history)
+assets/cruise-pics/
+assets/cruise-dump.csv
+assets/cruise-dump.sql
+assets/cruise-import.csv

@@ -52,7 +52,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="whats-on"
-        options={tabOptions(SECTIONS.events.icon, 'Events', SECTIONS.events.color)}
+        options={tabOptions(SECTIONS.events.icon, SECTIONS.events.label, SECTIONS.events.color)}
       />
       <Tabs.Screen
         name="jobs"

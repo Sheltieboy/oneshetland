@@ -122,12 +122,12 @@ export const SECTIONS = {
   },
 
   cruise: {
-    color:       '#E0722A',   // shares fetch orange — nautical/visitor warmth
-    light:       '#FFEDD5',
+    color:       '#0E6E8C',   // harbour blue — matches the web cruise section
+    light:       '#E1F0F5',
     icon:        'ship',
-    label:       'Cruise Visitor',
-    description: 'A dedicated guide for cruise visitors',
-    live:        false,
+    label:       'Cruise',
+    description: 'Cruise ships in Lerwick — times, passengers and what to do ashore',
+    live:        true,
   },
 
   tourism: {

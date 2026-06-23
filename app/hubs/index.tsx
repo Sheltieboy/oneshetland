@@ -8,12 +8,12 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
-import { NavRail } from '@/components/NavRail';
+import { AppBottomNav } from '@/components/AppBottomNav';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { SECTION_HEROES } from '@/constants/section-heroes';
@@ -33,6 +33,7 @@ export default function HubsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { isTablet, screenWidth } = useAppLayout();
+  const insets = useSafeAreaInsets();
 
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,13 +57,12 @@ export default function HubsScreen() {
   const maxW = isTablet ? Math.min(900, screenWidth - spacing.lg * 2) : undefined;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <NavRail />
+    <SafeAreaView style={styles.safe} edges={[]}>
       <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0, backgroundColor: colors.screenBackground }}>
       <View>
         <TabScreenHeader section={S} eyebrow="Community" photo={SECTION_HEROES.community} />
         {!isTablet && router.canGoBack() ? (
-          <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+          <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
             <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
           </View>
         ) : null}
@@ -129,6 +129,7 @@ export default function HubsScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
       </View>
+      <AppBottomNav />
     </SafeAreaView>
   );
 }

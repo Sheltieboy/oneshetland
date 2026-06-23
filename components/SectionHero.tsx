@@ -36,6 +36,7 @@ import React from 'react';
 import {
   View, StyleSheet, ImageBackground, ImageSourcePropType, ViewStyle, Text,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS, SectionKey } from '@/constants/sections';
@@ -52,13 +53,19 @@ interface SectionHeroProps {
   height?:    number;
   /** Optional right-corner chip (e.g. a "saved 4" badge). */
   topRight?:  React.ReactNode;
+  /** When this hero is the screen's top header, absorb the status-bar inset so
+   *  the image runs to the very top (the screen's SafeAreaView must drop its top edge). */
+  topInset?:  boolean;
   style?:     ViewStyle;
 }
 
 export function SectionHero({
-  section, title, eyebrow, photo, height = 200, topRight, style,
+  section, title, eyebrow, photo, height = 200, topRight, topInset = false, style,
 }: SectionHeroProps) {
   const meta = SECTIONS[section];
+  const insets = useSafeAreaInsets();
+  const pad = topInset ? insets.top : 0;
+  const h = height + pad;
 
   // Shared overlay — the gradient + title block that sits on top of
   // either the photo or the gradient-fallback view.
@@ -77,7 +84,7 @@ export function SectionHero({
       </Svg>
 
       {topRight ? (
-        <View style={styles.topRight}>{topRight}</View>
+        <View style={[styles.topRight, { top: pad + 16 }]}>{topRight}</View>
       ) : null}
 
       <View style={styles.titleBlock}>
@@ -91,7 +98,7 @@ export function SectionHero({
 
   if (photo) {
     return (
-      <View style={[{ height }, style]}>
+      <View style={[{ height: h }, style]}>
         <ImageBackground source={photo} resizeMode="cover" style={styles.fill}>
           {overlay}
         </ImageBackground>
@@ -101,7 +108,7 @@ export function SectionHero({
 
   // ── Fallback: tinted gradient + faint icon ─────────────────────────────
   return (
-    <View style={[{ height, backgroundColor: meta.color }, styles.fallback, style]}>
+    <View style={[{ height: h, backgroundColor: meta.color }, styles.fallback, style]}>
       {/* A second gradient layer using the section colour and a darker mix */}
       <Svg style={StyleSheet.absoluteFill}>
         <Defs>

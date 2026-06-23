@@ -15,7 +15,7 @@
  * then uploads each piece of media against the new memory_id.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Image, KeyboardAvoidingView, Platform,
@@ -30,7 +30,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import {
-  createMemory, uploadMemoryMedia, requestTranscription,
+  createMemory, updateMemory, fetchMemoryDetail, uploadMemoryMedia, requestTranscription,
   MediaKind, MemoryVisibility,
 } from '@/lib/memories-api';
 import { PickedFile } from '@/lib/image-upload';
@@ -76,8 +76,10 @@ export default function MemoryNewScreen() {
   const { profile } = useAuth();
   const { alert } = useAlert();
   const { screenWidth } = useAppLayout();
-  const { lat: latParam, lng: lngParam, parent_id: parentIdParam } =
-    useLocalSearchParams<{ lat?: string; lng?: string; parent_id?: string }>();
+  const { lat: latParam, lng: lngParam, parent_id: parentIdParam, memory_id: memoryIdParam } =
+    useLocalSearchParams<{ lat?: string; lng?: string; parent_id?: string; memory_id?: string }>();
+
+  const isEditing = !!memoryIdParam;
 
   const initialPoint = useMemo(() => {
     if (latParam && lngParam) {
@@ -88,7 +90,8 @@ export default function MemoryNewScreen() {
     return null;
   }, [latParam, lngParam]);
 
-  const isChild = !!parentIdParam;
+  const [loadedIsChild, setLoadedIsChild] = useState(false);
+  const isChild = !!parentIdParam || loadedIsChild;
 
   const [point, setPoint]           = useState<{ lat: number; lng: number } | null>(initialPoint);
   const [placeName, setPlaceName]   = useState('');
@@ -100,6 +103,34 @@ export default function MemoryNewScreen() {
   const [drafts, setDrafts]         = useState<DraftMedia[]>([]);
   const [recording, setRecording]   = useState(false);
   const [saving, setSaving]         = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(isEditing);
+
+  // Edit mode: pull the existing memory and pre-fill every field. Existing
+  // media stays attached to the memory — any drafts added here are appended.
+  useEffect(() => {
+    if (!memoryIdParam) return;
+    let alive = true;
+    (async () => {
+      try {
+        const m = await fetchMemoryDetail(memoryIdParam, profile?.id ?? null);
+        if (!alive || !m) return;
+        if (m.parent_id) setLoadedIsChild(true);
+        setTitle(m.title ?? '');
+        setBody(m.body ?? '');
+        setEra(m.era ?? '');
+        setTags(m.tags ?? []);
+        setPlaceName(m.place_name ?? '');
+        setVisibility(m.visibility);
+        if (m.lat != null && m.lng != null) setPoint({ lat: m.lat, lng: m.lng });
+      } catch {
+        if (alive) alert({ title: 'Could not load', message: 'This memory could not be loaded for editing.' });
+      } finally {
+        if (alive) setLoadingExisting(false);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memoryIdParam, profile?.id]);
 
   // ── Attach media ─────────────────────────────────────────────────────────
 
@@ -175,26 +206,42 @@ export default function MemoryNewScreen() {
 
     setSaving(true);
     try {
-      // 1. Create the memory shell.
-      const memory = await createMemory({
-        author_id:  profile.id,
-        lat:        isChild ? null : point!.lat,
-        lng:        isChild ? null : point!.lng,
-        place_name: placeName.trim() || null,
-        parent_id:  parentIdParam ?? null,
-        era:        era.trim()        || null,
-        tags,
-        title:      title.trim()      || null,
-        body:       body.trim()       || null,
-        visibility,
-      });
+      // 1. Create the memory shell — or, in edit mode, update the existing one.
+      let memoryId: string;
+      if (isEditing && memoryIdParam) {
+        await updateMemory(memoryIdParam, {
+          lat:        isChild ? null : point!.lat,
+          lng:        isChild ? null : point!.lng,
+          place_name: placeName.trim() || null,
+          era:        era.trim()        || null,
+          tags,
+          title:      title.trim()      || null,
+          body:       body.trim()       || null,
+          visibility,
+        });
+        memoryId = memoryIdParam;
+      } else {
+        const memory = await createMemory({
+          author_id:  profile.id,
+          lat:        isChild ? null : point!.lat,
+          lng:        isChild ? null : point!.lng,
+          place_name: placeName.trim() || null,
+          parent_id:  parentIdParam ?? null,
+          era:        era.trim()        || null,
+          tags,
+          title:      title.trim()      || null,
+          body:       body.trim()       || null,
+          visibility,
+        });
+        memoryId = memory.id;
+      }
 
-      // 2. Upload media sequentially (small N — keeps UI predictable, and
-      //    keeps display_order stable).
+      // 2. Upload any newly-added media sequentially (small N — keeps UI
+      //    predictable, and keeps display_order stable).
       for (let i = 0; i < drafts.length; i++) {
         const d = drafts[i];
         const media = await uploadMemoryMedia({
-          memoryId:        memory.id,
+          memoryId,
           uploaderId:      profile.id,
           kind:            d.kind,
           file:            d.file,
@@ -210,7 +257,7 @@ export default function MemoryNewScreen() {
 
       // 3. Off to the detail screen — pin will be visible on next focus
       //    of the map screen too (it reloads on focus).
-      router.replace(`/memory/${memory.id}`);
+      router.replace(`/memory/${memoryId}`);
     } catch (err: any) {
       alert({ title: 'Could not save', message: err?.message ?? 'Please try again.' });
     } finally {
@@ -224,7 +271,7 @@ export default function MemoryNewScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScreenHeader
-        title={isChild ? 'Add to this memory' : 'New memory'}
+        title={isEditing ? 'Edit memory' : isChild ? 'Add to this memory' : 'New memory'}
         onClose={() => router.back()}
         accent={SECTION.color}
       />
@@ -232,6 +279,12 @@ export default function MemoryNewScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
+      {loadingExisting ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={SECTION.color} />
+          <Text style={[styles.sectionHint, { marginTop: spacing.md }]}>Loading memory…</Text>
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={[styles.scroll, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
         {/* Location picker (skip for sub-memories — they inherit) */}
         {!isChild ? (
@@ -368,7 +421,10 @@ export default function MemoryNewScreen() {
 
         {/* Media */}
         <View style={styles.cardSection}>
-          <Text style={styles.sectionLabel}>Attach photos, video, voice</Text>
+          <Text style={styles.sectionLabel}>{isEditing ? 'Add more photos, video, voice' : 'Attach photos, video, voice'}</Text>
+          {isEditing ? (
+            <Text style={styles.sectionHint}>Photos, videos and voice notes already on this memory stay attached. Anything you add here joins them.</Text>
+          ) : null}
           <View style={styles.attachRow}>
             <AttachButton icon="image"      label="Photo" onPress={pickPhoto} />
             <AttachButton icon="video"      label="Video" onPress={pickVideo} />
@@ -443,7 +499,7 @@ export default function MemoryNewScreen() {
 
         {/* Save */}
         <Button
-          label={isChild ? 'Add to memory' : 'Save memory'}
+          label={isEditing ? 'Save changes' : isChild ? 'Add to memory' : 'Save memory'}
           icon="check"
           color={SECTION.color}
           fullWidth
@@ -454,6 +510,7 @@ export default function MemoryNewScreen() {
         />
 
       </ScrollView>
+      )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

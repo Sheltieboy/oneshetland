@@ -58,7 +58,7 @@ async function loadFraunces(): Promise<void> {
  */
 const subscribers = new Set<() => void>();
 function notify() { for (const s of subscribers) s(); }
-loadingPromise?.then(notify);
+(loadingPromise as Promise<void> | null)?.then(notify);
 
 // ── Component ─────────────────────────────────────────────────────────────
 

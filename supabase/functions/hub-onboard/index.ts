@@ -56,7 +56,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { hub_id } = await req.json();
+    const { hub_id, web_return_url } = await req.json();
     if (!hub_id) return json({ error: 'hub_id required' }, 400);
 
     const { data: hub } = await svc
@@ -88,10 +88,12 @@ serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const returnUrl  = web_return_url ? `${web_return_url}?connected=1` : `${supabaseUrl}/functions/v1/connect-redirect?ok=1&hub=${hub_id}`;
+    const refreshUrl = web_return_url ? `${web_return_url}?retry=1`     : `${supabaseUrl}/functions/v1/connect-redirect?retry=1&hub=${hub_id}`;
     const accountLink = await stripePost('account_links', {
       account:     accountId,
-      refresh_url: `${supabaseUrl}/functions/v1/connect-redirect?retry=1&hub=${hub_id}`,
-      return_url:  `${supabaseUrl}/functions/v1/connect-redirect?ok=1&hub=${hub_id}`,
+      refresh_url: refreshUrl,
+      return_url:  returnUrl,
       type:        'account_onboarding',
     });
 

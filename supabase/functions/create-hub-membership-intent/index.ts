@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const STRIPE_API_VERSION = '2023-10-16';
-const DEFAULT_FLAT_FEE_PENCE = 50;
+const DEFAULT_FLAT_FEE_PENCE = 95;
 
 function stripeHeaders(): HeadersInit {
   return {

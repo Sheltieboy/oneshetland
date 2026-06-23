@@ -14,6 +14,16 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  /**
+   * Driver is a CAPABILITY, not an identity. It comes from
+   * driver_profiles.driver_status — NOT profiles.role. A normal user (role
+   * 'customer') can also be a driver. `null` = never applied / no driver row.
+   */
+  driverStatus: string | null;
+  /** True when the user is an approved driver (can create runs, take requests). */
+  isDriver: boolean;
+  /** True once the user has applied (pending/approved/rejected/suspended) — i.e. the Driver area is relevant to them. */
+  hasAppliedToDrive: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (
     email: string,
@@ -31,6 +41,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [driverStatus, setDriverStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -51,6 +62,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         fetchProfile(session.user.id);
       } else {
         setProfile(null);
+        setDriverStatus(null);
         setLoading(false);
       }
     });
@@ -73,6 +85,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // Register / refresh push token each time profile loads
         registerPushToken(userId).catch(() => {/* non-fatal */});
       }
+
+      // Driver-ness is a capability, read from driver_profiles — independent of
+      // profiles.role. No row = never applied. Non-fatal: a failure here just
+      // means no driver area, never blocks the rest of the app.
+      const { data: dp } = await supabase
+        .from('driver_profiles')
+        .select('driver_status')
+        .eq('id', userId)
+        .maybeSingle();
+      setDriverStatus((dp?.driver_status as string | undefined) ?? null);
     } catch (err) {
       console.error('[OneShetland] Profile fetch exception:', err);
     } finally {
@@ -122,9 +144,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
     await supabase.auth.signOut();
   }
 
+  const isDriver = driverStatus === 'approved';
+  const hasAppliedToDrive = driverStatus != null && driverStatus !== 'not_applied';
+
   return (
     <AuthContext.Provider
-      value={{ session, profile, loading, signIn, signUp, signOut, refreshProfile }}
+      value={{
+        session, profile, loading,
+        driverStatus, isDriver, hasAppliedToDrive,
+        signIn, signUp, signOut, refreshProfile,
+      }}
     >
       {children}
     </AuthContext.Provider>

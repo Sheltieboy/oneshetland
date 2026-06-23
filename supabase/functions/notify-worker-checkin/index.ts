@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,31 +77,27 @@ serve(async (req) => {
       });
     }
 
-    // Fetch employer push token
-    const { data: employer } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .eq('id', shift.employer_id)
-      .single();
+    // Notify the employer (helper resolves token + honours preferences).
+    const workerName = worker?.full_name ?? 'A worker';
 
-    if (employer?.push_token) {
-      const workerName = worker?.full_name ?? 'A worker';
-
-      if (event === 'checked_in') {
-        await sendPush(
-          employer.push_token,
-          'Worker checked in 📍',
-          `${workerName} has checked in for "${shift.title}"`,
-          { screen: 'my-posted-shifts' },
-        );
-      } else if (event === 'checked_out') {
-        await sendPush(
-          employer.push_token,
-          'Shift finished ✅',
-          `${workerName} has finished their shift on "${shift.title}" — confirm when ready`,
-          { screen: 'my-posted-shifts' },
-        );
-      }
+    if (event === 'checked_in') {
+      await sendUserPush(supabase, {
+        userId:     shift.employer_id,
+        module:     'shifts',
+        categoryId: 'shifts.worker_checked_in',
+        title:      'Worker checked in 📍',
+        body:       `${workerName} has checked in for "${shift.title}"`,
+        data:       { screen: 'my-posted-shifts' },
+      });
+    } else if (event === 'checked_out') {
+      await sendUserPush(supabase, {
+        userId:     shift.employer_id,
+        module:     'shifts',
+        categoryId: 'shifts.worker_checked_out',
+        title:      'Shift finished ✅',
+        body:       `${workerName} has finished their shift on "${shift.title}" — confirm when ready`,
+        data:       { screen: 'my-posted-shifts' },
+      });
     }
 
     return new Response(JSON.stringify({ ok: true }), {

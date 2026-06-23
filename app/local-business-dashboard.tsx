@@ -157,9 +157,7 @@ export default function BusinessDashboardScreen() {
         .is('posted_as_business_id', null)
         .then(({ count }) => count ?? 0, () => 0),
       target.accepts_wallet
-        ? fetchBusinessWalletReceipts(target.id, 20)
-            .then(r => { console.log('[wallet receipts] got', r.length, 'rows'); return r; })
-            .catch(e => { console.warn('[wallet receipts] fetch failed:', e); return [] as BusinessWalletReceipt[]; })
+        ? fetchBusinessWalletReceipts(target.id, 20).catch(() => [] as BusinessWalletReceipt[])
         : Promise.resolve([] as BusinessWalletReceipt[]),
       fetchBusinessAddons(target.id).catch(() => [] as BusinessAddon[]),
       fetchBusinessEvents(target.id).catch(() => [] as OsEvent[]),
@@ -980,6 +978,37 @@ export default function BusinessDashboardScreen() {
                 : `Renews ${new Date(activeBusiness.subscription_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
             </Text>
           )}
+
+          {/* Monthly breakdown — base + each extra premium add-on */}
+          {activeBusiness.subscription_tier === 'premium' && (() => {
+            const enabledPremium = addons.filter(a => a.enabled && (PREMIUM_ADDON_KEYS as readonly string[]).includes(a.addon_key));
+            const extras = enabledPremium.slice(1);
+            const totalPence = 4999 + extras.length * EXTRA_ADDON_MONTHLY_PENCE;
+            const rowS = { flexDirection: 'row' as const, justifyContent: 'space-between' as const, paddingVertical: 3 };
+            return (
+              <View style={{ marginTop: spacing.sm, backgroundColor: colors.offWhite, borderRadius: radius.md, padding: spacing.sm }}>
+                <View style={rowS}>
+                  <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>Premium plan</Text>
+                  <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.navy }}>£49.99</Text>
+                </View>
+                {extras.map(a => (
+                  <View key={a.addon_key} style={rowS}>
+                    <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>+ Add-on: {ADDON_META[a.addon_key].label}</Text>
+                    <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.navy }}>£{(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(2)}</Text>
+                  </View>
+                ))}
+                <View style={[rowS, { borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4, paddingTop: 6 }]}>
+                  <Text style={{ fontSize: fontSize.md, fontWeight: '700', color: colors.navy }}>Total</Text>
+                  <Text style={{ fontSize: fontSize.md, fontWeight: '800', color: colors.navy }}>£{(totalPence / 100).toFixed(2)}/mo</Text>
+                </View>
+                {extras.length === 0 && (
+                  <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 }}>
+                    Includes one premium add-on. Each additional add-on is £{(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo.
+                  </Text>
+                )}
+              </View>
+            );
+          })()}
 
           {/* Feature checklist — instantly clear what's unlocked vs locked */}
           <View style={styles.featureList}>

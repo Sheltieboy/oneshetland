@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { useAlert } from '@/components/BrandedAlert';
-import { formatPence } from '@/lib/local-api';
+import { formatPence, fetchWalletBalance, walletCheckout } from '@/lib/local-api';
 import {
   fetchCampaign, fetchHub, startHubDonation, confirmHubDonation,
   type HubCampaign, type Hub, type GiftAidDeclaration,
@@ -52,6 +52,7 @@ export default function HubDonateScreen() {
   const [customText, setCustomText] = useState('');
   const [message, setMessage] = useState('');
   const [anonymous, setAnonymous] = useState(false);
+  const [coverFees, setCoverFees] = useState(false);
 
   const [giftAidOn, setGiftAidOn] = useState(false);
   const [gaFirst, setGaFirst] = useState(profile?.full_name?.split(' ')[0] ?? '');
@@ -61,6 +62,7 @@ export default function HubDonateScreen() {
 
   const [confirming, setConfirming] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!campaignId) return;
@@ -71,15 +73,24 @@ export default function HubDonateScreen() {
     } finally { setLoading(false); }
   }, [campaignId]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
   const accent = tint(hub?.brand_color);
   const effectiveAmount = customText ? Math.round(parseFloat(customText) * 100) || 0 : amount;
+  const coverPence = Math.round(effectiveAmount * 0.015) + 20; // ~Stripe fee
+  const chargePence = effectiveAmount + (coverFees ? coverPence : 0);
   // Gift Aid is only offered when the hub is a charity AND has a charity number on file.
   const isCharity = !!hub?.is_charity && !!hub?.charity_number;
 
+  // Canonicalise a UK postcode ("ze10aa" → "ZE1 0AA"); null if not valid.
+  const normaliseUkPostcode = (raw: string): string | null => {
+    const m = raw.toUpperCase().replace(/\s+/g, '').match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
+    return m ? `${m[1]} ${m[2]}` : null;
+  };
+
   const buildGiftAid = (): GiftAidDeclaration | null => {
     if (!giftAidOn || !isCharity) return null;
-    return { first_name: gaFirst.trim(), last_name: gaLast.trim(), address: gaAddress.trim(), postcode: gaPostcode.trim() };
+    return { first_name: gaFirst.trim(), last_name: gaLast.trim(), address: gaAddress.trim(), postcode: normaliseUkPostcode(gaPostcode) ?? gaPostcode.trim() };
   };
 
   const validate = (): boolean => {
@@ -88,6 +99,10 @@ export default function HubDonateScreen() {
     if (giftAidOn && isCharity) {
       if (!gaFirst.trim() || !gaLast.trim() || !gaAddress.trim() || !gaPostcode.trim()) {
         alert({ title: 'Gift Aid details needed', message: 'Please complete your name, address and postcode for the Gift Aid declaration.' });
+        return false;
+      }
+      if (!normaliseUkPostcode(gaPostcode)) {
+        alert({ title: 'Check your postcode', message: 'Please enter a valid UK postcode so your Gift Aid can be claimed.' });
         return false;
       }
     }
@@ -101,12 +116,36 @@ export default function HubDonateScreen() {
     else runDonation();
   };
 
+  // Pay the donation from the wallet (no card, no fee — hub gets the full amount).
+  const runDonationWallet = async () => {
+    if (!campaign || !profile) return;
+    setPaying(true);
+    try {
+      const res = await walletCheckout({
+        type: 'hub_donation',
+        campaign_id: campaign.id,
+        amount_pence: effectiveAmount,
+        message: message.trim() || undefined,
+        anonymous,
+        gift_aid: buildGiftAid(),
+      });
+      if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      alert({ title: 'Thank you! 💜', message: `Your ${formatPence(effectiveAmount)} donation to ${hub?.name ?? 'the hub'} means a lot.`, actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }] });
+    } catch (e: any) {
+      alert({ title: 'Donation failed', message: e?.message ?? 'Please try again.' });
+    } finally {
+      setPaying(false);
+      setConfirming(false);
+    }
+  };
+
   const runDonation = async () => {
     if (!campaign || !profile) return;
     setPaying(true);
     try {
       const useSaved = !!profile.has_payment_method;
-      const start = await startHubDonation(campaign.id, effectiveAmount, { useSavedCard: useSaved });
+      const start = await startHubDonation(campaign.id, effectiveAmount, { useSavedCard: useSaved, coverFees });
       if (!start.charged) {
         if (!start.clientSecret) throw new Error('Could not start payment.');
         const initRes = await initPaymentSheet({ merchantDisplayName: 'OneShetland', paymentIntentClientSecret: start.clientSecret, applePay: { merchantCountryCode: 'GB' } });
@@ -162,6 +201,14 @@ export default function HubDonateScreen() {
             <Switch value={anonymous} onValueChange={setAnonymous} trackColor={{ true: accent }} />
           </View>
 
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleText}>Cover the card fee (+{formatPence(coverPence)})</Text>
+              <Text style={styles.gaSub}>So {hub.name} receives your full {formatPence(effectiveAmount)}.</Text>
+            </View>
+            <Switch value={coverFees} onValueChange={setCoverFees} trackColor={{ true: accent }} />
+          </View>
+
           {isCharity ? (
             <View style={[styles.gaCard, giftAidOn && { borderColor: accent }]}>
               <View style={styles.toggleRow}>
@@ -187,7 +234,7 @@ export default function HubDonateScreen() {
             </View>
           ) : null}
 
-          <Button label={`Donate ${formatPence(effectiveAmount)}`} icon="heart" color={accent} fullWidth loading={paying} disabled={paying} onPress={onDonate} style={styles.donateBtn} />
+          <Button label={`Donate ${formatPence(chargePence)}`} icon="heart" color={accent} fullWidth loading={paying} disabled={paying} onPress={onDonate} style={styles.donateBtn} />
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -196,13 +243,18 @@ export default function HubDonateScreen() {
         visible={confirming}
         title="Confirm donation"
         itemName={`${campaign.title} · ${hub.name}`}
-        lineItems={[{ label: 'Donation', amountPence: effectiveAmount }]}
-        totalPence={effectiveAmount}
+        lineItems={coverFees
+          ? [{ label: 'Donation', amountPence: effectiveAmount }, { label: 'Card fee cover', amountPence: coverPence }]
+          : [{ label: 'Donation', amountPence: effectiveAmount }]}
+        totalPence={chargePence}
         payingWith="your saved card"
         policy={{ text: giftAidOn && isCharity ? 'Gift Aid adds 25% at no cost to you. Donations are non-refundable.' : 'Donations are non-refundable.' }}
         loading={paying}
         onConfirm={() => { setConfirming(false); runDonation(); }}
         onCancel={() => setConfirming(false)}
+        walletBalancePence={coverFees ? null : walletBalance}
+        onConfirmWallet={runDonationWallet}
+        onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}
       />
     </SafeAreaView>
   );

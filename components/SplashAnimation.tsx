@@ -1,134 +1,80 @@
 /**
  * SplashAnimation
  *
- * Animated splash overlay used on cold launch.
+ * Cold-launch splash overlay.
  *
- * Sequence:
- *   1. Logo zooms in (0.25 → 1.0) with spring overshoot
- *   2. Wordmark fades + slides up
- *   3. Tagline fades in (held visible for ~600ms)
- *   4. Section-colour strip scales out from centre
- *   5. Once `ready` (auth loaded) and minimum hold elapsed, runs the exit:
- *      logo scales up to 1.3 while the whole overlay fades to 0 — cross-fading
- *      into the screen rendered underneath.
- *   6. Calls `onDone` when the exit animation finishes so _layout can unmount it.
+ * Primary: plays the brand reveal video (rings weave on, then resolve into the
+ * painterly OneShetland mark) on a cream field, holds on the resolved logo, and
+ * cross-fades away once auth is ready.
+ *
+ * Fallback: if the `expo-video` native module isn't in the build (e.g. Expo Go),
+ * it shows the animated RingLoader + wordmark instead of crashing.
+ *
+ * Calls `onDone` when the exit fade finishes so _layout can unmount it.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, Image, Animated } from 'react-native';
+import { View, StyleSheet, Animated, Text } from 'react-native';
 import { fontSize, spacing } from '@/constants/theme';
+import { RingLoader } from './RingLoader';
 
-const LOGO = require('../assets/icon.png');
+// Deep navy field — matches the waves splash video and the native splash bg.
+const CREAM = '#F4EDDF';
+const NAVY = '#032F4C';
 
-// Load the waves video defensively. Builds without the `expo-video` native
-// module (e.g. an older dev client / Expo Go) fall back to the navy splash
-// rather than crashing on launch. The video appears after a native rebuild.
-let SplashVideo: React.ComponentType | null = null;
+// Load the reveal video defensively (needs the expo-video native module).
+let SplashReveal: React.ComponentType<{ onEnd: () => void }> | null = null;
 try {
-  SplashVideo = require('./SplashVideo').SplashVideo;
+  SplashReveal = require('./SplashReveal').SplashReveal;
 } catch {
-  SplashVideo = null;
+  SplashReveal = null;
 }
 
-// Match the native splash background in app.json — no colour flash on transition
-const DEEP_NAVY = '#032F4C';
-
 interface Props {
-  /** True once auth state is known. Splash will start its exit only after this is true. */
+  /** True once auth state is known. Splash starts its exit only after this is true. */
   ready: boolean;
-  /** Called when the exit animation finishes — _layout uses this to unmount the splash. */
+  /** Called when the exit animation finishes — _layout uses this to unmount it. */
   onDone: () => void;
 }
 
 export function SplashAnimation({ ready, onDone }: Props) {
   const containerOpacity = useRef(new Animated.Value(1)).current;
-  const logoOpacity      = useRef(new Animated.Value(0)).current;
-  const logoScale        = useRef(new Animated.Value(0.25)).current;
-  const wordOpacity      = useRef(new Animated.Value(0)).current;
-  const wordTranslate    = useRef(new Animated.Value(14)).current;
-  const tagOpacity       = useRef(new Animated.Value(0)).current;
-  const stripScale       = useRef(new Animated.Value(0)).current;
+  const fallbackOpacity = useRef(new Animated.Value(0)).current;
 
-  const [entranceDone, setEntranceDone] = useState(false);
+  // "Content done" gate: video finished, or (fallback) a minimum hold elapsed.
+  const [videoEnded, setVideoEnded] = useState(false);
+  const [minHoldDone, setMinHoldDone] = useState(false);
+  const contentDone = SplashReveal ? videoEnded : minHoldDone;
 
-  // Entrance + hold
+  // Fallback entrance + minimum hold (only matters when there's no video).
   useEffect(() => {
-    Animated.sequence([
-      // Logo zooms in
-      Animated.parallel([
-        Animated.timing(logoOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-        Animated.spring(logoScale, { toValue: 1, friction: 4, tension: 55, useNativeDriver: true }),
-      ]),
-      // Wordmark in
-      Animated.parallel([
-        Animated.timing(wordOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
-        Animated.spring(wordTranslate, { toValue: 0, friction: 7, tension: 60, useNativeDriver: true }),
-      ]),
-      // Tagline in
-      Animated.timing(tagOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
-      // Colour strip
-      Animated.spring(stripScale, { toValue: 1, friction: 8, tension: 50, useNativeDriver: true }),
-      // Hold so the tagline has time to land
-      Animated.delay(550),
-    ]).start(() => setEntranceDone(true));
-  }, []);
+    if (SplashReveal) return;
+    Animated.timing(fallbackOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    const t = setTimeout(() => setMinHoldDone(true), 1600);
+    return () => clearTimeout(t);
+  }, [fallbackOpacity]);
 
-  // Exit — only runs once entrance is done AND auth is loaded
+  // Exit once the reveal has resolved AND auth is ready.
   useEffect(() => {
-    if (!entranceDone || !ready) return;
-    Animated.parallel([
-      // Logo zooms further out as we leave — "diving in" effect
-      Animated.timing(logoScale, {
-        toValue: 1.3, duration: 550, useNativeDriver: true,
-      }),
-      // Whole overlay cross-fades to reveal the screen behind
-      Animated.timing(containerOpacity, {
-        toValue: 0, duration: 550, useNativeDriver: true,
-      }),
-    ]).start(() => onDone());
-  }, [entranceDone, ready]);
+    if (!ready || !contentDone) return;
+    Animated.timing(containerOpacity, {
+      toValue: 0,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => onDone());
+  }, [ready, contentDone, containerOpacity, onDone]);
 
   return (
     <Animated.View style={[styles.container, { opacity: containerOpacity }]}>
-
-      {/* Full-bleed waves video (when the native module is available), cropped to fill */}
-      {SplashVideo ? <SplashVideo /> : null}
-      {/* Navy scrim keeps the white logo + wordmark legible over the waves */}
-      {SplashVideo ? <View style={styles.scrim} pointerEvents="none" /> : null}
-
-      <View style={styles.center}>
-        <Animated.View
-          style={[styles.logoWrap, {
-            opacity: logoOpacity,
-            transform: [{ scale: logoScale }],
-          }]}
-        >
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" />
+      {SplashReveal ? (
+        <SplashReveal onEnd={() => setVideoEnded(true)} />
+      ) : (
+        <Animated.View style={[styles.center, { opacity: fallbackOpacity }]}>
+          <RingLoader size={132} strokeWidth={3.2} />
+          <Text style={styles.wordmark}>OneShetland</Text>
+          <Text style={styles.tagline}>Everything Shetland, in one place</Text>
         </Animated.View>
-
-        <Animated.Text
-          style={[styles.wordmark, {
-            opacity: wordOpacity,
-            transform: [{ translateY: wordTranslate }],
-          }]}
-        >
-          OneShetland
-        </Animated.Text>
-
-        <Animated.Text style={[styles.tagline, { opacity: tagOpacity }]}>
-          Everything Shetland, in one place
-        </Animated.Text>
-      </View>
-
-      <Animated.View
-        style={[styles.colorStrip, { transform: [{ scaleX: stripScale }] }]}
-      >
-        <View style={[styles.colorChip, { backgroundColor: '#12B3D6' }]} />
-        <View style={[styles.colorChip, { backgroundColor: '#E8A020' }]} />
-        <View style={[styles.colorChip, { backgroundColor: '#7C3AED' }]} />
-        <View style={[styles.colorChip, { backgroundColor: '#E0722A' }]} />
-      </Animated.View>
-
+      )}
     </Animated.View>
   );
 }
@@ -136,42 +82,27 @@ export function SplashAnimation({ ready, onDone }: Props) {
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: DEEP_NAVY,
-    justifyContent: 'space-between',
+    backgroundColor: NAVY,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  scrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(3,47,76,0.55)',
-  },
-
   center: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 18,
   },
-
-  logoWrap: {
-    width: 130, height: 130, borderRadius: 32,
-    backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-    padding: 18,
-    shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 40, shadowOffset: { width: 0, height: 14 },
-    marginBottom: spacing.lg,
-  },
-  logo: { width: 94, height: 94 },
-
   wordmark: {
-    color: '#fff', fontSize: 32, fontWeight: '900',
-    letterSpacing: -0.7, marginTop: 4,
+    color: CREAM,
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    marginTop: spacing.md,
   },
   tagline: {
-    color: 'rgba(255,255,255,0.75)', fontSize: fontSize.md,
-    fontWeight: '600', marginTop: 6, letterSpacing: 0.2,
+    color: 'rgba(244,237,223,0.7)',
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
-
-  colorStrip: {
-    flexDirection: 'row',
-    height: 4,
-    marginBottom: 60,
-    marginHorizontal: spacing.xxl,
-  },
-  colorChip: { flex: 1 },
 });

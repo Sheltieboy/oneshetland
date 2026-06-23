@@ -7,7 +7,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { logCompliance } from '@/lib/compliance';
 import { useStripe } from '@stripe/stripe-react-native';
 import { FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
@@ -18,6 +18,8 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
 export default function PaymentSetupScreen() {
   const router = useRouter();
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  const isBusiness = !!businessId;
   const { profile, refreshProfile, session } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
@@ -31,7 +33,10 @@ export default function PaymentSetupScreen() {
     try {
       const { data, error: fnError } = await supabase.functions.invoke(
         'create-setup-intent',
-        { headers: { Authorization: `Bearer ${session?.access_token}` } },
+        {
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+          ...(isBusiness ? { body: { business_id: businessId } } : {}),
+        },
       );
 
       if (fnError || !data?.client_secret) {
@@ -70,14 +75,21 @@ export default function PaymentSetupScreen() {
         throw new Error(presentError.message);
       }
 
-      await supabase
-        .from('profiles')
-        .update({ has_payment_method: true })
-        .eq('id', profile!.id);
+      if (isBusiness) {
+        await supabase
+          .from('local_businesses')
+          .update({ has_business_payment_method: true })
+          .eq('id', businessId);
+        logCompliance({ eventType: 'payment.method_added', description: 'Business payment card added', metadata: { screen: 'payment-setup', business_id: businessId } });
+      } else {
+        await supabase
+          .from('profiles')
+          .update({ has_payment_method: true })
+          .eq('id', profile!.id);
+        logCompliance({ eventType: 'payment.method_added', description: 'Payment card added to account', metadata: { screen: 'payment-setup' } });
+        await refreshProfile();
+      }
 
-      logCompliance({ eventType: 'payment.method_added', description: 'Payment card added to account', metadata: { screen: 'payment-setup' } });
-
-      await refreshProfile();
       router.back();
 
     } catch (err) {
@@ -91,7 +103,7 @@ export default function PaymentSetupScreen() {
     } finally {
       setLoading(false);
     }
-  }, [session, profile, initPaymentSheet, presentPaymentSheet, refreshProfile, router]);
+  }, [session, profile, businessId, isBusiness, initPaymentSheet, presentPaymentSheet, refreshProfile, router]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -101,9 +113,11 @@ export default function PaymentSetupScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backRow}>
           <Text style={styles.backText}>‹ Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Set up payment</Text>
+        <Text style={styles.title}>{isBusiness ? 'Add a business card' : 'Set up payment'}</Text>
         <Text style={styles.subtitle}>
-          Add a payment method so drivers can be paid when they complete your delivery.
+          {isBusiness
+            ? 'Add a card for this business to pay for business features like boosting shifts.'
+            : 'Add a payment method so drivers can be paid when they complete your delivery.'}
         </Text>
       </View>
 

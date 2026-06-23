@@ -86,29 +86,40 @@ serve(async (req) => {
       );
     }
 
-    // Verify the PaymentIntent
-    const piRes = await fetch(
-      `https://api.stripe.com/v1/payment_intents/${payment_intent_id}`,
-      {
-        headers: {
-          'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-          'Stripe-Version': STRIPE_API_VERSION,
+    // Verify payment. Wallet-paid gifts carry a `wallet_…` reference that
+    // create-gift-intent only stamps AFTER a successful debit + transfer, so we
+    // trust it only when it matches the row exactly (prevents minting a code for
+    // an unpaid gift). Card-paid gifts are verified against Stripe as before.
+    if (typeof payment_intent_id === 'string' && payment_intent_id.startsWith('wallet_')) {
+      if (gift.payment_intent_id !== payment_intent_id) {
+        return new Response(JSON.stringify({ error: 'Payment reference does not match this gift.' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      const piRes = await fetch(
+        `https://api.stripe.com/v1/payment_intents/${payment_intent_id}`,
+        {
+          headers: {
+            'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+            'Stripe-Version': STRIPE_API_VERSION,
+          },
         },
-      },
-    );
-    const pi = await piRes.json();
-    if (!piRes.ok) {
-      throw new Error(pi.error?.message ?? `Stripe PaymentIntent retrieve failed (HTTP ${piRes.status})`);
-    }
-    if (pi.status !== 'succeeded') {
-      return new Response(JSON.stringify({ error: `Payment not completed (status: ${pi.status}).` }), {
-        status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    if (pi.metadata?.gift_id !== gift.id || pi.metadata?.buyer_id !== user.id) {
-      return new Response(JSON.stringify({ error: 'PaymentIntent does not match this gift.' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      );
+      const pi = await piRes.json();
+      if (!piRes.ok) {
+        throw new Error(pi.error?.message ?? `Stripe PaymentIntent retrieve failed (HTTP ${piRes.status})`);
+      }
+      if (pi.status !== 'succeeded') {
+        return new Response(JSON.stringify({ error: `Payment not completed (status: ${pi.status}).` }), {
+          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (pi.metadata?.gift_id !== gift.id || pi.metadata?.buyer_id !== user.id) {
+        return new Response(JSON.stringify({ error: 'PaymentIntent does not match this gift.' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // Generate the short code
@@ -127,7 +138,7 @@ serve(async (req) => {
       .update({
         code,
         status:            'sent',
-        payment_intent_id: pi.id,
+        payment_intent_id,
       })
       .eq('id', gift.id);
 

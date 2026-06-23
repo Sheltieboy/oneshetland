@@ -6,6 +6,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -32,11 +34,12 @@ const PAYMENT_FILTERS = ['all', 'captured', 'authorised', 'unpaid', 'refunded', 
 type PaymentFilter = typeof PAYMENT_FILTERS[number];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  captured:   { bg: '#F0FDF4', text: '#166534' },
-  authorised: { bg: '#EFF6FF', text: '#1D4ED8' },
-  unpaid:     { bg: '#FFF7ED', text: '#92400E' },
-  refunded:   { bg: '#F5F3FF', text: '#5B21B6' },
-  failed:     { bg: '#FFF1F2', text: '#9F1239' },
+  captured:            { bg: '#F0FDF4', text: '#166534' },
+  authorised:          { bg: '#EFF6FF', text: '#1D4ED8' },
+  unpaid:              { bg: '#FFF7ED', text: '#92400E' },
+  refunded:            { bg: '#F5F3FF', text: '#5B21B6' },
+  partially_refunded: { bg: '#F5F3FF', text: '#5B21B6' },
+  failed:              { bg: '#FFF1F2', text: '#9F1239' },
 };
 
 function pence(p: number | null): string {
@@ -50,6 +53,7 @@ export default function AdminPaymentsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<PaymentFilter>('all');
+  const [refundingId, setRefundingId] = useState<string | null>(null);
 
   const fetchPayments = useCallback(async () => {
     let query = supabase
@@ -88,6 +92,43 @@ export default function AdminPaymentsScreen() {
   useEffect(() => {
     setLoading(true);
     fetchPayments();
+  }, [fetchPayments]);
+
+  const doRefund = useCallback((row: PaymentRow) => {
+    if (!row.payment_intent_id) return;
+    const amount = pence(row.total_fee_pence ?? row.base_fee_pence);
+    Alert.alert(
+      'Refund this payment?',
+      `Refund ${amount} to ${row.customer_name}? This reverses the charge in Stripe and can't be undone here.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Refund',
+          style: 'destructive',
+          onPress: async () => {
+            setRefundingId(row.id);
+            const { data, error } = await supabase.functions.invoke('refund-payment', {
+              body: { payment_intent_id: row.payment_intent_id },
+            });
+            setRefundingId(null);
+            if (error || (data as any)?.error) {
+              let msg = (data as any)?.error ?? error?.message ?? 'Please try again.';
+              try {
+                const ctx = (error as any)?.context;
+                if (ctx && typeof ctx.json === 'function') {
+                  const body = await ctx.json();
+                  if (body?.error) msg = body.error;
+                }
+              } catch { /* keep generic */ }
+              Alert.alert('Refund failed', msg);
+              return;
+            }
+            Alert.alert('Refunded', `${amount} has been refunded.`);
+            fetchPayments();
+          },
+        },
+      ],
+    );
   }, [fetchPayments]);
 
   // Summary totals
@@ -204,6 +245,20 @@ export default function AdminPaymentsScreen() {
                         {row.payment_intent_id}
                       </Text>
                     )}
+
+                    {row.payment_status === 'captured' && row.payment_intent_id && (
+                      <TouchableOpacity
+                        style={styles.refundBtn}
+                        onPress={() => doRefund(row)}
+                        disabled={refundingId === row.id}
+                      >
+                        {refundingId === row.id ? (
+                          <ActivityIndicator size="small" color="#9F1239" />
+                        ) : (
+                          <Text style={styles.refundBtnText}>Refund {pence(row.total_fee_pence)}</Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
                   </Card>
                 );
               })}
@@ -291,4 +346,16 @@ const styles = StyleSheet.create({
 
   payDate: { fontSize: fontSize.xs, color: colors.textLight },
   payIntentId: { fontSize: 10, color: colors.textLight, fontFamily: 'monospace', marginTop: 2 },
+
+  refundBtn: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: '#FECDD3',
+    backgroundColor: '#FFF1F2',
+  },
+  refundBtnText: { fontSize: fontSize.sm, fontWeight: '700', color: '#9F1239' },
 });

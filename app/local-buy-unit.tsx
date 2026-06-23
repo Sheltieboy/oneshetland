@@ -23,6 +23,8 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
+import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
 import { supabase } from '@/lib/supabase';
 import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
 import { formatPence, type BookUnitItem } from '@/lib/book-api';
@@ -40,7 +42,11 @@ export default function BuyUnitScreen() {
   const [business, setBusiness] = useState<LocalBusiness | null>(null);
   const [loading, setLoading]   = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+
+  useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
   useEffect(() => {
     (async () => {
@@ -61,7 +67,8 @@ export default function BuyUnitScreen() {
     })();
   }, [itemId]);
 
-  const buy = useCallback(async () => {
+  // Validate + gate, then show the confirm step (off-session saved-card charge).
+  const buy = useCallback(() => {
     if (!session || !profile || !item) return;
     if (!profile.has_payment_method) {
       alert({
@@ -76,7 +83,11 @@ export default function BuyUnitScreen() {
       });
       return;
     }
+    setConfirming(true);
+  }, [session, profile, item, alert, router]);
 
+  const runBuy = useCallback(async () => {
+    if (!session || !profile || !item) return;
     setSubmitting(true);
     try {
       // 1. Create the PaymentIntent
@@ -138,8 +149,26 @@ export default function BuyUnitScreen() {
       alert({ title: 'Purchase failed', message: e?.message ?? 'Please try again.' });
     } finally {
       setSubmitting(false);
+      setConfirming(false);
     }
   }, [session, profile, item, business, alert, initPaymentSheet, presentPaymentSheet, router]);
+
+  // Pay from wallet (debits balance, transfers to the business — no card).
+  const runBuyWallet = useCallback(async () => {
+    if (!profile || !item) return;
+    setSubmitting(true);
+    try {
+      const res = await walletCheckout({ type: 'unit_purchase', unit_item_id: item.id });
+      if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setDone(true);
+    } catch (e: any) {
+      alert({ title: 'Purchase failed', message: e?.message ?? 'Please try again.' });
+    } finally {
+      setSubmitting(false);
+      setConfirming(false);
+    }
+  }, [profile, item, alert]);
 
   if (loading) {
     return (
@@ -255,6 +284,21 @@ export default function BuyUnitScreen() {
           </>
         )}
       </ScrollView>
+
+      <ConfirmPaymentSheet
+        visible={confirming}
+        itemName={`${item?.name ?? 'Purchase'}${business ? ` — ${business.name}` : ''}`}
+        lineItems={[{ label: item?.name ?? 'Purchase', amountPence: item?.price_pence ?? 0 }]}
+        totalPence={item?.price_pence ?? 0}
+        payingWith="Saved card"
+        policy={{ text: 'Passes and tickets are non-refundable once purchased.' }}
+        loading={submitting}
+        onConfirm={runBuy}
+        onCancel={() => setConfirming(false)}
+        walletBalancePence={walletBalance}
+        onConfirmWallet={runBuyWallet}
+        onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}
+      />
     </SafeAreaView>
   );
 }

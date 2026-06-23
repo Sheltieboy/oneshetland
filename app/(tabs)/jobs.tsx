@@ -120,7 +120,7 @@ export default function WorkHubScreen() {
   const maxW = isTablet ? Math.min(880, screenWidth - spacing.lg * 2) : undefined;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       <View style={{ flex: 1, backgroundColor: colors.screenBackground }}>
         {/* Cinematic banner — tints to the active tier; "Work" over it */}
         <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Find work" photo={SECTION_HEROES.jobs} />

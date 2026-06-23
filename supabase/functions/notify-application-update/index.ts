@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -65,30 +65,31 @@ serve(async (req) => {
       });
     }
 
-    // Fetch shift title and worker push token in parallel
-    const [{ data: shift }, { data: worker }] = await Promise.all([
-      supabase.from('shifts').select('title').eq('id', app.shift_id).single(),
-      supabase.from('profiles').select('push_token').eq('id', app.worker_id).single(),
-    ]);
+    // Fetch shift title
+    const { data: shift } = await supabase
+      .from('shifts').select('title').eq('id', app.shift_id).single();
 
-    if (worker?.push_token) {
-      const shiftTitle = shift?.title ?? 'a shift';
+    const shiftTitle = shift?.title ?? 'a shift';
 
-      if (status === 'accepted') {
-        await sendPush(
-          worker.push_token,
-          "You're confirmed! 🎉",
-          `Your application for "${shiftTitle}" has been accepted.`,
-          { screen: 'my-shift-applications' },
-        );
-      } else if (status === 'rejected') {
-        await sendPush(
-          worker.push_token,
-          'Application update',
-          `Your application for "${shiftTitle}" was not successful this time.`,
-          { screen: 'my-shift-applications' },
-        );
-      }
+    // Notify the worker (helper resolves token + honours preferences).
+    if (status === 'accepted') {
+      await sendUserPush(supabase, {
+        userId:     app.worker_id,
+        module:     'shifts',
+        categoryId: 'shifts.application_accepted',
+        title:      "You're confirmed! 🎉",
+        body:       `Your application for "${shiftTitle}" has been accepted.`,
+        data:       { screen: 'my-shift-applications' },
+      });
+    } else if (status === 'rejected') {
+      await sendUserPush(supabase, {
+        userId:     app.worker_id,
+        module:     'shifts',
+        categoryId: 'shifts.application_rejected',
+        title:      'Application update',
+        body:       `Your application for "${shiftTitle}" was not successful this time.`,
+        data:       { screen: 'my-shift-applications' },
+      });
     }
 
     return new Response(JSON.stringify({ ok: true }), {

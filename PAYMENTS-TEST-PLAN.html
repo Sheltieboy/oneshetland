@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OneShetland — Payments Test Plan</title>
+<style>
+  :root{--navy:#032f4c;--accent:#0e6e8c;--pass:#1a8f7a;--fail:#c0392b;--line:#e3e8ec;--ink:#1f2d36;--muted:#5b6b75;}
+  *{box-sizing:border-box}
+  body{font:16px/1.55 -apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);max-width:860px;margin:0 auto;padding:0 18px 120px;background:#fafbfc}
+  h1{color:var(--navy);font-size:30px;margin:24px 0 4px}
+  h2{color:var(--navy);font-size:22px;margin:34px 0 10px;padding-top:12px;border-top:2px solid var(--line)}
+  h3{color:var(--accent);font-size:17px;margin:20px 0 6px}
+  hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+  code{background:#eef2f4;padding:1px 5px;border-radius:5px;font-size:13px}
+  blockquote{margin:10px 0;padding:8px 14px;background:#eef6f9;border-left:3px solid var(--accent);border-radius:6px;color:#274b58}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:var(--navy);color:#fff}
+  ul,ol{margin:6px 0 12px;padding-left:22px}
+  li{margin:3px 0}
+  ul.tasks{list-style:none;padding-left:2px}
+  ul.tasks li{margin:6px 0}
+  ul.tasks label{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
+  ul.tasks input{margin-top:4px;width:18px;height:18px;flex:0 0 auto;accent-color:var(--accent)}
+  ul.tasks input:checked + span{color:var(--muted);text-decoration:line-through}
+  p.test{margin:18px 0 4px;font-size:15px}
+  .verdict{display:flex;gap:8px;align-items:center;margin:4px 0 14px;flex-wrap:wrap}
+  .verdict button{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:5px 14px;font-weight:700;font-size:13px;cursor:pointer;color:var(--muted)}
+  .verdict button.pass.on{background:var(--pass);border-color:var(--pass);color:#fff}
+  .verdict button.fail.on{background:var(--fail);border-color:var(--fail);color:#fff}
+  .verdict .note{flex:1;min-width:160px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px}
+  .bar{position:sticky;top:0;z-index:5;background:rgba(250,251,252,.95);backdrop-filter:blur(6px);padding:12px 0;margin:0 -18px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;padding-left:18px;padding-right:18px;flex-wrap:wrap}
+  .bar .track{flex:1;min-width:140px;height:10px;background:#e3e8ec;border-radius:999px;overflow:hidden}
+  .bar .fill{height:100%;width:0;background:linear-gradient(90deg,var(--pass),var(--accent));transition:width .25s}
+  .bar .stat{font-size:13px;font-weight:700;color:var(--navy)}
+  .bar button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;font-size:13px;font-weight:600;cursor:pointer;color:var(--navy)}
+</style></head>
+<body>
+<div class="bar">
+  <div class="track"><div class="fill" id="fill"></div></div>
+  <span class="stat" id="stat">0 / 0</span>
+  <button id="export">Copy results</button>
+  <button id="reset">Reset</button>
+</div>
+<h1>OneShetland — Payments &amp; Payouts Test Plan (pre go-live)</h1>
+<p>Work through these <strong>in Stripe TEST mode</strong> first. Each story has: who/where, steps, what should happen, where to verify, and a box for your feedback. Once everything here passes, follow <strong>§M Go-live switch</strong> to move to live Stripe.</p>
+<p><strong>Legend:</strong> ⬜ Pass · ⬜ Fail · </p>
+<p><strong>Verify in two places every time:</strong> (a) <strong>Stripe Dashboard</strong> (test mode) — Payments, Connect → connected accounts, Balance; (b) <strong>Supabase</strong> — the DB row/table named in the story.</p>
+<hr>
+<h2>A. Pre-flight setup (do once before testing)</h2>
+<ul class="tasks">
+<li class="task"><label><input type="checkbox" data-k="c0"> <span><strong>A1.</strong> Confirm TEST keys are set in Supabase Edge Function secrets: <code>STRIPE_SECRET_KEY</code> (sk_test_…), <code>STRIPE_WEBHOOK_SECRET</code>, <code>STRIPE_CONNECT_WEBHOOK_SECRET</code>, and web <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> (pk_test_…).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c1"> <span><strong>A2.</strong> Confirm test <strong>Price IDs</strong> in <code>admin_config</code> (or env): <code>STRIPE_PRICE_LOCAL_PRO</code>, <code>STRIPE_PRICE_LOCAL_PREMIUM</code>, <code>STRIPE_PRICE_ALERT_ADDON</code>. (If missing, subscriptions fail with a cryptic error — known gap.)</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c2"> <span><strong>A3.</strong> Stripe webhook endpoint points at <code>{SUPABASE_URL}/functions/v1/stripe-webhook</code> and is subscribed to: <code>payment_intent.succeeded</code>, <code>payment_intent.payment_failed</code>, <code>account.updated</code>, <code>customer.subscription.*</code>, <code>invoice.payment_succeeded</code>, <code>transfer.created</code>.</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c3"> <span><strong>A4.</strong> Have <strong>3 test logins</strong> ready: a <strong>Customer</strong>, a <strong>Business owner</strong>, a <strong>Hub admin</strong>, plus a <strong>Driver</strong> (Fetch). You'll onboard their payouts in §I.</span></label></li>
+</ul>
+<p><strong>Stripe test cards:</strong> success <code>4242 4242 4242 4242</code> · decline <code>4000 0000 0000 0002</code> · 3-D Secure/auth required <code>4000 0025 0000 3155</code>. Any future expiry, any CVC/postcode.</p>
+<hr>
+<h2>B. Card on file (foundation for everything)</h2>
+<p class="test"><strong>B1 — Save a card</strong> · Customer · app <code>payment-setup.tsx</code> (Local → Wallet/settings → add card)</p>
+<ol>
+<li>Add <code>4242…</code>. 2. Save.</li>
+</ol>
+<ul>
+<li>✅ Card saved; <code>profiles.stripe_customer_id</code> set; card shows as saved on return.</li>
+</ul>
+<div class="verdict" data-k="v4">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v4n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>B2 — Declined card</strong> · Customer · same screen, card <code>4000 0000 0000 0002</code></p>
+<ul>
+<li>✅ Clear decline message; no card saved; no crash.</li>
+</ul>
+<div class="verdict" data-k="v5">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v5n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>C. Wallet (top-up = money IN, pay = payout to business)</h2>
+<p class="test"><strong>C1 — Top-up, new card (PaymentSheet)</strong> · Customer · <code>local-wallet.tsx</code> → Top up £10 (<code>use_saved_card</code> off)</p>
+<ul>
+<li>✅ PaymentSheet appears → pay → balance +£10. <strong>No platform fee</strong> (your own money in). DB: <code>local_wallet_transactions</code> type=<code>topup</code>; balance via <code>wallet_credit</code>. Stripe: PaymentIntent £10, metadata <code>type=local_wallet_topup</code>.</li>
+</ul>
+<div class="verdict" data-k="v6">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v6n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>C2 — Top-up, saved card (off-session, no UI)</strong> · Customer · Top up £20</p>
+<ul>
+<li>✅ Charges saved card with no card form; balance +£20.</li>
+</ul>
+<div class="verdict" data-k="v7">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v7n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>C3 — Pay in store with wallet → BUSINESS PAYOUT</strong> · Customer · <code>local-pay.tsx</code> enter business code + amount (e.g. £10)</p>
+<ul>
+<li>✅ Wallet −£10. Business receives a <strong>Stripe transfer</strong> to its connected account = £10 − platform commission (<strong>2% + 25p</strong> default) − business's own cashback%. DB: <code>local_wallet_transactions</code> debit; business credited. Stripe: Connect → business account shows the transfer; platform keeps the 2%+25p.</li>
+<li>⚠️ This is the <strong>main customer→business payout</strong> — check the maths carefully.</li>
+</ul>
+<div class="verdict" data-k="v8">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v8n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>C4 — Pay with insufficient balance</strong> · Customer · pay more than balance</p>
+<ul>
+<li>✅ Rejected cleanly; balance unchanged.</li>
+</ul>
+<div class="verdict" data-k="v9">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v9n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>C5 — Pay a business that hasn't finished payout setup</strong> · (use a business with <code>payout_enabled=false</code>)</p>
+<ul>
+<li>✅ Blocked with "has not finished setting up payouts yet"; wallet <strong>not</strong> debited.</li>
+</ul>
+<div class="verdict" data-k="v10">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v10n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>D. Event tickets (the 95p / commission flow → organiser payout)</h2>
+<p class="test"><strong>D1 — Buy tickets (saved card)</strong> · Customer · <code>event-ticket-checkout.tsx</code> for an event with a paying organiser</p>
+<ol>
+<li>Pick 2 tickets. 2. Enter attendee details. 3. Pay.</li>
+</ol>
+<ul>
+<li>✅ Charged total; tickets become <strong>valid</strong>; capacity decremented (no oversell). DB: <code>event_ticket_orders</code> status=<code>paid</code>, <code>event_tickets</code> status=<code>valid</code>, event <code>tickets_sold</code> +2. Stripe: destination charge to <strong>organiser's</strong> Connect account; platform keeps commission. Push notification received.</li>
+</ul>
+<div class="verdict" data-k="v11">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v11n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>D2 — Oversell guard</strong> · two near-simultaneous buys of the last ticket(s)</p>
+<ul>
+<li>✅ Only one succeeds; the other gets a clean "sold out". No negative capacity.</li>
+</ul>
+<div class="verdict" data-k="v12">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v12n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>D3 — Buy tickets, card declined</strong> · Customer · use <code>4000…0002</code></p>
+<ul>
+<li>✅ No tickets issued; capacity released (pending order not left blocking stock).</li>
+</ul>
+<div class="verdict" data-k="v13">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v13n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>E. Hubs — membership, donation, Gift Aid (→ hub payout)</h2>
+<p class="test"><strong>E1 — Join paid membership</strong> · Customer · <code>hub-membership-types.tsx</code> → Join a paid tier</p>
+<ul>
+<li>✅ Charged <strong>tier price + 95p platform fee</strong> (fee added on top). Hub receives full tier price (destination charge). DB: <code>hub_members</code> row, <code>member_no</code>, <code>paid_until</code>. Stripe: Connect → hub account = tier price; platform keeps 95p.</li>
+</ul>
+<div class="verdict" data-k="v14">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v14n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>E2 — Donate (no Gift Aid)</strong> · Customer · <code>hub-donate.tsx</code> to an active campaign, £20</p>
+<ul>
+<li>✅ Hub receives £20 (destination charge); platform takes ~Stripe cost only (no margin). DB: donation recorded.</li>
+</ul>
+<div class="verdict" data-k="v15">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v15n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>E3 — Donate with "cover the fees"</strong> · Customer · tick cover-fees, £20</p>
+<ul>
+<li>✅ Customer pays £20 + fee estimate; <strong>hub nets the full £20</strong>.</li>
+</ul>
+<div class="verdict" data-k="v16">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v16n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>E4 — Donate with Gift Aid (charity hub)</strong> · Customer · full name + address + postcode, hub <code>is_charity</code> + charity number on file</p>
+<ul>
+<li>✅ Gift Aid declaration stored; confirm returns <code>gift_aid: true</code>. DB: Gift Aid fields recorded against the donation.</li>
+</ul>
+<div class="verdict" data-k="v17">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v17n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>E5 — Membership/donation on a hub NOT payout-ready</strong></p>
+<ul>
+<li>✅ Blocked with "has not finished setting up payouts yet"; no charge.</li>
+</ul>
+<div class="verdict" data-k="v18">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v18n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>F. Gifts &amp; unit items (→ business payout)</h2>
+<p class="test"><strong>F1 — Buy a unit item for self</strong> · Customer · <code>local-buy-unit.tsx</code></p>
+<ul>
+<li>✅ Charged price; commission (default <strong>4%</strong>) to platform; rest destination-charged to business. DB: <code>book_unit_purchases</code> row; stock decremented. <code>uses_remaining</code>/<code>expires_at</code> correct.</li>
+</ul>
+<div class="verdict" data-k="v19">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v19n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>F2 — Out-of-stock unit</strong> · buy a finite item with 0 stock</p>
+<ul>
+<li>✅ "stock_exhausted" error; no charge.</li>
+</ul>
+<div class="verdict" data-k="v20">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v20n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>F3 — Send a gift</strong> · Customer · <code>local-gift.tsx</code>, recipient email</p>
+<ul>
+<li>✅ Charged; <strong>shareable code generated</strong>; recipient gets claim email. Re-running confirm doesn't double-charge or re-email (idempotent).</li>
+</ul>
+<div class="verdict" data-k="v21">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v21n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>G. Shift boost (platform-only revenue, no payout)</h2>
+<p class="test"><strong>G1 — Boost a shift</strong> · Employer · <code>shifts.tsx</code>/my-posted-shifts → Boost (£2.99)</p>
+<ul>
+<li>✅ Charged £2.99 to <strong>platform</strong> (no destination charge); <code>boosted_until = now + 24h</code>; matching workers notified.</li>
+</ul>
+<div class="verdict" data-k="v22">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v22n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>H. Business subscriptions &amp; billing (recurring, platform revenue)</h2>
+<p class="test"><strong>H1 — Subscribe Pro</strong> · Business owner · web <code>/business/[id]/manage/billing</code> → Upgrade to Pro (£19.99)</p>
+<ul>
+<li>✅ Stripe <strong>Checkout (subscription)</strong> opens → pay → returns. Webhook <code>customer.subscription.created</code> sets <code>subscription_tier=pro</code>, <code>subscription_until</code>, <code>stripe_subscription_id</code>.</li>
+</ul>
+<div class="verdict" data-k="v23">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v23n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>H2 — Change tier Pro → Premium</strong> · Business owner · billing page</p>
+<ul>
+<li>✅ Tier updates mid-cycle; DB reflects <code>premium</code>.</li>
+</ul>
+<div class="verdict" data-k="v24">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v24n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>H3 — Renewal</strong> · Stripe Dashboard → advance the test clock / trigger <code>invoice.payment_succeeded</code></p>
+<ul>
+<li>✅ <code>subscription_until</code> extended.</li>
+</ul>
+<div class="verdict" data-k="v25">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v25n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>H4 — Cancel via billing portal</strong> · <code>local-billing-portal</code> → Customer Portal → cancel</p>
+<ul>
+<li>✅ Webhook <code>customer.subscription.deleted</code> resets tier to <code>free</code>.</li>
+</ul>
+<div class="verdict" data-k="v26">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v26n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>H5 — Alert add-on (£10/mo)</strong> · Business owner (alert access approved) · subscribe</p>
+<ul>
+<li>✅ Saved card → activates server-side (<code>activated:true</code>); no card → PaymentSheet. <code>business_alert_access.status=active</code> + <code>stripe_subscription_id</code>.</li>
+</ul>
+<div class="verdict" data-k="v27">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v27n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>I. PAYOUTS &amp; Connect onboarding — <strong>test these hardest</strong></h2>
+<blockquote>Goal: prove money actually <strong>lands in the recipient's connected account</strong> and your <strong>platform fee is retained</strong>. After §C/D/E/F, open Stripe → <strong>Connect → the connected account → Payments/Balance</strong> and confirm the figures.</blockquote>
+<p class="test"><strong>I1 — Driver Connect onboarding</strong> · Driver · onboarding flow (<code>create-connect-account</code>)</p>
+<ul>
+<li>✅ Express onboarding link opens; complete Stripe's test KYC. Webhook <code>account.updated</code> sets <code>stripe_payouts_enabled / charges_enabled = true</code>. Driver shows "ready for payouts".</li>
+</ul>
+<div class="verdict" data-k="v28">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v28n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>I2 — Business Connect onboarding</strong> · Business owner · web payouts setup (<code>local-business-onboard</code>)</p>
+<ul>
+<li>✅ Express onboarding completes; <code>local_businesses.payout_enabled=true</code>.</li>
+</ul>
+<div class="verdict" data-k="v29">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v29n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>I3 — Hub Connect onboarding</strong> · Hub admin · web <code>/hubs/[id]/manage/payouts</code> (<code>hub-onboard</code>)</p>
+<ul>
+<li>✅ Express onboarding completes; <code>hubs.payout_enabled=true</code>.</li>
+</ul>
+<div class="verdict" data-k="v30">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v30n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>I4 — Business payout received</strong> · after <strong>C3</strong> (wallet pay) and <strong>F1</strong> (unit sale)</p>
+<ul>
+<li>✅ Business connected account balance = sum of transfers, each = amount − fee. Platform balance shows the application fees / retained commission.</li>
+</ul>
+<div class="verdict" data-k="v31">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v31n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>I5 — Hub payout received</strong> · after <strong>E1/E2</strong> (membership/donation)</p>
+<ul>
+<li>✅ Hub account = membership face value + donation; platform kept only the 95p / Stripe cost.</li>
+</ul>
+<div class="verdict" data-k="v32">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v32n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>I6 — Driver payout (Fetch end-to-end)</strong> · see §J below; confirm transfer lands on driver account.</p>
+<div class="verdict" data-k="v33">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v33n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>J. Fetch delivery (auth → capture → driver payout)</h2>
+<p class="test"><strong>J1 — Authorise on accept</strong> · Customer card on file; Driver accepts a delivery</p>
+<ul>
+<li>✅ PaymentIntent created with <strong>manual capture</strong> (authorised, not yet charged); <code>transfer_data.destination</code> = driver's account; platform fee = <strong>£1.50 flat</strong> (default). Nothing captured yet.</li>
+</ul>
+<div class="verdict" data-k="v34">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v34n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>J2 — Capture on delivered (+ waiting fee)</strong> · Driver marks collected → delivered (add a waiting fee if applicable)</p>
+<ul>
+<li>✅ Full amount (base + waiting) <strong>captured</strong>; webhook <code>payment_intent.succeeded</code> sets <code>delivery_requests.payment_status=captured</code>. Driver account receives amount − £1.50; platform keeps £1.50.</li>
+</ul>
+<div class="verdict" data-k="v35">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v35n" placeholder="Notes…">
+    </div>
+<p class="test"><strong>J3 — Payment fails</strong> · use a card that fails capture</p>
+<ul>
+<li>✅ <code>payment_status=failed</code> <strong>and the customer gets a push</strong> ("Delivery payment failed — please update your payment method"). (Now implemented via the webhook.)</li>
+</ul>
+<div class="verdict" data-k="v36">
+      <button class="pass" data-v="pass">✓ Pass</button>
+      <button class="fail" data-v="fail">✗ Fail</button>
+      <input class="note" data-k="v36n" placeholder="Notes…">
+    </div>
+<hr>
+<h2>K. Negative / edge cases (do not skip before live)</h2>
+<ul class="tasks">
+<li class="task"><label><input type="checkbox" data-k="c37"> <span><strong>K1.</strong> Every paid flow with a <strong>declined</strong> card → no DB side-effects, clean error.</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c38"> <span><strong>K2.</strong> Every paid flow with <strong>3-D Secure</strong> card <code>4000 0025 0000 3155</code> → auth challenge completes then succeeds.</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c39"> <span><strong>K3.</strong> <strong>Double-tap / retry</strong> a confirm → no double charge, no duplicate rows (idempotency).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c40"> <span><strong>K4.</strong> <strong>Payout-not-ready</strong> gates fire for business AND hub (C5/E5).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c41"> <span><strong>K5.</strong> <strong>Webhook signature</strong>: send an unsigned/garbage event → rejected (fail-closed).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c42"> <span><strong>K6.</strong> <strong>Refunds (now in-app)</strong>: Admin → <strong>Payments</strong> → a captured row → <strong>Refund</strong>. ✅ Confirms via Stripe; for destination charges (tickets/donations/wallet pay-ins) it <strong>reverses the transfer + application fee</strong> so the money comes back from the recipient, not your platform balance. DB row flips to <code>refunded</code>; customer gets a "Refund issued" push. Also test a <strong>Dashboard refund</strong> → the <code>charge.refunded</code> webhook flips the row too. (⚠️ wallet-topup refunds don't auto-deduct wallet balance — handle those by adjusting the wallet, see notes.)</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c43"> <span><strong>K7.</strong> <strong>Offer / reward / stamp</strong> redemption (non-payment) still works and can't be double-redeemed.</span></label></li>
+</ul>
+<hr>
+<h2>L. Webhook &amp; data integrity sweep</h2>
+<ul class="tasks">
+<li class="task"><label><input type="checkbox" data-k="c44"> <span><strong>L1.</strong> Stripe → Webhooks → no failing deliveries after a full test pass.</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c45"> <span><strong>L2.</strong> Spot-check that each successful payment has a matching DB row (orders/tickets/transactions/memberships) — no "charged but not recorded".</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c46"> <span><strong>L3.</strong> <code>transfer.created</code> events arrive (currently logged only — fine, just confirm no errors).</span></label></li>
+</ul>
+<hr>
+<h2>M. Go-live switch (only after A–L pass)</h2>
+<ul class="tasks">
+<li class="task"><label><input type="checkbox" data-k="c47"> <span><strong>M1.</strong> Swap Supabase secrets to <strong>live</strong> keys: <code>STRIPE_SECRET_KEY</code> (sk_live_…), <code>STRIPE_WEBHOOK_SECRET</code>, <code>STRIPE_CONNECT_WEBHOOK_SECRET</code>; web <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> (pk_live_…).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c48"> <span><strong>M2.</strong> Create a <strong>live</strong> webhook endpoint (same URL/events) and use its live signing secret.</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c49"> <span><strong>M3.</strong> Create <strong>live</strong> recurring Price IDs and update <code>admin_config</code>/env (<code>…LOCAL_PRO/PREMIUM/ALERT_ADDON</code>).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c50"> <span><strong>M4.</strong> Re-onboard real drivers/businesses/hubs through <strong>live</strong> Connect (test-mode accounts don't carry over).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c51"> <span><strong>M5.</strong> Confirm Stripe account is fully activated for <strong>live charges + Connect transfers</strong> (business details, bank, identity).</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c52"> <span><strong>M6.</strong> One <strong>real low-value live transaction per flow</strong> (a £1 top-up, a cheap ticket, a £1 donation) + confirm a real payout lands, then refund/settle.</span></label></li>
+<li class="task"><label><input type="checkbox" data-k="c53"> <span><strong>M7.</strong> Decide go-live stance on the <strong>known gaps</strong>: no refund UI (K6), no customer notice on delivery payment failure (J3), Gift-Aid postcode not validated.</span></label></li>
+</ul>
+<hr>
+<h3>Status of the earlier gaps (now addressed in code)</h3>
+<ol>
+<li><strong>In-app refunds</strong> — ✅ added: Admin → Payments → Refund (<code>refund-payment</code> function), with Connect transfer/fee reversal + <code>charge.refunded</code> webhook. <em>Remaining manual case:</em> refunding a wallet <strong>top-up</strong> doesn't auto-deduct the wallet balance.</li>
+<li><strong>Delivery payment-failure</strong> — ✅ customer now gets a push (J3).</li>
+<li><strong>Subscription period-end</strong> — ✅ parsing hardened (item-level → any item → top-level, finite-checked).</li>
+<li><strong>Gift Aid postcode</strong> — ✅ validated + normalised on the app form <strong>and</strong> server-side (rejects invalid so Gift Aid isn't silently lost).</li>
+<li><strong>Missing Price IDs</strong> — error was already clear server-side and the client now surfaces it; just <strong>set the IDs (A2)</strong>.</li>
+</ol>
+<p><strong>Deploy before testing these:</strong> <code>supabase functions deploy refund-payment stripe-webhook confirm-hub-donation</code>, and add <strong><code>charge.refunded</code></strong> to your Stripe webhook's event list.</p>
+<p>_Fee defaults (overridable in <code>admin_config</code>): Fetch £1.50 flat · Wallet 2% + 25p · Products/units/gifts 4% · Hub membership +95p · Donations ~Stripe cost only · Subscriptions/boosts/alerts = platform keeps 100%._</p>
+<script>
+  const KEY = 'onesh-payments-test-v1';
+  const state = JSON.parse(localStorage.getItem(KEY) || '{}');
+  const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+
+  // checkboxes
+  document.querySelectorAll('input[type=checkbox][data-k]').forEach(el=>{
+    const k=el.dataset.k; if(state[k]) el.checked=true;
+    el.addEventListener('change',()=>{state[k]=el.checked;save();tally();});
+  });
+  // verdict buttons + notes
+  document.querySelectorAll('.verdict').forEach(v=>{
+    const k=v.dataset.k;
+    v.querySelectorAll('button').forEach(b=>{
+      if(state[k]===b.dataset.v) b.classList.add('on');
+      b.addEventListener('click',()=>{
+        state[k] = state[k]===b.dataset.v ? null : b.dataset.v;
+        v.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x.dataset.v===state[k]));
+        save();tally();
+      });
+    });
+    const note=v.querySelector('.note'); const nk=note.dataset.k;
+    if(state[nk]) note.value=state[nk];
+    note.addEventListener('input',()=>{state[nk]=note.value;save();});
+  });
+
+  const verdicts=[...document.querySelectorAll('.verdict')].map(v=>v.dataset.k);
+  const checks=[...document.querySelectorAll('input[type=checkbox][data-k]')].map(e=>e.dataset.k);
+  function tally(){
+    const total=verdicts.length+checks.length;
+    const done=verdicts.filter(k=>state[k]).length + checks.filter(k=>state[k]).length;
+    document.getElementById('fill').style.width=(total?done/total*100:0)+'%';
+    const fails=verdicts.filter(k=>state[k]==='fail').length;
+    document.getElementById('stat').textContent=done+' / '+total+(fails?'  ·  '+fails+' fail':'');
+  }
+  document.getElementById('reset').onclick=()=>{ if(confirm('Clear all results?')){localStorage.removeItem(KEY);location.reload();} };
+  document.getElementById('export').onclick=()=>{
+    const out=[];
+    document.querySelectorAll('.verdict').forEach(v=>{
+      const title=(v.previousElementSibling&&v.previousElementSibling.classList.contains('test'))?v.previousElementSibling.textContent.trim():'';
+      const k=v.dataset.k, verdict=state[k]||'—', note=state[k+'n']||'';
+      out.push((verdict==='pass'?'✓':verdict==='fail'?'✗':'·')+' '+title+(note?'  — '+note:''));
+    });
+    navigator.clipboard.writeText(out.join('\n')).then(()=>alert('Results copied to clipboard.'));
+  };
+  tally();
+</script>
+</body></html>

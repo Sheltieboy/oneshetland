@@ -161,7 +161,18 @@ export default function JobDetailScreen() {
               </TouchableOpacity>
             )}
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.applyBar}>
+            <TouchableOpacity
+              style={[styles.applyBtn, { backgroundColor: S.color }]}
+              onPress={() => router.push(`/job-applicants?jobId=${job.id}` as any)}
+              activeOpacity={0.9}
+            >
+              <FontAwesome5 name="users" size={15} color="#fff" solid />
+              <Text style={styles.applyBtnText}>Manage this job</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {showApply && job ? (

@@ -16,6 +16,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, ImageBackground, ImageSourcePropType } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -32,6 +33,8 @@ interface Props {
   children?: React.ReactNode;
   /** Optional hero photo; falls back to a tinted gradient using the section colour. */
   photo?:    ImageSourcePropType;
+  /** Optional custom banner background (e.g. an SVG). Takes precedence over `photo`. */
+  banner?:   React.ReactNode;
   /** Optional eyebrow line (defaults to "OneShetland"). */
   eyebrow?:  string;
   /** Banner height. Default 138 — cinematic but compact for a fixed header. */
@@ -39,8 +42,13 @@ interface Props {
 }
 
 export function TabScreenHeader({
-  section, title, right, children, photo, eyebrow = 'OneShetland', height = 138,
+  section, title, right, children, photo, banner, eyebrow = 'OneShetland', height = 138,
 }: Props) {
+  // Absorb the status-bar inset so the hero image/tint runs to the very top of
+  // the screen — the screen's SafeAreaView must NOT pad the top edge.
+  const insets = useSafeAreaInsets();
+  const h = height + insets.top;
+
   // The legibility gradient + content overlay, shared by photo & fallback.
   const overlay = (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
@@ -55,7 +63,7 @@ export function TabScreenHeader({
         <Rect x={0} y={0} width="100%" height="100%" fill="url(#tab-hero-grad)" />
       </Svg>
 
-      {right != null ? <View style={styles.rightSlot}>{right}</View> : null}
+      {right != null ? <View style={[styles.rightSlot, { top: insets.top + 12 }]}>{right}</View> : null}
 
       <View style={styles.titleBlock}>
         <Text style={styles.eyebrow}>{eyebrow.toUpperCase()}</Text>
@@ -65,12 +73,17 @@ export function TabScreenHeader({
     </View>
   );
 
-  const banner = photo ? (
-    <View style={{ height }}>
+  const bannerEl = banner ? (
+    <View style={{ height: h }}>
+      <View style={StyleSheet.absoluteFill}>{banner}</View>
+      {overlay}
+    </View>
+  ) : photo ? (
+    <View style={{ height: h }}>
       <ImageBackground source={photo} resizeMode="cover" style={styles.fill}>{overlay}</ImageBackground>
     </View>
   ) : (
-    <View style={[{ height, backgroundColor: section.color }, styles.fallback]}>
+    <View style={[{ height: h, backgroundColor: section.color }, styles.fallback]}>
       <Svg style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="tab-hero-tint" x1="0" y1="0" x2="1" y2="1">
@@ -89,7 +102,7 @@ export function TabScreenHeader({
 
   return (
     <View>
-      {banner}
+      {bannerEl}
       {children != null ? <View style={styles.below}>{children}</View> : null}
     </View>
   );

@@ -22,8 +22,9 @@ export interface SearchResult {
   type:     SearchResultType;
   title:    string;
   subtitle: string;
-  icon:     string;     // FontAwesome5 name
+  icon:     string;     // FontAwesome5 name (fallback when no logoUrl)
   color:    string;     // accent for the row icon
+  logoUrl?: string | null; // business logo/monogram, shown instead of the icon
   route:    Href;
   /** Internal ranking score — higher is better. Not displayed. */
   score:    number;
@@ -89,6 +90,7 @@ function businessToResult(b: LocalBusiness, score: number): SearchResult {
     subtitle: trade,
     icon:     CATEGORY_ICONS[b.category] ?? 'store',
     color:    b.brand_color || '#7C3AED',
+    logoUrl:  b.logo_url ?? null,
     route:    { pathname: '/local-business-detail', params: { id: b.id } },
     score,
   };

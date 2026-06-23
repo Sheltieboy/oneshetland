@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getConfig } from '../_shared/admin-config.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 /**
  * stripe-webhook
@@ -106,14 +107,39 @@ serve(async (req) => {
 
       // ── Payment failed ───────────────────────────────────────────────
       case 'payment_intent.payment_failed': {
-        const requestId = (eventData.metadata as Record<string, string>)?.request_id;
+        const meta = (eventData.metadata ?? {}) as Record<string, string>;
+        const requestId = meta.request_id;
         if (requestId) {
           await supabase
             .from('delivery_requests')
             .update({ payment_status: 'failed' })
             .eq('payment_intent_id', eventData.id as string);
 
-          // TODO: notify customer their payment failed
+          // Notify the customer their delivery payment failed so they can fix
+          // their card. customer_id is stamped on the PaymentIntent metadata by
+          // authorise-payment; fall back to a lookup if it's absent.
+          let customerId = meta.customer_id || '';
+          if (!customerId) {
+            const { data: dr } = await supabase
+              .from('delivery_requests')
+              .select('customer_id')
+              .eq('payment_intent_id', eventData.id as string)
+              .maybeSingle();
+            customerId = (dr?.customer_id as string) ?? '';
+          }
+          if (customerId) {
+            const lastErr = (eventData.last_payment_error as Record<string, unknown> | undefined);
+            const reason = (lastErr?.message as string | undefined) ?? 'Your card was declined.';
+            await sendUserPush(supabase, {
+              userId:     customerId,
+              module:     'fetch',
+              categoryId: 'fetch.payment_failed',
+              title:      'Delivery payment failed',
+              body:       `${reason} Please update your payment method to keep your delivery.`,
+              data:       { request_id: requestId, kind: 'fetch_payment_failed' },
+              urgent:     true,
+            }).catch((e) => console.error('[stripe-webhook] payment_failed push:', e));
+          }
         }
         break;
       }
@@ -164,6 +190,15 @@ serve(async (req) => {
           })
           .eq('business_stripe_account_id', accountId);
 
+        // 3b. Businesses onboarded via local-business-onboard store the Connect
+        // account in stripe_account_id and gate payments on payout_enabled, so
+        // set that here too — otherwise payout_enabled never flips true and every
+        // business payment (wallet or card) is rejected after onboarding.
+        await supabase
+          .from('local_businesses')
+          .update({ payout_enabled: payoutsEnabled })
+          .eq('stripe_account_id', accountId);
+
         // 4. Hub Connect accounts (paid memberships)
         await supabase
           .from('hubs')
@@ -184,17 +219,6 @@ serve(async (req) => {
         const items             = eventData.items as {
           data: Array<{ price: { id: string }; current_period_end?: number }>
         };
-        const priceId           = items?.data?.[0]?.price?.id;
-
-        // Stripe API 2025-04-30+ moved current_period_end to the subscription_item
-        // level. Read it from there with a fallback to the legacy top-level field.
-        const periodEndSec =
-          items?.data?.[0]?.current_period_end ??
-          (eventData.current_period_end as number | undefined);
-        const periodEndIso = periodEndSec
-          ? new Date(periodEndSec * 1000).toISOString()
-          : null;
-
         const isActive = ['active', 'trialing'].includes(status);
 
         // ── Alert add-on subscription ────────────────────────────────────
@@ -224,6 +248,25 @@ serve(async (req) => {
         // fall back to env vars so old deployments keep working.
         const proPrice     = await getConfig(supabase, 'stripe.price.local_pro',     Deno.env.get('STRIPE_PRICE_LOCAL_PRO')     ?? null);
         const premiumPrice = await getConfig(supabase, 'stripe.price.local_premium', Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM') ?? null);
+
+        // A subscription may carry an add-on line item alongside the tier item,
+        // so never assume items.data[0] — find the item whose price matches a
+        // tier (premium first), falling back to the first item.
+        const tierItem =
+          items?.data?.find((i) => i.price?.id === premiumPrice) ??
+          items?.data?.find((i) => i.price?.id === proPrice) ??
+          items?.data?.[0];
+        const priceId = tierItem?.price?.id;
+
+        // current_period_end moved to the item in Stripe 2025-04-30+. Be robust
+        // across API versions: prefer the tier item, then ANY item that carries
+        // it, then the legacy top-level field. Only accept a finite epoch.
+        const rawPeriodEnd =
+          tierItem?.current_period_end ??
+          items?.data?.find((it) => typeof it.current_period_end === 'number')?.current_period_end ??
+          (eventData.current_period_end as number | undefined);
+        const periodEndSec = typeof rawPeriodEnd === 'number' && Number.isFinite(rawPeriodEnd) ? rawPeriodEnd : null;
+        const periodEndIso = periodEndSec ? new Date(periodEndSec * 1000).toISOString() : null;
 
         let tier: 'free' | 'pro' | 'premium' = 'free';
         if (priceId === premiumPrice) tier = 'premium';
@@ -291,6 +334,35 @@ serve(async (req) => {
       // ── Payout to driver succeeded ───────────────────────────────────
       case 'transfer.created': {
         console.log('[stripe-webhook] Transfer created:', eventData.id);
+        break;
+      }
+
+      // ── Charge refunded (in-app refund OR Stripe Dashboard refund) ───
+      // Mark the originating record refunded so app state matches Stripe even
+      // when a refund is issued straight from the Dashboard.
+      case 'charge.refunded': {
+        const pi = eventData.payment_intent as string | null;
+        const fullyRefunded = eventData.refunded === true; // false for partials
+        if (pi) {
+          await supabase
+            .from('delivery_requests')
+            .update({ payment_status: fullyRefunded ? 'refunded' : 'partially_refunded' })
+            .eq('payment_intent_id', pi);
+          // Notify the customer a refund was issued.
+          const meta = (eventData.metadata ?? {}) as Record<string, string>;
+          const customerId = meta.customer_id || '';
+          if (customerId) {
+            const amt = ((eventData.amount_refunded as number) ?? 0) / 100;
+            await sendUserPush(supabase, {
+              userId:     customerId,
+              module:     'fetch',
+              categoryId: 'fetch.refunded',
+              title:      'Refund issued',
+              body:       `A refund of £${amt.toFixed(2)} is on its way back to your card.`,
+              data:       { kind: 'refund', payment_intent_id: pi },
+            }).catch((e) => console.error('[stripe-webhook] refund push:', e));
+          }
+        }
         break;
       }
 

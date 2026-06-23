@@ -118,8 +118,7 @@ export default function BusinessDetailScreen() {
           .eq('status', 'open')
           .order('start_at', { ascending: true, nullsFirst: false })
           .limit(5)
-          .then(({ data }) => data ?? [])
-          .catch(() => [] as any[]),
+          .then(({ data }) => data ?? [], () => [] as any[]),
         fetchBusinessUnitItems(id, false).catch(() => [] as BookUnitItem[]),
         fetchBusinessServices(id, false).catch(() => [] as BookService[]),
         fetchBusinessAddons(id).catch(() => [] as BusinessAddon[]),

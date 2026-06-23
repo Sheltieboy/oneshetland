@@ -52,8 +52,19 @@ serve(async (req) => {
     // and when a complete declaration is given.
     const { data: hub } = await svc.from('hubs').select('is_charity, charity_number').eq('id', pi.metadata.hub_id).maybeSingle();
     const charityEligible = !!hub?.is_charity && !!hub?.charity_number;
-    const ga = (charityEligible && gift_aid && gift_aid.first_name && gift_aid.last_name && gift_aid.address && gift_aid.postcode)
-      ? gift_aid : null;
+    const declared = charityEligible && gift_aid && gift_aid.first_name && gift_aid.last_name && gift_aid.address && gift_aid.postcode;
+
+    // HMRC requires a valid home address + postcode for a Gift Aid claim, so
+    // validate the UK postcode rather than storing whatever was typed. We reject
+    // (not silently drop) so the donor knows their Gift Aid didn't apply.
+    let ga = null;
+    if (declared) {
+      const normalised = normaliseUkPostcode(String(gift_aid.postcode));
+      if (!normalised) {
+        return json({ error: "That doesn't look like a valid UK postcode — please check it so your Gift Aid can be claimed." }, 400);
+      }
+      ga = { ...gift_aid, postcode: normalised };
+    }
 
     const { error: rpcErr } = await svc.rpc('record_hub_donation', {
       p_campaign: pi.metadata.campaign_id,
@@ -79,3 +90,17 @@ serve(async (req) => {
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
   }
 });
+
+/**
+ * Validate + normalise a UK postcode. Returns the canonical "OUTWARD INWARD"
+ * form (e.g. "ZE1 0AA") or null if it isn't a valid UK postcode.
+ */
+function normaliseUkPostcode(raw: string): string | null {
+  const compact = raw.toUpperCase().replace(/\s+/g, '');
+  // Outward (2–4 chars) + inward (digit + 2 letters). Excludes letters that
+  // never appear in those positions, per the official UK pattern.
+  const re = /^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/;
+  const m = compact.match(re);
+  if (!m) return null;
+  return `${m[1]} ${m[2]}`;
+}

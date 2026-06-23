@@ -4,7 +4,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { colors } from '@/constants/theme';
 
 export default function DriverLayout() {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, hasAppliedToDrive } = useAuth();
 
   if (loading) {
     return (
@@ -15,9 +15,12 @@ export default function DriverLayout() {
   }
 
   if (!session) return <Redirect href="/(auth)/sign-in" />;
-  if (profile && profile.role === 'customer') return <Redirect href="/(customer)/dashboard" />;
-  // Admins can use the driver dashboard like any approved driver — admin
-  // surface is reachable via Me → Admin.
+  // The Driver area is a capability, gated by driver_profiles.driver_status —
+  // NOT by profiles.role. Anyone who has applied (pending/approved/…) can see it
+  // (to view their status); admins can use it too. Everyone else is sent to the
+  // Fetch section, where they can apply via the Driver toggle.
+  const canAccessDriver = hasAppliedToDrive || profile?.role === 'admin';
+  if (profile && !canAccessDriver) return <Redirect href="/(tabs)/fetch" />;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

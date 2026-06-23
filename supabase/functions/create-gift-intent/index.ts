@@ -93,7 +93,7 @@ serve(async (req) => {
     );
 
     const body = await req.json();
-    const { kind, unit_item_id, service_id, recipient_email, recipient_name, message, use_saved_card = false } = body;
+    const { kind, unit_item_id, service_id, recipient_email, recipient_name, message, use_saved_card = false, pay_with_wallet = false } = body;
 
     if (!kind || (kind !== 'unit' && kind !== 'booking')) {
       return new Response(JSON.stringify({ error: 'kind must be "unit" or "booking"' }), {
@@ -156,6 +156,19 @@ serve(async (req) => {
       itemLabel  = svc.name;
     }
 
+    // The business must be set up for payouts before we take money for a gift.
+    const { data: giftBiz } = await supabase
+      .from('local_businesses')
+      .select('stripe_account_id, payout_enabled')
+      .eq('id', businessId)
+      .single();
+    if (!giftBiz?.stripe_account_id || !giftBiz.payout_enabled) {
+      return new Response(JSON.stringify({ error: "This business isn't set up to take payments yet." }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const giftPlatformFee = Math.round(pricePence! * 0.05); // 5% platform fee
+
     // Insert pending gift row (no code yet — generated on confirm).
     const giftRow: Record<string, unknown> = {
       kind,
@@ -184,10 +197,43 @@ serve(async (req) => {
       });
     }
 
+    // ── Mode 0: pay from wallet (debit + transfer to the business, no card) ──
+    if (pay_with_wallet) {
+      const { data: bal, error: dErr } = await supabase.rpc('wallet_debit', { p_user: user.id, p_spend: pricePence!, p_cashback: 0 });
+      if (dErr) throw new Error(dErr.message);
+      if (bal == null) {
+        await supabase.from('book_gifts').delete().eq('id', gift.id);
+        return new Response(JSON.stringify({ error: 'Not enough in your wallet — top up or pay by card.' }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      let walletTransferId: string;
+      try {
+        const tb = new URLSearchParams({
+          amount: String(pricePence! - giftPlatformFee), currency: 'gbp', destination: giftBiz.stripe_account_id,
+          description: `OneShetland wallet gift — ${itemLabel}`,
+          'metadata[type]': 'gift_purchase_wallet', 'metadata[gift_id]': gift.id, 'metadata[buyer_id]': user.id,
+        });
+        const tr = await fetch('https://api.stripe.com/v1/transfers', { method: 'POST', headers: { ...stripePostHeaders(), 'Idempotency-Key': crypto.randomUUID() }, body: tb });
+        const tj = await tr.json();
+        if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
+        walletTransferId = tj.id;
+      } catch (e) {
+        console.error('[create-gift-intent] wallet transfer failed:', e);
+        await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: pricePence! });
+        await supabase.from('book_gifts').delete().eq('id', gift.id);
+        return new Response(JSON.stringify({ error: 'Gift payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const ref = `wallet_${walletTransferId}`;
+      await supabase.from('book_gifts').update({ payment_intent_id: ref }).eq('id', gift.id);
+      await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: businessId, type: 'spend', amount_pence: -pricePence!, stripe_transfer_id: walletTransferId, description: `Gift — ${itemLabel}` });
+      return new Response(JSON.stringify({ charged: true, payment_intent_id: ref, gift_id: gift.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const baseParams: Record<string, string> = {
       amount:      String(pricePence!),
       currency:    'gbp',
       description: `OneShetland gift — ${itemLabel}`,
+      'transfer_data[destination]': giftBiz.stripe_account_id,
+      'application_fee_amount':      String(giftPlatformFee),
       'metadata[type]':        'gift_purchase',
       'metadata[gift_id]':     gift.id,
       'metadata[kind]':        kind,

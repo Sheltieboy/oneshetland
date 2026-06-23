@@ -26,6 +26,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { supabase } from '@/lib/supabase';
+import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchOpenShifts, fetchMyApplications, fetchEmployerShifts,
@@ -235,11 +236,69 @@ export function BoostSheet({
   const router = useRouter();
   const { alert } = useAlert();
   const [loading, setLoading] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [biz, setBiz] = useState<{ id: string; name: string; hasCard: boolean } | null>(null);
+
+  useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
+  // A shift posted as a business is a business expense → default to its own card.
+  useEffect(() => {
+    (async () => {
+      const { data: s } = await supabase.from('shifts').select('posted_as_business_id').eq('id', shiftId).maybeSingle();
+      const bizId = s?.posted_as_business_id as string | null;
+      if (!bizId) { setBiz(null); return; }
+      const { data: b } = await supabase.from('local_businesses').select('name, has_business_payment_method').eq('id', bizId).maybeSingle();
+      setBiz({ id: bizId, name: b?.name ?? 'this business', hasCard: !!b?.has_business_payment_method });
+    })().catch(() => {});
+  }, [shiftId]);
 
   const hasSavedCard = !!profile?.has_payment_method;
+  const canWallet = (walletBalance ?? 0) >= 299;
+
+  const finish = (boostedUntil?: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    onBoosted(boostedUntil ?? new Date(Date.now() + 86_400_000).toISOString());
+  };
+
+  const handleBoostWallet = async () => {
+    setLoading(true);
+    try {
+      const res = await walletCheckout({ type: 'shift_boost', shift_id: shiftId });
+      finish(res?.boosted_until);
+    } catch (e: any) {
+      alert({ title: 'Boost failed', message: e?.message ?? 'Try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const promptBizCard = () => {
+    if (!biz) return;
+    onDismiss();
+    router.push(`/payment-setup?businessId=${biz.id}`);
+  };
+
+  const charge = async (body: Record<string, unknown>, onNoCard?: () => void) => {
+    setLoading(true);
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('create-boost-intent', { body });
+      let resBody: any = data;
+      if (fnErr) { try { const ctx = (fnErr as any).context; if (ctx?.json) resBody = await ctx.json(); } catch { /* */ } }
+      if (resBody?.error === 'no_business_card') { setLoading(false); onNoCard?.(); return; }
+      if (!resBody?.charged) throw new Error(resBody?.error ?? fnErr?.message ?? 'Payment did not complete.');
+      const { data: confirmData, error: confirmErr } = await supabase.functions.invoke('confirm-boost', { body: { shift_id: shiftId } });
+      if (confirmErr) throw confirmErr;
+      finish(confirmData?.boosted_until);
+    } catch (e: any) {
+      alert({ title: 'Boost failed', message: e?.message ?? 'Try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBoostBusiness = () => charge({ shift_id: shiftId, use_business_card: true, business_id: biz?.id }, promptBizCard);
 
   const handleBoost = async () => {
-    // Pre-flight: redirect to card setup if no card on file
+    // Personal-card path. Redirect to card setup if no personal card on file.
     if (!hasSavedCard) {
       alert({
         title: 'Payment card needed',
@@ -251,28 +310,7 @@ export function BoostSheet({
       });
       return;
     }
-
-    setLoading(true);
-    try {
-      // Charge the saved card off-session — no PaymentSheet needed
-      const { data, error: fnErr } = await supabase.functions.invoke('create-boost-intent', {
-        body: { shift_id: shiftId, use_saved_card: true },
-      });
-      if (fnErr) throw new Error(fnErr.message ?? 'Boost payment failed.');
-      if (!data?.charged) throw new Error(data?.error ?? 'Payment did not complete.');
-
-      const { data: confirmData, error: confirmErr } = await supabase.functions.invoke('confirm-boost', {
-        body: { shift_id: shiftId },
-      });
-      if (confirmErr) throw confirmErr;
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onBoosted(confirmData?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString());
-    } catch (e: any) {
-      alert({ title: 'Boost failed', message: e?.message ?? 'Try again.' });
-    } finally {
-      setLoading(false);
-    }
+    charge({ shift_id: shiftId, use_saved_card: true });
   };
 
   return (
@@ -301,30 +339,77 @@ export function BoostSheet({
             </View>
           </View>
 
-          {/* Show which card will be charged */}
-          {hasSavedCard && (
+          {/* Which card will be charged */}
+          {biz ? (
+            <View style={styles.savedCardNote}>
+              <FontAwesome5 name={biz.hasCard ? 'briefcase' : 'exclamation-circle'} size={11} color={colors.jobs} solid />
+              <Text style={styles.savedCardNoteText}>
+                {biz.hasCard ? `Charged to ${biz.name}'s card` : `${biz.name} has no card on file yet`}
+              </Text>
+            </View>
+          ) : hasSavedCard ? (
             <View style={styles.savedCardNote}>
               <FontAwesome5 name="credit-card" size={11} color={colors.jobs} solid />
               <Text style={styles.savedCardNoteText}>Charged to your saved card</Text>
             </View>
-          )}
+          ) : null}
 
-          <TouchableOpacity
-            style={[styles.boostBtn, loading && { opacity: 0.7 }]}
-            onPress={handleBoost}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <>
-                  <FontAwesome5 name="bolt" size={13} color="#fff" solid />
-                  <Text style={styles.boostBtnText}>
-                    {hasSavedCard ? 'Confirm boost — £2.99' : 'Boost for £2.99'}
-                  </Text>
-                </>
-            }
-          </TouchableOpacity>
+          {biz && !biz.hasCard ? (
+            // Business expense, no business card yet → add one first.
+            <TouchableOpacity style={[styles.boostBtn, loading && { opacity: 0.7 }]} onPress={promptBizCard} disabled={loading} activeOpacity={0.85}>
+              <FontAwesome5 name="credit-card" size={13} color="#fff" solid />
+              <Text style={styles.boostBtnText}>  Add a card for {biz.name}</Text>
+            </TouchableOpacity>
+          ) : biz && biz.hasCard ? (
+            // Business expense → business card default; personal card + wallet as alternatives.
+            <>
+              <TouchableOpacity style={[styles.boostBtn, loading && { opacity: 0.7 }]} onPress={handleBoostBusiness} disabled={loading} activeOpacity={0.85}>
+                {loading ? <ActivityIndicator color="#fff" size="small" /> : <>
+                  <FontAwesome5 name="briefcase" size={13} color="#fff" solid />
+                  <Text style={styles.boostBtnText}>  Pay £2.99 — {biz.name} card</Text>
+                </>}
+              </TouchableOpacity>
+              {canWallet && (
+                <TouchableOpacity style={[styles.boostBtn, { backgroundColor: '#fff', borderWidth: 1.5, borderColor: colors.jobs }, loading && { opacity: 0.7 }]} onPress={handleBoostWallet} disabled={loading} activeOpacity={0.85}>
+                  <FontAwesome5 name="wallet" size={13} color={colors.jobs} solid />
+                  <Text style={[styles.boostBtnText, { color: colors.jobs }]}>  Pay from my wallet</Text>
+                </TouchableOpacity>
+              )}
+              {hasSavedCard && (
+                <TouchableOpacity style={[styles.boostBtn, { backgroundColor: '#fff', borderWidth: 1.5, borderColor: colors.jobs }, loading && { opacity: 0.7 }]} onPress={handleBoost} disabled={loading} activeOpacity={0.85}>
+                  <FontAwesome5 name="credit-card" size={13} color={colors.jobs} solid />
+                  <Text style={[styles.boostBtnText, { color: colors.jobs }]}>  Pay with my personal card</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          ) : (
+            // Personal shift → personal card / wallet.
+            <>
+              {canWallet && (
+                <TouchableOpacity style={[styles.boostBtn, loading && { opacity: 0.7 }]} onPress={handleBoostWallet} disabled={loading} activeOpacity={0.85}>
+                  {loading ? <ActivityIndicator color="#fff" size="small" /> : <>
+                    <FontAwesome5 name="wallet" size={13} color="#fff" solid />
+                    <Text style={styles.boostBtnText}>  Pay £2.99 from wallet</Text>
+                  </>}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.boostBtn, canWallet && { backgroundColor: '#fff', borderWidth: 1.5, borderColor: colors.jobs }, loading && { opacity: 0.7 }]}
+                onPress={handleBoost}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading
+                  ? <ActivityIndicator color={canWallet ? colors.jobs : '#fff'} size="small" />
+                  : <>
+                      <FontAwesome5 name="bolt" size={13} color={canWallet ? colors.jobs : '#fff'} solid />
+                      <Text style={[styles.boostBtnText, canWallet && { color: colors.jobs }]}>
+                        {canWallet ? 'Pay £2.99 by card' : (hasSavedCard ? 'Confirm boost — £2.99' : 'Boost for £2.99')}
+                      </Text>
+                    </>}
+              </TouchableOpacity>
+            </>
+          )}
 
           <TouchableOpacity onPress={onDismiss} style={styles.boostSkipBtn} activeOpacity={0.7}>
             <Text style={styles.boostSkipText}>Not now — I'll boost later</Text>
@@ -370,19 +455,6 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
       });
   }, [profile?.id]);
 
-  // Sensible default category based on the shift's category, when we
-  // need to inline-create a Local business.
-  useEffect(() => {
-    if (inlineBusinessCategory) return;
-    if (!category) return;
-    const map: Record<string, typeof inlineBusinessCategory> = {
-      hospitality: 'food_drink',
-      retail:      'retail',
-      tourism:     'tourism',
-    };
-    setInlineBusinessCategory(map[category] ?? 'services');
-  }, [category, inlineBusinessCategory]);
-
   const [title, setTitle]               = useState('');
   const [category, setCategory]         = useState('');
   const [description, setDescription]   = useState('');
@@ -392,6 +464,20 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
   const [positions, setPositions]       = useState('1');
   const [requirements, setRequirements] = useState<string[]>([]);
   const [urgency, setUrgency]           = useState('planned');
+
+  // Sensible default business category derived from the shift's category, used
+  // when inline-creating a Local business. Declared AFTER `category` so it isn't
+  // referenced before initialisation.
+  useEffect(() => {
+    if (inlineBusinessCategory) return;
+    if (!category) return;
+    const map: Record<string, 'food_drink' | 'retail' | 'services' | 'tourism' | 'accommodation' | 'other'> = {
+      hospitality: 'food_drink',
+      retail:      'retail',
+      tourism:     'tourism',
+    };
+    setInlineBusinessCategory(map[category] ?? 'services');
+  }, [category, inlineBusinessCategory]);
 
   const now = new Date();
   const [startDate, setStartDate] = useState<Date>(now);
@@ -483,7 +569,6 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
           name:        inlineBusinessName.trim(),
           category:    inlineBusinessCategory,
           address:     location.trim(),
-          email:       profile?.email ?? null,
           is_active:   true,
         })
         .select('id, name, address')
@@ -1349,7 +1434,7 @@ function HubScreen({ onPostShift }: { onPostShift: () => void }) {
 export default function ShiftsTab() {
   const router = useRouter();
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       <TabScreenHeader
         section={S}
         photo={SECTION_HEROES.shifts}

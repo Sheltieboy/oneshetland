@@ -164,7 +164,9 @@ serve(async (req) => {
       description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'}${applicationFeePence > 0 ? ` (incl. £${(applicationFeePence / 100).toFixed(2)} platform fee)` : ''}`,
     };
 
-    // Route funds to driver's Connect account if available
+    // Destination charge to the driver's Connect account (transfers-only
+    // capable). The platform's £1.50 service fee is taken as application_fee;
+    // Stripe's processing fee comes out of that fee, leaving clean margin.
     if (driverProfile?.stripe_account_id) {
       piBody['transfer_data[destination]'] = driverProfile.stripe_account_id;
       if (applicationFeePence > 0) {

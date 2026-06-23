@@ -51,42 +51,82 @@ serve(async (req) => {
       });
     }
 
-    // Fetch the user's profile to check for an existing Stripe customer ID
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('stripe_customer_id, full_name')
-      .eq('id', user.id)
-      .single();
+    // Optional { business_id } in the body — when present we set up a
+    // BUSINESS-scoped card (local_businesses.business_stripe_customer_id) instead
+    // of the user's central card (profiles.stripe_customer_id). The caller must
+    // own the business.
+    const body = await req.json().catch(() => ({}));
+    const businessId: string | undefined = body?.business_id;
 
-    let stripeCustomerId: string = profile?.stripe_customer_id ?? '';
+    let stripeCustomerId = '';
 
-    // Create a Stripe customer if one doesn't exist yet
-    if (!stripeCustomerId) {
-      const customerRes = await fetch('https://api.stripe.com/v1/customers', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeSecretKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          email: user.email ?? '',
-          name: profile?.full_name ?? '',
-          'metadata[supabase_user_id]': user.id,
-        }),
-      });
+    if (businessId) {
+      const { data: business, error: bizErr } = await supabase
+        .from('local_businesses')
+        .select('id, owner_id, name, email, business_stripe_customer_id')
+        .eq('id', businessId)
+        .single();
 
-      const customer = await customerRes.json();
-      if (!customerRes.ok) {
-        throw new Error(`Stripe customer creation failed: ${customer.error?.message}`);
+      if (bizErr || !business) {
+        return new Response(JSON.stringify({ error: 'Business not found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (business.owner_id !== user.id) {
+        return new Response(JSON.stringify({ error: 'Forbidden — not the business owner' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
-      stripeCustomerId = customer.id;
+      stripeCustomerId = business.business_stripe_customer_id ?? '';
+      if (!stripeCustomerId) {
+        const customerRes = await fetch('https://api.stripe.com/v1/customers', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${stripeSecretKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            email: business.email ?? user.email ?? '',
+            name: business.name ?? '',
+            'metadata[supabase_user_id]': user.id,
+            'metadata[business_id]': business.id,
+          }),
+        });
+        const customer = await customerRes.json();
+        if (!customerRes.ok) throw new Error(`Stripe customer creation failed: ${customer.error?.message}`);
+        stripeCustomerId = customer.id;
 
-      // Save the Stripe customer ID back to the profile
-      await supabase
+        await supabase
+          .from('local_businesses')
+          .update({ business_stripe_customer_id: stripeCustomerId })
+          .eq('id', business.id);
+      }
+    } else {
+      // Central (personal) card on the profile.
+      const { data: profile } = await supabase
         .from('profiles')
-        .update({ stripe_customer_id: stripeCustomerId })
-        .eq('id', user.id);
+        .select('stripe_customer_id, full_name')
+        .eq('id', user.id)
+        .single();
+
+      stripeCustomerId = profile?.stripe_customer_id ?? '';
+      if (!stripeCustomerId) {
+        const customerRes = await fetch('https://api.stripe.com/v1/customers', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${stripeSecretKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            email: user.email ?? '',
+            name: profile?.full_name ?? '',
+            'metadata[supabase_user_id]': user.id,
+          }),
+        });
+        const customer = await customerRes.json();
+        if (!customerRes.ok) throw new Error(`Stripe customer creation failed: ${customer.error?.message}`);
+        stripeCustomerId = customer.id;
+
+        await supabase
+          .from('profiles')
+          .update({ stripe_customer_id: stripeCustomerId })
+          .eq('id', user.id);
+      }
     }
 
     // Create a SetupIntent — this lets the app save a payment method without charging

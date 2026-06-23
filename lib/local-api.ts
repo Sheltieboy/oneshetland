@@ -6,6 +6,25 @@
 
 import { supabase } from './supabase';
 
+// ---------------------------------------------------------------------------
+// Shetland areas
+// ---------------------------------------------------------------------------
+export const SHETLAND_AREAS = [
+  { key: 'lerwick',        label: 'Lerwick' },
+  { key: 'scalloway',      label: 'Scalloway' },
+  { key: 'brae',           label: 'Brae' },
+  { key: 'northmavine',    label: 'Northmavine' },
+  { key: 'south mainland', label: 'South Mainland' },
+  { key: 'west mainland',  label: 'West Mainland' },
+  { key: 'yell',           label: 'Yell' },
+  { key: 'unst',           label: 'Unst' },
+  { key: 'fetlar',         label: 'Fetlar' },
+  { key: 'whalsay',        label: 'Whalsay' },
+  { key: 'skerries',       label: 'Skerries' },
+] as const;
+
+export type ShetlandAreaKey = typeof SHETLAND_AREAS[number]['key'];
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type LocalCategory =
@@ -41,7 +60,7 @@ export type AddonKey =
   | typeof PREMIUM_ADDON_KEYS[number]
   | typeof STANDARD_ADDON_KEYS[number];
 
-export const EXTRA_ADDON_MONTHLY_PENCE = 1500; // £15 per additional premium add-on
+export const EXTRA_ADDON_MONTHLY_PENCE = 1000; // £10 per additional premium add-on
 
 export interface AddonMeta {
   label:       string;
@@ -96,6 +115,10 @@ export async function toggleAddon(businessId: string, key: AddonKey, enabled: bo
     .eq('business_id', businessId)
     .eq('addon_key', key);
   if (error) throw error;
+  // Reconcile billing: adds/removes the £10/mo add-on line item on the
+  // subscription so the monthly total reflects extra premium add-ons.
+  // Best-effort — the toggle itself has already saved.
+  try { await supabase.functions.invoke('sync-business-addons', { body: { business_id: businessId } }); } catch { /* non-fatal */ }
 }
 
 export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness | null> {
@@ -604,6 +627,25 @@ export async function fetchMyRedeemedOfferIds(userId: string): Promise<string[]>
 
 // ── Wallet ────────────────────────────────────────────────────────────────────
 
+/**
+ * Pay for something from the OneShetland wallet (instead of a card) via the
+ * wallet-checkout edge function. Surfaces the server's error message. Returns
+ * the function's JSON (incl. the new balance_pence) on success.
+ */
+export async function walletCheckout(body: Record<string, unknown>): Promise<any> {
+  const { data, error } = await supabase.functions.invoke('wallet-checkout', { body });
+  if (error) {
+    let msg = error.message;
+    try {
+      const ctx = (error as any).context;
+      if (ctx && typeof ctx.json === 'function') { const b = await ctx.json(); if (b?.error) msg = b.error; }
+    } catch { /* keep generic */ }
+    throw new Error(msg);
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data;
+}
+
 export async function fetchWalletBalance(userId: string): Promise<number> {
   const { data } = await supabase
     .from('local_wallet_balances')
@@ -843,6 +885,23 @@ export async function fetchFeaturedBusinesses(limit = 12): Promise<LocalBusiness
     if (!have.has(b.id)) { featured.push(b); have.add(b.id); }
   }
   return featured;
+}
+
+/** Fetch the single best live offer per business for a set of business IDs. */
+export async function fetchActiveOffersForBusinesses(
+  businessIds: string[]
+): Promise<LocalOffer[]> {
+  if (businessIds.length === 0) return [];
+  const now = new Date().toISOString();
+  const { data } = await supabase
+    .from('local_offers')
+    .select('id, business_id, title, discount_type, discount_value, valid_until, image_url, is_active, redemption_count, max_redemptions, valid_from, terms, description, created_at')
+    .in('business_id', businessIds)
+    .eq('is_active', true)
+    .lte('valid_from', now)
+    .gte('valid_until', now)
+    .order('created_at', { ascending: false });
+  return (data ?? []) as LocalOffer[];
 }
 
 // ── NFC tile ──────────────────────────────────────────────────────────────────
@@ -1416,4 +1475,68 @@ export async function fetchMyGiftsReceived(userId: string): Promise<MyGiftReceiv
     claimed_at:     r.claimed_at,
     expires_at:     r.expires_at,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Combined local feed (for the Local tab)
+// ---------------------------------------------------------------------------
+
+export interface LocalFeedEvent {
+  id: string; title: string; starts_at: string; venue: string | null;
+  cover_url: string | null; has_tickets: boolean; locality: string | null;
+}
+
+export interface LocalFeedJob {
+  id: string; title: string; location: string | null; pay_text: string | null;
+}
+
+export interface LocalFeedNotice {
+  id: string; title: string; body: string | null;
+  hub: { id: string; name: string; logo_url: string | null; slug: string | null } | null;
+}
+
+export async function fetchLocalFeed(area?: string): Promise<{
+  events:     LocalFeedEvent[];
+  businesses: LocalBusiness[];
+  jobs:       LocalFeedJob[];
+}> {
+  const now = new Date().toISOString();
+
+  let evQ = supabase
+    .from('events')
+    .select('id,title,starts_at,venue,cover_url,has_tickets,locality')
+    .eq('status', 'published')
+    .or('organiser_hub_id.is.null,calendar_approved.eq.true')
+    .gte('starts_at', now)
+    .order('starts_at', { ascending: true })
+    .limit(12);
+  if (area) evQ = evQ.ilike('locality', `%${area}%`);
+
+  let bizQ = supabase
+    .from('local_businesses')
+    .select('*')
+    .eq('is_active', true)
+    .order('is_verified', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (area) bizQ = bizQ.ilike('locality', `%${area}%`);
+
+  let jobQ = supabase
+    .from('jobs')
+    .select('id,title,location,pay_text')
+    .eq('is_hidden', false)
+    .eq('status', 'open')
+    .or(`expires_at.is.null,expires_at.gt.${now}`)
+    .order('is_featured', { ascending: false })
+    .order('posted_at', { ascending: false })
+    .limit(10);
+  if (area) jobQ = jobQ.ilike('location', `%${area}%`);
+
+  const [evRes, bizRes, jobRes] = await Promise.all([evQ, bizQ, jobQ]);
+
+  return {
+    events:     (evRes.data  ?? []) as LocalFeedEvent[],
+    businesses: (bizRes.data ?? []) as LocalBusiness[],
+    jobs:       (jobRes.data ?? []) as LocalFeedJob[],
+  };
 }

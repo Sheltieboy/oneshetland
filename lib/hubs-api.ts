@@ -133,6 +133,8 @@ export interface HubNotice {
   campaign_id?:     string | null;
   // joined: live progress for a campaign-linked notice
   campaign?:        Pick<HubCampaign, 'id' | 'title' | 'raised_pence' | 'goal_pence' | 'donor_count' | 'ends_at' | 'status'> | null;
+  // joined when fetched via fetchPublicNotices
+  hub?:             { id: string; name: string; logo_url: string | null; slug: string | null } | null;
 }
 
 // ── Slug ────────────────────────────────────────────────────────────────────────
@@ -559,10 +561,10 @@ export interface DonationStart { charged?: boolean; payment_intent_id: string; c
 export async function startHubDonation(
   campaignId: string,
   amountPence: number,
-  opts: { useSavedCard?: boolean; message?: string; anonymous?: boolean; giftAid?: GiftAidDeclaration | null } = {},
+  opts: { useSavedCard?: boolean; coverFees?: boolean; message?: string; anonymous?: boolean; giftAid?: GiftAidDeclaration | null } = {},
 ): Promise<DonationStart> {
   const { data, error } = await supabase.functions.invoke('create-hub-donation-intent', {
-    body: { campaign_id: campaignId, amount_pence: amountPence, use_saved_card: opts.useSavedCard ?? true },
+    body: { campaign_id: campaignId, amount_pence: amountPence, use_saved_card: opts.useSavedCard ?? true, cover_fees: opts.coverFees ?? false },
   });
   if (error) {
     let msg = error.message;
@@ -735,4 +737,18 @@ export function formatMembershipPrice(pricePence: number, period: MembershipPeri
     case 'month': return `${price} / month`;
     case 'year':  return `${price} / year`;
   }
+}
+
+export async function fetchPublicNotices(limit = 10): Promise<HubNotice[]> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('notices')
+    .select('*, hub:hubs(id,name,logo_url,slug)')
+    .eq('visibility', 'public')
+    .eq('is_hidden', false)
+    .or(`expires_at.is.null,expires_at.gt.${now}`)
+    .order('published_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as HubNotice[];
 }

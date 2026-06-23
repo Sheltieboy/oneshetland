@@ -236,6 +236,7 @@ export default function RequestDetailScreen() {
   const inGrace = graceRemaining > 0;
 
   async function handleCancel() {
+    if (!request) return;
     const status = request.status;
 
     if (status === 'collected' || status === 'delivered') return; // blocked

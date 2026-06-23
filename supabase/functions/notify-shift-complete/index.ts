@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -80,27 +80,17 @@ serve(async (req) => {
 
     const workerIds = apps.map((a: any) => a.worker_id);
 
-    // Fetch push tokens for all workers
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .in('id', workerIds);
+    // Notify each accepted worker — the helper honours preferences /
+    // quiet hours and resolves their push token.
+    await sendUserPushBulk(supabase, workerIds, {
+      module:     'shifts',
+      categoryId: 'shifts.complete',
+      title:      'Shift confirmed! 🎉',
+      body:       `Your shift "${shift.title}" has been marked complete by the employer.`,
+      data:       { screen: 'my-shift-applications' },
+    });
 
-    // Send to each worker that has a push token
-    let sent = 0;
-    for (const profile of profiles ?? []) {
-      if (profile?.push_token) {
-        await sendPush(
-          profile.push_token,
-          'Shift confirmed! 🎉',
-          `Your shift "${shift.title}" has been marked complete by the employer.`,
-          { screen: 'my-shift-applications' },
-        );
-        sent++;
-      }
-    }
-
-    return new Response(JSON.stringify({ ok: true, sent }), {
+    return new Response(JSON.stringify({ ok: true, sent: workerIds.length }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

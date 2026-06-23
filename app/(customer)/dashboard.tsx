@@ -69,10 +69,10 @@ const STATUS_LABEL: Record<string, string> = {
   collected: 'Out for delivery',
 };
 
-export default function CustomerDashboard() {
+export default function CustomerDashboard({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
-  const { profile, signOut } = useAuth();
-  const { screenWidth } = useAppLayout();
+  const { profile, hasAppliedToDrive } = useAuth();
+  const { screenWidth, isTablet } = useAppLayout();
   const { alert } = useAlert();
 
   const [requests, setRequests] = useState<DeliveryRequest[]>([]);
@@ -186,10 +186,10 @@ export default function CustomerDashboard() {
   }, [fetchData]);
 
   return (
-    <ScreenScaffold>
+    <ScreenScaffold embedded={embedded}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
+        contentContainerStyle={[styles.content, isTablet ? styles.contentTablet : contentContainer(screenWidth)]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -199,10 +199,9 @@ export default function CustomerDashboard() {
           />
         }
       >
-        {/* ── Header ── */}
+        {/* ── Header — hidden when embedded; the Fetch tab supplies the standard banner ── */}
+        {!embedded && (
         <View style={styles.header}>
-          {/* Back button removed — the customer dashboard is rendered
-              inline in the Fetch tab, so the bottom tab bar is the way out. */}
           <Animated.View style={[styles.headerInner, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.greeting}>{getGreeting()}, <Text style={styles.greetingName}>{firstName} 👋</Text></Text>
@@ -234,7 +233,11 @@ export default function CustomerDashboard() {
             </Pressable>
           </Animated.View>
         </View>
+        )}
 
+        {/* Body — two columns on tablet, single column on phone */}
+        <View style={isTablet && styles.columns}>
+        <View style={isTablet && styles.col}>
         {/* ── Payment method banner ── */}
         {profile && !profile.has_payment_method && (
           <Pressable
@@ -385,6 +388,9 @@ export default function CustomerDashboard() {
           )}
         </View>
 
+        </View>{/* end left column */}
+
+        <View style={isTablet && styles.col}>
         {/* ── Available runs ── */}
         <View style={styles.section}>
           <View style={styles.sectionRow}>
@@ -461,16 +467,16 @@ export default function CustomerDashboard() {
           )}
         </View>
 
-        {/* ── My account quick links ── */}
+        {/* ── Fetch quick links ── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My account</Text>
+          <Text style={styles.sectionTitle}>Your Fetch</Text>
           <View style={styles.linkGroup}>
             {QUICK_LINKS.map(({ icon, label, route }, i) => (
               <Pressable
                 key={label}
                 style={({ pressed }) => [
                   styles.linkRow,
-                  i < QUICK_LINKS.length - 1 && styles.linkRowBorder,
+                  styles.linkRowBorder,
                   pressed && styles.linkRowPressed,
                 ]}
                 onPress={() => { haptic.light(); router.push(route as any); }}
@@ -480,17 +486,7 @@ export default function CustomerDashboard() {
                 <Text style={styles.linkArrow}>›</Text>
               </Pressable>
             ))}
-            <Pressable
-              style={({ pressed }) => [styles.linkRow, styles.linkRowBorder, pressed && styles.linkRowPressed]}
-              onPress={() => { haptic.light(); router.push(PAYMENT_SETUP_HREF); }}
-            >
-              <Text style={styles.linkIcon}>💳</Text>
-              <Text style={styles.linkLabel}>
-                {profile?.has_payment_method ? 'Update payment method' : 'Set up payment'}
-              </Text>
-              <Text style={styles.linkArrow}>›</Text>
-            </Pressable>
-            {profile?.role !== 'driver' && (
+            {!hasAppliedToDrive && (
               <Pressable
                 style={({ pressed }) => [styles.linkRow, styles.linkRowDriver, pressed && styles.linkRowPressed]}
                 onPress={() => { haptic.light(); router.push('/(customer)/apply-driver'); }}
@@ -503,38 +499,32 @@ export default function CustomerDashboard() {
           </View>
         </View>
 
-        {/* ── Footer actions ── */}
-        <View style={styles.footer}>
-          {profile?.role === 'driver' && (
-            <Button
-              label="Switch to driver view"
-              onPress={() => router.push('/(driver)/dashboard')}
-              variant="outline"
-              size="sm"
-              style={{ marginBottom: spacing.sm }}
-            />
-          )}
-          <Button
-            label="Sign out"
-            onPress={signOut}
-            variant="ghost"
-            size="sm"
-          />
-        </View>
+        {/* Sign-out and view-switching live in the central account/Me area and
+            the Fetch tab's Requester|Driver toggle — Fetch is a section, not a
+            standalone app, so no per-screen sign-out / role-switch here. */}
+        </View>{/* end right column */}
+        </View>{/* end columns */}
       </ScrollView>
     </ScreenScaffold>
   );
 }
 
+// Fetch-specific quick links only. Global account items (Account settings,
+// payment method) live in the central Me / account area — Fetch is a section,
+// not a standalone app, so it doesn't carry its own account menu.
 const QUICK_LINKS = [
   { icon: '📍', label: 'Saved addresses', route: '/(customer)/saved-addresses' },
   { icon: '📋', label: 'Previous requests', route: '/(customer)/previous-requests' },
-  { icon: '👤', label: 'Account settings', route: '/account' },
 ];
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: spacing.xxl },
+  contentTablet: { maxWidth: 1100, width: '100%', alignSelf: 'center' },
+
+  // Two-column body on tablet
+  columns: { flexDirection: 'row', gap: spacing.lg, alignItems: 'flex-start' },
+  col:     { flex: 1, minWidth: 0 },
 
   // ── Header ──
   header: {

@@ -1,43 +1,65 @@
 /**
  * local-businesses-browse.tsx
  * Full directory of local businesses, filterable by category.
+ * Used by the Directory tab (tabs/services.tsx).
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
-  Image, ActivityIndicator, RefreshControl,
+  Image, ActivityIndicator, RefreshControl, useWindowDimensions, StyleSheet as RN,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import {
-  fetchActiveBusinesses, CATEGORY_LABELS, CATEGORY_ICONS,
-  type LocalBusiness, type LocalCategory,
+  fetchActiveBusinesses, fetchActiveOffersForBusinesses,
+  formatOfferDiscount, formatValidUntil,
+  isBusinessFeatured, CATEGORY_LABELS,
+  type LocalBusiness, type LocalCategory, type LocalOffer,
 } from '@/lib/local-api';
 import { isBookableLive } from '@/lib/book-api';
 
 const S = SECTIONS.local;
 
+const CATEGORY_COLOR: Record<string, string> = {
+  food_drink:    '#D97706',
+  retail:        '#7C3AED',
+  services:      '#2563EB',
+  tourism:       '#059669',
+  accommodation: '#DC2626',
+};
+const CATEGORY_EMOJI: Record<string, string> = {
+  food_drink:    '🍽',
+  retail:        '🛍',
+  services:      '🔧',
+  tourism:       '🌅',
+  accommodation: '🛏',
+};
+
 const FILTERS: { id: LocalCategory | ''; label: string }[] = [
   { id: '',              label: 'All' },
-  { id: 'food_drink',    label: '🍽 Food & Drink' },
-  { id: 'retail',        label: '🛍 Retail' },
-  { id: 'services',      label: '🔧 Services' },
-  { id: 'tourism',       label: '🌅 Tourism' },
-  { id: 'accommodation', label: '🛏 Stay' },
+  { id: 'food_drink',   label: '🍽 Food & Drink' },
+  { id: 'retail',       label: '🛍 Retail' },
+  { id: 'services',     label: '🔧 Services' },
+  { id: 'tourism',      label: '🌅 Tourism' },
+  { id: 'accommodation',label: '🛏 Stay' },
 ];
 
 export default function BrowseBusinessesScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
+  const numCols  = isTablet ? 2 : 1;
 
   const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
+  const [offersMap, setOffersMap]   = useState<Map<string, LocalOffer>>(new Map());
   const [filter, setFilter]         = useState<LocalCategory | ''>('');
   const [bookableOnly, setBookableOnly] = useState(false);
   const [loading, setLoading]       = useState(true);
@@ -47,6 +69,10 @@ export default function BrowseBusinessesScreen() {
     try {
       const data = await fetchActiveBusinesses(filter || undefined);
       setBusinesses(data);
+      const offers = await fetchActiveOffersForBusinesses(data.map(b => b.id));
+      const map = new Map<string, LocalOffer>();
+      for (const o of offers) { if (!map.has(o.business_id)) map.set(o.business_id, o); }
+      setOffersMap(map);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -55,12 +81,25 @@ export default function BrowseBusinessesScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  const visibleBusinesses = bookableOnly
-    ? businesses.filter(isBookableLive)
-    : businesses;
+  const filtered = bookableOnly ? businesses.filter(isBookableLive) : businesses;
+  const featured = filtered.filter(b => isBusinessFeatured(b));
+  const regular  = filtered.filter(b => !isBusinessFeatured(b));
+
+  const renderItem = ({ item }: { item: LocalBusiness }) => (
+    <BusinessCard
+      business={item}
+      offer={offersMap.get(item.id)}
+      featured={isBusinessFeatured(item)}
+      numCols={numCols}
+      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: item.id } })}
+    />
+  );
+
+  // Interleave: featured first, then regular
+  const allItems = [...featured, ...regular];
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       <View>
         <TabScreenHeader
           section={S}
@@ -69,7 +108,7 @@ export default function BrowseBusinessesScreen() {
           eyebrow="Shop local"
           right={
             <Text style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' }}>
-              {visibleBusinesses.length} business{visibleBusinesses.length !== 1 ? 'es' : ''}
+              {filtered.length} business{filtered.length !== 1 ? 'es' : ''}
             </Text>
           }
         />
@@ -81,155 +120,267 @@ export default function BrowseBusinessesScreen() {
       </View>
 
       {/* Filter strip */}
-      <ScrollView
-        horizontal showsHorizontalScrollIndicator={false}
-        style={styles.filterBar} contentContainerStyle={styles.filterBarContent}
-      >
-        <TouchableOpacity
-          style={[styles.filterChip, styles.bookableChip, bookableOnly && { backgroundColor: '#10B981', borderColor: '#10B981' }]}
-          onPress={() => { Haptics.selectionAsync(); setBookableOnly(v => !v); }}
-          activeOpacity={0.75}
+      <View style={styles.filterBar}>
+        <ScrollView
+          horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterBarContent}
+          alwaysBounceHorizontal={false}
         >
-          <FontAwesome5 name="calendar-check" size={10} color={bookableOnly ? '#fff' : '#10B981'} solid />
-          <Text style={[styles.filterChipText, { color: bookableOnly ? '#fff' : '#10B981', fontWeight: '800' }]}>
-            Bookable
-          </Text>
-        </TouchableOpacity>
-
-        {FILTERS.map(f => {
-          const active = filter === f.id;
-          return (
-            <TouchableOpacity
-              key={f.id || 'all'}
-              style={[styles.filterChip, active && { backgroundColor: S.color, borderColor: S.color }]}
-              onPress={() => { Haptics.selectionAsync(); setFilter(f.id); }}
-              activeOpacity={0.75}
-            >
-              <Text style={[styles.filterChipText, active && { color: '#fff' }]}>{f.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+          <TouchableOpacity
+            style={[styles.filterChip, styles.bookableChip, bookableOnly && { backgroundColor: '#10B981', borderColor: '#10B981' }]}
+            onPress={() => { Haptics.selectionAsync(); setBookableOnly(v => !v); }}
+            activeOpacity={0.75}
+          >
+            <FontAwesome5 name="calendar-check" size={10} color={bookableOnly ? '#fff' : '#10B981'} solid />
+            <Text style={[styles.filterChipText, { color: bookableOnly ? '#fff' : '#10B981', fontWeight: '800' }]}>
+              Bookable
+            </Text>
+          </TouchableOpacity>
+          {FILTERS.map(f => {
+            const active = filter === f.id;
+            const col = f.id ? (CATEGORY_COLOR[f.id] ?? S.color) : S.color;
+            return (
+              <TouchableOpacity
+                key={f.id || 'all'}
+                style={[styles.filterChip, active && { backgroundColor: col, borderColor: col }]}
+                onPress={() => { Haptics.selectionAsync(); setFilter(f.id); }}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.filterChipText, active && { color: '#fff' }]}>{f.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={S.color} /></View>
       ) : (
         <FlatList
-          data={visibleBusinesses}
+          data={allItems}
           keyExtractor={b => b.id}
-          renderItem={({ item }) => <BusinessRow business={item} />}
+          renderItem={renderItem}
+          numColumns={numCols}
+          key={numCols} // re-mount when cols change
+          columnWrapperStyle={numCols > 1 ? styles.columnWrap : undefined}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
-                <FontAwesome5 name="store" size={28} color={S.color} solid />
-              </View>
-              <Text style={styles.emptyTitle}>No businesses yet</Text>
-              <Text style={styles.emptyText}>
-                {filter ? 'Try a different category.' : 'Be the first to list yours.'}
-              </Text>
-            </View>
-          }
+          ListEmptyComponent={<EmptyState filter={!!filter} />}
         />
       )}
     </SafeAreaView>
   );
 }
 
-function BusinessRow({ business }: { business: LocalBusiness }) {
-  const router = useRouter();
+// ---------------------------------------------------------------------------
+// BusinessCard — styled like EventCard
+// ---------------------------------------------------------------------------
+
+function BusinessCard({ business, offer, featured, numCols, onPress }: {
+  business: LocalBusiness;
+  offer?: LocalOffer;
+  featured?: boolean;
+  numCols: number;
+  onPress: () => void;
+}) {
+  const router   = useRouter();
+  const cat      = business.category ?? 'other';
+  const catColor = CATEGORY_COLOR[cat] ?? S.color;
+  const emoji    = CATEGORY_EMOJI[cat] ?? '🏪';
+
   return (
     <TouchableOpacity
-      style={styles.row}
-      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: business.id } })}
+      style={[styles.card, numCols > 1 && styles.cardTablet, featured && styles.cardFeatured]}
+      onPress={onPress}
       activeOpacity={0.85}
     >
-      {business.logo_url ? (
-        <Image source={{ uri: business.logo_url }} style={styles.rowLogo} />
+      {/* Cover image or coloured placeholder */}
+      {business.cover_url ? (
+        <Image source={{ uri: business.cover_url }} style={styles.cardImage} />
       ) : (
-        <View style={[styles.rowLogo, { backgroundColor: S.light, alignItems: 'center', justifyContent: 'center' }]}>
-          <FontAwesome5 name={CATEGORY_ICONS[business.category] as any} size={20} color={S.color} solid />
+        <View style={[styles.cardImagePlaceholder, { backgroundColor: catColor + '18' }]}>
+          <Text style={styles.cardPlaceholderEmoji}>{emoji}</Text>
         </View>
       )}
-      <View style={{ flex: 1 }}>
-        <View style={styles.rowNameRow}>
-          <Text style={styles.rowName} numberOfLines={1}>{business.name}</Text>
+
+      {/* Featured badge */}
+      {featured && (
+        <View style={styles.featuredBadge}>
+          <FontAwesome5 name="star" size={9} color="#fff" solid />
+          <Text style={styles.featuredBadgeText}>Featured</Text>
+        </View>
+      )}
+
+      {/* Card body: logo pill + meta */}
+      <View style={styles.cardBody}>
+        {/* Logo pill (mirrors date pill) */}
+        <View style={[styles.logoPill, { backgroundColor: catColor + '18' }]}>
+          {business.logo_url
+            ? <Image source={{ uri: business.logo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            : <Text style={{ fontSize: 20 }}>{emoji}</Text>}
           {business.is_verified && (
-            <FontAwesome5 name="check-circle" size={11} color={S.color} solid />
+            <View style={[styles.verifiedDot, { backgroundColor: catColor }]}>
+              <FontAwesome5 name="check" size={6} color="#fff" solid />
+            </View>
           )}
         </View>
-        <Text style={[styles.rowCategory, { color: S.color }]}>{CATEGORY_LABELS[business.category]}</Text>
-        <Text style={styles.rowAddress} numberOfLines={1}>{business.address}</Text>
-        <View style={styles.rowBadges}>
-          {isBookableLive(business) && (
-            <View style={[styles.miniBadge, { backgroundColor: '#D1FAE5' }]}>
-              <FontAwesome5 name="calendar-check" size={8} color="#10B981" solid />
-              <Text style={[styles.miniBadgeText, { color: '#10B981' }]}>Bookable</Text>
+
+        {/* Meta */}
+        <View style={styles.cardMeta}>
+          <Text style={[styles.cardCategory, { color: catColor }]}>
+            {CATEGORY_LABELS[cat] ?? cat}
+          </Text>
+          <Text style={styles.cardTitle} numberOfLines={2}>{business.name}</Text>
+          <View style={styles.cardInfoRow}>
+            <View style={styles.cardInfoItem}>
+              <FontAwesome5 name="map-marker-alt" size={10} color={colors.textMuted} />
+              <Text style={styles.cardInfoText} numberOfLines={1}>{business.address}</Text>
             </View>
-          )}
-          {business.accepts_wallet && (
-            <View style={styles.miniBadge}>
-              <FontAwesome5 name="wallet" size={8} color={S.color} solid />
-              <Text style={styles.miniBadgeText}>Wallet</Text>
-            </View>
-          )}
-          {(business.cashback_percent ?? 0) > 0 && (
-            <View style={[styles.miniBadge, { backgroundColor: '#FEF3C7' }]}>
-              <FontAwesome5 name="percent" size={8} color={colors.shifts} solid />
-              <Text style={[styles.miniBadgeText, { color: colors.shifts }]}>
-                {business.cashback_percent}% back
-              </Text>
-            </View>
-          )}
+          </View>
+          <View style={styles.cardFootRow}>
+            <BadgePills business={business} catColor={catColor} />
+            {offer && (
+              <View style={styles.offerPill}>
+                <FontAwesome5 name="tag" size={8} color="#fff" solid />
+                <Text style={styles.offerPillText}>{formatOfferDiscount(offer)}</Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
-      <FontAwesome5 name="chevron-right" size={12} color={colors.textLight} />
+
+      {/* Offer strip */}
+      {offer && (
+        <View style={styles.offerStrip}>
+          <Text style={styles.offerTitle} numberOfLines={1}>{offer.title}</Text>
+          <Text style={styles.offerExpiry}>Until {formatValidUntil(offer.valid_until)}</Text>
+        </View>
+      )}
+
+      {/* Claim strip */}
+      {!business.is_claimed && (
+        <TouchableOpacity
+          style={styles.claimStrip}
+          onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/business-claim', params: { id: business.id } }); }}
+          activeOpacity={0.75}
+        >
+          <FontAwesome5 name="store" size={10} color="#6366F1" />
+          <Text style={styles.claimText}>Is this your business? <Text style={styles.claimLink}>Claim it →</Text></Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
 
+function BadgePills({ business, catColor }: { business: LocalBusiness; catColor: string }) {
+  return (
+    <View style={styles.badgeRow}>
+      {isBookableLive(business) && (
+        <View style={[styles.miniBadge, { backgroundColor: '#D1FAE5' }]}>
+          <Text style={[styles.miniBadgeText, { color: '#059669' }]}>📅 Bookable</Text>
+        </View>
+      )}
+      {(business.cashback_percent ?? 0) > 0 && (
+        <View style={[styles.miniBadge, { backgroundColor: '#FEF3C7' }]}>
+          <Text style={[styles.miniBadgeText, { color: '#D97706' }]}>{business.cashback_percent}% back</Text>
+        </View>
+      )}
+      {business.accepts_wallet && (
+        <View style={[styles.miniBadge, { backgroundColor: catColor + '18' }]}>
+          <Text style={[styles.miniBadgeText, { color: catColor }]}>👛 Wallet</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function EmptyState({ filter }: { filter: boolean }) {
+  return (
+    <View style={styles.empty}>
+      <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
+        <FontAwesome5 name="store" size={28} color={S.color} solid />
+      </View>
+      <Text style={styles.emptyTitle}>No businesses yet</Text>
+      <Text style={styles.emptyText}>
+        {filter ? 'Try a different category.' : 'Be the first to list yours.'}
+      </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
+  safe:   { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
 
-  header: {
-    backgroundColor: colors.navy,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 2,
-  },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
-  backText:    { fontSize: fontSize.sm, fontWeight: '700' },
-  headerCenter:{ alignItems: 'center', gap: 2 },
-  headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
-  headerSub:   { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.xs, fontWeight: '600' },
+  filterBar:        { backgroundColor: colors.screenBackground, borderBottomWidth: 1, borderBottomColor: colors.border },
+  filterBarContent: { paddingHorizontal: spacing.md, paddingVertical: 10, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  filterChip:       { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#fff', borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border },
+  filterChipText:   { fontSize: 13, fontWeight: '700', color: colors.textMuted },
+  bookableChip:     { flexDirection: 'row', alignItems: 'center', gap: 5, borderColor: '#10B981' },
 
-  filterBar:        { backgroundColor: colors.screenBackground, maxHeight: 52 },
-  filterBarContent: { paddingHorizontal: spacing.md, paddingVertical: 10, gap: 8 },
-  filterChip: {
-    paddingHorizontal: 14, paddingVertical: 6,
-    backgroundColor: '#fff', borderRadius: radius.full,
-    borderWidth: 1.5, borderColor: colors.border,
-  },
-  filterChipText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted },
-  bookableChip:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderColor: '#10B981' },
+  listContent:  { padding: spacing.md, gap: 12, paddingBottom: 100, backgroundColor: colors.screenBackground },
+  columnWrap:   { gap: 12 },
 
-  listContent: { padding: spacing.md, gap: 10, paddingBottom: 100 },
-
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: radius.lg,
-    padding: 12, borderWidth: 1, borderColor: colors.border,
+  // Card — mirrors EventCard exactly
+  card: {
+    backgroundColor: '#fff', borderRadius: radius.lg, overflow: 'hidden',
+    borderWidth: 1, borderColor: colors.border,
+    ...shadow.card,
   },
-  rowLogo: { width: 56, height: 56, borderRadius: radius.md },
-  rowNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowName:    { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 },
-  rowCategory:{ fontSize: 10, fontWeight: '700', marginTop: 1 },
-  rowAddress: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
-  rowBadges:  { flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' },
-  miniBadge:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: S.light, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
-  miniBadgeText: { fontSize: 9, fontWeight: '700', color: S.color },
+  cardTablet:   { flex: 1 },
+  cardFeatured: { borderColor: S.color + '60', borderWidth: 1.5 },
+
+  cardImage:            { width: '100%', height: 160, resizeMode: 'cover' },
+  cardImagePlaceholder: { width: '100%', height: 120, alignItems: 'center', justifyContent: 'center' },
+  cardPlaceholderEmoji: { fontSize: 54, opacity: 0.3 },
+
+  featuredBadge: {
+    position: 'absolute', top: 10, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: S.color, paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  featuredBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+
+  cardBody:    { flexDirection: 'row', gap: 10, padding: spacing.md, paddingTop: 10 },
+
+  logoPill: {
+    width: 44, height: 44, borderRadius: radius.md, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, alignSelf: 'flex-start', position: 'relative',
+  },
+  verifiedDot: {
+    position: 'absolute', bottom: -2, right: -2,
+    width: 16, height: 16, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: '#fff',
+  },
+
+  cardMeta:     { flex: 1, gap: 3 },
+  cardCategory: { fontSize: fontSize.xs, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  cardTitle:    { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, lineHeight: 20 },
+  cardInfoRow:  { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 2 },
+  cardInfoItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  cardInfoText: { fontSize: fontSize.xs, color: colors.textMuted },
+  cardFootRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, flexWrap: 'wrap', gap: 6 },
+
+  badgeRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  miniBadge:    { paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
+  miniBadgeText:{ fontSize: 9, fontWeight: '800' },
+
+  offerPill:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F59E0B', borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3 },
+  offerPillText: { fontSize: 10, fontWeight: '900', color: '#fff' },
+
+  offerStrip:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFBEB', paddingHorizontal: spacing.md, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#FDE68A' },
+  offerTitle:  { fontSize: fontSize.xs, fontWeight: '700', color: '#92400E', flex: 1 },
+  offerExpiry: { fontSize: 10, color: '#B45309', marginLeft: 8 },
+
+  claimStrip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EEF2FF', paddingHorizontal: spacing.md, paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#C7D2FE' },
+  claimText:  { fontSize: 11, color: '#4338CA' },
+  claimLink:  { fontWeight: '800' },
 
   empty:      { alignItems: 'center', padding: spacing.xl, gap: 10, marginTop: spacing.xl },
   emptyIcon:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },

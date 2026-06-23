@@ -9,6 +9,13 @@ interface ScreenScaffoldProps extends PropsWithChildren {
   /** A ScreenHeader (or any header element) rendered above the content. */
   header?: React.ReactNode;
   edges?: ('top' | 'bottom' | 'left' | 'right')[];
+  /**
+   * Set when this screen is rendered INLINE inside the (tabs) navigator (e.g.
+   * the Fetch tab renders the customer/driver dashboards directly). In that
+   * case the Tabs navigator already provides the NavRail and the SIDEBAR_WIDTH
+   * scene offset, so we must NOT render a second rail or double the offset.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -18,12 +25,12 @@ interface ScreenScaffoldProps extends PropsWithChildren {
  * `contentContainer(screenWidth)` on their own ScrollView for the reading
  * column. (Design A5 — kills the "full-bleed on iPad" problem at the root.)
  */
-export function ScreenScaffold({ header, children, edges = ['top'] }: ScreenScaffoldProps) {
+export function ScreenScaffold({ header, children, edges = ['top'], embedded = false }: ScreenScaffoldProps) {
   const { isTablet } = useAppLayout();
   return (
     <SafeAreaView style={styles.safe} edges={edges}>
-      <NavRail />
-      <View style={[styles.body, isTablet && { paddingLeft: SIDEBAR_WIDTH }]}>
+      {!embedded && <NavRail />}
+      <View style={[styles.body, isTablet && !embedded && { paddingLeft: SIDEBAR_WIDTH }]}>
         {header}
         <View style={styles.content}>{children}</View>
       </View>

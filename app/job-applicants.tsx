@@ -9,7 +9,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   RefreshControl,
 } from 'react-native';
-import { useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
@@ -39,6 +39,7 @@ export default function JobApplicantsScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { screenWidth } = useAppLayout();
   const { alert } = useAlert();
+  const router = useRouter();
 
   const [job, setJob]   = useState<Job | null>(null);
   const [apps, setApps] = useState<JobApplication[]>([]);
@@ -81,7 +82,23 @@ export default function JobApplicantsScreen() {
 
   return (
     <ScreenScaffold
-      header={<ScreenHeader title={job?.title ?? 'Applicants'} accent={S.color} />}
+      header={
+        <ScreenHeader
+          title={job?.title ?? 'Applicants'}
+          accent={S.color}
+          rightElement={job ? (
+            <TouchableOpacity
+              onPress={() => router.push(`/job-post?jobId=${job.id}${job.posted_as_business_id ? `&businessId=${job.posted_as_business_id}` : ''}` as any)}
+              hitSlop={10}
+              style={styles.editBtn}
+              activeOpacity={0.8}
+            >
+              <FontAwesome5 name="pen" size={13} color={S.color} solid />
+              <Text style={styles.editBtnText}>Edit</Text>
+            </TouchableOpacity>
+          ) : undefined}
+        />
+      }
     >
       {loading ? (
         <LoadingState accent={S.color} />
@@ -169,6 +186,8 @@ export default function JobApplicantsScreen() {
 }
 
 const styles = StyleSheet.create({
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingVertical: 4 },
+  editBtnText: { fontSize: fontSize.sm, fontWeight: '800', color: SECTIONS.jobs.color },
   filterBar: { backgroundColor: '#fff', maxHeight: 52, borderBottomWidth: 1, borderBottomColor: colors.border },
   filterChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, height: 34 },
   filterText: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textSecondary },

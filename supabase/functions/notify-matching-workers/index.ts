@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -98,30 +98,20 @@ serve(async (req) => {
       });
     }
 
-    // Fetch push tokens for matching users
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .in('id', matchingUserIds)
-      .not('push_token', 'is', null);
-
-    if (!profiles?.length) {
-      return new Response(JSON.stringify({ sent: 0 }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Send notifications in parallel
+    // Send notifications — the helper honours each worker's preferences /
+    // quiet hours and resolves their push token.
     const location = shift.location_text ?? 'Shetland';
     const body = `"${shift.title}" — ${location}`;
 
-    await Promise.allSettled(
-      profiles.map(p =>
-        sendPush(p.push_token, 'New shift for you 📋', body, { screen: 'shifts', shift_id })
-      )
-    );
+    await sendUserPushBulk(supabase, matchingUserIds, {
+      module:     'shifts',
+      categoryId: 'shifts.new_match',
+      title:      'New shift for you 📋',
+      body,
+      data:       { screen: 'shifts', shift_id },
+    });
 
-    return new Response(JSON.stringify({ sent: profiles.length }), {
+    return new Response(JSON.stringify({ sent: matchingUserIds.length }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

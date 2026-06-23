@@ -49,14 +49,26 @@ interface Props {
   policy?: { text: string; url?: string };
   confirmLabel?: string;
   loading?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => void;               // pay by card (saved card / PaymentSheet)
   onCancel: () => void;
+  /** OneShetland wallet balance in pence. When given AND it covers the total,
+   *  a "Pay with wallet" option is offered alongside card. Omit to hide wallet. */
+  walletBalancePence?: number | null;
+  /** Called when the user chooses to pay from their wallet. */
+  onConfirmWallet?: () => void;
+  /** Optional: tapping the faded wallet button when short routes here (e.g. top up). */
+  onTopUp?: () => void;
 }
 
 export function ConfirmPaymentSheet({
   visible, title = 'Confirm payment', itemName, lineItems, totalPence,
   payingWith, policy, confirmLabel, loading = false, onConfirm, onCancel,
+  walletBalancePence = null, onConfirmWallet, onTopUp,
 }: Props) {
+  // Show the wallet option whenever a balance is known — even when it's short,
+  // shown faded, so people get used to seeing it.
+  const showWallet = walletBalancePence != null && onConfirmWallet != null && totalPence > 0;
+  const canWallet = showWallet && (walletBalancePence as number) >= totalPence;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View style={styles.scrim}>
@@ -81,7 +93,15 @@ export function ConfirmPaymentSheet({
             </View>
           </View>
 
-          {payingWith ? (
+          {walletBalancePence != null ? (
+            <View style={styles.payingWith}>
+              <FontAwesome5 name="wallet" size={12} color={colors.textMuted} solid />
+              <Text style={styles.payingWithText}>
+                Wallet balance {formatPence(walletBalancePence)}
+                {!canWallet ? ' — not enough to cover this' : ''}
+              </Text>
+            </View>
+          ) : payingWith ? (
             <View style={styles.payingWith}>
               <FontAwesome5 name="credit-card" size={12} color={colors.textMuted} solid />
               <Text style={styles.payingWithText}>Paying with {payingWith}</Text>
@@ -97,16 +117,69 @@ export function ConfirmPaymentSheet({
             </Text>
           ) : null}
 
-          <TouchableOpacity
-            style={[styles.payBtn, loading && { opacity: 0.7 }]}
-            onPress={onConfirm}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.payText}>{confirmLabel ?? `Pay ${formatPence(totalPence)}`}</Text>}
-          </TouchableOpacity>
+          {canWallet ? (
+            <>
+              {/* Primary: pay from wallet */}
+              <TouchableOpacity
+                style={[styles.payBtn, loading && { opacity: 0.7 }]}
+                onPress={onConfirmWallet}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : (
+                    <View style={styles.btnRow}>
+                      <FontAwesome5 name="wallet" size={14} color="#fff" solid />
+                      <Text style={styles.payText}>  Pay {formatPence(totalPence)} from wallet</Text>
+                    </View>
+                  )}
+              </TouchableOpacity>
+              {/* Secondary: pay by card */}
+              <TouchableOpacity
+                style={[styles.payBtnAlt, loading && { opacity: 0.7 }]}
+                onPress={onConfirm}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <View style={styles.btnRow}>
+                  <FontAwesome5 name="credit-card" size={14} color={colors.navy} solid />
+                  <Text style={styles.payTextAlt}>  Pay {formatPence(totalPence)} by card</Text>
+                </View>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              {/* Primary: pay by card */}
+              <TouchableOpacity
+                style={[styles.payBtn, loading && { opacity: 0.7 }]}
+                onPress={onConfirm}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.payText}>{confirmLabel ?? `Pay ${formatPence(totalPence)} by card`}</Text>}
+              </TouchableOpacity>
+              {/* Faded wallet button when a balance is known but too low — keeps the
+                  option visible. Tappable to top up if a handler is provided. */}
+              {showWallet ? (
+                <TouchableOpacity
+                  style={[styles.payBtnAlt, styles.payBtnFaded]}
+                  onPress={onTopUp}
+                  disabled={loading || !onTopUp}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.btnRow}>
+                    <FontAwesome5 name="wallet" size={14} color={colors.textMuted} solid />
+                    <Text style={styles.payTextFaded}>
+                      {'  '}Wallet — {formatPence(walletBalancePence as number)}{onTopUp ? ' · top up to use' : ' (not enough)'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          )}
 
           <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} disabled={loading} hitSlop={8}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -153,6 +226,15 @@ const styles = StyleSheet.create({
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',
   },
   payText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  btnRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  payBtnAlt: {
+    marginTop: spacing.sm, backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1.5, borderColor: colors.navy,
+    paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
+  },
+  payTextAlt: { color: colors.navy, fontSize: fontSize.md, fontWeight: '800' },
+  payBtnFaded: { borderColor: colors.border, opacity: 0.55 },
+  payTextFaded: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700' },
   cancelBtn: { marginTop: spacing.sm, alignItems: 'center', paddingVertical: 10 },
   cancelText: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700' },
 });

@@ -488,6 +488,7 @@ export async function purchaseTickets(params: {
   event_id:       string;
   line_items:     LineItem[];
   use_saved_card?: boolean;
+  pay_with_wallet?: boolean;
 }): Promise<{
   clientSecret?: string;
   order_id:       string;

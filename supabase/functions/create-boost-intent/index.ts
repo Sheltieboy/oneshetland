@@ -80,7 +80,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { shift_id, use_saved_card = false } = await req.json();
+    const { shift_id, use_saved_card = false, use_business_card = false, business_id } = await req.json();
     if (!shift_id) {
       return new Response(JSON.stringify({ error: 'shift_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -113,6 +113,40 @@ serve(async (req) => {
       'metadata[employer_id]': user.id,
       'metadata[type]':        'shift_boost',
     };
+
+    // ── Mode 0: charge the BUSINESS's own saved card (business expense) ────────
+    // A boost is the business paying to feature its shift, so it should default
+    // to the business card. If the business has no card on file we return a
+    // `no_business_card` signal so the app can prompt to add one first.
+    if (use_business_card && business_id) {
+      const { data: biz } = await supabase
+        .from('local_businesses')
+        .select('id, name, owner_id, business_stripe_customer_id, has_business_payment_method')
+        .eq('id', business_id)
+        .single();
+      if (!biz || biz.owner_id !== user.id) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (!biz.business_stripe_customer_id || !biz.has_business_payment_method) {
+        return new Response(JSON.stringify({ error: 'no_business_card', business_id }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const bizPm = await listSavedCard(biz.business_stripe_customer_id);
+      if (!bizPm) {
+        return new Response(JSON.stringify({ error: 'no_business_card', business_id }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const pi = await createPaymentIntent({
+        ...baseParams,
+        'metadata[business_id]': business_id,
+        customer:       biz.business_stripe_customer_id,
+        payment_method: bizPm,
+        confirm:        'true',
+        off_session:    'true',
+      });
+      if (pi.status !== 'succeeded') {
+        return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${pi.status}). Please check the business card.` }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ charged: true, payment_intent_id: pi.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // ── Mode 1: charge saved card off-session ─────────────────────────────────
     if (use_saved_card) {

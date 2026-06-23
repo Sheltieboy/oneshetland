@@ -17,6 +17,8 @@ import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
+import { fetchWalletBalance } from '@/lib/local-api';
 import {
   fetchEvent,
   purchaseTickets, confirmTicketPurchase,
@@ -48,6 +50,10 @@ export default function EventTicketCheckoutScreen() {
   const [event,   setEvent]   = useState<OsEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [buying,  setBuying]  = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+
+  useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
   // qty per ticket type
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -81,13 +87,22 @@ export default function EventTicketCheckoutScreen() {
 
   const totalTickets = lineItems.reduce((s, li) => s + li.quantity, 0);
 
-  // Buyer-facing booking fee — flat 50p per ticket, free tickets exempt.
+  // Buyer-facing booking fee — flat 95p per ticket, free tickets exempt.
   // Must match BOOKING_FEE_PENCE in the create-event-ticket-intent edge function.
-  const BOOKING_FEE_PENCE = 50;
+  const BOOKING_FEE_PENCE = 95;
   const bookingFeePence = totalPence > 0 ? BOOKING_FEE_PENCE * totalTickets : 0;
   const grandTotalPence = totalPence + bookingFeePence;
 
-  const handleBuy = async () => {
+  // Paid tickets on a saved card charge silently off-session, so show a confirm
+  // step first. Free tickets and the no-saved-card (PaymentSheet) path don't need it.
+  const onBuyPress = () => {
+    if (!profile) { router.push('/(auth)/sign-in' as any); return; }
+    if (!event || lineItems.length === 0) return;
+    if (grandTotalPence > 0 && profile.has_payment_method) setConfirming(true);
+    else runPurchase();
+  };
+
+  const runPurchase = async () => {
     if (!profile || !event || lineItems.length === 0) return;
     setBuying(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -145,6 +160,25 @@ export default function EventTicketCheckoutScreen() {
       alert({ title: 'Could not complete booking', message: e.message ?? 'Please try again' });
     } finally {
       setBuying(false);
+      setConfirming(false);
+    }
+  };
+
+  // Pay for tickets from the wallet (debits balance, transfers to the organiser).
+  const runPurchaseWallet = async () => {
+    if (!profile || !event || lineItems.length === 0) return;
+    setBuying(true);
+    try {
+      const result = await purchaseTickets({ event_id: event.id, line_items: lineItems, pay_with_wallet: true });
+      await persistTokens(result.ticket_ids ?? [], result.tokens ?? []);
+      if (!result.charged) throw new Error('Wallet payment did not complete.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.replace({ pathname: '/my-event-tickets' } as any);
+    } catch (e: any) {
+      alert({ title: 'Could not complete booking', message: e.message ?? 'Please try again' });
+    } finally {
+      setBuying(false);
+      setConfirming(false);
     }
   };
 
@@ -295,7 +329,7 @@ export default function EventTicketCheckoutScreen() {
             styles.ctaBtn,
             { backgroundColor: totalTickets === 0 || buying ? colors.border : S.color },
           ]}
-          onPress={handleBuy}
+          onPress={onBuyPress}
           disabled={totalTickets === 0 || buying}
           activeOpacity={0.85}
         >
@@ -311,6 +345,24 @@ export default function EventTicketCheckoutScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      <ConfirmPaymentSheet
+        visible={confirming}
+        itemName={`${totalTickets} ticket${totalTickets !== 1 ? 's' : ''} — ${event.title}`}
+        lineItems={[
+          { label: 'Tickets', amountPence: totalPence },
+          ...(bookingFeePence > 0 ? [{ label: 'Booking fee', amountPence: bookingFeePence, muted: true }] : []),
+        ]}
+        totalPence={grandTotalPence}
+        payingWith="Saved card"
+        policy={{ text: event.refund_policy || 'Tickets are non-refundable unless the event is cancelled.' }}
+        loading={buying}
+        onConfirm={runPurchase}
+        onCancel={() => setConfirming(false)}
+        walletBalancePence={walletBalance}
+        onConfirmWallet={runPurchaseWallet}
+        onTopUp={() => { setConfirming(false); router.push('/local-wallet' as any); }}
+      />
     </SafeAreaView>
   );
 }

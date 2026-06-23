@@ -10,7 +10,15 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
-import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import {
+  GooglePlacesAutocomplete as GooglePlacesAutocompleteRaw,
+  type GooglePlaceData,
+  type GooglePlaceDetail,
+} from 'react-native-google-places-autocomplete';
+
+// This package version's type defs omit `flatListProps` (valid at runtime —
+// needed so the results dropdown scrolls correctly inside the form ScrollView).
+const GooglePlacesAutocomplete = GooglePlacesAutocompleteRaw as unknown as React.ComponentType<any>;
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
@@ -64,7 +72,7 @@ export default function RequestStep2() {
           <GooglePlacesAutocomplete
             placeholder="e.g. Lerwick Co-op, 16 Commercial Street…"
             minLength={2}
-            onPress={(data, details) => {
+            onPress={(data: GooglePlaceData, details: GooglePlaceDetail | null) => {
               const full = details?.formatted_address ?? data.description;
               const name = data.structured_formatting?.main_text ?? data.description.split(',')[0].trim();
               const postcode = (details?.address_components ?? [])

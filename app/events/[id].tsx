@@ -7,7 +7,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   ActivityIndicator, Linking, Share,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -35,6 +35,7 @@ export default function EventDetailScreen() {
   const { profile } = useAuth();
   const { isTablet, screenWidth, screenHeight } = useAppLayout();
   const twoPane = isTablet && screenWidth > screenHeight;
+  const insets = useSafeAreaInsets();
 
   const [event,   setEvent]   = useState<OsEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -329,7 +330,7 @@ export default function EventDetailScreen() {
       {/* Buy tickets CTA — only when the organiser can actually receive payouts */}
       {hasTickets && ticketsOnSale && !isCancelled && !isOwner && (
         payoutReady ? (
-          <View style={styles.ctaBar}>
+          <View style={[styles.ctaBar, { paddingBottom: insets.bottom + 12 }]}>
             {priceLabel && (
               <Text style={styles.ctaPrice}>{priceLabel}</Text>
             )}
@@ -343,7 +344,7 @@ export default function EventDetailScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.ctaBarMuted}>
+          <View style={[styles.ctaBarMuted, { paddingBottom: insets.bottom + 16 }]}>
             <FontAwesome5 name="clock" size={13} color={colors.textMuted} />
             <Text style={styles.ctaSoonText}>Tickets coming soon</Text>
           </View>
@@ -389,7 +390,7 @@ function UpdateRow({ update }: { update: EventUpdate }) {
 const styles = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.navy },
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
-  content:{ paddingBottom: 40 },
+  content:{ paddingBottom: 110 }, // clears the absolute sticky ticket bar
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, backgroundColor: colors.screenBackground },
   errorText:      { fontSize: fontSize.md, color: colors.textMuted },
   backBtnFull:    { marginTop: 8 },
@@ -502,12 +503,14 @@ const styles = StyleSheet.create({
   ownerBtnText: { fontSize: fontSize.sm, fontWeight: '800' },
 
   ctaBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingVertical: 12,
     backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.border,
     ...shadow.strong,
   },
   ctaBarMuted: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingHorizontal: spacing.md, paddingVertical: 16,
     backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: colors.border,

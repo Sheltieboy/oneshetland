@@ -130,6 +130,10 @@ export default function SignInScreen() {
               style={styles.submitBtn}
             />
 
+            <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password' as never)} style={styles.forgotBtn}>
+              <Text style={styles.forgotText}>Forgot your password?</Text>
+            </TouchableOpacity>
+
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>New to OneShetland?</Text>
@@ -226,6 +230,8 @@ const styles = StyleSheet.create({
   fields: { gap: spacing.xs, marginBottom: spacing.sm },
 
   submitBtn: { marginTop: spacing.md },
+  forgotBtn: { alignSelf: 'center', paddingVertical: spacing.md },
+  forgotText: { color: colors.navy, fontSize: fontSize.sm, fontWeight: '600' },
 
   // Divider
   divider: {

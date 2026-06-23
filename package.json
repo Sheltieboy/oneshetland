@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "node --test supabase/functions/_shared/commission.node.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@expo-google-fonts/fraunces": "^0.4.1",
@@ -17,8 +19,10 @@
     "@stripe/stripe-react-native": "0.63.0",
     "@supabase/supabase-js": "^2.45.0",
     "expo": "~55.0.26",
+    "expo-audio": "~55.0.14",
     "expo-camera": "~55.0.19",
     "expo-constants": "~55.0.16",
+    "expo-dev-client": "~55.0.35",
     "expo-device": "~55.0.17",
     "expo-font": "~55.0.8",
     "expo-haptics": "~55.0.14",

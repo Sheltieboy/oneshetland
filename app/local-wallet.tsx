@@ -331,13 +331,7 @@ export default function WalletScreen() {
             icon="truck"
             title="Fetch"
             countLabel={fetchCountLabel(fetch_)}
-            onPress={() => {
-              if (fetch_.driver.isDriver && fetch_.driver.activeRuns >= fetch_.customer.activeCount) {
-                router.push('/(driver)/dashboard');
-              } else {
-                router.push('/(customer)/previous-requests');
-              }
-            }}
+            onPress={() => router.push('/(tabs)/fetch')}
             footChildren={
               <>
                 <HubFootLink

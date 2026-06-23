@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,22 +79,16 @@ serve(async (req) => {
       });
     }
 
-    // Fetch employer push token
-    const { data: employer } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .eq('id', shift.employer_id)
-      .single();
-
-    if (employer?.push_token) {
-      const workerName = worker?.full_name ?? 'Someone';
-      await sendPush(
-        employer.push_token,
-        'New application 📩',
-        `${workerName} has applied for "${shift.title}"`,
-        { screen: 'employer-applications' },
-      );
-    }
+    // Notify the employer (helper resolves token + honours preferences).
+    const workerName = worker?.full_name ?? 'Someone';
+    await sendUserPush(supabase, {
+      userId:     shift.employer_id,
+      module:     'shifts',
+      categoryId: 'shifts.new_application',
+      title:      'New application 📩',
+      body:       `${workerName} has applied for "${shift.title}"`,
+      data:       { screen: 'employer-applications' },
+    });
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

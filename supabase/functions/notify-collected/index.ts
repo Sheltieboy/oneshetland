@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,19 +66,15 @@ serve(async (req) => {
       });
     }
 
-    // Fetch customer's push token
-    const { data: customerProfile } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .eq('id', request.customer_id)
-      .single();
-
-    await sendPush(
-      customerProfile?.push_token,
-      'Item collected 📦',
-      `Your driver has picked up your item from ${request.pickup_name ?? 'the collection point'} and is on the way to you.`,
-      { request_id },
-    );
+    // Notify the customer (helper resolves token + honours preferences).
+    await sendUserPush(supabase, {
+      userId:     request.customer_id,
+      module:     'fetch',
+      categoryId: 'fetch.collected',
+      title:      'Item collected 📦',
+      body:       `Your driver has picked up your item from ${request.pickup_name ?? 'the collection point'} and is on the way to you.`,
+      data:       { request_id },
+    });
 
     return new Response(
       JSON.stringify({ sent: true }),

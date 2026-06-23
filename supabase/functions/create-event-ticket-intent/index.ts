@@ -66,7 +66,7 @@ serve(async (req) => {
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    const { event_id, line_items, use_saved_card = false } = await req.json();
+    const { event_id, line_items, use_saved_card = false, pay_with_wallet = false } = await req.json();
 
     if (!event_id || !Array.isArray(line_items) || line_items.length === 0) {
       return new Response(JSON.stringify({ error: 'event_id and line_items required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -116,7 +116,7 @@ serve(async (req) => {
 
     // Buyer-facing booking fee: flat 50p per ticket, added on top of face value.
     // Free tickets carry no fee. This is the platform's cut (covers Stripe + run costs).
-    const BOOKING_FEE_PENCE = 50;
+    const BOOKING_FEE_PENCE = 95;
     const platformFeePence = totalPence > 0 ? BOOKING_FEE_PENCE * totalTickets : 0;
     const chargeTotalPence = totalPence + platformFeePence;
 
@@ -262,6 +262,44 @@ serve(async (req) => {
         JSON.stringify({ error: 'This organiser isn’t set up to take payments yet. Please check back soon.' }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // ── Wallet path: debit the wallet + transfer face value to the organiser ─────
+    if (pay_with_wallet) {
+      const { data: bal, error: dErr } = await supabase.rpc('wallet_debit', { p_user: user.id, p_spend: chargeTotalPence, p_cashback: 0 });
+      if (dErr) throw new Error(dErr.message);
+      if (bal == null) {
+        await supabase.from('event_tickets').delete().eq('order_id', order.id);
+        await supabase.from('event_ticket_orders').delete().eq('id', order.id);
+        return new Response(JSON.stringify({ error: 'Not enough in your wallet — top up or pay by card.' }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      let walletTransferId: string | null = null;
+      try {
+        const tb = new URLSearchParams({
+          amount: String(totalPence), currency: 'gbp', destination: stripeAccountId,
+          description: `OneShetland wallet tickets — ${event.title}`,
+          'metadata[type]': 'event_tickets_wallet', 'metadata[order_id]': order.id, 'metadata[buyer_id]': user.id,
+        });
+        const tr = await fetch('https://api.stripe.com/v1/transfers', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': STRIPE_API_VERSION, 'Idempotency-Key': crypto.randomUUID() },
+          body: tb,
+        });
+        const tj = await tr.json();
+        if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
+        walletTransferId = tj.id;
+      } catch (e) {
+        console.error('[create-event-ticket-intent] wallet transfer failed:', e);
+        await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: chargeTotalPence });
+        await supabase.from('event_tickets').delete().eq('order_id', order.id);
+        await supabase.from('event_ticket_orders').delete().eq('id', order.id);
+        return new Response(JSON.stringify({ error: 'Ticket payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now, stripe_payment_intent_id: `wallet_${walletTransferId}` }).eq('id', order.id);
+      await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
+      await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }).catch(() => {});
+      await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: null, type: 'spend', amount_pence: -chargeTotalPence, stripe_transfer_id: walletTransferId, description: `Tickets — ${event.title}` });
+      return new Response(JSON.stringify({ charged: true, wallet: true, order_id: order.id, tokens: tokensByIndex, ticket_ids: ticketIdsByIndex }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // ── Paid order: create Stripe PaymentIntent ──────────────────────────────────

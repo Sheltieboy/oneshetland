@@ -376,7 +376,7 @@ export default function MemoriesScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {twoPane ? (

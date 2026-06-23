@@ -62,7 +62,7 @@ serve(async (req) => {
 
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    const { campaign_id, amount_pence, use_saved_card = false } = await req.json();
+    const { campaign_id, amount_pence, use_saved_card = false, cover_fees = false } = await req.json();
     if (!campaign_id) return json({ error: 'campaign_id required' }, 400);
     const amount = Math.round(Number(amount_pence));
     if (!Number.isFinite(amount) || amount < MIN_PENCE || amount > MAX_PENCE) {
@@ -80,23 +80,29 @@ serve(async (req) => {
       return json({ error: 'This hub has not finished setting up payouts yet.' }, 409);
     }
 
-    const { data: feeRow } = await svc.from('admin_config').select('value').eq('key', 'fees.hub_donation.flat_pence').maybeSingle();
-    const flatFee = Math.max(0, parseInt(feeRow?.value ?? '', 10) || 0);
-    const totalPence = amount + flatFee;
+    // Donations earn the platform nothing. We retain an application_fee equal to
+    // Stripe's estimated processing fee — the platform keeps it but immediately
+    // pays it back to Stripe, netting ~£0, so the HUB effectively bears the fee.
+    // If the donor opts to "cover the fee", we add the same estimate on top so
+    // the hub still nets the full donation.
+    const feeEstimate = Math.round(amount * 0.015) + 20; // ~Stripe 1.5% + 20p
+    const coverPence = cover_fees ? feeEstimate : 0;
+    const totalPence = amount + coverPence;
 
     const baseParams: Record<string, string> = {
       amount:      String(totalPence),
       currency:    'gbp',
       description: `OneShetland donation — ${hub.name} (${campaign.title})`,
       'transfer_data[destination]': hub.stripe_account_id,
+      'application_fee_amount':      String(feeEstimate),
       'metadata[type]':        'hub_donation',
       'metadata[campaign_id]': campaign.id,
       'metadata[hub_id]':      hub.id,
       'metadata[user_id]':     user.id,
       'metadata[face_pence]':  String(amount),
-      'metadata[fee_pence]':   String(flatFee),
+      'metadata[fee_pence]':   '0',
+      'metadata[cover_pence]': String(coverPence),
     };
-    if (flatFee > 0) baseParams['application_fee_amount'] = String(flatFee);
 
     if (use_saved_card) {
       const { data: profile } = await svc.from('profiles').select('stripe_customer_id').eq('id', user.id).single();

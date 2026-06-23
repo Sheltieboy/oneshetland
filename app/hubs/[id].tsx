@@ -20,6 +20,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
+import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
 import {
   fetchHub, fetchMyMembership, joinHub, leaveHub, fetchMemberCount, fetchHubNotices,
   fetchHubMembershipTypes, startHubMembershipPayment, confirmHubMembership,
@@ -62,6 +63,9 @@ export default function HubDetailScreen() {
   const [payingType, setPayingType] = useState<HubMembershipType | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+
+  useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -117,6 +121,20 @@ export default function HubDetailScreen() {
     if (type.price_pence <= 0) { onJoinFree(type); return; }
     if (profile.has_payment_method) setPayingType(type);
     else runMembershipPayment(type);
+  };
+
+  const runMembershipWallet = async (type: HubMembershipType) => {
+    if (!hub || !profile) return;
+    setActing(true);
+    try {
+      const res = await walletCheckout({ type: 'hub_membership', membership_type_id: type.id });
+      if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      alert({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
+      load();
+    } catch (e: any) {
+      alert({ title: 'Payment failed', message: e?.message ?? 'Please try again.' });
+    } finally { setActing(false); }
   };
 
   const runMembershipPayment = async (type: HubMembershipType) => {
@@ -510,6 +528,9 @@ export default function HubDetailScreen() {
         loading={acting}
         onConfirm={() => { const t = payingType; setPayingType(null); if (t) runMembershipPayment(t); }}
         onCancel={() => setPayingType(null)}
+        walletBalancePence={walletBalance}
+        onConfirmWallet={() => { const t = payingType; setPayingType(null); if (t) runMembershipWallet(t); }}
+        onTopUp={() => { setPayingType(null); router.push('/local-wallet'); }}
       />
     </SafeAreaView>
   );

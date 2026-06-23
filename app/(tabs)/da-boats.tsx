@@ -166,7 +166,7 @@ export default function DaBoatsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={[]}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView
@@ -187,6 +187,7 @@ export default function DaBoatsScreen() {
           title="Da Boats"
           eyebrow="The fleet"
           photo={SECTION_HEROES.daBoats}
+          topInset
           height={220}
         />
 

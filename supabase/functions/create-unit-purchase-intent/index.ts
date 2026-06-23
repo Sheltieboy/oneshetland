@@ -112,10 +112,25 @@ serve(async (req) => {
       });
     }
 
+    // The business must be set up for payouts before we take money.
+    const { data: unitBiz } = await supabase
+      .from('local_businesses')
+      .select('stripe_account_id, payout_enabled')
+      .eq('id', item.business_id)
+      .single();
+    if (!unitBiz?.stripe_account_id || !unitBiz.payout_enabled) {
+      return new Response(JSON.stringify({ error: "This business isn't set up to take payments yet." }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const unitPlatformFee = Math.round(item.price_pence * 0.05); // 5% platform fee
+
     const baseParams: Record<string, string> = {
       amount:      String(item.price_pence),
       currency:    'gbp',
       description: `OneShetland Book — ${item.name}`,
+      'transfer_data[destination]': unitBiz.stripe_account_id,
+      'application_fee_amount':      String(unitPlatformFee),
       'metadata[type]':         'unit_purchase',
       'metadata[unit_item_id]': item.id,
       'metadata[business_id]':  item.business_id,

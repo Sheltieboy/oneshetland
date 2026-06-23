@@ -116,8 +116,9 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
       next.my_reactions = had
         ? (m.my_reactions ?? []).filter(k => k !== kind)
         : [ ...(m.my_reactions ?? []), kind ];
-      next.reactions_by_kind = { ...(m.reactions_by_kind as any) };
-      next.reactions_by_kind[kind] = (m.reactions_by_kind?.[kind] ?? 0) + (had ? -1 : 1);
+      const byKind = { ...(m.reactions_by_kind ?? {}) } as Record<string, number>;
+      byKind[kind] = (m.reactions_by_kind?.[kind] ?? 0) + (had ? -1 : 1);
+      next.reactions_by_kind = byKind;
       next.reaction_count = (m.reaction_count ?? 0) + (had ? -1 : 1);
       return next;
     });
@@ -294,9 +295,14 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
             <Text style={styles.title} numberOfLines={2}>{memory.title ?? 'Untitled memory'}</Text>
           </View>
           {isAuthor ? (
-            <TouchableOpacity onPress={onDeleteMemory} style={styles.iconBtn} hitSlop={10}>
-              <FontAwesome5 name="trash" size={16} color={colors.error} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row' }}>
+              <TouchableOpacity onPress={() => router.push(`/memory-new?memory_id=${memory.id}`)} style={styles.iconBtn} hitSlop={10}>
+                <FontAwesome5 name="pen" size={15} color={SECTION.color} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onDeleteMemory} style={styles.iconBtn} hitSlop={10}>
+                <FontAwesome5 name="trash" size={16} color={colors.error} />
+              </TouchableOpacity>
+            </View>
           ) : <View style={{ width: 36 }} />}
         </View>
 

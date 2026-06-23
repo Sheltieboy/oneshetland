@@ -40,7 +40,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 function RootNavigator() {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, hasAppliedToDrive } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -140,7 +140,7 @@ function RootNavigator() {
       (segments as string[])[0] === 'driver';
 
     if (!launchedViaDeepLink.current && !isOnDeepLinkRoute) {
-      if (inAuthGroup || (segments as string[])[0] === 'index' || segments.length === 0) {
+      if (inAuthGroup || (segments as string[])[0] === 'index' || (segments as string[]).length === 0) {
         router.replace('/(tabs)');
         return;
       }
@@ -148,11 +148,14 @@ function RootNavigator() {
 
     if (!profile) return;
 
-    // Pure customers can't access driver routes — send back to tabs
-    if (inDriverGroup && profile.role === 'customer') {
+    // Driver routes are a capability gated by driver_profiles.driver_status, not
+    // by role. Users who haven't applied to drive (and aren't admin) are sent
+    // back to the tabs. (The (driver) layout enforces the same rule.)
+    const canAccessDriver = hasAppliedToDrive || profile.role === 'admin';
+    if (inDriverGroup && !canAccessDriver) {
       router.replace('/(tabs)');
     }
-  }, [session, profile, loading, segments, linkCheckDone, introCheckDone, introSeen]);
+  }, [session, profile, hasAppliedToDrive, loading, segments, linkCheckDone, introCheckDone, introSeen]);
 
   // The Stack renders behind the splash overlay so we get a true cross-fade
   // when the splash dissolves at the end of its animation.
@@ -183,6 +186,7 @@ function RootNavigator() {
           <Stack.Screen name="shift-worker-profile" />
           <Stack.Screen name="edit-profile" />
           <Stack.Screen name="local-businesses-browse" />
+          <Stack.Screen name="local-combined-feed" />
           <Stack.Screen name="local-business-detail" />
           <Stack.Screen name="local-business-register" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="business-claim" options={{ ...MODAL_PRESENT }} />

@@ -12,13 +12,13 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
-import { NavRail } from '@/components/NavRail';
+import { AppBottomNav } from '@/components/AppBottomNav';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
@@ -37,6 +37,7 @@ export default function GamesCentre() {
   const router = useRouter();
   const { profile } = useAuth();
   const { isTablet } = useAppLayout();
+  const insets = useSafeAreaInsets();
 
   const [stats, setStats]         = useState<UserGameStats | null>(null);
   const [bestSprint, setBestSprint] = useState<number>(0);
@@ -174,14 +175,13 @@ export default function GamesCentre() {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <NavRail />
+    <SafeAreaView style={styles.safe} edges={[]}>
       <View style={{ flex: 1, paddingLeft: isTablet ? SIDEBAR_WIDTH : 0 }}>
 
       {/* Cinematic header — banner with a floating back (Games is reached via More) */}
       <View>
         <TabScreenHeader section={S} eyebrow="Play & compete" photo={SECTION_HEROES.games} />
-        <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+        <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
           <HeroBackPill variant="overlay" label="Back" onPress={() => { Haptics.selectionAsync(); router.back(); }} />
         </View>
       </View>
@@ -278,6 +278,7 @@ export default function GamesCentre() {
         <View style={{ height: 40 }} />
       </ScrollView>
       </View>
+      <AppBottomNav />
     </SafeAreaView>
   );
 }

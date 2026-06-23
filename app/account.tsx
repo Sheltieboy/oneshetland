@@ -69,7 +69,7 @@ function LinkRow({
 // ─── main screen ──────────────────────────────────────────────────────────
 export default function AccountScreen() {
   const router = useRouter();
-  const { session, profile, signOut, refreshProfile } = useAuth();
+  const { session, profile, signOut, refreshProfile, hasAppliedToDrive } = useAuth();
   const { alert } = useAlert();
   const { screenWidth } = useAppLayout();
 
@@ -93,9 +93,10 @@ export default function AccountScreen() {
     setPhone(profile?.phone ?? '');
   }, [profile?.id]);
 
-  // Fetch driver_profiles row when the user is a driver
+  // Fetch driver_profiles row when the user has a driver capability (applied).
+  // Driver-ness is driver_profiles.driver_status, not profiles.role.
   const fetchDriverProfile = useCallback(async () => {
-    if (profile?.role !== 'driver' || !profile?.id) return;
+    if (!hasAppliedToDrive || !profile?.id) return;
     const { data } = await supabase
       .from('driver_profiles')
       .select('driver_status, vehicle_type, vehicle_reg, notes, stripe_account_id, stripe_onboarding_complete, stripe_payouts_enabled')
@@ -107,7 +108,7 @@ export default function AccountScreen() {
       setVehicleType(data.vehicle_type ?? '');
       setVehicleReg(data.vehicle_reg ?? '');
     }
-  }, [profile?.id, profile?.role]);
+  }, [profile?.id, hasAppliedToDrive]);
 
   const VEHICLE_TYPES = ['Car', 'Estate car', 'SUV / 4x4', 'Van', 'Pickup truck', 'Minibus'];
 
@@ -199,8 +200,11 @@ export default function AccountScreen() {
     admin: 'Admin',
   };
 
-  const isDriver = profile?.role === 'driver';
-  const isCustomer = !isDriver && profile?.role !== 'admin';
+  // Driver is a capability (driver_profiles.driver_status), not a role. Show the
+  // driver card / "go to driver dashboard" to anyone who has applied; show
+  // "apply to become a driver" to everyone else (non-admins).
+  const isDriver = hasAppliedToDrive;
+  const isCustomer = !hasAppliedToDrive && profile?.role !== 'admin';
 
   // Driver status helpers
   const driverStatusConfig = {

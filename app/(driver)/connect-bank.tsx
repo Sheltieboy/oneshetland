@@ -61,7 +61,7 @@ function SuccessScreen({ onContinue }: { onContinue: () => void }) {
 
         <View style={successStyles.card}>
           {[
-            { icon: 'pound-sign', text: 'You keep 100% — no platform fee during the community launch' },
+            { icon: 'pound-sign', text: 'You keep the delivery fee, less a small £1.50 service fee per delivery' },
             { icon: 'clock',      text: 'Payouts within 2 working days of each delivery' },
             { icon: 'shield-alt', text: 'Payments handled securely by Stripe' },
           ].map((row, i) => (
@@ -355,8 +355,8 @@ export default function ConnectBankScreen() {
         )}
 
         <Text style={styles.legalNote}>
-          OneShetland takes no platform fee during the current community launch period.
-          You receive the full delivery fee for every completed run.
+          OneShetland keeps a small £1.50 service fee per delivery. You receive the
+          rest of the delivery fee, paid out to your connected bank account.
         </Text>
 
       </View>

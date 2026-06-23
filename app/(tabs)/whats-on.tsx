@@ -193,7 +193,7 @@ export default function WhatsOnTab() {
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       <TabScreenHeader section={S} photo={SECTION_HEROES.events} />
 
       {/* View toggle + filters */}

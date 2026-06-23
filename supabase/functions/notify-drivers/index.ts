@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,19 +78,7 @@ serve(async (req) => {
       });
     }
 
-    // Fetch push tokens for those driver profiles
     const driverIds = approvedDrivers.map((d) => d.id);
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .in('id', driverIds)
-      .not('push_token', 'is', null);
-
-    if (!profiles?.length) {
-      return new Response(JSON.stringify({ sent: 0 }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     const destination = request.destination_area ?? request.destination_address?.split(',')[0] ?? 'nearby';
     const feeLabel = request.base_fee_pence
@@ -98,10 +86,15 @@ serve(async (req) => {
       : '';
     const body = `${request.pickup_name ?? request.category_slug} → ${destination}${feeLabel}`;
 
-    // Send to all approved drivers in parallel
-    await Promise.allSettled(
-      profiles.map((p) => sendPush(p.push_token, 'New delivery request 📬', body, { request_id })),
-    );
+    // Send to all approved drivers — the helper honours each driver's
+    // notification preferences / quiet hours and resolves their push token.
+    await sendUserPushBulk(supabase, driverIds, {
+      module:     'fetch',
+      categoryId: 'fetch.new_request',
+      title:      'New delivery request 📬',
+      body,
+      data:       { request_id },
+    });
 
     return new Response(
       JSON.stringify({ sent: approvedDrivers.length }),

@@ -70,10 +70,10 @@ function getGreeting() {
   return 'Good evening';
 }
 
-export default function DriverDashboard() {
+export default function DriverDashboard({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
-  const { profile, signOut } = useAuth();
-  const { screenWidth } = useAppLayout();
+  const { profile } = useAuth();
+  const { screenWidth, isTablet } = useAppLayout();
   const { alert } = useAlert();
 
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
@@ -288,9 +288,9 @@ export default function DriverDashboard() {
             body: JSON.stringify({ request_id: requestId }),
           },
         );
-        if (!res.ok) { const err = await res.json(); console.warn('[authorise-payment]', err); }
+        if (!res.ok) { await res.json().catch(() => {}); } // non-fatal: webhook/retry reconciles
       }
-    } catch (e) { console.warn('[authorise-payment] network error', e); }
+    } catch { /* non-fatal — pre-auth will be retried */ }
 
     setAccepting(null);
     setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
@@ -304,16 +304,17 @@ export default function DriverDashboard() {
   const canAccept = isApproved && isBankConnected;
 
   return (
-    <ScreenScaffold>
+    <ScreenScaffold embedded={embedded}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
+        contentContainerStyle={[styles.content, isTablet ? styles.contentTablet : contentContainer(screenWidth)]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
       >
-        {/* ── Header ── */}
+        {/* ── Header — hidden when embedded; the Fetch tab supplies the standard banner ── */}
+        {!embedded && (
         <View style={styles.header}>
           <Pressable onPress={() => { haptic.light(); router.canGoBack() ? router.back() : router.replace('/(tabs)'); }} style={styles.backToHome}>
             <Text style={styles.backToHomeText}>‹ OneShetland</Text>
@@ -349,7 +350,11 @@ export default function DriverDashboard() {
             </Pressable>
           </Animated.View>
         </View>
+        )}
 
+        {/* Body — two columns on tablet, single column on phone */}
+        <View style={isTablet && styles.columns}>
+        <View style={isTablet && styles.col}>
         {/* ── Driver status strip ── */}
         <View style={styles.statusStrip}>
           <Text style={styles.statusStripLabel}>Driver status</Text>
@@ -581,6 +586,9 @@ export default function DriverDashboard() {
           )}
         </View>
 
+        </View>{/* end left column */}
+
+        <View style={isTablet && styles.col}>
         {/* ── Pending requests to accept ── */}
         {isApproved && (
           <View style={styles.section}>
@@ -758,17 +766,11 @@ export default function DriverDashboard() {
           </View>
         )}
 
-        {/* ── Footer ── */}
-        <View style={styles.footer}>
-          <Button
-            label="Switch to customer view"
-            onPress={() => router.push('/(customer)/dashboard')}
-            variant="outline"
-            size="sm"
-            style={{ marginBottom: spacing.sm }}
-          />
-          <Button label="Sign out" onPress={signOut} variant="ghost" size="sm" />
-        </View>
+        {/* Sign-out and view-switching live in the central account/Me area and
+            the Fetch tab's Requester|Driver toggle — Fetch is a section, not a
+            standalone app, so no per-screen sign-out / role-switch here. */}
+        </View>{/* end right column */}
+        </View>{/* end columns */}
       </ScrollView>
     </ScreenScaffold>
   );
@@ -777,6 +779,11 @@ export default function DriverDashboard() {
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content: { paddingBottom: spacing.xxl },
+  contentTablet: { maxWidth: 1100, width: '100%', alignSelf: 'center' },
+
+  // Two-column body on tablet
+  columns: { flexDirection: 'row', gap: spacing.lg, alignItems: 'flex-start' },
+  col:     { flex: 1, minWidth: 0 },
 
   // ── Header ──
   header: {

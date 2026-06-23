@@ -1,12 +1,15 @@
 /**
  * (tabs)/fetch.tsx
  *
- * Fetch tab. Renders different content based on auth + role:
+ * Fetch tab. A normal section of OneShetland (NOT a standalone app):
  *   - Signed-out → the public hub (intro + live runs + sign-in CTA)
- *   - Driver     → the driver dashboard component, inline
- *   - Everyone else (customer, admin, etc.) → the customer dashboard component, inline
+ *   - Signed-in  → Requester | Driver toggle; the chosen dashboard renders inline
  *
- * We render the role dashboards INLINE (not via router.replace) so:
+ * Everyone defaults to the Requester view. "Driver" is a capability (opt-in via
+ * the toggle), not an identity — we never auto-switch based on it. The driver
+ * dashboard itself shows the apply/pending/approved state.
+ *
+ * We render the dashboards INLINE (not via router.replace) so:
  *   - The bottom tab bar stays visible (it lives at the (tabs) group level)
  *   - There's no navigation hop / no back button needed
  *   - The /(customer)/dashboard and /(driver)/dashboard routes still exist
@@ -27,9 +30,12 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
+import { ShetlandRoadSign } from '@/components/ShetlandRoadSign';
 import { supabase } from '@/lib/supabase';
 import CustomerDashboard from '../(customer)/dashboard';
 import DriverDashboard from '../(driver)/dashboard';
+
+type FetchView = 'requester' | 'driver';
 
 interface LiveRun {
   id: string;
@@ -45,8 +51,14 @@ const S = SECTIONS.fetch;
 export default function FetchTab() {
   const { profile, loading } = useAuth();
 
+  // Requester | Driver switch — swaps the dashboard IN PLACE (like the Work
+  // hub's Jobs | Shifts switch). Everyone defaults to the Requester view;
+  // driving is opt-in via the toggle. Driver is a capability, not an identity,
+  // so we never auto-hijack the view based on it.
+  const [view, setView] = useState<FetchView>('requester');
+
   // While auth is resolving, show a quick spinner — avoids flashing the
-  // public hub for a frame before the role-specific dashboard mounts.
+  // public hub for a frame before the dashboard mounts.
   if (loading) {
     return (
       <View style={styles.bootCenter}>
@@ -55,12 +67,52 @@ export default function FetchTab() {
     );
   }
 
-  // Role-specific dashboards render inline so the bottom tab bar stays
-  // visible and there's no navigation hop / back button.
-  if (profile?.role === 'driver') return <DriverDashboard />;
-  if (profile)                    return <CustomerDashboard />;
+  // Signed-out users can't use either dashboard — show the public hub.
+  if (!profile) return <PublicFetchHub />;
 
-  return <PublicFetchHub />;
+  // Standard section header (same cinematic banner as every other tab), with the
+  // Requester | Driver switch in its strip — exactly the Work hub pattern. The
+  // dashboards render `embedded` so they drop their own header + nav rail.
+  return (
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <TabScreenHeader section={S} title="Fetch" banner={<ShetlandRoadSign />}>
+        <View style={styles.switchRow}>
+          <SwitchPill
+            icon="box-open" label="Requester"
+            active={view === 'requester'}
+            onPress={() => { Haptics.selectionAsync(); setView('requester'); }}
+          />
+          <SwitchPill
+            icon="car" label="Driver"
+            active={view === 'driver'}
+            onPress={() => { Haptics.selectionAsync(); setView('driver'); }}
+          />
+        </View>
+      </TabScreenHeader>
+
+      <View style={{ flex: 1 }}>
+        {view === 'driver'
+          ? <DriverDashboard embedded />
+          : <CustomerDashboard embedded />}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+// Toggle styled to sit on the header's navy strip.
+function SwitchPill({ icon, label, active, onPress }: {
+  icon: string; label: string; active: boolean; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.switchPill, active && styles.switchPillActive]}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      <FontAwesome5 name={icon as any} size={12} color={active ? colors.navy : 'rgba(255,255,255,0.7)'} solid />
+      <Text style={[styles.switchText, { color: active ? colors.navy : 'rgba(255,255,255,0.7)' }]}>{label}</Text>
+    </TouchableOpacity>
+  );
 }
 
 // ── Public hub (signed-out) ──────────────────────────────────────────────────
@@ -87,7 +139,7 @@ function PublicFetchHub() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={[]}>
       <TabScreenHeader
         section={S}
         photo={SECTION_HEROES.fetch}
@@ -262,6 +314,12 @@ const styles = StyleSheet.create({
   content: { paddingBottom: 40 },
   contentTablet: { maxWidth: 760, alignSelf: 'center', width: '100%' },
   bootCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBackground },
+
+  // Requester | Driver switch — sits in the header's navy strip (Work-hub style)
+  switchRow:        { flexDirection: 'row', gap: 6, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: 4, alignSelf: 'center' },
+  switchPill:       { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 999 },
+  switchPillActive: { backgroundColor: '#fff' },
+  switchText:       { fontSize: fontSize.sm, fontWeight: '800' },
 
   headerBadge:     { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
   headerBadgeDot:  { width: 6, height: 6, borderRadius: 3 },

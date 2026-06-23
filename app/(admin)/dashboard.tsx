@@ -172,7 +172,7 @@ export default function AdminDashboard() {
     pendingAlertRequests: null,
   });
 
-  const firstName = profile?.full_name?.split(' ')[0] || profile?.email || 'Admin';
+  const firstName = profile?.full_name?.split(' ')[0] || 'Admin';
 
   useEffect(() => {
     async function fetchStats() {

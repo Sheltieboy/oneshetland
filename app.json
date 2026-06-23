@@ -9,7 +9,7 @@
     "jsEngine": "jsc",
     "newArchEnabled": false,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-blank.png",
       "resizeMode": "contain",
       "backgroundColor": "#032F4C"
     },
@@ -32,8 +32,8 @@
     "android": {
       "package": "com.oneshetland.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#032F4C"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F0F2F5"
       },
       "intentFilters": [
         {
@@ -78,7 +78,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/adaptive-icon.png",
           "color": "#032F4C",
           "sounds": []
         }
@@ -86,7 +86,8 @@
       "@react-native-community/datetimepicker",
       "expo-font",
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      "expo-audio"
     ],
     "scheme": "oneshetland-fetch",
     "experiments": {

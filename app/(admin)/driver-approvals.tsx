@@ -55,7 +55,9 @@ export default function DriverApprovalsScreen() {
       .select('id, vehicle_type, vehicle_reg, notes, created_at, driver_status, profile:profiles(full_name, email)')
       .eq('driver_status', 'pending')
       .order('created_at', { ascending: true });
-    setApplications((data as Application[]) ?? []);
+    // Supabase types a to-one embed (profile:profiles) as an array; at runtime
+    // it's a single object, so cast through unknown to the real shape.
+    setApplications((data as unknown as Application[]) ?? []);
     setLoading(false);
   }
 

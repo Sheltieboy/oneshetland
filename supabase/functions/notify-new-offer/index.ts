@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,25 +49,18 @@ serve(async (req) => {
     }
 
     const userIds = followers.map(f => f.user_id);
-    const { data: profiles } = await svc
-      .from('profiles')
-      .select('id, push_token')
-      .in('id', userIds);
 
-    let notified = 0;
-    for (const p of profiles ?? []) {
-      if (p.push_token) {
-        await sendPush(
-          p.push_token,
-          `🎁 New offer at ${business?.name ?? 'Local'}`,
-          offer.title,
-          { screen: 'local-offers', offer_id },
-        );
-        notified++;
-      }
-    }
+    // Notify each follower — the helper honours preferences / quiet hours
+    // and resolves their push token.
+    await sendUserPushBulk(svc, userIds, {
+      module:     'offers',
+      categoryId: 'offers.new_offer',
+      title:      `🎁 New offer at ${business?.name ?? 'Local'}`,
+      body:       offer.title,
+      data:       { screen: 'local-offers', offer_id },
+    });
 
-    return json({ ok: true, notified });
+    return json({ ok: true, notified: userIds.length });
   } catch (err) {
     console.error('[notify-new-offer]', err);
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
