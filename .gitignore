@@ -23,3 +23,8 @@ expo-env.d.ts
 
 # Claude session files
 .claude/
+# local-only service role key (never commit)
+service_key.txt
+
+# local-only DB connection string for one-off pg_dump (never commit)
+supabase/.db_url
