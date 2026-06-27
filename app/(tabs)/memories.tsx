@@ -22,6 +22,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAuth } from '@/context/AuthContext';
 import { VIEW_BOUNDS } from '@/lib/shetland-geometry';
 import {
@@ -43,6 +44,7 @@ const SECTION = SECTIONS.memories;
 
 export default function MemoriesScreen() {
   const router = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { isTablet, screenWidth, screenHeight } = useAppLayout();
   const isLandscape = screenWidth > screenHeight;
@@ -162,7 +164,7 @@ export default function MemoriesScreen() {
 
   const onDropPin = (point: { lat: number; lng: number }) => {
     if (!profile?.id) {
-      router.push('/(auth)/sign-in');
+      goToSignIn();
       return;
     }
     router.push({
@@ -199,7 +201,7 @@ export default function MemoriesScreen() {
         style={[styles.dropCta, { backgroundColor: SECTION.color }]}
       >
         <FontAwesome5 name="plus" size={14} color="#fff" />
-        <Text style={styles.dropCtaText}>Add a memory</Text>
+        <Text style={styles.dropCtaText}>Add a story</Text>
       </TouchableOpacity>
     </>
   );
@@ -221,7 +223,7 @@ export default function MemoriesScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Search memories — names, places, themes…"
+              placeholder="Search auld stories — names, places, themes…"
               placeholderTextColor={colors.textLight}
               style={styles.searchInput}
               autoCorrect={false}
@@ -246,7 +248,7 @@ export default function MemoriesScreen() {
           <View style={styles.nearWrap}>
             <View style={styles.nearHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.nearEyebrow}>Memories near</Text>
+                <Text style={styles.nearEyebrow}>Auld stories near</Text>
                 <Text style={styles.nearTitle}>
                   {nearPlace.name}
                   <Text style={styles.nearSub}>
@@ -268,7 +270,7 @@ export default function MemoriesScreen() {
             ) : nearby.length === 0 ? (
               <View style={[styles.empty, { marginHorizontal: 0, marginTop: spacing.sm }]}>
                 <FontAwesome5 name="book-open" size={22} color={SECTION.color} />
-                <Text style={styles.emptyTitle}>No memories here yet</Text>
+                <Text style={styles.emptyTitle}>No stories here yet</Text>
                 <Text style={styles.emptyBody}>
                   Be the first — tap on the map above to drop a pin near {nearPlace.name}.
                 </Text>
@@ -346,9 +348,9 @@ export default function MemoriesScreen() {
             {recent.length === 0 && !loading ? (
               <View style={styles.empty}>
                 <FontAwesome5 name="book-open" size={28} color={SECTION.color} />
-                <Text style={styles.emptyTitle}>No memories yet</Text>
+                <Text style={styles.emptyTitle}>No stories yet</Text>
                 <Text style={styles.emptyBody}>
-                  Be the first. Tap anywhere on the map above to drop a pin and start a memory.
+                  Be the first. Tap anywhere on the map above to drop a pin and start a story.
                 </Text>
               </View>
             ) : (
@@ -429,7 +431,7 @@ export default function MemoriesScreen() {
         >
           <SectionHero
             section="memories"
-            title="Memories"
+            title="Auld Stories"
             eyebrow="The living map"
             photo={memoriesHero}
           />
@@ -486,7 +488,7 @@ function SearchResultRow({
           </Text>
         ) : null}
         <Text style={styles.searchTitle} numberOfLines={1}>
-          {result.title ?? result.body_excerpt ?? 'Untitled memory'}
+          {result.title ?? result.body_excerpt ?? 'Untitled story'}
         </Text>
         <View style={styles.searchMetaRow}>
           {matchLabel ? (

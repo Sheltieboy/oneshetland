@@ -25,18 +25,19 @@
  *   - Engagement signals come from lib/engagement.ts.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Image, ImageBackground, Platform,
+  RefreshControl, Image, ImageBackground, Platform, Animated,
 } from 'react-native';
 
 // OneShetland brand mark (transparent rings) used in the top app header.
 const LOGO = require('@/assets/logo-mark-keyed.png');
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect, Stack } from 'expo-router';
-import { FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { SECTIONS, SectionKey } from '@/constants/sections';
+import { NAV, PROFILE, type NavDest } from '@/constants/nav-model';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { GameArt } from '@/components/GameArt';
@@ -44,6 +45,8 @@ import { FeaturedBusinessesBar } from '@/components/FeaturedBusinessesBar';
 import { BrushAccent, BrushDivider } from '@/components/Brush';
 import { CruiseTodayCard } from '@/components/CruiseTodayCard';
 import { TodayAtAGlance } from '@/components/TodayAtAGlance';
+import { ShetlandTodayCard } from '@/components/ShetlandTodayCard';
+import { NotificationBell } from '@/components/NotificationBell';
 import { useAuth } from '@/context/AuthContext';
 
 import DisplayText from '@/components/DisplayText';
@@ -223,15 +226,10 @@ function HeroSection({
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
+  // Calm navy welcome band — the photography now lives on the Shetland Today
+  // card below, so the top doesn't compete with it.
   return (
-    <ImageBackground
-      source={HERO_IMAGES[heroKey]}
-      style={[styles.hero, { minHeight: Math.min(isTablet ? 380 : 320, screenHeight * 0.45) }]}
-      resizeMode="cover"
-    >
-      {/* Gradient overlay — top is semi-transparent, bottom is darker */}
-      <View style={styles.heroOverlay} />
-
+    <View style={styles.hero}>
       <View style={[styles.heroContent, { paddingTop: insets.top + 10 }]}>
 
         {/* Logo row */}
@@ -246,6 +244,7 @@ function HeroSection({
             </View>
           </View>
           <View style={styles.heroHeaderActions}>
+            <NotificationBell />
             <TouchableOpacity
               style={styles.walletBtn}
               onPress={() => router.push('/local-wallet')}
@@ -283,7 +282,7 @@ function HeroSection({
               <Text style={styles.heroDate}>{dateStr}</Text>
             </View>
 
-            {/* Chips row — SPIK word + urgent alert */}
+            {/* SPIK word + search share one row — saves a whole row of height */}
             <View style={styles.heroChips}>
               <TouchableOpacity
                 style={styles.spikChip}
@@ -295,24 +294,297 @@ function HeroSection({
                 {spik.meaning ? <Text style={styles.spikChipMeaning} numberOfLines={1}>· {spik.meaning}</Text> : null}
               </TouchableOpacity>
 
-              {urgent ? (
-                <TouchableOpacity
-                  style={styles.urgentChip}
-                  onPress={() => router.push('/(tabs)/whats-on')}
-                  activeOpacity={0.85}
-                >
-                  <FontAwesome5 name="exclamation-triangle" size={10} color="#fff" solid />
-                  <Text style={styles.urgentChipText} numberOfLines={1}>{urgent.title}</Text>
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity
+                style={styles.heroSearch}
+                onPress={() => router.push('/search')}
+                activeOpacity={0.85}
+                accessibilityLabel="Search"
+              >
+                <FontAwesome5 name="search" size={14} color={colors.textMuted} />
+                <Text style={styles.heroSearchText} numberOfLines={1}>Search Shetland…</Text>
+              </TouchableOpacity>
             </View>
+
+            {urgent ? (
+              <TouchableOpacity
+                style={[styles.urgentChip, { marginTop: spacing.sm, alignSelf: 'flex-start' }]}
+                onPress={() => router.push('/(tabs)/whats-on')}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="exclamation-triangle" size={10} color="#fff" solid />
+                <Text style={styles.urgentChipText} numberOfLines={1}>{urgent.title}</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {isTablet && <TodayAtAGlance />}
         </View>
 
       </View>
-    </ImageBackground>
+    </View>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Phone collapsing header — brand row stays pinned; the welcome (greeting +
+// date + SPIK) collapses on scroll so the search pill docks up under the brand.
+// ──────────────────────────────────────────────────────────────────────────
+
+function HomeHeader({ name, spik, urgent, scrollY }: {
+  name:    string | null;
+  spik:    SpikDaily;
+  urgent:  HomeNotice | null;
+  scrollY: Animated.Value;
+}) {
+  const router = useRouter();
+  const { profile } = useAuth();
+  const insets = useSafeAreaInsets();
+
+  const [walletPence, setWalletPence] = useState<number | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      if (!profile?.id) { setWalletPence(null); return; }
+      fetchWalletBalance(profile.id).then(setWalletPence).catch(() => {});
+    }, [profile?.id]),
+  );
+
+  const initials = profile?.full_name
+    ? profile.full_name.trim().split(/\s+/).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
+    : '?';
+
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  // Measure the welcome block once, then collapse its height + fade it on scroll.
+  const [greetH, setGreetH] = useState(0);
+  const collapse = greetH > 0 ? greetH : 130;
+  const greetingHeight = scrollY.interpolate({
+    inputRange: [0, collapse],
+    outputRange: [greetH || 130, 0],
+    extrapolate: 'clamp',
+  });
+  const greetingOpacity = scrollY.interpolate({
+    inputRange: [0, collapse * 0.6],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <View style={styles.hero}>
+      <View style={[styles.heroContent, { paddingTop: insets.top + 10 }]}>
+        {/* Brand row — always pinned */}
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroLogoRow}>
+            <View style={styles.heroLogoMedallion}>
+              <Image source={LOGO} style={styles.heroLogo} resizeMode="contain" />
+            </View>
+            <View style={styles.heroBrandBlock}>
+              <DisplayText weight="black" style={styles.heroBrand} numberOfLines={1}>OneShetland</DisplayText>
+              <Text style={styles.heroBrandTag} numberOfLines={2}>Everything Shetland,{'\n'}in one place</Text>
+            </View>
+          </View>
+          <View style={styles.heroHeaderActions}>
+            <TouchableOpacity style={styles.walletBtn} onPress={() => router.push('/local-wallet')} activeOpacity={0.8} hitSlop={8} accessibilityLabel="My Wallet">
+              <FontAwesome5 name="wallet" size={13} color={colors.navy} solid />
+              {walletPence != null && (
+                <Text style={styles.walletBtnText}>
+                  {walletPence % 100 === 0 ? `£${Math.round(walletPence / 100)}` : formatPence(walletPence)}
+                </Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.profileAvatar} onPress={() => router.push('/(tabs)/me')} activeOpacity={0.8} hitSlop={8}>
+              <Text style={styles.profileAvatarText}>{initials}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Collapsing welcome — greeting + date + SPIK */}
+        <Animated.View style={[styles.heroCollapse, { opacity: greetingOpacity }, greetH > 0 ? { height: greetingHeight } : null]}>
+          <View onLayout={e => { const h = Math.round(e.nativeEvent.layout.height); if (h > 0 && greetH === 0) setGreetH(h); }}>
+            <View style={styles.heroGreeting}>
+              <DisplayText weight="black" style={styles.heroGreetingTitle}>
+                {`${timeGreeting()}${name ? `, ${name.split(' ')[0]}` : ''}`}
+              </DisplayText>
+              {/* Date + SPIK on one line — SPIK styled lightly like the date, word stands out */}
+              <View style={styles.heroDateRow}>
+                <Text style={styles.heroDate}>{dateStr}</Text>
+                <View style={styles.heroDateDivider} />
+                <TouchableOpacity style={styles.spikInline} onPress={() => router.push('/(tabs)/spik')} activeOpacity={0.8} hitSlop={6}>
+                  <Text style={styles.spikInlineLabel}>SPIK</Text>
+                  <Text style={styles.spikInlineWord}>{spik.word}</Text>
+                  {spik.meaning ? <Text style={styles.spikInlineMeaning} numberOfLines={1}>· {spik.meaning}</Text> : null}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Search + notifications — persistent; dock under the brand row as the welcome collapses */}
+        <View style={styles.heroSearchRow}>
+          <TouchableOpacity style={[styles.heroSearchFull, { flex: 1 }]} onPress={() => router.push('/search')} activeOpacity={0.85} accessibilityLabel="Search">
+            <FontAwesome5 name="search" size={15} color={colors.textMuted} />
+            <Text style={styles.heroSearchText} numberOfLines={1}>Search Shetland…</Text>
+          </TouchableOpacity>
+          <NotificationBell size={48} />
+        </View>
+
+        {urgent ? (
+          <TouchableOpacity style={[styles.urgentChip, { marginTop: spacing.sm, alignSelf: 'flex-start' }]} onPress={() => router.push('/(tabs)/whats-on')} activeOpacity={0.85}>
+            <FontAwesome5 name="exclamation-triangle" size={10} color="#fff" solid />
+            <Text style={styles.urgentChipText} numberOfLines={1}>{urgent.title}</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Explore OneShetland — persistent sections grid
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * A scannable grid of every destination in the app, so older / non-technical
+ * users can discover the sections hidden behind the phone "More" sheet (Fetch,
+ * Hubs, Spik, Auld Stories, Da Boats, Games, Cruise, Profile, …) rather than
+ * relying on the 5-slot bottom bar. Renders from the single nav-model source of
+ * truth (NAV + PROFILE) so it can never drift from the rest of navigation.
+ * Visual reference: the MoreSheet tiles in components/AppTabBar.tsx.
+ */
+// Sections grouped into a few human themes — feels curated, not a launcher grid.
+// Labels must match the nav-model labels exactly (single source of truth).
+// Explore surfaces the sections that AREN'T on the bottom bar (What's On, Local,
+// Jobs, Directory all live there already). Da Boats sits in Community & culture.
+// Profile is omitted — it's the avatar in the header. Fetch gets its own
+// full-width card below the grid (rendered separately).
+const EXPLORE_GROUPS: { title: string; labels: string[] }[] = [
+  { title: 'Community & culture', labels: ['Spik', 'Games', 'Hubs', 'Auld Stories', 'Da Boats', 'Cruise'] },
+];
+
+interface ExploreLive { lkBoats?: number; stories?: number; runs?: number; runRoute?: string }
+
+// Short live/static caption under each Explore card — the bit of depth that
+// stops it feeling like a flat menu.
+function exploreCaption(label: string, live: ExploreLive, spikWord?: string): string {
+  switch (label) {
+    case 'Da Boats':     return live.lkBoats != null ? `${live.lkBoats} LK boats`        : 'Vessel heritage';
+    case 'Auld Stories': return live.stories != null ? `${live.stories} stories`         : 'Living memory';
+    case 'Fetch':        return live.runs ? `${live.runs} run${live.runs === 1 ? '' : 's'} on now` : 'Get it delivered';
+    case 'Spik':         return spikWord && spikWord !== '…' ? `Wird: ${spikWord}`       : 'Shetland dialect';
+    case 'Games':        return 'Play & compete';
+    case 'Hubs':         return 'Community groups';
+    case 'Cruise':       return 'Ships & visitors';
+    case 'Profile':      return 'Account & wallet';
+    default:             return '';
+  }
+}
+
+function ExploreGrid({ spikWord }: { spikWord?: string }) {
+  const router = useRouter();
+  const items: NavDest[] = [...NAV.filter(d => d.label !== 'Home'), PROFILE];
+  const byLabel = (label: string) => items.find(d => d.label === label);
+
+  // Live counts for the Da Boats / Auld Stories / Fetch captions. Each is
+  // independent — one failure just falls back to its static caption.
+  const [live, setLive] = useState<ExploreLive>({});
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const nowIso = new Date().toISOString();
+      const [boats, stories, runs] = await Promise.allSettled([
+        supabase.rpc('count_lk_vessels'),
+        supabase.from('memories').select('id', { count: 'exact', head: true })
+          .eq('visibility', 'public').is('parent_id', null),
+        // "Live" runs = open and not yet finished (includes ones scheduled for later today/this week).
+        // Pull the route of the soonest one for the "from → to" caption.
+        supabase.from('runs')
+          .select('id, origin:regions!runs_origin_region_id_fkey(name), destination:regions!runs_destination_region_id_fkey(name)')
+          .eq('status', 'open').gte('departure_end', nowIso)
+          .order('departure_start', { ascending: true }),
+      ]);
+      if (!active) return;
+      const next: ExploreLive = {};
+      if (boats.status === 'fulfilled' && typeof boats.value.data === 'number') next.lkBoats = boats.value.data;
+      if (stories.status === 'fulfilled') next.stories = stories.value.count ?? 0;
+      if (runs.status === 'fulfilled') {
+        const rows = (runs.value.data ?? []) as any[];
+        next.runs = rows.length;
+        const first = rows[0];
+        if (first) {
+          const o = Array.isArray(first.origin) ? first.origin[0] : first.origin;
+          const d = Array.isArray(first.destination) ? first.destination[0] : first.destination;
+          if (o?.name && d?.name) next.runRoute = `${o.name} → ${d.name}`;
+        }
+      }
+      setLive(next);
+    })().catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  return (
+    <SectionRow title="Explore OneShetland">
+      <View style={styles.exploreGroups}>
+        {EXPLORE_GROUPS.map(group => (
+          <View key={group.title} style={styles.exploreGroup}>
+            <DisplayText weight="bold" style={styles.exploreGroupTitle}>{group.title}</DisplayText>
+            <View style={styles.exploreGrid}>
+              {group.labels.map(label => {
+                const item = byLabel(label);
+                if (!item) return null;
+                return (
+                  <View key={item.label} style={styles.exploreCardWrap}>
+                    <TouchableOpacity
+                      style={[styles.exploreCard, { backgroundColor: item.color }]}
+                      onPress={() => router.push(item.href)}
+                      activeOpacity={0.85}
+                      accessibilityLabel={item.label}
+                    >
+                      {/* Card is the section colour; icon + text in white. Da Boats
+                          uses a small-boat icon, not the cruise ship. */}
+                      {item.label === 'Da Boats'
+                        ? <Ionicons name="boat" size={20} color="#fff" />
+                        : <FontAwesome5 name={item.icon as any} size={18} color="#fff" solid />}
+                      <Text style={styles.exploreCardName} numberOfLines={1}>{item.label}</Text>
+                      <Text style={styles.exploreCardCaption} numberOfLines={1}>
+                        {exploreCaption(item.label, live, spikWord)}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+
+        {/* Fetch — full-width feature card with live run count. */}
+        {(() => {
+          const fetchItem = byLabel('Fetch');
+          if (!fetchItem) return null;
+          const runs = live.runs ?? 0;
+          return (
+            <TouchableOpacity
+              style={[styles.exploreFetchCard, { backgroundColor: fetchItem.color }]}
+              onPress={() => router.push(fetchItem.href)}
+              activeOpacity={0.85}
+              accessibilityLabel="Fetch"
+            >
+              <FontAwesome5 name={fetchItem.icon as any} size={22} color="#fff" solid />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.exploreFetchName}>Fetch</Text>
+                <Text style={styles.exploreFetchCaption} numberOfLines={1}>
+                  {runs > 0
+                    ? (live.runRoute
+                        ? `${live.runRoute}${runs > 1 ? `  +${runs - 1} more` : ''}`
+                        : `${runs} run${runs === 1 ? '' : 's'} live now`)
+                    : 'Get anything delivered across Shetland'}
+                </Text>
+              </View>
+              <FontAwesome5 name="chevron-right" size={13} color="rgba(255,255,255,0.9)" />
+            </TouchableOpacity>
+          );
+        })()}
+      </View>
+    </SectionRow>
   );
 }
 
@@ -437,7 +709,9 @@ function EventCardCompact({ event, onPress }: { event: SampleEvent & { source?: 
         {isDb && event.has_tickets && (
           <TouchableOpacity
             style={styles.eventTicketBtn}
-            onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/event-ticket-checkout', params: { id: event.id } }); }}
+            // Route to the event detail page (not straight to checkout) so the
+            // organiser payout-readiness gate + messaging apply before any sale.
+            onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/events/[id]', params: { id: event.id } }); }}
             activeOpacity={0.85}
           >
             <FontAwesome5 name="ticket-alt" size={9} color="#fff" solid />
@@ -483,7 +757,9 @@ function EventCardFull({ event, onPress }: { event: SampleEvent & { source?: str
           {isDb && event.has_tickets && (
             <TouchableOpacity
               style={styles.eventTicketBtn}
-              onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/event-ticket-checkout', params: { id: event.id } }); }}
+              // Route to the event detail page (not straight to checkout) so the
+              // organiser payout-readiness gate + messaging apply before any sale.
+              onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/events/[id]', params: { id: event.id } }); }}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="ticket-alt" size={9} color="#fff" solid />
@@ -512,7 +788,7 @@ function WorkRow({ jobs, shifts }: { jobs: HomeJob[]; shifts: HomeShift[] }) {
     <SectionRow
       title="Work in Shetland"
       sectionKey="shifts"
-      action={{ label: 'See all', onPress: () => router.push('/(tabs)/shifts') }}
+      action={{ label: 'See all', onPress: () => router.push('/(tabs)/jobs') }}
     >
       <ScrollView
         horizontal
@@ -523,7 +799,7 @@ function WorkRow({ jobs, shifts }: { jobs: HomeJob[]; shifts: HomeShift[] }) {
           <TouchableOpacity
             key={item.id}
             style={[styles.workTile, { width: cardWidth(0.38) }]}
-            onPress={() => router.push('/(tabs)/shifts')}
+            onPress={() => router.push('/(tabs)/jobs')}
             activeOpacity={0.85}
           >
             <View style={[styles.workTileTag, { backgroundColor: SC + '18', borderColor: SC + '40' }]}>
@@ -536,7 +812,7 @@ function WorkRow({ jobs, shifts }: { jobs: HomeJob[]; shifts: HomeShift[] }) {
         {/* "More" tile */}
         <TouchableOpacity
           style={[styles.workTile, styles.workTileMore, { width: cardWidth(0.38), borderColor: SC + '40' }]}
-          onPress={() => router.push('/(tabs)/shifts')}
+          onPress={() => router.push('/(tabs)/jobs')}
           activeOpacity={0.85}
         >
           <FontAwesome5 name="briefcase" size={20} color={SC} />
@@ -754,11 +1030,11 @@ const ENGAGEMENT_TO_PATH: Record<EngagementKey, string> = {
   spik:     '/(tabs)/spik',
   fetch:    '/(tabs)/fetch',
   local:    '/(tabs)/local',
-  shifts:   '/(tabs)/shifts',
+  shifts:   '/(tabs)/jobs?tab=shifts',
   games:    '/games',
   events:   '/(tabs)/whats-on',
   notices:  '/(tabs)/whats-on',
-  jobs:     '/(tabs)/shifts',
+  jobs:     '/(tabs)/jobs',
 };
 
 export default function HomeScreen() {
@@ -828,10 +1104,6 @@ export default function HomeScreen() {
     } catch { /* ignore */ }
   }, []);
 
-  // Fetch weather once on mount to pick the right hero image
-  useEffect(() => {
-    fetchShetlandWeather().then(w => setHeroKey(pickHeroImage(w)));
-  }, []);
 
   // Fetch partner alerts + subscribe to real-time changes.
   // Use a ref so the cleanup always removes the exact channel instance,
@@ -960,7 +1232,7 @@ export default function HomeScreen() {
         tag: 'TONIGHT',
         headline: tonightShift.title,
         detail: `${tonightShift.when}  ·  ${tonightShift.pay}`,
-        onPress: () => router.push('/(tabs)/shifts'),
+        onPress: () => router.push('/(tabs)/jobs?tab=shifts'),
       });
     } else if (shifts.length > 0 && engagement.some(e => e.key === 'shifts')) {
       out.push({
@@ -969,7 +1241,7 @@ export default function HomeScreen() {
         tag: 'NEW SHIFT',
         headline: shifts[0].title,
         detail: `${shifts[0].when}  ·  ${shifts[0].pay}`,
-        onPress: () => router.push('/(tabs)/shifts'),
+        onPress: () => router.push('/(tabs)/jobs?tab=shifts'),
       });
     }
 
@@ -982,7 +1254,7 @@ export default function HomeScreen() {
         tag: 'JOB',
         headline: jobs[0].title,
         detail: `${jobs[0].employer}  ·  ${jobs[0].pay}`,
-        onPress: () => router.push('/(tabs)/shifts'),
+        onPress: () => router.push('/(tabs)/jobs'),
       });
     }
 
@@ -1007,10 +1279,15 @@ export default function HomeScreen() {
     return `${savedBoats.length} boat${savedBoats.length === 1 ? '' : 's'} saved`;
   }, [savedBoats]);
 
-  const urgentNotice = notices.find(n => n.severity === 'urgent') ?? SAMPLE_URGENT_NOTICE;
+  // Only ever show a genuine urgent notice from the data — no sample fallback,
+  // so a brand-new user never sees a fake "urgent" alert that looks real.
+  const urgentNotice = notices.find(n => n.severity === 'urgent') ?? null;
 
   // Show the highest-priority active alert that hasn't been dismissed this session
   const visibleAlert = partnerAlerts.find(a => !dismissedAlerts.has(a.id)) ?? null;
+
+  // Drives the phone collapsing header (brand pinned, welcome collapses on scroll).
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   return (
     <SafeAreaView style={styles.container} edges={[]}>
@@ -1024,9 +1301,25 @@ export default function HomeScreen() {
         />
       )}
 
-      <ScrollView
+      {/* Phone: collapsing header sits OUTSIDE the scroll so the brand bar stays
+          pinned and the welcome collapses as you scroll. */}
+      {!isTablet && (
+        <HomeHeader
+          name={profile?.full_name ?? null}
+          spik={spik}
+          urgent={urgentNotice as unknown as HomeNotice | null}
+          scrollY={scrollY}
+        />
+      )}
+
+      <Animated.ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scroll}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false },
+        )}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1038,27 +1331,35 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Full-bleed hero — image changes with time of day + weather */}
-        <HeroSection
-          name={profile?.full_name ?? null}
-          spik={spik}
-          urgent={urgentNotice as unknown as HomeNotice | null}
-          heroKey={heroKey}
-        />
+        {/* Tablet keeps the full hero inside the scroll (its sidebar nav makes a
+            collapsing header unnecessary). */}
+        {isTablet && (
+          <HeroSection
+            name={profile?.full_name ?? null}
+            spik={spik}
+            urgent={urgentNotice as unknown as HomeNotice | null}
+            heroKey={heroKey}
+          />
+        )}
 
         {/* Sections — white card that sits below the hero, no dark gaps */}
         <View style={[styles.sectionsCard, { paddingHorizontal: sidePadding }]}>
-          {/* Directory / app search */}
-          <TouchableOpacity
-            style={styles.searchEntry}
-            onPress={() => router.push('/search')}
-            activeOpacity={0.8}
-          >
-            <FontAwesome5 name="search" size={15} color={colors.textMuted} />
-            <Text style={styles.searchEntryText}>Search businesses, trades, services…</Text>
-          </TouchableOpacity>
+          {/* Shetland today — weather + daylight with a Lerwick / Near-me toggle.
+              Phone only: tablet already shows the weather in the hero. */}
+          {!isTablet && (
+            <ShetlandTodayCard style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.lg }} />
+          )}
           {/* Cruise — in port today / next call (hidden when no calls) */}
           <CruiseTodayCard style={{ marginHorizontal: spacing.lg, marginBottom: spacing.lg }} />
+          {/* Explore — persistent grid of every section (discoverability).
+              Phone only: on tablet the NavRail sidebar already lists every
+              section, so the grid would just be a redundant duplicate. */}
+          {!isTablet && (
+            <>
+              <ExploreGrid spikWord={spik.word} />
+              <BrushDivider />
+            </>
+          )}
           {/* 1. For you */}
           <ForYouRow tiles={tiles} />
           <BrushDivider />
@@ -1081,7 +1382,7 @@ export default function HomeScreen() {
             </>
           )}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
@@ -1098,7 +1399,7 @@ const styles = StyleSheet.create({
   // ── Hero ──────────────────────────────────────────────────────────────
   hero: {
     width: '100%',
-    minHeight: 320,
+    backgroundColor: colors.navy,
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1107,14 +1408,14 @@ const styles = StyleSheet.create({
   },
   heroContent: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.lg,
     gap: 0,
   },
   heroTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     // Frosted light panel — same colour as the logo backing, photo shows through
     backgroundColor: 'rgba(240,242,245,0.82)',
     borderRadius: 22,
@@ -1137,11 +1438,11 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   heroLogoMedallion: {
-    width: 64, height: 64,
+    width: 52, height: 52,
     alignItems: 'center', justifyContent: 'center',
   },
   heroLogo: {
-    width: 62, height: 62,
+    width: 50, height: 50,
   },
   heroBrand: {
     fontSize: 18,
@@ -1191,14 +1492,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   heroGreeting: {
-    gap: 4,
-    marginBottom: spacing.lg,
+    gap: 3,
+    marginBottom: spacing.md,
   },
   heroGreetingTitle: {
-    fontSize: 38,
+    fontSize: 29,
     color: '#fff',
-    letterSpacing: -1,
-    lineHeight: 42,
+    letterSpacing: -0.6,
+    lineHeight: 33,
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
@@ -1243,6 +1544,42 @@ const styles = StyleSheet.create({
     maxWidth: 180,
     flexShrink: 1,
   },
+  heroSearch: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  heroSearchText: { flex: 1, fontSize: fontSize.sm, color: colors.textMuted, fontWeight: '500' },
+  heroCollapse: { overflow: 'hidden' },
+  heroDateRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 1 },
+  heroDateDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.25)' },
+  spikInline: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
+  spikInlineLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 1.2, color: 'rgba(255,255,255,0.45)' },
+  spikInlineWord: { fontSize: 14, fontWeight: '800', fontStyle: 'italic', color: colors.accent },
+  spikInlineMeaning: { fontSize: 13, color: 'rgba(255,255,255,0.6)', flexShrink: 1 },
+  heroSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  heroSearchFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
   urgentChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1278,6 +1615,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 13,
   },
   searchEntryText: { fontSize: fontSize.sm, color: colors.textMuted, fontWeight: '500' },
+
+  // Explore OneShetland — persistent sections grid
+  // Rounded surface that sections Explore off — like the Shetland Today card,
+  // minus the photo. Coloured cards pop against the white panel.
+  exploreGroups: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  exploreGroup: {
+    marginBottom: spacing.lg,
+  },
+  exploreGroupTitle: {
+    fontSize: 14,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
+  exploreChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  // 3-up card grid. Padding-as-gutter (marginHorizontal:-4 + per-card padding:4)
+  // gives even thirds with the last partial row left-aligned.
+  exploreGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -4,
+  },
+  exploreCardWrap: {
+    width: '33.333%',
+    padding: 4,
+  },
+  exploreCard: {
+    borderRadius: radius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 11,
+    minHeight: 78,
+  },
+  exploreCardName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#fff',
+    marginTop: 8,
+  },
+  exploreCardCaption: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.82)',
+    marginTop: 1,
+  },
+  exploreFetchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 15,
+    marginTop: 4,
+  },
+  exploreFetchName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  exploreFetchCaption: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.88)',
+    marginTop: 2,
+  },
   sectionDivider: {
     height: 1,
     backgroundColor: colors.border,

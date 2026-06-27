@@ -155,11 +155,15 @@ function safeUrl(u: unknown): string {
   return /^https?:\/\//i.test(s) ? escapeHtml(s) : '#';
 }
 
-/** Like interpolate(), but HTML-escapes each value — for the HTML body only. */
+/** Like interpolate(), but HTML-escapes each value — for the HTML body only.
+ *  EXCEPTION: keys ending in `_html` are already pre-rendered, trusted HTML
+ *  (built server-side from already-escaped pieces, e.g. the gift message block),
+ *  so they're inserted raw — otherwise the markup shows as literal tags. */
 function interpolateHtml(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
     const v = vars[key];
-    return v == null ? `{{${key}}}` : escapeHtml(v);
+    if (v == null) return `{{${key}}}`;
+    return key.endsWith('_html') ? String(v) : escapeHtml(v);
   });
 }
 

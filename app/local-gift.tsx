@@ -92,14 +92,17 @@ export default function GiftScreen() {
       return alert({ title: 'Email needed', message: 'Please enter the recipient\'s email address.' });
     }
 
-    if (!profile.has_payment_method) {
+    // A saved card OR enough wallet balance gets you in — only block when the
+    // user has neither. (Previously a funded wallet with no card was shut out.)
+    if (!profile.has_payment_method && (walletBalance ?? 0) < (price ?? 0)) {
       alert({
-        title:   'Add a payment card',
-        message: 'Add a card to your account before sending a gift.',
+        title:   'Add a card or top up',
+        message: 'Add a payment card, or top up your wallet to cover this gift.',
         icon:    'credit-card',
         accent:  S.color,
         actions: [
           { label: 'Cancel', style: 'cancel' },
+          { label: 'Top up',  onPress: () => router.push('/local-wallet') },
           { label: 'Add card', onPress: () => router.push('/payment-setup') },
         ],
       });
@@ -173,7 +176,12 @@ export default function GiftScreen() {
       );
 
       if (confirmErr || !confirm?.ok) {
-        throw new Error(confirmErr?.message ?? confirm?.error ?? 'Could not finalise gift.');
+        let msg = confirmErr?.message ?? confirm?.error ?? 'Could not finalise gift.';
+        try {
+          const c = (confirmErr as any)?.context;
+          if (c?.json) { const b = await c.json(); if (b?.error) msg = b.error; }
+        } catch { /* keep generic */ }
+        throw new Error(msg);
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -336,6 +344,8 @@ export default function GiftScreen() {
         walletBalancePence={walletBalance}
         onConfirmWallet={() => runGift(true)}
         onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}
+        hasCard={!!profile?.has_payment_method}
+        onAddCard={() => { setConfirming(false); router.push('/payment-setup'); }}
       />
     </SafeAreaView>
   );

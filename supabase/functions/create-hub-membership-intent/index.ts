@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -7,7 +9,6 @@ const corsHeaders = {
 };
 
 const STRIPE_API_VERSION = '2023-10-16';
-const DEFAULT_FLAT_FEE_PENCE = 95;
 
 function stripeHeaders(): HeadersInit {
   return {
@@ -39,7 +40,7 @@ async function createPaymentIntent(params: Record<string, string>): Promise<any>
  *
  * Pays for a PAID hub membership tier. Destination charge: the membership price
  * routes to the hub's connected account; the platform keeps a flat application
- * fee (admin_config fees.hub_membership.flat_pence, added ON TOP so the hub
+ * fee (admin_config fees.membership.fixed_pence, added ON TOP so the hub
  * receives the full price). Guarded: the hub must have a payout-ready connected
  * account before any membership can be sold. Free tiers do NOT use this — the
  * client joins them directly.
@@ -86,27 +87,34 @@ serve(async (req) => {
 
     const { data: hub } = await svc
       .from('hubs')
-      .select('id, name, stripe_account_id, payout_enabled, is_active')
+      .select('id, name, stripe_account_id, payout_enabled, is_active, slug')
       .eq('id', type.hub_id)
       .single();
     if (!hub || !hub.is_active) return json({ error: 'Hub not available' }, 404);
 
+    // Demo hubs (slug 'demo-…') exist only for testing and have no real Stripe
+    // Connect account — in test mode we charge the platform directly (no
+    // destination transfer). Real hubs must be payout-ready.
+    const isDemoHub = (hub.slug ?? '').startsWith('demo-');
+    const hubHasAccount = !!(hub.stripe_account_id && hub.payout_enabled);
     // Payout-readiness guard: never sell a membership the hub can't be paid for.
-    if (!hub.stripe_account_id || !hub.payout_enabled) {
+    if (!isDemoHub && !hubHasAccount) {
       return json({ error: 'This hub has not finished setting up payouts yet.' }, 409);
     }
 
     // Flat platform fee (added on top — hub receives the full membership price).
-    const { data: feeRow } = await svc
-      .from('admin_config').select('value').eq('key', 'fees.hub_membership.flat_pence').maybeSingle();
-    const flatFee = Math.max(0, parseInt(feeRow?.value ?? '', 10) || DEFAULT_FLAT_FEE_PENCE);
+    // Admin-editable via fees.membership.* in admin_config; default flat 95p
+    // (matches the previous hardcoded DEFAULT_FLAT_FEE_PENCE). The 'membership'
+    // rail defaults to percent_bps:0, so the fee is purely fixed_pence — making
+    // calculateCommission return exactly the flat fee regardless of price.
+    const membershipCfg = await getCommissionConfig(svc, 'membership');
+    const flatFee = calculateCommission(type.price_pence, membershipCfg, 'membership').fee_pence;
     const totalPence = type.price_pence + flatFee;
 
     const baseParams: Record<string, string> = {
       amount:      String(totalPence),
       currency:    'gbp',
       description: `OneShetland Hub membership — ${hub.name} (${type.name})`,
-      'transfer_data[destination]': hub.stripe_account_id,
       'metadata[type]':               'hub_membership',
       'metadata[hub_id]':             hub.id,
       'metadata[membership_type_id]': type.id,
@@ -115,7 +123,12 @@ serve(async (req) => {
       'metadata[face_pence]':         String(type.price_pence),
       'metadata[fee_pence]':          String(flatFee),
     };
-    if (flatFee > 0) baseParams['application_fee_amount'] = String(flatFee);
+    // Route to the hub's Connect account only when it has one (a real,
+    // payout-ready hub). Demo hubs have none → charge the platform.
+    if (hubHasAccount) {
+      baseParams['transfer_data[destination]'] = hub.stripe_account_id;
+      if (flatFee > 0) baseParams['application_fee_amount'] = String(flatFee);
+    }
 
     // ── Saved card, off-session ──────────────────────────────────────────────
     if (use_saved_card) {

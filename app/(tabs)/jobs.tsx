@@ -18,6 +18,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAuth } from '@/context/AuthContext';
 import { JobCard } from '@/components/JobCard';
 import { ShiftCard } from '@/components/ShiftCard';
@@ -41,6 +42,7 @@ const JOB_CATS   = JOB_CATEGORIES.map(c => ({ value: c, label: c }));
 
 export default function WorkHubScreen() {
   const router = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { isTablet, screenWidth } = useAppLayout();
   const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
@@ -88,7 +90,7 @@ export default function WorkHubScreen() {
   };
 
   const onToggleSave = async (jobId: string) => {
-    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    if (!profile) { goToSignIn(); return; }
     const next = new Set(saved);
     if (await toggleSavedJob(profile.id, jobId)) next.add(jobId); else next.delete(jobId);
     setSaved(next);
@@ -96,7 +98,7 @@ export default function WorkHubScreen() {
 
   // "Post a job" — pick which business is hiring (jobs are posted by a business).
   const openHire = () => {
-    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    if (!profile) { goToSignIn(); return; }
     setHireOpen(true);
   };
   useEffect(() => {
@@ -145,11 +147,11 @@ export default function WorkHubScreen() {
 
           {/* Quick links */}
           <View style={styles.quickRow}>
-            <QuickLink color={accent} icon="user-tie" label="My profile / CV" onPress={() => router.push(profile ? '/work-profile' : '/(auth)/sign-in')} />
+            <QuickLink color={accent} icon="user-tie" label="My profile / CV" onPress={() => (profile ? router.push('/work-profile') : goToSignIn())} />
             {tier === 'jobs' ? (
-              <QuickLink color={accent} icon="clipboard-list" label="My applications" onPress={() => router.push(profile ? '/my-job-applications' : '/(auth)/sign-in')} />
+              <QuickLink color={accent} icon="clipboard-list" label="My applications" onPress={() => (profile ? router.push('/my-job-applications') : goToSignIn())} />
             ) : (
-              <QuickLink color={accent} icon="clipboard-list" label="My shifts" onPress={() => router.push(profile ? '/my-shift-applications' : '/(auth)/sign-in')} />
+              <QuickLink color={accent} icon="clipboard-list" label="My shifts" onPress={() => (profile ? router.push('/my-shift-applications') : goToSignIn())} />
             )}
           </View>
 

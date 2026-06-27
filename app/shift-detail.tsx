@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchShift, fetchMyApplication, submitInterest, withdrawApplication,
@@ -23,6 +24,7 @@ const S = SECTIONS.shifts;
 export default function ShiftDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router  = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { alert } = useAlert();
 
@@ -260,7 +262,7 @@ export default function ShiftDetailScreen() {
             ) : (
               <TouchableOpacity
                 style={styles.applyBtn}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowMessage(true); }}
+                onPress={() => { if (!profile) { goToSignIn(`/shift-detail?id=${id}`); return; } Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowMessage(true); }}
                 activeOpacity={0.85}
               >
                 <FontAwesome5 name="paper-plane" size={14} color="#fff" solid />

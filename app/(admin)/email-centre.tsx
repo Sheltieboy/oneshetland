@@ -165,7 +165,13 @@ export default function EmailCentreScreen() {
     Haptics.selectionAsync();
     const newEnabled = !tmpl.enabled;
     setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, enabled: newEnabled } : t));
-    await supabase.from('email_templates').update({ enabled: newEnabled, updated_at: new Date().toISOString() }).eq('id', tmpl.id);
+    try {
+      const { error } = await supabase.from('email_templates').update({ enabled: newEnabled, updated_at: new Date().toISOString() }).eq('id', tmpl.id);
+      if (error) throw error;
+    } catch (e: any) {
+      setTemplates(prev => prev.map(t => t.id === tmpl.id ? { ...t, enabled: tmpl.enabled } : t));
+      alert({ title: 'Could not update', message: e?.message ?? 'Please try again.' });
+    }
   };
 
   const saveTemplate = async () => {

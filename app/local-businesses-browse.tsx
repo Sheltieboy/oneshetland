@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, TextInput,
   Image, ActivityIndicator, RefreshControl, useWindowDimensions, StyleSheet as RN,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -62,6 +62,7 @@ export default function BrowseBusinessesScreen() {
   const [offersMap, setOffersMap]   = useState<Map<string, LocalOffer>>(new Map());
   const [filter, setFilter]         = useState<LocalCategory | ''>('');
   const [bookableOnly, setBookableOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -81,7 +82,18 @@ export default function BrowseBusinessesScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = bookableOnly ? businesses.filter(isBookableLive) : businesses;
+  const q = searchQuery.trim().toLowerCase();
+  const filtered = (bookableOnly ? businesses.filter(isBookableLive) : businesses)
+    .filter(b => {
+      if (!q) return true;
+      const cat = b.category ? (CATEGORY_LABELS[b.category] ?? b.category) : '';
+      return (
+        b.name?.toLowerCase().includes(q) ||
+        cat.toLowerCase().includes(q) ||
+        b.address?.toLowerCase().includes(q) ||
+        (b.tags ?? []).some(t => t.toLowerCase().includes(q))
+      );
+    });
   const featured = filtered.filter(b => isBusinessFeatured(b));
   const regular  = filtered.filter(b => !isBusinessFeatured(b));
 
@@ -117,6 +129,29 @@ export default function BrowseBusinessesScreen() {
             <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
           </View>
         ) : null}
+      </View>
+
+      {/* Search box */}
+      <View style={styles.searchBar}>
+        <View style={styles.searchWrap}>
+          <FontAwesome5 name="search" size={13} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name, type or place…"
+            placeholderTextColor={colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+          {searchQuery.length > 0 ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+              <FontAwesome5 name="times-circle" size={15} color={colors.textMuted} solid />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       {/* Filter strip */}
@@ -165,7 +200,21 @@ export default function BrowseBusinessesScreen() {
           columnWrapperStyle={numCols > 1 ? styles.columnWrap : undefined}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
-          ListEmptyComponent={<EmptyState filter={!!filter} />}
+          ListEmptyComponent={<EmptyState filter={!!filter || !!q} />}
+          ListFooterComponent={
+            <TouchableOpacity
+              style={styles.listBizCta}
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-business-register'); }}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name="store" size={15} color={S.color} solid />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.listBizCtaTitle}>List your business</Text>
+                <Text style={styles.listBizCtaSub}>Run a Shetland business? Add it to the Directory.</Text>
+              </View>
+              <FontAwesome5 name="chevron-right" size={12} color={colors.textMuted} />
+            </TouchableOpacity>
+          }
         />
       )}
     </SafeAreaView>
@@ -315,6 +364,14 @@ const styles = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
 
+  searchBar:   { backgroundColor: colors.screenBackground, paddingHorizontal: spacing.md, paddingTop: 10 },
+  searchWrap:  {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 9,
+  },
+  searchInput: { flex: 1, fontSize: fontSize.sm, color: colors.textPrimary, padding: 0 },
+
   filterBar:        { backgroundColor: colors.screenBackground, borderBottomWidth: 1, borderBottomColor: colors.border },
   filterBarContent: { paddingHorizontal: spacing.md, paddingVertical: 10, gap: 8, flexDirection: 'row', alignItems: 'center' },
   filterChip:       { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#fff', borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border },
@@ -322,6 +379,14 @@ const styles = StyleSheet.create({
   bookableChip:     { flexDirection: 'row', alignItems: 'center', gap: 5, borderColor: '#10B981' },
 
   listContent:  { padding: spacing.md, gap: 12, paddingBottom: 100, backgroundColor: colors.screenBackground },
+  listBizCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginTop: spacing.sm, padding: spacing.md,
+    backgroundColor: colors.white, borderRadius: radius.lg,
+    borderWidth: 1.5, borderColor: S.color, borderStyle: 'dashed',
+  },
+  listBizCtaTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  listBizCtaSub:   { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
   columnWrap:   { gap: 12 },
 
   // Card — mirrors EventCard exactly

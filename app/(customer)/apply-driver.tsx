@@ -93,8 +93,11 @@ export default function ApplyDriverScreen() {
     await refreshProfile();
     setSubmitting(false);
 
-    // Navigate to driver dashboard — they'll see pending status there
-    router.replace('/(driver)/dashboard');
+    // Land back in the Fetch SECTION on the Driver view (keeps the bottom nav —
+    // the standalone /(driver)/dashboard has its own "‹ OneShetland" back and no
+    // tab bar, which made it feel like a separate app). The embedded driver view
+    // shows the "pending review" status with the rest of OneShetland intact.
+    router.replace({ pathname: '/(tabs)/fetch', params: { view: 'driver' } } as any);
   }
 
   return (

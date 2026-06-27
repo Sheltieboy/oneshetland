@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
@@ -36,6 +37,7 @@ const PALETTE = ['#6B47BF', '#0E7490', '#2A8B5C', '#C2410C', '#9F1239', '#1E3A8A
 export default function HubRegisterScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
   const { alert } = useAlert();
@@ -94,7 +96,7 @@ export default function HubRegisterScreen() {
   };
 
   const save = async () => {
-    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    if (!profile) { goToSignIn(id ? `/hub-register?id=${id}` : undefined); return; }
     if (!name.trim()) { alert({ title: 'Name needed', message: 'Give your hub a name.' }); return; }
     setSaving(true);
     const input = {

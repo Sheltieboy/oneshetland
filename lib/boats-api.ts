@@ -623,6 +623,12 @@ export async function addVesselComment(input: {
     if (imagePath) await deleteCommentPhoto(imagePath).catch(() => {});
     throw error;
   }
+
+  // Notify the thread (reply → parent commenter; top-level → other commenters).
+  supabase.functions
+    .invoke('notify-engagement', { body: { event: 'vessel_comment', comment_id: (data as VesselComment).id } })
+    .catch(() => {});
+
   return data as VesselComment;
 }
 

@@ -52,9 +52,18 @@ function daylightBetween(sunriseIso: string, sunsetIso: string): string {
   return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
 }
 
-export async function fetchTodaySnapshot(): Promise<TodaySnapshot | null> {
+export const LERWICK_COORDS = LERWICK;
+
+/**
+ * Fetch the weather + daylight snapshot for a location. Defaults to Lerwick,
+ * but pass the user's own coordinates to power a "near me" toggle. Shetland is
+ * all on Europe/London time, so we keep that timezone for daylight figures.
+ */
+export async function fetchTodaySnapshot(
+  coords: { lat: number; lng: number } = LERWICK,
+): Promise<TodaySnapshot | null> {
   const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${LERWICK.lat}&longitude=${LERWICK.lng}` +
+    `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}` +
     `&current=temperature_2m,weather_code&daily=sunrise,sunset&forecast_days=1&timezone=Europe%2FLondon`;
   try {
     const res = await fetch(url);

@@ -88,7 +88,12 @@ export default function BusinessAlertsScreen() {
               if (isLive) await forceExpireAlert(a.id);
               else await cancelAlert(a.id);
               await load();
-            } catch {}
+            } catch (e: any) {
+              alert({
+                title: isLive ? 'Could not end alert' : 'Could not delete alert',
+                message: e?.message ?? 'Please try again.',
+              });
+            }
           },
         },
       ],

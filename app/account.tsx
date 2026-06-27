@@ -352,7 +352,7 @@ export default function AccountScreen() {
                 <LinkRow
                   icon="🚗"
                   label="Go to driver dashboard"
-                  onPress={() => { haptic.light(); router.replace('/(driver)/dashboard'); }}
+                  onPress={() => { haptic.light(); router.replace({ pathname: '/(tabs)/fetch', params: { view: 'driver' } } as any); }}
                   last
                 />
               )}

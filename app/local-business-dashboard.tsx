@@ -521,14 +521,26 @@ export default function BusinessDashboardScreen() {
     if (value && !activeBusiness.payout_enabled) {
       return brandedAlert({ title: 'Complete Stripe first', message: 'Connect your Stripe account before accepting wallet payments.' });
     }
-    await updateBusiness(activeBusiness.id, { accepts_wallet: value });
+    const prev = activeBusiness.accepts_wallet;
     setActiveBusiness({ ...activeBusiness, accepts_wallet: value });
+    try {
+      await updateBusiness(activeBusiness.id, { accepts_wallet: value });
+    } catch (e: any) {
+      setActiveBusiness({ ...activeBusiness, accepts_wallet: prev });
+      brandedAlert({ title: 'Could not update', message: e?.message ?? 'Try again.' });
+    }
   };
 
   const updateCashback = async (percent: number) => {
     if (!activeBusiness) return;
-    await updateBusiness(activeBusiness.id, { cashback_percent: percent });
+    const prev = activeBusiness.cashback_percent;
     setActiveBusiness({ ...activeBusiness, cashback_percent: percent });
+    try {
+      await updateBusiness(activeBusiness.id, { cashback_percent: percent });
+    } catch (e: any) {
+      setActiveBusiness({ ...activeBusiness, cashback_percent: prev });
+      brandedAlert({ title: 'Could not update', message: e?.message ?? 'Try again.' });
+    }
   };
 
   const toggleAcceptsBookings = async (value: boolean) => {

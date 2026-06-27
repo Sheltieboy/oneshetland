@@ -12,11 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
@@ -39,6 +41,7 @@ function tint(hex?: string | null): string {
 export default function HubDonateScreen() {
   const { campaign: campaignId } = useLocalSearchParams<{ campaign: string }>();
   const router = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -63,6 +66,7 @@ export default function HubDonateScreen() {
   const [confirming, setConfirming] = useState(false);
   const [paying, setPaying] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [donated, setDonated] = useState<number | null>(null);   // inline success: amount given
 
   const load = useCallback(async () => {
     if (!campaignId) return;
@@ -110,10 +114,12 @@ export default function HubDonateScreen() {
   };
 
   const onDonate = () => {
-    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    if (!profile) { goToSignIn(`/hub-donate?campaign=${campaignId}`); return; }
     if (!validate()) return;
-    if (profile.has_payment_method) setConfirming(true);
-    else runDonation();
+    // Always open the confirm sheet — it offers wallet AND card. The card path
+    // uses Stripe's Payment Sheet, which collects a card even when none is
+    // saved, so a card-less but wallet-funded donor is no longer shut out.
+    setConfirming(true);
   };
 
   // Pay the donation from the wallet (no card, no fee — hub gets the full amount).
@@ -131,7 +137,12 @@ export default function HubDonateScreen() {
       });
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({ title: 'Thank you! 💜', message: `Your ${formatPence(effectiveAmount)} donation to ${hub?.name ?? 'the hub'} means a lot.`, actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }] });
+      // Show success INLINE — this modal screen can't present the root alert over
+      // itself on iOS (it gets swallowed).
+      setConfirming(false);
+      // The ConfirmPaymentSheet stays mounted (just hidden) in the same tree, so
+      // it animates closed cleanly — no unmount-while-visible, no frozen screen.
+      setDonated(effectiveAmount);
     } catch (e: any) {
       alert({ title: 'Donation failed', message: e?.message ?? 'Please try again.' });
     } finally {
@@ -155,7 +166,12 @@ export default function HubDonateScreen() {
       }
       await confirmHubDonation(start.payment_intent_id, { message: message.trim() || undefined, anonymous, giftAid: buildGiftAid() });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({ title: 'Thank you! 💜', message: `Your ${formatPence(effectiveAmount)} donation to ${hub?.name ?? 'the hub'} means a lot.`, actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }] });
+      // Show success INLINE — this modal screen can't present the root alert over
+      // itself on iOS (it gets swallowed).
+      setConfirming(false);
+      // The ConfirmPaymentSheet stays mounted (just hidden) in the same tree, so
+      // it animates closed cleanly — no unmount-while-visible, no frozen screen.
+      setDonated(effectiveAmount);
     } catch (e: any) {
       alert({ title: 'Donation failed', message: e?.message ?? 'Please try again.' });
     } finally { setPaying(false); setConfirming(false); }
@@ -170,8 +186,26 @@ export default function HubDonateScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Donate" onClose={() => router.back()} accent={S.color} />
+      <ScreenHeader title={donated != null ? 'Thank you' : 'Donate'} onClose={() => router.back()} accent={donated != null ? accent : S.color} />
 
+      {donated != null ? (
+        <View style={styles.successWrap}>
+          <View style={[styles.successIcon, { backgroundColor: accent + '1A' }]}>
+            <FontAwesome5 name="heart" size={28} color={accent} solid />
+          </View>
+          <Text style={styles.successTitle}>Thank you! 💜</Text>
+          <Text style={styles.successSub}>
+            Your {formatPence(donated)} donation to {hub.name} means a lot — it's been received.
+          </Text>
+          <TouchableOpacity
+            style={[styles.successBtn, { backgroundColor: accent }]}
+            onPress={() => router.back()}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
           <Text style={styles.campaign}>{campaign.title}</Text>
@@ -238,6 +272,7 @@ export default function HubDonateScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+      )}
 
       <ConfirmPaymentSheet
         visible={confirming}
@@ -286,4 +321,20 @@ const styles = StyleSheet.create({
   gaDeclaration: { fontSize: 11, color: colors.textMuted, lineHeight: 16, marginTop: 4 },
 
   donateBtn: { marginTop: spacing.xl },
+
+  successWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBackground },
+  successIcon: {
+    width: 76, height: 76, borderRadius: 38,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
+  },
+  successTitle: { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
+  successSub: {
+    fontSize: fontSize.sm, color: colors.textSecondary, textAlign: 'center',
+    paddingHorizontal: spacing.xl, lineHeight: 22, marginTop: spacing.sm,
+  },
+  successBtn: {
+    marginTop: spacing.xl, borderRadius: radius.lg,
+    paddingVertical: 15, paddingHorizontal: spacing.xxl, alignItems: 'center',
+  },
+  successBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 });

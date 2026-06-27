@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -67,13 +67,17 @@ serve(async (req) => {
 
     let pushCount = 0, emailCount = 0;
 
-    // Push
+    // Push (preference-aware: honours each member's hubs toggle + quiet hours
+    // and logs to their inbox).
     if (channel === 'push' || channel === 'both') {
-      const { data: profs } = await svc.from('profiles').select('push_token').in('id', ids);
-      const tokens = (profs ?? []).map(p => p.push_token).filter(Boolean) as string[];
-      await Promise.all(tokens.map(t =>
-        sendPush(t, `${hubName}: ${title}`, message, { hub_id, type: 'hub_broadcast' }).catch(() => {})));
-      pushCount = tokens.length;
+      const res = await sendUserPushBulk(svc, ids, {
+        module:     'hubs',
+        categoryId: 'hubs.broadcast',
+        title:      `${hubName}: ${title}`,
+        body:       message,
+        data:       { hub_id, type: 'hub_broadcast' },
+      });
+      pushCount = res.sent;
     }
 
     // Email (via Postmark). Member email lives in auth.users.

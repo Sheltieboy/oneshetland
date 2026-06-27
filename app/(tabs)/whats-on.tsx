@@ -136,7 +136,6 @@ export default function WhatsOnTab() {
     : [];
 
   const goEvent = (id: string) => router.push({ pathname: '/events/[id]', params: { id } });
-  const goTickets = (id: string) => router.push({ pathname: '/event-ticket-checkout', params: { id } });
 
   // Highlights header for the list (featured strip + on-sale row).
   const showHighlights = !categoryFilter && !freeOnly;
@@ -157,7 +156,7 @@ export default function WhatsOnTab() {
             <Text style={styles.rowHeading}>On sale now</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hScroll}>
-            {ticketed.map(e => <TicketCard key={e.id} event={e} onPress={() => goEvent(e.id)} onTickets={() => goTickets(e.id)} />)}
+            {ticketed.map(e => <TicketCard key={e.id} event={e} onPress={() => goEvent(e.id)} onTickets={() => goEvent(e.id)} />)}
           </ScrollView>
         </>
       )}
@@ -456,7 +455,10 @@ function EventCard({ event, onPress }: { event: OsEvent; onPress: () => void }) 
                   style={styles.ticketBtn}
                   onPress={e => {
                     e.stopPropagation?.();
-                    router.push({ pathname: '/event-ticket-checkout', params: { id: event.id } });
+                    // Route to the event detail page so the organiser payout-readiness
+                    // gate (working buy CTA vs "Tickets coming soon") always applies,
+                    // rather than landing straight on checkout.
+                    router.push({ pathname: '/events/[id]', params: { id: event.id } });
                   }}
                   hitSlop={8}
                   activeOpacity={0.8}

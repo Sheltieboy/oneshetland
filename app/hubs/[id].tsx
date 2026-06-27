@@ -17,6 +17,7 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
@@ -47,6 +48,7 @@ function fmtDate(iso: string): string {
 export default function HubDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { isTablet, screenWidth } = useAppLayout();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -64,6 +66,10 @@ export default function HubDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  // In-page success state. This screen isn't a dedicated modal, and a Modal-based
+  // alert (the app-root BrandedAlert) can't present over a modal — and we mustn't
+  // introduce another Modal here — so success is shown as an in-page banner.
+  const [joinSuccess, setJoinSuccess] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
@@ -96,13 +102,13 @@ export default function HubDetailScreen() {
   // Free join — optionally records the chosen free tier.
   const onJoinFree = async (type?: HubMembershipType) => {
     if (!hub) return;
-    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    if (!profile) { goToSignIn(); return; }
     setActing(true);
     try {
       const m = await joinHub(hub.id, profile.id, type?.id ?? null);
       setMembership(m);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({
+      setJoinSuccess({
         title: m.status === 'active' ? 'You\'re in 🎉' : 'Request sent',
         message: m.status === 'active'
           ? `You're now a member of ${hub.name}.`
@@ -117,10 +123,12 @@ export default function HubDetailScreen() {
   // Tap a tier: free → join; paid + saved card → our confirm sheet; paid + no
   // card → straight to Stripe's Payment Sheet (which is itself the confirm).
   const onTapTier = (type: HubMembershipType) => {
-    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    if (!profile) { goToSignIn(); return; }
     if (type.price_pence <= 0) { onJoinFree(type); return; }
-    if (profile.has_payment_method) setPayingType(type);
-    else runMembershipPayment(type);
+    // Always open the confirm sheet — it offers wallet AND card. The card path
+    // uses Stripe's Payment Sheet (collects a card even if none is saved), so a
+    // card-less but wallet-funded member is no longer shut out.
+    setPayingType(type);
   };
 
   const runMembershipWallet = async (type: HubMembershipType) => {
@@ -130,7 +138,7 @@ export default function HubDetailScreen() {
       const res = await walletCheckout({ type: 'hub_membership', membership_type_id: type.id });
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
+      setJoinSuccess({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
       load();
     } catch (e: any) {
       alert({ title: 'Payment failed', message: e?.message ?? 'Please try again.' });
@@ -159,7 +167,7 @@ export default function HubDetailScreen() {
       }
       await confirmHubMembership(start.payment_intent_id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
+      setJoinSuccess({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
       load();
     } catch (e: any) {
       alert({ title: 'Payment failed', message: e?.message ?? 'Please try again.' });
@@ -485,6 +493,21 @@ export default function HubDetailScreen() {
 
           {membershipState}
 
+          {joinSuccess ? (
+            <View style={[styles.successBanner, { backgroundColor: accent + '14', borderColor: accent }]}>
+              <View style={[styles.successBannerIcon, { backgroundColor: accent + '22' }]}>
+                <FontAwesome5 name="check" size={14} color={accent} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.successBannerTitle, { color: accent }]}>{joinSuccess.title}</Text>
+                <Text style={styles.successBannerMsg}>{joinSuccess.message}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setJoinSuccess(null)} hitSlop={10}>
+                <FontAwesome5 name="times" size={14} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           {isTablet ? (
             <View style={styles.columns}>
               <View style={styles.mainCol}>
@@ -629,4 +652,12 @@ const styles = StyleSheet.create({
   memberTag: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#EDE9FE', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
   memberTagText: { fontSize: 9, fontWeight: '800', color: '#6B47BF' },
   joinHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4, fontStyle: 'italic' },
+
+  successBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: radius.lg, borderWidth: 1, padding: spacing.md, marginTop: spacing.md,
+  },
+  successBannerIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  successBannerTitle: { fontSize: fontSize.sm, fontWeight: '900' },
+  successBannerMsg: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2, lineHeight: 17 },
 });

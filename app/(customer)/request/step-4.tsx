@@ -32,6 +32,10 @@ function penceToGBP(pence: number): string {
   return `£${(pence / 100).toFixed(2)}`;
 }
 
+// OneShetland service fee — added ON TOP of the delivery fee (the driver gets the
+// full delivery fee). Mirrors the 'fetch' commission default (£1.50).
+const SERVICE_FEE_PENCE = 150;
+
 /** Haversine distance in miles between two lat/lng points */
 function haversinemiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 3958.8; // Earth radius in miles
@@ -153,6 +157,22 @@ export default function Step4ReviewScreen() {
       return;
     }
 
+    // Require a card on file BEFORE the request is posted. The driver's payment
+    // is pre-authorised (manually) the moment they accept, and captured on
+    // delivery — if there's no card, that pre-auth fails and the driver is left
+    // having committed to a run they can't be paid for. Better to gate here.
+    if (!profile.has_payment_method) {
+      alert({
+        title: 'Add a payment card first',
+        message: "Add a card so your driver can be paid. You're only charged once your item is delivered — nothing now.",
+        actions: [
+          { label: 'Not now', style: 'cancel' },
+          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup' as any) },
+        ],
+      });
+      return;
+    }
+
     setSubmitting(true);
 
     // Log liability acknowledgement before the request is created
@@ -227,7 +247,10 @@ export default function Step4ReviewScreen() {
         {
           label: 'Back to dashboard',
           style: 'primary',
-          onPress: () => router.replace('/(customer)/dashboard'),
+          // Return to the Fetch *tab* (which renders the customer dashboard
+          // inline) — NOT the standalone /(customer)/dashboard route, which
+          // sits outside the Tabs navigator and has no bottom tab bar.
+          onPress: () => router.replace('/(tabs)/fetch'),
         },
       ],
     });
@@ -285,13 +308,25 @@ export default function Step4ReviewScreen() {
             )}
             {!feeLoading && feePence != null && (
               <>
-                <Text style={styles.feeAmount}>{penceToGBP(feePence)}</Text>
+                <Text style={styles.feeAmount}>{penceToGBP(feePence + SERVICE_FEE_PENCE)}</Text>
                 {distanceMiles != null && (
                   <Text style={styles.feeDetail}>~{distanceMiles} miles (road estimate)</Text>
                 )}
+                <View style={{ marginTop: spacing.md, gap: 6 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={styles.feeDetail}>Delivery fee (your driver gets this)</Text>
+                    <Text style={styles.feeDetail}>{penceToGBP(feePence)}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={styles.feeDetail}>OneShetland service fee</Text>
+                    <Text style={styles.feeDetail}>{penceToGBP(SERVICE_FEE_PENCE)}</Text>
+                  </View>
+                </View>
                 <Text style={styles.feeNote}>
-                  Priced at 95p/mile with a £4.00 minimum. Your card is pre-authorised
-                  now and only charged when your item is delivered.
+                  Priced at 95p/mile (£4.00 minimum). Your driver receives the full
+                  delivery fee; the service fee is OneShetland's share, added on top.
+                  Your card is authorised when a driver accepts your request, and only
+                  charged once your item is delivered.
                 </Text>
               </>
             )}

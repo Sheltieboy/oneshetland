@@ -286,7 +286,12 @@ export function BoostSheet({
       if (resBody?.error === 'no_business_card') { setLoading(false); onNoCard?.(); return; }
       if (!resBody?.charged) throw new Error(resBody?.error ?? fnErr?.message ?? 'Payment did not complete.');
       const { data: confirmData, error: confirmErr } = await supabase.functions.invoke('confirm-boost', { body: { shift_id: shiftId } });
-      if (confirmErr) throw confirmErr;
+      if (confirmErr) {
+        // invoke gives a generic non-2xx message — read the real body error.
+        let msg = confirmErr.message ?? 'Boost could not be confirmed.';
+        try { const ctx = (confirmErr as any).context; if (ctx?.json) { const body = await ctx.json(); if (body?.error) msg = body.error; } } catch { /* */ }
+        throw new Error(msg);
+      }
       finish(confirmData?.boosted_until);
     } catch (e: any) {
       alert({ title: 'Boost failed', message: e?.message ?? 'Try again.' });
@@ -612,7 +617,11 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
     if (error) {
       alert({ title: 'Error', message: error.message });
     } else {
-      // NOTE: notify-matching-workers is NOT fired here — it only fires on boost.
+      // Alert workers whose saved shift-alert matches this new post (free posts
+      // included — previously only boosted shifts notified anyone).
+      supabase.functions.invoke('notify-matching-workers', {
+        body: { shift_id: newShift!.id },
+      }).catch(() => {});
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       reset();
       onSuccess(newShift!.id);

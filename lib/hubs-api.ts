@@ -354,8 +354,15 @@ export async function fetchMemberCount(hubId: string): Promise<number> {
 }
 
 export async function approveMember(memberId: string): Promise<void> {
-  const { error } = await supabase.from('hub_members').update({ status: 'active' }).eq('id', memberId);
+  const { data, error } = await supabase
+    .from('hub_members')
+    .update({ status: 'active' })
+    .eq('id', memberId)
+    .select('hub_id, user_id')
+    .single();
   if (error) throw error;
+  // Tell the member they're in (notify-hub already supports 'approved').
+  if (data) notifyHub('approved', data.hub_id, data.user_id);
 }
 
 export async function rejectMember(memberId: string): Promise<void> {
@@ -402,6 +409,12 @@ export async function createHubNotice(hubId: string, input: NoticeInput): Promis
     .select('*')
     .single();
   if (error) throw error;
+
+  // Let active members know (fire-and-forget).
+  supabase.functions
+    .invoke('notify-hub-content', { body: { event: 'notice', hub_id: hubId, ref_id: (data as HubNotice).id, title: input.title } })
+    .catch(() => {});
+
   return data as HubNotice;
 }
 

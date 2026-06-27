@@ -15,16 +15,34 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getConfigBulk } from './admin-config.ts';
 import type { CommissionConfig } from './commission.ts';
 
-export type Rail = 'fetch' | 'wallet' | 'product';
+export type Rail =
+  | 'fetch'
+  | 'wallet'
+  | 'product'
+  | 'gift'
+  | 'unit'
+  | 'donation'
+  | 'membership';
 
 /**
  * In-code fallbacks. Must match the migration 032 seed values.
  * Keep these in sync if either side changes.
+ *
+ * The gift/unit/donation/membership defaults were chosen to EXACTLY MATCH the
+ * fee each function hardcoded before it moved onto the shared calculator, so
+ * behaviour is unchanged until an admin tunes them. NOTE: the old gift/unit/
+ * donation code used Math.round on the percentage; the shared calculator uses
+ * Math.floor — so for amounts whose percentage lands on a ≥0.5p fraction the
+ * fee is now 1p lower. See the refactor report for worked examples.
  */
 export const DEFAULTS: Record<Rail, CommissionConfig> = {
-  fetch:   { percent_bps:   0, fixed_pence: 150 },  // flat £1.50 per Fetch
-  wallet:  { percent_bps: 200, fixed_pence:  25 },  // 2% + 25p
-  product: { percent_bps: 400, fixed_pence:   0 },  // 4% — future product rail
+  fetch:      { percent_bps:   0, fixed_pence: 150 },  // flat £1.50 per Fetch
+  wallet:     { percent_bps: 200, fixed_pence:  25 },  // 2% + 25p
+  product:    { percent_bps: 400, fixed_pence:   0 },  // 4% — future product rail
+  gift:       { percent_bps: 500, fixed_pence:   0 },  // 5% — Book gift purchases
+  unit:       { percent_bps: 500, fixed_pence:   0 },  // 5% — Book unit purchases
+  donation:   { percent_bps: 150, fixed_pence:  20 },  // 1.5% + 20p — hub donations (~Stripe cost, hub-borne)
+  membership: { percent_bps:   0, fixed_pence:  95 },  // flat 95p — hub paid memberships
 };
 
 function parsePositiveInt(raw: string | undefined): number | null {

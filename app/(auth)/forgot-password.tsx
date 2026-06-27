@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -16,6 +16,7 @@ const RESET_REDIRECT = 'https://oneshetland.com/reset-password';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const { next } = useLocalSearchParams<{ next?: string }>();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -62,7 +63,7 @@ export default function ForgotPasswordScreen() {
                 <Text style={styles.cardSubtitle}>
                   If an account exists for {email.trim().toLowerCase()}, we&apos;ve sent a link to reset your password. Open it on this device to set a new one, then come back and sign in.
                 </Text>
-                <Button label="Back to sign in" onPress={() => router.replace('/(auth)/sign-in')} fullWidth size="lg" style={styles.submitBtn} />
+                <Button label="Back to sign in" onPress={() => router.replace({ pathname: '/(auth)/sign-in', params: next ? { next } : {} })} fullWidth size="lg" style={styles.submitBtn} />
               </>
             ) : (
               <>

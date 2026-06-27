@@ -365,7 +365,16 @@ export async function createEvent(userId: string, input: EventUpsertInput): Prom
     .select('*')
     .single();
   if (error) throw error;
-  return data as OsEvent;
+
+  // If this is a published HUB event, tell the hub's members (fire-and-forget).
+  const ev = data as OsEvent;
+  if (ev.organiser_hub_id && ev.status === 'published') {
+    supabase.functions
+      .invoke('notify-hub-content', { body: { event: 'event', hub_id: ev.organiser_hub_id, ref_id: ev.id, title: ev.title } })
+      .catch(() => {});
+  }
+
+  return ev;
 }
 
 export async function updateEvent(
@@ -458,6 +467,12 @@ export async function postEventUpdate(input: {
     .select('*')
     .single();
   if (error) throw error;
+
+  // Tell every ticket-holder about the update (cancellations/changes urgent).
+  supabase.functions
+    .invoke('notify-event-update', { body: { update_id: (data as EventUpdate).id } })
+    .catch(() => {});
+
   return data as EventUpdate;
 }
 
@@ -521,7 +536,15 @@ export async function confirmTicketPurchase(params: {
   payment_intent_id: string;
 }): Promise<void> {
   const { data, error } = await supabase.functions.invoke('confirm-event-tickets', { body: params });
-  if (error) throw new Error(error.message);
+  if (error) {
+    // invoke gives a generic non-2xx message — the real reason is in context.json().
+    let msg = error.message ?? 'Could not confirm your ticket purchase.';
+    try {
+      const ctx = (error as any)?.context;
+      if (ctx?.json) { const body = await ctx.json(); if (body?.error) msg = body.error; }
+    } catch { /* keep generic message */ }
+    throw new Error(msg);
+  }
   if (data?.error) throw new Error(data.error);
 }
 

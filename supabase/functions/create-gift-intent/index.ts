@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -159,15 +161,23 @@ serve(async (req) => {
     // The business must be set up for payouts before we take money for a gift.
     const { data: giftBiz } = await supabase
       .from('local_businesses')
-      .select('stripe_account_id, payout_enabled')
+      .select('stripe_account_id, payout_enabled, slug')
       .eq('id', businessId)
       .single();
-    if (!giftBiz?.stripe_account_id || !giftBiz.payout_enabled) {
+    // Demo businesses (slug 'demo-…') exist only for testing and have no real
+    // Stripe Connect account — in test mode we charge the platform directly
+    // (no destination transfer). Real businesses must be payout-ready.
+    const isDemoBiz = (giftBiz?.slug ?? '').startsWith('demo-');
+    const giftHasAccount = !!(giftBiz?.stripe_account_id && giftBiz.payout_enabled);
+    if (!isDemoBiz && !giftHasAccount) {
       return new Response(JSON.stringify({ error: "This business isn't set up to take payments yet." }), {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const giftPlatformFee = Math.round(pricePence! * 0.05); // 5% platform fee
+    // Platform commission — admin-editable, see fees.gift.* in admin_config.
+    // Default 5% (matches the previous hardcoded rate).
+    const giftCfg = await getCommissionConfig(supabase, 'gift');
+    const giftPlatformFee = calculateCommission(pricePence!, giftCfg, 'gift').fee_pence;
 
     // Insert pending gift row (no code yet — generated on confirm).
     const giftRow: Record<string, unknown> = {
@@ -205,24 +215,28 @@ serve(async (req) => {
         await supabase.from('book_gifts').delete().eq('id', gift.id);
         return new Response(JSON.stringify({ error: 'Not enough in your wallet — top up or pay by card.' }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      let walletTransferId: string;
-      try {
-        const tb = new URLSearchParams({
-          amount: String(pricePence! - giftPlatformFee), currency: 'gbp', destination: giftBiz.stripe_account_id,
-          description: `OneShetland wallet gift — ${itemLabel}`,
-          'metadata[type]': 'gift_purchase_wallet', 'metadata[gift_id]': gift.id, 'metadata[buyer_id]': user.id,
-        });
-        const tr = await fetch('https://api.stripe.com/v1/transfers', { method: 'POST', headers: { ...stripePostHeaders(), 'Idempotency-Key': crypto.randomUUID() }, body: tb });
-        const tj = await tr.json();
-        if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
-        walletTransferId = tj.id;
-      } catch (e) {
-        console.error('[create-gift-intent] wallet transfer failed:', e);
-        await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: pricePence! });
-        await supabase.from('book_gifts').delete().eq('id', gift.id);
-        return new Response(JSON.stringify({ error: 'Gift payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      // Demo businesses have no connected account → skip the transfer entirely
+      // (the wallet debit alone funds the platform). Real businesses transfer.
+      let walletTransferId: string | null = null;
+      if (giftHasAccount) {
+        try {
+          const tb = new URLSearchParams({
+            amount: String(pricePence! - giftPlatformFee), currency: 'gbp', destination: giftBiz.stripe_account_id,
+            description: `OneShetland wallet gift — ${itemLabel}`,
+            'metadata[type]': 'gift_purchase_wallet', 'metadata[gift_id]': gift.id, 'metadata[buyer_id]': user.id,
+          });
+          const tr = await fetch('https://api.stripe.com/v1/transfers', { method: 'POST', headers: { ...stripePostHeaders(), 'Idempotency-Key': crypto.randomUUID() }, body: tb });
+          const tj = await tr.json();
+          if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
+          walletTransferId = tj.id;
+        } catch (e) {
+          console.error('[create-gift-intent] wallet transfer failed:', e);
+          await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: pricePence! });
+          await supabase.from('book_gifts').delete().eq('id', gift.id);
+          return new Response(JSON.stringify({ error: 'Gift payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
       }
-      const ref = `wallet_${walletTransferId}`;
+      const ref = walletTransferId ? `wallet_${walletTransferId}` : `wallet_${crypto.randomUUID()}`;
       await supabase.from('book_gifts').update({ payment_intent_id: ref }).eq('id', gift.id);
       await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: businessId, type: 'spend', amount_pence: -pricePence!, stripe_transfer_id: walletTransferId, description: `Gift — ${itemLabel}` });
       return new Response(JSON.stringify({ charged: true, payment_intent_id: ref, gift_id: gift.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -232,14 +246,18 @@ serve(async (req) => {
       amount:      String(pricePence!),
       currency:    'gbp',
       description: `OneShetland gift — ${itemLabel}`,
-      'transfer_data[destination]': giftBiz.stripe_account_id,
-      'application_fee_amount':      String(giftPlatformFee),
       'metadata[type]':        'gift_purchase',
       'metadata[gift_id]':     gift.id,
       'metadata[kind]':        kind,
       'metadata[business_id]': businessId!,
       'metadata[buyer_id]':    user.id,
     };
+    // Route to the business's Connect account only when it has one (a real,
+    // payout-ready business). Demo businesses have none → charge the platform.
+    if (giftHasAccount) {
+      baseParams['transfer_data[destination]'] = giftBiz!.stripe_account_id;
+      baseParams['application_fee_amount']      = String(giftPlatformFee);
+    }
 
     // ── Mode 1: saved card, off-session ──────────────────────────────────────
     if (use_saved_card) {

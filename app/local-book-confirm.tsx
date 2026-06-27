@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAlert } from '@/components/BrandedAlert';
 import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
 import {
@@ -34,6 +35,7 @@ export default function BookConfirmScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { alert } = useAlert();
+  const goToSignIn = useGoToSignIn();
   const params = useLocalSearchParams<{
     businessId: string;
     serviceId:  string;
@@ -93,8 +95,15 @@ export default function BookConfirmScreen() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Replace so back doesn't return to confirm
-      router.replace('/local-my-bookings');
+      // Show a clear success FIRST — otherwise the user lands straight on the
+      // bookings list whose most prominent button is "Cancel", which reads like
+      // something went wrong.
+      const whenLabel = `${startsAt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}, ${startsAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+      alert({
+        title: 'Booking confirmed! 🎉',
+        message: `You're booked for ${service.name} at ${business.name} on ${whenLabel}. You can view or change it any time under My bookings.`,
+        actions: [{ label: 'View my bookings', style: 'primary', onPress: () => router.replace('/local-my-bookings') }],
+      });
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       alert({
@@ -134,7 +143,14 @@ export default function BookConfirmScreen() {
           <Text style={styles.emptyTitle}>Sign in to confirm</Text>
           <TouchableOpacity
             style={[styles.confirmBtn, { backgroundColor: S.color }]}
-            onPress={() => router.push('/(auth)/sign-in')}
+            onPress={() => goToSignIn(
+              `/local-book-confirm?businessId=${params.businessId}`
+              + `&serviceId=${params.serviceId}`
+              + `&startsAt=${encodeURIComponent(params.startsAt)}`
+              + `&endsAt=${encodeURIComponent(params.endsAt)}`
+              + (params.lastMin ? `&lastMin=${params.lastMin}` : '')
+              + (giftId ? `&giftId=${giftId}` : '')
+            )}
           >
             <Text style={styles.confirmBtnText}>Sign in</Text>
           </TouchableOpacity>

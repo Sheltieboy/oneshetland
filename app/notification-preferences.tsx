@@ -18,20 +18,23 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
-  fetchPreferences, updatePreferences, NOTIFICATION_MODULES,
-  type NotificationPreferences,
+  fetchPreferences, updatePreferences, NOTIFICATION_GROUPS, modulesInGroup,
+  type NotificationPreferences, type ModuleInfo,
 } from '@/lib/notification-prefs';
 
 export default function NotificationPreferencesScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
   const { profile } = useAuth();
 
   const [prefs, setPrefs]     = useState<NotificationPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
   const [showEnd, setShowEnd]     = useState(false);
+  const [expanded, setExpanded]   = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     if (!profile) { setLoading(false); return; }
@@ -56,7 +59,15 @@ export default function NotificationPreferencesScreen() {
     } catch (e) {
       console.error('Pref update failed', e);
       load();
+      alert({ title: 'Could not save', message: 'That change didn\'t save. Please try again.' });
     }
+  };
+
+  // Turn every module in a category on/off at once (the parent toggle).
+  const toggleGroup = (mods: ModuleInfo[], on: boolean) => {
+    const patch: Partial<NotificationPreferences> = {};
+    mods.forEach(m => { (patch as any)[m.prefKey] = on; });
+    updatePref(patch);
   };
 
   if (loading) {
@@ -107,33 +118,73 @@ export default function NotificationPreferencesScreen() {
           </View>
         </View>
 
-        {/* ── Per-module section ── */}
+        {/* ── Per-category section (broad toggle, expand to fine-tune) ── */}
         <View style={styles.sectionLabelWrap}>
           <Text style={styles.sectionLabel}>By feature</Text>
           <Text style={styles.sectionHint}>
-            Urgent reminders (e.g. an appointment in 10 minutes) still come through.
+            Tap a group to fine-tune. Urgent safety alerts still come through.
           </Text>
         </View>
 
-        <View style={[styles.card, !prefs.enabled && styles.cardDimmed]} pointerEvents={prefs.enabled ? 'auto' : 'none'}>
-          {NOTIFICATION_MODULES.map((m, i) => (
-            <View key={m.module} style={[styles.row, i > 0 && styles.rowBorder]}>
-              <View style={[styles.iconWrap, { backgroundColor: m.color + '20' }]}>
-                <FontAwesome5 name={m.icon as any} size={13} color={m.color} solid />
+        {NOTIFICATION_GROUPS.map(group => {
+          const mods  = modulesInGroup(group.key);
+          const anyOn = mods.some(m => !!prefs[m.prefKey]);
+          const allOn = mods.every(m => !!prefs[m.prefKey]);
+          const open  = !!expanded[group.key];
+          return (
+            <View
+              key={group.key}
+              style={[styles.card, !prefs.enabled && styles.cardDimmed]}
+              pointerEvents={prefs.enabled ? 'auto' : 'none'}
+            >
+              <View style={styles.row}>
+                <TouchableOpacity
+                  style={styles.groupTap}
+                  onPress={() => setExpanded(e => ({ ...e, [group.key]: !e[group.key] }))}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.iconWrap, { backgroundColor: colors.navy + '14' }]}>
+                    <FontAwesome5 name={group.icon as any} size={13} color={colors.navy} solid />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{group.label}</Text>
+                    <Text style={styles.rowSub}>{allOn ? 'All on' : anyOn ? 'Some on' : 'All off'}</Text>
+                  </View>
+                  <FontAwesome5
+                    name={open ? 'chevron-up' : 'chevron-down'}
+                    size={12}
+                    color={colors.textLight}
+                    style={{ marginRight: 10 }}
+                  />
+                </TouchableOpacity>
+                <Switch
+                  value={anyOn}
+                  onValueChange={v => toggleGroup(mods, v)}
+                  trackColor={{ false: colors.border, true: colors.navy }}
+                  disabled={!prefs.enabled}
+                />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowTitle}>{m.label}</Text>
-                <Text style={styles.rowSub} numberOfLines={2}>{m.description}</Text>
-              </View>
-              <Switch
-                value={!!prefs[m.prefKey]}
-                onValueChange={v => updatePref({ [m.prefKey]: v } as any)}
-                trackColor={{ false: colors.border, true: m.color }}
-                disabled={!prefs.enabled}
-              />
+
+              {open && mods.map(m => (
+                <View key={m.module} style={[styles.row, styles.childRow, styles.rowBorder]}>
+                  <View style={[styles.iconWrap, styles.childIcon, { backgroundColor: m.color + '20' }]}>
+                    <FontAwesome5 name={m.icon as any} size={12} color={m.color} solid />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle}>{m.label}</Text>
+                    <Text style={styles.rowSub} numberOfLines={2}>{m.description}</Text>
+                  </View>
+                  <Switch
+                    value={!!prefs[m.prefKey]}
+                    onValueChange={v => updatePref({ [m.prefKey]: v } as any)}
+                    trackColor={{ false: colors.border, true: m.color }}
+                    disabled={!prefs.enabled}
+                  />
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          );
+        })}
 
         {/* ── Quiet hours ── */}
         <View style={styles.sectionLabelWrap}>
@@ -280,6 +331,9 @@ const styles = StyleSheet.create({
   cardDimmed: { opacity: 0.5 },
 
   row:       { flexDirection: 'row', alignItems: 'center', gap: 12, padding: spacing.md },
+  groupTap:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  childRow:  { paddingLeft: spacing.md + 24, backgroundColor: '#fafbfc' },
+  childIcon: { width: 30, height: 30 },
   rowBorder: { borderTopWidth: 1, borderTopColor: colors.border },
   iconWrap:  { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   rowTitle:  { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },

@@ -28,6 +28,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import {
   fetchMemoryDetail, Memory, MemoryMedia, MemoryImagePin,
   addImagePin, resolveImagePin, deleteImagePin,
@@ -55,6 +56,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
   onClose?: () => void;
 } = {}) {
   const router = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { id: routeId } = useLocalSearchParams<{ id: string }>();
   const id = idOverride ?? routeId;
   const { profile } = useAuth();
@@ -105,7 +107,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
 
   const onReact = async (kind: ReactionKind) => {
     if (!profile?.id || !memory) {
-      router.push('/(auth)/sign-in');
+      goToSignIn();
       return;
     }
     // Optimistic flip
@@ -226,8 +228,8 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
   const onDeleteMemory = () => {
     if (!memory) return;
     alert({
-      title: 'Delete this memory?',
-      message: 'Photos, voice notes, comments and child memories will be removed. This can\'t be undone.',
+      title: 'Delete this story?',
+      message: 'Photos, voice notes, comments and child stories will be removed. This can\'t be undone.',
       actions: [
         { label: 'Cancel', style: 'cancel' },
         {
@@ -259,7 +261,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
     return (
       <SafeAreaView style={[styles.container, styles.centerFill]} edges={edges}>
         {!embedded && <Stack.Screen options={{ headerShown: false }} />}
-        <Text style={styles.bodyText}>Memory not found.</Text>
+        <Text style={styles.bodyText}>Story not found.</Text>
         <TouchableOpacity onPress={goBack} style={[styles.actionBtn, { marginTop: spacing.md }]}>
           <Text style={styles.actionBtnText}>Go back</Text>
         </TouchableOpacity>
@@ -292,7 +294,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
                 {memory.place_name}
               </Text>
             ) : null}
-            <Text style={styles.title} numberOfLines={2}>{memory.title ?? 'Untitled memory'}</Text>
+            <Text style={styles.title} numberOfLines={2}>{memory.title ?? 'Untitled story'}</Text>
           </View>
           {isAuthor ? (
             <View style={{ flexDirection: 'row' }}>
@@ -438,7 +440,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
             onDelete={() => onDeletePin(activePin)}
             onSuggest={async (answer) => {
               if (!profile?.id) {
-                router.push('/(auth)/sign-in');
+                goToSignIn();
                 return;
               }
               try {
@@ -479,7 +481,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
             onPress={() => router.push({ pathname: '/memory-new', params: { parent_id: memory.id } })}
           >
             <FontAwesome5 name="layer-group" size={14} color={SECTION.color} />
-            <Text style={[styles.addChildText, { color: SECTION.color }]}>Add to this memory</Text>
+            <Text style={[styles.addChildText, { color: SECTION.color }]}>Add to this story</Text>
           </TouchableOpacity>
           <Text style={styles.threadHint}>
             Got a related story, photo, or voice note? Thread it onto this memory so it lives here too.
@@ -489,7 +491,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
         {/* Sub-memories */}
         {memory.children?.length ? (
           <View style={styles.children}>
-            <Text style={styles.sectionTitle}>Added to this memory ({memory.children.length})</Text>
+            <Text style={styles.sectionTitle}>Added to this story ({memory.children.length})</Text>
             {memory.children.map(child => (
               <TouchableOpacity
                 key={child.id}

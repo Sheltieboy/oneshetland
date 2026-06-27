@@ -226,7 +226,12 @@ export default function MyPostedShiftsScreen() {
       const { data: confirmData, error: confirmErr } = await supabase.functions.invoke('confirm-boost', {
         body: { shift_id: shiftId },
       });
-      if (confirmErr) throw confirmErr;
+      if (confirmErr) {
+        // invoke gives a generic non-2xx message — read the real body error.
+        let msg = confirmErr.message ?? 'Boost could not be confirmed.';
+        try { const ctx = (confirmErr as any).context; if (ctx?.json) { const body = await ctx.json(); if (body?.error) msg = body.error; } } catch { /* */ }
+        throw new Error(msg);
+      }
 
       const boostedUntil = confirmData?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString();
       setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, boosted_until: boostedUntil } : s));

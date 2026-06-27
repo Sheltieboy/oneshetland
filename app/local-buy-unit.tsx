@@ -70,21 +70,25 @@ export default function BuyUnitScreen() {
   // Validate + gate, then show the confirm step (off-session saved-card charge).
   const buy = useCallback(() => {
     if (!session || !profile || !item) return;
-    if (!profile.has_payment_method) {
+    const price = item.price_pence ?? 0;
+    // A saved card OR enough wallet balance gets you in — only block when the
+    // user has neither. (Previously a funded wallet with no card was shut out.)
+    if (!profile.has_payment_method && (walletBalance ?? 0) < price) {
       alert({
-        title:   'Add a payment card',
-        message: 'Add a card to your account before buying.',
+        title:   'Add a card or top up',
+        message: 'Add a payment card, or top up your wallet to cover this.',
         icon:    'credit-card',
         accent:  S.color,
         actions: [
           { label: 'Cancel', style: 'cancel' },
+          { label: 'Top up',  onPress: () => router.push('/local-wallet') },
           { label: 'Add card', onPress: () => router.push('/payment-setup') },
         ],
       });
       return;
     }
     setConfirming(true);
-  }, [session, profile, item, alert, router]);
+  }, [session, profile, item, walletBalance, alert, router]);
 
   const runBuy = useCallback(async () => {
     if (!session || !profile || !item) return;
@@ -100,7 +104,11 @@ export default function BuyUnitScreen() {
       );
 
       if (intentErr || !intent) {
-        throw new Error(intentErr?.message ?? 'Could not start payment.');
+        // The real reason is in error.context.json(), not error.message (which
+        // is just the generic "non-2xx" string).
+        let m = intentErr?.message ?? 'Could not start payment.';
+        try { const c = (intentErr as any)?.context; if (c?.json) { const b = await c.json(); if (b?.error) m = b.error; } } catch { /* keep generic */ }
+        throw new Error(m);
       }
       if (intent.error) throw new Error(intent.error);
 
@@ -140,7 +148,9 @@ export default function BuyUnitScreen() {
       );
 
       if (confirmErr || !confirm?.ok) {
-        throw new Error(confirmErr?.message ?? confirm?.error ?? 'Could not record purchase.');
+        let m = confirm?.error ?? confirmErr?.message ?? 'Could not record purchase.';
+        try { const c = (confirmErr as any)?.context; if (c?.json) { const b = await c.json(); if (b?.error) m = b.error; } } catch { /* keep generic */ }
+        throw new Error(m);
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -298,6 +308,8 @@ export default function BuyUnitScreen() {
         walletBalancePence={walletBalance}
         onConfirmWallet={runBuyWallet}
         onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}
+        hasCard={!!profile?.has_payment_method}
+        onAddCard={() => { setConfirming(false); router.push('/payment-setup'); }}
       />
     </SafeAreaView>
   );

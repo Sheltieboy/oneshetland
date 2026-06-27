@@ -38,35 +38,50 @@ export default function HubBroadcastScreen() {
   const [message, setMessage] = useState('');
   const [channel, setChannel] = useState<'push' | 'email' | 'both'>('push');
   const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<{ members: number; push: number; email: number } | null>(null);
 
+  // The pre-send confirm alert was a Modal at app root, which iOS can't present
+  // over this modal screen — it was swallowed, so the broadcast could never
+  // fire. Send directly and confirm success INLINE instead.
   const send = async () => {
     if (!id) return;
     if (!title.trim() || !message.trim()) { alert({ title: 'Add a subject and message', message: 'Both are needed.' }); return; }
-    alert({
-      title: 'Send to all members?',
-      message: `This will ${channel === 'push' ? 'push-notify' : channel === 'email' ? 'email' : 'push and email'} every active member.`,
-      actions: [
-        { label: 'Cancel', style: 'cancel' },
-        {
-          label: 'Send', style: 'primary', onPress: async () => {
-            setSending(true);
-            try {
-              const res = await broadcastToHub(id, { title: title.trim(), message: message.trim(), channel });
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              alert({
-                title: 'Sent',
-                message: `Reached ${res.members} member${res.members === 1 ? '' : 's'}` +
-                  `${channel !== 'email' ? ` · ${res.push} push` : ''}${channel !== 'push' ? ` · ${res.email} email` : ''}.`,
-                actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }],
-              });
-            } catch (e: any) {
-              alert({ title: 'Could not send', message: e?.message ?? 'Please try again.' });
-            } finally { setSending(false); }
-          },
-        },
-      ],
-    });
+    setSending(true);
+    try {
+      const res = await broadcastToHub(id, { title: title.trim(), message: message.trim(), channel });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setSent({ members: res.members, push: res.push, email: res.email });
+    } catch (e: any) {
+      alert({ title: 'Could not send', message: e?.message ?? 'Please try again.' });
+    } finally { setSending(false); }
   };
+
+  // ── Inline success screen (shown after a sent broadcast) ────────────────────
+  if (sent) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScreenHeader title="Broadcast sent" onClose={() => router.back()} accent={S.color} />
+        <View style={styles.successWrap}>
+          <View style={[styles.successIcon, { backgroundColor: S.light }]}>
+            <FontAwesome5 name="paper-plane" size={28} color={S.color} solid />
+          </View>
+          <Text style={styles.successTitle}>Broadcast sent ✓</Text>
+          <Text style={styles.successSub}>
+            Reached {sent.members} member{sent.members === 1 ? '' : 's'}
+            {channel !== 'email' ? ` · ${sent.push} push` : ''}
+            {channel !== 'push' ? ` · ${sent.email} email` : ''}.
+          </Text>
+          <TouchableOpacity
+            style={[styles.successBtn, { backgroundColor: S.color }]}
+            onPress={() => router.back()}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -116,4 +131,20 @@ const styles = StyleSheet.create({
 
   note: { fontSize: fontSize.xs, color: colors.textLight, marginTop: spacing.md, lineHeight: 17 },
   sendBtn: { marginTop: spacing.lg },
+
+  successWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBackground },
+  successIcon: {
+    width: 76, height: 76, borderRadius: 38,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
+  },
+  successTitle: { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
+  successSub: {
+    fontSize: fontSize.sm, color: colors.textSecondary, textAlign: 'center',
+    paddingHorizontal: spacing.xl, lineHeight: 22, marginTop: spacing.sm,
+  },
+  successBtn: {
+    marginTop: spacing.xl, borderRadius: radius.lg,
+    paddingVertical: 15, paddingHorizontal: spacing.xxl, alignItems: 'center',
+  },
+  successBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 });

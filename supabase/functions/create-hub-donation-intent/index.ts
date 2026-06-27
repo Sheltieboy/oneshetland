@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -74,9 +76,14 @@ serve(async (req) => {
     if (!campaign || campaign.status !== 'active') return json({ error: 'Campaign not available' }, 404);
 
     const { data: hub } = await svc.from('hubs')
-      .select('id, name, stripe_account_id, payout_enabled, is_active').eq('id', campaign.hub_id).single();
+      .select('id, name, stripe_account_id, payout_enabled, is_active, slug').eq('id', campaign.hub_id).single();
     if (!hub || !hub.is_active) return json({ error: 'Hub not available' }, 404);
-    if (!hub.stripe_account_id || !hub.payout_enabled) {
+    // Demo hubs (slug 'demo-…') exist only for testing and have no real Stripe
+    // Connect account — in test mode we charge the platform directly (no
+    // destination transfer). Real hubs must be payout-ready.
+    const isDemoHub = (hub.slug ?? '').startsWith('demo-');
+    const hubHasAccount = !!(hub.stripe_account_id && hub.payout_enabled);
+    if (!isDemoHub && !hubHasAccount) {
       return json({ error: 'This hub has not finished setting up payouts yet.' }, 409);
     }
 
@@ -85,7 +92,11 @@ serve(async (req) => {
     // pays it back to Stripe, netting ~£0, so the HUB effectively bears the fee.
     // If the donor opts to "cover the fee", we add the same estimate on top so
     // the hub still nets the full donation.
-    const feeEstimate = Math.round(amount * 0.015) + 20; // ~Stripe 1.5% + 20p
+    // Platform commission — admin-editable, see fees.donation.* in admin_config.
+    // Default 1.5% + 20p (matches the previous hardcoded ~Stripe-cost estimate).
+    // Computed on the face donation amount, not the cover-fee-inclusive total.
+    const donationCfg = await getCommissionConfig(svc, 'donation');
+    const feeEstimate = calculateCommission(amount, donationCfg, 'donation').fee_pence;
     const coverPence = cover_fees ? feeEstimate : 0;
     const totalPence = amount + coverPence;
 
@@ -93,8 +104,6 @@ serve(async (req) => {
       amount:      String(totalPence),
       currency:    'gbp',
       description: `OneShetland donation — ${hub.name} (${campaign.title})`,
-      'transfer_data[destination]': hub.stripe_account_id,
-      'application_fee_amount':      String(feeEstimate),
       'metadata[type]':        'hub_donation',
       'metadata[campaign_id]': campaign.id,
       'metadata[hub_id]':      hub.id,
@@ -103,6 +112,12 @@ serve(async (req) => {
       'metadata[fee_pence]':   '0',
       'metadata[cover_pence]': String(coverPence),
     };
+    // Route to the hub's Connect account only when it has one (a real,
+    // payout-ready hub). Demo hubs have none → charge the platform.
+    if (hubHasAccount) {
+      baseParams['transfer_data[destination]'] = hub.stripe_account_id;
+      baseParams['application_fee_amount']      = String(feeEstimate);
+    }
 
     if (use_saved_card) {
       const { data: profile } = await svc.from('profiles').select('stripe_customer_id').eq('id', user.id).single();

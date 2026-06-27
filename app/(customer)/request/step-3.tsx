@@ -289,7 +289,7 @@ function StepIndicator({ current }: { current: number }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.navy },
-  scroll: { flex: 1, backgroundColor: colors.navy },
+  scroll: { flex: 1, backgroundColor: colors.screenBackground },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
   navHeader: {
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
 });
 
 const modal = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.navy },
+  safe: { flex: 1, backgroundColor: colors.screenBackground },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

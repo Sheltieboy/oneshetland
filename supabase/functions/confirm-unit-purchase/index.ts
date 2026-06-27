@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -98,7 +99,7 @@ serve(async (req) => {
 
     const { data: item } = await supabase
       .from('book_unit_items')
-      .select('id, business_id, price_pence, uses_per_purchase, valid_days')
+      .select('id, business_id, price_pence, uses_per_purchase, valid_days, name')
       .eq('id', unit_item_id)
       .single();
 
@@ -127,11 +128,51 @@ serve(async (req) => {
       .single();
 
     if (insertErr || !purchase) {
+      // Unique violation (Postgres 23505) means a concurrent/duplicate confirm
+      // already recorded this payment_intent_id. The check-then-act above is
+      // racy on its own; the UNIQUE index on payment_intent_id closes the race.
+      // Treat it as an idempotent success: fetch the existing row and return it
+      // rather than 500-ing or issuing a second unit.
+      if (insertErr?.code === '23505') {
+        const { data: dup } = await supabase
+          .from('book_unit_purchases')
+          .select('id, uses_remaining, expires_at')
+          .eq('payment_intent_id', payment_intent_id)
+          .maybeSingle();
+        if (dup) {
+          return new Response(
+            JSON.stringify({ ok: true, purchase_id: dup.id, uses_remaining: dup.uses_remaining, expires_at: dup.expires_at }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+      }
       console.error('[confirm-unit-purchase] insert failed', insertErr);
       return new Response(JSON.stringify({ error: insertErr?.message ?? 'Could not record purchase.' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Receipts (best-effort): buyer confirmation + owner new-sale.
+    try {
+      const itemName = (item as { name?: string }).name ?? 'your purchase';
+      const paid = `£${(pi.amount / 100).toFixed(2)}`;
+      await sendUserPush(supabase, {
+        userId: user.id, module: 'wallet', categoryId: 'wallet.purchase',
+        title: 'Purchase confirmed 🎟',
+        body: `You bought ${itemName} for ${paid}. Find it in My Passes.`,
+        data: { screen: 'local-my-passes' },
+      });
+      const { data: biz } = await supabase
+        .from('local_businesses').select('owner_id, name').eq('id', item.business_id).maybeSingle();
+      if (biz?.owner_id) {
+        await sendUserPush(supabase, {
+          userId: biz.owner_id, module: 'business', categoryId: 'business.sale',
+          title: 'New sale 💷',
+          body: `Someone bought ${itemName} (${paid})${biz.name ? ` at ${biz.name}` : ''}.`,
+          data: { screen: 'local-business-dashboard' },
+        });
+      }
+    } catch (e) { console.error('[confirm-unit-purchase] notify failed', e); }
 
     return new Response(
       JSON.stringify({ ok: true, purchase_id: purchase.id, uses_remaining: purchase.uses_remaining, expires_at: purchase.expires_at }),

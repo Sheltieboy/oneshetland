@@ -189,10 +189,25 @@ export default function CreateRunScreen() {
 
     setSubmitting(true);
 
+    // Resolve region slugs → UUIDs (runs.origin_region_id / destination_region_id
+    // are FKs to public.regions). These used to be saved as null, so runs lost
+    // their structured region links and any matching/filtering by region couldn't
+    // see them. Falls back to null if a slug isn't found, so the run still saves.
+    let originRegionId: string | null = null;
+    let destRegionId: string | null = null;
+    try {
+      const slugs = [form.originRegionSlug, form.destinationRegionSlug].filter(Boolean);
+      if (slugs.length) {
+        const { data: regionRows } = await supabase.from('regions').select('id, slug').in('slug', slugs);
+        originRegionId = regionRows?.find((r) => r.slug === form.originRegionSlug)?.id ?? null;
+        destRegionId   = regionRows?.find((r) => r.slug === form.destinationRegionSlug)?.id ?? null;
+      }
+    } catch { /* fall back to null — the run still creates */ }
+
     const { error } = await supabase.from('runs').insert({
       driver_id: profile.id,
-      origin_region_id: null,       // TODO: resolve slug → UUID
-      destination_region_id: null,  // TODO: resolve slug → UUID
+      origin_region_id: originRegionId,
+      destination_region_id: destRegionId,
       destination_area: form.destinationArea || null,
       departure_start: form.departureStart.toISOString(),
       departure_end: form.departureEnd.toISOString(),
@@ -219,7 +234,7 @@ export default function CreateRunScreen() {
       title: 'Run created! 🚗',
       message: 'Your run is now visible to customers. Matched requests will appear on your dashboard.',
       actions: [
-        { label: 'Back to dashboard', style: 'primary', onPress: () => router.replace('/(driver)/dashboard') },
+        { label: 'Back to dashboard', style: 'primary', onPress: () => router.replace({ pathname: '/(tabs)/fetch', params: { view: 'driver' } } as any) },
       ],
     });
   }

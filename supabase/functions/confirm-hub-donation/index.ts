@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -50,7 +51,7 @@ serve(async (req) => {
 
     // Gift Aid only counts at charity hubs that have a charity number on file,
     // and when a complete declaration is given.
-    const { data: hub } = await svc.from('hubs').select('is_charity, charity_number').eq('id', pi.metadata.hub_id).maybeSingle();
+    const { data: hub } = await svc.from('hubs').select('is_charity, charity_number, name').eq('id', pi.metadata.hub_id).maybeSingle();
     const charityEligible = !!hub?.is_charity && !!hub?.charity_number;
     const declared = charityEligible && gift_aid && gift_aid.first_name && gift_aid.last_name && gift_aid.address && gift_aid.postcode;
 
@@ -83,6 +84,41 @@ serve(async (req) => {
       p_postcode: ga?.postcode ?? null,
     });
     if (rpcErr) throw rpcErr;
+
+    // ── Notifications (best-effort — never fail the recorded donation) ───────
+    try {
+      const hubName = hub?.name ?? 'the hub';
+      const pence   = parseInt(pi.metadata.face_pence ?? '0', 10) || 0;
+      const amount  = `£${(pence / 100).toFixed(2)}`;
+
+      // Donor receipt.
+      await sendUserPush(svc, {
+        userId: user.id, module: 'hubs', categoryId: 'hubs.donation_receipt',
+        title: 'Thank you for your donation 💚',
+        body: `Your ${amount} donation to ${hubName} has gone through.`,
+        data: { hub_id: pi.metadata.hub_id },
+      });
+
+      // Hub admins (owner + committee). Respect anonymity — name the donor only
+      // when they didn't tick anonymous.
+      let donorName = 'An anonymous supporter';
+      if (!anonymous) {
+        const { data: donor } = await svc.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
+        donorName = (donor as { full_name?: string } | null)?.full_name ?? 'A supporter';
+      }
+      const { data: admins } = await svc
+        .from('hub_members').select('user_id')
+        .eq('hub_id', pi.metadata.hub_id).in('role', ['owner', 'committee']).eq('status', 'active');
+      const adminIds = [...new Set((admins ?? []).map(a => a.user_id).filter(Boolean) as string[])];
+      await sendUserPushBulk(svc, adminIds, {
+        module: 'hubs', categoryId: 'hubs.donation_received',
+        title: 'New donation 💚',
+        body: `${donorName} donated ${amount} to ${hubName}.`,
+        data: { hub_id: pi.metadata.hub_id },
+      });
+    } catch (notifyErr) {
+      console.error('[confirm-hub-donation] notify failed (non-fatal):', notifyErr);
+    }
 
     return json({ ok: true, gift_aid: !!ga });
   } catch (err) {

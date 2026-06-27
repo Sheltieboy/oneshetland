@@ -99,7 +99,7 @@ export default function WorkProfileScreen() {
       message: `Remove "${d.label}"?`,
       actions: [
         { label: 'Cancel', style: 'cancel' },
-        { label: 'Delete', style: 'destructive', onPress: async () => { try { await deleteCvDocument(d.id); setDocs(prev => prev.filter(x => x.id !== d.id)); } catch {} } },
+        { label: 'Delete', style: 'destructive', onPress: async () => { try { await deleteCvDocument(d.id); setDocs(prev => prev.filter(x => x.id !== d.id)); } catch (e: any) { alert({ title: 'Could not delete', message: e?.message ?? 'Please try again.' }); } } },
       ],
     });
   };

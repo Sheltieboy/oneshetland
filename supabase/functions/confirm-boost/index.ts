@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -110,24 +110,15 @@ serve(async (req) => {
       });
     }
 
-    // Fetch push tokens for matching workers
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .in('id', matchingUserIds);
-
-    let notified = 0;
-    for (const profile of profiles ?? []) {
-      if (profile?.push_token) {
-        await sendPush(
-          profile.push_token,
-          '⚡ Featured shift for you',
-          `"${shift.title}" — ${shift.location_text}`,
-          { screen: 'shifts', shift_id },
-        );
-        notified++;
-      }
-    }
+    // Notify matching workers (preference-aware: honours each worker's
+    // shifts toggle + quiet hours, and logs to their inbox).
+    const { sent: notified } = await sendUserPushBulk(supabase, matchingUserIds, {
+      module:     'shifts',
+      categoryId: 'shifts.new_match',
+      title:      '⚡ Featured shift for you',
+      body:       `"${shift.title}" — ${shift.location_text}`,
+      data:       { screen: 'shifts', shift_id },
+    });
 
     return new Response(
       JSON.stringify({ ok: true, boosted_until: boostedUntil, notified }),

@@ -46,6 +46,7 @@ export default function NewOfferScreen() {
   const [terms, setTerms]             = useState('');
   const [showDate, setShowDate]       = useState(false);
   const [saving, setSaving]           = useState(false);
+  const [published, setPublished]     = useState(false);   // inline success state
 
   const valueNeeded = type === 'percent' || type === 'fixed';
 
@@ -69,19 +70,43 @@ export default function NewOfferScreen() {
         max_redemptions: maxRedemptions ? parseInt(maxRedemptions) : null,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({
-        title: 'Offer live!',
-        message: 'Followers have been notified.',
-        actions: [
-          { label: 'OK', style: 'primary', onPress: () => router.back() },
-        ],
-      });
+      // Show success INLINE — this screen is presented as a modal and the alert
+      // lives at the app root, so iOS can't present it over us (it's swallowed).
+      setPublished(true);
     } catch (e: any) {
       alert({ title: 'Could not save', message: e.message ?? 'Try again' });
     } finally {
       setSaving(false);
     }
   };
+
+  // ── Inline success screen (shown after a published offer) ───────────────────
+  if (published) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScreenHeader title="Offer published" onClose={() => router.back()} accent={S.color} />
+        <View style={styles.successWrap}>
+          <View style={[styles.successIcon, { backgroundColor: S.light }]}>
+            <FontAwesome5 name="bullhorn" size={30} color={S.color} solid />
+          </View>
+          <Text style={styles.successTitle}>Offer live! 🎉</Text>
+          <Text style={styles.successSub}>
+            Your offer is now showing in the Local directory and followers have been notified.
+          </Text>
+          <TouchableOpacity
+            style={[styles.successBtn, { backgroundColor: S.color }]}
+            onPress={() => router.replace('/local-business-dashboard')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successBtnText}>Back to dashboard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 14 }} hitSlop={8}>
+            <Text style={styles.successDone}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -234,4 +259,21 @@ const styles = StyleSheet.create({
   saveBtn: {
     marginTop: 12,
   },
+
+  successWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBackground },
+  successIcon: {
+    width: 76, height: 76, borderRadius: 38,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
+  },
+  successTitle: { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
+  successSub: {
+    fontSize: fontSize.sm, color: colors.textSecondary, textAlign: 'center',
+    paddingHorizontal: spacing.xl, lineHeight: 22, marginTop: spacing.sm,
+  },
+  successBtn: {
+    marginTop: spacing.xl, borderRadius: radius.lg,
+    paddingVertical: 15, paddingHorizontal: spacing.xxl, alignItems: 'center',
+  },
+  successBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  successDone: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700' },
 });

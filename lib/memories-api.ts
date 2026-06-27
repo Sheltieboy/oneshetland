@@ -566,6 +566,12 @@ export async function addComment(input: {
     .select('*, author:profiles!memory_comments_author_id_fkey(id, full_name, avatar_url)')
     .single();
   if (error) throw error;
+
+  // Notify the story author (fire-and-forget; skips self in the edge fn).
+  supabase.functions
+    .invoke('notify-engagement', { body: { event: 'memory_comment', comment_id: (data as MemoryComment).id } })
+    .catch(() => {});
+
   return data as MemoryComment;
 }
 
@@ -586,7 +592,13 @@ export async function toggleReaction(
     .from('memory_reactions')
     .insert({ memory_id: memoryId, user_id: userId, kind });
 
-  if (!insErr) return { added: true };
+  if (!insErr) {
+    // Notify the story author only when a reaction is ADDED (not on un-react).
+    supabase.functions
+      .invoke('notify-engagement', { body: { event: 'memory_reaction', memory_id: memoryId, actor_id: userId } })
+      .catch(() => {});
+    return { added: true };
+  }
 
   // Unique-violation = already reacted → remove
   const { error: delErr } = await supabase

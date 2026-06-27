@@ -18,7 +18,9 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 export type NotificationModule =
-  | 'bookings' | 'shifts' | 'fetch' | 'loyalty' | 'offers' | 'spik' | 'games';
+  | 'bookings' | 'shifts' | 'fetch' | 'loyalty' | 'offers' | 'spik' | 'games'
+  | 'jobs' | 'events' | 'cruise' | 'wallet' | 'hubs' | 'community'
+  | 'notices' | 'business';
 
 export interface SendUserPushInput {
   userId:     string;                  // recipient (used for prefs + log)
@@ -57,33 +59,90 @@ export async function sendUserPush(
     return { status: 'skipped_pref' };
   }
 
-  // 2. Look up push token
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('push_token')
-    .eq('id', input.userId)
-    .maybeSingle();
-
-  const token = profile?.push_token as string | null | undefined;
-  if (!token || !token.startsWith('ExponentPushToken[')) {
+  // 2. Look up every active push token for this user (multi-device), falling
+  //    back to the legacy profiles.push_token column.
+  const tokens = await getUserPushTokens(supabase, input.userId);
+  if (tokens.length === 0) {
     await logAttempt(supabase, input, 'no_token');
     return { status: 'no_token' };
   }
 
-  // 3. Send via Expo Push API
-  const result = await sendPushRaw({
-    token,
-    title:      input.title,
-    body:       input.body,
-    data:       { ...(input.data ?? {}), categoryId: input.categoryId },
-    categoryId: input.categoryId,
-    sound:      input.sound === null ? null : 'default',
-  });
+  // 3. Send to each device. Prune any token Expo reports as unregistered.
+  let anyOk = false;
+  let lastError: string | undefined;
+  for (const token of tokens) {
+    const result = await sendPushRaw({
+      token,
+      title:      input.title,
+      body:       input.body,
+      data:       { ...(input.data ?? {}), categoryId: input.categoryId },
+      categoryId: input.categoryId,
+      sound:      input.sound === null ? null : 'default',
+    });
+    if (result.ok) {
+      anyOk = true;
+    } else {
+      lastError = result.error;
+      if (result.deviceNotRegistered) {
+        await pruneToken(supabase, input.userId, token);
+      }
+    }
+  }
 
-  // 4. Log
-  await logAttempt(supabase, input, result.ok ? 'sent' : 'error', result.error);
+  // 4. Log once per notification (not per device) — this row backs the in-app
+  //    inbox, so we want one entry the user can see and mark read.
+  await logAttempt(supabase, input, anyOk ? 'sent' : 'error', anyOk ? undefined : lastError);
 
-  return { status: result.ok ? 'sent' : 'error', error: result.error };
+  return { status: anyOk ? 'sent' : 'error', error: anyOk ? undefined : lastError };
+}
+
+/**
+ * Collect every valid Expo push token for a user: the push_tokens table
+ * (multi-device) plus the legacy profiles.push_token column, de-duplicated.
+ */
+async function getUserPushTokens(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string[]> {
+  const set = new Set<string>();
+
+  const { data: rows } = await supabase
+    .from('push_tokens')
+    .select('token')
+    .eq('user_id', userId);
+  for (const r of rows ?? []) {
+    const t = (r as { token?: string }).token;
+    if (t?.startsWith('ExponentPushToken[')) set.add(t);
+  }
+
+  // Legacy fallback for users who registered before push_tokens existed.
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('push_token')
+    .eq('id', userId)
+    .maybeSingle();
+  const legacy = (profile as { push_token?: string } | null)?.push_token;
+  if (legacy?.startsWith('ExponentPushToken[')) set.add(legacy);
+
+  return [...set];
+}
+
+/** Remove a dead token (Expo reported DeviceNotRegistered) from both stores. */
+async function pruneToken(
+  supabase: SupabaseClient,
+  userId: string,
+  token: string,
+): Promise<void> {
+  try {
+    await supabase.from('push_tokens').delete().eq('token', token);
+    await supabase
+      .from('profiles')
+      .update({ push_token: null })
+      .eq('id', userId)
+      .eq('push_token', token);
+  } catch (e) {
+    console.error('[send-push] pruneToken failed:', e);
+  }
 }
 
 /**
@@ -138,7 +197,7 @@ async function sendPushRaw(opts: {
   data?:       Record<string, unknown>;
   categoryId?: string;
   sound?:      'default' | null;
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<{ ok: boolean; error?: string; deviceNotRegistered?: boolean }> {
   if (!opts.token?.startsWith('ExponentPushToken[')) {
     return { ok: false, error: 'invalid_token' };
   }
@@ -162,8 +221,11 @@ async function sendPushRaw(opts: {
     const json = await res.json();
     if (!res.ok || json?.data?.status === 'error') {
       const errMsg = json?.data?.message ?? JSON.stringify(json);
+      // Expo flags a stale/uninstalled token with this error code — the caller
+      // prunes it so we stop sending to dead devices.
+      const dnr = json?.data?.details?.error === 'DeviceNotRegistered';
       console.error('[send-push] Expo API error:', errMsg);
-      return { ok: false, error: errMsg };
+      return { ok: false, error: errMsg, deviceNotRegistered: dnr };
     }
     return { ok: true };
   } catch (err) {

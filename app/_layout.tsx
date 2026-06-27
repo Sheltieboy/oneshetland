@@ -1,15 +1,17 @@
 import 'react-native-gesture-handler';   // must be first import in the entry file
 import { useEffect, useState, useRef, Component, ReactNode } from 'react';
 import { View, Text, ScrollView } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments, useGlobalSearchParams, useRootNavigationState } from 'expo-router';
+import { sanitizeNext } from '@/lib/auth-redirect';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
+import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
-import { registerPushToken } from '@/lib/notifications';
+import { registerPushToken, notificationRoute } from '@/lib/notifications';
 import { SCREEN_PUSH, MODAL_PRESENT, SECTION_ROOT } from '@/constants/nav';
 import { SplashAnimation } from '@/components/SplashAnimation';
 import { BrandedAlertProvider } from '@/components/BrandedAlert';
@@ -43,6 +45,7 @@ function RootNavigator() {
   const { session, profile, loading, hasAppliedToDrive } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const navParams = useGlobalSearchParams<{ next?: string }>();
 
   // Track whether the app was cold-launched via a deep link (universal link or
   // custom scheme). If so, we must NOT auto-redirect signed-in users to /(tabs)
@@ -87,6 +90,50 @@ function RootNavigator() {
       registerPushToken(session.user.id).catch(() => {});
     }
   }, [session?.user?.id, profile]);
+
+  // Route the user when they TAP a notification. Without this every tap just
+  // opens the app on Home and the carefully-attached routing data is wasted.
+  //
+  // We capture the target route into state and only navigate once the root
+  // navigator is actually mounted (rootNavState.key) and auth has resolved.
+  // Navigating earlier — which happens on a COLD start, where the listener
+  // fires before the <Stack> mounts — silently no-ops. That was the bug.
+  const coldNotifHandled = useRef(false);
+  const [pendingNotifRoute, setPendingNotifRoute] = useState<string | null>(null);
+  const rootNavState = useRootNavigationState();
+  const navReady = !!rootNavState?.key;
+
+  // Warm taps (app already running/backgrounded).
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(resp => {
+      const route = notificationRoute(resp.notification.request.content.data as Record<string, unknown>);
+      if (route) setPendingNotifRoute(route);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Cold start: app launched by tapping a notification.
+  useEffect(() => {
+    if (coldNotifHandled.current) return;
+    coldNotifHandled.current = true;
+    Notifications.getLastNotificationResponseAsync().then(resp => {
+      if (!resp) return;
+      const route = notificationRoute(resp.notification.request.content.data as Record<string, unknown>);
+      if (route) setPendingNotifRoute(route);
+      // Clear it so opening the app normally later doesn't re-route to the same
+      // screen (this response persists across launches otherwise).
+      (Notifications as { clearLastNotificationResponseAsync?: () => Promise<void> })
+        .clearLastNotificationResponseAsync?.();
+    }).catch(() => {});
+  }, []);
+
+  // Navigate once the navigator is mounted and auth has settled.
+  useEffect(() => {
+    if (!pendingNotifRoute || !navReady || loading) return;
+    const target = pendingNotifRoute;
+    setPendingNotifRoute(null);
+    try { router.push(target as never); } catch { /* invalid route — ignore */ }
+  }, [pendingNotifRoute, navReady, loading]);
 
   // Separate effect for the intro gate. Reads AsyncStorage fresh on every
   // segments-change so the moment intro.tsx writes the flag and replaces to
@@ -141,7 +188,10 @@ function RootNavigator() {
 
     if (!launchedViaDeepLink.current && !isOnDeepLinkRoute) {
       if (inAuthGroup || (segments as string[])[0] === 'index' || (segments as string[]).length === 0) {
-        router.replace('/(tabs)');
+        // Honour a `next` (return-to) param if a gated action/guard sent the
+        // user to sign-in — land them back where they were, not on Home.
+        const dest = (inAuthGroup ? sanitizeNext(navParams?.next) : null) ?? '/(tabs)';
+        router.replace(dest as never);
         return;
       }
     }
@@ -155,7 +205,7 @@ function RootNavigator() {
     if (inDriverGroup && !canAccessDriver) {
       router.replace('/(tabs)');
     }
-  }, [session, profile, hasAppliedToDrive, loading, segments, linkCheckDone, introCheckDone, introSeen]);
+  }, [session, profile, hasAppliedToDrive, loading, segments, linkCheckDone, introCheckDone, introSeen, navParams?.next]);
 
   // The Stack renders behind the splash overlay so we get a true cross-fade
   // when the splash dissolves at the end of its animation.
@@ -166,10 +216,12 @@ function RootNavigator() {
           <Stack.Screen name="index" />
           <Stack.Screen name="intro" />
           <Stack.Screen name="(auth)" />
+          <Stack.Screen name="auth/confirm" />
           <Stack.Screen name="(customer)" />
           <Stack.Screen name="(driver)" />
           <Stack.Screen name="(admin)" />
           <Stack.Screen name="account" />
+          <Stack.Screen name="notifications" />
           <Stack.Screen name="home" />
           <Stack.Screen name="search" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="(tabs)" options={{ ...SECTION_ROOT }} />

@@ -19,6 +19,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
 import {
   fetchBusinessServices, fetchAvailabilityRules, fetchUpcomingOverrides,
@@ -37,6 +38,7 @@ const WINDOW_DAYS = 14;
 export default function BookBusinessScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const goToSignIn = useGoToSignIn();
   const { businessId, serviceId: paramServiceId, giftId } = useLocalSearchParams<{
     businessId: string;
     serviceId?: string;
@@ -122,7 +124,10 @@ export default function BookBusinessScreen() {
     if (!selectedService || !business) return;
     if (slot.isFull) return;
     if (!profile) {
-      router.push('/(auth)/sign-in');
+      const next = `/local-book-business?businessId=${business.id}`
+        + `&serviceId=${selectedService.id}`
+        + (giftId ? `&giftId=${giftId}` : '');
+      goToSignIn(next);
       return;
     }
     Haptics.selectionAsync();

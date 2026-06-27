@@ -103,7 +103,14 @@ export default function EventScannerScreen() {
       else if (backup) body.backup_code = backup.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
       const { data, error } = await supabase.functions.invoke('validate-event-ticket', { body });
-      if (error) throw new Error(error.message);
+      if (error) {
+        let msg = error.message;
+        try {
+          const c = (error as any)?.context;
+          if (c?.json) { const b = await c.json(); if (b?.error) msg = b.error; }
+        } catch { /* keep generic */ }
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
 
       const result: ScanResult = data;

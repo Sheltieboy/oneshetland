@@ -85,7 +85,7 @@ export function MemoryCard({ pin, onPress, variant = 'compact', style }: MemoryC
               <View style={styles.heroScrim} />
               <View style={styles.heroOverlay}>
                 {pin.place_name ? <Text style={styles.heroPlace} numberOfLines={1}>{pin.place_name}</Text> : null}
-                <Text style={styles.heroTitle} numberOfLines={2}>{pin.title ?? 'Untitled memory'}</Text>
+                <Text style={styles.heroTitle} numberOfLines={2}>{pin.title ?? 'Untitled story'}</Text>
               </View>
               {pin.hero_kind === 'video' ? (
                 <View style={styles.playOverlay}><FontAwesome5 name="play" size={15} color="#fff" solid /></View>
@@ -108,7 +108,7 @@ export function MemoryCard({ pin, onPress, variant = 'compact', style }: MemoryC
           {!hasPhoto ? (
             <>
               {pin.place_name ? <Text style={[styles.place, { color: SECTION.color }]} numberOfLines={1}>{pin.place_name}</Text> : null}
-              <Text style={styles.titleFull} numberOfLines={2}>{pin.title ?? 'Untitled memory'}</Text>
+              <Text style={styles.titleFull} numberOfLines={2}>{pin.title ?? 'Untitled story'}</Text>
             </>
           ) : null}
           <View style={styles.metaRow}>
@@ -142,7 +142,7 @@ export function MemoryCard({ pin, onPress, variant = 'compact', style }: MemoryC
         {pin.place_name ? (
           <Text style={[styles.place, { color: SECTION.color }]} numberOfLines={1}>{pin.place_name}</Text>
         ) : null}
-        <Text style={styles.titleCompact} numberOfLines={1}>{pin.title ?? 'Untitled memory'}</Text>
+        <Text style={styles.titleCompact} numberOfLines={1}>{pin.title ?? 'Untitled story'}</Text>
         <View style={styles.metaRow}>
           {pin.era ? (
             <View style={[styles.eraChip, { backgroundColor: tone.light }]}>

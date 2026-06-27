@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 
@@ -85,10 +85,14 @@ serve(async (req) => {
         .update({ status: 'delivered', payment_status: 'unpaid' })
         .eq('id', request_id);
 
-      const { data: customerProfile } = await supabase
-        .from('profiles').select('push_token').eq('id', request.customer_id).single();
-      await sendPush(customerProfile?.push_token, 'Delivered! 🎉',
-        'Your item has arrived.', { request_id });
+      await sendUserPush(supabase, {
+        userId:     request.customer_id,
+        module:     'fetch',
+        categoryId: 'fetch.delivered',
+        title:      'Delivered! 🎉',
+        body:       'Your item has arrived.',
+        data:       { request_id },
+      });
 
       return new Response(
         JSON.stringify({ captured: false, no_payment_intent: true }),
@@ -102,7 +106,12 @@ serve(async (req) => {
       });
     }
 
-    const totalPence = (request.base_fee_pence ?? 0) + (request.waiting_fee_pence ?? 0);
+    // Service fee was added on top at authorisation; include it so the captured
+    // total = delivery fee + service fee + any waiting fee. The driver receives
+    // the delivery fee + waiting fee; OneShetland keeps the flat service fee.
+    const fetchCfg = await getCommissionConfig(supabase, 'fetch');
+    const serviceFeePence = calculateCommission(request.base_fee_pence ?? 0, fetchCfg, 'fetch').fee_pence;
+    const totalPence = (request.base_fee_pence ?? 0) + serviceFeePence + (request.waiting_fee_pence ?? 0);
 
     // If there's a waiting fee, update the PaymentIntent amount before capturing.
     // Recompute the platform fee on the new total so it tracks the final
@@ -121,9 +130,9 @@ serve(async (req) => {
       );
       const piExisting = await piGetRes.json();
       if (piGetRes.ok && piExisting.application_fee_amount != null) {
-        const cfg = await getCommissionConfig(supabase, 'fetch');
-        const { fee_pence } = calculateCommission(totalPence, cfg, 'fetch');
-        updateBody.application_fee_amount = String(fee_pence);
+        // Service fee is flat and sits on top — it doesn't grow with the waiting
+        // fee, so the driver receives the full delivery + waiting fee.
+        updateBody.application_fee_amount = String(serviceFeePence);
       }
 
       const updateRes = await fetch(`https://api.stripe.com/v1/payment_intents/${request.payment_intent_id}`, {
@@ -168,19 +177,15 @@ serve(async (req) => {
       })
       .eq('id', request_id);
 
-    // Notify the customer their item has been delivered
-    const { data: customerProfile } = await supabase
-      .from('profiles')
-      .select('push_token')
-      .eq('id', request.customer_id)
-      .single();
-
-    await sendPush(
-      customerProfile?.push_token,
-      'Delivered! 🎉',
-      `Your item has arrived. £${(totalPence / 100).toFixed(2)} has been charged to your card.`,
-      { request_id },
-    );
+    // Notify the customer their item has been delivered (preference-aware).
+    await sendUserPush(supabase, {
+      userId:     request.customer_id,
+      module:     'fetch',
+      categoryId: 'fetch.delivered',
+      title:      'Delivered! 🎉',
+      body:       `Your item has arrived. £${(totalPence / 100).toFixed(2)} has been charged to your card.`,
+      data:       { request_id },
+    });
 
     return new Response(
       JSON.stringify({ captured: true, total_fee_pence: totalPence }),

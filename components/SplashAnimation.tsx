@@ -17,6 +17,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, Animated, Text } from 'react-native';
 import { fontSize, spacing } from '@/constants/theme';
 import { RingLoader } from './RingLoader';
+import { DisplayText } from './DisplayText';
 
 // Deep navy field — matches the waves splash video and the native splash bg.
 const CREAM = '#F4EDDF';
@@ -71,7 +72,7 @@ export function SplashAnimation({ ready, onDone }: Props) {
       ) : (
         <Animated.View style={[styles.center, { opacity: fallbackOpacity }]}>
           <RingLoader size={132} strokeWidth={3.2} />
-          <Text style={styles.wordmark}>OneShetland</Text>
+          <DisplayText weight="black" style={styles.wordmark}>OneShetland</DisplayText>
           <Text style={styles.tagline}>Everything Shetland, in one place</Text>
         </Animated.View>
       )}
@@ -95,9 +96,9 @@ const styles = StyleSheet.create({
   wordmark: {
     color: CREAM,
     fontSize: 34,
-    fontWeight: '700',
     letterSpacing: -0.5,
     marginTop: spacing.md,
+    // Font comes from DisplayText (Fraunces-Black) — same as the app headers.
   },
   tagline: {
     color: 'rgba(244,237,223,0.7)',

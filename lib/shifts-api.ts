@@ -346,6 +346,11 @@ export async function withdrawApplication(
     .eq('id', applicationId);
   if (error) throw error;
 
+  // Let the employer know the candidate pulled out.
+  supabase.functions
+    .invoke('notify-shift-status', { body: { event: 'withdrawn', application_id: applicationId } })
+    .catch(() => {});
+
   if (wasAccepted && shiftId) {
     const { data: shift } = await supabase
       .from('shifts')
@@ -454,6 +459,11 @@ export async function cancelShift(shiftId: string): Promise<void> {
     .update({ status: 'cancelled' })
     .eq('id', shiftId);
   if (error) throw error;
+
+  // Tell every still-in-play worker the shift is off (urgent).
+  supabase.functions
+    .invoke('notify-shift-status', { body: { event: 'cancelled', shift_id: shiftId } })
+    .catch(() => {});
 }
 
 /** Worker checks in to their shift */

@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendUserPushBulk } from '../_shared/send-push.ts';
+import { sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,10 +10,16 @@ const corsHeaders = {
 /**
  * notify-drivers
  *
- * Called when a customer submits a new delivery request.
- * Sends a push notification to all approved drivers who have a push token.
+ * Two jobs, selected by `event`:
+ *   • event omitted / 'new'  — a customer submitted a new delivery request.
+ *     Fan out to every approved driver who has a push token.
+ *   • event === 'cancelled'  — a customer cancelled an existing request.
+ *     Notify ONLY the assigned driver (via the request's run → driver), and
+ *     no one if the request was never matched. (Previously this branch was
+ *     ignored, so a cancellation wrongly spammed the whole driver pool with a
+ *     "new request" alert and the assigned driver was never told.)
  *
- * Body: { request_id: string }
+ * Body: { request_id: string, event?: 'new' | 'cancelled' }
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -46,17 +52,18 @@ serve(async (req) => {
       });
     }
 
-    const { request_id } = await req.json();
+    const { request_id, event } = await req.json();
     if (!request_id) {
       return new Response(JSON.stringify({ error: 'request_id is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Fetch the request details for the notification message
+    // Fetch the request details for the notification message (+ run_id so we
+    // can resolve the assigned driver on cancellation)
     const { data: request } = await supabase
       .from('delivery_requests')
-      .select('category_slug, pickup_name, destination_area, destination_address, base_fee_pence')
+      .select('category_slug, pickup_name, destination_area, destination_address, base_fee_pence, run_id')
       .eq('id', request_id)
       .single();
 
@@ -66,6 +73,44 @@ serve(async (req) => {
       });
     }
 
+    const destination = request.destination_area ?? request.destination_address?.split(',')[0] ?? 'nearby';
+
+    // ── Cancellation: tell only the assigned driver (if the request was matched) ──
+    if (event === 'cancelled') {
+      if (!request.run_id) {
+        // Never matched — no driver to notify.
+        return new Response(JSON.stringify({ sent: 0 }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: run } = await supabase
+        .from('runs')
+        .select('driver_id')
+        .eq('id', request.run_id)
+        .maybeSingle();
+
+      if (!run?.driver_id) {
+        return new Response(JSON.stringify({ sent: 0 }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      await sendUserPush(supabase, {
+        userId:     run.driver_id,
+        module:     'fetch',
+        categoryId: 'fetch.request_cancelled',
+        title:      'Delivery cancelled',
+        body:       `The customer has called off the run to ${destination}.`,
+        data:       { request_id, event: 'cancelled' },
+      });
+
+      return new Response(JSON.stringify({ sent: 1 }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ── New request: fan out to all approved drivers ──
     // Fetch IDs of all approved drivers
     const { data: approvedDrivers } = await supabase
       .from('driver_profiles')
@@ -80,7 +125,6 @@ serve(async (req) => {
 
     const driverIds = approvedDrivers.map((d) => d.id);
 
-    const destination = request.destination_area ?? request.destination_address?.split(',')[0] ?? 'nearby';
     const feeLabel = request.base_fee_pence
       ? ` — £${(request.base_fee_pence / 100).toFixed(2)}`
       : '';

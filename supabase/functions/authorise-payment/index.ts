@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 
@@ -139,17 +139,14 @@ serve(async (req) => {
       });
     }
 
-    // Platform commission — only applied when routing to a connected account
-    // (no destination = no transfer = no application_fee_amount to deduct).
-    let applicationFeePence = 0;
-    if (driverProfile?.stripe_account_id) {
-      const cfg = await getCommissionConfig(supabase, 'fetch');
-      applicationFeePence = calculateCommission(baseFeePence, cfg, 'fetch').fee_pence;
-    }
+    // Service fee — added ON TOP of the delivery fee so the DRIVER receives the
+    // full delivery fee and OneShetland's fee is separate (not skimmed from it).
+    const fetchCfg = await getCommissionConfig(supabase, 'fetch');
+    const serviceFeePence = calculateCommission(baseFeePence, fetchCfg, 'fetch').fee_pence;
 
-    // Create a PaymentIntent with manual capture (pre-authorise only)
+    // Pre-authorise the customer for delivery fee + service fee (manual capture).
     const piBody: Record<string, string> = {
-      amount: String(baseFeePence),
+      amount: String(baseFeePence + serviceFeePence),
       currency: 'gbp',
       customer: customerProfile.stripe_customer_id,
       payment_method: paymentMethodId,
@@ -159,18 +156,19 @@ serve(async (req) => {
       'automatic_payment_methods[allow_redirects]': 'never',
       'metadata[request_id]': request_id,
       'metadata[customer_id]': request.customer_id,
-      'metadata[application_fee_label]': 'OneShetland platform fee',
-      'metadata[application_fee_pence]': String(applicationFeePence),
-      description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'}${applicationFeePence > 0 ? ` (incl. £${(applicationFeePence / 100).toFixed(2)} platform fee)` : ''}`,
+      'metadata[base_fee_pence]': String(baseFeePence),
+      'metadata[application_fee_label]': 'OneShetland service fee',
+      'metadata[application_fee_pence]': String(serviceFeePence),
+      description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'} (£${(baseFeePence / 100).toFixed(2)} to driver + £${(serviceFeePence / 100).toFixed(2)} service fee)`,
     };
 
-    // Destination charge to the driver's Connect account (transfers-only
-    // capable). The platform's £1.50 service fee is taken as application_fee;
-    // Stripe's processing fee comes out of that fee, leaving clean margin.
+    // Destination charge to the driver's Connect account. amount includes the
+    // service fee; application_fee_amount = service fee, so the driver receives
+    // (amount − service fee) = the FULL delivery fee.
     if (driverProfile?.stripe_account_id) {
       piBody['transfer_data[destination]'] = driverProfile.stripe_account_id;
-      if (applicationFeePence > 0) {
-        piBody['application_fee_amount'] = String(applicationFeePence);
+      if (serviceFeePence > 0) {
+        piBody['application_fee_amount'] = String(serviceFeePence);
       }
     }
 
@@ -198,13 +196,15 @@ serve(async (req) => {
       })
       .eq('id', request_id);
 
-    // Notify the customer their driver has been matched
-    await sendPush(
-      customerProfile?.push_token,
-      'Driver matched 🚗',
-      `Your driver is on the way to collect your ${request.category_slug ?? 'item'}. Your card will be charged on delivery.`,
-      { request_id },
-    );
+    // Notify the customer their driver has been matched (preference-aware).
+    await sendUserPush(supabase, {
+      userId:     request.customer_id,
+      module:     'fetch',
+      categoryId: 'fetch.driver_matched',
+      title:      'Driver matched 🚗',
+      body:       `Your driver is on the way to collect your ${request.category_slug ?? 'item'}. Your card will be charged on delivery.`,
+      data:       { request_id },
+    });
 
     return new Response(
       JSON.stringify({ payment_intent_id: pi.id, base_fee_pence: baseFeePence }),

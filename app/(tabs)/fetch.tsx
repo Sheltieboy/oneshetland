@@ -21,13 +21,14 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
 import { ShetlandRoadSign } from '@/components/ShetlandRoadSign';
@@ -55,7 +56,10 @@ export default function FetchTab() {
   // hub's Jobs | Shifts switch). Everyone defaults to the Requester view;
   // driving is opt-in via the toggle. Driver is a capability, not an identity,
   // so we never auto-hijack the view based on it.
-  const [view, setView] = useState<FetchView>('requester');
+  // Default to Requester, but honour an explicit ?view=driver (e.g. straight
+  // after applying to drive) so the user lands on the Driver view in-section.
+  const { view: viewParam } = useLocalSearchParams<{ view?: string }>();
+  const [view, setView] = useState<FetchView>(viewParam === 'driver' ? 'driver' : 'requester');
 
   // While auth is resolving, show a quick spinner — avoids flashing the
   // public hub for a frame before the dashboard mounts.
@@ -120,6 +124,7 @@ function SwitchPill({ icon, label, active, onPress }: {
 function PublicFetchHub() {
   const router = useRouter();
   const { isTablet } = useAppLayout();
+  const goToSignIn = useGoToSignIn();
   const [runs, setRuns]               = useState<LiveRun[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
 
@@ -205,7 +210,7 @@ function PublicFetchHub() {
                   <TouchableOpacity
                     key={run.id}
                     style={styles.runCard}
-                    onPress={() => router.push('/(auth)/sign-in')}
+                    onPress={() => goToSignIn()}
                     activeOpacity={0.85}
                   >
                     <View style={styles.runCardTop}>
@@ -261,7 +266,7 @@ function PublicFetchHub() {
         <View style={styles.ctaSection}>
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: S.color }]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(auth)/sign-in'); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); goToSignIn(); }}
             activeOpacity={0.85}
           >
             <FontAwesome5 name="paper-plane" size={14} color="#fff" solid />

@@ -58,13 +58,22 @@ interface Props {
   onConfirmWallet?: () => void;
   /** Optional: tapping the faded wallet button when short routes here (e.g. top up). */
   onTopUp?: () => void;
+  /** Whether the user has a saved card. When false, the card button becomes
+   *  "Add a card" (→ onAddCard) so a funded-wallet/no-card user isn't blocked. */
+  hasCard?: boolean;
+  /** Called when a card-less user taps the card button (route to card setup). */
+  onAddCard?: () => void;
 }
 
 export function ConfirmPaymentSheet({
   visible, title = 'Confirm payment', itemName, lineItems, totalPence,
   payingWith, policy, confirmLabel, loading = false, onConfirm, onCancel,
   walletBalancePence = null, onConfirmWallet, onTopUp,
+  hasCard = true, onAddCard,
 }: Props) {
+  // Card button: pay if they have a card, otherwise route to add one.
+  const cardPress = hasCard ? onConfirm : (onAddCard ?? onConfirm);
+  const cardLabel = (full: string) => hasCard ? full : 'Add a card to pay';
   // Show the wallet option whenever a balance is known — even when it's short,
   // shown faded, so people get used to seeing it.
   const showWallet = walletBalancePence != null && onConfirmWallet != null && totalPence > 0;
@@ -135,31 +144,31 @@ export function ConfirmPaymentSheet({
                     </View>
                   )}
               </TouchableOpacity>
-              {/* Secondary: pay by card */}
+              {/* Secondary: pay by card (or add a card if none on file) */}
               <TouchableOpacity
                 style={[styles.payBtnAlt, loading && { opacity: 0.7 }]}
-                onPress={onConfirm}
+                onPress={cardPress}
                 disabled={loading}
                 activeOpacity={0.85}
               >
                 <View style={styles.btnRow}>
                   <FontAwesome5 name="credit-card" size={14} color={colors.navy} solid />
-                  <Text style={styles.payTextAlt}>  Pay {formatPence(totalPence)} by card</Text>
+                  <Text style={styles.payTextAlt}>{'  '}{hasCard ? `Pay ${formatPence(totalPence)} by card` : 'Add a card to pay'}</Text>
                 </View>
               </TouchableOpacity>
             </>
           ) : (
             <>
-              {/* Primary: pay by card */}
+              {/* Primary: pay by card (or add a card if none on file) */}
               <TouchableOpacity
                 style={[styles.payBtn, loading && { opacity: 0.7 }]}
-                onPress={onConfirm}
+                onPress={cardPress}
                 disabled={loading}
                 activeOpacity={0.85}
               >
                 {loading
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.payText}>{confirmLabel ?? `Pay ${formatPence(totalPence)} by card`}</Text>}
+                  : <Text style={styles.payText}>{hasCard ? (confirmLabel ?? `Pay ${formatPence(totalPence)} by card`) : 'Add a card to pay'}</Text>}
               </TouchableOpacity>
               {/* Faded wallet button when a balance is known but too low — keeps the
                   option visible. Tappable to top up if a handler is provided. */}

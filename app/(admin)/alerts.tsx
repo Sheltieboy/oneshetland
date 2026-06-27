@@ -80,7 +80,12 @@ export default function AdminAlertsScreen() {
           label: 'End alert',
           style: 'destructive',
           onPress: async () => {
-            try { await forceExpireAlert(a.id); await load(); } catch {}
+            try {
+              await forceExpireAlert(a.id);
+              await load();
+            } catch (e: any) {
+              alert({ title: 'Could not end alert', message: e?.message ?? 'Please try again.' });
+            }
           },
         },
       ],

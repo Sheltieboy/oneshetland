@@ -123,6 +123,15 @@ export async function sendAlert(params: {
     .single();
 
   if (error) throw error;
+
+  // Push immediately-active alerts to the business's customers. Scheduled ones
+  // (is_active=false until their start time) are delivered when activated.
+  if (!isScheduled && data?.id) {
+    supabase.functions
+      .invoke('notify-business-alert', { body: { alert_id: data.id } })
+      .catch(() => {});
+  }
+
   return data;
 }
 

@@ -430,6 +430,11 @@ export async function createBooking(input: CreateBookingInput): Promise<BookBook
       .eq('id', input.giftId);
   }
 
+  // Notify the business owner of the new booking (fire-and-forget).
+  supabase.functions
+    .invoke('notify-booking', { body: { booking_id: (data as BookBooking).id, event: 'created' } })
+    .catch(() => {});
+
   return data as BookBooking;
 }
 
@@ -443,6 +448,12 @@ export async function cancelBooking(id: string, byUserId: string): Promise<void>
     })
     .eq('id', id);
   if (error) throw error;
+
+  // Notify the other party (owner cancelled → tell customer; customer
+  // cancelled → tell owner). Fire-and-forget.
+  supabase.functions
+    .invoke('notify-booking', { body: { booking_id: id, event: 'cancelled' } })
+    .catch(() => {});
 }
 
 /** Owner action: mark a booking complete or no-show. */

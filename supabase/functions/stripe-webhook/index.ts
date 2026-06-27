@@ -272,6 +272,14 @@ serve(async (req) => {
         if (priceId === premiumPrice) tier = 'premium';
         else if (priceId === proPrice) tier = 'pro';
 
+        // Read the current state first so we can tell a genuine downgrade
+        // (was paid, now lapsing) from routine update churn.
+        const { data: bizBefore } = await supabase
+          .from('local_businesses')
+          .select('owner_id, name, subscription_tier')
+          .eq('stripe_customer_id', customerId)
+          .maybeSingle();
+
         await supabase
           .from('local_businesses')
           .update({
@@ -282,6 +290,20 @@ serve(async (req) => {
             stripe_customer_id:                customerId,
           })
           .eq('stripe_customer_id', customerId);
+
+        // Silent-downgrade fix: if a paying business just lapsed (payment
+        // failed / went inactive), tell the owner — losing the tier also hides
+        // their bookable listings.
+        if (!isActive && bizBefore?.owner_id && bizBefore.subscription_tier !== 'free') {
+          await sendUserPush(supabase, {
+            userId:     bizBefore.owner_id,
+            module:     'business',
+            categoryId: 'business.subscription_lapsed',
+            title:      'Subscription payment problem',
+            body:       `We couldn't take payment for ${bizBefore.name}'s OneShetland subscription, so it's paused. Tap to update your card and stay listed.`,
+            data:       { screen: 'local-business-dashboard' },
+          });
+        }
 
         break;
       }
@@ -302,6 +324,12 @@ serve(async (req) => {
         }
 
         // Standard tier subscription cancelled
+        const { data: bizDel } = await supabase
+          .from('local_businesses')
+          .select('owner_id, name, subscription_tier')
+          .eq('stripe_subscription_id', subId)
+          .maybeSingle();
+
         await supabase
           .from('local_businesses')
           .update({
@@ -310,6 +338,18 @@ serve(async (req) => {
             subscription_cancel_at_period_end: false,
           })
           .eq('stripe_subscription_id', subId);
+
+        // Tell the owner their subscription has ended (bookable listings now hidden).
+        if (bizDel?.owner_id && bizDel.subscription_tier !== 'free') {
+          await sendUserPush(supabase, {
+            userId:     bizDel.owner_id,
+            module:     'business',
+            categoryId: 'business.subscription_ended',
+            title:      'Subscription ended',
+            body:       `Your OneShetland subscription for ${bizDel.name} has ended, so your bookable listings are now hidden. Tap to resubscribe.`,
+            data:       { screen: 'local-business-dashboard' },
+          });
+        }
         break;
       }
 

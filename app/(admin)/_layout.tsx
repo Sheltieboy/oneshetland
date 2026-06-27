@@ -1,10 +1,11 @@
-import { Redirect, Stack } from 'expo-router';
+import { Redirect, Stack, usePathname } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { View, ActivityIndicator } from 'react-native';
 import { colors } from '@/constants/theme';
 
 export default function AdminLayout() {
   const { session, profile, loading } = useAuth();
+  const pathname = usePathname();
 
   if (loading) {
     return (
@@ -14,8 +15,10 @@ export default function AdminLayout() {
     );
   }
 
-  if (!session) return <Redirect href="/(auth)/sign-in" />;
-  if (profile && profile.role !== 'admin') return <Redirect href="/(customer)/dashboard" />;
+  if (!session) return <Redirect href={`/(auth)/sign-in?next=${encodeURIComponent(pathname)}`} />;
+  // Bounce non-admins to the Fetch tab (home, with the bottom tab bar) rather
+  // than the standalone /(customer)/dashboard route, which has no tabs.
+  if (profile && profile.role !== 'admin') return <Redirect href="/(tabs)/fetch" />;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

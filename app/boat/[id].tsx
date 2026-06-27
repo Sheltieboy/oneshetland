@@ -52,6 +52,7 @@ import {
 } from '@/lib/boats-prefs';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 
 const SECTION = SECTIONS.daBoats;
 
@@ -149,6 +150,7 @@ export default function BoatProfileScreen() {
   const { profile: viewer } = useAuth();
   const { isTablet } = useAppLayout();
   const { alert } = useAlert();
+  const goToSignIn = useGoToSignIn();
 
   const [profile, setProfile]       = useState<VesselProfile | null>(null);
   const [timeline, setTimeline]     = useState<VesselTimelineEntry[]>([]);
@@ -271,7 +273,7 @@ export default function BoatProfileScreen() {
   }, [id, viewer?.id]);
 
   const handleVote = useCallback(async (proposalId: string, vote: 'confirm' | 'dispute') => {
-    if (!viewer?.id) { router.push('/(auth)/sign-in'); return; }
+    if (!viewer?.id) { goToSignIn(); return; }
     try {
       const res = await voteVesselEdit(proposalId, vote);
       if (res.applied) {
@@ -284,12 +286,12 @@ export default function BoatProfileScreen() {
     } catch (err: any) {
       alert({ title: 'Could not record your vote', message: err?.message ?? '' });
     }
-  }, [viewer?.id, router, load, refreshEdits]);
+  }, [viewer?.id, goToSignIn, load, refreshEdits]);
 
   const handlePropose = useCallback(async (
     args: { action: EditAction; value: string; note: string },
   ): Promise<boolean> => {
-    if (!viewer?.id) { setEditTarget(null); router.push('/(auth)/sign-in'); return false; }
+    if (!viewer?.id) { setEditTarget(null); goToSignIn(); return false; }
     const t = editTarget;
     if (!t || !profile) return false;
 
@@ -321,7 +323,7 @@ export default function BoatProfileScreen() {
       alert({ title: 'Could not send your suggestion', message: err?.message ?? '' });
       return false;
     }
-  }, [viewer?.id, router, editTarget, profile, refreshEdits]);
+  }, [viewer?.id, goToSignIn, editTarget, profile, refreshEdits]);
 
   const handleSaveToggle = async () => {
     if (!profile) return;
@@ -350,7 +352,7 @@ export default function BoatProfileScreen() {
 
   const submitComment = async () => {
     if (!viewer?.id) {
-      router.push('/(auth)/sign-in');
+      goToSignIn();
       return;
     }
     if (!profile) return;
@@ -1039,7 +1041,7 @@ export default function BoatProfileScreen() {
               {/* Post / Sign-in on the right */}
               {!viewer ? (
                 <TouchableOpacity
-                  onPress={() => router.push('/(auth)/sign-in')}
+                  onPress={() => goToSignIn()}
                   style={[styles.postBtn, { backgroundColor: SECTION.color }]}
                 >
                   <FontAwesome5 name="sign-in-alt" size={14} color="#fff" />

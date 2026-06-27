@@ -140,22 +140,28 @@ serve(async (req) => {
 
     // Resolve the organiser's Connect account for the destination charge.
     let stripeAccountId: string | null = null;
+    // Demo organisers (slug 'demo-…') exist only for testing and have no real
+    // Stripe Connect account — in test mode we charge the platform directly
+    // (no destination transfer). Real organisers must be payout-ready.
+    let isDemo = false;
     if (event.organiser_hub_id) {
       // Hub-organised event → pay out to the hub's connected account.
       const { data: hub } = await supabase
         .from('hubs')
-        .select('stripe_account_id, payout_enabled')
+        .select('stripe_account_id, payout_enabled, slug')
         .eq('id', event.organiser_hub_id)
         .single();
+      isDemo = (hub?.slug ?? '').startsWith('demo-');
       if (hub?.payout_enabled && hub?.stripe_account_id) {
         stripeAccountId = hub.stripe_account_id;
       }
     } else if (event.organiser_business_id) {
       const { data: biz } = await supabase
         .from('local_businesses')
-        .select('stripe_account_id, payout_enabled, use_business_payout, owner_id')
+        .select('stripe_account_id, payout_enabled, use_business_payout, owner_id, slug')
         .eq('id', event.organiser_business_id)
         .single();
+      isDemo = (biz?.slug ?? '').startsWith('demo-');
 
       if (biz?.payout_enabled && biz?.stripe_account_id) {
         stripeAccountId = biz.stripe_account_id;
@@ -240,7 +246,9 @@ serve(async (req) => {
       // No Stripe needed — just confirm immediately
       await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now }).eq('id', order.id);
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
-      await supabase.from('events').update({ tickets_sold: supabase.rpc('tickets_sold') }).eq('id', event_id);
+      // Use the atomic counter RPC — the previous `supabase.rpc('tickets_sold')`
+      // wrote a query-builder object into the column, corrupting tickets_sold.
+      await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }).catch(() => {});
 
       return new Response(JSON.stringify({
         free:       true,
@@ -254,7 +262,7 @@ serve(async (req) => {
     // Never take money for a paid ticket unless the organiser has a connected
     // Stripe account to receive it — otherwise the funds would settle into the
     // platform account with no automatic payout to the organiser.
-    if (!stripeAccountId) {
+    if (!stripeAccountId && !isDemo) {
       // Roll back the pending order + held tickets we just created.
       await supabase.from('event_tickets').delete().eq('order_id', order.id);
       await supabase.from('event_ticket_orders').delete().eq('id', order.id);
@@ -273,29 +281,34 @@ serve(async (req) => {
         await supabase.from('event_ticket_orders').delete().eq('id', order.id);
         return new Response(JSON.stringify({ error: 'Not enough in your wallet — top up or pay by card.' }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+      // Demo organisers have no connected account → skip the transfer entirely
+      // (the wallet debit alone funds the platform). Real organisers transfer.
       let walletTransferId: string | null = null;
-      try {
-        const tb = new URLSearchParams({
-          amount: String(totalPence), currency: 'gbp', destination: stripeAccountId,
-          description: `OneShetland wallet tickets — ${event.title}`,
-          'metadata[type]': 'event_tickets_wallet', 'metadata[order_id]': order.id, 'metadata[buyer_id]': user.id,
-        });
-        const tr = await fetch('https://api.stripe.com/v1/transfers', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': STRIPE_API_VERSION, 'Idempotency-Key': crypto.randomUUID() },
-          body: tb,
-        });
-        const tj = await tr.json();
-        if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
-        walletTransferId = tj.id;
-      } catch (e) {
-        console.error('[create-event-ticket-intent] wallet transfer failed:', e);
-        await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: chargeTotalPence });
-        await supabase.from('event_tickets').delete().eq('order_id', order.id);
-        await supabase.from('event_ticket_orders').delete().eq('id', order.id);
-        return new Response(JSON.stringify({ error: 'Ticket payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (stripeAccountId) {
+        try {
+          const tb = new URLSearchParams({
+            amount: String(totalPence), currency: 'gbp', destination: stripeAccountId,
+            description: `OneShetland wallet tickets — ${event.title}`,
+            'metadata[type]': 'event_tickets_wallet', 'metadata[order_id]': order.id, 'metadata[buyer_id]': user.id,
+          });
+          const tr = await fetch('https://api.stripe.com/v1/transfers', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': STRIPE_API_VERSION, 'Idempotency-Key': crypto.randomUUID() },
+            body: tb,
+          });
+          const tj = await tr.json();
+          if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
+          walletTransferId = tj.id;
+        } catch (e) {
+          console.error('[create-event-ticket-intent] wallet transfer failed:', e);
+          await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: chargeTotalPence });
+          await supabase.from('event_tickets').delete().eq('order_id', order.id);
+          await supabase.from('event_ticket_orders').delete().eq('id', order.id);
+          return new Response(JSON.stringify({ error: 'Ticket payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
       }
-      await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now, stripe_payment_intent_id: `wallet_${walletTransferId}` }).eq('id', order.id);
+      const walletRef = walletTransferId ? `wallet_${walletTransferId}` : `wallet_${crypto.randomUUID()}`;
+      await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now, stripe_payment_intent_id: walletRef }).eq('id', order.id);
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
       await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }).catch(() => {});
       await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: null, type: 'spend', amount_pence: -chargeTotalPence, stripe_transfer_id: walletTransferId, description: `Tickets — ${event.title}` });

@@ -17,6 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchMyBookings, cancelBooking,
@@ -32,6 +33,7 @@ export default function MyBookingsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { alert } = useAlert();
+  const goToSignIn = useGoToSignIn();
 
   const [bookings, setBookings] = useState<BookBooking[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -122,7 +124,7 @@ export default function MyBookingsScreen() {
           <Text style={styles.emptyTitle}>Sign in to see your bookings</Text>
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: S.color }]}
-            onPress={() => router.push('/(auth)/sign-in')}
+            onPress={() => goToSignIn()}
           >
             <Text style={styles.primaryBtnText}>Sign in</Text>
           </TouchableOpacity>

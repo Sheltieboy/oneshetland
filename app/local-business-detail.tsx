@@ -32,6 +32,7 @@ import {
 } from '@/lib/book-api';
 import { supabase } from '@/lib/supabase';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { addRecentlyViewed, businessResult } from '@/lib/search';
 import { BusinessLocationMap } from '@/components/BusinessLocationMap';
 import { useAlert } from '@/components/BrandedAlert';
@@ -75,6 +76,7 @@ export default function BusinessDetailScreen() {
   const { profile } = useAuth();
   const { isTablet } = useAppLayout();
   const { alert } = useAlert();
+  const goToSignIn = useGoToSignIn();
 
   const [business, setBusiness] = useState<LocalBusiness | null>(null);
   const [program,  setProgram]  = useState<LoyaltyProgram | null>(null);
@@ -188,6 +190,7 @@ export default function BusinessDetailScreen() {
   };
 
   const handleRedeemOffer = async (offer: LocalOffer) => {
+    if (!profile) { goToSignIn(`/local-business-detail?id=${id}`); return; }
     alert({
       title: 'Claim this offer?',
       message: `Show staff to use "${offer.title}". You can only use this offer once.`,
@@ -199,6 +202,10 @@ export default function BusinessDetailScreen() {
             await redeemOffer(offer.id);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             await load();
+            alert({
+              title: 'Offer claimed ✓',
+              message: `Show the "Claimed" badge on "${offer.title}" to staff in the shop to get your discount — it's a one-time use.`,
+            });
           } catch (e: any) {
             alert({ title: 'Error', message: e.message });
           } finally {
@@ -443,7 +450,7 @@ export default function BusinessDetailScreen() {
               )}
               <TouchableOpacity
                 style={styles.collectBtn}
-                onPress={() => router.push('/local-stamp-scanner')}
+                onPress={() => { if (!profile) { goToSignIn(`/local-business-detail?id=${id}`); return; } router.push('/local-stamp-scanner'); }}
                 activeOpacity={0.8}
               >
                 <FontAwesome5 name="qrcode" size={11} color={accent} />
@@ -773,7 +780,7 @@ export default function BusinessDetailScreen() {
                 style={[styles.claimBtn, { backgroundColor: accent }]}
                 onPress={() => {
                   Haptics.selectionAsync();
-                  if (!profile) { router.push('/(auth)/sign-in'); return; }
+                  if (!profile) { goToSignIn(`/local-business-detail?id=${id}`); return; }
                   router.push(`/business-claim?id=${business.id}`);
                 }}
                 activeOpacity={0.85}

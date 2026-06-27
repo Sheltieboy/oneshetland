@@ -6,6 +6,20 @@
 
 import { supabase } from './supabase';
 
+/**
+ * Decode the real error from a supabase.functions.invoke failure.
+ * invoke() returns a generic "Edge Function returned a non-2xx status code";
+ * the real reason is in error.context.json() → { error: "..." }.
+ */
+async function fnErr(error: any, fallback: string): Promise<Error> {
+  let msg = error?.message ?? fallback;
+  try {
+    const c = error?.context;
+    if (c?.json) { const b = await c.json(); if (b?.error) msg = b.error; }
+  } catch { /* keep generic */ }
+  return new Error(msg);
+}
+
 // ---------------------------------------------------------------------------
 // Shetland areas
 // ---------------------------------------------------------------------------
@@ -526,7 +540,7 @@ export async function collectStamp(code: string): Promise<{ ok: boolean; reward_
   const { data, error } = await supabase.functions.invoke('local-stamp-collect', {
     body: { code },
   });
-  if (error) throw error;
+  if (error) throw await fnErr(error, 'Could not collect stamp.');
   return data;
 }
 
@@ -535,7 +549,7 @@ export async function redeemReward(cardId: string): Promise<void> {
   const { error } = await supabase.functions.invoke('local-redeem-reward', {
     body: { card_id: cardId },
   });
-  if (error) throw error;
+  if (error) throw await fnErr(error, 'Could not redeem reward.');
 }
 
 // ── Offers ────────────────────────────────────────────────────────────────────
@@ -614,7 +628,7 @@ export async function redeemOffer(offerId: string): Promise<void> {
   const { error } = await supabase.functions.invoke('local-redeem-offer', {
     body: { offer_id: offerId },
   });
-  if (error) throw error;
+  if (error) throw await fnErr(error, 'Could not redeem offer.');
 }
 
 export async function fetchMyRedeemedOfferIds(userId: string): Promise<string[]> {
@@ -697,7 +711,7 @@ export async function startWalletTopUp(
   const { data, error } = await supabase.functions.invoke('local-wallet-topup-intent', {
     body: { amount_pence: amountPence, use_saved_card: useSavedCard },
   });
-  if (error) throw error;
+  if (error) throw await fnErr(error, 'Could not start top-up.');
   return data;
 }
 
@@ -706,7 +720,7 @@ export async function confirmWalletTopUp(paymentIntentId: string): Promise<{ bal
   const { data, error } = await supabase.functions.invoke('local-wallet-confirm-topup', {
     body: { payment_intent_id: paymentIntentId },
   });
-  if (error) throw error;
+  if (error) throw await fnErr(error, 'Could not confirm top-up.');
   return data;
 }
 
@@ -715,7 +729,7 @@ export async function payWithWallet(code: string, amountPence: number): Promise<
   const { data, error } = await supabase.functions.invoke('local-wallet-pay', {
     body: { code, amount_pence: amountPence },
   });
-  if (error) throw error;
+  if (error) throw await fnErr(error, 'Could not pay with wallet.');
   return data;
 }
 
@@ -797,7 +811,7 @@ export async function createBusinessOnboardingLink(businessId: string): Promise<
   const { data, error } = await supabase.functions.invoke('local-business-onboard', {
     body: { business_id: businessId },
   });
-  if (error) throw error;
+  if (error) throw await fnErr(error, 'Could not start onboarding.');
   return data;
 }
 
@@ -1289,6 +1303,9 @@ export async function fetchPendingClaimCount(): Promise<number> {
 export async function approveClaim(claimId: string): Promise<void> {
   const { error } = await supabase.rpc('approve_business_claim', { p_claim_id: claimId });
   if (error) throw error;
+  supabase.functions
+    .invoke('notify-claim', { body: { claim_id: claimId, outcome: 'approved' } })
+    .catch(() => {});
 }
 
 /** Admin: reject a claim with an optional note. */
@@ -1298,6 +1315,9 @@ export async function rejectClaim(claimId: string, note?: string): Promise<void>
     .update({ status: 'rejected', reviewed_at: new Date().toISOString(), admin_note: note ?? null })
     .eq('id', claimId);
   if (error) throw error;
+  supabase.functions
+    .invoke('notify-claim', { body: { claim_id: claimId, outcome: 'rejected' } })
+    .catch(() => {});
 }
 
 // ── Discount grants ────────────────────────────────────────────────────────────

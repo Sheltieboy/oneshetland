@@ -10,17 +10,19 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { logCompliance } from '@/lib/compliance';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const { next } = useLocalSearchParams<{ next?: string }>();
+  const signInTarget = { pathname: '/(auth)/sign-in' as const, params: next ? { next } : {} };
   const { signUp } = useAuth();
 
   const [fullName, setFullName] = useState('');
@@ -32,6 +34,8 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
 
   async function handleSignUp() {
     setError(null);
@@ -52,6 +56,7 @@ export default function SignUpScreen() {
       fullName.trim(),
       phone.trim() || undefined,
       marketingOptIn,
+      next,
     );
     setLoading(false);
 
@@ -70,6 +75,38 @@ export default function SignUpScreen() {
         metadata:    { screen: 'sign-up' },
       });
       setSuccess(true);
+    }
+  }
+
+  // Resend the confirmation email to the address the user just signed up with.
+  // Guarded against double-taps with a short sending state and a 30s cooldown.
+  async function handleResend() {
+    if (resending) return;
+    setResendMsg(null);
+
+    if (!isSupabaseConfigured) {
+      setResendMsg('Supabase is not configured. Check your .env file.');
+      return;
+    }
+
+    setResending(true);
+    const { error: resendError } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+      options: {
+        emailRedirectTo: next
+          ? `oneshetland-fetch://auth/confirm?next=${encodeURIComponent(next)}`
+          : 'oneshetland-fetch://auth/confirm',
+      },
+    });
+
+    if (resendError) {
+      setResendMsg(resendError.message || "Couldn't resend just now — please try again shortly.");
+      setResending(false);
+    } else {
+      setResendMsg('Sent — check your inbox again.');
+      // Keep the button disabled briefly so people don't fire off a burst.
+      setTimeout(() => setResending(false), 30000);
     }
   }
 
@@ -96,17 +133,33 @@ export default function SignUpScreen() {
           </Text>
           <Button
             label="Go to sign in"
-            onPress={() => router.replace('/(auth)/sign-in')}
+            onPress={() => router.replace(signInTarget)}
             variant="primary"
             size="lg"
             fullWidth
             style={styles.successBtn}
           />
+
+          <Text style={styles.resendPrompt}>Didn't get the email?</Text>
+
+          <Button
+            label={resending ? 'Sent — check your inbox' : 'Resend confirmation email'}
+            onPress={handleResend}
+            variant="secondary"
+            size="lg"
+            fullWidth
+            loading={resending && !resendMsg}
+            disabled={resending}
+            style={styles.resendBtn}
+          />
+
+          {resendMsg && <Text style={styles.resendMsg}>{resendMsg}</Text>}
+
           <TouchableOpacity
             onPress={() => setSuccess(false)}
             style={styles.resendLink}
           >
-            <Text style={styles.resendText}>Didn't get it? Try again</Text>
+            <Text style={styles.resendText}>Wrong email address? Go back</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -245,7 +298,7 @@ export default function SignUpScreen() {
 
             <TouchableOpacity
               style={styles.secondaryBtn}
-              onPress={() => router.push('/(auth)/sign-in')}
+              onPress={() => router.push(signInTarget)}
             >
               <Text style={styles.secondaryBtnText}>Sign in instead</Text>
             </TouchableOpacity>
@@ -418,6 +471,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   successBtn: { width: '100%' },
+  resendPrompt: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  resendBtn: { width: '100%' },
+  resendMsg: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
   resendLink: { marginTop: spacing.lg },
   resendText: {
     fontSize: fontSize.sm,

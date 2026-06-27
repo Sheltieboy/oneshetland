@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 // Stripe API version pinned via header below — kept aligned with authorise-payment.
 const STRIPE_API_VERSION = '2023-10-16';
@@ -164,6 +165,26 @@ serve(async (req) => {
         description: `${business.cashback_percent}% cashback from ${business.name}`,
       }] : []),
     ]);
+
+    // Receipts (best-effort): customer paid, owner received.
+    try {
+      const paid = `£${(amount_pence / 100).toFixed(2)}`;
+      const cashbackNote = cashbackPence > 0 ? ` You earned £${(cashbackPence / 100).toFixed(2)} cashback.` : '';
+      await sendUserPush(svc, {
+        userId: user.id, module: 'wallet', categoryId: 'wallet.payment',
+        title: 'Payment sent',
+        body: `You paid ${paid} at ${business.name}.${cashbackNote}`,
+        data: { screen: 'local-wallet' },
+      });
+      if (business.owner_id) {
+        await sendUserPush(svc, {
+          userId: business.owner_id, module: 'business', categoryId: 'business.payment_received',
+          title: 'Payment received 💷',
+          body: `A customer paid ${paid} at ${business.name}.`,
+          data: { screen: 'local-business-dashboard' },
+        });
+      }
+    } catch (e) { console.error('[local-wallet-pay] notify failed', e); }
 
     return json({ balance_pence: newBalance, cashback_pence: cashbackPence });
   } catch (err) {

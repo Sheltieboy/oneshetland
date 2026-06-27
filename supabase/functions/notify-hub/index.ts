@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPushBulk } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -43,12 +43,11 @@ serve(async (req) => {
       if (p?.full_name) actorName = p.full_name;
     }
 
-    // Resolve recipient push tokens.
-    let tokens: string[] = [];
+    // Resolve recipient user ids.
+    let recipientIds: string[] = [];
     if (event === 'approved') {
       if (!user_id) return json({ error: 'user_id required' }, 400);
-      const { data: p } = await svc.from('profiles').select('push_token').eq('id', user_id).maybeSingle();
-      if (p?.push_token) tokens = [p.push_token];
+      recipientIds = [user_id];
     } else {
       // Admins (owner/committee) of the hub.
       const { data: admins } = await svc
@@ -57,22 +56,26 @@ serve(async (req) => {
         .eq('hub_id', hub_id)
         .in('role', ['owner', 'committee'])
         .eq('status', 'active');
-      const ids = (admins ?? []).map(a => a.user_id);
-      if (ids.length) {
-        const { data: profs } = await svc.from('profiles').select('push_token').in('id', ids);
-        tokens = (profs ?? []).map(p => p.push_token).filter(Boolean) as string[];
-      }
+      recipientIds = (admins ?? []).map(a => a.user_id);
     }
 
-    let title = '', body = '';
-    if (event === 'join_request')     { title = 'New member request'; body = `${actorName} asked to join ${hubName}.`; }
-    else if (event === 'membership_paid') { title = 'New member 🎉';   body = `${actorName} joined ${hubName} as a paying member.`; }
-    else if (event === 'approved')    { title = "You're in 🎉";        body = `You're now a member of ${hubName}.`; }
+    let title = '', body = '', categoryId = '';
+    if (event === 'join_request')         { title = 'New member request'; body = `${actorName} asked to join ${hubName}.`;          categoryId = 'hubs.member_request'; }
+    else if (event === 'membership_paid') { title = 'New member 🎉';       body = `${actorName} joined ${hubName} as a paying member.`; categoryId = 'hubs.member_joined'; }
+    else if (event === 'approved')        { title = "You're in 🎉";        body = `You're now a member of ${hubName}.`;                categoryId = 'hubs.membership_approved'; }
     else return json({ error: 'unknown event' }, 400);
 
-    await Promise.all(tokens.map(t => sendPush(t, title, body, { hub_id, type: 'hub_membership' }).catch(() => {})));
+    // Preference-aware: honours each recipient's hubs toggle + quiet hours,
+    // and logs to their inbox.
+    const { sent } = await sendUserPushBulk(svc, recipientIds, {
+      module: 'hubs',
+      categoryId,
+      title,
+      body,
+      data: { hub_id, type: 'hub_membership' },
+    });
 
-    return json({ ok: true, notified: tokens.length });
+    return json({ ok: true, notified: sent });
   } catch (err) {
     console.error('[notify-hub]', err);
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);

@@ -11,6 +11,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
 import { useAlert } from '@/components/BrandedAlert';
 
@@ -71,14 +72,20 @@ type MyBusiness = {
 
 export default function MeTab() {
   const router = useRouter();
-  const { session, profile, signOut, refreshProfile } = useAuth();
+  const { session, profile, signOut, refreshProfile, isDriver, hasAppliedToDrive } = useAuth();
   const { alert } = useAlert();
   const { isTablet } = useAppLayout();
+  const goToSignIn = useGoToSignIn();
 
   const [refreshing, setRefreshing] = useState(false);
   const [myBusinesses, setMyBusinesses] = useState<MyBusiness[]>([]);
   const initials = (profile?.full_name ?? 'U')
     .split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+
+  // Bank-payout onboarding is only relevant to people who RECEIVE money:
+  // anyone who has applied to drive (pending/approved/etc.) or owns a business.
+  // Ordinary residents only ever PAY, so they shouldn't see payout onboarding.
+  const isSeller = hasAppliedToDrive || myBusinesses.length > 0;
 
   const loadStats = useCallback(async () => {
     if (!profile?.id) return;
@@ -133,7 +140,7 @@ export default function MeTab() {
         <View style={styles.signedOutBody}>
           <TouchableOpacity
             style={styles.signInPrimaryBtn}
-            onPress={() => { Haptics.selectionAsync(); router.push('/(auth)/sign-in'); }}
+            onPress={() => { Haptics.selectionAsync(); goToSignIn(); }}
             activeOpacity={0.85}
           >
             <FontAwesome5 name="sign-in-alt" size={13} color="#fff" />
@@ -249,46 +256,53 @@ export default function MeTab() {
               label={profile?.has_payment_method ? 'Update payment card' : 'Add a payment card'}
               sublabel="Used for Fetch, Shifts, Local, bookings and boosts across the whole app"
               onPress={() => { Haptics.selectionAsync(); router.push('/payment-setup'); }}
+              last={!isSeller && myBusinesses.length === 0}
             />
 
-            {/* Payout bank status — for all users, not just drivers */}
-            <View style={[styles.statusBanner, {
-              backgroundColor: profile?.stripe_payouts_enabled ? colors.jobsLight : '#F3F4F6',
-              marginTop: 4,
-            }]}>
-              <FontAwesome5
-                name={profile?.stripe_payouts_enabled ? 'check-circle' : 'exclamation-circle'}
-                size={13}
-                color={profile?.stripe_payouts_enabled ? colors.jobs : colors.textMuted}
-                solid
-              />
-              <Text style={[styles.statusText, {
-                color: profile?.stripe_payouts_enabled ? colors.jobs : colors.textMuted,
-              }]}>
-                {profile?.stripe_payouts_enabled
-                  ? 'Bank account connected'
-                  : profile?.stripe_onboarding_complete
-                    ? 'Bank verification in progress'
-                    : 'No bank account yet'}
-              </Text>
-              {!profile?.stripe_onboarding_complete && (
-                <TouchableOpacity
-                  style={[styles.statusBtn, { backgroundColor: colors.navy }]}
+            {/* Payout onboarding — only for users who RECEIVE money (drivers /
+                applicants / business owners). Ordinary residents only pay. */}
+            {isSeller && (
+              <>
+                {/* Payout bank status */}
+                <View style={[styles.statusBanner, {
+                  backgroundColor: profile?.stripe_payouts_enabled ? colors.jobsLight : '#F3F4F6',
+                  marginTop: 4,
+                }]}>
+                  <FontAwesome5
+                    name={profile?.stripe_payouts_enabled ? 'check-circle' : 'exclamation-circle'}
+                    size={13}
+                    color={profile?.stripe_payouts_enabled ? colors.jobs : colors.textMuted}
+                    solid
+                  />
+                  <Text style={[styles.statusText, {
+                    color: profile?.stripe_payouts_enabled ? colors.jobs : colors.textMuted,
+                  }]}>
+                    {profile?.stripe_payouts_enabled
+                      ? 'Bank account connected'
+                      : profile?.stripe_onboarding_complete
+                        ? 'Bank verification in progress'
+                        : 'No bank account yet'}
+                  </Text>
+                  {!profile?.stripe_onboarding_complete && (
+                    <TouchableOpacity
+                      style={[styles.statusBtn, { backgroundColor: colors.navy }]}
+                      onPress={() => { Haptics.selectionAsync(); router.push('/(driver)/connect-bank'); }}
+                    >
+                      <Text style={styles.statusBtnText}>Connect</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <MenuRow
+                  icon="university"
+                  iconColor={colors.jobs}
+                  label={profile?.stripe_payouts_enabled ? 'Bank account connected' : 'Connect bank account'}
+                  sublabel="Receive payment for Fetch deliveries, shifts, bookings and Local wallet"
                   onPress={() => { Haptics.selectionAsync(); router.push('/(driver)/connect-bank'); }}
-                >
-                  <Text style={styles.statusBtnText}>Connect</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <MenuRow
-              icon="university"
-              iconColor={colors.jobs}
-              label={profile?.stripe_payouts_enabled ? 'Bank account connected' : 'Connect bank account'}
-              sublabel="Receive payment for Fetch deliveries, shifts, bookings and Local wallet"
-              onPress={() => { Haptics.selectionAsync(); router.push('/(driver)/connect-bank'); }}
-              last={myBusinesses.length === 0}
-            />
+                  last={myBusinesses.length === 0}
+                />
+              </>
+            )}
 
             {/* Per-business payment/payout overrides */}
             {myBusinesses.map((biz, i) => (
@@ -356,8 +370,34 @@ export default function MeTab() {
 
           </SectionCard>
 
-          {/* Fetch entries (Saved addresses, Previous requests) moved into
-              My Wallet → "Fetch" section. */}
+          {/* ── Your activity ───────────────────────────────────────────────── */}
+          <SectionCard title="Your activity" accentColor={colors.accent}>
+            <MenuRow
+              icon="map-marker-alt"
+              iconColor={colors.accent}
+              label="Saved addresses"
+              sublabel="Home, work and other places you use for Fetch"
+              onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/saved-addresses'); }}
+            />
+            <MenuRow
+              icon="history"
+              iconColor={colors.accent}
+              label="Previous requests"
+              sublabel="Your past Fetch deliveries and pickups"
+              onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/previous-requests'); }}
+              last={isDriver || hasAppliedToDrive}
+            />
+            {!isDriver && !hasAppliedToDrive && (
+              <MenuRow
+                icon="car"
+                iconColor={colors.accent}
+                label="Apply to become a driver"
+                sublabel="Earn money delivering for Fetch"
+                onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/apply-driver'); }}
+                last
+              />
+            )}
+          </SectionCard>
 
           {/* ── Preferences ─────────────────────────────────────────────────── */}
           <SectionCard title="Preferences" accentColor={colors.navy}>
@@ -365,7 +405,14 @@ export default function MeTab() {
               icon="bell"
               iconColor={colors.navy}
               label="Notifications"
-              sublabel="Pushes, quiet hours, per-feature toggles"
+              sublabel="Your recent notifications"
+              onPress={() => { Haptics.selectionAsync(); router.push('/notifications'); }}
+            />
+            <MenuRow
+              icon="sliders-h"
+              iconColor={colors.navy}
+              label="Notification settings"
+              sublabel="Choose what you're notified about, quiet hours"
               onPress={() => { Haptics.selectionAsync(); router.push('/notification-preferences'); }}
               last
             />
@@ -396,14 +443,18 @@ export default function MeTab() {
             />
 
             <View style={styles.infoBlock}>
-              <View style={styles.infoRow}>
+              <View style={[styles.infoRow, profile?.role !== 'admin' && { borderBottomWidth: 0 }]}>
                 <Text style={styles.infoLabel}>Email</Text>
                 <Text style={styles.infoValue} numberOfLines={1}>{session?.user.email ?? '—'}</Text>
               </View>
-              <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-                <Text style={styles.infoLabel}>Role</Text>
-                <Text style={styles.infoValue}>{profile?.role ?? '—'}</Text>
-              </View>
+              {/* Raw role is internal jargon — only show it to admins, who
+                  understand/care. Ordinary residents never see it. */}
+              {profile?.role === 'admin' && (
+                <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.infoLabel}>Role</Text>
+                  <Text style={styles.infoValue}>{profile.role}</Text>
+                </View>
+              )}
             </View>
 
             <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>

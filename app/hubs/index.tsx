@@ -19,6 +19,7 @@ import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { SECTION_HEROES } from '@/constants/section-heroes';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchActiveHubs, HUB_TYPE_LABELS, HUB_TYPE_ICONS,
@@ -31,6 +32,7 @@ const TYPE_FILTERS: (HubType | 'all')[] = ['all', 'club', 'sports', 'youth', 'ha
 
 export default function HubsScreen() {
   const router = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { isTablet, screenWidth } = useAppLayout();
   const insets = useSafeAreaInsets();
@@ -81,7 +83,7 @@ export default function HubsScreen() {
           style={[styles.createCard, { backgroundColor: S.color }]}
           onPress={() => {
             Haptics.selectionAsync();
-            if (!profile) { router.push('/(auth)/sign-in'); return; }
+            if (!profile) { goToSignIn(); return; }
             router.push('/hub-register');
           }}
           activeOpacity={0.9}

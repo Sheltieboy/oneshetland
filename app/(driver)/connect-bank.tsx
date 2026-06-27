@@ -244,7 +244,7 @@ export default function ConnectBankScreen() {
   }
 
   if (alreadyComplete || status === 'complete') {
-    return <SuccessScreen onContinue={() => router.replace('/(driver)/dashboard')} />;
+    return <SuccessScreen onContinue={() => router.replace({ pathname: '/(tabs)/fetch', params: { view: 'driver' } } as any)} />;
   }
 
   return (

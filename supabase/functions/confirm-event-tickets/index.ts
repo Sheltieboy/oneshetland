@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -51,9 +52,19 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, order_id, tickets_count: order.tickets_count }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Verify PI with Stripe
+    // Bind the PaymentIntent to THIS order. create-event-ticket-intent stored
+    // the order's own PI id at creation, so the only valid PI is that one.
+    // Without this, a buyer could pass any other succeeded PI id (e.g. a cheap
+    // 50p one, or another order's) with their pending order_id and have these
+    // tickets marked valid without paying for them.
+    const piToVerify = order.stripe_payment_intent_id ?? payment_intent_id;
+    if (order.stripe_payment_intent_id && payment_intent_id !== order.stripe_payment_intent_id) {
+      return new Response(JSON.stringify({ error: 'Payment reference does not match this order.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Verify PI with Stripe (always the order's own PI, never a client-substituted one)
     const piRes = await fetch(
-      `https://api.stripe.com/v1/payment_intents/${payment_intent_id}`,
+      `https://api.stripe.com/v1/payment_intents/${piToVerify}`,
       { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } },
     );
     const pi = await piRes.json();
@@ -61,6 +72,11 @@ serve(async (req) => {
 
     if (pi.status !== 'succeeded') {
       return new Response(JSON.stringify({ error: `Payment not confirmed (status: ${pi.status})` }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Defence-in-depth: the PI's own metadata must point back at this order + buyer.
+    if (pi.metadata?.order_id !== order_id || pi.metadata?.buyer_id !== user.id) {
+      return new Response(JSON.stringify({ error: 'Payment does not match this order.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Confirm order + tickets
@@ -72,30 +88,28 @@ serve(async (req) => {
 
     await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order_id);
 
-    // Increment event tickets_sold counter
-    await supabase.rpc('increment_event_tickets_sold', {
-      p_event_id: order.event_id,
-      p_count:    order.tickets_count,
-    }).catch(() => {}); // non-critical
+    // Increment event tickets_sold counter (non-critical — a Supabase builder
+    // isn't a real Promise, so guard with try/catch, not .catch()).
+    try {
+      await supabase.rpc('increment_event_tickets_sold', {
+        p_event_id: order.event_id,
+        p_count:    order.tickets_count,
+      });
+    } catch { /* non-critical */ }
 
-    // Send push notification
-    const { data: profile } = await supabase.from('profiles').select('push_token').eq('id', user.id).single();
-    if (profile?.push_token) {
-      const { data: event } = await supabase.from('events').select('title, starts_at').eq('id', order.event_id).single();
-      if (event) {
-        const eventDate = new Date(event.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-        await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to:    profile.push_token,
-            title: 'Tickets confirmed 🎟',
-            body:  `${order.tickets_count} ticket${order.tickets_count !== 1 ? 's' : ''} for ${event.title} on ${eventDate}. Find them in My Wallet.`,
-            data:  { categoryId: 'events.tickets_confirmed', order_id },
-            sound: 'default',
-          }),
-        }).catch(() => {});
-      }
+    // Send push notification (preference-aware: honours the events toggle +
+    // quiet hours, fans out to all the buyer's devices, logs to their inbox).
+    const { data: event } = await supabase.from('events').select('title, starts_at').eq('id', order.event_id).single();
+    if (event) {
+      const eventDate = new Date(event.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      await sendUserPush(supabase, {
+        userId:     user.id,
+        module:     'events',
+        categoryId: 'events.tickets_confirmed',
+        title:      'Tickets confirmed 🎟',
+        body:       `${order.tickets_count} ticket${order.tickets_count !== 1 ? 's' : ''} for ${event.title} on ${eventDate}. Find them in My Wallet.`,
+        data:       { order_id },
+      });
     }
 
     return new Response(JSON.stringify({ ok: true, order_id, tickets_count: order.tickets_count }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

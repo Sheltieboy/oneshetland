@@ -72,6 +72,7 @@ export default function BusinessRegisterScreen() {
 
   const [loading, setLoading]     = useState(!!id);
   const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);   // inline success state
 
   useEffect(() => {
     if (!id) return;
@@ -179,17 +180,40 @@ export default function BusinessRegisterScreen() {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({
-        title: id ? 'Saved' : 'Business listed!',
-        message: id ? 'Your changes are live.' : 'Your business is now visible in the Local directory.',
-        actions: [{ label: 'OK', style: 'primary', onPress: () => router.replace('/local-business-dashboard') }],
-      });
+      // Show success INLINE — this screen is presented as a modal and the alert
+      // lives at the app root, so iOS can't present it over us (it's swallowed).
+      setSaved(true);
     } catch (e: any) {
       alert({ title: 'Could not save', message: e.message ?? 'Try again' });
     } finally {
       setSaving(false);
     }
   };
+
+  // ── Inline success screen (shown after save) ────────────────────────────────
+  if (saved) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScreenHeader title={id ? 'Saved' : 'Business listed'} onClose={() => router.replace('/local-business-dashboard')} accent={S.color} />
+        <View style={styles.successWrap}>
+          <View style={[styles.successIcon, { backgroundColor: S.light }]}>
+            <FontAwesome5 name="store" size={30} color={S.color} solid />
+          </View>
+          <Text style={styles.successTitle}>{id ? 'Changes saved ✓' : 'Business listed! 🎉'}</Text>
+          <Text style={styles.successSub}>
+            {id ? 'Your changes are live.' : 'Your business is now visible in the Local directory.'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.successBtn, { backgroundColor: S.color }]}
+            onPress={() => router.replace('/local-business-dashboard')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successBtnText}>Go to dashboard</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (loading) {
     return (
@@ -595,4 +619,20 @@ const styles = StyleSheet.create({
   saveBtn: {
     marginTop: spacing.lg,
   },
+
+  successWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.screenBackground },
+  successIcon: {
+    width: 76, height: 76, borderRadius: 38,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
+  },
+  successTitle: { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
+  successSub: {
+    fontSize: fontSize.sm, color: colors.textSecondary, textAlign: 'center',
+    paddingHorizontal: spacing.xl, lineHeight: 22, marginTop: spacing.sm,
+  },
+  successBtn: {
+    marginTop: spacing.xl, borderRadius: radius.lg,
+    paddingVertical: 15, paddingHorizontal: spacing.xxl, alignItems: 'center',
+  },
+  successBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 });

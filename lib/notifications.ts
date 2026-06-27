@@ -69,6 +69,59 @@ export const NOTIFICATION_CATEGORIES = {
 
 export type NotificationCategoryId = keyof typeof NOTIFICATION_CATEGORIES;
 
+// ── Notification → route mapping ─────────────────────────────────────────────
+// Turns a notification's `data` payload into an in-app route so tapping a push
+// opens the relevant screen instead of dumping the user on Home. Senders attach
+// either a `screen` alias or an id (request_id / shift_id / job_id / hub_id /
+// order_id). Returns null when there's nothing meaningful to open.
+
+const SCREEN_ALIASES: Record<string, string> = {
+  fetch:                  '/(tabs)/fetch',
+  shifts:                 '/(tabs)/jobs?tab=shifts',
+  jobs:                   '/(tabs)/jobs',
+  spik:                   '/(tabs)/spik',
+  games:                  '/games',
+  'my-shift-applications':'/my-shift-applications',
+  'my-job-applications':  '/my-job-applications',
+  'employer-applications':'/employer-applications',
+  'local-my-cards':       '/local-my-cards',
+  'local-offers':         '/local-offers',
+  'local-wallet':         '/local-wallet',
+  'local-my-passes':      '/local-my-passes',
+  'local-my-gifts':       '/local-my-gifts',
+  'local-my-bookings':    '/local-my-bookings',
+  'my-event-tickets':     '/my-event-tickets',
+  notices:                '/notices',
+};
+
+export function notificationRoute(
+  data: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!data) return null;
+
+  const screen = typeof data.screen === 'string' ? data.screen : null;
+
+  // Employer applicants pipeline needs the jobId query param.
+  if (screen === 'job-applicants' && typeof data.job_id === 'string') {
+    return `/job-applicants?jobId=${data.job_id}`;
+  }
+
+  if (screen && SCREEN_ALIASES[screen]) return SCREEN_ALIASES[screen];
+
+  // Id-based fallbacks (most specific first).
+  if (typeof data.shift_id === 'string')  return `/shift-detail?id=${data.shift_id}`;
+  if (typeof data.job_id === 'string')    return `/job/${data.job_id}`;
+  if (typeof data.hub_id === 'string')    return `/hubs/${data.hub_id}`;
+  if (typeof data.order_id === 'string')  return '/my-event-tickets';
+  if (typeof data.event_id === 'string')  return `/events/${data.event_id}`;
+  if (typeof data.request_id === 'string')return '/(tabs)/fetch';
+  if (typeof data.memory_id === 'string') return `/memory/${data.memory_id}`;
+  if (typeof data.vessel_id === 'string') return `/boat/${data.vessel_id}`;
+  if (typeof data.business_id === 'string') return `/local-business-detail?id=${data.business_id}`;
+
+  return null;
+}
+
 /**
  * Set up the foreground display handler + Android channel + iOS categories.
  * Idempotent — safe to call on every app start.
@@ -107,6 +160,11 @@ async function configureNotifications(): Promise<void> {
   }
 }
 
+// The Expo token for THIS device, captured on registration so sign-out can
+// remove exactly this device's row from push_tokens (and not the user's other
+// devices).
+let lastRegisteredToken: string | null = null;
+
 export async function registerPushToken(userId: string): Promise<void> {
   // Push tokens only work on physical devices
   if (!Device.isDevice) return;
@@ -134,8 +192,26 @@ export async function registerPushToken(userId: string): Promise<void> {
 
   const token = tokenData.data;
   if (!token) return;
+  lastRegisteredToken = token;
 
-  // Save to the user's profile row — edge functions read it from there
+  // Multi-device: one row per device in push_tokens (the send helper fans out
+  // to every row). Upsert on the token so re-registering the same device just
+  // refreshes its owner + last_seen (and reassigns it if a new user signs in
+  // on this device).
+  await supabase
+    .from('push_tokens')
+    .upsert(
+      {
+        user_id:      userId,
+        token,
+        platform:     Platform.OS,
+        device_name:  Device.deviceName ?? null,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'token' },
+    );
+
+  // Keep the legacy single-column in sync for any sender not yet on push_tokens.
   await supabase
     .from('profiles')
     .update({ push_token: token })
@@ -146,4 +222,33 @@ export async function registerPushToken(userId: string): Promise<void> {
   await supabase
     .from('notification_preferences')
     .upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true });
+}
+
+/**
+ * Clear this user's push token on sign-out.
+ *
+ * Without this, a shared device keeps the previous user's token on their
+ * profile row, so pushes addressed to them land on whoever holds the device
+ * next. Call this BEFORE supabase.auth.signOut() (we still have the session).
+ *
+ * Best-effort and non-fatal: a failure here must never block sign-out.
+ */
+export async function clearPushToken(userId: string): Promise<void> {
+  try {
+    // Remove only THIS device's row, so the user's other devices keep working.
+    if (lastRegisteredToken) {
+      await supabase.from('push_tokens').delete().eq('token', lastRegisteredToken);
+    } else {
+      // Fallback (token not captured this session): drop this user's rows.
+      await supabase.from('push_tokens').delete().eq('user_id', userId);
+    }
+    // Clear the legacy column too.
+    await supabase
+      .from('profiles')
+      .update({ push_token: null })
+      .eq('id', userId);
+    lastRegisteredToken = null;
+  } catch (e) {
+    console.warn('[notifications] clearPushToken failed:', e);
+  }
 }

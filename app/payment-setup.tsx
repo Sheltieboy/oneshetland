@@ -40,7 +40,12 @@ export default function PaymentSetupScreen() {
       );
 
       if (fnError || !data?.client_secret) {
-        throw new Error(fnError?.message ?? 'Could not initialise payment setup.');
+        let msg = fnError?.message ?? 'Could not initialise payment setup.';
+        try {
+          const c = (fnError as any)?.context;
+          if (c?.json) { const b = await c.json(); if (b?.error) msg = b.error; }
+        } catch { /* keep generic */ }
+        throw new Error(msg);
       }
 
       const { error: initError } = await initPaymentSheet({
@@ -75,20 +80,30 @@ export default function PaymentSetupScreen() {
         throw new Error(presentError.message);
       }
 
-      if (isBusiness) {
-        await supabase
-          .from('local_businesses')
-          .update({ has_business_payment_method: true })
-          .eq('id', businessId);
-        logCompliance({ eventType: 'payment.method_added', description: 'Business payment card added', metadata: { screen: 'payment-setup', business_id: businessId } });
-      } else {
-        await supabase
-          .from('profiles')
-          .update({ has_payment_method: true })
-          .eq('id', profile!.id);
-        logCompliance({ eventType: 'payment.method_added', description: 'Payment card added to account', metadata: { screen: 'payment-setup' } });
-        await refreshProfile();
+      // Record the card SERVER-SIDE. The tg_profiles_lock_sensitive trigger
+      // reverts any client write to profiles.has_payment_method, so a client
+      // update is silently undone — the card attaches in Stripe but the app
+      // never knows. confirm-card-setup (service role) checks Stripe and sets
+      // the flag for real.
+      const { data: confirmData, error: confirmErr } = await supabase.functions.invoke(
+        'confirm-card-setup',
+        {
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+          ...(isBusiness ? { body: { business_id: businessId } } : {}),
+        },
+      );
+      if (confirmErr || !confirmData?.ok || confirmData?.has_card === false) {
+        let msg = 'Your card was taken but we couldn\'t confirm it saved — please try again.';
+        try { const c = (confirmErr as any)?.context; if (c?.json) { const b = await c.json(); if (b?.error) msg = b.error; } } catch { /* keep generic */ }
+        throw new Error(msg);
       }
+
+      logCompliance({
+        eventType:   'payment.method_added',
+        description: isBusiness ? 'Business payment card added' : 'Payment card added to account',
+        metadata:    isBusiness ? { screen: 'payment-setup', business_id: businessId } : { screen: 'payment-setup' },
+      });
+      if (!isBusiness) await refreshProfile();
 
       router.back();
 

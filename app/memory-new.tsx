@@ -66,7 +66,7 @@ const ERA_SUGGESTIONS = [
 ];
 
 const VISIBILITY_OPTIONS: { value: MemoryVisibility; label: string; sub: string }[] = [
-  { value: 'public',    label: 'Public',    sub: 'Anyone can see this memory' },
+  { value: 'public',    label: 'Public',    sub: 'Anyone can see this story' },
   { value: 'community', label: 'Community', sub: 'Signed-in OneShetland members only' },
   { value: 'private',   label: 'Private',   sub: 'Just for you' },
 ];
@@ -123,7 +123,7 @@ export default function MemoryNewScreen() {
         setVisibility(m.visibility);
         if (m.lat != null && m.lng != null) setPoint({ lat: m.lat, lng: m.lng });
       } catch {
-        if (alive) alert({ title: 'Could not load', message: 'This memory could not be loaded for editing.' });
+        if (alive) alert({ title: 'Could not load', message: 'This story could not be loaded for editing.' });
       } finally {
         if (alive) setLoadingExisting(false);
       }
@@ -196,11 +196,11 @@ export default function MemoryNewScreen() {
 
   const handleSave = async () => {
     if (!profile?.id) {
-      alert({ title: 'Sign in first', message: 'You need to be signed in to add a memory.' });
+      alert({ title: 'Sign in first', message: 'You need to be signed in to add a story.' });
       return;
     }
     if (!isChild && !point) {
-      alert({ title: 'Pin missing', message: 'Tap on the map to set where this memory belongs.' });
+      alert({ title: 'Pin missing', message: 'Tap on the map to set where this story belongs.' });
       return;
     }
 
@@ -271,7 +271,7 @@ export default function MemoryNewScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScreenHeader
-        title={isEditing ? 'Edit memory' : isChild ? 'Add to this memory' : 'New memory'}
+        title={isEditing ? 'Edit story' : isChild ? 'Add to this story' : 'New story'}
         onClose={() => router.back()}
         accent={SECTION.color}
       />
@@ -282,7 +282,7 @@ export default function MemoryNewScreen() {
       {loadingExisting ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator size="large" color={SECTION.color} />
-          <Text style={[styles.sectionHint, { marginTop: spacing.md }]}>Loading memory…</Text>
+          <Text style={[styles.sectionHint, { marginTop: spacing.md }]}>Loading story…</Text>
         </View>
       ) : (
       <ScrollView contentContainerStyle={[styles.scroll, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
@@ -291,8 +291,16 @@ export default function MemoryNewScreen() {
           <View style={styles.cardSection}>
             <Text style={styles.sectionLabel}>Where</Text>
             <Text style={styles.sectionHint}>
-              Tap to place — or drag the map under the pin to refine.
+              Type a place in the map's search box (like Lerwick) and pick it from the list — or tap the map to drop a pin, then drag to refine.
             </Text>
+            {!point ? (
+              <View style={styles.pinNotice}>
+                <FontAwesome5 name="map-marker-alt" size={13} color={SECTION.color} />
+                <Text style={styles.pinNoticeText}>
+                  Set where your story belongs before saving: use the search box on the map (e.g. type Lerwick) and pick your place, or tap the map. Every story needs a spot on Shetland.
+                </Text>
+              </View>
+            ) : null}
             <View style={{ marginTop: spacing.sm }}>
               <MemoryMapNative
                 pins={[]}
@@ -329,7 +337,7 @@ export default function MemoryNewScreen() {
 
         {/* Story */}
         <View style={styles.cardSection}>
-          <Text style={styles.sectionLabel}>The memory</Text>
+          <Text style={styles.sectionLabel}>The story</Text>
           <TextInput
             value={title}
             onChangeText={setTitle}
@@ -378,7 +386,7 @@ export default function MemoryNewScreen() {
         <View style={styles.cardSection}>
           <Text style={styles.sectionLabel}>What's it about</Text>
           <Text style={styles.sectionHint}>
-            Tag this memory so others can find it. Pick as many as fit.
+            Tag this story so others can find it. Pick as many as fit.
           </Text>
           <View style={styles.tagGrid}>
             {MEMORY_CATEGORIES.map(cat => {
@@ -423,7 +431,7 @@ export default function MemoryNewScreen() {
         <View style={styles.cardSection}>
           <Text style={styles.sectionLabel}>{isEditing ? 'Add more photos, video, voice' : 'Attach photos, video, voice'}</Text>
           {isEditing ? (
-            <Text style={styles.sectionHint}>Photos, videos and voice notes already on this memory stay attached. Anything you add here joins them.</Text>
+            <Text style={styles.sectionHint}>Photos, videos and voice notes already on this story stay attached. Anything you add here joins them.</Text>
           ) : null}
           <View style={styles.attachRow}>
             <AttachButton icon="image"      label="Photo" onPress={pickPhoto} />
@@ -499,7 +507,7 @@ export default function MemoryNewScreen() {
 
         {/* Save */}
         <Button
-          label={isEditing ? 'Save changes' : isChild ? 'Add to memory' : 'Save memory'}
+          label={isEditing ? 'Save changes' : isChild ? 'Add to story' : 'Save story'}
           icon="check"
           color={SECTION.color}
           fullWidth
@@ -580,6 +588,23 @@ const styles = StyleSheet.create({
   inputMulti: {
     minHeight: 110,
     textAlignVertical: 'top',
+  },
+  pinNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: SECTION.color,
+    backgroundColor: SECTION.light,
+  },
+  pinNoticeText: {
+    flex: 1,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
   coordsRow: {
     flexDirection: 'row',

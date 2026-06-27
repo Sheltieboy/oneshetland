@@ -8,7 +8,7 @@ import React, {
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/types/database';
-import { registerPushToken } from '@/lib/notifications';
+import { registerPushToken, clearPushToken } from '@/lib/notifications';
 
 interface AuthContextType {
   session: Session | null;
@@ -31,6 +31,7 @@ interface AuthContextType {
     fullName: string,
     phone?: string,
     marketingOptIn?: boolean,
+    next?: string,
   ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -113,7 +114,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return { error: error?.message ?? null };
   }
 
-  async function signUp(email: string, password: string, fullName: string, phone?: string, marketingOptIn = false) {
+  async function signUp(email: string, password: string, fullName: string, phone?: string, marketingOptIn = false, next?: string) {
+    // Carry the return-to path through the confirmation deep link so a user who
+    // signed up mid-action lands back where they were after confirming.
+    const emailRedirectTo = next
+      ? `oneshetland-fetch://auth/confirm?next=${encodeURIComponent(next)}`
+      : 'oneshetland-fetch://auth/confirm';
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -124,7 +130,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         data: { full_name: fullName, marketing_opt_in: marketingOptIn },
         // Deep link back into the app after email confirmation
         // Requires "oneshetland-fetch://**" in Supabase → Auth → URL Configuration
-        emailRedirectTo: 'oneshetland-fetch://auth/confirm',
+        emailRedirectTo,
       },
     });
 
@@ -141,6 +147,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function signOut() {
+    // Clear this device's push token first (while we still have the session),
+    // so the next user on a shared device doesn't inherit our notifications.
+    const userId = session?.user.id;
+    if (userId) await clearPushToken(userId);
     await supabase.auth.signOut();
   }
 

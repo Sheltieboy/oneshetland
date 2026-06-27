@@ -14,6 +14,7 @@ import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/th
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { NavRail } from '@/components/NavRail';
 import { Sheet } from '@/components/ui/Sheet';
 import { useAlert } from '@/components/BrandedAlert';
@@ -31,6 +32,7 @@ export default function JobDetailScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { isTablet } = useAppLayout();
+  const goToSignIn = useGoToSignIn();
 
   const [job, setJob]         = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,7 @@ export default function JobDetailScreen() {
   useEffect(() => { void load(); }, [load]);
 
   const onSave = async () => {
-    if (!profile) { router.push('/(auth)/sign-in'); return; }
+    if (!profile) { goToSignIn(); return; }
     setSaved(await toggleSavedJob(profile.id, id));
   };
 
@@ -153,7 +155,7 @@ export default function JobDetailScreen() {
             ) : (
               <TouchableOpacity
                 style={[styles.applyBtn, { backgroundColor: S.color }]}
-                onPress={() => { if (!profile) { router.push('/(auth)/sign-in'); return; } setShowApply(true); }}
+                onPress={() => { if (!profile) { goToSignIn(); return; } setShowApply(true); }}
                 activeOpacity={0.9}
               >
                 <FontAwesome5 name="paper-plane" size={15} color="#fff" solid />

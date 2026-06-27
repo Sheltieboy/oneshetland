@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +45,7 @@ export default function BusinessClaimScreen() {
   const [contactPhone, setContactPhone] = useState(profile?.phone ?? '');
   const [role,         setRole]         = useState('');
   const [evidence,     setEvidence]     = useState('');
+  const [submitted,    setSubmitted]    = useState(false);   // inline success state
 
   useEffect(() => {
     (async () => {
@@ -78,11 +79,9 @@ export default function BusinessClaimScreen() {
         evidence:      evidence.trim() || null,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({
-        title: 'Claim submitted',
-        message: `Thanks! We'll verify your connection to ${business.name} and get back to you. Once approved you can edit your listing and unlock Pro features.`,
-        actions: [{ label: 'Done', style: 'primary', onPress: () => router.back() }],
-      });
+      // Show success INLINE — this screen is presented as a modal and the alert
+      // lives at the app root, so iOS can't present it over us (it's swallowed).
+      setSubmitted(true);
     } catch (e: any) {
       alert({ title: 'Could not submit', message: e?.message ?? 'Please try again.' });
     } finally {
@@ -109,6 +108,31 @@ export default function BusinessClaimScreen() {
   const Header = (
     <ScreenHeader title="Claim this business" onClose={() => router.back()} accent={S.color} />
   );
+
+  // ── Inline success screen (shown after a submitted claim) ───────────────────
+  if (submitted) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        {Header}
+        <View style={styles.center}>
+          <View style={[styles.successIcon, { backgroundColor: S.light }]}>
+            <FontAwesome5 name="check" size={30} color={S.color} solid />
+          </View>
+          <Text style={styles.successTitle}>Claim submitted</Text>
+          <Text style={styles.successSub}>
+            Thanks! We'll verify your connection to {business.name} and get back to you. Once approved you can edit your listing and unlock Pro features.
+          </Text>
+          <TouchableOpacity
+            style={[styles.successBtn, { backgroundColor: S.color }]}
+            onPress={() => router.back()}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Already claimed by someone, or a pending/approved claim exists.
   if (business.is_claimed) {
@@ -209,6 +233,21 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: 12 },
   muted:  { color: colors.textMuted, fontSize: fontSize.sm, textAlign: 'center', lineHeight: 21 },
   stateTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary, marginTop: 4 },
+
+  successIcon: {
+    width: 76, height: 76, borderRadius: 38,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
+  },
+  successTitle: { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
+  successSub: {
+    fontSize: fontSize.sm, color: colors.textSecondary, textAlign: 'center',
+    paddingHorizontal: spacing.xl, lineHeight: 22, marginTop: spacing.sm,
+  },
+  successBtn: {
+    marginTop: spacing.xl, borderRadius: radius.lg,
+    paddingVertical: 15, paddingHorizontal: spacing.xxl, alignItems: 'center',
+  },
+  successBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 
   scroll:  { flex: 1 },
   content: { padding: spacing.md },

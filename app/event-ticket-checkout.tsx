@@ -16,6 +16,7 @@ import * as SecureStore from 'expo-secure-store';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchWalletBalance } from '@/lib/local-api';
@@ -43,6 +44,7 @@ async function persistTokens(ticketIds: string[], tokens: string[]) {
 export default function EventTicketCheckoutScreen() {
   const { id }   = useLocalSearchParams<{ id: string }>();
   const router   = useRouter();
+  const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const { alert } = useAlert();
@@ -52,6 +54,8 @@ export default function EventTicketCheckoutScreen() {
   const [buying,  setBuying]  = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [purchased, setPurchased] = useState(false);   // inline success state
+  const [boughtCount, setBoughtCount] = useState(0);
 
   useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
@@ -96,10 +100,30 @@ export default function EventTicketCheckoutScreen() {
   // Paid tickets on a saved card charge silently off-session, so show a confirm
   // step first. Free tickets and the no-saved-card (PaymentSheet) path don't need it.
   const onBuyPress = () => {
-    if (!profile) { router.push('/(auth)/sign-in' as any); return; }
+    if (!profile) { goToSignIn(`/event-ticket-checkout?id=${id}`); return; }
     if (!event || lineItems.length === 0) return;
-    if (grandTotalPence > 0 && profile.has_payment_method) setConfirming(true);
+    // Paid tickets always open the confirm sheet (wallet AND card; the card
+    // path uses Stripe's Payment Sheet which collects a card even if none is
+    // saved). Free tickets skip straight through.
+    if (grandTotalPence > 0) setConfirming(true);
     else runPurchase();
+  };
+
+  // One success confirmation for ALL pay paths (saved-card, PaymentSheet,
+  // wallet) so the buyer is always told the tickets are booked + where to find
+  // them, instead of being silently bounced back to the purchase sheet.
+  const ticketSuccess = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Show success INLINE (a screen state), not as an alert. This screen is
+    // presented as a modal and the alert lives at the app root, so iOS can't
+    // present the alert over it — it gets silently swallowed. Flipping to an
+    // in-screen success view (like the gift flow) is reliable.
+    setBoughtCount(totalTickets);
+    // The ConfirmPaymentSheet stays mounted (just hidden) in the same tree, so
+    // it animates closed cleanly when these flip — no unmount-while-visible, so
+    // no stuck overlay / frozen screen.
+    setConfirming(false);
+    setPurchased(true);
   };
 
   const runPurchase = async () => {
@@ -118,8 +142,8 @@ export default function EventTicketCheckoutScreen() {
       await persistTokens(result.ticket_ids ?? [], result.tokens ?? []);
 
       if (result.free || result.charged) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace({ pathname: '/my-event-tickets' } as any);
+        setConfirming(false);
+        ticketSuccess();
         return;
       }
 
@@ -147,14 +171,8 @@ export default function EventTicketCheckoutScreen() {
       const piId = clientSecret.split('_secret_')[0];
       await confirmTicketPurchase({ order_id, payment_intent_id: piId });
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({
-        title: 'Tickets booked! 🎟',
-        message: `${totalTickets} ticket${totalTickets !== 1 ? 's' : ''} confirmed. Find them in My Wallet.`,
-        actions: [
-          { label: 'View tickets', style: 'primary', onPress: () => router.replace({ pathname: '/my-event-tickets' } as any) },
-        ],
-      });
+      setConfirming(false);
+      ticketSuccess();
 
     } catch (e: any) {
       alert({ title: 'Could not complete booking', message: e.message ?? 'Please try again' });
@@ -172,8 +190,8 @@ export default function EventTicketCheckoutScreen() {
       const result = await purchaseTickets({ event_id: event.id, line_items: lineItems, pay_with_wallet: true });
       await persistTokens(result.ticket_ids ?? [], result.tokens ?? []);
       if (!result.charged) throw new Error('Wallet payment did not complete.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace({ pathname: '/my-event-tickets' } as any);
+      setConfirming(false);
+      ticketSuccess();
     } catch (e: any) {
       alert({ title: 'Could not complete booking', message: e.message ?? 'Please try again' });
     } finally {
@@ -205,12 +223,34 @@ export default function EventTicketCheckoutScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Get tickets</Text>
+        <Text style={styles.headerTitle}>{purchased ? 'Tickets booked' : 'Get tickets'}</Text>
         <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()} hitSlop={12}>
           <FontAwesome5 name="times" size={16} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
 
+      {purchased ? (
+        <View style={styles.center}>
+          <View style={styles.successIcon}>
+            <FontAwesome5 name="ticket-alt" size={30} color={S.color} solid />
+          </View>
+          <Text style={styles.successTitle}>Tickets booked! 🎟</Text>
+          <Text style={styles.successSub}>
+            {boughtCount} ticket{boughtCount !== 1 ? 's' : ''} confirmed — you'll find {boughtCount !== 1 ? 'them' : 'it'} any time under My Tickets.
+          </Text>
+          <TouchableOpacity
+            style={[styles.successBtn, { backgroundColor: S.color }]}
+            onPress={() => router.replace({ pathname: '/my-event-tickets' } as any)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successBtnText}>View my tickets</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 14 }} hitSlop={8}>
+            <Text style={styles.successDone}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+      <>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
 
         {/* Event summary */}
@@ -295,7 +335,7 @@ export default function EventTicketCheckoutScreen() {
               <Text style={styles.feeVal}>£{(totalPence / 100).toFixed(2)}</Text>
             </View>
             <View style={styles.feeRow}>
-              <Text style={styles.feeLabel}>Booking fee · 50p × {totalTickets}</Text>
+              <Text style={styles.feeLabel}>Booking fee · 95p × {totalTickets}</Text>
               <Text style={styles.feeVal}>£{(bookingFeePence / 100).toFixed(2)}</Text>
             </View>
             <View style={[styles.feeRow, styles.feeTotalRow]}>
@@ -303,7 +343,7 @@ export default function EventTicketCheckoutScreen() {
               <Text style={styles.feeTotalVal}>£{(grandTotalPence / 100).toFixed(2)}</Text>
             </View>
             <Text style={styles.feeNote}>
-              A small 50p booking fee per ticket helps keep OneShetland running — organisers receive the full ticket price.
+              A small 95p booking fee per ticket helps keep OneShetland running — organisers receive the full ticket price.
             </Text>
           </View>
         )}
@@ -345,6 +385,8 @@ export default function EventTicketCheckoutScreen() {
           )}
         </TouchableOpacity>
       </View>
+      </>
+      )}
 
       <ConfirmPaymentSheet
         visible={confirming}
@@ -373,6 +415,22 @@ const styles = StyleSheet.create({
   content:{ paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.screenBackground },
   errorText: { fontSize: fontSize.md, color: colors.textMuted },
+
+  successIcon: {
+    width: 76, height: 76, borderRadius: 38, backgroundColor: '#EAF2FB',
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
+  },
+  successTitle: { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
+  successSub: {
+    fontSize: fontSize.sm, color: colors.textSecondary, textAlign: 'center',
+    paddingHorizontal: spacing.xl, lineHeight: 22, marginTop: spacing.sm,
+  },
+  successBtn: {
+    marginTop: spacing.xl, borderRadius: radius.lg,
+    paddingVertical: 15, paddingHorizontal: spacing.xxl, alignItems: 'center',
+  },
+  successBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  successDone: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700' },
 
   header: {
     backgroundColor: colors.screenBackground,

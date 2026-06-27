@@ -20,6 +20,7 @@ DO $$
 DECLARE
   owner_email text := 'darren@oneshetland.com';
   v_owner uuid;
+  v_owner_acct text;
   oh jsonb := '{"mon":"09:00–17:00","tue":"09:00–17:00","wed":"09:00–17:00","thu":"09:00–17:00","fri":"09:00–17:00","sat":"10:00–16:00","sun":"Closed"}';
   b_cafe uuid; b_join uuid; b_spark uuid; b_plumb uuid; b_hair uuid; b_shop uuid;
   s_cut uuid; s_colour uuid;
@@ -37,6 +38,21 @@ BEGIN
     RAISE EXCEPTION 'No user matched % and no admin profile was found. Run:  select id, email from auth.users order by created_at;  then set owner_email.', owner_email;
   END IF;
 
+  -- Find a Stripe Connect account to make demo payments work, then copy it onto
+  -- every demo business + hub at the end (so tickets/gifts/donations/memberships
+  -- can take money in test mode). Read it BEFORE the cleanup delete so it
+  -- SURVIVES re-seeds: prefer one already on a demo business (from when you
+  -- connected its bank), else the owner's own connected (driver) account.
+  -- => Connect a bank for ANY one demo business once, then it propagates here.
+  SELECT stripe_account_id INTO v_owner_acct
+    FROM public.local_businesses WHERE slug LIKE 'demo-%' AND stripe_account_id IS NOT NULL LIMIT 1;
+  IF v_owner_acct IS NULL THEN
+    BEGIN
+      SELECT stripe_account_id INTO v_owner_acct
+        FROM public.driver_profiles WHERE id = v_owner AND stripe_account_id IS NOT NULL;
+    EXCEPTION WHEN OTHERS THEN v_owner_acct := NULL; END;
+  END IF;
+
   -- ── Clean out previous demo rows (guarded; children before parents) ───────
   IF to_regclass('public.event_tickets') IS NOT NULL AND to_regclass('public.events') IS NOT NULL THEN
     DELETE FROM public.event_tickets WHERE event_id IN (SELECT id FROM public.events WHERE title LIKE 'DEMO —%');
@@ -46,6 +62,16 @@ BEGIN
   END IF;
   IF to_regclass('public.shift_applications') IS NOT NULL AND to_regclass('public.shifts') IS NOT NULL THEN
     DELETE FROM public.shift_applications WHERE shift_id IN (SELECT id FROM public.shifts WHERE title LIKE 'DEMO —%');
+  END IF;
+  -- event_checkins → events FK does not cascade; clear demo check-ins first.
+  IF to_regclass('public.event_checkins') IS NOT NULL AND to_regclass('public.events') IS NOT NULL THEN
+    DELETE FROM public.event_checkins WHERE event_id IN (SELECT id FROM public.events WHERE title LIKE 'DEMO —%');
+  END IF;
+  -- local_wallet_transactions.business_id is the ONE FK to local_businesses that
+  -- doesn't cascade, so a tester's wallet payment to a demo business blocks the
+  -- delete below. Clear those demo transactions first.
+  IF to_regclass('public.local_wallet_transactions') IS NOT NULL THEN
+    DELETE FROM public.local_wallet_transactions WHERE business_id IN (SELECT id FROM public.local_businesses WHERE slug LIKE 'demo-%');
   END IF;
   IF to_regclass('public.local_businesses') IS NOT NULL THEN DELETE FROM public.local_businesses WHERE slug LIKE 'demo-%'; END IF;
   IF to_regclass('public.hubs')             IS NOT NULL THEN DELETE FROM public.hubs             WHERE slug LIKE 'demo-%'; END IF;
@@ -128,6 +154,21 @@ BEGIN
      '01595 000006', 'https://example.com', 'demo-shop@example.com',
      oh, false, true, true, true, 5.00, false, 'pro', '#C0392B', 'owner')
     RETURNING id INTO b_shop;
+
+  -- An UNCLAIMED listing (no owner, is_claimed = false) so testers can try the
+  -- "Claim this business" flow — every other demo business is already owned by
+  -- the demo account, so the claim option never showed.
+  INSERT INTO public.local_businesses
+    (owner_id, name, slug, category, description, address, lat, lng, tags, phone, website, email,
+     opening_hours, is_verified, is_active, is_claimed, accepts_wallet, cashback_percent,
+     accepts_bookings, subscription_tier, brand_color, source)
+  VALUES
+    (NULL, 'DEMO — Unclaimed Croft Shop (TEST)', 'demo-unclaimed-croft-shop', 'retail',
+     'A demo listing with no owner — use this to test claiming a business.',
+     'Voe, Shetland', 60.3540, -1.2480,
+     ARRAY['Farm shop','Local produce']::text[],
+     '01806 000007', 'https://example.com', 'demo-unclaimed@example.com',
+     oh, false, true, false, false, 0, false, 'free', '#6366F1', 'csv');
 
   -- ── Feature add-ons ON (per-key skip — older schemas allow fewer keys) ────
   BEGIN
@@ -286,6 +327,27 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Skipped campaign: %', SQLERRM; END;
   EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Skipped hubs: %', SQLERRM;
   END;
+
+  -- ── Make every demo business + hub payout-ready (test mode) ───────────────
+  -- Copies the owner's connected Stripe account onto the demo entities so demo
+  -- tickets / gifts / donations / paid memberships can actually take money.
+  -- Skips quietly if the owner hasn't connected a bank yet.
+  -- Always flip payout_enabled on demo entities so the UI lets you reach
+  -- tickets/gifts/donations/memberships. If a real Connect account is known it's
+  -- used as the destination; otherwise the edge functions detect the demo
+  -- business/hub (slug 'demo-%') and charge the platform in TEST mode — so no
+  -- real payout account is needed to test the demo purchase flows.
+  BEGIN
+    UPDATE public.local_businesses
+      SET payout_enabled = true, stripe_account_id = COALESCE(v_owner_acct, stripe_account_id)
+      WHERE slug LIKE 'demo-%';
+  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Skipped business payout setup: %', SQLERRM; END;
+  BEGIN
+    UPDATE public.hubs
+      SET payout_enabled = true, stripe_account_id = COALESCE(v_owner_acct, stripe_account_id)
+      WHERE slug LIKE 'demo-%';
+  EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'Skipped hub payout setup: %', SQLERRM; END;
+  RAISE NOTICE 'Demo businesses + hubs marked payout-ready for testing (destination: %).', COALESCE(v_owner_acct, 'platform/test');
 
   RAISE NOTICE 'Demo seed complete. Anything your project does not support was skipped (see notices above).';
 END $$;

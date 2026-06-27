@@ -10,7 +10,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
@@ -19,6 +19,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 
 export default function SignInScreen() {
   const router = useRouter();
+  const { next } = useLocalSearchParams<{ next?: string }>();
   const { signIn } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -130,7 +131,7 @@ export default function SignInScreen() {
               style={styles.submitBtn}
             />
 
-            <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password' as never)} style={styles.forgotBtn}>
+            <TouchableOpacity onPress={() => router.push({ pathname: '/(auth)/forgot-password', params: next ? { next } : {} })} style={styles.forgotBtn}>
               <Text style={styles.forgotText}>Forgot your password?</Text>
             </TouchableOpacity>
 
@@ -142,7 +143,7 @@ export default function SignInScreen() {
 
             <TouchableOpacity
               style={styles.secondaryBtn}
-              onPress={() => router.push('/(auth)/sign-up')}
+              onPress={() => router.push({ pathname: '/(auth)/sign-up', params: next ? { next } : {} })}
             >
               <Text style={styles.secondaryBtnText}>Create a free account</Text>
             </TouchableOpacity>

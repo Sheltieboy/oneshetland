@@ -17,6 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import {
   GAMES, fetchUserStats, fetchGameBreakdown, fetchMyRecentScores,
   levelTitle, xpForLevel,
@@ -34,6 +35,7 @@ const ACCENTS: Record<string, string> = {
 export default function GameStatsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const goToSignIn = useGoToSignIn();
 
   const [stats,     setStats]     = useState<UserGameStats | null>(null);
   const [breakdown, setBreakdown] = useState<GameBreakdownEntry[]>([]);
@@ -106,7 +108,7 @@ export default function GameStatsScreen() {
             <Text style={styles.signedOutText}>Sign in to see your stats.</Text>
             <TouchableOpacity
               style={[styles.signInBtn, { backgroundColor: S.color }]}
-              onPress={() => router.push('/(auth)/sign-in')}
+              onPress={() => goToSignIn()}
             >
               <Text style={styles.signInBtnText}>Sign in</Text>
             </TouchableOpacity>

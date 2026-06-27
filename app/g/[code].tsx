@@ -28,6 +28,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAlert } from '@/components/BrandedAlert';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
 
 const S = SECTIONS.local;
@@ -51,6 +52,7 @@ export default function ClaimGiftScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const { profile, loading: authLoading, session } = useAuth();
   const { alert } = useAlert();
+  const goToSignIn = useGoToSignIn();
 
   const [gift, setGift]       = useState<GiftPreview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,7 +110,7 @@ export default function ClaimGiftScreen() {
   const claim = useCallback(async () => {
     if (!gift) return;
     if (!session) {
-      router.push('/(auth)/sign-in');
+      goToSignIn();
       return;
     }
     setClaiming(true);
@@ -148,7 +150,7 @@ export default function ClaimGiftScreen() {
     } finally {
       setClaiming(false);
     }
-  }, [gift, session, router]);
+  }, [gift, session, router, goToSignIn]);
 
   if (loading || authLoading) {
     return (
@@ -215,7 +217,7 @@ export default function ClaimGiftScreen() {
             <Text style={styles.hint}>Sign in to claim it to your account.</Text>
             <TouchableOpacity
               style={[styles.primaryBtn, { backgroundColor: S.color }]}
-              onPress={() => router.push('/(auth)/sign-in')}
+              onPress={() => goToSignIn()}
               activeOpacity={0.85}
             >
               <Text style={styles.primaryBtnText}>Sign in to claim</Text>

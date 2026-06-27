@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -115,27 +117,38 @@ serve(async (req) => {
     // The business must be set up for payouts before we take money.
     const { data: unitBiz } = await supabase
       .from('local_businesses')
-      .select('stripe_account_id, payout_enabled')
+      .select('stripe_account_id, payout_enabled, slug')
       .eq('id', item.business_id)
       .single();
-    if (!unitBiz?.stripe_account_id || !unitBiz.payout_enabled) {
+    // Demo businesses (slug 'demo-…') exist only for testing and have no real
+    // Stripe Connect account — in test mode we charge the platform directly
+    // (no destination transfer). Real businesses must be payout-ready.
+    const isDemoBiz = (unitBiz?.slug ?? '').startsWith('demo-');
+    if (!isDemoBiz && (!unitBiz?.stripe_account_id || !unitBiz.payout_enabled)) {
       return new Response(JSON.stringify({ error: "This business isn't set up to take payments yet." }), {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const unitPlatformFee = Math.round(item.price_pence * 0.05); // 5% platform fee
+    // Platform commission — admin-editable, see fees.unit.* in admin_config.
+    // Default 5% (matches the previous hardcoded rate).
+    const unitCfg = await getCommissionConfig(supabase, 'unit');
+    const unitPlatformFee = calculateCommission(item.price_pence, unitCfg, 'unit').fee_pence;
 
     const baseParams: Record<string, string> = {
       amount:      String(item.price_pence),
       currency:    'gbp',
       description: `OneShetland Book — ${item.name}`,
-      'transfer_data[destination]': unitBiz.stripe_account_id,
-      'application_fee_amount':      String(unitPlatformFee),
       'metadata[type]':         'unit_purchase',
       'metadata[unit_item_id]': item.id,
       'metadata[business_id]':  item.business_id,
       'metadata[buyer_id]':     user.id,
     };
+    // Route to the business's Connect account only when it has one (a real,
+    // payout-ready business). Demo businesses have none → charge the platform.
+    if (unitBiz?.stripe_account_id && unitBiz.payout_enabled) {
+      baseParams['transfer_data[destination]'] = unitBiz.stripe_account_id;
+      baseParams['application_fee_amount']      = String(unitPlatformFee);
+    }
 
     // ── Mode 1: saved card, off-session ──────────────────────────────────────
     if (use_saved_card) {

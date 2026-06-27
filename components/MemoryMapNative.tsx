@@ -336,7 +336,7 @@ export function MemoryMapNative({
       {pins.length === 0 && onDropPin ? (
         <View pointerEvents="none" style={styles.emptyHint}>
           <FontAwesome5 name="hand-pointer" size={12} color="#fff" solid />
-          <Text style={styles.emptyHintText}>Tap a place to drop the first memory</Text>
+          <Text style={styles.emptyHintText}>Tap a place to drop the first story</Text>
         </View>
       ) : null}
     </View>

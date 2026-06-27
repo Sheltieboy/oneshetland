@@ -271,6 +271,13 @@ export async function updateJob(id: string, patch: Partial<JobInput>): Promise<v
 export async function setJobStatus(id: string, status: JobStatus): Promise<void> {
   const { error } = await supabase.from('jobs').update({ status }).eq('id', id);
   if (error) throw error;
+
+  // Let still-pending applicants know the role has closed / been filled.
+  if (status === 'closed' || status === 'filled') {
+    supabase.functions
+      .invoke('notify-job', { body: { event: 'job_closed', job_id: id } })
+      .catch(() => {});
+  }
 }
 
 // ── Worker (candidate) profile ──────────────────────────────────────────────────
@@ -361,12 +368,23 @@ export async function applyToJob(input: {
     .select('*')
     .single();
   if (error) throw error;
+
+  // Notify the employer of the new application (fire-and-forget).
+  supabase.functions
+    .invoke('notify-job', { body: { event: 'application', application_id: (data as JobApplication).id } })
+    .catch(() => {});
+
   return data as JobApplication;
 }
 
 export async function withdrawApplication(id: string): Promise<void> {
   const { error } = await supabase.from('job_applications').update({ status: 'withdrawn' }).eq('id', id);
   if (error) throw error;
+
+  // Notify the employer the candidate pulled out.
+  supabase.functions
+    .invoke('notify-job', { body: { event: 'withdrawn', application_id: id } })
+    .catch(() => {});
 }
 
 /** The signed-in candidate's applications (with the role they applied for). */
@@ -396,6 +414,12 @@ export async function updateApplicationStatus(id: string, status: ApplicationSta
   if (note !== undefined) patch.employer_note = note;
   const { error } = await supabase.from('job_applications').update(patch).eq('id', id);
   if (error) throw error;
+
+  // Notify the applicant of meaningful stage changes (notify-job filters out
+  // the silent stages like 'viewed').
+  supabase.functions
+    .invoke('notify-job', { body: { event: 'status', application_id: id, status } })
+    .catch(() => {});
 }
 
 export async function setApplicationNote(id: string, note: string): Promise<void> {

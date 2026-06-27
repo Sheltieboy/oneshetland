@@ -25,6 +25,7 @@ import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { GameArt } from '@/components/GameArt';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import {
   GAMES, fetchUserStats, fetchTopScores, fetchMyBestScore,
   levelTitle, xpForLevel,
@@ -38,6 +39,7 @@ export default function GamesCentre() {
   const { profile } = useAuth();
   const { isTablet } = useAppLayout();
   const insets = useSafeAreaInsets();
+  const goToSignIn = useGoToSignIn();
 
   const [stats, setStats]         = useState<UserGameStats | null>(null);
   const [bestSprint, setBestSprint] = useState<number>(0);
@@ -251,7 +253,7 @@ export default function GamesCentre() {
             </View>
             <TouchableOpacity
               style={[styles.signInBtn, { backgroundColor: S.color }]}
-              onPress={() => router.push('/(auth)/sign-in')}
+              onPress={() => goToSignIn()}
             >
               <Text style={styles.signInBtnText}>Sign in</Text>
             </TouchableOpacity>

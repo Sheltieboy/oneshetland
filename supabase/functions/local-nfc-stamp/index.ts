@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendPush } from '../_shared/send-push.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -141,21 +141,16 @@ serve(async (req) => {
         .eq('id', business.id);
     }
 
-    // Push if reward ready
+    // Push if reward ready (preference-aware).
     if (rewardReady) {
-      const { data: profile } = await svc
-        .from('profiles')
-        .select('push_token')
-        .eq('id', user.id)
-        .single();
-      if (profile?.push_token) {
-        await sendPush(
-          profile.push_token,
-          `🎉 Reward unlocked at ${business.name}!`,
-          program.stamp_reward ?? 'Show this card next time you visit.',
-          { screen: 'local-my-cards' },
-        );
-      }
+      await sendUserPush(svc, {
+        userId:     user.id,
+        module:     'loyalty',
+        categoryId: 'loyalty.reward_ready',
+        title:      `🎉 Reward unlocked at ${business.name}!`,
+        body:       program.stamp_reward ?? 'Show this card next time you visit.',
+        data:       { screen: 'local-my-cards' },
+      });
     }
 
     return json({
