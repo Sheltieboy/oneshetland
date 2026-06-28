@@ -54,7 +54,7 @@ import AlertPill from '@/components/AlertPill';
 
 import { fetchActiveAlerts, type PartnerAlert } from '@/lib/alerts-api';
 import { supabase } from '@/lib/supabase';
-import { fetchWalletBalance, formatPence } from '@/lib/local-api';
+import { fetchWalletBalance, formatPence, fetchFeaturedBusinesses, CATEGORY_ICONS, CATEGORY_LABELS, type LocalBusiness } from '@/lib/local-api';
 import { SAMPLE_URGENT_NOTICE, SampleEvent } from '@/lib/seed-content';
 import {
   fetchHomeEvents, fetchHomeNotices, fetchHomeJobs, fetchHomeShifts,
@@ -62,6 +62,7 @@ import {
   HomeEvent, HomeNotice, HomeJob, HomeShift, NearbyOffer, SpikDaily,
 } from '@/lib/concierge-api';
 import { loadSavedBoats, loadRecentBoats, VesselStub } from '@/lib/boats-prefs';
+import { fetchHomeData, type HomeData } from '@/lib/home-data';
 import {
   bumpSectionEngagement, getRecentEngagement, EngagementKey, EngagementEntry,
 } from '@/lib/engagement';
@@ -226,23 +227,41 @@ function HeroSection({
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  // Calm navy welcome band — the photography now lives on the Shetland Today
-  // card below, so the top doesn't compete with it.
+  // Lean navy header — greeting + search + account actions in one row. The
+  // brand is already in the sidebar, and the weather now lives in the wide
+  // Shetland Today hero card below, so the header stays calm and compact.
   return (
     <View style={styles.hero}>
       <View style={[styles.heroContent, { paddingTop: insets.top + 10 }]}>
-
-        {/* Logo row */}
-        <View style={styles.heroTopRow}>
-          <View style={styles.heroLogoRow}>
-            <View style={styles.heroLogoMedallion}>
-              <Image source={LOGO} style={styles.heroLogo} resizeMode="contain" />
-            </View>
-            <View style={styles.heroBrandBlock}>
-              <DisplayText weight="black" style={styles.heroBrand} numberOfLines={1}>OneShetland</DisplayText>
-              <Text style={styles.heroBrandTag} numberOfLines={2}>Everything Shetland,{'\n'}in one place</Text>
+        <View style={styles.heroLeanRow}>
+          {/* Greeting + date + wird o' da day */}
+          <View style={styles.heroLeanGreeting}>
+            <DisplayText weight="black" style={styles.heroGreetingTitle}>
+              {`${timeGreeting()}${name ? `, ${name.split(' ')[0]}` : ''}`}
+            </DisplayText>
+            <View style={styles.heroLeanDateRow}>
+              <Text style={styles.heroDate}>{dateStr}</Text>
+              {spik.word && spik.word !== '…' ? (
+                <TouchableOpacity style={styles.heroWirdChip} onPress={() => router.push('/(tabs)/spik')} activeOpacity={0.85}>
+                  <Text style={styles.spikChipLabel}>WIRD</Text>
+                  <Text style={styles.heroWirdWord} numberOfLines={1}>{spik.word}</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
+
+          {/* Search — fills the middle */}
+          <TouchableOpacity
+            style={styles.heroSearchWide}
+            onPress={() => router.push('/search')}
+            activeOpacity={0.85}
+            accessibilityLabel="Search"
+          >
+            <FontAwesome5 name="search" size={15} color={colors.textMuted} />
+            <Text style={styles.heroSearchText} numberOfLines={1}>Search Shetland — businesses, events, the fleet…</Text>
+          </TouchableOpacity>
+
+          {/* Account actions */}
           <View style={styles.heroHeaderActions}>
             <NotificationBell />
             <TouchableOpacity
@@ -270,56 +289,16 @@ function HeroSection({
           </View>
         </View>
 
-        {/* Lower hero — greeting + chips on the left; on tablet a calm
-            "today at a glance" card fills the open space on the right. */}
-        <View style={isTablet ? styles.heroLowerRow : undefined}>
-          <View style={isTablet ? styles.heroLowerLeft : undefined}>
-            {/* Greeting */}
-            <View style={styles.heroGreeting}>
-              <DisplayText weight="black" style={styles.heroGreetingTitle}>
-                {`${timeGreeting()}${name ? `, ${name.split(' ')[0]}` : ''}`}
-              </DisplayText>
-              <Text style={styles.heroDate}>{dateStr}</Text>
-            </View>
-
-            {/* SPIK word + search share one row — saves a whole row of height */}
-            <View style={styles.heroChips}>
-              <TouchableOpacity
-                style={styles.spikChip}
-                onPress={() => router.push('/(tabs)/spik')}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.spikChipLabel}>SPIK</Text>
-                <Text style={styles.spikChipWord}>{spik.word}</Text>
-                {spik.meaning ? <Text style={styles.spikChipMeaning} numberOfLines={1}>· {spik.meaning}</Text> : null}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.heroSearch}
-                onPress={() => router.push('/search')}
-                activeOpacity={0.85}
-                accessibilityLabel="Search"
-              >
-                <FontAwesome5 name="search" size={14} color={colors.textMuted} />
-                <Text style={styles.heroSearchText} numberOfLines={1}>Search Shetland…</Text>
-              </TouchableOpacity>
-            </View>
-
-            {urgent ? (
-              <TouchableOpacity
-                style={[styles.urgentChip, { marginTop: spacing.sm, alignSelf: 'flex-start' }]}
-                onPress={() => router.push('/(tabs)/whats-on')}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="exclamation-triangle" size={10} color="#fff" solid />
-                <Text style={styles.urgentChipText} numberOfLines={1}>{urgent.title}</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {isTablet && <TodayAtAGlance />}
-        </View>
-
+        {urgent ? (
+          <TouchableOpacity
+            style={[styles.urgentChip, { marginTop: spacing.md, alignSelf: 'flex-start' }]}
+            onPress={() => router.push('/(tabs)/whats-on')}
+            activeOpacity={0.85}
+          >
+            <FontAwesome5 name="exclamation-triangle" size={10} color="#fff" solid />
+            <Text style={styles.urgentChipText} numberOfLines={1}>{urgent.title}</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );
@@ -824,6 +803,93 @@ function WorkRow({ jobs, shifts }: { jobs: HomeJob[]; shifts: HomeShift[] }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Around Shetland — events + work + featured local, merged into one
+// scannable vertical list (replaces three separate carousels).
+// ──────────────────────────────────────────────────────────────────────────
+
+interface HappeningItem {
+  key: string; tag: string; icon: string; color: string;
+  title: string; sub: string; onPress: () => void;
+}
+
+/** Interleave several lists round-robin so the feed mixes types for variety. */
+function roundRobin<T>(lists: T[][]): T[] {
+  const out: T[] = [];
+  const max = Math.max(0, ...lists.map(l => l.length));
+  for (let i = 0; i < max; i++) {
+    for (const l of lists) { if (l[i] !== undefined) out.push(l[i]); }
+  }
+  return out;
+}
+
+function HappeningRow({ events, jobs, shifts, businesses }: {
+  events: HomeEvent[]; jobs: HomeJob[]; shifts: HomeShift[]; businesses: LocalBusiness[];
+}) {
+  const router = useRouter();
+  const now = Date.now();
+
+  const eventItems: HappeningItem[] = events
+    .filter(e => new Date(e.starts_at).getTime() >= now - 12 * 3_600_000)
+    .slice(0, 4)
+    .map(e => {
+      const { day, time } = fmtEventDay(e.starts_at);
+      return {
+        key: `ev-${e.id}`, tag: 'EVENT', icon: 'calendar-alt', color: SECTIONS.events.color,
+        title: e.title, sub: `${day}  ·  ${time}${e.venue ? `  ·  ${e.venue}` : ''}`,
+        onPress: () => (e as any).source === 'db'
+          ? router.push({ pathname: '/events/[id]', params: { id: e.id } } as any)
+          : router.push('/(tabs)/whats-on'),
+      };
+    });
+
+  const workItems: HappeningItem[] = [
+    ...jobs.slice(0, 2).map(j => ({
+      key: `jb-${j.id}`, tag: 'JOB', icon: 'briefcase', color: SECTIONS.jobs.color,
+      title: j.title, sub: `${j.employer}  ·  ${j.pay}`,
+      onPress: () => router.push('/(tabs)/jobs'),
+    })),
+    ...shifts.slice(0, 2).map(s => ({
+      key: `sh-${s.id}`, tag: 'SHIFT', icon: 'briefcase', color: SECTIONS.shifts.color,
+      title: s.title, sub: `${s.when}  ·  ${s.pay}`,
+      onPress: () => router.push('/(tabs)/jobs?tab=shifts'),
+    })),
+  ];
+
+  const bizItems: HappeningItem[] = businesses.slice(0, 3).map(b => ({
+    key: `bz-${b.id}`, tag: 'LOCAL', icon: (CATEGORY_ICONS[b.category] ?? 'store'),
+    color: SECTIONS.local.color,
+    title: b.name, sub: CATEGORY_LABELS[b.category] ?? 'Local business',
+    onPress: () => router.push(`/local-business-detail?id=${b.id}`),
+  }));
+
+  const items = roundRobin([eventItems, workItems, bizItems]).slice(0, 6);
+  if (items.length === 0) return null;
+
+  return (
+    <SectionRow title="Around Shetland">
+      <View style={styles.happeningCard}>
+        {items.map((it, i) => (
+          <TouchableOpacity
+            key={it.key}
+            style={[styles.happeningRow, i < items.length - 1 && styles.happeningRowBorder]}
+            onPress={it.onPress}
+            activeOpacity={0.7}
+          >
+            <FontAwesome5 name={it.icon as any} size={16} color={it.color} solid style={{ width: 22, textAlign: 'center' }} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.happeningTitle} numberOfLines={1}>{it.title}</Text>
+              <Text style={styles.happeningSub} numberOfLines={1}>{it.sub}</Text>
+            </View>
+            <Text style={[styles.happeningTag, { color: it.color }]}>{it.tag}</Text>
+            <FontAwesome5 name="chevron-right" size={11} color={colors.textLight} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </SectionRow>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Notices
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -967,14 +1033,37 @@ interface ForYouTile {
 function ForYouRow({ tiles }: { tiles: ForYouTile[] }) {
   const { cardWidth } = useAppLayout();
   if (tiles.length === 0) return null;
+
+  // Lead item gets a prominent, full-width "do this now" card in its section
+  // colour; the rest sit in the row below.
+  const [lead, ...rest] = tiles;
+  const leadMeta = SECTIONS[lead.iconKey];
+
   return (
     <SectionRow title="For you" subtitle="Picked for you right now">
+      <View style={{ paddingHorizontal: spacing.lg }}>
+        <TouchableOpacity
+          onPress={lead.onPress}
+          activeOpacity={0.85}
+          style={[styles.forYouHero, { backgroundColor: leadMeta.color }]}
+        >
+          <FontAwesome5 name={leadMeta.icon} size={20} color="#fff" solid />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.forYouHeroTag}>{lead.tag}</Text>
+            <Text style={styles.forYouHeroHeadline} numberOfLines={1}>{lead.headline}</Text>
+            <Text style={styles.forYouHeroDetail} numberOfLines={1}>{lead.detail}</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={14} color="rgba(255,255,255,0.9)" />
+        </TouchableOpacity>
+      </View>
+
+      {rest.length > 0 && (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.forYouScroll}
+        contentContainerStyle={[styles.forYouScroll, { paddingTop: spacing.sm }]}
       >
-        {tiles.map(t => {
+        {rest.map(t => {
           const meta = SECTIONS[t.iconKey];
           return (
             <TouchableOpacity
@@ -1003,6 +1092,7 @@ function ForYouRow({ tiles }: { tiles: ForYouTile[] }) {
           );
         })}
       </ScrollView>
+      )}
     </SectionRow>
   );
 }
@@ -1055,8 +1145,16 @@ export default function HomeScreen() {
   const [notices, setNotices] = useState<HomeNotice[]>([]);
   const [jobs,    setJobs]    = useState<HomeJob[]>([]);
   const [shifts,  setShifts]  = useState<HomeShift[]>([]);
+  const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
   const [spik,    setSpik]    = useState<SpikDaily>({ word: '…', meaning: '' });
   const [nearby,  setNearby]  = useState<NearbyOffer[]>([]);
+  // This user's own in-progress items (delivery / booking / application / reward / gift).
+  const [personal, setPersonal] = useState<HomeData | null>(null);
+
+  const loadPersonal = useCallback(async () => {
+    if (!profile?.id) { setPersonal(null); return; }
+    try { setPersonal(await fetchHomeData(profile)); } catch { /* non-fatal */ }
+  }, [profile]);
 
   const loadPrefs = useCallback(async () => {
     const [s, r, e] = await Promise.all([
@@ -1073,18 +1171,20 @@ export default function HomeScreen() {
   const loadConcierge = useCallback(async () => {
     const viewerParish =
       (profile as any)?.parish ?? null;
-    const [evRes, ntRes, jbRes, shRes, spRes] = await Promise.all([
+    const [evRes, ntRes, jbRes, shRes, spRes, bzRes] = await Promise.all([
       fetchHomeEvents(),
       fetchHomeNotices({ viewerParish }),
       fetchHomeJobs(),
       fetchHomeShifts(),
       fetchTodaysSpik(),
+      fetchFeaturedBusinesses(6).catch(() => [] as LocalBusiness[]),
     ]);
     setEvents(evRes);
     setNotices(ntRes);
     setJobs(jbRes);
     setShifts(shRes);
     setSpik(spRes);
+    setBusinesses(bzRes);
   }, [profile]);
 
   // GPS-aware local offers. Soft-checks current permission state — never
@@ -1131,6 +1231,7 @@ export default function HomeScreen() {
     void loadPrefs();
     void loadConcierge();
     void loadNearby();
+    void loadPersonal();
   }, [loadPrefs, loadConcierge, loadNearby]));
 
   // ── Build For-you tiles — real data, not placeholders ──────────────────
@@ -1138,6 +1239,71 @@ export default function HomeScreen() {
     const out: ForYouTile[] = [];
     const now  = Date.now();
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59);
+
+    // ── 0. YOUR in-progress items — highest priority (your live journey) ──
+    if (personal?.activeDelivery) {
+      const d = personal.activeDelivery;
+      const statusText = d.status === 'pending' ? 'Finding you a driver'
+        : d.status === 'collected' ? 'On its way to you'
+        : 'A driver is on the way';
+      out.push({
+        id: 'my-delivery',
+        iconKey: 'fetch',
+        tag: 'YOUR DELIVERY',
+        headline: d.destination_area ? `Delivery to ${d.destination_area}` : `Your ${d.category_slug ?? 'delivery'}`,
+        detail: statusText,
+        onPress: () => router.push('/(tabs)/fetch'),
+      });
+    }
+    if (personal?.upcomingBooking) {
+      const b = personal.upcomingBooking;
+      const dt = new Date(b.starts_at);
+      const isToday = dt.toDateString() === new Date().toDateString();
+      const timeStr = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const dayStr  = isToday ? 'Today' : dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      out.push({
+        id: 'my-booking',
+        iconKey: 'local',
+        tag: isToday ? 'BOOKING TODAY' : 'YOUR BOOKING',
+        headline: b.business_name ? `${b.service_name ?? 'Appointment'} at ${b.business_name}` : (b.service_name ?? 'Your appointment'),
+        detail: `${dayStr}  ·  ${timeStr}`,
+        onPress: () => router.push('/local-my-bookings'),
+      });
+    }
+    if (personal?.application) {
+      const a = personal.application;
+      const tag: Record<string, string>    = { accepted: "YOU'RE CONFIRMED", pending: 'APPLICATION IN' };
+      const detail: Record<string, string> = { accepted: "You've got the shift", pending: 'Awaiting the employer', rejected: 'Not successful this time', withdrawn: 'Withdrawn' };
+      out.push({
+        id: 'my-application',
+        iconKey: 'shifts',
+        tag: tag[a.status] ?? 'APPLICATION',
+        headline: a.title,
+        detail: detail[a.status] ?? '',
+        onPress: () => router.push('/my-shift-applications'),
+      });
+    }
+    if (personal?.rewardReady) {
+      const r = personal.rewardReady;
+      out.push({
+        id: 'my-reward',
+        iconKey: 'local',
+        tag: 'REWARD READY',
+        headline: r.business_name ? `Free reward at ${r.business_name}` : 'A reward is ready',
+        detail: 'Show your card to redeem',
+        onPress: () => router.push('/local-my-cards'),
+      });
+    }
+    if (personal?.giftToClaim) {
+      out.push({
+        id: 'my-gift',
+        iconKey: 'local',
+        tag: 'A GIFT FOR YOU',
+        headline: "You've a gift to use",
+        detail: 'Pick a time to book it in',
+        onPress: () => router.push('/local-my-gifts'),
+      });
+    }
 
     // ── 1. GPS: nearby offer or loyalty card (you are physically here) ──
     if (nearby.length > 0) {
@@ -1271,7 +1437,7 @@ export default function HomeScreen() {
     }
 
     return out.slice(0, 6);
-  }, [savedBoats, recentBoats, engagement, nearby, events, notices, jobs, shifts, router]);
+  }, [personal, savedBoats, recentBoats, engagement, nearby, events, notices, jobs, shifts, router]);
 
   // ── Personal note in the banner ────────────────────────────────────────
   const personalNote = useMemo(() => {
@@ -1325,7 +1491,7 @@ export default function HomeScreen() {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              void Promise.all([loadPrefs(), loadConcierge(), loadNearby()]);
+              void Promise.all([loadPrefs(), loadConcierge(), loadNearby(), loadPersonal()]);
             }}
             tintColor={colors.accent}
           />
@@ -1346,11 +1512,15 @@ export default function HomeScreen() {
         <View style={[styles.sectionsCard, { paddingHorizontal: sidePadding }]}>
           {/* Shetland today — weather + daylight with a Lerwick / Near-me toggle.
               Phone only: tablet already shows the weather in the hero. */}
-          {!isTablet && (
-            <ShetlandTodayCard style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.lg }} />
-          )}
+          {/* Shetland today — weather + daylight + tides on the contextual photo.
+              Wide horizontal layout on tablet (the header no longer carries the
+              weather), the original tall layout on phone. */}
+          <ShetlandTodayCard wide={isTablet} style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.lg }} />
           {/* Cruise — in port today / next call (hidden when no calls) */}
           <CruiseTodayCard style={{ marginHorizontal: spacing.lg, marginBottom: spacing.lg }} />
+          {/* For you — your personal/contextual items, surfaced high. Hidden when
+              there's nothing personal, so the page leads with Explore instead. */}
+          <ForYouRow tiles={tiles} />
           {/* Explore — persistent grid of every section (discoverability).
               Phone only: on tablet the NavRail sidebar already lists every
               section, so the grid would just be a redundant duplicate. */}
@@ -1360,19 +1530,11 @@ export default function HomeScreen() {
               <BrushDivider />
             </>
           )}
-          {/* 1. For you */}
-          <ForYouRow tiles={tiles} />
+          {/* Around Shetland — events, work & featured local merged into one
+              scannable vertical feed (replaces three separate carousels). */}
+          <HappeningRow events={events} jobs={jobs} shifts={shifts} businesses={businesses} />
           <BrushDivider />
-          {/* 2. Events */}
-          <ComingUpRow events={events} />
-          <BrushDivider />
-          {/* 3. Directory / featured listings */}
-          <FeaturedBusinessesBar />
-          <BrushDivider />
-          {/* 4. Work / shifts */}
-          <WorkRow jobs={jobs} shifts={shifts} />
-          <BrushDivider />
-          {/* 5. Local notices */}
+          {/* Local notices — kept (already a rich vertical list w/ campaigns) */}
           <NoticesRow notices={notices} />
           {/* 6. Today's game — phone only; on tablet it lives below the left nav */}
           {!isTablet && (
@@ -1557,6 +1719,23 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.5)',
   },
   heroSearchText: { flex: 1, fontSize: fontSize.sm, color: colors.textMuted, fontWeight: '500' },
+
+  // Lean tablet header — greeting + search + actions on one row.
+  heroLeanRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  heroLeanGreeting: { flexShrink: 1 },
+  heroLeanDateRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' },
+  heroWirdChip: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroWirdWord: { color: '#fff', fontSize: 13.5, fontWeight: '700', fontStyle: 'italic' },
+  heroSearchWide: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
   heroCollapse: { overflow: 'hidden' },
   heroDateRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 1 },
   heroDateDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.25)' },
@@ -1951,6 +2130,55 @@ const styles = StyleSheet.create({
   forYouScroll: {
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
+  },
+  // Lead "For you" item — prominent full-width action card in its section colour.
+  forYouHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 15,
+  },
+  // Around Shetland — merged vertical feed (white rounded panel + rows).
+  happeningCard: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  happeningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  happeningRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  happeningTitle: { fontSize: 14, fontWeight: '700', color: colors.navy },
+  happeningSub:   { fontSize: 11.5, color: colors.textMuted, marginTop: 1 },
+  happeningTag:   { fontSize: 9.5, fontWeight: '800', letterSpacing: 0.6 },
+  forYouHeroTag: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: 'rgba(255,255,255,0.92)',
+  },
+  forYouHeroHeadline: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    marginTop: 2,
+  },
+  forYouHeroDetail: {
+    fontSize: 12.5,
+    color: 'rgba(255,255,255,0.88)',
+    marginTop: 1,
   },
   forYouTile: {
     width: 168,

@@ -44,6 +44,10 @@ export interface RewardReady {
   needed:        number;
 }
 
+export interface GiftToClaim {
+  id: string;
+}
+
 export interface OwnerGlance {
   businesses:        LocalBusiness[];
   primaryBusiness:   LocalBusiness | null;
@@ -56,6 +60,7 @@ export interface HomeData {
   upcomingBooking:  UpcomingBooking | null;
   application:      ApplicationSummary | null;   // most relevant (pending/accepted)
   rewardReady:      RewardReady | null;
+  giftToClaim:      GiftToClaim | null;           // a booking gift you've claimed but not yet booked a slot for
   owner:            OwnerGlance | null;
   /**
    * Total "things in your wallet" — sum of:
@@ -73,6 +78,7 @@ const EMPTY: HomeData = {
   upcomingBooking: null,
   application:     null,
   rewardReady:     null,
+  giftToClaim:     null,
   owner:           null,
   walletItemCount: 0,
 };
@@ -150,6 +156,22 @@ async function getRewardReady(userId: string): Promise<RewardReady | null> {
       }
     }
     return null;
+  } catch {
+    return null;
+  }
+}
+
+async function getGiftToClaim(userId: string): Promise<GiftToClaim | null> {
+  try {
+    const { data } = await supabase
+      .from('book_gifts')
+      .select('id')
+      .eq('claimed_by_user_id', userId)
+      .eq('status', 'claimed')
+      .eq('kind', 'booking')
+      .limit(1);
+    const row = data?.[0];
+    return row ? { id: row.id as string } : null;
   } catch {
     return null;
   }
@@ -237,15 +259,16 @@ export async function fetchHomeData(
 
   const userId = profile.id;
 
-  const [activeDelivery, upcomingBooking, application, rewardReady, owner, walletItemCount] = await Promise.all([
+  const [activeDelivery, upcomingBooking, application, rewardReady, giftToClaim, owner, walletItemCount] = await Promise.all([
     getActiveDelivery(userId),
     getUpcomingBooking(userId),
     getApplication(userId),
     getRewardReady(userId),
+    getGiftToClaim(userId),
     // Always check ownership — role isn't always set to business_owner even when they own one
     getOwnerGlance(userId),
     getWalletItemCount(userId),
   ]);
 
-  return { activeDelivery, upcomingBooking, application, rewardReady, owner, walletItemCount };
+  return { activeDelivery, upcomingBooking, application, rewardReady, giftToClaim, owner, walletItemCount };
 }

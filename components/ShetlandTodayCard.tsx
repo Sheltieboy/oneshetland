@@ -52,7 +52,7 @@ const clampPct = (f: number) => Math.min(95, Math.max(5, f * 100));
 type Mode = 'lerwick' | 'mine';
 const PREF_KEY = 'shetland_today_loc';
 
-export function ShetlandTodayCard({ style }: { style?: StyleProp<ViewStyle> }) {
+export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<ViewStyle>; wide?: boolean }) {
   const [mode, setMode]   = useState<Mode>('lerwick');
   const [place, setPlace] = useState('Lerwick');
   const [snap, setSnap]   = useState<TodaySnapshot | null>(null);
@@ -194,23 +194,47 @@ export function ShetlandTodayCard({ style }: { style?: StyleProp<ViewStyle> }) {
         <View style={styles.loadingBox}><ActivityIndicator color="#fff" /></View>
       ) : (
         <>
-          <View style={styles.weatherRow}>
-            <FontAwesome5 name={w.icon as any} size={30} color="#fff" solid />
-            <Text style={styles.temp}>{snap?.tempC != null ? `${snap.tempC}°` : '—'}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.place} numberOfLines={1}>{place}</Text>
-              <Text style={styles.cond} numberOfLines={1}>{w.label}</Text>
+          {wide ? (
+            // Tablet: weather + daylight side-by-side; tide timeline spans below.
+            <View style={styles.wideTop}>
+              <View style={styles.weatherRowWide}>
+                <FontAwesome5 name={w.icon as any} size={42} color="#fff" solid />
+                <Text style={styles.tempWide}>{snap?.tempC != null ? `${snap.tempC}°` : '—'}</Text>
+                <View>
+                  <Text style={styles.place} numberOfLines={1}>{place}</Text>
+                  <Text style={styles.cond} numberOfLines={1}>{w.label}</Text>
+                </View>
+              </View>
+              <View style={styles.wideRightGroup}>
+                <View style={styles.wideVDivider} />
+                <View style={styles.sunRowWide}>
+                  <Sun icon="sun"   label="Sunrise"  value={snap?.sunrise ?? '—'} />
+                  <Sun icon="moon"  label="Sunset"   value={snap?.sunset ?? '—'} />
+                  <Sun icon="clock" label="Daylight" value={snap?.daylight ?? '—'} />
+                </View>
+              </View>
             </View>
-            {loading ? <ActivityIndicator color="rgba(255,255,255,0.8)" /> : null}
-          </View>
+          ) : (
+            <>
+              <View style={styles.weatherRow}>
+                <FontAwesome5 name={w.icon as any} size={30} color="#fff" solid />
+                <Text style={styles.temp}>{snap?.tempC != null ? `${snap.tempC}°` : '—'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.place} numberOfLines={1}>{place}</Text>
+                  <Text style={styles.cond} numberOfLines={1}>{w.label}</Text>
+                </View>
+                {loading ? <ActivityIndicator color="rgba(255,255,255,0.8)" /> : null}
+              </View>
 
-          <View style={styles.divider} />
+              <View style={styles.divider} />
 
-          <View style={styles.sunRow}>
-            <Sun icon="sun"   label="Sunrise"  value={snap?.sunrise ?? '—'} />
-            <Sun icon="moon"  label="Sunset"   value={snap?.sunset ?? '—'} />
-            <Sun icon="clock" label="Daylight" value={snap?.daylight ?? '—'} />
-          </View>
+              <View style={styles.sunRow}>
+                <Sun icon="sun"   label="Sunrise"  value={snap?.sunrise ?? '—'} />
+                <Sun icon="moon"  label="Sunset"   value={snap?.sunset ?? '—'} />
+                <Sun icon="clock" label="Daylight" value={snap?.daylight ?? '—'} />
+              </View>
+            </>
+          )}
 
           {tideEvents.length > 0 ? (
             <>
@@ -288,6 +312,15 @@ const styles = StyleSheet.create({
 
   weatherRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   temp: { color: '#fff', fontSize: 34, fontWeight: '800' },
+
+  // Wide (tablet) layout — weather far-left, daylight group far-right, filling
+  // the card width; tide timeline spans below.
+  wideTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  weatherRowWide: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tempWide: { color: '#fff', fontSize: 44, fontWeight: '800' },
+  wideRightGroup: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  wideVDivider: { width: 1, height: 46, backgroundColor: 'rgba(255,255,255,0.18)' },
+  sunRowWide: { flexDirection: 'row', gap: 28 },
   place: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
   cond: { color: 'rgba(255,255,255,0.75)', fontSize: fontSize.sm },
 
