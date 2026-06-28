@@ -1329,7 +1329,11 @@ export default function HomeScreen() {
         tag: 'TODAY',
         headline: todayEvent.title,
         detail: `${timeStr}${todayEvent.venue ? `  ·  ${todayEvent.venue}` : ''}`,
-        onPress: () => router.push({ pathname: '/events/[id]', params: { id: todayEvent.id } } as any),
+        // Only real DB events have a UUID detail page; seed/sample events route
+        // to What's On (their ids like 'e1' aren't valid uuids → 400 + blank page).
+        onPress: () => todayEvent.source === 'db'
+          ? router.push({ pathname: '/events/[id]', params: { id: todayEvent.id } } as any)
+          : router.push('/(tabs)/whats-on'),
       });
     }
 
@@ -1382,7 +1386,9 @@ export default function HomeScreen() {
           tag: 'COMING UP',
           headline: next.title,
           detail: `${dayLabel}  ·  ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
-          onPress: () => router.push({ pathname: '/events/[id]', params: { id: next.id } } as any),
+          onPress: () => next.source === 'db'
+            ? router.push({ pathname: '/events/[id]', params: { id: next.id } } as any)
+            : router.push('/(tabs)/whats-on'),
         });
       }
     }

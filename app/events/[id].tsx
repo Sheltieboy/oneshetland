@@ -43,10 +43,14 @@ export default function EventDetailScreen() {
   const [accent, setAccent] = useState<string>(S.color);
 
   const load = useCallback(async () => {
-    if (!id) return;
+    // No id, or a non-uuid id (e.g. a seed/sample 'e1') → show "not found"
+    // rather than hanging on the spinner forever.
+    if (!id) { setLoading(false); return; }
     try {
       const ev = await fetchEvent(id);
       setEvent(ev);
+    } catch {
+      setEvent(null);
     } finally {
       setLoading(false);
     }

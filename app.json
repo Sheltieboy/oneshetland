@@ -31,6 +31,7 @@
     },
     "android": {
       "package": "com.oneshetland.app",
+      "jsEngine": "hermes",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F0F2F5"
