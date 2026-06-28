@@ -44,7 +44,7 @@ export default function WorkHubScreen() {
   const router = useRouter();
   const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
-  const { isTablet, screenWidth } = useAppLayout();
+  const { isTablet, contentWidth } = useAppLayout();
   const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
 
   const [tier, setTier]     = useState<Tier>(tabParam === 'shifts' ? 'shifts' : 'jobs');
@@ -119,7 +119,7 @@ export default function WorkHubScreen() {
     ? shifts.filter(s => `${s.title} ${s.category} ${s.location_text}`.toLowerCase().includes(q))
     : shifts;
 
-  const maxW = isTablet ? Math.min(880, screenWidth - spacing.lg * 2) : undefined;
+  const maxW = isTablet ? Math.min(880, contentWidth - spacing.lg * 2) : undefined;
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>

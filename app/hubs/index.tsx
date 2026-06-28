@@ -34,7 +34,7 @@ export default function HubsScreen() {
   const router = useRouter();
   const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
-  const { isTablet, screenWidth } = useAppLayout();
+  const { isTablet, screenWidth, contentWidth } = useAppLayout();
   const insets = useSafeAreaInsets();
 
   const [hubs, setHubs] = useState<Hub[]>([]);
@@ -56,7 +56,7 @@ export default function HubsScreen() {
 
   const visible = filter === 'all' ? hubs : hubs.filter(h => h.type === filter);
   const cols = isTablet ? (screenWidth >= 1100 ? 3 : 2) : 1;
-  const maxW = isTablet ? Math.min(900, screenWidth - spacing.lg * 2) : undefined;
+  const maxW = isTablet ? Math.min(900, contentWidth - spacing.lg * 2) : undefined;
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>

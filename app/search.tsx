@@ -43,7 +43,7 @@ const CATEGORY_ORDER: LocalCategory[] = ['services', 'food_drink', 'retail', 'to
 
 export default function SearchScreen() {
   const router = useRouter();
-  const { isTablet, screenWidth } = useAppLayout();
+  const { isTablet, contentWidth } = useAppLayout();
 
   const [query, setQuery]           = useState('');
   const [businesses, setBusiness]   = useState<LocalBusiness[]>([]);
@@ -120,7 +120,7 @@ export default function SearchScreen() {
   }, []);
 
   // Tablet: centre content in a readable column instead of spanning the screen.
-  const maxW = isTablet ? Math.min(720, screenWidth - spacing.lg * 2) : undefined;
+  const maxW = isTablet ? Math.min(720, contentWidth - spacing.lg * 2) : undefined;
 
   const ResultRow = ({ item }: { item: SearchResult }) => (
     <TouchableOpacity style={styles.resultRow} onPress={() => openResult(item)} activeOpacity={0.7}>

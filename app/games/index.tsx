@@ -37,7 +37,12 @@ const S = SECTIONS.games;
 export default function GamesCentre() {
   const router = useRouter();
   const { profile } = useAuth();
-  const { isTablet } = useAppLayout();
+  const { isTablet, contentWidth } = useAppLayout();
+  // Two-column magazine layout only when there's genuinely room (wide iPad).
+  // On a foldable / narrow tablet the available canvas (~580pt after the nav
+  // rail) is too tight for two columns — fall back to a single centred column
+  // so "Pick a game" gets full width and the cards don't squash.
+  const twoCol = isTablet && contentWidth >= 820;
   const insets = useSafeAreaInsets();
   const goToSignIn = useGoToSignIn();
 
@@ -260,7 +265,7 @@ export default function GamesCentre() {
           </View>
         )}
 
-        {isTablet ? (
+        {twoCol ? (
           <View style={styles.gColumns}>
             <View style={styles.gMain}>{pickGameSection}</View>
             <View style={styles.gSide}>

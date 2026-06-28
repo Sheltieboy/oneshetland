@@ -50,7 +50,7 @@ export default function HubDetailScreen() {
   const router = useRouter();
   const goToSignIn = useGoToSignIn();
   const { profile } = useAuth();
-  const { isTablet, screenWidth } = useAppLayout();
+  const { isTablet, contentWidth } = useAppLayout();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const { alert } = useAlert();
 
@@ -200,7 +200,7 @@ export default function HubDetailScreen() {
     return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.center}><Text style={styles.muted}>Hub not found.</Text></View></SafeAreaView>;
   }
 
-  const maxW = isTablet ? Math.min(980, screenWidth - spacing.lg * 2) : undefined;
+  const maxW = isTablet ? Math.min(980, contentWidth - spacing.lg * 2) : undefined;
 
   // ── Sections (extracted so phone stacks them and tablet splits into columns) ──
   const membershipState = isAdmin ? (
