@@ -25,6 +25,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { track } from '@/lib/analytics';
 import { submitScore } from '@/lib/games-api';
 import { GameArt, GAME_COLORS, GAME_LIGHTS } from '@/components/GameArt';
 import { Sheet } from '@/components/ui/Sheet';
@@ -104,8 +105,12 @@ export default function GuessDaWird() {
 
   const [state, dispatch] = useReducer(reducer, INIT);
   const [stuckOpen, setStuckOpen] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const [saving, setSaving]       = useState(false);
   const shakeAnim         = useRef(new Animated.Value(0)).current;
   const startTime         = useRef<number | null>(null);
+  // Holds the last score payload so a failed save can be retried verbatim.
+  const pendingSave       = useRef<{ score: number; metadata: Record<string, unknown> } | null>(null);
 
   // ── Boot ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -206,15 +211,32 @@ export default function GuessDaWird() {
       const updated = await recordResult(userId, dateKey, newCount, won, cluesShown, solveSeconds);
       dispatch({ type: 'STATS', stats: updated });
 
+      const score = calcScore(newCount, maxT, cluesShown, won, wird.difficulty);
+      track('game_completed', { props: { game: 'guess_da_wird', score } });
+
       if (profile) {
-        const score = calcScore(newCount, maxT, cluesShown, won, wird.difficulty);
-        submitScore(profile.id, 'guess_da_wird', score, {
-          metadata: { date: dateKey, tries: newCount, won, cluesUsed: cluesShown, difficulty: wird.difficulty },
-          xpEarned: score,
-        }).catch(() => {});
+        const metadata = { date: dateKey, tries: newCount, won, cluesUsed: cluesShown, difficulty: wird.difficulty };
+        pendingSave.current = { score, metadata };
+        setSaving(true);
+        setSaveError(false);
+        submitScore(profile.id, 'guess_da_wird', score, { metadata, xpEarned: score })
+          .then(() => { pendingSave.current = null; })
+          .catch((e) => { console.error('Score submit failed', e); setSaveError(true); })
+          .finally(() => setSaving(false));
       }
     }
   }, [state, userId, profile, triggerShake]);
+
+  const retrySave = useCallback(() => {
+    if (!profile || !pendingSave.current || saving) return;
+    const { score, metadata } = pendingSave.current;
+    setSaving(true);
+    setSaveError(false);
+    submitScore(profile.id, 'guess_da_wird', score, { metadata, xpEarned: score })
+      .then(() => { pendingSave.current = null; })
+      .catch((e) => { console.error('Score submit retry failed', e); setSaveError(true); })
+      .finally(() => setSaving(false));
+  }, [profile, saving]);
 
   const showNextClue = useCallback(() => {
     const next = Math.min((state.cluesShown + 1), 5) as ClueLevel;
@@ -336,6 +358,22 @@ export default function GuessDaWird() {
             onShare={handleShare}
             onSpik={() => router.push({ pathname: '/spik-detail', params: { id: String(wird.id) } })}
           />
+        )}
+
+        {gameOver && profile && saveError && (
+          <View style={styles.saveErrorBox}>
+            <FontAwesome5 name="exclamation-triangle" size={13} color="#B91C1C" solid />
+            <Text style={styles.saveErrorText}>
+              Couldn't save today's result. It won't count on the leaderboard until it saves.
+            </Text>
+            <TouchableOpacity
+              style={[styles.saveRetryBtn, saving && { opacity: 0.6 }]}
+              onPress={retrySave}
+              disabled={saving}
+            >
+              <Text style={styles.saveRetryText}>{saving ? 'Saving…' : 'Retry'}</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {!gameOver && (
@@ -895,6 +933,10 @@ const styles = StyleSheet.create({
   // Board
   board: { alignItems: 'center', gap: 6, marginVertical: 4 },
   row:   { flexDirection: 'row', gap: 5 },
+  saveErrorBox:  { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 12, marginHorizontal: 16, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#FEE2E2', borderRadius: radius.md },
+  saveErrorText: { flex: 1, minWidth: 180, fontSize: fontSize.sm, color: '#7F1D1D', fontWeight: '600' },
+  saveRetryBtn:  { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#B91C1C', borderRadius: radius.full },
+  saveRetryText: { fontSize: fontSize.sm, fontWeight: '900', color: '#fff' },
   tile:  { width: TILE_SIZE, height: TILE_SIZE, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
   tileLetter: { fontSize: 21, fontWeight: '900', letterSpacing: -0.5 },
 

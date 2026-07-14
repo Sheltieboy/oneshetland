@@ -67,7 +67,7 @@ export default function HubNoticesManageScreen() {
           title="Notices"
           accent={S.color}
           rightElement={
-            <IconButton icon="plus" color={S.color} onPress={() => id && router.push(`/hub-notice-compose?hub=${id}`)} />
+            <IconButton icon="plus" color={S.color} onPress={() => id && router.push(`/hub-notice-compose?hub=${id}`)} accessibilityLabel="New notice" />
           }
         />
       }

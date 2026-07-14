@@ -36,6 +36,7 @@ import VesselCard from '@/components/VesselCard';
 import SectionHero from '@/components/SectionHero';
 import { BoatBuildMap } from '@/components/BoatBuildMap';
 import { SECTION_HEROES } from '@/constants/section-heroes';
+import { track } from '@/lib/analytics';
 
 const SECTION = SECTIONS.daBoats;
 
@@ -45,6 +46,34 @@ function decadeOf(year: number | null | undefined): string | null {
   if (!year) return null;
   const d = Math.floor(year / 10) * 10;
   return `${d}s`;
+}
+
+type BoatSort = 'default' | 'name' | 'year_new' | 'year_old' | 'photos';
+
+const SORT_OPTIONS: { key: BoatSort; label: string }[] = [
+  { key: 'default',  label: 'Default' },
+  { key: 'name',     label: 'Name A–Z' },
+  { key: 'year_new', label: 'Year (newest)' },
+  { key: 'year_old', label: 'Year (oldest)' },
+  { key: 'photos',   label: 'Most photos' },
+];
+
+/** Pure client-side reorder of an already-loaded list. 'default' leaves order untouched. */
+function sortVessels(rows: VesselSearchRow[], sort: BoatSort): VesselSearchRow[] {
+  if (sort === 'default') return rows;
+  const r = [...rows];
+  switch (sort) {
+    case 'name':
+      return r.sort((a, b) => a.canonical_name.localeCompare(b.canonical_name, 'en', { sensitivity: 'base' }));
+    case 'year_new':
+      return r.sort((a, b) => (b.built_year ?? -Infinity) - (a.built_year ?? -Infinity));
+    case 'year_old':
+      return r.sort((a, b) => (a.built_year ?? Infinity) - (b.built_year ?? Infinity));
+    case 'photos':
+      return r.sort((a, b) => (b.media_asset_count ?? 0) - (a.media_asset_count ?? 0));
+    default:
+      return r;
+  }
 }
 
 export default function DaBoatsScreen() {
@@ -58,6 +87,7 @@ export default function DaBoatsScreen() {
   const [photosOnly, setPhotosOnly]       = useState(false);
   const [buildPlace, setBuildPlace]       = useState<string | null>(null);  // place key
   const [builderName, setBuilderName]     = useState<string | null>(null);
+  const [sort, setSort]                   = useState<BoatSort>('default');
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [saved, setSaved]                 = useState<VesselStub[]>([]);
@@ -80,6 +110,9 @@ export default function DaBoatsScreen() {
       // default never reached the older decades before the cap.
       const data = await searchVessels(q, 600);
       setRows(data);
+      if (q.trim()) {
+        track('search_performed', { props: { section: 'boats', query: q.trim(), results_count: data.length } });
+      }
       // Show the cards straight away — don't block the list on photos.
       setLoading(false);
       setRefreshing(false);
@@ -139,8 +172,8 @@ export default function DaBoatsScreen() {
     if (photosOnly) r = r.filter(v => v.media_asset_count > 0);
     if (buildPlace) r = r.filter(v => matchBuildPlace(v.builder)?.key === buildPlace);
     if (builderName) r = r.filter(v => (v.builder ?? '').trim() === builderName);
-    return r;
-  }, [rows, decade, photosOnly, buildPlace, builderName]);
+    return sortVessels(r, sort);
+  }, [rows, decade, photosOnly, buildPlace, builderName, sort]);
 
   // Pristine landing (stats + map + breakdowns) shows only with no filter/search.
   const exploreActive = !query.trim() && !decade && !photosOnly && !buildPlace && !builderName;
@@ -157,6 +190,7 @@ export default function DaBoatsScreen() {
       hero_url:       heroes[row.id] ?? null,
     };
     const isNowSaved = await toggleSavedBoat(stub);
+    track(isNowSaved ? 'item_saved' : 'item_unsaved', { objectType: 'vessel', objectId: row.id });
     setSavedIds(prev => {
       const next = new Set(prev);
       if (isNowSaved) next.add(row.id); else next.delete(row.id);
@@ -289,7 +323,14 @@ export default function DaBoatsScreen() {
                   {stats.decades.map(d => {
                     const max = Math.max(...stats.decades.map(x => x.count));
                     return (
-                      <TouchableOpacity key={d.key} style={styles.histoCol} onPress={() => setDecade(d.key)} activeOpacity={0.8}>
+                      <TouchableOpacity
+                        key={d.key}
+                        style={styles.histoCol}
+                        onPress={() => setDecade(d.key)}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${d.count} boats from the ${d.key} — tap to filter`}
+                      >
                         <Text style={styles.histoCount}>{d.count}</Text>
                         <View style={[styles.histoBar, { height: 10 + (d.count / max) * 96 }]} />
                         <Text style={styles.histoLabel}>{d.key}</Text>
@@ -387,7 +428,8 @@ export default function DaBoatsScreen() {
                   variant="row"
                   saved
                   onToggleSave={async () => {
-                    await toggleSavedBoat(s);
+                    const isNowSaved = await toggleSavedBoat(s);
+                    track(isNowSaved ? 'item_saved' : 'item_unsaved', { objectType: 'vessel', objectId: s.id });
                     void refreshPrefs();
                   }}
                   onPress={() => router.push(`/boat/${s.id}`)}
@@ -414,7 +456,8 @@ export default function DaBoatsScreen() {
                   variant="row"
                   saved={savedIds.has(r.id)}
                   onToggleSave={async () => {
-                    await toggleSavedBoat(r);
+                    const isNowSaved = await toggleSavedBoat(r);
+                    track(isNowSaved ? 'item_saved' : 'item_unsaved', { objectType: 'vessel', objectId: r.id });
                     void refreshPrefs();
                   }}
                   onPress={() => router.push(`/boat/${r.id}`)}
@@ -449,6 +492,24 @@ export default function DaBoatsScreen() {
           }
           action={anyFilter ? { label: 'Show all', onPress: clearFilters } : undefined}
         >
+          {/* Sort control — pure client-side reorder of the loaded list */}
+          {!loading && filtered.length > 1 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.sortRow}
+              accessibilityLabel="Sort boats"
+            >
+              {SORT_OPTIONS.map(opt => (
+                <Chip
+                  key={opt.key}
+                  label={opt.label}
+                  active={sort === opt.key}
+                  onPress={() => setSort(opt.key)}
+                />
+              ))}
+            </ScrollView>
+          )}
           {loading ? (
             <View style={{ paddingVertical: spacing.lg }}>
               <ActivityIndicator color={SECTION.color} />
@@ -521,7 +582,11 @@ function Section({ title, children, action }: {
 
 function StatTile({ value, label }: { value: string | number; label: string }) {
   return (
-    <View style={styles.statTile}>
+    <View
+      style={styles.statTile}
+      accessible
+      accessibilityLabel={`${value} ${label}`}
+    >
       <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
@@ -543,6 +608,9 @@ function Chip({
   return (
     <TouchableOpacity
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
       style={[
         styles.chip,
         active && { backgroundColor: SECTION.color, borderColor: SECTION.color },
@@ -616,6 +684,11 @@ const styles = StyleSheet.create({
 
   chipRow: {
     paddingHorizontal: spacing.lg,
+    gap: 8,
+  },
+  sortRow: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
     gap: 8,
   },
   chip: {

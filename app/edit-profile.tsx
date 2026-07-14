@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -18,6 +18,17 @@ import { useAlert } from '@/components/BrandedAlert';
 import {
   validateHandle, isHandleAvailable, HANDLE_MAX,
 } from '@/lib/games-handle';
+import { uploadAvatar, deleteUploadedImage, pathFromPublicUrl } from '@/lib/image-upload';
+
+// expo-image-picker is loaded lazily so the screen never hard-crashes if the
+// native module is unavailable in a given build (mirrors memory-new.tsx).
+let ImagePicker: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ImagePicker = require('expo-image-picker');
+} catch {
+  ImagePicker = null;
+}
 
 const SHETLAND_AREAS = [
   'Lerwick', 'Scalloway', 'Brae', 'Voe', 'Vidlin', 'Laxo',
@@ -46,6 +57,9 @@ export default function EditProfileScreen() {
   const { alert } = useAlert();
 
   const [fullName,     setFullName]     = useState(profile?.full_name     ?? '');
+  const [displayName,  setDisplayName]  = useState(profile?.display_name  ?? '');
+  const [avatarUrl,    setAvatarUrl]    = useState(profile?.avatar_url    ?? '');
+  const [uploading,    setUploading]    = useState(false);
   const [bio,          setBio]          = useState(profile?.bio           ?? '');
   const [gamesHandle,  setGamesHandle]  = useState(profile?.games_handle  ?? '');
   const [locationArea, setLocationArea] = useState(profile?.location_area ?? '');
@@ -66,6 +80,8 @@ export default function EditProfileScreen() {
 
   useEffect(() => {
     setFullName(profile?.full_name ?? '');
+    setDisplayName(profile?.display_name ?? '');
+    setAvatarUrl(profile?.avatar_url ?? '');
     setBio(profile?.bio ?? '');
     setGamesHandle(profile?.games_handle ?? '');
     setLocationArea(profile?.location_area ?? '');
@@ -105,6 +121,8 @@ export default function EditProfileScreen() {
 
   const isDirty =
     fullName.trim()     !== (profile?.full_name     ?? '').trim() ||
+    displayName.trim()  !== (profile?.display_name  ?? '').trim() ||
+    (avatarUrl || null) !== (profile?.avatar_url    ?? null)      ||
     bio.trim()          !== (profile?.bio           ?? '').trim() ||
     handleNormalised    !== savedHandle                           ||
     locationArea        !== (profile?.location_area ?? '')        ||
@@ -115,6 +133,50 @@ export default function EditProfileScreen() {
   const handleSaveable =
     handleStatus.kind !== 'invalid' && handleStatus.kind !== 'taken';
 
+  // ── Avatar pick / upload / remove ─────────────────────────────────────────
+  const pickAvatar = async () => {
+    if (!ImagePicker) {
+      return alert({ title: 'Setup needed', message: 'Run `npx expo install expo-image-picker` and rebuild.' });
+    }
+    if (!profile?.id) return;
+
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      return alert({ title: 'Permission needed', message: 'Allow photo access to choose an avatar.' });
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions?.Images ?? ['images'],
+      quality: 0.85,
+      allowsEditing: true,
+      aspect: [1, 1],
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+
+    setUploading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const { publicUrl } = await uploadAvatar(profile.id, {
+        uri: asset.uri,
+        mimeType: asset.mimeType,
+        ext: asset.fileName?.split('.').pop(),
+      });
+      setAvatarUrl(publicUrl);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      alert({ title: 'Upload failed', message: e instanceof Error ? e.message : 'Could not upload that photo.' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAvatar = () => {
+    Haptics.selectionAsync();
+    setAvatarUrl('');
+  };
+
   const handleSave = async () => {
     if (!fullName.trim()) return alert({ title: 'Required', message: 'Please enter your full name.' });
     if (!handleSaveable) return alert({ title: 'Fix your handle', message: 'Pick a different Games handle before saving.' });
@@ -122,10 +184,14 @@ export default function EditProfileScreen() {
     setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+    const newAvatar = avatarUrl || null;
+
     const { error } = await supabase
       .from('profiles')
       .update({
         full_name:     fullName.trim(),
+        display_name:  displayName.trim() || null,
+        avatar_url:    newAvatar,
         bio:           bio.trim() || null,
         games_handle:  handleNormalised,
         location_area: locationArea || null,
@@ -134,6 +200,16 @@ export default function EditProfileScreen() {
       .eq('id', profile!.id);
 
     setSaving(false);
+
+    // Best-effort cleanup of the previous avatar object once the new URL (or
+    // removal) is safely persisted. Failures are non-fatal.
+    if (!error) {
+      const prevAvatar = profile?.avatar_url ?? null;
+      if (prevAvatar && prevAvatar !== newAvatar) {
+        const ref = pathFromPublicUrl(prevAvatar);
+        if (ref) deleteUploadedImage(ref.bucket, ref.path).catch(() => {});
+      }
+    }
 
     if (error) {
       // Only treat as "taken" on a real unique-violation (Postgres 23505).
@@ -165,6 +241,42 @@ export default function EditProfileScreen() {
           keyboardShouldPersistTaps="handled"
         >
 
+          {/* ── Avatar ─────────────────────────────────────────────────────── */}
+          <View style={styles.avatarRow}>
+            <View style={styles.avatarPreview}>
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarInitials}>
+                  {(fullName.trim() || 'U').slice(0, 1).toUpperCase()}
+                </Text>
+              )}
+              {uploading && (
+                <View style={styles.avatarUploading}>
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              )}
+            </View>
+            <View style={{ flex: 1, gap: 8 }}>
+              <TouchableOpacity
+                style={styles.avatarBtn}
+                onPress={pickAvatar}
+                disabled={uploading}
+                activeOpacity={0.8}
+              >
+                <FontAwesome5 name="camera" size={12} color={colors.navy} />
+                <Text style={styles.avatarBtnText}>
+                  {uploading ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Add photo'}
+                </Text>
+              </TouchableOpacity>
+              {avatarUrl ? (
+                <TouchableOpacity onPress={removeAvatar} disabled={uploading} activeOpacity={0.7}>
+                  <Text style={styles.avatarRemove}>Remove photo</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+
           <Field label="Full name" required>
             <View style={styles.inputWrap}>
               <TextInput
@@ -176,6 +288,20 @@ export default function EditProfileScreen() {
                 autoCapitalize="words"
               />
             </View>
+          </Field>
+
+          <Field label="Display name">
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={styles.input}
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="Shown publicly (optional)"
+                placeholderTextColor={colors.textLight}
+                autoCapitalize="words"
+              />
+            </View>
+            <Text style={styles.hint}>Your public-facing name across OneShetland. Leave blank to use your full name.</Text>
           </Field>
 
           <Field label="Bio">
@@ -321,6 +447,33 @@ const styles = StyleSheet.create({
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
 
   content: { padding: spacing.md, gap: 0, paddingBottom: 60 },
+
+  // Avatar
+  avatarRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 16,
+    marginBottom: spacing.lg,
+  },
+  avatarPreview: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: colors.navy,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage:    { width: '100%', height: '100%' },
+  avatarInitials: { fontSize: 30, fontWeight: '900', color: '#fff' },
+  avatarUploading: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+    backgroundColor: '#fff', borderRadius: radius.full,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 9,
+  },
+  avatarBtnText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.navy },
+  avatarRemove:  { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted },
 
   field:      { marginBottom: spacing.lg },
   fieldLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },

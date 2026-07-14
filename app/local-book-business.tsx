@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { track } from '@/lib/analytics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
@@ -131,6 +132,11 @@ export default function BookBusinessScreen() {
       return;
     }
     Haptics.selectionAsync();
+    track('booking_started', {
+      businessId: business.id,
+      objectType: 'service',
+      objectId:   selectedService.id,
+    });
     router.push({
       pathname: '/local-book-confirm',
       params: {

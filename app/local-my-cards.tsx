@@ -7,7 +7,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Image, RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
@@ -43,7 +43,9 @@ export default function MyCardsScreen() {
     }
   }, [profile?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refresh on focus so a stamp collected on the scanner shows the moment you
+  // come back to this screen (no need to leave and re-enter).
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return (
     <ScreenScaffold

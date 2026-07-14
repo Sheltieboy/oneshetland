@@ -143,6 +143,9 @@ export interface MediaAsset {
   rights_note:        string | null;
   payload:            Record<string, any>;
   created_at:         string;
+  /** Moderation state (migration 20260701093000). Legacy rows read 'approved'. */
+  approval_status?:   'pending' | 'approved' | 'rejected';
+  submitted_by?:      string | null;
 }
 
 export interface VesselMediaLink {
@@ -533,6 +536,63 @@ export async function uploadCommentPhoto(
 }
 
 /**
+ * Stable id + slug of the "community uploads" source document seeded by
+ * migration 20260701093000. Community-submitted gallery photos hang off this
+ * source so a normal user can insert a media_asset without admin rights (RLS
+ * allows it only as a pending row against this source, owned by the submitter).
+ */
+export const COMMUNITY_SOURCE_ID   = '00000000-0000-4000-8000-0000000da404';
+export const COMMUNITY_SOURCE_SLUG = 'community-uploads';
+
+/**
+ * Submit a photo to a vessel's PHOTO GALLERY as a *pending* community
+ * contribution. Held invisible to the public until an admin/moderator approves
+ * it (RLS narrows the gallery read to approved-only). Reuses the already-
+ * uploaded comment photo URL so the same image backs both the discussion
+ * comment and the pending gallery asset — no second upload.
+ *
+ * Creates a pending media_asset (asset_type 'photo', source = community) then
+ * links it to the vessel at 'possible' confidence. Returns the new asset id.
+ * Best-effort: throws on failure so the caller can surface it, but the comment
+ * itself has already been posted independently.
+ */
+export async function submitVesselPhoto(input: {
+  vesselId:  string;
+  authorId:  string;
+  imageUrl:  string;
+  title?:    string | null;
+}): Promise<{ assetId: string }> {
+  const { data: asset, error: aErr } = await supabase
+    .from('media_assets')
+    .insert({
+      source_document_id: COMMUNITY_SOURCE_ID,
+      asset_type:         'photo',
+      title:              input.title ?? null,
+      image_url:          input.imageUrl,
+      submitted_by:       input.authorId,
+      approval_status:    'pending',
+      rights_note:        'Community submission — pending review',
+    })
+    .select('id')
+    .single();
+  if (aErr) throw aErr;
+
+  const assetId = (asset as { id: string }).id;
+
+  const { error: lErr } = await supabase
+    .from('vessel_media_links')
+    .insert({
+      vessel_id:      input.vesselId,
+      media_asset_id: assetId,
+      confidence:     'possible',
+      notes:          'Submitted via discussion — awaiting approval',
+    });
+  if (lErr) throw lErr;
+
+  return { assetId };
+}
+
+/**
  * Delete a previously-uploaded comment photo from storage. Silently
  * ignores "not found".
  */
@@ -590,6 +650,13 @@ export async function addVesselComment(input: {
   parentCommentId?: string | null;
   /** Optional photo to upload + attach. */
   imageFile?:       PickedFile | null;
+  /**
+   * When true AND a photo is attached, also submit that photo to the vessel's
+   * gallery as a pending community contribution (moderated — hidden until an
+   * admin/moderator approves it). Reuses the same uploaded image, so there is
+   * no second upload.
+   */
+  addToGallery?:    boolean;
 }): Promise<VesselComment> {
   // Upload first (if any) so the row carries a known-good URL.
   let imagePath: string | null = null;
@@ -622,6 +689,21 @@ export async function addVesselComment(input: {
     // Roll back the orphaned upload so we don't leak bytes.
     if (imagePath) await deleteCommentPhoto(imagePath).catch(() => {});
     throw error;
+  }
+
+  // Optionally mirror the photo into the vessel's gallery as a pending
+  // community contribution. Best-effort: a failure here must not lose the
+  // comment the user already posted, so we swallow + log rather than throw.
+  if (input.addToGallery && imageUrl) {
+    try {
+      await submitVesselPhoto({
+        vesselId: input.vesselId,
+        authorId: input.authorId,
+        imageUrl,
+      });
+    } catch (err) {
+      console.warn('[boats] gallery photo submission failed (comment still posted):', err);
+    }
   }
 
   // Notify the thread (reply → parent commenter; top-level → other commenters).

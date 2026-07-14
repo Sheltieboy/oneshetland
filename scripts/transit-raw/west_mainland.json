@@ -1,0 +1,2890 @@
+{
+  "source": "bus-west_mainland",
+  "legend": {
+    "DAR": "Dial-a-Ride",
+    "DARV": "Dial-a-Ride during school holidays only",
+    "M": "Mondays only",
+    "Tu": "Tuesdays only",
+    "ATu": "Alternate Tuesdays only",
+    "NTu": "Not Tuesdays",
+    "W": "Wednesdays only",
+    "Th": "Thursdays only",
+    "F": "Fridays only",
+    "Sat": "Saturdays only",
+    "NSat": "Not Saturdays",
+    "MW": "Mondays and Wednesdays only",
+    "MWF": "Mondays, Wednesdays and Fridays only",
+    "MWFS": "Mondays, Wednesdays, Fridays and Saturdays only",
+    "FSat": "Fridays and Saturdays only",
+    "Sch": "Schooldays only",
+    "NSch": "School holidays only",
+    "CON9": "Connects with Service 9 in Bixter",
+    "CON12": "Connects with Service 12 in Bixter",
+    "EX12": "Express between Tresta and Holmsgarth",
+    "FOUB": "Extends to Walls Pier on Tuesdays and Thursdays",
+    "FOUL": "On Tuesdays and Thursdays service starts from Walls Pier at 1315",
+    "SD": "Diverts to/from Stromfirth on request only",
+    "OnReq": "Bridge of Walls, Walls and Aith covered on request"
+  },
+  "services": [
+    {
+      "service": "9",
+      "name": "Lerwick to Walls",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0700"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0701"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0703"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0706"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "0708"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0714"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0721"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0726"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0731"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0736"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0746"
+            },
+            {
+              "stop": "Walls",
+              "time": "0751"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0900"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0901"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0903"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0906"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "0908"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0914"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0921"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0926"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0931"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0936"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0946"
+            },
+            {
+              "stop": "Walls",
+              "time": "0951"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "FOUB"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1220"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1221"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1223"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1226"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "1228"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1234"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1241"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1246"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1251"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1256"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1306"
+            },
+            {
+              "stop": "Walls",
+              "time": "1311"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1715"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1716"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1718"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1721"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "1723"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1729"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1736"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1741"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1746"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1751"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1801"
+            },
+            {
+              "stop": "Walls",
+              "time": "1806"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "OnReq"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "2120"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "2121"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "2123"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "2126"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "2128"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "2134"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "2141"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "2146"
+            },
+            {
+              "stop": "Tresta",
+              "time": "2151"
+            },
+            {
+              "stop": "Bixter",
+              "time": "2156"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12",
+      "name": "Lerwick to Aith",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1540"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1541"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1543"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1546"
+            },
+            {
+              "stop": "Anderson High School",
+              "time": "1555"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "1559"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1605"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1612"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1617"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1622"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1627"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1710"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1711"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1713"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1716"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "1718"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1724"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1731"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1736"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1741"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1746"
+            },
+            {
+              "stop": "Aith",
+              "time": "1754"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12C",
+      "name": "Bixter to Aith Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1629"
+            },
+            {
+              "stop": "Aith",
+              "time": "1637"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "9F",
+      "name": "Bixter to Walls Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1629"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1639"
+            },
+            {
+              "stop": "Walls",
+              "time": "1644"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "9",
+      "name": "Lerwick to Walls",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "0700"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0705"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0715"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0720"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0725"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0730"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0737"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0743"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0745"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0750"
+            },
+            {
+              "stop": "Tesco",
+              "time": "0755"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "0755"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0800"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0810"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0815"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0820"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0825"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0832"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0838"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0840"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0842"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0844"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0845"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "0955"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1000"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1010"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1015"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1020"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1025"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1032"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1038"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1040"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1042"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1044"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1045"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "FOUL"
+          ],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1320"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1325"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1335"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1340"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1345"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1350"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1357"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1403"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1405"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1407"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1409"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1410"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1810"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1815"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1825"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1830"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1835"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1840"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1847"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1853"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1855"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1857"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1859"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1900"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12",
+      "name": "Lerwick to Aith",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "Sch",
+            "EX12"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "0800"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0810"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0815"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0836"
+            },
+            {
+              "stop": "Anderson High School",
+              "time": "0840"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0845"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0847"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0849"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0850"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1629"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1633"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1638"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1641"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1646"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1652"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1654"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1656"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1658"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1659"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12F",
+      "name": "Bixter to Aith Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "NSch",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "0800"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0808"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12C",
+      "name": "Bixter to Aith Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "1619"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1627"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "9F",
+      "name": "Bixter to Walls Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1612"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1617"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1627"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "9",
+      "name": "Lerwick to Walls",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0700"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0701"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0703"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0706"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "0708"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0714"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0721"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0726"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0731"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0736"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0746"
+            },
+            {
+              "stop": "Walls",
+              "time": "0751"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0900"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0901"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0903"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0906"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "0908"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0914"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0921"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0926"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0931"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0936"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0946"
+            },
+            {
+              "stop": "Walls",
+              "time": "0951"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1220"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1221"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1223"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1226"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "1228"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1234"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1241"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1246"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1251"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1256"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1306"
+            },
+            {
+              "stop": "Walls",
+              "time": "1311"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1520"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1521"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1523"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1526"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "1528"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1534"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1541"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1546"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1551"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1556"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1606"
+            },
+            {
+              "stop": "Walls",
+              "time": "1611"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1715"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1716"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1718"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1721"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "1723"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1729"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1736"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1741"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1746"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1751"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1801"
+            },
+            {
+              "stop": "Walls",
+              "time": "1806"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "OnReq"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "2300"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "2301"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "2303"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "2306"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "2308"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "2314"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "2321"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "2326"
+            },
+            {
+              "stop": "Tresta",
+              "time": "2331"
+            },
+            {
+              "stop": "Bixter",
+              "time": "2336"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "9",
+      "name": "Lerwick to Walls",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "0700"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0705"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0715"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0720"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0725"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0730"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0737"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0743"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0745"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0750"
+            },
+            {
+              "stop": "Tesco",
+              "time": "0755"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "0755"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "0800"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0810"
+            },
+            {
+              "stop": "Tresta",
+              "time": "0815"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0820"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0825"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0832"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0838"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0840"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0842"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0844"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0845"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "0955"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1000"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1010"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1015"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1020"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1025"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1032"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1038"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1040"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1042"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1044"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1045"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1320"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1325"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1335"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1340"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1345"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1350"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1357"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1403"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1405"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1407"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1409"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1410"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1620"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1625"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1635"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1640"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1645"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1650"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1657"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1703"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1705"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1707"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1709"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1710"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1810"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1815"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1825"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1830"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1835"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1840"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1847"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1853"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1855"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1857"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1859"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1900"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12F",
+      "name": "Bixter to Aith Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1258"
+            },
+            {
+              "stop": "Aith",
+              "time": "1306"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12F",
+      "name": "Bixter to Aith Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "1000"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1008"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "1325"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1333"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12F",
+      "name": "Bixter to Aith Feeder",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1258"
+            },
+            {
+              "stop": "Aith",
+              "time": "1306"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1558"
+            },
+            {
+              "stop": "Aith",
+              "time": "1606"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1752"
+            },
+            {
+              "stop": "Aith",
+              "time": "1800"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "12F",
+      "name": "Bixter to Aith Feeder",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "0800"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0808"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "1000"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1008"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "1325"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1333"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "1625"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1633"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "10",
+      "name": "Sandness to Walls (via Dale of Walls)",
+      "direction": "inbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        {
+          "codes": [
+            "CON9",
+            "NSat"
+          ],
+          "calls": [
+            {
+              "stop": "Sandness",
+              "time": "0725"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "0740"
+            },
+            {
+              "stop": "Walls",
+              "time": "0755"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9",
+            "Sat"
+          ],
+          "calls": [
+            {
+              "stop": "Sandness",
+              "time": "0725"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "0740"
+            },
+            {
+              "stop": "Walls",
+              "time": "0755"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Sandness",
+              "time": "0925"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "0940"
+            },
+            {
+              "stop": "Walls",
+              "time": "0955"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Sandness",
+              "time": "1130"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "1150"
+            },
+            {
+              "stop": "Walls",
+              "time": "1215"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Sandness",
+              "time": "1200"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "1215"
+            },
+            {
+              "stop": "Walls",
+              "time": "1230"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "10",
+      "name": "Sandness to Walls (via Dale of Walls)",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        {
+          "codes": [
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1120"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "1135"
+            },
+            {
+              "stop": "Sandness",
+              "time": "1150"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON9",
+            "NTu"
+          ],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1315"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "1330"
+            },
+            {
+              "stop": "Sandness",
+              "time": "1345"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1315"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "1335"
+            },
+            {
+              "stop": "Sandness",
+              "time": "1400"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1808"
+            },
+            {
+              "stop": "Dale of Walls",
+              "time": "1820"
+            },
+            {
+              "stop": "Sandness",
+              "time": "1833"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "13",
+      "name": "Skeld to Bixter Feeder & Skeld to Lerwick Shopper",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Wester Skeld",
+              "time": "0735"
+            },
+            {
+              "stop": "Skeld",
+              "time": "0740"
+            },
+            {
+              "stop": "Reawick",
+              "time": "0745"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0805"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9",
+            "MWF"
+          ],
+          "calls": [
+            {
+              "stop": "Wester Skeld",
+              "time": "0940"
+            },
+            {
+              "stop": "Skeld",
+              "time": "0945"
+            },
+            {
+              "stop": "Reawick",
+              "time": "0950"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1010"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Culswick",
+              "time": "0945"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1000"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1005"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1010"
+            },
+            {
+              "stop": "Sand",
+              "time": "1020"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1035"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1105"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "13",
+      "name": "Skeld to Bixter Feeder & Skeld to Lerwick Shopper",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "W"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1115"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1135"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1140"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1145"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "MWF"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1256"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1316"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1321"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1326"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1330"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1400"
+            },
+            {
+              "stop": "Sand",
+              "time": "1412"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1422"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1427"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1432"
+            },
+            {
+              "stop": "Culswick",
+              "time": "1445"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DARV",
+            "CON12"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1629"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1649"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1654"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1659"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1753"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1813"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1818"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1823"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "13",
+      "name": "Skeld to Bixter Feeder & Skeld to Lerwick Shopper",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Wester Skeld",
+              "time": "0735"
+            },
+            {
+              "stop": "Skeld",
+              "time": "0740"
+            },
+            {
+              "stop": "Reawick",
+              "time": "0745"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0805"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Wester Skeld",
+              "time": "1300"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1305"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1310"
+            },
+            {
+              "stop": "Sand",
+              "time": "1320"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1335"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "13",
+      "name": "Skeld to Bixter Feeder & Skeld to Lerwick Shopper",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1415"
+            },
+            {
+              "stop": "Sand",
+              "time": "1427"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1439"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1444"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1449"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1751"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1811"
+            },
+            {
+              "stop": "Skeld",
+              "time": "1816"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1821"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "14",
+      "name": "Whiteness & Weisdale Shopper",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "SD",
+            "ATu"
+          ],
+          "calls": [
+            {
+              "stop": "Cott",
+              "time": "0910"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "0920"
+            },
+            {
+              "stop": "South Whiteness",
+              "time": "0930"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0935"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0949"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0950"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Cott",
+              "time": "1000"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1015"
+            },
+            {
+              "stop": "South Whiteness",
+              "time": "1030"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1035"
+            },
+            {
+              "stop": "Nesbister",
+              "time": "1040"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "14",
+      "name": "Whiteness & Weisdale Shopper",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Nesbister",
+              "time": "1105"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1115"
+            },
+            {
+              "stop": "South Whiteness",
+              "time": "1120"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1135"
+            },
+            {
+              "stop": "Cott",
+              "time": "1145"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "SD",
+            "ATu"
+          ],
+          "calls": [
+            {
+              "stop": "Esplanade",
+              "time": "1245"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1246"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1300"
+            },
+            {
+              "stop": "South Whiteness",
+              "time": "1305"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1315"
+            },
+            {
+              "stop": "Cott",
+              "time": "1325"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "15",
+      "name": "Bixter to Selivoe Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "DARV",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Selivoe",
+              "time": "0750"
+            },
+            {
+              "stop": "Gruting",
+              "time": "0755"
+            },
+            {
+              "stop": "Bixter",
+              "time": "0810"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Selivoe",
+              "time": "1000"
+            },
+            {
+              "stop": "Gruting",
+              "time": "1005"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1020"
+            },
+            {
+              "stop": "Sandsound",
+              "time": "1030"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1100"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "15",
+      "name": "Bixter to Selivoe Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1330"
+            },
+            {
+              "stop": "Sandsound",
+              "time": "1400"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1410"
+            },
+            {
+              "stop": "Gruting",
+              "time": "1425"
+            },
+            {
+              "stop": "Selivoe",
+              "time": "1430"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DARV",
+            "CON12"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1629"
+            },
+            {
+              "stop": "Gruting",
+              "time": "1644"
+            },
+            {
+              "stop": "Selivoe",
+              "time": "1649"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "CON9"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1753"
+            },
+            {
+              "stop": "Gruting",
+              "time": "1808"
+            },
+            {
+              "stop": "Selivoe",
+              "time": "1813"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "18",
+      "name": "Lerwick to West Burrafirth",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "MW"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1350"
+            },
+            {
+              "stop": "Tingwall Crossroads",
+              "time": "1400"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1405"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1410"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1415"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1420"
+            },
+            {
+              "stop": "West Burrafirth Pier",
+              "time": "1440"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "FSat"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1746"
+            },
+            {
+              "stop": "West Burrafirth Pier",
+              "time": "1804"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "18",
+      "name": "Lerwick to West Burrafirth",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "MWFS"
+          ],
+          "calls": [
+            {
+              "stop": "West Burrafirth Pier",
+              "time": "1040"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1100"
+            },
+            {
+              "stop": "Tresta",
+              "time": "1105"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1110"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1115"
+            },
+            {
+              "stop": "Tingwall Crossroads",
+              "time": "1120"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1130"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "17",
+      "name": "Weisdale to Scalloway",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Weisdale",
+              "time": "0900"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "0910"
+            },
+            {
+              "stop": "Tingwall Hall",
+              "time": "0920"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "0930"
+            },
+            {
+              "stop": "Scalloway",
+              "time": "0940"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "17",
+      "name": "Weisdale to Scalloway",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway",
+              "time": "1130"
+            },
+            {
+              "stop": "Veensgarth",
+              "time": "1140"
+            },
+            {
+              "stop": "Tingwall Hall",
+              "time": "1150"
+            },
+            {
+              "stop": "Whiteness",
+              "time": "1200"
+            },
+            {
+              "stop": "Weisdale",
+              "time": "1210"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "91",
+      "name": "Gruting Area to Bixter Health Centre & Shop",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "M"
+          ],
+          "calls": [
+            {
+              "stop": "Gruting",
+              "time": "1050"
+            },
+            {
+              "stop": "Sellivoe",
+              "time": "1055"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1105"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1115"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1130"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "91",
+      "name": "Gruting Area to Bixter Health Centre & Shop",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "M"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1200"
+            },
+            {
+              "stop": "Reawick",
+              "time": "1215"
+            },
+            {
+              "stop": "Wester Skeld",
+              "time": "1225"
+            },
+            {
+              "stop": "Sellivoe",
+              "time": "1235"
+            },
+            {
+              "stop": "Gruting",
+              "time": "1240"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "92",
+      "name": "Aith Area to Bixter Health Centre & Shop",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "W"
+          ],
+          "calls": [
+            {
+              "stop": "Aith",
+              "time": "1100"
+            },
+            {
+              "stop": "Clousta",
+              "time": "1110"
+            },
+            {
+              "stop": "Twatt",
+              "time": "1115"
+            },
+            {
+              "stop": "Bixter",
+              "time": "1125"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "92",
+      "name": "Aith Area to Bixter Health Centre & Shop",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "W"
+          ],
+          "calls": [
+            {
+              "stop": "Bixter",
+              "time": "1210"
+            },
+            {
+              "stop": "Twatt",
+              "time": "1215"
+            },
+            {
+              "stop": "Clousta",
+              "time": "1220"
+            },
+            {
+              "stop": "Aith",
+              "time": "1230"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "94",
+      "name": "Bridge of Walls to Walls Health Centre & Shop",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Bridge of Walls",
+              "time": "1045"
+            },
+            {
+              "stop": "Walls",
+              "time": "1100"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "94",
+      "name": "Bridge of Walls to Walls Health Centre & Shop",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Walls",
+              "time": "1145"
+            },
+            {
+              "stop": "Bridge of Walls",
+              "time": "1200"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

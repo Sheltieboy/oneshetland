@@ -41,6 +41,26 @@ export async function getConfig(
 }
 
 /**
+ * Resolve the shared £10/mo ADD-ON Stripe price. All add-ons (alerts, analytics,
+ * and extra premium add-ons) bill at £10/mo and share ONE Stripe price, so the
+ * app owner only configures it once. Resolution order:
+ *   1. an explicit per-add-on override key (if set) — e.g. stripe.price.analytics_addon
+ *   2. the canonical shared key   — stripe.price.addon
+ *   3. the legacy alert key       — stripe.price.alert_addon  (where it was first set)
+ *   4. an env-var fallback
+ */
+export async function getAddonPrice(
+  supabase: SupabaseClient,
+  specificKey: string | null = null,
+  envFallback: string | null = null,
+): Promise<string | null> {
+  return (specificKey ? await getConfig(supabase, specificKey, null) : null)
+      ?? await getConfig(supabase, 'stripe.price.addon', null)
+      ?? await getConfig(supabase, 'stripe.price.alert_addon', null)
+      ?? envFallback;
+}
+
+/**
  * Bulk fetch: returns a Map of key→value for all requested keys. Empty-string
  * values are NOT replaced with fallbacks here — caller decides.
  */

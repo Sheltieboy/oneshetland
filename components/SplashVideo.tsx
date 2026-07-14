@@ -17,12 +17,14 @@ export function SplashVideo() {
   const player = useVideoPlayer(WAVES, p => {
     p.loop = true;
     p.muted = true;
+    // Don't interrupt other apps' audio — this is a decorative, muted background.
+    p.audioMixingMode = 'mixWithOthers';
     p.play();
   });
 
   return (
     <VideoView
-      style={StyleSheet.absoluteFill}
+      style={[StyleSheet.absoluteFill, { backgroundColor: '#032F4C' }]}
       player={player}
       contentFit="cover"
       nativeControls={false}

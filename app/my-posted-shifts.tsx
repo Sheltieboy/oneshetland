@@ -1,17 +1,14 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { useStripe } from '@stripe/stripe-react-native';
-import { supabase } from '@/lib/supabase';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
-import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAlert } from '@/components/BrandedAlert';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
@@ -52,11 +49,6 @@ export default function MyPostedShiftsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [cancelling, setCancelling]   = useState<string | null>(null);
   const [confirming, setConfirming]   = useState<string | null>(null);
-  const [boosting,   setBoosting]     = useState<string | null>(null);
-  const [walletBalance, setWalletBalance] = useState<number | null>(null);
-
-  useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const load = useCallback(async () => {
     if (!profile) return;
@@ -71,7 +63,9 @@ export default function MyPostedShiftsScreen() {
     }
   }, [profile]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refresh on focus so application counts update after new applications arrive
+  // or you accept/decline on the applicants screen.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -137,128 +131,14 @@ export default function MyPostedShiftsScreen() {
     });
   };
 
-  const promptAddBusinessCard = (bizId: string, bizName: string) => {
-    alert({
-      title: 'Add a business card',
-      message: `${bizName} needs a card on file before you can boost its shifts.`,
-      actions: [
-        { label: 'Not now', style: 'cancel' },
-        { label: 'Add card', style: 'primary', onPress: () => router.push(`/payment-setup?businessId=${bizId}`) },
-      ],
-    });
-  };
-
-  const handleBoost = async (shiftId: string) => {
-    const shift = shifts.find(s => s.id === shiftId);
-    const bizId = shift?.posted_as_business_id ?? null;
-    const hasWallet = (walletBalance ?? 0) >= 299;
-
-    // Posted as a business → business expense → default to the business's card.
-    if (bizId) {
-      const { data: biz } = await supabase
-        .from('local_businesses')
-        .select('name, has_business_payment_method')
-        .eq('id', bizId)
-        .maybeSingle();
-      const bizName = biz?.name ?? 'this business';
-      if (!biz?.has_business_payment_method) { promptAddBusinessCard(bizId, bizName); return; }
-
-      const actions: any[] = [
-        { label: 'Cancel', style: 'cancel' },
-        { label: `Pay £2.99 — ${bizName} card`, style: 'primary', onPress: () => runBoostBusiness(shiftId, bizId) },
-      ];
-      if (profile?.has_payment_method) actions.push({ label: 'Pay with my personal card', onPress: () => runBoost(shiftId) });
-      if (hasWallet) actions.push({ label: 'Pay from my wallet', onPress: () => runBoostWallet(shiftId) });
-      alert({ title: 'Boost this shift?', message: 'Featured at the top and matching workers alerted for 24 hours, for £2.99.', actions });
-      return;
-    }
-
-    // Personal shift → personal card / wallet.
-    if (!profile?.has_payment_method && !hasWallet) {
-      alert({
-        title: 'Payment card needed',
-        message: 'Add a payment card (or top up your wallet) before boosting a shift.',
-        actions: [
-          { label: 'Not now', style: 'cancel' },
-          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup') },
-        ],
-      });
-      return;
-    }
-    const actions: any[] = [{ label: 'Cancel', style: 'cancel' }];
-    if (hasWallet) actions.push({ label: 'Pay £2.99 from wallet', style: 'primary', onPress: () => runBoostWallet(shiftId) });
-    if (profile?.has_payment_method) actions.push({ label: hasWallet ? 'Pay £2.99 by card' : 'Pay £2.99', ...(hasWallet ? {} : { style: 'primary' }), onPress: () => runBoost(shiftId) });
-    alert({
-      title: 'Boost this shift?',
-      message: 'Your shift will be featured at the top and matching workers alerted for 24 hours, for £2.99.',
-      actions,
-    });
-  };
-
-  const runBoostWallet = async (shiftId: string) => {
-    setBoosting(shiftId);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      const res = await walletCheckout({ type: 'shift_boost', shift_id: shiftId });
-      if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
-      const boostedUntil = res?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString();
-      setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, boosted_until: boostedUntil } : s));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({ title: '⚡ Shift boosted!', message: 'Your shift is pinned to the top for 24 hours.', actions: [{ label: 'Great', style: 'primary' }] });
-    } catch (e: any) {
-      alert({ title: 'Boost failed', message: e?.message ?? 'Please try again.' });
-    } finally {
-      setBoosting(null);
-    }
-  };
-
-  const chargeBoost = async (shiftId: string, body: Record<string, unknown>, onNoBusinessCard?: () => void) => {
-    setBoosting(shiftId);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('create-boost-intent', { body });
-      // invoke gives a generic message on non-2xx — read the real body error.
-      let resBody: any = data;
-      if (fnErr) { try { const ctx = (fnErr as any).context; if (ctx?.json) resBody = await ctx.json(); } catch { /* */ } }
-      if (resBody?.error === 'no_business_card') { setBoosting(null); onNoBusinessCard?.(); return; }
-      if (!resBody?.charged) throw new Error(resBody?.error ?? fnErr?.message ?? 'Payment did not complete.');
-
-      const { data: confirmData, error: confirmErr } = await supabase.functions.invoke('confirm-boost', {
-        body: { shift_id: shiftId },
-      });
-      if (confirmErr) {
-        // invoke gives a generic non-2xx message — read the real body error.
-        let msg = confirmErr.message ?? 'Boost could not be confirmed.';
-        try { const ctx = (confirmErr as any).context; if (ctx?.json) { const body = await ctx.json(); if (body?.error) msg = body.error; } } catch { /* */ }
-        throw new Error(msg);
-      }
-
-      const boostedUntil = confirmData?.boosted_until ?? new Date(Date.now() + 86_400_000).toISOString();
-      setShifts(prev => prev.map(s => s.id === shiftId ? { ...s, boosted_until: boostedUntil } : s));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      alert({
-        title: '⚡ Shift boosted!',
-        message: 'Matching workers have been alerted. Your shift is pinned to the top for 24 hours.',
-        actions: [{ label: 'Great', style: 'primary' }],
-      });
-    } catch (e: any) {
-      alert({ title: 'Boost failed', message: e?.message ?? 'Please try again.' });
-    } finally {
-      setBoosting(null);
-    }
-  };
-
-  const runBoost = (shiftId: string) => chargeBoost(shiftId, { shift_id: shiftId, use_saved_card: true });
-  const runBoostBusiness = (shiftId: string, bizId: string) =>
-    chargeBoost(shiftId, { shift_id: shiftId, use_business_card: true, business_id: bizId },
-      () => promptAddBusinessCard(bizId, 'This business'));
+  // Shift boost is a paid digital feature and its in-app purchase path has been
+  // removed for store compliance. The boost CTA is no longer rendered.
 
   const renderItem = ({ item }: { item: ShiftWithStats }) => {
     const urgency         = URGENCY_CONFIG[item.urgency];
     const status          = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.open;
     const isCancelling    = cancelling === item.id;
     const isConfirming    = confirming === item.id;
-    const isBoosting      = boosting === item.id;
     const isOpen          = item.status === 'open';
     const isFilled        = item.status === 'filled';
     const isActive        = isOpen || isFilled;
@@ -266,9 +146,8 @@ export default function MyPostedShiftsScreen() {
     const showConfirm     = isActive && (isShiftPast || item.checked_out_count > 0);
     const now             = new Date().toISOString();
     const isActiveBoosted = !!(item.boosted_until && item.boosted_until > now);
-    const canBoost        = isOpen && !isActiveBoosted;
     const fillPct         = Math.min(1, item.positions_filled / Math.max(1, item.positions_total));
-    const hasActions      = isOpen || (isActive && item.total_apps > 0) || showConfirm || canBoost;
+    const hasActions      = isOpen || (isActive && item.total_apps > 0) || showConfirm;
 
     return (
       <View style={styles.card}>
@@ -353,12 +232,14 @@ export default function MyPostedShiftsScreen() {
             {isActive && item.total_apps > 0 && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.appsBtn]}
-                onPress={() => { Haptics.selectionAsync(); router.push('/employer-applications'); }}
+                onPress={() => { Haptics.selectionAsync(); router.push({ pathname: '/shift-detail', params: { id: item.id } }); }}
                 activeOpacity={0.8}
               >
                 <FontAwesome5 name="inbox" size={12} color={S.color} />
                 <Text style={styles.appsBtnText}>
-                  {item.total_apps} {item.total_apps === 1 ? 'application' : 'applications'}
+                  {item.pending_count > 0
+                    ? `Review ${item.pending_count} applicant${item.pending_count === 1 ? '' : 's'}`
+                    : `${item.total_apps} applicant${item.total_apps === 1 ? '' : 's'}`}
                 </Text>
               </TouchableOpacity>
             )}
@@ -378,22 +259,6 @@ export default function MyPostedShiftsScreen() {
                           ? `${item.checked_out_count} finished — confirm`
                           : 'Mark complete'}
                       </Text>
-                    </>
-                }
-              </TouchableOpacity>
-            )}
-            {canBoost && (
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.boostBtn, isBoosting && { opacity: 0.55 }]}
-                onPress={() => handleBoost(item.id)}
-                disabled={!!boosting}
-                activeOpacity={0.8}
-              >
-                {isBoosting
-                  ? <ActivityIndicator size="small" color={colors.shifts} />
-                  : <>
-                      <FontAwesome5 name="bolt" size={12} color={colors.shifts} solid />
-                      <Text style={styles.boostBtnText}>Boost — £2.99</Text>
                     </>
                 }
               </TouchableOpacity>

@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { getConfig } from '../_shared/admin-config.ts';
+import { getAddonPrice } from '../_shared/admin-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,7 +49,7 @@ serve(async (req) => {
 
     const { data: business } = await svc
       .from('local_businesses')
-      .select('id, owner_id, name, email, stripe_customer_id')
+      .select('id, owner_id, name, email, stripe_customer_id, business_stripe_customer_id, has_business_payment_method')
       .eq('id', business_id)
       .single();
 
@@ -65,13 +65,13 @@ serve(async (req) => {
     if (access.status === 'active') return json({ error: 'Alert access is already active' }, 400);
     if (access.status !== 'approved') return json({ error: 'Alert access has not been approved yet' }, 400);
 
-    const priceId = await getConfig(
+    const priceId = await getAddonPrice(
       svc,
       'stripe.price.alert_addon',
-      Deno.env.get('STRIPE_PRICE_ALERT_ADDON') ?? null,
+      Deno.env.get('STRIPE_PRICE_ALERT_ADDON') ?? Deno.env.get('STRIPE_PRICE_ADDON') ?? null,
     );
     if (!priceId) {
-      return json({ error: 'Alert add-on price ID not configured. Set stripe.price.alert_addon in Admin → Config.' }, 500);
+      return json({ error: 'Add-on price not configured. Set stripe.price.addon in Admin → Config.' }, 500);
     }
 
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
@@ -79,47 +79,38 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    // ── Resolve Stripe customer ──────────────────────────────────────────────
-    let customerId = business.stripe_customer_id as string | null;
+    // ── Pick the card to charge: BUSINESS card first, then PERSONAL ──────────
+    // Cards live on SEPARATE Stripe customers: the business card on
+    // local_businesses.business_stripe_customer_id, the owner's personal card on
+    // profiles.stripe_customer_id. (local_businesses.stripe_customer_id is the
+    // tier-SUBSCRIPTION customer and usually has no card — checking it was the
+    // bug that forced card re-entry.) The subscription is created on whichever
+    // customer holds the card so a saved card is charged silently; only if
+    // neither has one do we collect a card.
+    const { data: prof } = await svc.from('profiles')
+      .select('stripe_customer_id, has_payment_method').eq('id', user.id).maybeSingle();
 
-    if (!customerId) {
-      const { data: profile } = await svc
-        .from('profiles')
-        .select('stripe_customer_id')
-        .eq('id', user.id)
-        .maybeSingle();
+    let customerId: string | null = null;
+    let paymentMethodId: string | null = null;
 
-      if (profile?.stripe_customer_id) {
-        customerId = profile.stripe_customer_id as string;
-        await svc.from('local_businesses').update({ stripe_customer_id: customerId }).eq('id', business_id);
-      }
+    if (business.has_business_payment_method && business.business_stripe_customer_id) {
+      const pm = await firstCard(stripe, business.business_stripe_customer_id as string);
+      if (pm) { customerId = business.business_stripe_customer_id as string; paymentMethodId = pm; }
     }
-
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: business.email ?? user.email ?? undefined,
-        name:  business.name,
-        metadata: { business_id, owner_id: user.id, type: 'local_business' },
-      });
-      customerId = customer.id;
-      await svc.from('local_businesses').update({ stripe_customer_id: customerId }).eq('id', business_id);
+    if (!customerId && prof?.has_payment_method && prof.stripe_customer_id) {
+      const pm = await firstCard(stripe, prof.stripe_customer_id as string);
+      if (pm) { customerId = prof.stripe_customer_id as string; paymentMethodId = pm; }
     }
-
-    // ── Check for a saved default payment method ─────────────────────────────
-    const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
-    const defaultPaymentMethod =
-      customer.invoice_settings?.default_payment_method as string | null ?? null;
-
-    // Also check if there are any payment methods attached even if not set as default
-    let paymentMethodId = defaultPaymentMethod;
-    if (!paymentMethodId) {
-      const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
-      if (methods.data.length > 0) {
-        paymentMethodId = methods.data[0].id;
-        // Set it as the default so future charges use it automatically
-        await stripe.customers.update(customerId, {
-          invoice_settings: { default_payment_method: paymentMethodId },
+    if (!customerId) {
+      customerId = (business.business_stripe_customer_id as string | null) ?? (business.stripe_customer_id as string | null);
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: business.email ?? user.email ?? undefined,
+          name:  business.name,
+          metadata: { business_id, owner_id: user.id, type: 'local_business' },
         });
+        customerId = customer.id;
+        await svc.from('local_businesses').update({ business_stripe_customer_id: customerId }).eq('id', business_id);
       }
     }
 
@@ -141,16 +132,22 @@ serve(async (req) => {
     const latestInvoice = subscription.latest_invoice as any;
     const paymentIntent = latestInvoice?.payment_intent;
 
-    // If the subscription is already active (e.g. trialing, or Stripe confirmed
-    // the saved card immediately), activate in DB and tell the client — no sheet needed.
-    if (['active', 'trialing'].includes(subscription.status)) {
+    // Saved card → confirm the first invoice OFF-SESSION so it charges silently
+    // (default_incomplete does not auto-charge). Only falls through to a card
+    // form if there's no saved card, or the card needs 3DS / is declined.
+    const activate = async () => {
       await svc.from('business_alert_access').update({
-        status:                 'active',
-        activated_at:           new Date().toISOString(),
-        stripe_subscription_id: subscription.id,
+        status: 'active', activated_at: new Date().toISOString(), stripe_subscription_id: subscription.id,
       }).eq('business_id', business_id);
-
       return json({ activated: true, subscriptionId: subscription.id });
+    };
+    const alreadyPaid = ['active', 'trialing'].includes(subscription.status) || paymentIntent?.status === 'succeeded';
+    if (alreadyPaid) return await activate();
+    if (paymentMethodId && paymentIntent?.id) {
+      try {
+        const confirmed = await stripe.paymentIntents.confirm(paymentIntent.id, { payment_method: paymentMethodId, off_session: true });
+        if (confirmed.status === 'succeeded') return await activate();
+      } catch (_e) { /* needs auth / declined → fall through */ }
     }
 
     // PaymentIntent exists and needs confirmation (saved card that needs action,
@@ -176,6 +173,22 @@ serve(async (req) => {
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
   }
 });
+
+// Returns a customer's default card payment method (or its first attached card),
+// setting it as default for future renewals. Null if the customer has no card.
+async function firstCard(stripe: Stripe, customerId: string): Promise<string | null> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+    const def = (customer.invoice_settings?.default_payment_method as string | null) ?? null;
+    if (def) return def;
+    const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+    if (methods.data.length > 0) {
+      await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: methods.data[0].id } });
+      return methods.data[0].id;
+    }
+  } catch (_e) { /* treat as no card */ }
+  return null;
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

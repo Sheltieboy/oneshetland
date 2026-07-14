@@ -26,7 +26,9 @@ import {
 } from '@/lib/local-api';
 import { isBookableLive } from '@/lib/book-api';
 
-const S = SECTIONS.local;
+// Directory uses the indigo "services" accent — deliberately distinct from
+// the violet Local section so the two tabs no longer read as duplicates.
+const S = SECTIONS.services;
 
 const CATEGORY_COLOR: Record<string, string> = {
   food_drink:    '#D97706',
@@ -117,7 +119,7 @@ export default function BrowseBusinessesScreen() {
           section={S}
           photo={SECTION_HEROES.directory}
           title="Directory"
-          eyebrow="Shop local"
+          eyebrow="Every Shetland business"
           right={
             <Text style={{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' }}>
               {filtered.length} business{filtered.length !== 1 ? 'es' : ''}
@@ -147,7 +149,7 @@ export default function BrowseBusinessesScreen() {
             clearButtonMode="while-editing"
           />
           {searchQuery.length > 0 ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
               <FontAwesome5 name="times-circle" size={15} color={colors.textMuted} solid />
             </TouchableOpacity>
           ) : null}

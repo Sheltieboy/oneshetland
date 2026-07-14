@@ -27,10 +27,12 @@ export const NAV: NavDest[] = [
   { label: 'Home',                   icon: 'home',                  color: colors.accent,            href: '/(tabs)',          route: 'index' },
   { label: SECTIONS.events.label,    icon: SECTIONS.events.icon,    color: SECTIONS.events.color,    href: '/(tabs)/whats-on', route: 'whats-on' },
   { label: 'Local',                  icon: SECTIONS.local.icon,     color: SECTIONS.local.color,     href: '/(tabs)/local',    route: 'local' },
-  { label: 'Jobs',                   icon: SECTIONS.jobs.icon,      color: SECTIONS.jobs.color,      href: '/(tabs)/jobs',     route: 'jobs' },
+  { label: 'Work',                   icon: SECTIONS.jobs.icon,      color: SECTIONS.jobs.color,      href: '/(tabs)/jobs',     route: 'jobs' },
   { label: 'Directory',              icon: SECTIONS.services.icon,  color: SECTIONS.services.color,  href: '/(tabs)/services', route: 'services' },
-  { label: SECTIONS.community.label, icon: SECTIONS.community.icon,  color: SECTIONS.community.color, href: '/hubs' },
+  // Games leads the "More" sheet — daily puzzles are a retention engine, so it
+  // sits first in the overflow grid (highest prominence short of a bar tab).
   { label: SECTIONS.games.label,     icon: SECTIONS.games.icon,     color: SECTIONS.games.color,     href: '/games' },
+  { label: SECTIONS.community.label, icon: SECTIONS.community.icon,  color: SECTIONS.community.color, href: '/hubs' },
   { label: SECTIONS.spik.label,      icon: SECTIONS.spik.icon,      color: SECTIONS.spik.color,      href: '/(tabs)/spik',     route: 'spik' },
   { label: SECTIONS.memories.label,  icon: SECTIONS.memories.icon,  color: SECTIONS.memories.color,  href: '/(tabs)/memories', route: 'memories' },
   { label: SECTIONS.daBoats.label,   icon: SECTIONS.daBoats.icon,   color: SECTIONS.daBoats.color,   href: '/(tabs)/da-boats', route: 'da-boats' },

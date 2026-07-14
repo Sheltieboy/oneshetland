@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { track } from '@/lib/analytics';
 import { useStripe } from '@stripe/stripe-react-native';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
@@ -116,6 +117,13 @@ export default function HubDonateScreen() {
   const onDonate = () => {
     if (!profile) { goToSignIn(`/hub-donate?campaign=${campaignId}`); return; }
     if (!validate()) return;
+    if (campaign) {
+      track('hub_donation_started', {
+        hubId:      campaign.hub_id,
+        objectType: 'campaign',
+        objectId:   campaign.id,
+      });
+    }
     // Always open the confirm sheet — it offers wallet AND card. The card path
     // uses Stripe's Payment Sheet, which collects a card even when none is
     // saved, so a card-less but wallet-funded donor is no longer shut out.

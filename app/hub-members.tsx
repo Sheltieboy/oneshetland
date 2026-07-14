@@ -20,6 +20,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAlert } from '@/components/BrandedAlert';
+import { ContentActions } from '@/components/ContentActions';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchHub, fetchHubMembers, approveMember, rejectMember, setMemberRole, notifyHub,
@@ -93,7 +94,7 @@ export default function HubMembersScreen() {
           accent={S.color}
           onBack={() => router.back()}
           rightElement={
-            id ? <IconButton icon="cog" color={S.color} onPress={() => router.push(`/hub-register?id=${id}`)} /> : undefined
+            id ? <IconButton icon="cog" color={S.color} onPress={() => router.push(`/hub-register?id=${id}`)} accessibilityLabel="Hub settings" /> : undefined
           }
         />
       }
@@ -154,6 +155,16 @@ export default function HubMembersScreen() {
               <View style={[styles.roleTag, { backgroundColor: S.color + '22' }]}>
                 <Text style={[styles.roleTagText, { color: S.color }]}>Committee</Text>
               </View>
+            ) : null}
+            {m.user_id && m.user_id !== profile?.id ? (
+              <ContentActions
+                contentType="profile"
+                contentId={m.user_id}
+                authorId={m.user_id}
+                authorName={m.profile?.full_name}
+                onBlocked={() => { void load(); }}
+                icon="ellipsis-v"
+              />
             ) : null}
           </View>
         ))}

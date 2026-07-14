@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { track } from '@/lib/analytics';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { AppBottomNav } from '@/components/AppBottomNav';
@@ -101,6 +102,12 @@ export default function GamesCentre() {
     { game: GAMES.map_it,        best: bestMapIt,  accent: '#12B3D6', route: '/games/map-it' },
   ];
 
+  const launchGame = (t: typeof GAME_TILES[number]) => {
+    Haptics.selectionAsync();
+    track('game_started', { props: { game: t.game.id } });
+    router.push(t.route as any);
+  };
+
   const pickGameSection = (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Pick a game</Text>
@@ -108,10 +115,10 @@ export default function GamesCentre() {
         {GAME_TILES.map(t => (
           isTablet ? (
             <GameCard key={t.game.id} game={t.game} best={t.best} accent={t.accent}
-              onPress={() => { Haptics.selectionAsync(); router.push(t.route as any); }} />
+              onPress={() => launchGame(t)} />
           ) : (
             <GameRow key={t.game.id} game={t.game} best={t.best} accent={t.accent}
-              onPress={() => { Haptics.selectionAsync(); router.push(t.route as any); }} />
+              onPress={() => launchGame(t)} />
           )
         ))}
       </View>

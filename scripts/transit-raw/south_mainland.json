@@ -1,0 +1,7878 @@
+{
+  "source": "bus-south_mainland",
+  "legend": {
+    "DAR": "Dial-a-Ride",
+    "M": "Mondays only",
+    "Tu": "Tuesdays only",
+    "W": "Wednesdays only",
+    "Th": "Thursdays only",
+    "F": "Fridays only",
+    "M-Th": "Mondays to Thursdays only",
+    "Sch": "School days only",
+    "NSch": "School holidays only",
+    "CON6": "Connects with Service 6 at Channerwick Junction",
+    "Rq": "Swinister served on request only",
+    "T4": "Through journey at Lerwick to/from Service 4",
+    "6A": "(Not defined in printed legend) appears in Service 6 headers as a school journey variant via Anderson High School"
+  },
+  "services": [
+    {
+      "service": "6",
+      "name": "Lerwick to Sumburgh",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Holmsgarth",
+              "time": "0525"
+            },
+            {
+              "stop": "Co-op",
+              "time": "0526"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0527"
+            },
+            {
+              "stop": "North Road (Freefield)",
+              "time": "0528"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0530"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0531"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0532"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0533"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0534"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0535"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0536"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0537"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0540"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0541"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0543"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0550"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0557"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0604"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0605"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0607"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0614"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0620"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0623"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0625"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0628"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0600"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0601"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0602"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0603"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0604"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0605"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0606"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0607"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0610"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0611"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0613"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0620"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0627"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0634"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0635"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0637"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0644"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0650"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0653"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0655"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0658"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0640"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0641"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0642"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0643"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0644"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0645"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0646"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0647"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0650"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0651"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0653"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0700"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0707"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0714"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0715"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0717"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0724"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0730"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0733"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0735"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0738"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0800"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0801"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0802"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0803"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0804"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0805"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0806"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0807"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0810"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0811"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0813"
+            },
+            {
+              "stop": "Fladdabister",
+              "time": "0820"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "0825"
+            },
+            {
+              "stop": "Voxter",
+              "time": "0831"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0837"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0844"
+            },
+            {
+              "stop": "Sandwick School",
+              "time": "0846"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0857"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0858"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0900"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0907"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0913"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0916"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0918"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0921"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0900"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0901"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0902"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0903"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0904"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0905"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0906"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0907"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0910"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0911"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0913"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0920"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0927"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0934"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0935"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0937"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0944"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0950"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0953"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0955"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0958"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0945"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0946"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0947"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0948"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0949"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0950"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0951"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0952"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0955"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0956"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0958"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1005"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1012"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1019"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1020"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1022"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1029"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1035"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1038"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1040"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1043"
+            },
+            {
+              "stop": "Grutness Pier",
+              "time": "1045"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1045"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1046"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1047"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1048"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1049"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1050"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1051"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1052"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1055"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1056"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1058"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1105"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1112"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1119"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1120"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1122"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1129"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1135"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1138"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1140"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1143"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1130"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1131"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1132"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1133"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1134"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1135"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1136"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1137"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1140"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1141"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1143"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1150"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1157"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1204"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1205"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1207"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1214"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1220"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1223"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1225"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1228"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1230"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1231"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1232"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1233"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1234"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1235"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1236"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1237"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1240"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1241"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1243"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1250"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1257"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1304"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1305"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1307"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1314"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1320"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1323"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1325"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1328"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1330"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1331"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1332"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1333"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1334"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1335"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1336"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1337"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1340"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1341"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1343"
+            },
+            {
+              "stop": "Fladdabister",
+              "time": "1350"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "1355"
+            },
+            {
+              "stop": "Voxter",
+              "time": "1401"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1408"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1421"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1422"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1424"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1431"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1437"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1440"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1442"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1445"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "M-Th"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1400"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1401"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1402"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1403"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1404"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1405"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1406"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1407"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1410"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1411"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1413"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1420"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1427"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1434"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1435"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1437"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1444"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1450"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1453"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1455"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1458"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Sch",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1400"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1401"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1402"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1403"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1404"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1405"
+            },
+            {
+              "stop": "Lochside (Athletics Track)",
+              "time": "1406"
+            },
+            {
+              "stop": "Anderson High School",
+              "time": "1415"
+            },
+            {
+              "stop": "Lochside (Opp Ath Track)",
+              "time": "1416"
+            },
+            {
+              "stop": "Lochside (Opp Pitches)",
+              "time": "1417"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1418"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1419"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1420"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1423"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1424"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1426"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1433"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1440"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1447"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1448"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1450"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1457"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1504"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1505"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1508"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "1509"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1512"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1515"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "NSch",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1400"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1401"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1402"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1403"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1404"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1405"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1406"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1407"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1410"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1411"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1413"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1420"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1427"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1434"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1435"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1437"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1444"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1450"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1453"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1455"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1458"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "6A",
+            "Sch",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Anderson High School",
+              "time": "1415"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1426"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1433"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1440"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1535"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1536"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1537"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1538"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1539"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1540"
+            },
+            {
+              "stop": "Lochside (Athletics Track)",
+              "time": "1541"
+            },
+            {
+              "stop": "Anderson High School",
+              "time": "1555"
+            },
+            {
+              "stop": "Lochside (Opp Ath Track)",
+              "time": "1556"
+            },
+            {
+              "stop": "Lochside (Opp Pitches)",
+              "time": "1557"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1558"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1559"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1600"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1603"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1604"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1606"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1613"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1620"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1627"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1628"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1630"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1637"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1644"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1645"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1648"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "1649"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1652"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1655"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "NSch"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1535"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1536"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1537"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1538"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1539"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1540"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1541"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1542"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1545"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1546"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1548"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1555"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1602"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1609"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1610"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1612"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1619"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1626"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1627"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1630"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "1631"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1634"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1637"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "6A",
+            "Sch",
+            "M-Th"
+          ],
+          "calls": [
+            {
+              "stop": "Anderson High School",
+              "time": "1555"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1606"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1613"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1620"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Shetland College",
+              "time": "1650"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1652"
+            },
+            {
+              "stop": "Co-op",
+              "time": "1653"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1654"
+            },
+            {
+              "stop": "North Road (Freefield)",
+              "time": "1655"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1710"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1711"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1712"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1713"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1714"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1715"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1716"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1717"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1740"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1741"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1743"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1750"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1757"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1758"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1801"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "1802"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1805"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1808"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1715"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1716"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1717"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1718"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1719"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1720"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1721"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1722"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1725"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1726"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1728"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1735"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1742"
+            },
+            {
+              "stop": "Swinister",
+              "time": "1743"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "1744"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1900"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1901"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1902"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1903"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1904"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1905"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1906"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1907"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1910"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1911"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1913"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1920"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1927"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1934"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1935"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1937"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1944"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1950"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1953"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1955"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1958"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "M-Th"
+          ],
+          "calls": [
+            {
+              "stop": "Shetland College",
+              "time": "2108"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "2110"
+            },
+            {
+              "stop": "Co-op",
+              "time": "2111"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "2112"
+            },
+            {
+              "stop": "North Road (Freefield)",
+              "time": "2113"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "2115"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "2116"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "2117"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "2118"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "2119"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "2120"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "2121"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "2122"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "2125"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "2126"
+            },
+            {
+              "stop": "Quarff",
+              "time": "2128"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "2135"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "2142"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "2149"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "2150"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "2152"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "2159"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "2206"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "2207"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "2210"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "2211"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "2214"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "2300"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "2301"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "2302"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "2303"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "2304"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "2305"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "2306"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "2307"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "2310"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "2311"
+            },
+            {
+              "stop": "Quarff",
+              "time": "2313"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "2320"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "2327"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "2334"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "2335"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "2337"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "2344"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "2351"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "2352"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "2355"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "2356"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "2359"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "6",
+      "name": "Sumburgh to Lerwick",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0640"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "0642"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0643"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "0646"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0647"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0649"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "0650"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "0653"
+            },
+            {
+              "stop": "Voe",
+              "time": "0659"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0704"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0711"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0713"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0714"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0721"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0727"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0728"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0734"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "0737"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0738"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "0739"
+            },
+            {
+              "stop": "Baila",
+              "time": "0740"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "0741"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0743"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0744"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0745"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0746"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0747"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0730"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "0732"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0733"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "0735"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0737"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0740"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "0742"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "0746"
+            },
+            {
+              "stop": "Voe",
+              "time": "0753"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0758"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0805"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0809"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "0832"
+            },
+            {
+              "stop": "Lochside (Athletics Track)",
+              "time": "0833"
+            },
+            {
+              "stop": "Anderson High School",
+              "time": "0836"
+            },
+            {
+              "stop": "Lochside (Opp Ath Track)",
+              "time": "0837"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0839"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0840"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0841"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0842"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0844"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "NSch"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0730"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "0732"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0733"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "0735"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0737"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0740"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "0742"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "0746"
+            },
+            {
+              "stop": "Voe",
+              "time": "0753"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0758"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0805"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0809"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0830"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0831"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0832"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0833"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0835"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "6A",
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Sandwick Central",
+              "time": "0809"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0819"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0820"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0825"
+            },
+            {
+              "stop": "Anderson High School",
+              "time": "0845"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0750"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0807"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0809"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0809"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "0817"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0820"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0826"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0827"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0833"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "0836"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0837"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "0838"
+            },
+            {
+              "stop": "Baila",
+              "time": "0839"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "0840"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0842"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0843"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0844"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0845"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0850"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "0852"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "0853"
+            },
+            {
+              "stop": "JRJ's",
+              "time": "0854"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "0857"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0935"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "0937"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0938"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "0941"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0942"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0944"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "0945"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "0948"
+            },
+            {
+              "stop": "Voe",
+              "time": "0954"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0959"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1006"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1008"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1009"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1016"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1022"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1023"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1029"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1032"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1033"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1034"
+            },
+            {
+              "stop": "Baila",
+              "time": "1035"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1036"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1038"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1039"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1040"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1041"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1042"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1020"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1022"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1023"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1025"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1027"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1034"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1041"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1043"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1044"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1051"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1057"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1058"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1104"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1107"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1108"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1109"
+            },
+            {
+              "stop": "Baila",
+              "time": "1110"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1111"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1113"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1114"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1115"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1116"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1117"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Grutness Pier",
+              "time": "1055"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1100"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1102"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1103"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1105"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1107"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1114"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1121"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1123"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1124"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "1131"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1133"
+            },
+            {
+              "stop": "Voxter",
+              "time": "1140"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "1145"
+            },
+            {
+              "stop": "Fladdabister",
+              "time": "1149"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1154"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1157"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1158"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1159"
+            },
+            {
+              "stop": "Baila",
+              "time": "1200"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1201"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1203"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1204"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1205"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1206"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1207"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1150"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1152"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1153"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1155"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1157"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1204"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1211"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1213"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1214"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1221"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1227"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1228"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1234"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1237"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1238"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1239"
+            },
+            {
+              "stop": "Baila",
+              "time": "1240"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1241"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1243"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1244"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1245"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1246"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1247"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1245"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1247"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1248"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1250"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1252"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1259"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1306"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1308"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1309"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1316"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1322"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1323"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1329"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1332"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1333"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1334"
+            },
+            {
+              "stop": "Baila",
+              "time": "1335"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1336"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1338"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1339"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1340"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1341"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1342"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1345"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1347"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1348"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1350"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1352"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1359"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1406"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1408"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1409"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1416"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1422"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1423"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1429"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1432"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1433"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1434"
+            },
+            {
+              "stop": "Baila",
+              "time": "1435"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1436"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1438"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1439"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1440"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1441"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1442"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1510"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1512"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1513"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1515"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1517"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1524"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1531"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1533"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1534"
+            },
+            {
+              "stop": "Sandwick School",
+              "time": "1545"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1547"
+            },
+            {
+              "stop": "Voxter",
+              "time": "1554"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "1559"
+            },
+            {
+              "stop": "Fladdabister",
+              "time": "1603"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1608"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1611"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1612"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1613"
+            },
+            {
+              "stop": "Baila",
+              "time": "1614"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1615"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1617"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1618"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1619"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1620"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1621"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "NSch"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1510"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1512"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1513"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1515"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1517"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1524"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1531"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1533"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1534"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1541"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1547"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1548"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1554"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1557"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1558"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1559"
+            },
+            {
+              "stop": "Baila",
+              "time": "1600"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1601"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1603"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1604"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1605"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1606"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1607"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1600"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1602"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1603"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1605"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1607"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1614"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1621"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1623"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1624"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1631"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1637"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1638"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1644"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1647"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1648"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1649"
+            },
+            {
+              "stop": "Baila",
+              "time": "1650"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1651"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1653"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1654"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1655"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1656"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1657"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1710"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1712"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1713"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1715"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1717"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1724"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1731"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1733"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1734"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1741"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1747"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1748"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1754"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1757"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1758"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1759"
+            },
+            {
+              "stop": "Baila",
+              "time": "1800"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1801"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1803"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1804"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1805"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1806"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1807"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Hoswick",
+              "time": "1800"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1802"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1808"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1809"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1815"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1818"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1819"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1820"
+            },
+            {
+              "stop": "Baila",
+              "time": "1821"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1822"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1824"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1825"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1826"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1827"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1828"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "M-Th"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1830"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1832"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1833"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1835"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1837"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1844"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1851"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1853"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1854"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1901"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1907"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1908"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1914"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1917"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1918"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1919"
+            },
+            {
+              "stop": "Baila",
+              "time": "1920"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1921"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1923"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1924"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1925"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1926"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1927"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "2000"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "2002"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "2003"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "2005"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "2007"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "2014"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "2021"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "2023"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "2024"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "2031"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "2037"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "2038"
+            },
+            {
+              "stop": "Quarff",
+              "time": "2044"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "2047"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "2048"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "2049"
+            },
+            {
+              "stop": "Baila",
+              "time": "2050"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "2051"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "2053"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "2054"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "2055"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "2056"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "2057"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "2059"
+            },
+            {
+              "stop": "Shetland Hotel",
+              "time": "2100"
+            },
+            {
+              "stop": "JRJ's",
+              "time": "2101"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "2105"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "2000"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "2002"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "2003"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "2005"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "2007"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "2014"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "2021"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "2023"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "2024"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "2031"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "2037"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "2038"
+            },
+            {
+              "stop": "Quarff",
+              "time": "2044"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "2047"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "2048"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "2049"
+            },
+            {
+              "stop": "Baila",
+              "time": "2050"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "2051"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "2053"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "2054"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "2055"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "2056"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "2057"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "6",
+      "name": "Lerwick to Sumburgh",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0530"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0531"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0532"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0533"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0534"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0535"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0536"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0537"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0540"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0541"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0543"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0550"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0557"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0604"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0605"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0607"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0614"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0620"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0623"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0625"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0628"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0630"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0631"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0632"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0633"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0634"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0635"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0636"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0637"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0640"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0641"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0643"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0650"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0657"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0704"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0705"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0707"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0714"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0720"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0723"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0725"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0728"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0800"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0801"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0802"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0803"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0804"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0805"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0806"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0807"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0810"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0811"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0813"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0820"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0827"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0834"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0835"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0837"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0844"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0850"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0853"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0855"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0858"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0900"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0901"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0902"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0903"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0904"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0905"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0906"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0907"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0910"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0911"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0913"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0920"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0927"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0934"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0935"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0937"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0944"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0950"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0953"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0955"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0958"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1045"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1046"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1047"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1048"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1049"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1050"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1051"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1052"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1055"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1056"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1058"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1105"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1112"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1119"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1120"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1122"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1129"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1135"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1138"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1140"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1143"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1200"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1201"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1202"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1203"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1204"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1205"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1206"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1207"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1210"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1211"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1213"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1220"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1227"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1234"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1235"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1237"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1244"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1250"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1253"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1255"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1258"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1330"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1331"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1332"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1333"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1334"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1335"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1336"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1337"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1340"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1341"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1343"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1350"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1357"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "1359"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1410"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1411"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1413"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1420"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1426"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1429"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1431"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1434"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1535"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1536"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1537"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1538"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1539"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1540"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1541"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1542"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1545"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1546"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1548"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1555"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1602"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1609"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1610"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1612"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1619"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1625"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1628"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1630"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1633"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1710"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1711"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1712"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1713"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1714"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1715"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1716"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1717"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1720"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1721"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1723"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1730"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1737"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "1739"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1750"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1751"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1753"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1800"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1807"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1808"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1811"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "1812"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1815"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1818"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1900"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1901"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1902"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1903"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1904"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1905"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1906"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1907"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1910"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1911"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1913"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1920"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1927"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1934"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1935"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1937"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1944"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1950"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1953"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1955"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1958"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "2300"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "2301"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "2302"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "2303"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "2304"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "2305"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "2306"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "2307"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "2310"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "2311"
+            },
+            {
+              "stop": "Quarff",
+              "time": "2313"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "2320"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "2327"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "2334"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "2335"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "2337"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "2344"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "2351"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "2352"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "2355"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "2356"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "2359"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "6",
+      "name": "Sumburgh to Lerwick",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0640"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "0642"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0643"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "0646"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0647"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0649"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "0650"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "0653"
+            },
+            {
+              "stop": "Voe",
+              "time": "0659"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0704"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0711"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0713"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0714"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0721"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0727"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0728"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0734"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "0737"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0738"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "0739"
+            },
+            {
+              "stop": "Baila",
+              "time": "0740"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "0741"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0743"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0744"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0745"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0746"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0747"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0735"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "0737"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0738"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "0741"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0742"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0744"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "0745"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "0748"
+            },
+            {
+              "stop": "Voe",
+              "time": "0754"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0759"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0806"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0808"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0809"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "0816"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0820"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0826"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0827"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0833"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "0836"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0837"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "0838"
+            },
+            {
+              "stop": "Baila",
+              "time": "0839"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "0840"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0842"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0843"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0844"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "0845"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0850"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "0910"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "0912"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "0913"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "0915"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0917"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0924"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0931"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0933"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0934"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0941"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0947"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0948"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0954"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "0957"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0958"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "0959"
+            },
+            {
+              "stop": "Baila",
+              "time": "1000"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1001"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1003"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1004"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1005"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1006"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1007"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1020"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1022"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1023"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1025"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1027"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1034"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1041"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1043"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1044"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1051"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1057"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1058"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1104"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1107"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1108"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1109"
+            },
+            {
+              "stop": "Baila",
+              "time": "1110"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1111"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1113"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1114"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1115"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1116"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1117"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1150"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1152"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1153"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1155"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1157"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1204"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1211"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1213"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1214"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1221"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1227"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1228"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1234"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1237"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1238"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1239"
+            },
+            {
+              "stop": "Baila",
+              "time": "1240"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1241"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1243"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1244"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1245"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1246"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1247"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1320"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1322"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1323"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1325"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1327"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1334"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1341"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1343"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1344"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1351"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1357"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1358"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1404"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1407"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1408"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1409"
+            },
+            {
+              "stop": "Baila",
+              "time": "1410"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1411"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1413"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1414"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1415"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1416"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1417"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1520"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1522"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1523"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1525"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1527"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1534"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1541"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1543"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1544"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1551"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1557"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1558"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1604"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1607"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1608"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1609"
+            },
+            {
+              "stop": "Baila",
+              "time": "1610"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1611"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1613"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1614"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1615"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1616"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1617"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1710"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1712"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1713"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1715"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1717"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1724"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1731"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1733"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1734"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1741"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1747"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1748"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1754"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1757"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1758"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1759"
+            },
+            {
+              "stop": "Baila",
+              "time": "1800"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1801"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1803"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1804"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1805"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1806"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1807"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "2000"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "2002"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "2003"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "2005"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "2007"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "2014"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "2021"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "2023"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "2024"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "2031"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "2037"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "2038"
+            },
+            {
+              "stop": "Quarff",
+              "time": "2044"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "2047"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "2048"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "2049"
+            },
+            {
+              "stop": "Baila",
+              "time": "2050"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "2052"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "2053"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "2054"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "2055"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "2056"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "2057"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "6",
+      "name": "Lerwick to Sumburgh",
+      "direction": "outbound",
+      "dayGroup": "Sunday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0915"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0916"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0917"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "0918"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0919"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0920"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0921"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0922"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "0925"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "0926"
+            },
+            {
+              "stop": "Quarff",
+              "time": "0931"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "0937"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0944"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0951"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "0952"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0954"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1001"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1007"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1010"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1012"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1015"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T4"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1215"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1216"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1217"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1218"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1219"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1220"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1221"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1222"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1225"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1226"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1231"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1237"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1244"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1251"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1252"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1254"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1301"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1307"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1310"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1312"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1315"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T4"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1415"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1416"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1417"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1418"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1419"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1420"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1421"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1422"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1425"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1426"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1431"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1437"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1444"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1451"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1452"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1454"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1501"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1507"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1510"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1512"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1515"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T4"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1615"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1616"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1617"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1618"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1619"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1620"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1621"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1622"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1625"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1626"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1631"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1637"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1644"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1651"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1652"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1654"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1701"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1707"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1710"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1712"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1715"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1845"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1846"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1847"
+            },
+            {
+              "stop": "Scalloway Road (Goudies)",
+              "time": "1848"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1849"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1850"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1851"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1852"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1855"
+            },
+            {
+              "stop": "Upper Hillside",
+              "time": "1856"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1901"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1907"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1914"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1921"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1922"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1924"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1931"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1937"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1940"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1942"
+            },
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1945"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "6",
+      "name": "Sumburgh to Lerwick",
+      "direction": "inbound",
+      "dayGroup": "Sunday",
+      "trips": [
+        {
+          "codes": [
+            "T4"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1155"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1158"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1200"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1202"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1209"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1216"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1218"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1219"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1226"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1233"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1239"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1244"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1245"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1246"
+            },
+            {
+              "stop": "Baila",
+              "time": "1248"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1249"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1251"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1252"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1253"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1254"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1255"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T4"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1355"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1358"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1400"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1402"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1409"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1416"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1418"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1419"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1426"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1433"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1439"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1444"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1445"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1446"
+            },
+            {
+              "stop": "Baila",
+              "time": "1448"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1449"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1451"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1452"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1453"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1454"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1455"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T4"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1555"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1558"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1600"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1602"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1609"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1616"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1618"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1619"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1626"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1633"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1639"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1644"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1645"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1646"
+            },
+            {
+              "stop": "Baila",
+              "time": "1648"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1649"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1651"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1652"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1653"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1654"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1655"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T4"
+          ],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "1755"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "1758"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "1800"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1802"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1809"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "1816"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "1818"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1819"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1826"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "1833"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1839"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "1844"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "1845"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "1846"
+            },
+            {
+              "stop": "Baila",
+              "time": "1848"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "1849"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1851"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1852"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1853"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "1854"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1855"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Sumburgh Airport",
+              "time": "2000"
+            },
+            {
+              "stop": "Grutness Junction",
+              "time": "2003"
+            },
+            {
+              "stop": "Scatness Junction",
+              "time": "2005"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "2007"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "2014"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "2021"
+            },
+            {
+              "stop": "Levenwick Junction",
+              "time": "2023"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "2024"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "2031"
+            },
+            {
+              "stop": "Cunningsburgh Hall",
+              "time": "2038"
+            },
+            {
+              "stop": "Quarff",
+              "time": "2044"
+            },
+            {
+              "stop": "Upper Langton",
+              "time": "2049"
+            },
+            {
+              "stop": "Shurton Brae",
+              "time": "2050"
+            },
+            {
+              "stop": "Nordavatn",
+              "time": "2051"
+            },
+            {
+              "stop": "Baila",
+              "time": "2053"
+            },
+            {
+              "stop": "Westerloch Junction",
+              "time": "2054"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "2056"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "2057"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "2058"
+            },
+            {
+              "stop": "Harrison Square",
+              "time": "2059"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "2100"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "7",
+      "name": "Quendale & Bigton Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Exnaboe",
+              "time": "0925"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "0929"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Channerwick Junction",
+              "time": "1120"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1124"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1130"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1135"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1140"
+            },
+            {
+              "stop": "Voe",
+              "time": "1145"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1150"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6",
+            "NSch"
+          ],
+          "calls": [
+            {
+              "stop": "Channerwick Junction",
+              "time": "1610"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1614"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1620"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1625"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1630"
+            },
+            {
+              "stop": "Voe",
+              "time": "1635"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1640"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6",
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Channerwick Junction",
+              "time": "1628"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1632"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1638"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1643"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1648"
+            },
+            {
+              "stop": "Voe",
+              "time": "1653"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1658"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Channerwick Junction",
+              "time": "1740"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1744"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1750"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1755"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1800"
+            },
+            {
+              "stop": "Voe",
+              "time": "1805"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1810"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1813"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "7",
+      "name": "Quendale & Bigton Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Quendale",
+              "time": "0740"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0745"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "0750"
+            },
+            {
+              "stop": "Bigton",
+              "time": "0756"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0800"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Toab Shop",
+              "time": "1005"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1007"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1010"
+            },
+            {
+              "stop": "Voe",
+              "time": "1015"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1020"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1025"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1030"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1036"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1040"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6",
+            "M-Th"
+          ],
+          "calls": [
+            {
+              "stop": "Thistle Court",
+              "time": "1007"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1010"
+            },
+            {
+              "stop": "Voe",
+              "time": "1015"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1020"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1025"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1030"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1036"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1040"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Exnaboe",
+              "time": "1335"
+            },
+            {
+              "stop": "Voe",
+              "time": "1340"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1345"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1350"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1355"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1401"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1405"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Exnaboe",
+              "time": "1700"
+            },
+            {
+              "stop": "Voe",
+              "time": "1705"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1710"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1715"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1720"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1726"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1730"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "7",
+      "name": "Quendale & Bigton Feeder",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Channerwick Junction",
+              "time": "1120"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1124"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1130"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1135"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1140"
+            },
+            {
+              "stop": "Voe",
+              "time": "1145"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1150"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Channerwick Junction",
+              "time": "1610"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1614"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1620"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1625"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1630"
+            },
+            {
+              "stop": "Voe",
+              "time": "1635"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1640"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Channerwick Junction",
+              "time": "1750"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1754"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1800"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1805"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1810"
+            },
+            {
+              "stop": "Voe",
+              "time": "1815"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1820"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1825"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "7",
+      "name": "Quendale & Bigton Feeder",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Quendale",
+              "time": "0748"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "0753"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "0758"
+            },
+            {
+              "stop": "Bigton",
+              "time": "0804"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "0808"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Thistle Court",
+              "time": "1011"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1014"
+            },
+            {
+              "stop": "Voe",
+              "time": "1019"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1024"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1029"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1034"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1040"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1044"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Exnaboe",
+              "time": "1314"
+            },
+            {
+              "stop": "Voe",
+              "time": "1319"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1324"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1329"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1334"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1340"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1344"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON6"
+          ],
+          "calls": [
+            {
+              "stop": "Exnaboe",
+              "time": "1709"
+            },
+            {
+              "stop": "Voe",
+              "time": "1714"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1719"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1724"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1730"
+            },
+            {
+              "stop": "Channerwick Junction",
+              "time": "1734"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "61",
+      "name": "Sumburgh Area Shopper & Sumburgh Area to Levenwick Health Centre",
+      "direction": "inbound",
+      "dayGroup": "Dial-a-Ride (Mon/Wed/Tue)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "M"
+          ],
+          "calls": [
+            {
+              "stop": "Scousburgh",
+              "time": "0910"
+            },
+            {
+              "stop": "Bigton",
+              "time": "0915"
+            },
+            {
+              "stop": "Maywick",
+              "time": "0921"
+            },
+            {
+              "stop": "Levenwick",
+              "time": "0935"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "W"
+          ],
+          "calls": [
+            {
+              "stop": "Quendale",
+              "time": "0955"
+            },
+            {
+              "stop": "Voe",
+              "time": "1005"
+            },
+            {
+              "stop": "Dalsetter Wynd",
+              "time": "1010"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1015"
+            },
+            {
+              "stop": "Levenwick",
+              "time": "1025"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Grutness Pier",
+              "time": "1010"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1012"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "1014"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1015"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1017"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1018"
+            },
+            {
+              "stop": "Levenwick",
+              "time": "1030"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "61",
+      "name": "Sumburgh Area Shopper & Sumburgh Area to Levenwick Health Centre",
+      "direction": "outbound",
+      "dayGroup": "Dial-a-Ride (Mon/Wed/Tue)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "M"
+          ],
+          "calls": [
+            {
+              "stop": "Levenwick",
+              "time": "1045"
+            },
+            {
+              "stop": "Maywick",
+              "time": "1058"
+            },
+            {
+              "stop": "Bigton",
+              "time": "1105"
+            },
+            {
+              "stop": "Scousburgh",
+              "time": "1110"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "W"
+          ],
+          "calls": [
+            {
+              "stop": "Levenwick",
+              "time": "1105"
+            },
+            {
+              "stop": "Robins Brae",
+              "time": "1115"
+            },
+            {
+              "stop": "Dalsetter Wynd",
+              "time": "1120"
+            },
+            {
+              "stop": "Voe",
+              "time": "1125"
+            },
+            {
+              "stop": "Quendale",
+              "time": "1135"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Levenwick",
+              "time": "1105"
+            },
+            {
+              "stop": "Exnaboe",
+              "time": "1117"
+            },
+            {
+              "stop": "Thistle Court",
+              "time": "1118"
+            },
+            {
+              "stop": "Toab Shop",
+              "time": "1119"
+            },
+            {
+              "stop": "Colonial Place",
+              "time": "1121"
+            },
+            {
+              "stop": "Sumburgh Hotel Gate",
+              "time": "1123"
+            },
+            {
+              "stop": "Grutness Pier",
+              "time": "1127"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "60",
+      "name": "Cunningsburgh Shopper & Cunningsburgh/Sandwick to Levenwick Health Centre",
+      "direction": "outbound",
+      "dayGroup": "Dial-a-Ride (Thu/Fri/Tue)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Fladdabister",
+              "time": "0900"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "0905"
+            },
+            {
+              "stop": "Voxter",
+              "time": "0910"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0917"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "0924"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "0927"
+            },
+            {
+              "stop": "Levenwick",
+              "time": "0936"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Aithsetter",
+              "time": "0945"
+            },
+            {
+              "stop": "Voxter",
+              "time": "0950"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "0957"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1004"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "1007"
+            },
+            {
+              "stop": "Sandwick Shop",
+              "time": "1009"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Aithsetter",
+              "time": "1300"
+            },
+            {
+              "stop": "Voxter",
+              "time": "1305"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1312"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1319"
+            },
+            {
+              "stop": "Levenwick",
+              "time": "1329"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "60",
+      "name": "Cunningsburgh Shopper & Cunningsburgh/Sandwick to Levenwick Health Centre",
+      "direction": "inbound",
+      "dayGroup": "Dial-a-Ride (Thu/Fri/Tue)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Levenwick",
+              "time": "1045"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "1054"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1057"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1104"
+            },
+            {
+              "stop": "Voxter",
+              "time": "1111"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "1116"
+            },
+            {
+              "stop": "Fladdabister",
+              "time": "1121"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Sandwick Shop",
+              "time": "1100"
+            },
+            {
+              "stop": "Hoswick",
+              "time": "1102"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1105"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1112"
+            },
+            {
+              "stop": "Voxter",
+              "time": "1119"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "1124"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Levenwick",
+              "time": "1430"
+            },
+            {
+              "stop": "Sandwick Central",
+              "time": "1440"
+            },
+            {
+              "stop": "St Clair Road",
+              "time": "1447"
+            },
+            {
+              "stop": "Voxter",
+              "time": "1457"
+            },
+            {
+              "stop": "Aithsetter",
+              "time": "1502"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "66",
+      "name": "Dunrossness/Levenwick/Bigton Shoppers",
+      "direction": "outbound",
+      "dayGroup": "Dial-a-Ride (Fri)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "South Punds",
+              "time": "0910"
+            },
+            {
+              "stop": "Levenwick Shop",
+              "time": "0920"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Troswick",
+              "time": "1100"
+            },
+            {
+              "stop": "Dunrossness Shop",
+              "time": "1115"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Dunrossness Shop",
+              "time": "1145"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Maywick",
+              "time": "1330"
+            },
+            {
+              "stop": "Bigton Shop",
+              "time": "1345"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "66",
+      "name": "Dunrossness/Levenwick/Bigton Shoppers",
+      "direction": "inbound",
+      "dayGroup": "Dial-a-Ride (Fri)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Levenwick Shop",
+              "time": "1000"
+            },
+            {
+              "stop": "South Punds",
+              "time": "1020"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Dunrossness Shop",
+              "time": "1200"
+            },
+            {
+              "stop": "Troswick",
+              "time": "1215"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Dunrossness Shop",
+              "time": "1230"
+            },
+            {
+              "stop": "Longfield",
+              "time": "1245"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Bigton Shop",
+              "time": "1445"
+            },
+            {
+              "stop": "Maywick",
+              "time": "1500"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "67",
+      "name": "Sandwick & Cunningsburgh to Lerwick Shopper",
+      "direction": "inbound",
+      "dayGroup": "Dial-a-Ride (Mon)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "M"
+          ],
+          "calls": [
+            {
+              "stop": "Sandwick",
+              "time": "0930"
+            },
+            {
+              "stop": "Cunningsburgh",
+              "time": "1000"
+            },
+            {
+              "stop": "Lerwick (arrival)",
+              "time": "1020"
+            },
+            {
+              "stop": "Lerwick (departure)",
+              "time": "1230"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "65",
+      "name": "Quarff & Gulberwick Shopper",
+      "direction": "inbound",
+      "dayGroup": "Dial-a-Ride (Fri)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Quarff",
+              "time": "0940"
+            },
+            {
+              "stop": "Gulberwick",
+              "time": "0945"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1000"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "65",
+      "name": "Quarff & Gulberwick Shopper",
+      "direction": "outbound",
+      "dayGroup": "Dial-a-Ride (Fri)",
+      "trips": [
+        {
+          "codes": [
+            "DAR",
+            "F"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1145"
+            },
+            {
+              "stop": "Gulberwick",
+              "time": "1210"
+            },
+            {
+              "stop": "Quarff",
+              "time": "1215"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

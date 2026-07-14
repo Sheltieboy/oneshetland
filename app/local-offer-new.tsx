@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/Button';
 import { SECTIONS } from '@/constants/sections';
 import { useAlert } from '@/components/BrandedAlert';
 import { createOffer, type DiscountType } from '@/lib/local-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.local;
 
@@ -59,7 +60,7 @@ export default function NewOfferScreen() {
     setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await createOffer(businessId, {
+      const offer = await createOffer(businessId, {
         title: title.trim(),
         description: description.trim() || null,
         discount_type: type,
@@ -69,6 +70,7 @@ export default function NewOfferScreen() {
         terms: terms.trim() || null,
         max_redemptions: maxRedemptions ? parseInt(maxRedemptions) : null,
       });
+      track('offer_created', { businessId, objectType: 'offer', objectId: offer.id });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Show success INLINE — this screen is presented as a modal and the alert
       // lives at the app root, so iOS can't present it over us (it's swallowed).

@@ -10,6 +10,7 @@
 
 import { supabase, SUPABASE_URL } from './supabase';
 import { PickedFile } from './image-upload';
+import { fetchBlockedIds } from './moderation';
 
 // ── Types (kept loose; the DB is the source of truth) ───────────────────────
 
@@ -33,6 +34,7 @@ export interface MemoryPin {
   hero_url:       string | null;
   hero_kind:      MediaKind | null;
   created_at:     string;
+  author_id?:     string;
 }
 
 export interface MemoryAuthor {
@@ -165,15 +167,20 @@ export async function fetchMemoryPins(
 export async function fetchRecentMemories(limit = 12): Promise<MemoryPin[]> {
   const { data, error } = await supabase
     .from('memories')
-    .select('id, lat, lng, place_name, title, era, media_count, comment_count, reaction_count, child_count, created_at')
+    .select('id, lat, lng, place_name, title, era, media_count, comment_count, reaction_count, child_count, created_at, author_id')
     .is('parent_id', null)
     .eq('is_hidden', false)
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(limit + 20); // over-fetch a little so block-filtering still fills the list
   if (error) throw error;
+  // Hide blocked users' memories (UGC block must be effective everywhere).
+  const blocked = new Set(await fetchBlockedIds());
   // hero_url is omitted in this fast path; caller can hit fetchMemoryPins or
   // open the detail to load media.
-  return ((data ?? []) as any[]).map(r => ({ ...r, hero_url: null, hero_kind: null }));
+  return ((data ?? []) as any[])
+    .filter(r => !blocked.has(r.author_id))
+    .slice(0, limit)
+    .map(r => ({ ...r, hero_url: null, hero_kind: null }));
 }
 
 // ── Detail ──────────────────────────────────────────────────────────────────

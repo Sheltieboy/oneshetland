@@ -30,6 +30,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.local;
 
@@ -120,6 +121,7 @@ export default function ClaimGiftScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       const result = data as { kind: string; service_id: string | null; business_id: string };
+      track('gift_claimed', { businessId: result.business_id, props: { kind: result.kind } });
 
       if (result.kind === 'booking' && result.service_id) {
         // Route into the slot picker with the gift_id flowing through.

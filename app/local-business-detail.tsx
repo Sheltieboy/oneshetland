@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { track } from '@/lib/analytics';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -36,6 +37,7 @@ import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { addRecentlyViewed, businessResult } from '@/lib/search';
 import { BusinessLocationMap } from '@/components/BusinessLocationMap';
 import { useAlert } from '@/components/BrandedAlert';
+import { tierUnlocks, FEATURE_MIN_TIER, TIER_LABEL, type ListingFeature } from '@/lib/listing-tiers';
 
 const S = SECTIONS.local;
 
@@ -153,6 +155,11 @@ export default function BusinessDetailScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Analytics: business profile view (powers the seller dashboard's view count).
+  useEffect(() => {
+    if (business?.id) track('content_viewed', { objectType: 'business', objectId: business.id, businessId: business.id });
+  }, [business?.id]);
+
   const handleFollowToggle = async () => {
     if (!profile || !business) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -176,6 +183,7 @@ export default function BusinessDetailScreen() {
           setBusy(true);
           try {
             await redeemReward(card.id);
+            track('loyalty_reward_redeemed', { businessId: business?.id });
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             await load();
             alert({ title: 'Redeemed!', message: 'Show staff your card. Enjoy 🎉' });
@@ -200,6 +208,7 @@ export default function BusinessDetailScreen() {
           setBusy(true);
           try {
             await redeemOffer(offer.id);
+            track('offer_redeemed', { businessId: business?.id, objectType: 'offer', objectId: offer.id });
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             await load();
             alert({
@@ -238,6 +247,29 @@ export default function BusinessDetailScreen() {
   // Page accent: derived from the logo colour (contrast-safe), else the
   // Marketplace violet. Used for chips, badges, buttons and icons below.
   const accent = readableAccent(business.brand_color) ?? S.color;
+
+  // Tier gating — a richer listing for higher subscription tiers. Governs
+  // DISPLAY only (no selling here — App Store compliance). Sections still also
+  // respect the owner's per-add-on visibility toggles via `addonOn`.
+  const tier = business.subscription_tier;
+  const shows = (f: ListingFeature) => tierUnlocks(tier, f);
+  const showCover = shows('coverPhoto');
+
+  // Owner-only upgrade hint: shown to the business owner viewing their own
+  // listing when a higher tier would surface content they can add. No price,
+  // no buy button — points at the web dashboard (in-app selling is disallowed).
+  const upgradeHint: { feature: string; tier: string } | null = (() => {
+    if (!isOwner) return null;
+    const candidates: { feature: ListingFeature; label: string }[] = [
+      { feature: 'gallery',       label: 'a photo gallery' },
+      { feature: 'description',   label: 'an "about" description' },
+      { feature: 'coverPhoto',    label: 'a cover photo' },
+      { feature: 'offers',        label: 'offers on your listing' },
+    ];
+    const locked = candidates.find(c => !shows(c.feature));
+    if (!locked) return null;
+    return { feature: locked.label, tier: TIER_LABEL[FEATURE_MIN_TIER[locked.feature]] };
+  })();
   const stamps  = card?.stamps_collected ?? 0;
   const needed  = program?.stamps_required ?? 10;
   const progress = Math.min(1, stamps / needed);
@@ -248,7 +280,7 @@ export default function BusinessDetailScreen() {
     <View style={[styles.hero, { borderBottomColor: accent }]}>
           {/* Banner — own cover photo, else logo-tinted, else category-themed */}
           <View style={[styles.banner, { backgroundColor: business.brand_color || CATEGORY_BANNER[business.category] || CATEGORY_BANNER.other }]}>
-            {business.cover_url ? (
+            {showCover && business.cover_url ? (
               <Image source={{ uri: business.cover_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             ) : (
               <FontAwesome5
@@ -278,7 +310,7 @@ export default function BusinessDetailScreen() {
           <View style={styles.heroBody}>
             <View style={styles.heroTop}>
               {business.logo_url ? (
-                <Image source={{ uri: business.logo_url }} style={styles.heroLogo} />
+                <Image source={{ uri: business.logo_url }} style={styles.heroLogo} resizeMode="contain" />
               ) : (
                 <View style={[styles.heroLogo, styles.heroLogoFallback, { backgroundColor: CATEGORY_BANNER[business.category] ?? CATEGORY_BANNER.other }]}>
                   <FontAwesome5 name={CATEGORY_ICONS[business.category] as any} size={30} color="#fff" solid />
@@ -315,7 +347,7 @@ export default function BusinessDetailScreen() {
   );
 
   // ── Book now (OneShetland Book) ────────────────────────────────────────────
-  const bookCtaSection = isBookableLive(business) ? (
+  const bookCtaSection = shows('tickets') && isBookableLive(business) ? (
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.bookCtaBtn}
@@ -335,7 +367,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Tickets & passes (non-time-based unit items) ───────────────────────────
-  const ticketsSection = unitItems.length > 0 && addonOn('bookings') ? (
+  const ticketsSection = shows('tickets') && unitItems.length > 0 && addonOn('bookings') ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Tickets &amp; passes</Text>
             <View style={{ gap: 10 }}>
@@ -394,14 +426,14 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Description ────────────────────────────────────────────────────────────
-  const descriptionSection = business.description ? (
+  const descriptionSection = shows('description') && business.description ? (
           <View style={styles.section}>
             <Text style={styles.descText}>{business.description}</Text>
           </View>
   ) : null;
 
   // ── Loyalty card ───────────────────────────────────────────────────────────
-  const loyaltySection = program && addonOn('stamps') ? (
+  const loyaltySection = shows('loyalty') && program && addonOn('stamps') ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Loyalty</Text>
             <View style={styles.loyaltyCard}>
@@ -461,7 +493,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Offers ─────────────────────────────────────────────────────────────────
-  const offersSection = offers.length > 0 && addonOn('offers') ? (
+  const offersSection = shows('offers') && offers.length > 0 && addonOn('offers') ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Current offers</Text>
             <View style={{ gap: 8 }}>
@@ -505,7 +537,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Open shifts posted by this business ────────────────────────────────────
-  const hiringSection = openShifts.length > 0 ? (
+  const hiringSection = shows('hiring') && openShifts.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Hiring now</Text>
             <View style={{ gap: 8 }}>
@@ -560,7 +592,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Upcoming events (when events add-on enabled) ───────────────────────────
-  const eventsSection = upcomingEvents.length > 0 && addonOn('events') ? (
+  const eventsSection = shows('events') && upcomingEvents.length > 0 && addonOn('events') ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Upcoming events</Text>
             <View style={{ gap: 8 }}>
@@ -602,7 +634,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Services catalogue (when Services add-on enabled) ──────────────────────
-  const servicesSection = addonOn('services') && services.length > 0 ? (() => {
+  const servicesSection = shows('services') && addonOn('services') && services.length > 0 ? (() => {
           const bookable = addonOn('bookings') && isBookableLive(business);
           return (
             <View style={styles.section}>
@@ -653,7 +685,7 @@ export default function BusinessDetailScreen() {
         })() : null;
 
   // ── Add-on placeholder sections (for add-ons not yet fully built) ──────────
-  const placeholderSections = addons
+  const placeholderSections = (shows('addonSections') ? addons : [])
           .filter(a => a.enabled && ['products', 'membership', 'enquiries'].includes(a.addon_key))
           .map(addon => {
             const icons: Record<string, string> = {
@@ -716,13 +748,15 @@ export default function BusinessDetailScreen() {
   const infoSection = (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Info</Text>
-          <BusinessLocationMap
-            lat={business.lat}
-            lng={business.lng}
-            name={business.name}
-            address={business.address}
-            color={accent}
-          />
+          {shows('mapPin') && (
+            <BusinessLocationMap
+              lat={business.lat}
+              lng={business.lng}
+              name={business.name}
+              address={business.address}
+              color={accent}
+            />
+          )}
           <View style={styles.infoCard}>
             <InfoRow icon="map-marker-alt" label="Address" value={business.address} accentColor={accent} />
             {business.phone && (
@@ -730,22 +764,22 @@ export default function BusinessDetailScreen() {
                 <View style={styles.infoDivider} />
                 <InfoRow
                   icon="phone" label="Phone" value={business.phone}
-                  onPress={() => Linking.openURL(`tel:${business.phone}`)}
+                  onPress={() => { track('contact_clicked', { objectType: 'business', objectId: business.id, businessId: business.id, props: { method: 'phone' } }); Linking.openURL(`tel:${business.phone}`); }}
                   accentColor={accent}
                 />
               </>
             )}
-            {business.website && (
+            {shows('extraContacts') && business.website && (
               <>
                 <View style={styles.infoDivider} />
                 <InfoRow
                   icon="globe" label="Website" value={business.website}
-                  onPress={() => Linking.openURL(business.website!)}
+                  onPress={() => { track('contact_clicked', { objectType: 'business', objectId: business.id, businessId: business.id, props: { method: 'website' } }); Linking.openURL(business.website!); }}
                   accentColor={accent}
                 />
               </>
             )}
-            {business.accepts_wallet && addonOn('payments') && (
+            {shows('wallet') && business.accepts_wallet && addonOn('payments') && (
               <>
                 <View style={styles.infoDivider} />
                 <InfoRow
@@ -805,6 +839,23 @@ export default function BusinessDetailScreen() {
           </View>
   ) : null;
 
+  // ── Owner upgrade hint (owner-only, no price/buy — points at web dashboard) ─
+  const upgradeHintSection = upgradeHint ? (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.upgradeHint}
+              onPress={() => router.push('/local-business-dashboard')}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name="unlock-alt" size={13} color={accent} solid />
+              <Text style={styles.upgradeHintText}>
+                Upgrade to {upgradeHint.tier} to show {upgradeHint.feature} on your listing.
+                {' '}Manage your plan on the web dashboard.
+              </Text>
+            </TouchableOpacity>
+          </View>
+  ) : null;
+
   // ── Compose ────────────────────────────────────────────────────────────────
   // Phone: single stacked column. Tablet: showcase content in a wide main
   // column, with contact/info + hiring in a fixed-width sidebar, all centred
@@ -831,6 +882,7 @@ export default function BusinessDetailScreen() {
               <View style={styles.sideCol}>
                 {infoSection}
                 {hiringSection}
+                {upgradeHintSection}
                 {ownerSection}
               </View>
             </View>
@@ -847,6 +899,7 @@ export default function BusinessDetailScreen() {
               {servicesSection}
               {placeholderSections}
               {infoSection}
+              {upgradeHintSection}
               {ownerSection}
             </>
           )}
@@ -925,7 +978,7 @@ const styles = StyleSheet.create({
   heroLogo: {
     width: 84, height: 84, borderRadius: radius.lg, marginTop: -42,
     borderWidth: 4, borderColor: colors.screenBackground,
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', padding: 6,
   },
   heroLogoFallback: { alignItems: 'center', justifyContent: 'center' },
   heroNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 },
@@ -1064,6 +1117,15 @@ const styles = StyleSheet.create({
     paddingVertical: 14, borderRadius: radius.lg,
   },
   ownerBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+
+  // Owner-only upgrade hint (no price/buy button — compliance)
+  upgradeHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed',
+    padding: spacing.md,
+  },
+  upgradeHintText: { flex: 1, fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600', lineHeight: 17 },
 
   // Claim-this-business banner
   claimCard: {

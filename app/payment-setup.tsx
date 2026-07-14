@@ -132,7 +132,7 @@ export default function PaymentSetupScreen() {
         <Text style={styles.subtitle}>
           {isBusiness
             ? 'Add a card for this business to pay for business features like boosting shifts.'
-            : 'Add a payment method so drivers can be paid when they complete your delivery.'}
+            : 'Securely save a card to pay for things across OneShetland — event tickets, deliveries, bookings and wallet top-ups.'}
         </Text>
       </View>
 
@@ -183,8 +183,8 @@ export default function PaymentSetupScreen() {
         </View>
 
         <Text style={styles.legalNote}>
-          By adding a payment method you authorise OneShetland Fetch to charge your card
-          for completed deliveries. You can update or remove it at any time from account settings.
+          By adding a card you authorise OneShetland to charge it, via Stripe, for purchases
+          you make in the app. You can update or remove it at any time from account settings.
         </Text>
 
       </View>

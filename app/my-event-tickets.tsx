@@ -7,12 +7,14 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, Image,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, shadow, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { TicketCelebration } from '@/components/TicketCelebration';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -43,6 +45,7 @@ export default function MyEventTicketsScreen() {
   const [refreshing,setRefreshing]= useState(false);
 
   const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [celebrate, setCelebrate] = useState(false);
 
   const load = useCallback(async () => {
     if (!profile) return;
@@ -54,7 +57,29 @@ export default function MyEventTicketsScreen() {
     setRefreshing(false);
   }, [profile?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refetch whenever the screen regains focus, so a ticket that was just checked
+  // in at the door shows as "Used" when the holder returns to this screen.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Live update: the moment one of the holder's tickets changes (e.g. scanned →
+  // 'used'), the DB pushes it here and the list refreshes on its own.
+  useEffect(() => {
+    if (!profile) return;
+    const channel = supabase
+      .channel(`my-event-tickets-${profile.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'event_tickets', filter: `holder_id=eq.${profile.id}` },
+        (payload) => {
+          const next = (payload.new as { status?: string } | null)?.status;
+          const prev = (payload.old as { status?: string } | null)?.status;
+          if (next === 'used' && prev !== 'used') setCelebrate(true);
+          load();
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.id, load]);
 
   const now = new Date().toISOString();
   const filtered = tickets.filter(t => {
@@ -64,6 +89,7 @@ export default function MyEventTicketsScreen() {
 
   return (
     <ScreenScaffold header={<ScreenHeader title="My Tickets" accent={S.color} />}>
+      <TicketCelebration visible={celebrate} onDone={() => setCelebrate(false)} />
       {/* Tabs */}
       <View style={styles.tabRow}>
         {(['upcoming', 'past'] as const).map(t => (

@@ -215,7 +215,13 @@ function AlertRow({ alert: a, status, onCancel }: {
       </View>
 
       {onCancel && (
-        <TouchableOpacity onPress={onCancel} hitSlop={12} style={styles.cancelBtn}>
+        <TouchableOpacity
+          onPress={onCancel}
+          hitSlop={12}
+          style={styles.cancelBtn}
+          accessibilityRole="button"
+          accessibilityLabel={status === 'live' ? 'End alert' : 'Remove alert'}
+        >
           <FontAwesome5 name={status === 'live' ? 'stop-circle' : 'times'} size={14} color={colors.textMuted} />
         </TouchableOpacity>
       )}

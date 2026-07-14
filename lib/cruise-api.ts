@@ -98,7 +98,7 @@ export function ashorePlan(hours: number | null): string {
 
 // ── queries ──
 export async function getUpcomingDays(limit = 60): Promise<CruiseDay[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = londonToday();
   const { data } = await supabase.from('cruise_day_summary').select('*').gte('visit_date', today).order('visit_date', { ascending: true }).limit(limit);
   return (data ?? []) as CruiseDay[];
 }
@@ -139,7 +139,7 @@ export type CruiseHomeCard = {
 
 /** "In port today" card — today if ships are in, otherwise the next call. */
 export async function getCruiseHomeCard(): Promise<CruiseHomeCard | null> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = londonToday();
   const { data: t } = await supabase.from('cruise_day_summary').select('*').eq('visit_date', today).maybeSingle();
   let day = (t ?? null) as CruiseDay | null;
   if (!day) {
@@ -385,6 +385,62 @@ export function londonHours(iso?: string | null): number | null {
   const local = new Date(d.getTime() + (ukIsBST(d) ? 3_600_000 : 0));
   return local.getUTCHours() + local.getUTCMinutes() / 60;
 }
+/** Today's date (YYYY-MM-DD) in Shetland local time (Europe/London).
+ *  Cruise season runs in BST, so UTC midnight ≠ local midnight — always use this for "today". */
+export function londonToday(now: Date = new Date()): string {
+  const local = new Date(now.getTime() + (ukIsBST(now) ? 3_600_000 : 0));
+  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}-${String(local.getUTCDate()).padStart(2, '0')}`;
+}
+/** Current month (YYYY-MM) in Shetland local time. */
+export function londonMonth(now: Date = new Date()): string {
+  return londonToday(now).slice(0, 7);
+}
+
+/** Format a decimal Shetland hour (e.g. 13.5) as a friendly clock time like "1.30pm". */
+export function fmtHourLabel(h: number): string {
+  const hh = ((Math.floor(h) % 24) + 24) % 24;
+  const mm = Math.round((h - Math.floor(h)) * 60);
+  const ampm = hh < 12 ? 'am' : 'pm';
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return mm === 0 ? `${h12}${ampm}` : `${h12}.${String(mm).padStart(2, '0')}${ampm}`;
+}
+
+type PeakVisit = { arrival_at: string | null; departure_at: string | null; est_pax: number | null };
+/** Busiest footfall window of the day, derived from when passengers are ashore.
+ *  Builds each ship's ashore interval (capping unknown departures at +6h, like the timeline),
+ *  weights by est_pax, and returns the contiguous band where footfall stays near its peak. */
+export function peakWindow(visits: PeakVisit[]): { from: number; to: number; label: string } | null {
+  const spans = visits
+    .map((v) => {
+      const a = londonHours(v.arrival_at);
+      let d = londonHours(v.departure_at);
+      if (a == null) return null;
+      if (d == null || d <= a) d = Math.min(24, a + 6);
+      return { a, d, pax: Math.max(1, v.est_pax ?? 1) };
+    })
+    .filter(Boolean) as { a: number; d: number; pax: number }[];
+  if (spans.length === 0) return null;
+
+  const lo = Math.min(...spans.map((s) => s.a));
+  const hi = Math.max(...spans.map((s) => s.d));
+  const STEP = 0.5;
+  const slots: { t: number; pax: number }[] = [];
+  for (let t = lo; t <= hi + 1e-9; t += STEP) {
+    let pax = 0;
+    for (const s of spans) if (t >= s.a && t <= s.d) pax += s.pax;
+    slots.push({ t, pax });
+  }
+  const peak = Math.max(...slots.map((s) => s.pax));
+  const threshold = peak * 0.7;
+  const busy = slots.filter((s) => s.pax >= threshold).map((s) => s.t);
+  let from = Math.min(...busy);
+  let to = Math.max(...busy) + STEP;
+  from = Math.max(0, Math.floor(from * 2) / 2);
+  to = Math.min(24, Math.ceil(to * 2) / 2);
+  if (to - from < 1) to = Math.min(24, from + 1);
+  return { from, to, label: `${fmtHourLabel(from)}–${fmtHourLabel(to)}` };
+}
+
 export function monthShort(month: string): string {
   return MONTHS[new Date(month + '-01T12:00:00Z').getUTCMonth()].slice(0, 3);
 }

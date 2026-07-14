@@ -20,9 +20,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TouchableOpacity, Image, TextInput,
-  KeyboardAvoidingView, Platform, RefreshControl,
+  KeyboardAvoidingView, Platform, RefreshControl, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
@@ -40,6 +42,9 @@ import {
 import ImageAnnotationOverlay from '@/components/ImageAnnotationOverlay';
 import { MEMORY_CATEGORY_BY_SLUG } from '@/constants/memory-categories';
 import { useAlert } from '@/components/BrandedAlert';
+import { ContentActions } from '@/components/ContentActions';
+import { fetchBlockedIds } from '@/lib/moderation';
+import { track } from '@/lib/analytics';
 
 const SECTION = SECTIONS.memories;
 
@@ -75,6 +80,7 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
   const [memory, setMemory] = useState<Memory | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [blockedIds, setBlockedIds] = useState<string[]>([]);
 
   // Image-pin modal state
   const [activePin, setActivePin]                     = useState<MemoryImagePin | null>(null);
@@ -86,6 +92,11 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
   const [commenting, setCommenting]     = useState(false);
 
   const isAuthor = !!(memory && profile && memory.author_id === profile.id);
+
+  // Hide content from blocked authors (client-side filter after fetch).
+  const blockedSet = React.useMemo(() => new Set(blockedIds), [blockedIds]);
+  const visibleComments = (memory?.comments ?? []).filter(c => !blockedSet.has(c.author_id));
+  const visibleChildren = (memory?.children ?? []).filter(c => !blockedSet.has(c.author_id));
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -102,6 +113,18 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
 
   useEffect(() => { void load(); }, [load]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
+
+  // Blocked-author ids, for hiding blocked commenters / child stories.
+  const loadBlocked = useCallback(async () => {
+    if (!profile?.id) { setBlockedIds([]); return; }
+    try { setBlockedIds(await fetchBlockedIds()); } catch { /* non-fatal */ }
+  }, [profile?.id]);
+  useEffect(() => { void loadBlocked(); }, [loadBlocked]);
+  useFocusEffect(useCallback(() => { void loadBlocked(); }, [loadBlocked]));
+
+  useEffect(() => {
+    if (memory?.id) track('content_viewed', { objectType: 'memory', objectId: memory.id });
+  }, [memory?.id]);
 
   // ── Reactions ────────────────────────────────────────────────────────────
 
@@ -305,7 +328,16 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
                 <FontAwesome5 name="trash" size={16} color={colors.error} />
               </TouchableOpacity>
             </View>
-          ) : <View style={{ width: 36 }} />}
+          ) : (
+            <ContentActions
+              contentType="memory"
+              contentId={memory.id}
+              authorId={memory.author_id}
+              authorName={memory.author?.full_name}
+              onBlocked={goBack}
+              icon="ellipsis-h"
+            />
+          )}
         </View>
 
         {/* Author + era */}
@@ -378,6 +410,14 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
               <TouchableOpacity
                 key={r.kind}
                 onPress={() => onReact(r.kind)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: !!active }}
+                accessibilityLabel={
+                  count > 0
+                    ? `${r.label}, ${count} ${count === 1 ? 'reaction' : 'reactions'}`
+                    : r.label
+                }
+                accessibilityHint={active ? `Remove your ${r.label} reaction` : `React with ${r.label}`}
                 style={[
                   styles.reactionChip,
                   active && { backgroundColor: SECTION.light, borderColor: SECTION.color },
@@ -489,10 +529,10 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
         </View>
 
         {/* Sub-memories */}
-        {memory.children?.length ? (
+        {visibleChildren.length ? (
           <View style={styles.children}>
-            <Text style={styles.sectionTitle}>Added to this story ({memory.children.length})</Text>
-            {memory.children.map(child => (
+            <Text style={styles.sectionTitle}>Added to this story ({visibleChildren.length})</Text>
+            {visibleChildren.map(child => (
               <TouchableOpacity
                 key={child.id}
                 onPress={() => router.push(`/memory/${child.id}`)}
@@ -519,9 +559,9 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
 
         {/* Comments */}
         <View style={styles.commentsBlock}>
-          <Text style={styles.sectionTitle}>Comments ({memory.comments?.length ?? 0})</Text>
+          <Text style={styles.sectionTitle}>Comments ({visibleComments.length})</Text>
 
-          {memory.comments?.length ? memory.comments.map(c => (
+          {visibleComments.length ? visibleComments.map(c => (
             <View key={c.id} style={styles.commentRow}>
               <View style={[styles.avatarSm, { backgroundColor: SECTION.light }]}>
                 {c.author?.avatar_url ? (
@@ -546,7 +586,18 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
                 <TouchableOpacity onPress={() => onDeleteComment(c.id)} hitSlop={6}>
                   <FontAwesome5 name="trash" size={11} color={colors.textLight} />
                 </TouchableOpacity>
-              ) : null}
+              ) : (
+                <ContentActions
+                  contentType="memory_comment"
+                  contentId={c.id}
+                  authorId={c.author_id}
+                  authorName={c.author?.full_name}
+                  onBlocked={loadBlocked}
+                  icon="ellipsis-h"
+                  size={14}
+                  color={colors.textLight}
+                />
+              )}
             </View>
           )) : (
             <Text style={styles.emptyHint}>No comments yet — be the first.</Text>
@@ -607,33 +658,99 @@ function MediaTile({
   }
 
   if (media.kind === 'video') {
-    return (
-      <View style={styles.mediaTile}>
-        <TouchableOpacity style={styles.videoFrame} onPress={() => {/* fullscreen player TBD */}}>
-          {media.thumb_url ? (
-            <Image source={{ uri: media.thumb_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
-          )}
-          <View style={styles.videoPlay}>
-            <FontAwesome5 name="play" size={20} color="#fff" solid />
-          </View>
-        </TouchableOpacity>
-        {media.caption ? <Text style={styles.caption}>{media.caption}</Text> : null}
-      </View>
-    );
+    return <VideoTile media={media} />;
   }
 
   // audio
+  return <AudioTile media={media} />;
+}
+
+// ── Video tile ────────────────────────────────────────────────────────────────
+// Tapping the poster opens a fullscreen modal player with native controls,
+// mirroring the web's <video controls>.
+
+function VideoTile({ media }: { media: MemoryMedia }) {
+  const [open, setOpen] = useState(false);
+
+  const player = useVideoPlayer(open ? media.url : null, p => {
+    p.loop = false;
+  });
+
+  // Start playing when the modal opens; pause when it closes.
+  useEffect(() => {
+    if (open) player.play();
+    else player.pause();
+  }, [open, player]);
+
+  const close = useCallback(() => setOpen(false), []);
+
+  return (
+    <View style={styles.mediaTile}>
+      <TouchableOpacity style={styles.videoFrame} onPress={() => setOpen(true)}>
+        {media.thumb_url ? (
+          <Image source={{ uri: media.thumb_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
+        )}
+        <View style={styles.videoPlay}>
+          <FontAwesome5 name="play" size={20} color="#fff" solid />
+        </View>
+      </TouchableOpacity>
+      {media.caption ? <Text style={styles.caption}>{media.caption}</Text> : null}
+
+      <Modal visible={open} animationType="fade" onRequestClose={close} supportedOrientations={['portrait', 'landscape']}>
+        <View style={styles.videoModal}>
+          <VideoView
+            player={player}
+            style={StyleSheet.absoluteFill}
+            contentFit="contain"
+            nativeControls
+          />
+          <SafeAreaView edges={['top']} style={styles.videoModalClose} pointerEvents="box-none">
+            <TouchableOpacity onPress={close} hitSlop={12} style={styles.videoCloseBtn}>
+              <FontAwesome5 name="times" size={20} color="#fff" />
+            </TouchableOpacity>
+          </SafeAreaView>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+// ── Audio tile ────────────────────────────────────────────────────────────────
+// Inline play/pause for a voice note, mirroring the web's <audio controls>.
+
+function AudioTile({ media }: { media: MemoryMedia }) {
+  const player = useAudioPlayer(media.url);
+  const status = useAudioPlayerStatus(player);
+  const isPlaying = status.playing;
+
+  const toggle = useCallback(() => {
+    if (status.playing) {
+      player.pause();
+    } else {
+      // Replay from the start once it has reached the end.
+      if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration)) {
+        player.seekTo(0);
+      }
+      player.play();
+    }
+  }, [player, status.playing, status.didJustFinish, status.currentTime, status.duration]);
+
   return (
     <View style={[styles.mediaTile, styles.audioTile]}>
-      <View style={[styles.avatar, { backgroundColor: SECTION.light }]}>
-        <FontAwesome5 name="microphone" size={18} color={SECTION.color} />
-      </View>
+      <TouchableOpacity
+        onPress={toggle}
+        style={[styles.audioPlayBtn, { backgroundColor: SECTION.color }]}
+        hitSlop={8}
+      >
+        <FontAwesome5 name={isPlaying ? 'pause' : 'play'} size={16} color="#fff" solid />
+      </TouchableOpacity>
       <View style={{ flex: 1 }}>
         <Text style={styles.audioTitle}>Voice note</Text>
         <Text style={styles.audioMeta}>
           {media.duration_seconds ? `${media.duration_seconds}s` : ''}
+          {isPlaying ? ' · playing…' : ''}
           {media.transcript_status === 'pending' ? ' · transcribing…' : ''}
           {media.transcript_status === 'failed'  ? ' · transcription failed' : ''}
         </Text>
@@ -915,6 +1032,24 @@ const styles = StyleSheet.create({
   videoPlay: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  videoModal: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  videoModalClose: {
+    position: 'absolute',
+    top: 0, right: 0,
+    padding: spacing.md,
+  },
+  videoCloseBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  audioPlayBtn: {
+    width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
   },
   audioTile: {

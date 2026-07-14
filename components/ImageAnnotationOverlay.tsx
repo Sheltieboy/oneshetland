@@ -91,7 +91,16 @@ export function ImageAnnotationOverlay({
           <Pressable
             key={pin.id}
             onPress={() => onTapPin?.(pin)}
-            hitSlop={8}
+            // 28px visible head + 10px hitSlop on every side = a 48px touch
+            // target, comfortably over the 44px accessibility minimum.
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={
+              pin.resolved
+                ? `Identified: ${pin.resolved_answer ?? 'answered'}`
+                : `Question: ${pin.prompt}`
+            }
+            accessibilityHint={pin.resolved ? 'Opens the answer' : 'Opens this question to answer it'}
             style={[
               styles.pinAbs,
               { left: cx - 14, top: cy - 14 },

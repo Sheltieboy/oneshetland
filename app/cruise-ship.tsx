@@ -144,6 +144,9 @@ export default function CruiseShipScreen() {
           <TouchableOpacity style={[styles.btn, styles.btnGhost]} onPress={() => router.push('/(tabs)/local')} activeOpacity={0.85}>
             <Text style={[styles.btnText, { color: colors.textPrimary }]}>What&apos;s open today</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={[styles.btn, styles.btnGhost]} onPress={() => router.push('/(tabs)/whats-on')} activeOpacity={0.85}>
+            <Text style={[styles.btnText, { color: colors.textPrimary }]}>Tours &amp; tickets</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>

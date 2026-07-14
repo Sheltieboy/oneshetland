@@ -24,6 +24,14 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { REGIONS, getRegionName } from '@/constants/regions';
+
+/** "By" defaults to the end of today (8pm) — the common "I need it today" case. */
+function endOfToday(): string {
+  const d = new Date();
+  d.setHours(20, 0, 0, 0);
+  return d.toISOString();
+}
 
 interface SavedAddress {
   id: string;
@@ -40,6 +48,7 @@ export default function RequestStep3() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [showPicker, setShowPicker] = useState(false);
+  const [showRegionPicker, setShowRegionPicker] = useState(false);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -67,6 +76,7 @@ export default function RequestStep3() {
   function validate() {
     const e: Record<string, string> = {};
     if (!formData.destinationAddress.trim()) e.destinationAddress = 'Enter a delivery address';
+    if (!formData.destinationRegionSlug) e.destinationRegion = 'Choose the drop-off area';
     return e;
   }
 
@@ -199,6 +209,64 @@ export default function RequestStep3() {
             debounce={300}
           />
         </View>
+
+        {/* Drop-off area — matches a driver heading the same way */}
+        <View style={{ marginTop: spacing.md, marginBottom: spacing.sm }}>
+          <Text style={styles.fieldLabel}>Which area? *</Text>
+          <Text style={styles.fieldHint}>So we can match a driver heading your way</Text>
+          {errors.destinationRegion ? <Text style={styles.errorText}>{errors.destinationRegion}</Text> : null}
+          <Pressable style={styles.regionBtn} onPress={() => { haptic.light(); setShowRegionPicker(true); }}>
+            <Text style={formData.destinationRegionSlug ? styles.regionBtnText : styles.regionBtnPlaceholder}>
+              {formData.destinationRegionSlug ? getRegionName(formData.destinationRegionSlug) : 'Select area…'}
+            </Text>
+            <Text style={styles.savedBtnArrow}>›</Text>
+          </Pressable>
+        </View>
+
+        {/* When do you need it? */}
+        <View style={{ marginBottom: spacing.sm }}>
+          <Text style={styles.fieldLabel}>When do you need it?</Text>
+          <Text style={styles.fieldHint}>A driver heading your way picks it up — this sets how long we keep looking</Text>
+          <View style={styles.whenRow}>
+            {([
+              { key: 'asap', label: 'As soon as possible' },
+              { key: 'by', label: 'By tonight' },
+              { key: 'flexible', label: 'No rush' },
+            ] as { key: 'asap' | 'by' | 'flexible'; label: string }[]).map((o) => {
+              const on = formData.schedulingMode === o.key;
+              return (
+                <Pressable key={o.key} onPress={() => { haptic.select(); update({ schedulingMode: o.key, neededBy: o.key === 'by' ? endOfToday() : null }); }}
+                  style={[styles.whenChip, on && styles.whenChipOn]}>
+                  <Text style={[styles.whenChipText, on && styles.whenChipTextOn]}>{o.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Region picker modal */}
+        <Modal visible={showRegionPicker} animationType="slide" presentationStyle="pageSheet">
+          <SafeAreaView style={modal.safe} edges={['top', 'bottom']}>
+            <View style={modal.header}>
+              <Text style={modal.title}>Select area</Text>
+              <Pressable onPress={() => { haptic.light(); setShowRegionPicker(false); }} hitSlop={12}>
+                <Text style={modal.close}>Done</Text>
+              </Pressable>
+            </View>
+            <FlatList
+              data={REGIONS}
+              keyExtractor={(r) => r.slug}
+              contentContainerStyle={modal.list}
+              renderItem={({ item }) => (
+                <Pressable style={({ pressed }) => [modal.item, pressed && { opacity: 0.85 }]}
+                  onPress={() => { haptic.select(); update({ destinationRegionSlug: item.slug }); setShowRegionPicker(false); setErrors((e) => ({ ...e, destinationRegion: '' })); }}>
+                  <View style={modal.itemInfo}><Text style={modal.itemLabel}>{item.name}</Text></View>
+                  {formData.destinationRegionSlug === item.slug && <Text style={{ color: colors.accent, fontSize: 18, alignSelf: 'center' }}>✓</Text>}
+                </Pressable>
+              )}
+            />
+          </SafeAreaView>
+        </Modal>
 
         {/* Saved address modal */}
         <Modal visible={showPicker} animationType="slide" presentationStyle="pageSheet">
@@ -358,6 +426,23 @@ const styles = StyleSheet.create({
   savedBtnTitle: { fontSize: fontSize.sm, fontWeight: '700', color: colors.navy },
   savedBtnHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
   savedBtnArrow: { fontSize: 22, color: colors.textLight },
+
+  regionBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, height: 48,
+  },
+  regionBtnText: { fontSize: fontSize.md, color: colors.textPrimary },
+  regionBtnPlaceholder: { fontSize: fontSize.md, color: colors.textLight },
+
+  whenRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 4 },
+  whenChip: {
+    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.full,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  whenChipOn: { borderColor: colors.accent, backgroundColor: colors.accentLight },
+  whenChipText: { fontSize: fontSize.sm, fontWeight: '600', color: colors.textMuted },
+  whenChipTextOn: { color: colors.accent },
 });
 
 const modal = StyleSheet.create({

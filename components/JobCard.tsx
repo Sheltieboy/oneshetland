@@ -73,7 +73,13 @@ export function JobCard({
       </View>
 
       {onToggleSave ? (
-        <TouchableOpacity onPress={onToggleSave} hitSlop={12} style={styles.saveBtn}>
+        <TouchableOpacity
+          onPress={onToggleSave}
+          hitSlop={12}
+          style={styles.saveBtn}
+          accessibilityRole="button"
+          accessibilityLabel={saved ? 'Remove saved job' : 'Save job'}
+        >
           <FontAwesome5 name="bookmark" size={16} color={saved ? S.color : colors.textLight} solid={saved} />
         </TouchableOpacity>
       ) : (

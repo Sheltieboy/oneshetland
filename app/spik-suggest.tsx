@@ -24,6 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, router } from 'expo-router';
+import { track } from '@/lib/analytics';
 import { colors, fontSize, radius, spacing, contentContainer } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
@@ -345,6 +346,7 @@ export default function SpikSuggestScreen() {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
+      track('spik_suggestion_submitted', {});
       setSubmitted(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Animated.parallel([

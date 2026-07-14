@@ -17,7 +17,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchMyApplications, checkIn, checkOut,
-  formatShiftDate, formatDuration, formatPay,
+  formatShiftDate, formatDuration, formatPay, hoursWorked,
   type CheckInStatus,
 } from '@/lib/shifts-api';
 
@@ -26,7 +26,7 @@ const S = SECTIONS.shifts;
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
   pending:   { label: 'Pending',   color: '#D97706',        bg: '#FEF3C7',         icon: 'clock' },
   accepted:  { label: 'Confirmed', color: colors.jobs,      bg: colors.jobsLight,  icon: 'check-circle' },
-  rejected:  { label: 'Declined',  color: '#DC2626',        bg: '#FEE2E2',         icon: 'times-circle' },
+  rejected:  { label: 'Not selected', color: '#DC2626',      bg: '#FEE2E2',         icon: 'times-circle' },
   withdrawn: { label: 'Withdrawn', color: colors.textMuted, bg: colors.screenBackground, icon: 'undo' },
 };
 
@@ -71,6 +71,7 @@ function CheckInCard({
   // Allow check-in up to 2 hrs before start
   const canCheckIn = shiftStart > 0 && now >= shiftStart - 2 * 3_600_000;
   const cis = app.check_in_status;
+  const worked = app.shift ? hoursWorked(app, app.shift.start_at, app.shift.end_at) : null;
 
   // Shift completed — employer confirmed
   if (cis === 'employer_confirmed') {
@@ -87,6 +88,7 @@ function CheckInCard({
               ? ` · ${new Date(app.employer_confirmed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
               : ''}
           </Text>
+          {worked ? <Text style={styles.checkInHours}>{worked.label} worked{worked.actual ? '' : ' (scheduled)'}</Text> : null}
         </View>
       </View>
     );
@@ -108,6 +110,7 @@ function CheckInCard({
               : '—'}
             {' '}· the employer will confirm shortly
           </Text>
+          {worked ? <Text style={styles.checkInHours}>{worked.label} worked{worked.actual ? '' : ' (scheduled)'}</Text> : null}
         </View>
       </View>
     );
@@ -358,7 +361,7 @@ export default function MyShiftApplicationsScreen() {
     { id: 'all',       label: 'All' },
     { id: 'pending',   label: 'Pending' },
     { id: 'accepted',  label: 'Confirmed' },
-    { id: 'rejected',  label: 'Declined' },
+    { id: 'rejected',  label: 'Not selected' },
     { id: 'withdrawn', label: 'Withdrawn' },
   ];
 
@@ -407,7 +410,7 @@ export default function MyShiftApplicationsScreen() {
               icon="paper-plane"
               title={filter === 'all' ? 'No applications yet' : `No ${filter} applications`}
               body={filter === 'all'
-                ? "When you submit interest in a shift, it'll appear here."
+                ? "When you apply for a shift, it'll appear here."
                 : 'Try a different filter above.'}
               accent={S.color}
               variant="card"
@@ -487,6 +490,7 @@ const styles = StyleSheet.create({
   },
   checkInTitle: { fontSize: fontSize.sm, fontWeight: '800', lineHeight: 18 },
   checkInSub:   { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1, lineHeight: 16 },
+  checkInHours: { fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '800', marginTop: 4 },
 
   checkInBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

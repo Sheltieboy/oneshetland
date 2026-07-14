@@ -16,6 +16,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
+import { ContentActions } from '@/components/ContentActions';
 import { formatPence } from '@/lib/local-api';
 import {
   fetchCampaign, fetchHub, fetchCampaignDonors,
@@ -73,9 +74,17 @@ export default function HubCampaignScreen() {
           <Text style={[styles.backText, { color: accent }]}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Fundraiser</Text>
-        <TouchableOpacity onPress={() => setQrOpen(true)} hitSlop={12} style={{ width: 70, alignItems: 'flex-end' }}>
-          <FontAwesome5 name="qrcode" size={18} color={accent} solid />
-        </TouchableOpacity>
+        <View style={{ width: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: spacing.xs }}>
+          <TouchableOpacity onPress={() => setQrOpen(true)} hitSlop={12}>
+            <FontAwesome5 name="qrcode" size={18} color={accent} solid />
+          </TouchableOpacity>
+          <ContentActions
+            contentType="hub_campaign"
+            contentId={campaign.id}
+            icon="ellipsis-v"
+            color={accent}
+          />
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}

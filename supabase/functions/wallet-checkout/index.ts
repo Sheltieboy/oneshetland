@@ -41,6 +41,7 @@ serve(async (req) => {
       case 'hub_membership': return await hubMembership(svc, user.id, body);
       case 'unit_purchase':  return await unitPurchase(svc, user.id, body);
       case 'shift_boost':    return await shiftBoost(svc, user.id, body);
+      case 'analytics_addon': return await analyticsAddon(svc, user.id, body);
       default:
         return json({ error: `Wallet payment isn't available for "${type}" yet.` }, 400);
     }
@@ -283,6 +284,43 @@ async function stripeTransfer(destination: string, amount: number, description: 
   const j = await res.json();
   if (!res.ok) throw new Error(j.error?.message ?? `Stripe transfer failed (HTTP ${res.status})`);
   return j.id;
+}
+
+// ── analytics_addon ──────────────────────────────────────────────────────────
+// Owner pays the £10/mo Analytics add-on from their wallet (a platform charge,
+// not a payment to the business). Enables the add-on for one month; the
+// reminder-runner re-debits monthly and pauses it if the wallet runs dry.
+async function analyticsAddon(svc: any, userId: string, body: any): Promise<Response> {
+  const businessId = body.business_id as string;
+  if (!businessId) return json({ error: 'business_id required' }, 400);
+
+  const { data: business } = await svc.from('local_businesses')
+    .select('id, owner_id').eq('id', businessId).maybeSingle();
+  if (!business) return json({ error: 'Business not found.' }, 404);
+  if (business.owner_id !== userId) return json({ error: 'Forbidden' }, 403);
+
+  const { data: addon } = await svc.from('business_addons')
+    .select('enabled').eq('business_id', businessId).eq('addon_key', 'analytics').maybeSingle();
+  if (addon?.enabled) return json({ error: 'Analytics add-on is already active.' }, 409);
+
+  const { data: priceRow } = await svc.from('admin_config').select('value').eq('key', 'analytics.addon_price_pence').maybeSingle();
+  const amount = Math.round(Number(priceRow?.value)) || 1000; // default £10
+
+  const { error: debitErr } = await svc.rpc('wallet_debit', { p_user: userId, p_spend: amount, p_cashback: 0 });
+  if (debitErr) return json({ error: "Not enough wallet balance — top up or use a card." }, 402);
+
+  await svc.from('local_wallet_transactions').insert({
+    user_id: userId, business_id: null, type: 'spend', amount_pence: -amount,
+    description: 'OneShetland analytics add-on (1 month)',
+  });
+
+  const paidUntil = new Date();
+  paidUntil.setMonth(paidUntil.getMonth() + 1);
+  await svc.from('business_addons')
+    .update({ enabled: true, config: { method: 'wallet', paid_until: paidUntil.toISOString() } })
+    .eq('business_id', businessId).eq('addon_key', 'analytics');
+
+  return json({ ok: true, paid_until: paidUntil.toISOString() });
 }
 
 function normaliseUkPostcode(raw: string): string | null {

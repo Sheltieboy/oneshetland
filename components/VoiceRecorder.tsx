@@ -84,11 +84,31 @@ export function VoiceRecorder(props: VoiceRecorderProps) {
   return <VoiceRecorderInner {...props} />;
 }
 
+// expo-audio reports the input level in dBFS (decibels relative to full
+// scale): roughly −60 dB (near silence) up to 0 dB (clipping). Map that onto
+// a 0…1 bar so the meter shows the REAL level coming off the mic, not a
+// made-up number. Anything quieter than the floor reads as empty.
+const METER_FLOOR_DB = -50;
+function dbToLevel(db: number | undefined): number {
+  if (db == null || !Number.isFinite(db)) return 0;
+  if (db <= METER_FLOOR_DB) return 0;
+  if (db >= 0) return 1;
+  return (db - METER_FLOOR_DB) / (0 - METER_FLOOR_DB);
+}
+
 function VoiceRecorderInner({ onFinish, onCancel, maxSeconds = 600 }: VoiceRecorderProps) {
-  const recorder                = ExpoAudio.useAudioRecorder(ExpoAudio.RecordingPresets.HIGH_QUALITY);
   const [state, setState]       = useState<'idle' | 'preparing' | 'recording' | 'stopping'>('idle');
   const [elapsed, setElapsed]   = useState(0);
-  const meter = state === 'recording' ? 0.55 : 0;
+  // Real input level (0…1) derived from the recorder's metering status.
+  const [meter, setMeter]       = useState(0);
+  // Enable metering on the recorder preset so status updates carry a real
+  // `metering` value (dBFS). The status listener feeds the live level bar.
+  const recorder                = ExpoAudio.useAudioRecorder(
+    { ...ExpoAudio.RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true },
+    (status: any) => {
+      if (status?.metering != null) setMeter(dbToLevel(status.metering));
+    },
+  );
   const tickRef                 = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingFlag           = useRef(false);
 
@@ -132,6 +152,7 @@ function VoiceRecorderInner({ onFinish, onCancel, maxSeconds = 600 }: VoiceRecor
   const stop = async () => {
     if (!recordingFlag.current) return;
     setState('stopping');
+    setMeter(0);
     if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
     try {
       const duration = recorder.getStatus?.()?.durationMillis

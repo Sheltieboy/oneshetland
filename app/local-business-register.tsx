@@ -28,6 +28,7 @@ import {
   type LocalCategory, type BusinessUpsertInput,
 } from '@/lib/local-api';
 import { uploadBusinessImage, extractBrandColor, type PickedFile } from '@/lib/image-upload';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.local;
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
@@ -161,6 +162,7 @@ export default function BusinessRegisterScreen() {
       } else {
         const created = await createBusiness(profile.id, payload);
         businessId = created.id;
+        track('business_created', { businessId: created.id });
       }
 
       // Upload a freshly-picked logo now that we have a business id, then

@@ -12,7 +12,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
-import { fontSize, spacing, radius, contentContainer } from '@/constants/theme';
+import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
@@ -40,12 +40,13 @@ export default function MyMembershipsScreen() {
   const { screenWidth } = useAppLayout();
   const [memberships, setMemberships] = useState<HubMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!profile?.id) { setLoading(false); return; }
-    try { setMemberships(await fetchMyHubMemberships(profile.id)); }
-    catch { setMemberships([]); }
+    try { setMemberships(await fetchMyHubMemberships(profile.id)); setLoadError(false); }
+    catch { setMemberships([]); setLoadError(true); }
     finally { setLoading(false); }
   }, [profile?.id]);
 
@@ -59,6 +60,16 @@ export default function MyMembershipsScreen() {
 
         {loading ? (
           <LoadingState accent={S.color} />
+        ) : loadError && memberships.length === 0 ? (
+          <EmptyState
+            icon="exclamation-circle"
+            title="Couldn't load your memberships"
+            body="Something went agley — pull doon to try again."
+            accent={colors.error}
+            variant="card"
+            actionLabel="Try again"
+            onAction={() => { setLoading(true); load(); }}
+          />
         ) : memberships.length === 0 ? (
           <EmptyState
             icon="id-card"

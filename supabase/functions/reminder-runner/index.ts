@@ -48,7 +48,35 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_expired: 0 };
+
+    // ── Fetch: expire unmatched delivery requests ────────────────────────────
+    // A pending request past its expires_at (set from the customer's "when")
+    // lapses to 'expired' — a no-blame "no driver found" state — and the
+    // customer is nudged to post it again. Guarded to still-'pending' rows so
+    // nothing a driver has accepted is ever touched.
+    const { data: dueRequests } = await svc
+      .from('delivery_requests')
+      .select('id, customer_id, category_slug')
+      .eq('status', 'pending')
+      .not('expires_at', 'is', null)
+      .lt('expires_at', nowIso)
+      .limit(200);
+    if (dueRequests && dueRequests.length > 0) {
+      const ids = dueRequests.map((r) => r.id);
+      await svc.from('delivery_requests').update({ status: 'expired' }).in('id', ids).eq('status', 'pending');
+      for (const r of dueRequests) {
+        await sendUserPush(svc, {
+          userId:     r.customer_id,
+          module:     'fetch',
+          categoryId: 'fetch.expired',
+          title:      'No driver found',
+          body:       `No driver was able to take your ${r.category_slug ?? 'delivery'} in time. Tap to post it again.`,
+          data:       { request_id: r.id, event: 'expired' },
+        });
+        result.fetch_expired++;
+      }
+    }
 
     // London-local date (YYYY-MM-DD) + hour, for once-a-day jobs.
     const london = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/London' }));
@@ -188,6 +216,48 @@ serve(async (req) => {
           .upsert({ key: 'last_streak_nudge_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
       }
     }
+
+    // ── Analytics add-on — wallet auto-renewal ────────────────────────────────
+    // Card add-ons auto-renew via Stripe; wallet ones we re-debit here. Empty
+    // wallet → pause the add-on and tell the owner.
+    try {
+      const { data: priceRow } = await svc.from('admin_config').select('value').eq('key', 'analytics.addon_price_pence').maybeSingle();
+      const price = Math.round(Number(priceRow?.value)) || 1000;
+      const { data: due } = await svc
+        .from('business_addons')
+        .select('business_id, business:local_businesses(owner_id, name)')
+        .eq('addon_key', 'analytics').eq('enabled', true)
+        .filter('config->>method', 'eq', 'wallet')
+        .filter('config->>paid_until', 'lte', nowIso);
+      for (const row of due ?? []) {
+        // deno-lint-ignore no-explicit-any
+        const biz = (row as any).business;
+        const ownerId = biz?.owner_id;
+        if (!ownerId) continue;
+        const { error: debitErr } = await svc.rpc('wallet_debit', { p_user: ownerId, p_spend: price, p_cashback: 0 });
+        if (debitErr) {
+          await svc.from('business_addons').update({ enabled: false })
+            .eq('business_id', (row as any).business_id).eq('addon_key', 'analytics');
+          await sendUserPush(svc, {
+            userId: ownerId, module: 'business', categoryId: 'business.analytics_lapsed',
+            title: 'Analytics paused',
+            body: `We couldn't renew analytics for ${biz?.name ?? 'your business'} from your wallet. Top up or add a card to turn it back on.`,
+            data: { screen: 'local-business-dashboard' },
+          });
+          result.analytics_lapsed++;
+        } else {
+          await svc.from('local_wallet_transactions').insert({
+            user_id: ownerId, business_id: null, type: 'spend', amount_pence: -price,
+            description: 'OneShetland analytics add-on (renewal)',
+          });
+          const next = new Date(); next.setMonth(next.getMonth() + 1);
+          await svc.from('business_addons')
+            .update({ config: { method: 'wallet', paid_until: next.toISOString() } })
+            .eq('business_id', (row as any).business_id).eq('addon_key', 'analytics');
+          result.analytics_renewed++;
+        }
+      }
+    } catch (e) { console.error('[reminder-runner] analytics renewal failed', e); }
 
     return json({ ok: true, ran_at: nowIso, ...result });
   } catch (err) {

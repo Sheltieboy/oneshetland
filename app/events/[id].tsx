@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { track } from '@/lib/analytics';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
@@ -19,12 +20,16 @@ import { BusinessLocationMap } from '@/components/BusinessLocationMap';
 import { extractBrandColor, readableAccent } from '@/lib/image-upload';
 import { useAuth } from '@/context/AuthContext';
 import {
-  fetchEvent,
+  fetchEvent, fetchEventSocialStats, computeScarcity,
   formatEventDate, formatTime,
   lowestTicketPrice, isFreeEvent, ticketTypeOnSale,
   UPDATE_KIND_LABELS,
-  type OsEvent, type EventTicketType, type EventUpdate,
+  type OsEvent, type EventTicketType, type EventUpdate, type EventSocialStats,
 } from '@/lib/events-api';
+import { fetchEventConditions, LERWICK_COORDS, type EventConditions } from '@/lib/shetland-today';
+import { detectEventArea, detectEventStop } from '@/lib/transit-data';
+import { ScarcityStrip, GoingCount, GettingTherePanel } from '@/components/events/EventInsights';
+import { TravelPlanner } from '@/components/events/TravelPlanner';
 
 const S = SECTIONS.events;
 const SE = SECTIONS.local;
@@ -41,6 +46,8 @@ export default function EventDetailScreen() {
   const [loading, setLoading] = useState(true);
   // Page accent — extracted from the cover image, tints highlights throughout.
   const [accent, setAccent] = useState<string>(S.color);
+  const [social, setSocial] = useState<EventSocialStats | null>(null);
+  const [conditions, setConditions] = useState<EventConditions | null>(null);
 
   const load = useCallback(async () => {
     // No id, or a non-uuid id (e.g. a seed/sample 'e1') → show "not found"
@@ -57,6 +64,28 @@ export default function EventDetailScreen() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Analytics: event view (object metric for the organiser's dashboard).
+  useEffect(() => {
+    if (event?.id) track('content_viewed', {
+      objectType: 'event', objectId: event.id,
+      businessId: (event as any).organiser_business_id ?? undefined,
+    });
+  }, [event?.id]);
+
+  // What's On differentiators: social proof + "getting there" conditions.
+  // Only for live events (skip cancelled/postponed).
+  useEffect(() => {
+    const ev = event;
+    if (!ev?.id || ev.status === 'cancelled' || ev.status === 'postponed') {
+      setSocial(null); setConditions(null); return;
+    }
+    let active = true;
+    const coords = ev.lat != null && ev.lng != null ? { lat: ev.lat, lng: ev.lng } : LERWICK_COORDS;
+    fetchEventSocialStats(ev.id).then(s => { if (active) setSocial(s); }).catch(() => {});
+    fetchEventConditions(coords, ev.starts_at).then(c => { if (active) setConditions(c); }).catch(() => {});
+    return () => { active = false; };
+  }, [event?.id, event?.status, event?.lat, event?.lng, event?.starts_at]);
 
   // Pull the dominant colour from the cover image → contrast-safe page accent.
   useEffect(() => {
@@ -106,6 +135,15 @@ export default function EventDetailScreen() {
   const payoutReady = !!(event.business as any)?.payout_enabled;
 
   const urgentUpdate = updates.find(u => u.is_urgent);
+
+  const isLive = !isCancelled && !isPostponed;
+  const scarcity = computeScarcity(ticketTypes);
+  // Journey-home anchored on the event's own area (out from Lerwick for a hub
+  // event; in to Lerwick for an outer/isle event).
+  const eventArea = detectEventArea(event.locality, event.venue, event.lat, event.lng);
+  const eventStop = detectEventStop(event.locality, event.venue, eventArea);
+  // Default the "from" picker to the user's home area, if their profile has one.
+  const homeDefault = profile?.location_area ? detectEventArea(profile.location_area, null, null, null) : null;
 
   // ── Section blocks (composed differently on tablet vs phone) ──────────────
   const coverBlock = (
@@ -209,6 +247,7 @@ export default function EventDetailScreen() {
   const ticketsBlock = hasTickets && !isCancelled ? (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Tickets</Text>
+      {social && <ScarcityStrip scarcity={scarcity} bookedRecent={social.bookedRecent} />}
       <View style={{ gap: 8 }}>
         {ticketTypes.map(tt => {
           const onSale  = ticketTypeOnSale(tt);
@@ -263,6 +302,31 @@ export default function EventDetailScreen() {
     </View>
   ) : null;
 
+  const goingBlock = (isLive && social && social.goingCount >= 3) ? (
+    <View style={styles.goingWrap}>
+      <GoingCount count={social.goingCount} />
+    </View>
+  ) : null;
+
+  const gettingThereBlock = (isLive && conditions) ? (
+    <GettingTherePanel
+      conditions={conditions}
+      eventTime={formatTime(event.starts_at)}
+      accent={accent}
+    />
+  ) : null;
+
+  const gettingHomeBlock = (isLive && eventArea) ? (
+    <TravelPlanner
+      eventArea={eventArea}
+      eventStop={eventStop}
+      startsAt={event.starts_at}
+      endsAt={event.ends_at}
+      accent={accent}
+      defaultArea={homeDefault}
+    />
+  ) : null;
+
   const ownerBlock = isOwner ? (
     <View style={styles.ownerActions}>
       <TouchableOpacity style={styles.ownerBtn} onPress={() => router.push({ pathname: '/event-manage', params: { id: event.id } })} activeOpacity={0.85}>
@@ -289,6 +353,8 @@ export default function EventDetailScreen() {
         <TouchableOpacity
           hitSlop={12}
           onPress={() => Share.share({ message: `${event.title} — ${formatEventDate(event.starts_at, event.ends_at)}` })}
+          accessibilityRole="button"
+          accessibilityLabel="Share event"
         >
           <FontAwesome5 name="share-alt" size={15} color={accent} />
         </TouchableOpacity>
@@ -306,7 +372,10 @@ export default function EventDetailScreen() {
             <View style={styles.colRight}>
               {bannersBlock}
               {titleBlock}
+              {goingBlock}
               {aboutBlock}
+              {gettingThereBlock}
+              {gettingHomeBlock}
               {galleryBlock}
               {ticketsBlock}
               {updatesBlock}
@@ -318,8 +387,11 @@ export default function EventDetailScreen() {
             {coverBlock}
             {bannersBlock}
             {titleBlock}
+            {goingBlock}
             {factsBlock}
             {mapBlock}
+            {gettingThereBlock}
+            {gettingHomeBlock}
             {aboutBlock}
             {galleryBlock}
             {ticketsBlock}
@@ -445,6 +517,7 @@ const styles = StyleSheet.create({
   urgentBody:  { color: 'rgba(255,255,255,0.9)', fontSize: fontSize.xs, marginTop: 2 },
 
   titleBlock: { padding: spacing.md, paddingBottom: 4 },
+  goingWrap:  { paddingHorizontal: spacing.md, marginTop: 4, marginBottom: 4 },
   category:   { fontSize: fontSize.xs, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   title:      { fontSize: fontSize.xxl, fontWeight: '900', color: colors.textPrimary, lineHeight: 32 },
   organiserRow:{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },

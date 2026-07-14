@@ -1,0 +1,349 @@
+{
+  "source": "bus-north_mainland",
+  "legend": {
+    "DAR": "Dial-a-Ride",
+    "Tu": "Tuesdays only",
+    "ATu": "Alternate Tuesdays only",
+    "NTu": "Not Tuesdays",
+    "W": "Wednesdays only",
+    "F": "Fridays only",
+    "NF": "Not Fridays",
+    "AF": "Alternate Fridays only",
+    "Sat": "Saturdays only",
+    "NSat": "Not Saturdays",
+    "TTF": "Tuesdays, Thursdays and Fridays only",
+    "Sch": "School days only",
+    "NSch": "School holidays only",
+    "Sum": "Operates April - September only",
+    "LFT": "Return service from Vidlin serves Laxo Ferry Terminal",
+    "MR": "Serves Mossbank on return journey from Toft",
+    "CL": "Connects with Service 21 at Hillswick",
+    "CB": "Connects with Service 23 in Brae",
+    "CN": "Connects with Service 23 at the Nesting Junction",
+    "FERT": "May be required to wait for ferry connection at Toft",
+    "ORQ": "Serves Ollaberry on request only",
+    "MPS": "On school days operates via Mossbank Primary School"
+  },
+  "services": [
+    {
+      "service": "23",
+      "name": "Lerwick to Toft & Mossbank (via Brae)",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": ["MR"], "calls": [ {"stop":"Viking Bus Station","time":"0750"}, {"stop":"Esplanade","time":"0751"}, {"stop":"King Harald Street","time":"0753"}, {"stop":"North Road (Bolts)","time":"0756"}, {"stop":"Shetland Hotel","time":"0758"}, {"stop":"Shetland College","time":"0802"}, {"stop":"Tingwall Crossroads","time":"0810"}, {"stop":"Tingwall Hall","time":"0811"}, {"stop":"Girlsta","time":"0816"}, {"stop":"Nesting Junction","time":"0819"}, {"stop":"Voe","time":"0829"}, {"stop":"Brae Hall","time":"0836"}, {"stop":"Moorfield Ring Road","time":"0839"}, {"stop":"Sullom Voe Terminal","time":"0848"}, {"stop":"Toft","time":"0856"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1100"}, {"stop":"Esplanade","time":"1101"}, {"stop":"King Harald Street","time":"1103"}, {"stop":"North Road (Bolts)","time":"1106"}, {"stop":"Shetland Hotel","time":"1108"}, {"stop":"Tingwall Crossroads","time":"1115"}, {"stop":"Tingwall Hall","time":"1116"}, {"stop":"Girlsta","time":"1121"}, {"stop":"Nesting Junction","time":"1124"}, {"stop":"Voe","time":"1134"}, {"stop":"Brae Hall","time":"1141"}, {"stop":"Moorfield Ring Road","time":"1144"}, {"stop":"Mossbank","time":"1159"}, {"stop":"Toft","time":"1206"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1240"}, {"stop":"Esplanade","time":"1241"}, {"stop":"King Harald Street","time":"1243"}, {"stop":"North Road (Bolts)","time":"1246"}, {"stop":"Shetland Hotel","time":"1248"}, {"stop":"Tingwall Crossroads","time":"1255"}, {"stop":"Tingwall Hall","time":"1256"}, {"stop":"Girlsta","time":"1301"}, {"stop":"Nesting Junction","time":"1304"}, {"stop":"Voe","time":"1314"}, {"stop":"Brae Hall","time":"1321"}, {"stop":"Moorfield Ring Road","time":"1324"}, {"stop":"Mossbank","time":"1339"}, {"stop":"Toft","time":"1346"} ] },
+        { "codes": ["MR","Sch"], "calls": [ {"stop":"Viking Bus Station","time":"1535"}, {"stop":"Esplanade","time":"1536"}, {"stop":"King Harald Street","time":"1538"}, {"stop":"North Road (Bolts)","time":"1541"}, {"stop":"Anderson High School","time":"1555"}, {"stop":"Shetland Hotel","time":"1600"}, {"stop":"Tingwall Crossroads","time":"1607"}, {"stop":"Tingwall Hall","time":"1608"}, {"stop":"Girlsta","time":"1613"}, {"stop":"Nesting Junction","time":"1616"}, {"stop":"Voe","time":"1626"}, {"stop":"Brae Hall","time":"1633"}, {"stop":"Moorfield Ring Road","time":"1635"}, {"stop":"Toft","time":"1650"} ] },
+        { "codes": ["MR","NSch"], "calls": [ {"stop":"Viking Bus Station","time":"1540"}, {"stop":"Esplanade","time":"1541"}, {"stop":"King Harald Street","time":"1543"}, {"stop":"North Road (Bolts)","time":"1546"}, {"stop":"Shetland Hotel","time":"1548"}, {"stop":"Tingwall Crossroads","time":"1555"}, {"stop":"Tingwall Hall","time":"1556"}, {"stop":"Girlsta","time":"1601"}, {"stop":"Nesting Junction","time":"1604"}, {"stop":"Voe","time":"1614"}, {"stop":"Brae Hall","time":"1621"}, {"stop":"Moorfield Ring Road","time":"1624"}, {"stop":"Mossbank","time":"1639"}, {"stop":"Toft","time":"1646"} ] },
+        { "codes": ["MR"], "calls": [ {"stop":"Viking Bus Station","time":"1710"}, {"stop":"Esplanade","time":"1712"}, {"stop":"King Harald Street","time":"1714"}, {"stop":"North Road (Bolts)","time":"1718"}, {"stop":"Shetland Hotel","time":"1721"}, {"stop":"Tingwall Crossroads","time":"1728"}, {"stop":"Girlsta","time":"1733"}, {"stop":"Nesting Junction","time":"1736"}, {"stop":"Voe","time":"1746"}, {"stop":"Toft","time":"1803"} ] },
+        { "codes": ["NF"], "calls": [ {"stop":"Viking Bus Station","time":"2110"}, {"stop":"Esplanade","time":"2111"}, {"stop":"King Harald Street","time":"2113"}, {"stop":"North Road (Bolts)","time":"2116"}, {"stop":"Shetland Hotel","time":"2118"}, {"stop":"Tingwall Crossroads","time":"2124"}, {"stop":"Tingwall Hall","time":"2126"}, {"stop":"Girlsta","time":"2132"}, {"stop":"Nesting Junction","time":"2134"}, {"stop":"Voe","time":"2146"}, {"stop":"Brae Hall","time":"2155"}, {"stop":"Moorfield Ring Road","time":"2158"}, {"stop":"Mossbank","time":"2212"}, {"stop":"Toft","time":"2219"} ] },
+        { "codes": ["F"], "calls": [ {"stop":"Viking Bus Station","time":"2140"}, {"stop":"Esplanade","time":"2141"}, {"stop":"King Harald Street","time":"2143"}, {"stop":"North Road (Bolts)","time":"2146"}, {"stop":"Shetland Hotel","time":"2148"}, {"stop":"Tingwall Crossroads","time":"2154"}, {"stop":"Tingwall Hall","time":"2156"}, {"stop":"Girlsta","time":"2202"}, {"stop":"Nesting Junction","time":"2204"}, {"stop":"Voe","time":"2216"}, {"stop":"Brae Hall","time":"2225"}, {"stop":"Moorfield Ring Road","time":"2228"}, {"stop":"Mossbank","time":"2242"}, {"stop":"Toft","time":"2249"} ] }
+      ]
+    },
+    {
+      "service": "21",
+      "name": "Lerwick to Hillswick (via Brae)",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"0900"}, {"stop":"Esplanade","time":"0901"}, {"stop":"King Harald Street","time":"0903"}, {"stop":"North Road (Bolts)","time":"0906"}, {"stop":"Shetland Hotel","time":"0908"}, {"stop":"Tingwall Crossroads","time":"0914"}, {"stop":"Tingwall Hall","time":"0916"}, {"stop":"Girlsta","time":"0922"}, {"stop":"Nesting Junction","time":"0925"}, {"stop":"Voe","time":"0937"}, {"stop":"Brae Hall","time":"0947"}, {"stop":"Moorfield Ring Road","time":"0949"}, {"stop":"Urafirth","time":"1002"}, {"stop":"Hillswick","time":"1007"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1410"}, {"stop":"Esplanade","time":"1411"}, {"stop":"King Harald Street","time":"1413"}, {"stop":"North Road (Bolts)","time":"1416"}, {"stop":"Shetland Hotel","time":"1418"}, {"stop":"Tingwall Crossroads","time":"1424"}, {"stop":"Tingwall Hall","time":"1426"}, {"stop":"Girlsta","time":"1432"}, {"stop":"Nesting Junction","time":"1435"}, {"stop":"Voe","time":"1447"}, {"stop":"Brae Hall","time":"1457"}, {"stop":"Moorfield Ring Road","time":"1459"}, {"stop":"Urafirth","time":"1512"}, {"stop":"Hillswick","time":"1517"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1715"}, {"stop":"Esplanade","time":"1716"}, {"stop":"King Harald Street","time":"1718"}, {"stop":"North Road (Bolts)","time":"1721"}, {"stop":"Shetland Hotel","time":"1723"}, {"stop":"Tingwall Crossroads","time":"1729"}, {"stop":"Tingwall Hall","time":"1731"}, {"stop":"Girlsta","time":"1737"}, {"stop":"Nesting Junction","time":"1740"}, {"stop":"Voe","time":"1752"}, {"stop":"Brae Hall","time":"1802"}, {"stop":"Moorfield Ring Road","time":"1804"}, {"stop":"Urafirth","time":"1817"}, {"stop":"Hillswick","time":"1822"} ] }
+      ]
+    },
+    {
+      "service": "23",
+      "name": "Toft & Mossbank to Lerwick (via Brae)",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": ["FERT"], "calls": [ {"stop":"Toft","time":"0640"}, {"stop":"Mossbank","time":"0647"}, {"stop":"Moorfield Ring Road","time":"0702"}, {"stop":"Brae Hall","time":"0705"}, {"stop":"Voe","time":"0712"}, {"stop":"Nesting Junction","time":"0722"}, {"stop":"Girlsta","time":"0725"}, {"stop":"Tingwall Hall","time":"0730"}, {"stop":"Tingwall Crossroads","time":"0731"}, {"stop":"Holmsgarth","time":"0738"}, {"stop":"North Road (Bolts)","time":"0740"}, {"stop":"Viking Bus Station","time":"0741"} ] },
+        { "codes": ["FERT"], "calls": [ {"stop":"Toft","time":"0730"}, {"stop":"Mossbank","time":"0738"}, {"stop":"Sullom Voe Terminal","time":"0746"}, {"stop":"Moorfield Ring Road","time":"0755"}, {"stop":"Brae Hall","time":"0800"}, {"stop":"Voe","time":"0807"}, {"stop":"Nesting Junction","time":"0817"}, {"stop":"Girlsta","time":"0820"}, {"stop":"Tingwall Hall","time":"0825"}, {"stop":"Tingwall Crossroads","time":"0827"}, {"stop":"Holmsgarth","time":"0835"}, {"stop":"Anderson High School","time":"0840"}, {"stop":"North Road (Bolts)","time":"0843"}, {"stop":"King Harald Street","time":"0846"}, {"stop":"Harrison Square","time":"0848"}, {"stop":"Viking Bus Station","time":"0850"} ] },
+        { "codes": ["FERT","MPS"], "calls": [ {"stop":"Toft","time":"0905"}, {"stop":"Mossbank","time":"0912"}, {"stop":"Moorfield Ring Road","time":"0927"}, {"stop":"Brae Hall","time":"0930"}, {"stop":"Voe","time":"0937"}, {"stop":"Nesting Junction","time":"0947"}, {"stop":"Girlsta","time":"0950"}, {"stop":"Tingwall Hall","time":"0955"}, {"stop":"Tingwall Crossroads","time":"0956"}, {"stop":"Holmsgarth","time":"1003"}, {"stop":"North Road (Bolts)","time":"1005"}, {"stop":"King Harald Street","time":"1008"}, {"stop":"Harrison Square","time":"1010"}, {"stop":"Viking Bus Station","time":"1012"} ] },
+        { "codes": ["FERT"], "calls": [ {"stop":"Toft","time":"1210"}, {"stop":"Mossbank","time":"1217"}, {"stop":"Moorfield Ring Road","time":"1232"}, {"stop":"Brae Hall","time":"1235"}, {"stop":"Voe","time":"1242"}, {"stop":"Nesting Junction","time":"1252"}, {"stop":"Girlsta","time":"1255"}, {"stop":"Tingwall Hall","time":"1300"}, {"stop":"Tingwall Crossroads","time":"1301"}, {"stop":"Holmsgarth","time":"1308"}, {"stop":"North Road (Bolts)","time":"1310"}, {"stop":"King Harald Street","time":"1313"}, {"stop":"Harrison Square","time":"1315"}, {"stop":"Viking Bus Station","time":"1317"} ] },
+        { "codes": ["FERT"], "calls": [ {"stop":"Toft","time":"1420"}, {"stop":"Mossbank","time":"1427"}, {"stop":"Moorfield Ring Road","time":"1442"}, {"stop":"Brae Hall","time":"1445"}, {"stop":"Voe","time":"1452"}, {"stop":"Nesting Junction","time":"1502"}, {"stop":"Girlsta","time":"1505"}, {"stop":"Tingwall Hall","time":"1510"}, {"stop":"Tingwall Crossroads","time":"1511"}, {"stop":"Holmsgarth","time":"1518"}, {"stop":"North Road (Bolts)","time":"1520"}, {"stop":"King Harald Street","time":"1523"}, {"stop":"Harrison Square","time":"1525"}, {"stop":"Viking Bus Station","time":"1527"} ] },
+        { "codes": ["FERT"], "calls": [ {"stop":"Toft","time":"1655"}, {"stop":"Mossbank","time":"1702"}, {"stop":"Sullom Voe Terminal","time":"1710"}, {"stop":"Moorfield Ring Road","time":"1719"}, {"stop":"Brae Hall","time":"1722"}, {"stop":"Voe","time":"1729"}, {"stop":"Nesting Junction","time":"1739"}, {"stop":"Girlsta","time":"1742"}, {"stop":"Tingwall Hall","time":"1747"}, {"stop":"Tingwall Crossroads","time":"1748"}, {"stop":"Holmsgarth","time":"1755"}, {"stop":"North Road (Bolts)","time":"1757"}, {"stop":"King Harald Street","time":"1800"}, {"stop":"Harrison Square","time":"1802"}, {"stop":"Viking Bus Station","time":"1804"} ] },
+        { "codes": [], "calls": [ {"stop":"Toft","time":"1805"}, {"stop":"Mossbank","time":"1812"}, {"stop":"Moorfield Ring Road","time":"1827"}, {"stop":"Brae Hall","time":"1830"}, {"stop":"Voe","time":"1837"}, {"stop":"Nesting Junction","time":"1847"}, {"stop":"Girlsta","time":"1850"}, {"stop":"Tingwall Hall","time":"1855"}, {"stop":"Tingwall Crossroads","time":"1856"}, {"stop":"Holmsgarth","time":"1903"}, {"stop":"North Road (Bolts)","time":"1905"}, {"stop":"King Harald Street","time":"1908"}, {"stop":"Harrison Square","time":"1910"}, {"stop":"Viking Bus Station","time":"1912"} ] }
+      ]
+    },
+    {
+      "service": "21",
+      "name": "Hillswick to Lerwick (via Brae)",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": ["CB"], "calls": [ {"stop":"Hillswick","time":"0733"}, {"stop":"Urafirth","time":"0738"}, {"stop":"Moorfield Ring Road","time":"0753"} ] },
+        { "codes": [], "calls": [ {"stop":"Hillswick","time":"1015"}, {"stop":"Urafirth","time":"1020"}, {"stop":"Moorfield Ring Road","time":"1033"}, {"stop":"Brae Hall","time":"1035"}, {"stop":"Voe","time":"1045"}, {"stop":"Nesting Junction","time":"1057"}, {"stop":"Girlsta","time":"1100"}, {"stop":"Tingwall Hall","time":"1106"}, {"stop":"Tingwall Crossroads","time":"1108"}, {"stop":"Holmsgarth","time":"1114"}, {"stop":"North Road (Bolts)","time":"1116"}, {"stop":"King Harald Street","time":"1117"}, {"stop":"Harrison Square","time":"1119"}, {"stop":"Viking Bus Station","time":"1120"} ] },
+        { "codes": [], "calls": [ {"stop":"Hillswick","time":"1530"}, {"stop":"Urafirth","time":"1535"}, {"stop":"Moorfield Ring Road","time":"1550"}, {"stop":"Brae Hall","time":"1552"}, {"stop":"Voe","time":"1600"}, {"stop":"Nesting Junction","time":"1612"}, {"stop":"Girlsta","time":"1615"}, {"stop":"Tingwall Hall","time":"1620"}, {"stop":"Tingwall Crossroads","time":"1622"}, {"stop":"Holmsgarth","time":"1627"}, {"stop":"North Road (Bolts)","time":"1629"}, {"stop":"King Harald Street","time":"1630"}, {"stop":"Harrison Square","time":"1631"}, {"stop":"Viking Bus Station","time":"1632"} ] }
+      ]
+    },
+    {
+      "service": "23",
+      "name": "Lerwick to Toft & Mossbank (via Brae)",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        { "codes": ["MR"], "calls": [ {"stop":"Viking Bus Station","time":"0740"}, {"stop":"Esplanade","time":"0741"}, {"stop":"King Harald Street","time":"0743"}, {"stop":"North Road (Bolts)","time":"0746"}, {"stop":"Shetland Hotel","time":"0748"}, {"stop":"Tingwall Crossroads","time":"0755"}, {"stop":"Girlsta","time":"0800"}, {"stop":"Nesting Junction","time":"0803"}, {"stop":"Voe","time":"0813"}, {"stop":"Brae Hall","time":"0820"}, {"stop":"Moorfield Ring Road","time":"0823"}, {"stop":"Toft","time":"0838"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1040"}, {"stop":"Esplanade","time":"1041"}, {"stop":"King Harald Street","time":"1043"}, {"stop":"North Road (Bolts)","time":"1046"}, {"stop":"Shetland Hotel","time":"1048"}, {"stop":"Tingwall Crossroads","time":"1055"}, {"stop":"Tingwall Hall","time":"1056"}, {"stop":"Girlsta","time":"1101"}, {"stop":"Nesting Junction","time":"1104"}, {"stop":"Voe","time":"1114"}, {"stop":"Brae Hall","time":"1121"}, {"stop":"Moorfield Ring Road","time":"1124"}, {"stop":"Mossbank","time":"1139"}, {"stop":"Toft","time":"1146"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1240"}, {"stop":"Esplanade","time":"1241"}, {"stop":"King Harald Street","time":"1243"}, {"stop":"North Road (Bolts)","time":"1246"}, {"stop":"Shetland Hotel","time":"1248"}, {"stop":"Tingwall Crossroads","time":"1255"}, {"stop":"Tingwall Hall","time":"1256"}, {"stop":"Girlsta","time":"1301"}, {"stop":"Nesting Junction","time":"1304"}, {"stop":"Voe","time":"1314"}, {"stop":"Brae Hall","time":"1321"}, {"stop":"Moorfield Ring Road","time":"1324"}, {"stop":"Mossbank","time":"1339"}, {"stop":"Toft","time":"1346"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1540"}, {"stop":"Esplanade","time":"1541"}, {"stop":"King Harald Street","time":"1543"}, {"stop":"North Road (Bolts)","time":"1546"}, {"stop":"Shetland Hotel","time":"1548"}, {"stop":"Tingwall Crossroads","time":"1555"}, {"stop":"Tingwall Hall","time":"1556"}, {"stop":"Girlsta","time":"1601"}, {"stop":"Nesting Junction","time":"1604"}, {"stop":"Voe","time":"1614"}, {"stop":"Brae Hall","time":"1621"}, {"stop":"Moorfield Ring Road","time":"1624"}, {"stop":"Mossbank","time":"1639"}, {"stop":"Toft","time":"1646"} ] },
+        { "codes": ["MR"], "calls": [ {"stop":"Viking Bus Station","time":"1710"}, {"stop":"Esplanade","time":"1712"}, {"stop":"King Harald Street","time":"1714"}, {"stop":"North Road (Bolts)","time":"1718"}, {"stop":"Shetland Hotel","time":"1721"}, {"stop":"Tingwall Crossroads","time":"1728"}, {"stop":"Girlsta","time":"1733"}, {"stop":"Nesting Junction","time":"1736"}, {"stop":"Voe","time":"1746"}, {"stop":"Toft","time":"1803"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"2255"}, {"stop":"Esplanade","time":"2256"}, {"stop":"King Harald Street","time":"2258"}, {"stop":"North Road (Bolts)","time":"2301"}, {"stop":"Shetland Hotel","time":"2303"}, {"stop":"Tingwall Crossroads","time":"2309"}, {"stop":"Tingwall Hall","time":"2311"}, {"stop":"Girlsta","time":"2317"}, {"stop":"Nesting Junction","time":"2319"}, {"stop":"Voe","time":"2331"}, {"stop":"Brae Hall","time":"2340"}, {"stop":"Moorfield Ring Road","time":"2343"}, {"stop":"Mossbank","time":"2357"} ] }
+      ]
+    },
+    {
+      "service": "21",
+      "name": "Lerwick to Hillswick (via Brae)",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"0900"}, {"stop":"Esplanade","time":"0901"}, {"stop":"King Harald Street","time":"0903"}, {"stop":"North Road (Bolts)","time":"0906"}, {"stop":"Shetland Hotel","time":"0908"}, {"stop":"Tingwall Crossroads","time":"0914"}, {"stop":"Tingwall Hall","time":"0916"}, {"stop":"Girlsta","time":"0922"}, {"stop":"Nesting Junction","time":"0925"}, {"stop":"Voe","time":"0937"}, {"stop":"Brae Hall","time":"0947"}, {"stop":"Moorfield Ring Road","time":"0949"}, {"stop":"Urafirth","time":"1002"}, {"stop":"Hillswick","time":"1007"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1410"}, {"stop":"Esplanade","time":"1411"}, {"stop":"King Harald Street","time":"1413"}, {"stop":"North Road (Bolts)","time":"1416"}, {"stop":"Shetland Hotel","time":"1418"}, {"stop":"Tingwall Crossroads","time":"1424"}, {"stop":"Tingwall Hall","time":"1426"}, {"stop":"Girlsta","time":"1432"}, {"stop":"Nesting Junction","time":"1435"}, {"stop":"Voe","time":"1447"}, {"stop":"Brae Hall","time":"1457"}, {"stop":"Moorfield Ring Road","time":"1459"}, {"stop":"Urafirth","time":"1512"}, {"stop":"Hillswick","time":"1517"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1715"}, {"stop":"Esplanade","time":"1716"}, {"stop":"King Harald Street","time":"1718"}, {"stop":"North Road (Bolts)","time":"1721"}, {"stop":"Shetland Hotel","time":"1723"}, {"stop":"Tingwall Crossroads","time":"1729"}, {"stop":"Tingwall Hall","time":"1731"}, {"stop":"Girlsta","time":"1737"}, {"stop":"Nesting Junction","time":"1740"}, {"stop":"Voe","time":"1752"}, {"stop":"Brae Hall","time":"1802"}, {"stop":"Moorfield Ring Road","time":"1804"}, {"stop":"Urafirth","time":"1817"}, {"stop":"Hillswick","time":"1822"} ] }
+      ]
+    },
+    {
+      "service": "23",
+      "name": "Toft & Mossbank to Lerwick (via Brae)",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        { "codes": ["FERT"], "calls": [ {"stop":"Toft","time":"0730"}, {"stop":"Mossbank","time":"0738"}, {"stop":"Sullom Voe Terminal","time":"0746"}, {"stop":"Moorfield Ring Road","time":"0755"}, {"stop":"Brae Hall","time":"0800"}, {"stop":"Voe","time":"0807"}, {"stop":"Nesting Junction","time":"0817"}, {"stop":"Girlsta","time":"0820"}, {"stop":"Tingwall Hall","time":"0825"}, {"stop":"Tingwall Crossroads","time":"0827"}, {"stop":"Holmsgarth","time":"0835"}, {"stop":"North Road (Bolts)","time":"0838"}, {"stop":"King Harald Street","time":"0841"}, {"stop":"Harrison Square","time":"0843"}, {"stop":"Viking Bus Station","time":"0845"} ] },
+        { "codes": [], "calls": [ {"stop":"Toft","time":"0845"}, {"stop":"Mossbank","time":"0852"}, {"stop":"Moorfield Ring Road","time":"0907"}, {"stop":"Brae Hall","time":"0910"}, {"stop":"Voe","time":"0917"}, {"stop":"Nesting Junction","time":"0927"}, {"stop":"Girlsta","time":"0930"}, {"stop":"Tingwall Hall","time":"0935"}, {"stop":"Tingwall Crossroads","time":"0936"}, {"stop":"Holmsgarth","time":"0943"}, {"stop":"North Road (Bolts)","time":"0945"}, {"stop":"King Harald Street","time":"0948"}, {"stop":"Harrison Square","time":"0950"}, {"stop":"Viking Bus Station","time":"0952"} ] },
+        { "codes": [], "calls": [ {"stop":"Toft","time":"1200"}, {"stop":"Mossbank","time":"1207"}, {"stop":"Moorfield Ring Road","time":"1222"}, {"stop":"Brae Hall","time":"1225"}, {"stop":"Voe","time":"1232"}, {"stop":"Nesting Junction","time":"1242"}, {"stop":"Girlsta","time":"1245"}, {"stop":"Tingwall Hall","time":"1250"}, {"stop":"Tingwall Crossroads","time":"1251"}, {"stop":"Holmsgarth","time":"1258"}, {"stop":"North Road (Bolts)","time":"1300"}, {"stop":"King Harald Street","time":"1303"}, {"stop":"Harrison Square","time":"1305"}, {"stop":"Viking Bus Station","time":"1307"} ] },
+        { "codes": [], "calls": [ {"stop":"Toft","time":"1400"}, {"stop":"Mossbank","time":"1407"}, {"stop":"Moorfield Ring Road","time":"1422"}, {"stop":"Brae Hall","time":"1425"}, {"stop":"Voe","time":"1432"}, {"stop":"Nesting Junction","time":"1442"}, {"stop":"Girlsta","time":"1445"}, {"stop":"Tingwall Hall","time":"1450"}, {"stop":"Tingwall Crossroads","time":"1451"}, {"stop":"Holmsgarth","time":"1458"}, {"stop":"North Road (Bolts)","time":"1500"}, {"stop":"King Harald Street","time":"1503"}, {"stop":"Harrison Square","time":"1505"}, {"stop":"Viking Bus Station","time":"1507"} ] },
+        { "codes": ["FERT"], "calls": [ {"stop":"Toft","time":"1655"}, {"stop":"Mossbank","time":"1702"}, {"stop":"Sullom Voe Terminal","time":"1710"}, {"stop":"Moorfield Ring Road","time":"1719"}, {"stop":"Brae Hall","time":"1722"}, {"stop":"Voe","time":"1729"}, {"stop":"Nesting Junction","time":"1739"}, {"stop":"Girlsta","time":"1742"}, {"stop":"Tingwall Hall","time":"1747"}, {"stop":"Tingwall Crossroads","time":"1748"}, {"stop":"Holmsgarth","time":"1755"}, {"stop":"North Road (Bolts)","time":"1757"}, {"stop":"King Harald Street","time":"1800"}, {"stop":"Harrison Square","time":"1802"}, {"stop":"Viking Bus Station","time":"1804"} ] },
+        { "codes": [], "calls": [ {"stop":"Toft","time":"1805"}, {"stop":"Mossbank","time":"1812"}, {"stop":"Moorfield Ring Road","time":"1827"}, {"stop":"Brae Hall","time":"1830"}, {"stop":"Voe","time":"1837"}, {"stop":"Nesting Junction","time":"1847"}, {"stop":"Girlsta","time":"1850"}, {"stop":"Tingwall Hall","time":"1855"}, {"stop":"Tingwall Crossroads","time":"1856"}, {"stop":"Holmsgarth","time":"1903"}, {"stop":"North Road (Bolts)","time":"1905"}, {"stop":"King Harald Street","time":"1908"}, {"stop":"Harrison Square","time":"1910"}, {"stop":"Viking Bus Station","time":"1912"} ] }
+      ]
+    },
+    {
+      "service": "21",
+      "name": "Hillswick to Lerwick (via Brae)",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        { "codes": ["CB"], "calls": [ {"stop":"Hillswick","time":"0733"}, {"stop":"Urafirth","time":"0738"}, {"stop":"Moorfield Ring Road","time":"0753"} ] },
+        { "codes": [], "calls": [ {"stop":"Hillswick","time":"1015"}, {"stop":"Urafirth","time":"1020"}, {"stop":"Moorfield Ring Road","time":"1033"}, {"stop":"Brae Hall","time":"1035"}, {"stop":"Voe","time":"1045"}, {"stop":"Nesting Junction","time":"1057"}, {"stop":"Girlsta","time":"1100"}, {"stop":"Tingwall Hall","time":"1106"}, {"stop":"Tingwall Crossroads","time":"1108"}, {"stop":"Holmsgarth","time":"1114"}, {"stop":"North Road (Bolts)","time":"1116"}, {"stop":"King Harald Street","time":"1117"}, {"stop":"Harrison Square","time":"1119"}, {"stop":"Viking Bus Station","time":"1120"} ] },
+        { "codes": [], "calls": [ {"stop":"Hillswick","time":"1530"}, {"stop":"Urafirth","time":"1535"}, {"stop":"Moorfield Ring Road","time":"1550"}, {"stop":"Brae Hall","time":"1552"}, {"stop":"Voe","time":"1600"}, {"stop":"Nesting Junction","time":"1612"}, {"stop":"Girlsta","time":"1615"}, {"stop":"Tingwall Hall","time":"1620"}, {"stop":"Tingwall Crossroads","time":"1622"}, {"stop":"Holmsgarth","time":"1627"}, {"stop":"North Road (Bolts)","time":"1629"}, {"stop":"King Harald Street","time":"1630"}, {"stop":"Harrison Square","time":"1631"}, {"stop":"Viking Bus Station","time":"1632"} ] }
+      ]
+    },
+    {
+      "service": "19",
+      "name": "Lerwick to Vidlin",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": ["LFT"], "calls": [ {"stop":"Viking Bus Station","time":"0730"}, {"stop":"Esplanade","time":"0731"}, {"stop":"King Harald Street","time":"0733"}, {"stop":"North Road (Bolts)","time":"0736"}, {"stop":"Shetland Hotel","time":"0738"}, {"stop":"Tingwall Crossroads","time":"0744"}, {"stop":"Girlsta","time":"0751"}, {"stop":"Nesting Junction","time":"0754"}, {"stop":"Vidlin Junction","time":"0804"}, {"stop":"Vidlin","time":"0814"} ] },
+        { "codes": [], "calls": [ {"stop":"Viking Bus Station","time":"1115"}, {"stop":"Esplanade","time":"1116"}, {"stop":"King Harald Street","time":"1118"}, {"stop":"North Road (Bolts)","time":"1121"}, {"stop":"Shetland Hotel","time":"1123"}, {"stop":"Tingwall Crossroads","time":"1129"}, {"stop":"Girlsta","time":"1136"}, {"stop":"Nesting Junction","time":"1139"}, {"stop":"Vidlin Junction","time":"1149"}, {"stop":"Laxo Ferry Terminal","time":"1155"}, {"stop":"Vidlin","time":"1202"} ] },
+        { "codes": ["NSat"], "calls": [ {"stop":"Viking Bus Station","time":"1705"}, {"stop":"Esplanade","time":"1706"}, {"stop":"King Harald Street","time":"1708"}, {"stop":"North Road (Bolts)","time":"1711"}, {"stop":"Shetland Hotel","time":"1713"}, {"stop":"Tingwall Crossroads","time":"1719"}, {"stop":"Girlsta","time":"1726"}, {"stop":"Nesting Junction","time":"1729"}, {"stop":"Vidlin Junction","time":"1741"}, {"stop":"Laxo Ferry Terminal","time":"1747"}, {"stop":"Vidlin","time":"1754"} ] },
+        { "codes": ["Sat","LFT"], "calls": [ {"stop":"Viking Bus Station","time":"1720"}, {"stop":"Esplanade","time":"1721"}, {"stop":"King Harald Street","time":"1723"}, {"stop":"North Road (Bolts)","time":"1726"}, {"stop":"Shetland Hotel","time":"1728"}, {"stop":"Tingwall Crossroads","time":"1734"}, {"stop":"Girlsta","time":"1741"}, {"stop":"Nesting Junction","time":"1744"}, {"stop":"Vidlin Junction","time":"1754"}, {"stop":"Vidlin","time":"1804"} ] }
+      ]
+    },
+    {
+      "service": "19",
+      "name": "Vidlin to Lerwick",
+      "direction": "inbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Vidlin","time":"0814"}, {"stop":"Laxo Ferry Terminal","time":"0820"}, {"stop":"Vidlin Junction","time":"0827"}, {"stop":"Nesting Junction","time":"0837"}, {"stop":"Girlsta","time":"0840"}, {"stop":"Tingwall Crossroads","time":"0847"}, {"stop":"Holmsgarth","time":"0853"}, {"stop":"North Road (Bolts)","time":"0856"}, {"stop":"Viking Bus Station","time":"0859"} ] },
+        { "codes": [], "calls": [ {"stop":"Vidlin","time":"1205"}, {"stop":"Vidlin Junction","time":"1215"}, {"stop":"Nesting Junction","time":"1225"}, {"stop":"Girlsta","time":"1228"}, {"stop":"Tingwall Crossroads","time":"1235"}, {"stop":"Holmsgarth","time":"1241"}, {"stop":"North Road (Bolts)","time":"1243"}, {"stop":"King Harald Street","time":"1244"}, {"stop":"Harrison Square","time":"1246"}, {"stop":"Viking Bus Station","time":"1247"} ] },
+        { "codes": ["NSat"], "calls": [ {"stop":"Vidlin","time":"1805"}, {"stop":"Laxo Ferry Terminal","time":"1815"}, {"stop":"Vidlin Junction","time":"1821"}, {"stop":"Nesting Junction","time":"1831"}, {"stop":"Girlsta","time":"1834"}, {"stop":"Tingwall Crossroads","time":"1841"}, {"stop":"Holmsgarth","time":"1847"}, {"stop":"North Road (Bolts)","time":"1849"}, {"stop":"King Harald Street","time":"1850"}, {"stop":"Harrison Square","time":"1852"}, {"stop":"Viking Bus Station","time":"1853"} ] },
+        { "codes": ["Sat"], "calls": [ {"stop":"Vidlin","time":"1805"}, {"stop":"Laxo Ferry Terminal","time":"1820"}, {"stop":"Vidlin Junction","time":"1827"}, {"stop":"Nesting Junction","time":"1837"}, {"stop":"Girlsta","time":"1840"}, {"stop":"Tingwall Crossroads","time":"1847"}, {"stop":"Holmsgarth","time":"1853"}, {"stop":"North Road (Bolts)","time":"1855"}, {"stop":"King Harald Street","time":"1856"}, {"stop":"Harrison Square","time":"1858"}, {"stop":"Viking Bus Station","time":"1859"} ] }
+      ]
+    },
+    {
+      "service": "20",
+      "name": "Nesting Feeder & Shopper",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": ["DAR","NTu","CN"], "calls": [ {"stop":"Nesting Junction","time":"1306"}, {"stop":"Stendaal","time":"1317"}, {"stop":"Eswick","time":"1332"}, {"stop":"Skellister","time":"1344"} ] },
+        { "codes": ["DAR","Tu"], "calls": [ {"stop":"Viking Bus Station","time":"1250"}, {"stop":"Tingwall Crossroads","time":"1304"}, {"stop":"Girlsta","time":"1311"}, {"stop":"Nesting Junction","time":"1314"}, {"stop":"Stendaal","time":"1325"}, {"stop":"Eswick","time":"1340"}, {"stop":"Skellister","time":"1352"}, {"stop":"Dury","time":"1400"} ] },
+        { "codes": ["DAR","CN"], "calls": [ {"stop":"Nesting Junction","time":"1740"}, {"stop":"Stendaal","time":"1751"}, {"stop":"Eswick","time":"1806"}, {"stop":"Skellister","time":"1818"}, {"stop":"Dury","time":"1826"} ] }
+      ]
+    },
+    {
+      "service": "20",
+      "name": "Nesting Feeder & Shopper",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": ["DAR","CN"], "calls": [ {"stop":"Dury","time":"0730"}, {"stop":"Skellister","time":"0742"}, {"stop":"Eswick","time":"0750"}, {"stop":"Stendaal","time":"0805"}, {"stop":"Nesting Junction","time":"0815"} ] },
+        { "codes": ["DAR","Tu"], "calls": [ {"stop":"Dury","time":"0930"}, {"stop":"Skellister","time":"0942"}, {"stop":"Eswick","time":"0950"}, {"stop":"Stendaal","time":"1005"}, {"stop":"Nesting Junction","time":"1015"}, {"stop":"Girlsta","time":"1018"}, {"stop":"Tingwall Crossroads","time":"1025"}, {"stop":"Viking Bus Station","time":"1037"} ] },
+        { "codes": ["DAR","NTu","CN"], "calls": [ {"stop":"Skellister","time":"1217"}, {"stop":"Eswick","time":"1225"}, {"stop":"Stendaal","time":"1240"}, {"stop":"Nesting Junction","time":"1250"} ] }
+      ]
+    },
+    {
+      "service": "20",
+      "name": "Nesting Feeder & Shopper",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        { "codes": ["DAR","CN"], "calls": [ {"stop":"Nesting Junction","time":"1740"}, {"stop":"Stendaal","time":"1751"}, {"stop":"Eswick","time":"1806"}, {"stop":"Skellister","time":"1818"}, {"stop":"Dury","time":"1826"} ] }
+      ]
+    },
+    {
+      "service": "20",
+      "name": "Nesting Feeder & Shopper",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        { "codes": ["DAR","CN"], "calls": [ {"stop":"Dury","time":"0730"}, {"stop":"Skellister","time":"0742"}, {"stop":"Eswick","time":"0750"}, {"stop":"Stendaal","time":"0805"}, {"stop":"Nesting Junction","time":"0815"} ] }
+      ]
+    },
+    {
+      "service": "22",
+      "name": "North Roe & Ollaberry Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"North Roe","time":"0708"}, {"stop":"Collafirth","time":"0723"}, {"stop":"Brae","time":"0753"} ] },
+        { "codes": [], "calls": [ {"stop":"Ollaberry","time":"0713"}, {"stop":"Brae","time":"0753"} ] },
+        { "codes": [], "calls": [ {"stop":"North Roe","time":"0930"}, {"stop":"Collafirth","time":"0945"}, {"stop":"Ollaberry","time":"1000"}, {"stop":"Sullom","time":"1020"}, {"stop":"Brae","time":"1030"} ] }
+      ]
+    },
+    {
+      "service": "22",
+      "name": "North Roe & Ollaberry Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Brae","time":"0840"}, {"stop":"Collafirth","time":"0910"}, {"stop":"North Roe","time":"0925"} ] },
+        { "codes": [], "calls": [ {"stop":"Brae","time":"1325"}, {"stop":"Sullom","time":"1335"}, {"stop":"Ollaberry","time":"1355"}, {"stop":"Collafirth","time":"1410"}, {"stop":"North Roe","time":"1425"} ] },
+        { "codes": ["ORQ"], "calls": [ {"stop":"Brae","time":"1805"}, {"stop":"Collafirth","time":"1835"}, {"stop":"North Roe","time":"1850"} ] }
+      ]
+    },
+    {
+      "service": "25",
+      "name": "Muckle Roe Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": ["DAR","CB"], "calls": [ {"stop":"Muckle Roe","time":"0738"}, {"stop":"Brae","time":"0753"} ] },
+        { "codes": ["DAR","TTF"], "calls": [ {"stop":"Muckle Roe","time":"1010"}, {"stop":"Brae","time":"1030"} ] }
+      ]
+    },
+    {
+      "service": "25",
+      "name": "Muckle Roe Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": ["DAR","TTF"], "calls": [ {"stop":"Brae","time":"1325"}, {"stop":"Muckle Roe","time":"1345"} ] },
+        { "codes": ["DAR","CB"], "calls": [ {"stop":"Brae","time":"1805"}, {"stop":"Muckle Roe","time":"1825"} ] }
+      ]
+    },
+    {
+      "service": "31",
+      "name": "Sullom Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": ["CB"], "calls": [ {"stop":"Sullom","time":"0738"}, {"stop":"Brae","time":"0753"} ] },
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Sullom","time":"1200"}, {"stop":"Brae","time":"1215"} ] }
+      ]
+    },
+    {
+      "service": "31",
+      "name": "Sullom Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Brae","time":"1300"}, {"stop":"Sullom","time":"1315"} ] },
+        { "codes": ["CB"], "calls": [ {"stop":"Brae","time":"1805"}, {"stop":"Sullom","time":"1820"} ] }
+      ]
+    },
+    {
+      "service": "21F",
+      "name": "Hillswick to Eshaness Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": ["Sum","NF"], "calls": [ {"stop":"Hillswick","time":"1010"}, {"stop":"Eshaness","time":"1030"} ] },
+        { "codes": ["DAR","Tu"], "calls": [ {"stop":"Hillswick","time":"1100"}, {"stop":"Eshaness","time":"1120"} ] },
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Hillswick","time":"1215"}, {"stop":"Eshaness","time":"1240"} ] },
+        { "codes": ["DAR","CL"], "calls": [ {"stop":"Hillswick","time":"1822"}, {"stop":"Heylor","time":"1825"}, {"stop":"Eshaness","time":"1848"} ] }
+      ]
+    },
+    {
+      "service": "21F",
+      "name": "Eshaness to Hillswick Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        { "codes": ["CL"], "calls": [ {"stop":"Eshaness","time":"0713"}, {"stop":"Hillswick","time":"0733"} ] },
+        { "codes": ["DAR","CL"], "calls": [ {"stop":"Eshaness","time":"0944"}, {"stop":"Heylor","time":"1007"}, {"stop":"Hillswick","time":"1010"} ] },
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Eshaness","time":"0945"}, {"stop":"Hillswick","time":"1010"} ] },
+        { "codes": ["Sum","NF"], "calls": [ {"stop":"Eshaness","time":"1440"}, {"stop":"Hillswick","time":"1500"} ] }
+      ]
+    },
+    {
+      "service": "34",
+      "name": "North Roe & Ollaberry Shopper & Health Centre",
+      "direction": "loop",
+      "dayGroup": null,
+      "trips": [
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Ollaberry Area","time":"0930"}, {"stop":"Ollaberry Shop","time":"0955"} ] },
+        { "codes": ["DAR","F"], "calls": [ {"stop":"North Roe","time":"1025"}, {"stop":"Collafirth","time":"1040"}, {"stop":"Ollaberry Shop","time":"1055"}, {"stop":"Ollaberry Area","time":"1100"} ] },
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Ollaberry Shop","time":"1120"}, {"stop":"Collafirth","time":"1135"}, {"stop":"North Roe","time":"1150"} ] },
+        { "codes": ["DAR","W"], "calls": [ {"stop":"Ollaberry Area","time":"1100"}, {"stop":"North Roe","time":"1120"}, {"stop":"Collafirth","time":"1135"}, {"stop":"Hillswick Surgery","time":"1150"} ] },
+        { "codes": ["DAR","W"], "calls": [ {"stop":"Hillswick Surgery","time":"1220"}, {"stop":"Collafirth","time":"1235"}, {"stop":"North Roe","time":"1250"}, {"stop":"Ollaberry Area","time":"1310"} ] }
+      ]
+    },
+    {
+      "service": "39",
+      "name": "Hillswick to Lerwick Shopper",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        { "codes": ["ATu"], "calls": [ {"stop":"Lerwick","time":"1530"}, {"stop":"Nesting Junction","time":"1545"}, {"stop":"Voe","time":"1600"}, {"stop":"Brae","time":"1610"}, {"stop":"Muckle Roe","time":"1630"}, {"stop":"Sullom Junction","time":"1615"}, {"stop":"Hillswick","time":"1640"}, {"stop":"Ollaberry","time":"1645"}, {"stop":"Eshaness","time":"1700"}, {"stop":"North Roe","time":"1705"} ] }
+      ]
+    },
+    {
+      "service": "38",
+      "name": "Mossbank / Brae / Voe to Lerwick Shopper",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        { "codes": ["AF"], "calls": [ {"stop":"Brae South","time":"0925"}, {"stop":"Mossbank","time":"0940"}, {"stop":"Voe","time":"0955"}, {"stop":"Lerwick","time":"1030"} ] }
+      ]
+    },
+    {
+      "service": "38",
+      "name": "Lerwick to Mossbank / Brae / Voe Shopper",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        { "codes": ["AF"], "calls": [ {"stop":"Lerwick","time":"1355"}, {"stop":"Voe","time":"1430"}, {"stop":"Mossbank","time":"1445"}, {"stop":"Brae South","time":"1500"} ] }
+      ]
+    },
+    {
+      "service": "33",
+      "name": "Heylor to Hillswick Feeder",
+      "direction": "outbound",
+      "dayGroup": null,
+      "trips": [
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Heylor","time":"1100"}, {"stop":"Urafirth","time":"1115"}, {"stop":"Hillswick","time":"1130"} ] }
+      ]
+    },
+    {
+      "service": "33",
+      "name": "Hillswick to Heylor Feeder",
+      "direction": "inbound",
+      "dayGroup": null,
+      "trips": [
+        { "codes": ["DAR","F"], "calls": [ {"stop":"Hillswick","time":"1330"}, {"stop":"Urafirth","time":"1345"}, {"stop":"Heylor","time":"1400"} ] }
+      ]
+    },
+    {
+      "service": "37",
+      "name": "Brae to Mossbank",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Brae","time":"1805"}, {"stop":"Mossbank","time":"1820"} ] }
+      ]
+    }
+  ]
+}

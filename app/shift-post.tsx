@@ -11,7 +11,8 @@ import { useRouter } from 'expo-router';
 import { colors } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { PostShiftForm, BoostSheet } from './(tabs)/shifts';
+import { PostShiftForm, BoostSheet } from '@/components/shifts/ShiftPostForm';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.shifts;
 
@@ -25,12 +26,12 @@ export default function ShiftPostScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader
         title="Post a shift"
-        subtitle="Free to post — boost to alert matching workers"
+        subtitle="Free to post — reach available local workers"
         accent={S.color}
         onClose={() => router.back()}
       />
       <View style={{ flex: 1 }}>
-        <PostShiftForm onSuccess={(id) => setBoostId(id)} />
+        <PostShiftForm onSuccess={(id) => { track('shift_posted', { objectType: 'shift', objectId: id }); setBoostId(id); }} />
       </View>
 
       {boostId ? (

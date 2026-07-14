@@ -41,6 +41,7 @@ import { NAV, PROFILE, type NavDest } from '@/constants/nav-model';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { GameArt } from '@/components/GameArt';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { FeaturedBusinessesBar } from '@/components/FeaturedBusinessesBar';
 import { BrushAccent, BrushDivider } from '@/components/Brush';
 import { CruiseTodayCard } from '@/components/CruiseTodayCard';
@@ -283,6 +284,8 @@ function HeroSection({
               onPress={() => router.push('/(tabs)/me')}
               activeOpacity={0.8}
               hitSlop={8}
+              accessibilityLabel="My profile"
+              accessibilityRole="button"
             >
               <Text style={styles.profileAvatarText}>{initials}</Text>
             </TouchableOpacity>
@@ -765,7 +768,7 @@ function WorkRow({ jobs, shifts }: { jobs: HomeJob[]; shifts: HomeShift[] }) {
   ];
   return (
     <SectionRow
-      title="Work in Shetland"
+      title="Work"
       sectionKey="shifts"
       action={{ label: 'See all', onPress: () => router.push('/(tabs)/jobs') }}
     >
@@ -1098,6 +1101,32 @@ function ForYouRow({ tiles }: { tiles: ForYouTile[] }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Home skeleton — shown on first load before concierge content arrives, so the
+// screen has shape instead of a bare gap. Mirrors the rhythm of the real rows.
+// ──────────────────────────────────────────────────────────────────────────
+
+function HomeSkeleton() {
+  return (
+    <View
+      style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.lg }}
+      accessibilityLabel="Loading"
+    >
+      {/* Shetland today card */}
+      <Skeleton height={120} borderRadius={radius.lg} />
+      {[0, 1].map(i => (
+        <View key={i} style={{ gap: spacing.sm }}>
+          <Skeleton width="45%" height={16} />
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <Skeleton width="46%" height={96} borderRadius={radius.lg} />
+            <Skeleton width="46%" height={96} borderRadius={radius.lg} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Screen
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -1133,6 +1162,7 @@ export default function HomeScreen() {
   const { sidePadding, cardWidth, screenHeight, isTablet } = useAppLayout();
 
   const [refreshing, setRefreshing]     = useState(false);
+  const [loaded, setLoaded]             = useState(false);
   const [savedBoats, setSavedBoats]     = useState<VesselStub[]>([]);
   const [recentBoats, setRecentBoats]   = useState<VesselStub[]>([]);
   const [engagement, setEngagement]     = useState<Array<{ key: EngagementKey; entry: EngagementEntry }>>([]);
@@ -1185,6 +1215,7 @@ export default function HomeScreen() {
     setShifts(shRes);
     setSpik(spRes);
     setBusinesses(bzRes);
+    setLoaded(true);
   }, [profile]);
 
   // GPS-aware local offers. Soft-checks current permission state — never
@@ -1273,7 +1304,7 @@ export default function HomeScreen() {
     if (personal?.application) {
       const a = personal.application;
       const tag: Record<string, string>    = { accepted: "YOU'RE CONFIRMED", pending: 'APPLICATION IN' };
-      const detail: Record<string, string> = { accepted: "You've got the shift", pending: 'Awaiting the employer', rejected: 'Not successful this time', withdrawn: 'Withdrawn' };
+      const detail: Record<string, string> = { accepted: 'Confirmed', pending: 'Awaiting the employer', rejected: 'Not selected', withdrawn: 'Withdrawn' };
       out.push({
         id: 'my-application',
         iconKey: 'shifts',
@@ -1516,6 +1547,7 @@ export default function HomeScreen() {
 
         {/* Sections — white card that sits below the hero, no dark gaps */}
         <View style={[styles.sectionsCard, { paddingHorizontal: sidePadding }]}>
+          {!loaded && <HomeSkeleton />}
           {/* Shetland today — weather + daylight with a Lerwick / Near-me toggle.
               Phone only: tablet already shows the weather in the hero. */}
           {/* Shetland today — weather + daylight + tides on the contextual photo.

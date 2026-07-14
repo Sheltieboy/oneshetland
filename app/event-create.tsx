@@ -33,6 +33,7 @@ import {
   type EventUpsertInput, type EventTicketType, type HubEventVisibility,
 } from '@/lib/events-api';
 import { fetchHub, createHubNotice } from '@/lib/hubs-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.events;
 
@@ -208,6 +209,10 @@ export default function EventCreateScreen() {
       } else {
         const ev = await createEvent(profile.id, payload);
         targetId = ev.id;
+        track('event_created', { objectType: 'event', objectId: ev.id, businessId: businessId ?? null });
+      }
+      if (publish) {
+        track('event_published', { objectType: 'event', objectId: targetId });
       }
 
       // Upsert ticket types (only when using OneShetland ticketing)

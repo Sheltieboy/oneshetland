@@ -76,13 +76,17 @@ function SuggestionCard({
   suggestion,
   onMarkReviewed,
   onMarkPending,
+  onApprove,
 }: {
   suggestion: Suggestion;
   onMarkReviewed: (id: string) => void;
   onMarkPending: (id: string) => void;
+  onApprove: (id: string) => Promise<void> | void;
 }) {
   const [copying, setCopying] = useState(false);
+  const [approving, setApproving] = useState(false);
   const isReviewed = suggestion.status === 'reviewed';
+  const isApproved = suggestion.status === 'approved';
 
   const handleShare = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -145,6 +149,27 @@ function SuggestionCard({
       </View>
 
       {/* Actions */}
+      {isApproved ? (
+        <View style={styles.publishedPill}>
+          <FontAwesome5 name="check-circle" size={11} color="#059669" />
+          <Text style={styles.publishedPillText}>Published to the live word</Text>
+        </View>
+      ) : (
+        <>
+          {!isReviewed && !!suggestion.word_id && (
+            <TouchableOpacity
+              style={styles.approveBtn}
+              disabled={approving}
+              onPress={async () => { setApproving(true); try { await onApprove(suggestion.id); } finally { setApproving(false); } }}
+            >
+              {approving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <>
+                    <FontAwesome5 name="check-circle" size={11} color="#fff" />
+                    <Text style={styles.approveBtnText}>Approve &amp; publish</Text>
+                  </>}
+            </TouchableOpacity>
+          )}
       {isReviewed ? (
         <TouchableOpacity
           style={styles.undoBtn}
@@ -162,6 +187,8 @@ function SuggestionCard({
           <Text style={styles.reviewedBtnText}>Mark as reviewed</Text>
         </TouchableOpacity>
       )}
+        </>
+      )}
     </View>
   );
 }
@@ -172,10 +199,12 @@ function WordGroupBlock({
   group,
   onMarkReviewed,
   onMarkPending,
+  onApprove,
 }: {
   group: WordGroup;
   onMarkReviewed: (id: string) => void;
   onMarkPending: (id: string) => void;
+  onApprove: (id: string) => Promise<void> | void;
 }) {
   const pendingCount = group.suggestions.filter(s => s.status === 'pending').length;
 
@@ -195,6 +224,7 @@ function WordGroupBlock({
           suggestion={s}
           onMarkReviewed={onMarkReviewed}
           onMarkPending={onMarkPending}
+          onApprove={onApprove}
         />
       ))}
     </View>
@@ -264,6 +294,16 @@ export default function SpikSuggestionsScreen() {
     load(filter);
   }, [filter, load]);
 
+  // Approve & publish: apply the edit to the live dictionary word + credit the
+  // submitter, via the admin-only RPC.
+  const handleApprove = useCallback(async (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const { error } = await supabase.rpc('approve_spik_suggestion', { p_id: id });
+    if (error) { alert({ title: 'Could not publish', message: error.message }); return; }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    load(filter);
+  }, [filter, load, alert]);
+
   const FILTERS: { key: Status; label: string }[] = [
     { key: 'pending',  label: `Pending${totalPending > 0 ? ` (${totalPending})` : ''}` },
     { key: 'reviewed', label: 'Reviewed' },
@@ -329,6 +369,7 @@ export default function SpikSuggestionsScreen() {
         >
           {groups.map(g => (
             <WordGroupBlock
+              onApprove={handleApprove}
               key={g.word}
               group={g}
               onMarkReviewed={handleMarkReviewed}
@@ -427,6 +468,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   reviewedBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '700' },
+
+  approveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    marginBottom: 8,
+    borderRadius: radius.md,
+  },
+  approveBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+  publishedPill: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    backgroundColor: '#ECFDF5', paddingVertical: 10, borderRadius: radius.md,
+  },
+  publishedPillText: { color: '#059669', fontSize: fontSize.sm, fontWeight: '700' },
 
   undoBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,

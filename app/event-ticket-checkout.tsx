@@ -2,7 +2,8 @@
  * event-ticket-checkout.tsx — Ticket selection + purchase flow
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { track } from '@/lib/analytics';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator,
@@ -58,6 +59,14 @@ export default function EventTicketCheckoutScreen() {
   const [boughtCount, setBoughtCount] = useState(0);
 
   useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
+
+  // Fire once when the checkout screen opens.
+  const trackedOpen = useRef(false);
+  useEffect(() => {
+    if (trackedOpen.current || !id) return;
+    trackedOpen.current = true;
+    track('ticket_purchase_started', { objectType: 'event', objectId: id });
+  }, [id]);
 
   // qty per ticket type
   const [quantities, setQuantities] = useState<Record<string, number>>({});

@@ -18,12 +18,14 @@ import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { NavRail } from '@/components/NavRail';
 import { Sheet } from '@/components/ui/Sheet';
 import { useAlert } from '@/components/BrandedAlert';
+import { ContentActions } from '@/components/ContentActions';
 import {
   fetchJob, hasApplied, applyToJob, ensureWorkerProfile, generateCoverLetter,
   fetchSavedJobIds, toggleSavedJob,
   formatJobPay, payIsShown, CONTRACT_LABELS, REMOTE_LABELS,
   type Job, type WorkerProfile,
 } from '@/lib/jobs-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.jobs;
 
@@ -55,6 +57,10 @@ export default function JobDetailScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (job?.id) track('content_viewed', { objectType: 'job', objectId: job.id, businessId: job.posted_as_business_id ?? undefined });
+  }, [job?.id]);
+
   const onSave = async () => {
     if (!profile) { goToSignIn(); return; }
     setSaved(await toggleSavedJob(profile.id, id));
@@ -74,6 +80,7 @@ export default function JobDetailScreen() {
   }
 
   const isOwnPost = profile?.id === job.employer_id;
+  const isClosed  = job.status === 'closed' || job.status === 'filled';
   const featured = job.is_featured || (job.boosted_until != null && new Date(job.boosted_until) > new Date());
 
   return (
@@ -91,6 +98,14 @@ export default function JobDetailScreen() {
           <TouchableOpacity onPress={onSave} style={styles.iconBtn} hitSlop={12}>
             <FontAwesome5 name="bookmark" size={20} color={saved ? S.color : colors.textSecondary} solid={saved} />
           </TouchableOpacity>
+          {!isOwnPost ? (
+            <ContentActions
+              contentType="job"
+              contentId={job.id}
+              authorId={job.employer_id}
+              icon="ellipsis-v"
+            />
+          ) : null}
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
@@ -151,6 +166,13 @@ export default function JobDetailScreen() {
               <View style={[styles.appliedPill]}>
                 <FontAwesome5 name="check-circle" size={15} color="#15803D" solid />
                 <Text style={styles.appliedText}>Applied — track it in My applications</Text>
+              </View>
+            ) : isClosed ? (
+              <View style={[styles.appliedPill]}>
+                <FontAwesome5 name="lock" size={14} color={colors.textMuted} solid />
+                <Text style={styles.appliedText}>
+                  {job.status === 'filled' ? 'This role has been filled' : 'This role is no longer accepting applications'}
+                </Text>
               </View>
             ) : (
               <TouchableOpacity
@@ -214,6 +236,7 @@ function ApplySheet({ job, userId, onClose, onApplied }: { job: Job; userId: str
         willing_to_relocate: profile.willing_to_relocate,
       } : {};
       await applyToJob({ jobId: job.id, userId, coverLetter: cover.trim() || null, snapshot });
+      track('job_applied', { objectType: 'job', objectId: job.id, businessId: job.posted_as_business_id ?? undefined });
       onApplied();
     } catch (e: any) {
       alert({ title: 'Could not apply', message: e?.message ?? '' });

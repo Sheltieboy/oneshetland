@@ -24,6 +24,8 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { supabase } from '@/lib/supabase';
+import { TicketCelebration } from '@/components/TicketCelebration';
 import {
   fetchTicketWithToken,
   formatEventDate,
@@ -50,6 +52,7 @@ export default function MyEventTicketScreen() {
   const [rawToken, setRawToken] = useState<string | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [brightness, setBrightness] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -66,6 +69,26 @@ export default function MyEventTicketScreen() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Live: flip to "Scanned" (with a celebration) the instant this ticket is
+  // checked in at the door — no reload needed.
+  useEffect(() => {
+    if (!id) return;
+    const channel = supabase
+      .channel(`my-event-ticket-${id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'event_tickets', filter: `id=eq.${id}` },
+        (payload) => {
+          const next = (payload.new as { status?: string } | null)?.status;
+          const prev = (payload.old as { status?: string } | null)?.status;
+          if (next === 'used' && prev !== 'used') setCelebrate(true);
+          load();
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [id, load]);
 
   if (loading) {
     return (
@@ -113,6 +136,7 @@ export default function MyEventTicketScreen() {
         />
       }
     >
+      <TicketCelebration visible={celebrate} onDone={() => setCelebrate(false)} />
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]}>
 
         {/* Status banners */}

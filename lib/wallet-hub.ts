@@ -68,12 +68,11 @@ async function getWorkerSide(userId: string): Promise<WorkerSide> {
 
     let hasWorkerProfile = false;
     try {
-      const { data } = await supabase
+      const { count } = await supabase
         .from('worker_profiles')
-        .select('id', { head: true, count: 'exact' })
-        .eq('id', userId)
-        .maybeSingle();
-      hasWorkerProfile = !!data;
+        .select('user_id', { head: true, count: 'exact' })
+        .eq('user_id', userId);
+      hasWorkerProfile = (count ?? 0) > 0;
     } catch { /* leave false */ }
 
     return {

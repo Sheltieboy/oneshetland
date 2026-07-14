@@ -5,73 +5,70 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+const STRIPE = 'https://api.stripe.com/v1';
 
+/**
+ * create-connect-account
+ *
+ * Onboards (or resumes onboarding of) the caller's Stripe Connect Express
+ * account — the account that receives Fetch driving payouts.
+ *
+ * IMPORTANT: the account id + status is written to BOTH profiles (the webhook's
+ * source of truth, which the web /account/payments page reads) AND
+ * driver_profiles (which the Fetch charge path — authorise-payment — reads).
+ * Previously it wrote driver_profiles only, so the web page read profiles, never
+ * saw the account, showed "Not connected" forever, and the button dead-ended:
+ * driver_profiles said "onboarding complete" → already_complete → a bare refresh.
+ *
+ * The writes use the service role because profiles.stripe_* columns are locked
+ * against client-context updates. Status is read live from Stripe rather than
+ * trusting possibly-stale DB flags, and "already connected" is gated on
+ * payouts_enabled (the real can-be-paid signal), not just details_submitted.
+ *
+ * Returns: { already_complete: true, ... }  when payouts are enabled, else
+ *          { url }  — a fresh Stripe onboarding link to finish/fix setup.
+ */
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  const json = (b: unknown, s = 200) =>
+    new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      console.error('[create-connect-account] No Authorization header');
-      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (!authHeader) return json({ error: 'Unauthorised' }, 401);
 
-    const supabase = createClient(
+    const anon = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: authHeader } } },
     );
+    const { data: { user }, error: userError } = await anon.auth.getUser();
+    if (userError || !user) return json({ error: 'Unauthorised' }, 401);
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      console.error('[create-connect-account] getUser failed:', userError?.message);
-      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const svc = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
 
-    console.log('[create-connect-account] user:', user.id);
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+    if (!stripeKey) return json({ error: 'Stripe not configured' }, 500);
+    const sHeaders = { 'Authorization': `Bearer ${stripeKey}` };
 
-    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
-    if (!stripeSecretKey) {
-      console.error('[create-connect-account] STRIPE_SECRET_KEY not set');
-      return new Response(JSON.stringify({ error: 'Stripe not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // Resolve an existing Connect account — profiles first, then driver_profiles
+    // (covers drivers who onboarded before profiles became the source of truth).
+    const [{ data: prof }, { data: drv }] = await Promise.all([
+      svc.from('profiles').select('stripe_account_id').eq('id', user.id).maybeSingle(),
+      svc.from('driver_profiles').select('stripe_account_id').eq('id', user.id).maybeSingle(),
+    ]);
+    let accountId: string = prof?.stripe_account_id || drv?.stripe_account_id || '';
 
-    // Check if driver already has a Stripe Connect account
-    const { data: driverProfile } = await supabase
-      .from('driver_profiles')
-      .select('stripe_account_id, stripe_onboarding_complete')
-      .eq('id', user.id)
-      .single();
-
-    let stripeAccountId: string = driverProfile?.stripe_account_id ?? '';
-
-    // Create a new Connect account if one doesn't exist
-    if (!stripeAccountId) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user.id)
-        .single();
-
-      const accountRes = await fetch('https://api.stripe.com/v1/accounts', {
+    // Create a new Express account if there isn't one yet.
+    if (!accountId) {
+      const accountRes = await fetch(`${STRIPE}/accounts`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeSecretKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: { ...sHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          type: 'express',                   // Express accounts — Stripe handles KYC UI
+          type: 'express',
           country: 'GB',
           email: user.email ?? '',
           'capabilities[transfers][requested]': 'true',
@@ -81,59 +78,55 @@ serve(async (req) => {
           'metadata[supabase_user_id]': user.id,
         }),
       });
-
       const account = await accountRes.json();
-      if (!accountRes.ok) {
-        throw new Error(`Connect account creation failed: ${account.error?.message}`);
-      }
-
-      stripeAccountId = account.id;
-
-      // Save the account ID to driver_profiles
-      await supabase
-        .from('driver_profiles')
-        .update({ stripe_account_id: stripeAccountId })
-        .eq('id', user.id);
+      if (!accountRes.ok) throw new Error(`Connect account creation failed: ${account.error?.message}`);
+      accountId = account.id;
     }
 
-    // If already fully onboarded, just return the account ID
-    if (driverProfile?.stripe_onboarding_complete) {
-      return new Response(
-        JSON.stringify({ already_complete: true, stripe_account_id: stripeAccountId }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+    // Read the live account status from Stripe (don't trust stale DB flags).
+    const acctRes = await fetch(`${STRIPE}/accounts/${accountId}`, { headers: sHeaders });
+    const acct = await acctRes.json();
+    if (!acctRes.ok) throw new Error(`Stripe account lookup failed: ${acct.error?.message}`);
+    const detailsSubmitted = !!acct.details_submitted;
+    const payoutsEnabled = !!acct.payouts_enabled;
+    const chargesEnabled = !!acct.charges_enabled;
+
+    // Persist id + live status to BOTH tables so the web (profiles) and the
+    // Fetch charge path (driver_profiles) agree. driver_profiles update is a
+    // no-op for non-drivers (no row) — that's fine.
+    const flags = {
+      stripe_account_id: accountId,
+      stripe_onboarding_complete: detailsSubmitted,
+      stripe_payouts_enabled: payoutsEnabled,
+      stripe_charges_enabled: chargesEnabled,
+    };
+    await Promise.all([
+      svc.from('profiles').update(flags).eq('id', user.id),
+      svc.from('driver_profiles').update(flags).eq('id', user.id),
+    ]);
+
+    // Genuinely payouts-ready → nothing more to do.
+    if (payoutsEnabled) {
+      return json({ already_complete: true, stripe_account_id: accountId, payouts_enabled: true });
     }
 
-    // Generate a fresh onboarding link (these expire after a few minutes)
-    const linkRes = await fetch('https://api.stripe.com/v1/account_links', {
+    // Otherwise hand back a fresh onboarding link to finish (or fix) setup.
+    const linkRes = await fetch(`${STRIPE}/account_links`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${stripeSecretKey}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers: { ...sHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        account: stripeAccountId,
-        refresh_url: 'https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/connect-redirect?status=refresh',
-        return_url: 'https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/connect-redirect?status=return',
+        account: accountId,
+        refresh_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/connect-redirect?status=refresh`,
+        return_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/connect-redirect?status=return`,
         type: 'account_onboarding',
       }),
     });
-
     const link = await linkRes.json();
-    if (!linkRes.ok) {
-      throw new Error(`Account link creation failed: ${link.error?.message}`);
-    }
+    if (!linkRes.ok) throw new Error(`Account link creation failed: ${link.error?.message}`);
 
-    return new Response(
-      JSON.stringify({ url: link.url, stripe_account_id: stripeAccountId }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
-
+    return json({ url: link.url, stripe_account_id: accountId });
   } catch (err) {
     console.error('[create-connect-account]', err);
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
   }
 });

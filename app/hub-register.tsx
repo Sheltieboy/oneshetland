@@ -28,6 +28,7 @@ import {
   HUB_TYPE_LABELS, HUB_TYPE_ICONS,
   type HubType, type JoinMode,
 } from '@/lib/hubs-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.community;
 
@@ -109,7 +110,7 @@ export default function HubRegisterScreen() {
     try {
       let hubId = id;
       if (id) await updateHub(id, input);
-      else    { const hub = await createHub(profile.id, input); hubId = hub.id; }
+      else    { const hub = await createHub(profile.id, input); hubId = hub.id; track('hub_created', { hubId: hub.id }); }
 
       // Upload a freshly-picked logo now that we have a hub id, then persist its
       // URL + the extracted brand colour.

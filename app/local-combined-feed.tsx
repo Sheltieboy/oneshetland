@@ -144,6 +144,26 @@ export default function LocalCombinedFeed() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(area); }} tintColor={S.color} />}
           showsVerticalScrollIndicator={false}
         >
+          {/* CURATED SHORTCUTS — Local leads with offers / bookable / wallet,
+              not a generic business list (that's the Directory tab). */}
+          <View style={styles.shortcutRow}>
+            <ShortcutCard
+              icon="tags" label="Offers" sub="Deals & savings"
+              color="#D97706" bg="#FEF3C7"
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-offers' as any); }}
+            />
+            <ShortcutCard
+              icon="calendar-check" label="Book" sub="Experiences"
+              color="#059669" bg="#D1FAE5"
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-bookable-browse' as any); }}
+            />
+            <ShortcutCard
+              icon="wallet" label="Wallet" sub="Cashback"
+              color={S.color} bg={S.light}
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-wallet' as any); }}
+            />
+          </View>
+
           {/* EVENTS */}
           <SectionHeader label={areaLabel ? `Events in ${areaLabel}` : "What's on"} title="Upcoming events"
             color={EVENTS_COLOR} onSeeAll={() => router.push('/(tabs)/whats-on' as any)} />
@@ -167,7 +187,7 @@ export default function LocalCombinedFeed() {
           {activeOffers.length > 0 && (
             <>
               <SectionHeader label="Exclusive savings" title="Offers & deals"
-                color="#D97706" onSeeAll={() => router.push('/(tabs)/services' as any)} />
+                color="#D97706" onSeeAll={() => router.push('/local-offers' as any)} />
               <FlatList
                 horizontal data={activeOffers} keyExtractor={o => o.offer.id}
                 showsHorizontalScrollIndicator={false}
@@ -189,7 +209,7 @@ export default function LocalCombinedFeed() {
           {bookableBusinesses.length > 0 && (
             <>
               <SectionHeader label="Reserve your spot" title="Book now"
-                color="#059669" onSeeAll={() => router.push('/(tabs)/services' as any)} />
+                color="#059669" onSeeAll={() => router.push('/local-bookable-browse' as any)} />
               <FlatList
                 horizontal data={bookableBusinesses} keyExtractor={b => b.id}
                 showsHorizontalScrollIndicator={false}
@@ -277,6 +297,22 @@ function SectionHeader({ label, title, color, onSeeAll }: {
         <FontAwesome5 name="arrow-right" size={10} color={color} />
       </TouchableOpacity>
     </View>
+  );
+}
+
+// ── Curated shortcut card ─────────────────────────────────────────────────────
+
+function ShortcutCard({ icon, label, sub, color, bg, onPress }: {
+  icon: string; label: string; sub: string; color: string; bg: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.shortcutCard} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.shortcutIcon, { backgroundColor: bg }]}>
+        <FontAwesome5 name={icon} size={16} color={color} solid />
+      </View>
+      <Text style={styles.shortcutLabel}>{label}</Text>
+      <Text style={styles.shortcutSub} numberOfLines={1}>{sub}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -600,6 +636,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
   },
   chipText: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
+
+  shortcutRow: {
+    flexDirection: 'row', gap: 10,
+    paddingHorizontal: spacing.md, paddingTop: 16,
+  },
+  shortcutCard: {
+    flex: 1, backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border,
+    paddingVertical: 14, paddingHorizontal: 10, alignItems: 'center', gap: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+  },
+  shortcutIcon: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  shortcutLabel: { fontSize: 13, fontWeight: '800', color: colors.textPrimary },
+  shortcutSub:   { fontSize: 10, color: colors.textMuted, fontWeight: '600' },
 
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

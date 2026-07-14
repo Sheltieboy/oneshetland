@@ -27,6 +27,7 @@ import {
   type SpikStats,
 } from '@/lib/oneshetland-api';
 import { paletteFor } from '@/lib/spik-palette';
+import { track } from '@/lib/analytics';
 import SpikStatsHeader from '@/components/SpikStatsHeader';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
@@ -143,7 +144,11 @@ export default function SpikTab() {
   const loadSearch = useCallback(async (q: string) => {
     if (q.length < 2) return;
     setLoading(true); setError(null);
-    try   { setWords(await searchSpik(q)); }
+    try {
+      const res = await searchSpik(q);
+      setWords(res);
+      track('search_performed', { props: { section: 'spik', query: q, results_count: res.length } });
+    }
     catch { setError('Search failed'); }
     finally { setLoading(false); }
   }, []);

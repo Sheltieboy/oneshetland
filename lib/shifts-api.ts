@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase';
+import { ensureWorkerProfile } from './jobs-api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,21 @@ export function formatDuration(startAt: string, endAt: string): string {
   if (hrs < 1)   return `${Math.round(hrs * 60)} mins`;
   if (hrs === 1) return '1 hr';
   return Number.isInteger(hrs) ? `${hrs} hrs` : `${hrs.toFixed(1)} hrs`;
+}
+
+/**
+ * Hours the worker actually clocked (check-in → check-out). Falls back to the
+ * scheduled shift length when the times aren't recorded (e.g. the employer
+ * marked complete without the worker clocking in). `actual` says which it is.
+ */
+export function hoursWorked(
+  a: { checked_in_at: string | null; checked_out_at: string | null },
+  startAt: string, endAt: string,
+): { label: string; actual: boolean } {
+  if (a.checked_in_at && a.checked_out_at && new Date(a.checked_out_at) > new Date(a.checked_in_at)) {
+    return { label: formatDuration(a.checked_in_at, a.checked_out_at), actual: true };
+  }
+  return { label: formatDuration(startAt, endAt), actual: false };
 }
 
 /** e.g. "Mon 26 May · 2:00pm" */
@@ -293,12 +309,32 @@ export async function fetchMyApplication(
   return data as ShiftApplication | null;
 }
 
+/**
+ * Ensure the worker has a UNIFIED `worker_profiles` row so that, when an
+ * employer reviews this shift application, the profile join
+ * (fetchEmployerApplications) always resolves to *this* worker rather than
+ * nothing. Jobs + Shifts now share one profile — this simply delegates to the
+ * Jobs-side ensureWorkerProfile() so a worker who has only ever used Shifts
+ * still gets the same single row the Work-profile editor edits.
+ *
+ * NOTE: only writes the worker's own row (RLS: worker_profiles owner =
+ * auth.uid()). No locked/privileged `profiles` columns are touched.
+ */
+export async function ensureShiftWorkerProfile(workerId: string): Promise<void> {
+  await ensureWorkerProfile(workerId);
+}
+
 /** Submit interest in a shift */
 export async function submitInterest(
   shiftId: string,
   workerId: string,
   message?: string,
 ): Promise<void> {
+  // Attach the applicant's shift-worker profile reference so the employer has
+  // something to evaluate (mirrors the Jobs apply flow). Best-effort: never
+  // block the application if profile seeding fails.
+  await ensureShiftWorkerProfile(workerId).catch(() => {});
+
   const { data: app, error } = await supabase
     .from('shift_applications')
     .insert({ shift_id: shiftId, worker_id: workerId, message: message ?? null })
@@ -371,12 +407,14 @@ export async function withdrawApplication(
 }
 
 /** Fetch all applications for shifts posted by an employer */
-export async function fetchEmployerApplications(employerId: string) {
-  // 1. Get the employer's shift IDs
-  const { data: shifts, error: shiftsError } = await supabase
+export async function fetchEmployerApplications(employerId: string, shiftId?: string) {
+  // 1. Get the employer's shift IDs (optionally just one shift)
+  let shiftsQuery = supabase
     .from('shifts')
     .select('id, title, start_at')
     .eq('employer_id', employerId);
+  if (shiftId) shiftsQuery = shiftsQuery.eq('id', shiftId);
+  const { data: shifts, error: shiftsError } = await shiftsQuery;
   if (shiftsError) throw shiftsError;
   if (!shifts || shifts.length === 0) return [];
 
@@ -393,27 +431,63 @@ export async function fetchEmployerApplications(employerId: string) {
   if (appsError) throw appsError;
   if (!apps || apps.length === 0) return [];
 
-  // 3. Fetch worker profiles separately
+  // 3. Applicant display info (name/avatar/area) — via a SECURITY DEFINER RPC so
+  //    an employer can see WHO applied without profiles' own-row-only RLS hiding
+  //    them (that was the "Unknown" bug). Returns only safe, public fields.
   const workerIds = [...new Set(apps.map(a => a.worker_id).filter(Boolean))];
 
-  const [{ data: profiles }, { data: workerProfiles }] = await Promise.all([
+  const [{ data: applicants }, { data: workerProfiles }] = await Promise.all([
+    supabase.rpc('get_applicant_public', { p_worker_ids: workerIds }),
+    // Unified profile: `summary` is the "about you" (aliased to `bio` so the
+    // employer applicant view keeps reading `workerProfile.bio` unchanged).
     supabase
-      .from('profiles')
-      .select('id, full_name, avatar_url, location_area, created_at')
-      .in('id', workerIds),
-    supabase
-      .from('shift_worker_profiles')
-      .select('user_id, bio, experience_summary, skills, hourly_rate_min, hourly_rate_max, qualifications')
+      .from('worker_profiles')
+      .select('user_id, bio:summary, experience_summary, skills, hourly_rate_min, hourly_rate_max, qualifications')
       .in('user_id', workerIds),
   ]);
 
-  const profileMap      = Object.fromEntries((profiles      ?? []).map(p => [p.id,       p]));
-  const workerProfMap   = Object.fromEntries((workerProfiles ?? []).map(p => [p.user_id, p]));
+  const profileMap    = Object.fromEntries(((applicants as { id: string }[]) ?? []).map(p => [p.id, p]));
+  const workerProfMap = Object.fromEntries((workerProfiles ?? []).map(p => [p.user_id, p]));
 
   // 4. Combine
   return apps.map(app => ({
     ...app,
-    shift:         shiftMap[app.shift_id]   ?? null,
+    shift:         shiftMap[app.shift_id]    ?? null,
+    worker:        profileMap[app.worker_id] ?? null,
+    workerProfile: workerProfMap[app.worker_id] ?? null,
+  }));
+}
+
+/**
+ * Owner-scoped feed of EVERY non-withdrawn application on a single shift — for
+ * the shift-detail hub. Unlike fetchEmployerApplications (pending only) this
+ * returns pending AND accepted, carrying the check-in fields so the employer can
+ * see who's confirmed, clocked in, or finished. RLS ("employer sees applications
+ * for their shifts") scopes it to the caller's own shift.
+ */
+export async function fetchShiftManageApplications(shiftId: string) {
+  const { data: apps, error } = await supabase
+    .from('shift_applications')
+    .select('*')
+    .eq('shift_id', shiftId)
+    .neq('status', 'withdrawn')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  if (!apps || apps.length === 0) return [];
+
+  const workerIds = [...new Set(apps.map(a => a.worker_id).filter(Boolean))];
+  const [{ data: applicants }, { data: workerProfiles }] = await Promise.all([
+    supabase.rpc('get_applicant_public', { p_worker_ids: workerIds }),
+    supabase
+      .from('worker_profiles')
+      .select('user_id, bio:summary, experience_summary, skills, hourly_rate_min, hourly_rate_max, qualifications')
+      .in('user_id', workerIds),
+  ]);
+  const profileMap    = Object.fromEntries(((applicants as { id: string }[]) ?? []).map(p => [p.id, p]));
+  const workerProfMap = Object.fromEntries((workerProfiles ?? []).map(p => [p.user_id, p]));
+
+  return apps.map(app => ({
+    ...app,
     worker:        profileMap[app.worker_id] ?? null,
     workerProfile: workerProfMap[app.worker_id] ?? null,
   }));
@@ -538,14 +612,34 @@ export async function updateApplicationStatus(
       .single();
     if (shift) {
       const newFilled = shift.positions_filled + 1;
+      const nowFull = newFilled >= shift.positions_total;
       await supabase
         .from('shifts')
-        .update({
-          positions_filled: newFilled,
-          // Auto-close shift when all positions are filled
-          ...(newFilled >= shift.positions_total ? { status: 'filled' } : {}),
-        })
+        .update({ positions_filled: newFilled, ...(nowFull ? { status: 'filled' } : {}) })
         .eq('id', shiftId);
+
+      // When the shift is now full, don't leave the other applicants hanging —
+      // auto-decline them and let them know the shift has been filled.
+      if (nowFull) {
+        const { data: others } = await supabase
+          .from('shift_applications')
+          .select('id')
+          .eq('shift_id', shiftId)
+          .eq('status', 'pending')
+          .neq('id', applicationId);
+        const ids = (others ?? []).map(o => o.id);
+        if (ids.length) {
+          await supabase
+            .from('shift_applications')
+            .update({ status: 'rejected', updated_at: new Date().toISOString() })
+            .in('id', ids);
+          for (const id of ids) {
+            supabase.functions.invoke('notify-application-update', {
+              body: { application_id: id, status: 'rejected', reason: 'filled' },
+            }).catch(() => {});
+          }
+        }
+      }
     }
   }
 

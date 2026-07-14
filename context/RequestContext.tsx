@@ -20,6 +20,8 @@ export interface RequestFormData {
   contactPhone: string;
   deliveryNotes: string;
   liabilityAcknowledged: boolean;
+  schedulingMode: 'asap' | 'by' | 'flexible';
+  neededBy: string | null; // ISO, only when schedulingMode === 'by'
 }
 
 const initialData: RequestFormData = {
@@ -42,6 +44,8 @@ const initialData: RequestFormData = {
   contactPhone: '',
   deliveryNotes: '',
   liabilityAcknowledged: false,
+  schedulingMode: 'asap',
+  neededBy: null,
 };
 
 interface RequestContextType {

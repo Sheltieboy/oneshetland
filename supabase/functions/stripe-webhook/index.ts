@@ -243,6 +243,18 @@ serve(async (req) => {
           break;
         }
 
+        // ── Analytics add-on subscription (any tier, incl. free) ─────────
+        if (meta.type === 'analytics_addon' && meta.business_id) {
+          await supabase
+            .from('business_addons')
+            .update(isActive
+              ? { enabled: true, config: { method: 'card', subscription_id: subId } }
+              : { enabled: false })
+            .eq('business_id', meta.business_id)
+            .eq('addon_key', 'analytics');
+          break;
+        }
+
         // ── Standard business tier subscription ──────────────────────────
         // Map Stripe price IDs to our tiers — read from admin_config first,
         // fall back to env vars so old deployments keep working.
@@ -320,6 +332,16 @@ serve(async (req) => {
             .update({ status: 'suspended' })
             .eq('business_id', deleteMeta.business_id)
             .eq('stripe_subscription_id', subId);
+          break;
+        }
+
+        // Analytics add-on cancelled — disable the add-on
+        if (deleteMeta.type === 'analytics_addon' && deleteMeta.business_id) {
+          await supabase
+            .from('business_addons')
+            .update({ enabled: false })
+            .eq('business_id', deleteMeta.business_id)
+            .eq('addon_key', 'analytics');
           break;
         }
 

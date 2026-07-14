@@ -188,6 +188,59 @@ export function ticketTypeRemaining(tt: EventTicketType): number | null {
   return Math.max(0, tt.quantity_available - tt.quantity_sold);
 }
 
+export interface EventScarcity {
+  measurable: boolean;
+  totalCap:   number;
+  totalSold:  number;
+  remaining:  number;
+  pctSold:    number;   // 0..100
+  soldOut:    boolean;
+  sellingFast: boolean; // ≥65% sold
+  almostGone:  boolean; // capped allocation nearly gone
+}
+
+/**
+ * Aggregate scarcity across an event's capped, active ticket types. Uncapped
+ * tiers are ignored (can't measure "% gone" without a cap). Honest data only.
+ * Mirrors the web computeScarcity().
+ */
+export function computeScarcity(ticketTypes: EventTicketType[]): EventScarcity {
+  const none: EventScarcity = {
+    measurable: false, totalCap: 0, totalSold: 0, remaining: 0,
+    pctSold: 0, soldOut: false, sellingFast: false, almostGone: false,
+  };
+  const capped = ticketTypes.filter(t => t.is_active && t.quantity_available !== null);
+  if (capped.length === 0) return none;
+  const totalCap = capped.reduce((n, t) => n + (t.quantity_available ?? 0), 0);
+  const totalSold = capped.reduce((n, t) => n + Math.min(t.quantity_sold, t.quantity_available ?? 0), 0);
+  if (totalCap <= 0) return none;
+  const remaining = Math.max(0, totalCap - totalSold);
+  const pctSold = Math.round((totalSold / totalCap) * 100);
+  return {
+    measurable: true,
+    totalCap, totalSold, remaining, pctSold,
+    soldOut: remaining === 0,
+    sellingFast: pctSold >= 65 && remaining > 0,
+    almostGone: remaining > 0 && remaining <= 10,
+  };
+}
+
+export interface EventSocialStats {
+  goingCount:   number; // valid + used tickets
+  bookedRecent: number; // booked in last 24h
+}
+
+/** Public aggregate stats (counts only, no PII) via the get_event_social_stats RPC. */
+export async function fetchEventSocialStats(eventId: string): Promise<EventSocialStats> {
+  const { data, error } = await supabase.rpc('get_event_social_stats', { p_event_id: eventId });
+  if (error || !data) return { goingCount: 0, bookedRecent: 0 };
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    goingCount:   Number(row?.going_count ?? 0),
+    bookedRecent: Number(row?.booked_recent ?? 0),
+  };
+}
+
 export function eventSoldOut(event: OsEvent): boolean {
   if (!event.has_tickets) return false;
   if (event.capacity === null) return false;

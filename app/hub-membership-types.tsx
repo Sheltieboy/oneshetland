@@ -149,7 +149,7 @@ export default function HubMembershipTypesScreen() {
         <ScreenHeader
           title="Membership tiers"
           accent={S.color}
-          rightElement={<IconButton icon="plus" color={S.color} onPress={openNew} />}
+          rightElement={<IconButton icon="plus" color={S.color} onPress={openNew} accessibilityLabel="Add membership tier" />}
         />
       }
     >

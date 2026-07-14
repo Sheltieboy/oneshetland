@@ -1,0 +1,5146 @@
+{
+  "source": "bus-lerwick_scalloway",
+  "legend": {
+    "DAR": "Dial-a-Ride",
+    "Tu": "Tuesdays only",
+    "Th": "Thursdays only",
+    "NTh": "Not Thursdays",
+    "MWF": "Mondays, Wednesdays and Fridays only",
+    "FSat": "Fridays and Saturdays only",
+    "Sch": "Schooldays only",
+    "NSch": "School holidays only",
+    "CON4": "Connects with Service 4 at Blydoit",
+    "T6": "Through journey to/from Service 6",
+    "REQH": "Extends to Hamnavoe on request only",
+    "TES": "Extends to Tesco if required",
+    "Lk": "Lerwick"
+  },
+  "services": [
+    {
+      "service": "1",
+      "name": "Lerwick Town Service (Lerwick South)",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Quoys",
+              "time": "0825"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "0826"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "0827"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "0829"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "0830"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "0831"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "0832"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "0834"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "NSch"
+          ],
+          "calls": [
+            {
+              "stop": "Quoys",
+              "time": "0825"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "0826"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "0827"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "0829"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "0830"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "0831"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "0832"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "0834"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "0930"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0931"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0932"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0933"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "0934"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0935"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0936"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0937"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "0938"
+            },
+            {
+              "stop": "Quoys",
+              "time": "0940"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "0941"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "0942"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "0943"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "0944"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "0945"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "0947"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "0950"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "0951"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0952"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "0953"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "0954"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1030"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1031"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1032"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1033"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1034"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1035"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1036"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1037"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1038"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1040"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1041"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1042"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1043"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1044"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1045"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1047"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1050"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1051"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1052"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1053"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1054"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1130"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1131"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1132"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1133"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1134"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1135"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1136"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1137"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1138"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1140"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1141"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1142"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1143"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1144"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1145"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1147"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1150"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1151"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1152"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1153"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1154"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1230"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1231"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1232"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1233"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1234"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1235"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1236"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1237"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1238"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1240"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1241"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1242"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1243"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1244"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1245"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1247"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1250"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1251"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1252"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1253"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1254"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1330"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1331"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1332"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1333"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1334"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1335"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1336"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1337"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1338"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1340"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1341"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1342"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1343"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1344"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1345"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1347"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1350"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1351"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1352"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1353"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1354"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1430"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1431"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1432"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1433"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1434"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1435"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1436"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1437"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1438"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1440"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1441"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1442"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1443"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1444"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1445"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1447"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1450"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1451"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1452"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1453"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1454"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1530"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1531"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1532"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1533"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1534"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1535"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1536"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1537"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1538"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1540"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1541"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1542"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1543"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1544"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1545"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1547"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1550"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1551"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1552"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1553"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1554"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1630"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1631"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1632"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1633"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1634"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1635"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1636"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1637"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1638"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1640"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1641"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1642"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1643"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1644"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1645"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1647"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1650"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1651"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1652"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1653"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1654"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "1",
+      "name": "Lerwick Town Service (Lerwick South)",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Quoys",
+              "time": "0825"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "0826"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "0827"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "0829"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "0830"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "0831"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "0832"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "0834"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "0930"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0931"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0932"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "0933"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "0934"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "0935"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "0936"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "0937"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "0938"
+            },
+            {
+              "stop": "Quoys",
+              "time": "0940"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "0941"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "0942"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "0943"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "0944"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "0945"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "0947"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "0950"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "0951"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "0952"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "0953"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "0954"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1030"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1031"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1032"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1033"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1034"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1035"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1036"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1037"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1038"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1040"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1041"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1042"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1043"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1044"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1045"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1047"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1050"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1051"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1052"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1053"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1054"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1130"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1131"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1132"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1133"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1134"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1135"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1136"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1137"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1138"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1140"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1141"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1142"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1143"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1144"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1145"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1147"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1150"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1151"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1152"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1153"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1154"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1230"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1231"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1232"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1233"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1234"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1235"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1236"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1237"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1238"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1240"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1241"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1242"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1243"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1244"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1245"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1247"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1250"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1251"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1252"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1253"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1254"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1330"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1331"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1332"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1333"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1334"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1335"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1336"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1337"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1338"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1340"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1341"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1342"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1343"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1344"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1345"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1347"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1350"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1351"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1352"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1353"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1354"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1430"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1431"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1432"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1433"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1434"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1435"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1436"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1437"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1438"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1440"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1441"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1442"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1443"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1444"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1445"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1447"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1450"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1451"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1452"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1453"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1454"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1530"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1531"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1532"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1533"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1534"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1535"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1536"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1537"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1538"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1540"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1541"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1542"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1543"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1544"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1545"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1547"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1550"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1551"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1552"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1553"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1554"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1630"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1631"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1632"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1633"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1634"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1635"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1636"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1637"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1638"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1640"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1641"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1642"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1643"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1644"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1645"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1647"
+            },
+            {
+              "stop": "South Lochside",
+              "time": "1650"
+            },
+            {
+              "stop": "North Lochside",
+              "time": "1651"
+            },
+            {
+              "stop": "North Road (Bolts)",
+              "time": "1652"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1653"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1654"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "1",
+      "name": "Lerwick Town Service (Lerwick North)",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Staney Hill Hall",
+              "time": "0836"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "0838"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "0845"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0848"
+            },
+            {
+              "stop": "Bells Brae Primary School",
+              "time": "0850"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0853"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0854"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "0855"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "0856"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "NSch"
+          ],
+          "calls": [
+            {
+              "stop": "Staney Hill Hall",
+              "time": "0836"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "0838"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "0845"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0848"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0853"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0854"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "0855"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "0856"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "0900"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0901"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0902"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "0904"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "0908"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "0910"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "0917"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0920"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "0923"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "0924"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0925"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0926"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0927"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "0928"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "0930"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1000"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1001"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1002"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1004"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1008"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1010"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "1017"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1020"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1023"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1024"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1025"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1026"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1027"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1028"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1030"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1100"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1101"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1102"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1104"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1108"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1110"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "1117"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1120"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1123"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1124"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1125"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1126"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1127"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1128"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1130"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1200"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1201"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1202"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1204"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1208"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1210"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "1217"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1220"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1223"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1224"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1225"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1226"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1227"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1228"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1230"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1300"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1301"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1302"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1304"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1308"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1310"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "1317"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1320"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1323"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1324"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1325"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1326"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1327"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1328"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1330"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1400"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1401"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1402"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1404"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1408"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1410"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "1417"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1420"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1423"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1424"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1425"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1426"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1427"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1428"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1430"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1500"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1501"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1502"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1504"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1508"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1510"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "1517"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1520"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1523"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1524"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1525"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1526"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1527"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1528"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1530"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1600"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1601"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1602"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1604"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1608"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1610"
+            },
+            {
+              "stop": "Shetland College",
+              "time": "1617"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1620"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1623"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1624"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1625"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1626"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1627"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1628"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1630"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Sch"
+          ],
+          "calls": [
+            {
+              "stop": "Bells Brae Primary School",
+              "time": "1505"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1515"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1517"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1705"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1706"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1707"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1709"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1713"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1715"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1717"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1719"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1720"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1721"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1722"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1723"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1725"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1726"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1727"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1729"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1730"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1731"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1732"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1733"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1734"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1735"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1736"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1737"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "1",
+      "name": "Lerwick Town Service (Lerwick North)",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Staney Hill Hall",
+              "time": "0837"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "0841"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0843"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "0846"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "0847"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0848"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0849"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0850"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "0851"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "0853"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "0900"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "0901"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0902"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "0904"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "0908"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "0910"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0912"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "0915"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "0916"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "0917"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0918"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0919"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "0920"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "0922"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1000"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1001"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1002"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1004"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1008"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1010"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1012"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1015"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1016"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1017"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1018"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1019"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1020"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1022"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1100"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1101"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1102"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1104"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1108"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1110"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1112"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1115"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1116"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1117"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1118"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1119"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1120"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1122"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1200"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1201"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1202"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1204"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1208"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1210"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1212"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1215"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1216"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1217"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1218"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1219"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1220"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1222"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1300"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1301"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1302"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1304"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1308"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1310"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1312"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1315"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1316"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1317"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1318"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1319"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1320"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1322"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1400"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1401"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1402"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1404"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1408"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1410"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1412"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1415"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1416"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1417"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1418"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1419"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1420"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1422"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1500"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1501"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1502"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1504"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1508"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1510"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1512"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1515"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1516"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1517"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1518"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1519"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1520"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1522"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1600"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1601"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1602"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1604"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1608"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1610"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1612"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1615"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1616"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1617"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1618"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1619"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1620"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1622"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Esplanade (depart)",
+              "time": "1705"
+            },
+            {
+              "stop": "Annsbrae",
+              "time": "1706"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1707"
+            },
+            {
+              "stop": "North Road (Opp Bolts)",
+              "time": "1709"
+            },
+            {
+              "stop": "Staney Hill Hall",
+              "time": "1713"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1715"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1717"
+            },
+            {
+              "stop": "Lochside (Opp Track)",
+              "time": "1719"
+            },
+            {
+              "stop": "South Road (Tesco)",
+              "time": "1720"
+            },
+            {
+              "stop": "Sound Service Station",
+              "time": "1721"
+            },
+            {
+              "stop": "Sound Hall",
+              "time": "1722"
+            },
+            {
+              "stop": "Ackrigarth",
+              "time": "1723"
+            },
+            {
+              "stop": "Quoys",
+              "time": "1725"
+            },
+            {
+              "stop": "Oversund Rd (Swarthoull)",
+              "time": "1726"
+            },
+            {
+              "stop": "Oversund Rd (Sound Sch)",
+              "time": "1727"
+            },
+            {
+              "stop": "Nedersund Road",
+              "time": "1729"
+            },
+            {
+              "stop": "Kantersted Road",
+              "time": "1730"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1731"
+            },
+            {
+              "stop": "Clickimin Road",
+              "time": "1732"
+            },
+            {
+              "stop": "Gilbert Bain Hospital",
+              "time": "1733"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1734"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1735"
+            },
+            {
+              "stop": "Commercial Road",
+              "time": "1736"
+            },
+            {
+              "stop": "Esplanade (arrive)",
+              "time": "1737"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "4",
+      "name": "Lerwick - Scalloway",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0750"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0751"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0753"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "0755"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0757"
+            },
+            {
+              "stop": "North Road",
+              "time": "0758"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0759"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0810"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "0813"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "0816"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0840"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "0841"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "0843"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "0845"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "0847"
+            },
+            {
+              "stop": "North Road",
+              "time": "0848"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0849"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0900"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "0903"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "0906"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1010"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1011"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1013"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1015"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1017"
+            },
+            {
+              "stop": "North Road",
+              "time": "1018"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1019"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1030"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1033"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1036"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1110"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1111"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1113"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1115"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1117"
+            },
+            {
+              "stop": "North Road",
+              "time": "1118"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1119"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1130"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1133"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1136"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1210"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1211"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1213"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1215"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1217"
+            },
+            {
+              "stop": "North Road",
+              "time": "1218"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1219"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1230"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1233"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1236"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1310"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1311"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1313"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1315"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1317"
+            },
+            {
+              "stop": "North Road",
+              "time": "1318"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1319"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1330"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1333"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1336"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1415"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1416"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1418"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1420"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1422"
+            },
+            {
+              "stop": "North Road",
+              "time": "1423"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1424"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1435"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1438"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1441"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1510"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1511"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1513"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1515"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1517"
+            },
+            {
+              "stop": "North Road",
+              "time": "1518"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1519"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1530"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1533"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1536"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1610"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1611"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1613"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1615"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1617"
+            },
+            {
+              "stop": "North Road",
+              "time": "1618"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1619"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1630"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1633"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1636"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1715"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1716"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1718"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1720"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1722"
+            },
+            {
+              "stop": "North Road",
+              "time": "1723"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1724"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1735"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1738"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1741"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1910"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1911"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "1913"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1915"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "1917"
+            },
+            {
+              "stop": "North Road",
+              "time": "1918"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1919"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1930"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1933"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "1936"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "REQH"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "2120"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "2121"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "2123"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "2125"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "2127"
+            },
+            {
+              "stop": "North Road",
+              "time": "2128"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "2129"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "2133"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "2144"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "2147"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "2150"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "FSat"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "2300"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "2301"
+            },
+            {
+              "stop": "Scalloway Road",
+              "time": "2303"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "2305"
+            },
+            {
+              "stop": "King Harald Street",
+              "time": "2307"
+            },
+            {
+              "stop": "North Road",
+              "time": "2308"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "2309"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "2313"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "2324"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "2327"
+            },
+            {
+              "stop": "Port Arthur",
+              "time": "2330"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "4",
+      "name": "Lerwick - Scalloway",
+      "direction": "outbound",
+      "dayGroup": "Sunday",
+      "trips": [
+        {
+          "codes": [
+            "T6"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1300"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1303"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1307"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1319"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1322"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1332"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T6"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1500"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1503"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1507"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1519"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1522"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1532"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T6"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1700"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1703"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1707"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1719"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1722"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1732"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T6"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1900"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1903"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1907"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1919"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "4",
+      "name": "Lerwick - Scalloway",
+      "direction": "inbound",
+      "dayGroup": "Monday-Saturday",
+      "trips": [
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "0728"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "0731"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0734"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0745"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0749"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "0818"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "0821"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0824"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0835"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0839"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "0938"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "0941"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0944"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "0955"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "0959"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1038"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1041"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1044"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1055"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1059"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1138"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1141"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1144"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1155"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1159"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1238"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1241"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1244"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1255"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1259"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1338"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1341"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1344"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1355"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1359"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1443"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1446"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1449"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1500"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1504"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1538"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1541"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1544"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1555"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1559"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1638"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1641"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1644"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1655"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1659"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1743"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1746"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1749"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1800"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1804"
+            }
+          ]
+        },
+        {
+          "codes": [],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "1938"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1941"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1944"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1955"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1959"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "FSat"
+          ],
+          "calls": [
+            {
+              "stop": "Port Arthur",
+              "time": "2233"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "2236"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "2239"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "2250"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "2254"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "4",
+      "name": "Lerwick - Scalloway",
+      "direction": "inbound",
+      "dayGroup": "Sunday",
+      "trips": [
+        {
+          "codes": [
+            "T6"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "1148"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1159"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1203"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1207"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T6"
+          ],
+          "calls": [
+            {
+              "stop": "Hamnavoe",
+              "time": "1335"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1345"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1348"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1359"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1403"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1407"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "T6"
+          ],
+          "calls": [
+            {
+              "stop": "Hamnavoe",
+              "time": "1535"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1545"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1548"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1559"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1603"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1607"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "TES"
+          ],
+          "calls": [
+            {
+              "stop": "Hamnavoe",
+              "time": "1735"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1745"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1748"
+            },
+            {
+              "stop": "Hoofields",
+              "time": "1759"
+            },
+            {
+              "stop": "Holmsgarth",
+              "time": "1803"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1807"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "5",
+      "name": "Burra Feeder",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "0855"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0901"
+            },
+            {
+              "stop": "Trondra",
+              "time": "0906"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "0911"
+            },
+            {
+              "stop": "Papil",
+              "time": "0921"
+            },
+            {
+              "stop": "Houss",
+              "time": "0929"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "1155"
+            },
+            {
+              "stop": "Scalloway Health Centre",
+              "time": "1157"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1203"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1208"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1213"
+            },
+            {
+              "stop": "Papil",
+              "time": "1223"
+            },
+            {
+              "stop": "Houss",
+              "time": "1232"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4",
+            "NTh"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "1325"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1331"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1336"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1341"
+            },
+            {
+              "stop": "Papil",
+              "time": "1351"
+            },
+            {
+              "stop": "Houss",
+              "time": "1359"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4",
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Esplanade",
+              "time": "1313"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1316"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1331"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1336"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1341"
+            },
+            {
+              "stop": "Papil",
+              "time": "1351"
+            },
+            {
+              "stop": "Houss",
+              "time": "1359"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "1730"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1736"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1741"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1746"
+            },
+            {
+              "stop": "Papil",
+              "time": "1756"
+            },
+            {
+              "stop": "Houss",
+              "time": "1804"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "5",
+      "name": "Burra Feeder",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "0855"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0901"
+            },
+            {
+              "stop": "Trondra",
+              "time": "0906"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "0911"
+            },
+            {
+              "stop": "Papil",
+              "time": "0921"
+            },
+            {
+              "stop": "Houss",
+              "time": "0929"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "1325"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1331"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1336"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1341"
+            },
+            {
+              "stop": "Papil",
+              "time": "1351"
+            },
+            {
+              "stop": "Houss",
+              "time": "1359"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "1625"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1631"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1636"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1641"
+            },
+            {
+              "stop": "Papil",
+              "time": "1651"
+            },
+            {
+              "stop": "Houss",
+              "time": "1659"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Scalloway Hall",
+              "time": "1730"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1736"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1741"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1746"
+            },
+            {
+              "stop": "Papil",
+              "time": "1756"
+            },
+            {
+              "stop": "Houss",
+              "time": "1804"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "5",
+      "name": "Burra Feeder",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "0755"
+            },
+            {
+              "stop": "Papil",
+              "time": "0803"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "0813"
+            },
+            {
+              "stop": "Trondra",
+              "time": "0818"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0823"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "0826"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4",
+            "NTh"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "1015"
+            },
+            {
+              "stop": "Papil",
+              "time": "1023"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1033"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1038"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1043"
+            },
+            {
+              "stop": "Scalloway Health Centre",
+              "time": "1046"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1048"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4",
+            "Th"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "1015"
+            },
+            {
+              "stop": "Papil",
+              "time": "1023"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1033"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1038"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1043"
+            },
+            {
+              "stop": "Sea Road (Tesco)",
+              "time": "1058"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1101"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "1415"
+            },
+            {
+              "stop": "Papil",
+              "time": "1423"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1433"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1438"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1443"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1446"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "1804"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1814"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1819"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1824"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1827"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "5",
+      "name": "Burra Feeder",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "0755"
+            },
+            {
+              "stop": "Papil",
+              "time": "0803"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "0813"
+            },
+            {
+              "stop": "Trondra",
+              "time": "0818"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "0823"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "0826"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "1015"
+            },
+            {
+              "stop": "Papil",
+              "time": "1023"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1033"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1038"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1043"
+            },
+            {
+              "stop": "Scalloway Health Centre",
+              "time": "1046"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1048"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "1415"
+            },
+            {
+              "stop": "Papil",
+              "time": "1423"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1433"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1438"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1443"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1446"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "CON4"
+          ],
+          "calls": [
+            {
+              "stop": "Houss",
+              "time": "1704"
+            },
+            {
+              "stop": "Hamnavoe",
+              "time": "1714"
+            },
+            {
+              "stop": "Trondra",
+              "time": "1719"
+            },
+            {
+              "stop": "Blydoit",
+              "time": "1724"
+            },
+            {
+              "stop": "Scalloway Hall",
+              "time": "1727"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "41",
+      "name": "Bressay Shopper",
+      "direction": "inbound",
+      "dayGroup": "Tuesday",
+      "trips": [
+        {
+          "codes": [
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Bressay Ferry Terminal",
+              "time": "1008"
+            },
+            {
+              "stop": "Voeside",
+              "time": "1010"
+            },
+            {
+              "stop": "Fullaburn/Glebe",
+              "time": "1015"
+            },
+            {
+              "stop": "Bressay Public Hall",
+              "time": "1017"
+            },
+            {
+              "stop": "Voehead Road",
+              "time": "1018"
+            },
+            {
+              "stop": "Bressay Ferry Terminal",
+              "time": "1020"
+            },
+            {
+              "stop": "Bressay Ferry",
+              "time": "1030"
+            },
+            {
+              "stop": "Esplanade",
+              "time": "1038"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1045"
+            },
+            {
+              "stop": "Tesco",
+              "time": "1048"
+            },
+            {
+              "stop": "Co-op",
+              "time": "1050"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "41",
+      "name": "Bressay Shopper",
+      "direction": "outbound",
+      "dayGroup": "Tuesday",
+      "trips": [
+        {
+          "codes": [
+            "Tu"
+          ],
+          "calls": [
+            {
+              "stop": "Esplanade",
+              "time": "1300"
+            },
+            {
+              "stop": "Lerwick Health Centre",
+              "time": "1303"
+            },
+            {
+              "stop": "Tesco",
+              "time": "1305"
+            },
+            {
+              "stop": "Co-op (arrive)",
+              "time": "1308"
+            },
+            {
+              "stop": "Co-op (depart)",
+              "time": "1355"
+            },
+            {
+              "stop": "Tesco",
+              "time": "1400"
+            },
+            {
+              "stop": "Bressay Ferry Terminal (Lk)",
+              "time": "1410"
+            },
+            {
+              "stop": "Bressay Ferry",
+              "time": "1430"
+            },
+            {
+              "stop": "Bressay Ferry Terminal",
+              "time": "1435"
+            },
+            {
+              "stop": "Voeside",
+              "time": "1437"
+            },
+            {
+              "stop": "Fullaburn/Glebe",
+              "time": "1440"
+            },
+            {
+              "stop": "Bressay Public Hall",
+              "time": "1442"
+            },
+            {
+              "stop": "Voehead Road",
+              "time": "1444"
+            },
+            {
+              "stop": "Bressay Ferry Terminal",
+              "time": "1450"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "42",
+      "name": "Bressay Area",
+      "direction": "outbound",
+      "dayGroup": "Monday/Wednesday/Friday",
+      "trips": [
+        {
+          "codes": [
+            "MWF"
+          ],
+          "calls": [
+            {
+              "stop": "Ferry Terminal",
+              "time": "0908"
+            },
+            {
+              "stop": "Noss",
+              "time": "0916"
+            },
+            {
+              "stop": "Pettifirth Junction",
+              "time": "0920"
+            },
+            {
+              "stop": "Bressay Shop",
+              "time": "0924"
+            },
+            {
+              "stop": "Ferry Terminal (arrive)",
+              "time": "0928"
+            },
+            {
+              "stop": "Ferry Terminal (depart)",
+              "time": "0930"
+            },
+            {
+              "stop": "Heogan",
+              "time": "0935"
+            },
+            {
+              "stop": "Beosetter",
+              "time": "0946"
+            },
+            {
+              "stop": "Ferry Terminal (arrive)",
+              "time": "0958"
+            },
+            {
+              "stop": "Ferry Terminal (depart)",
+              "time": "1008"
+            },
+            {
+              "stop": "Kirkabister",
+              "time": "1016"
+            },
+            {
+              "stop": "Ferry Terminal",
+              "time": "1028"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "90",
+      "name": "Lerwick - Tingwall Airport",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0815"
+            },
+            {
+              "stop": "Tingwall Airport",
+              "time": "0830"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "0920"
+            },
+            {
+              "stop": "Tingwall Airport",
+              "time": "0935"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1245"
+            },
+            {
+              "stop": "Tingwall Airport",
+              "time": "1300"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1410"
+            },
+            {
+              "stop": "Tingwall Airport",
+              "time": "1425"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1520"
+            },
+            {
+              "stop": "Tingwall Airport",
+              "time": "1535"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "90",
+      "name": "Lerwick - Tingwall Airport",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Viking Bus Station",
+              "time": "1010"
+            },
+            {
+              "stop": "Tingwall Airport",
+              "time": "1025"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "90",
+      "name": "Lerwick - Tingwall Airport",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "trips": [
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Tingwall Airport",
+              "time": "1000"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1015"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Tingwall Airport",
+              "time": "1100"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1115"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Tingwall Airport",
+              "time": "1440"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1455"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Tingwall Airport",
+              "time": "1600"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1615"
+            }
+          ]
+        },
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Tingwall Airport",
+              "time": "1700"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1715"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "service": "90",
+      "name": "Lerwick - Tingwall Airport",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "trips": [
+        {
+          "codes": [
+            "DAR"
+          ],
+          "calls": [
+            {
+              "stop": "Tingwall Airport",
+              "time": "1455"
+            },
+            {
+              "stop": "Viking Bus Station",
+              "time": "1510"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

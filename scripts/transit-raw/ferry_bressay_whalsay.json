@@ -1,0 +1,173 @@
+{
+  "source": "ferry-bressay-whalsay",
+  "effectiveFrom": "2025-10-06",
+  "legend": {
+    "FO": "Friday Only (O = only on the named day(s); F = Friday). e.g. 2359FO sails only on Friday nights.",
+    "N": "Not on the named day(s). e.g. 1500NTh means the 1500 will NOT sail on Thursday.",
+    "O": "Only on the named day(s). e.g. 1500SaO means the 1500 is only available on Saturday.",
+    "booking": "Orange-shaded cell: sailing only takes place if a booking is made before close of Booking Office (or 1800 for online bookings). For Skerries & Papa Stour: booking must exist by 1630 the day before, or by 1100 on the day for sailings after 1500."
+  },
+  "vesselCoding": {
+    "note": "Whalsay-only cell styling indicates the vessel, not a restriction: normal black text = Linga; blue italic = Hendra; white-on-black box = Filla. Booking restriction is indicated separately by orange shading (flag 'booking').",
+    "Linga": "black text",
+    "Hendra": "blue italic",
+    "Filla": "white text on black"
+  },
+  "journeyMins": {
+    "Bressay": 7,
+    "Whalsay": 30,
+    "Papa Stour": 40,
+    "Foula": 120,
+    "Skerries-Vidlin": 90,
+    "Skerries-Lerwick": 150,
+    "Fair Isle-Grutness": 160,
+    "Fair Isle-Lerwick": 300
+  },
+  "bookingOnly": ["Skerries", "Papa Stour", "Foula", "Fair Isle"],
+  "routes": [
+    {
+      "route": "Bressay",
+      "from": "Lerwick",
+      "to": "Bressay",
+      "dayGroup": "Monday-Friday",
+      "departures": [
+        {"time":"0615","flags":[]},{"time":"0645","flags":[]},{"time":"0715","flags":[]},{"time":"0800","flags":[]},{"time":"0820","flags":[]},{"time":"0840","flags":[]},{"time":"0900","flags":[]},{"time":"1000","flags":[]},{"time":"1100","flags":[]},{"time":"1200","flags":[]},{"time":"1300","flags":[]},{"time":"1330","flags":[]},{"time":"1430","flags":[]},{"time":"1530","flags":[]},{"time":"1610","flags":[]},{"time":"1630","flags":[]},{"time":"1715","flags":[]},{"time":"1800","flags":[]},{"time":"1830","flags":[]},{"time":"1900","flags":[]},{"time":"2000","flags":[]},{"time":"2030","flags":[]},{"time":"2130","flags":[]},{"time":"2200","flags":[]},{"time":"2300","flags":[]},{"time":"2359","flags":["FO"]},{"time":"0100","flags":["FO"]}
+      ]
+    },
+    {
+      "route": "Bressay",
+      "from": "Bressay",
+      "to": "Lerwick",
+      "dayGroup": "Monday-Friday",
+      "departures": [
+        {"time":"0600","flags":[]},{"time":"0630","flags":[]},{"time":"0700","flags":[]},{"time":"0730","flags":[]},{"time":"0810","flags":[]},{"time":"0830","flags":[]},{"time":"0850","flags":[]},{"time":"0930","flags":[]},{"time":"1030","flags":[]},{"time":"1130","flags":[]},{"time":"1245","flags":[]},{"time":"1315","flags":[]},{"time":"1400","flags":[]},{"time":"1500","flags":[]},{"time":"1545","flags":[]},{"time":"1620","flags":[]},{"time":"1700","flags":[]},{"time":"1745","flags":[]},{"time":"1815","flags":[]},{"time":"1845","flags":[]},{"time":"1930","flags":[]},{"time":"2015","flags":[]},{"time":"2100","flags":[]},{"time":"2145","flags":[]},{"time":"2245","flags":["FO"]},{"time":"0045","flags":["FO"]}
+      ]
+    },
+    {
+      "route": "Bressay",
+      "from": "Lerwick",
+      "to": "Bressay",
+      "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0615","flags":[]},{"time":"0645","flags":[]},{"time":"0715","flags":[]},{"time":"0800","flags":[]},{"time":"0900","flags":[]},{"time":"1000","flags":[]},{"time":"1100","flags":[]},{"time":"1200","flags":[]},{"time":"1300","flags":[]},{"time":"1330","flags":[]},{"time":"1430","flags":[]},{"time":"1530","flags":[]},{"time":"1630","flags":[]},{"time":"1715","flags":[]},{"time":"1800","flags":[]},{"time":"1830","flags":[]},{"time":"1900","flags":[]},{"time":"2000","flags":[]},{"time":"2030","flags":[]},{"time":"2130","flags":[]},{"time":"2200","flags":[]},{"time":"2300","flags":[]},{"time":"2359","flags":[]},{"time":"0100","flags":[]}
+      ]
+    },
+    {
+      "route": "Bressay",
+      "from": "Bressay",
+      "to": "Lerwick",
+      "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0600","flags":[]},{"time":"0630","flags":[]},{"time":"0700","flags":[]},{"time":"0730","flags":[]},{"time":"0830","flags":[]},{"time":"0930","flags":[]},{"time":"1030","flags":[]},{"time":"1130","flags":[]},{"time":"1245","flags":[]},{"time":"1315","flags":[]},{"time":"1400","flags":[]},{"time":"1500","flags":[]},{"time":"1600","flags":[]},{"time":"1700","flags":[]},{"time":"1745","flags":[]},{"time":"1815","flags":[]},{"time":"1845","flags":[]},{"time":"1930","flags":[]},{"time":"2015","flags":[]},{"time":"2100","flags":[]},{"time":"2145","flags":[]},{"time":"2245","flags":[]},{"time":"2345","flags":[]},{"time":"0045","flags":[]}
+      ]
+    },
+    {
+      "route": "Bressay",
+      "from": "Lerwick",
+      "to": "Bressay",
+      "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0615","flags":[]},{"time":"0645","flags":[]},{"time":"0715","flags":[]},{"time":"0800","flags":[]},{"time":"0900","flags":[]},{"time":"1045","flags":[]},{"time":"1230","flags":[]},{"time":"1300","flags":[]},{"time":"1430","flags":[]},{"time":"1530","flags":[]},{"time":"1630","flags":[]},{"time":"1715","flags":[]},{"time":"1800","flags":[]},{"time":"1830","flags":[]},{"time":"1900","flags":[]},{"time":"2000","flags":[]},{"time":"2030","flags":[]},{"time":"2130","flags":[]},{"time":"2200","flags":[]},{"time":"2300","flags":[]}
+      ]
+    },
+    {
+      "route": "Bressay",
+      "from": "Bressay",
+      "to": "Lerwick",
+      "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0600","flags":[]},{"time":"0630","flags":[]},{"time":"0700","flags":[]},{"time":"0730","flags":[]},{"time":"0830","flags":[]},{"time":"1030","flags":[]},{"time":"1215","flags":[]},{"time":"1245","flags":[]},{"time":"1400","flags":[]},{"time":"1500","flags":[]},{"time":"1600","flags":[]},{"time":"1700","flags":[]},{"time":"1745","flags":[]},{"time":"1815","flags":[]},{"time":"1845","flags":[]},{"time":"1930","flags":[]},{"time":"2015","flags":[]},{"time":"2100","flags":[]},{"time":"2145","flags":[]},{"time":"2245","flags":[]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Laxo",
+      "to": "Symbister",
+      "dayGroup": "Monday",
+      "departures": [
+        {"time":"0530","flags":["booking"]},{"time":"0700","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0935","flags":[]},{"time":"1030","flags":[]},{"time":"1045","flags":[]},{"time":"1115","flags":[]},{"time":"1200","flags":[]},{"time":"1245","flags":[]},{"time":"1400","flags":[]},{"time":"1445","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1755","flags":[]},{"time":"1830","flags":[]},{"time":"2030","flags":[]},{"time":"2200","flags":[]},{"time":"2330","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Symbister",
+      "to": "Laxo",
+      "dayGroup": "Monday",
+      "departures": [
+        {"time":"0500","flags":["booking"]},{"time":"0615","flags":[]},{"time":"0645","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0915","flags":[]},{"time":"1030","flags":[]},{"time":"1115","flags":[]},{"time":"1200","flags":[]},{"time":"1245","flags":[]},{"time":"1400","flags":[]},{"time":"1445","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1745","flags":[]},{"time":"1900","flags":[]},{"time":"2115","flags":[]},{"time":"2245","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Laxo",
+      "to": "Symbister",
+      "dayGroup": "Tuesday-Thursday",
+      "departures": [
+        {"time":"0530","flags":["booking"]},{"time":"0700","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0935","flags":[]},{"time":"1030","flags":[]},{"time":"1115","flags":[]},{"time":"1200","flags":[]},{"time":"1245","flags":[]},{"time":"1400","flags":[]},{"time":"1445","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1755","flags":[]},{"time":"1830","flags":[]},{"time":"2030","flags":[]},{"time":"2200","flags":[]},{"time":"2330","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Symbister",
+      "to": "Laxo",
+      "dayGroup": "Tuesday-Thursday",
+      "departures": [
+        {"time":"0500","flags":["booking"]},{"time":"0615","flags":[]},{"time":"0645","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0915","flags":[]},{"time":"1030","flags":[]},{"time":"1115","flags":[]},{"time":"1200","flags":[]},{"time":"1245","flags":[]},{"time":"1400","flags":[]},{"time":"1445","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1745","flags":[]},{"time":"1900","flags":[]},{"time":"2115","flags":[]},{"time":"2245","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Laxo",
+      "to": "Symbister",
+      "dayGroup": "Friday",
+      "departures": [
+        {"time":"0530","flags":["booking"]},{"time":"0700","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0935","flags":[]},{"time":"1030","flags":[]},{"time":"1115","flags":[]},{"time":"1200","flags":[]},{"time":"1245","flags":[]},{"time":"1400","flags":[]},{"time":"1445","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1755","flags":[]},{"time":"1830","flags":[]},{"time":"2030","flags":[]},{"time":"2200","flags":[]},{"time":"2330","flags":["booking"]},{"time":"0030","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Symbister",
+      "to": "Laxo",
+      "dayGroup": "Friday",
+      "departures": [
+        {"time":"0500","flags":["booking"]},{"time":"0615","flags":[]},{"time":"0645","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0915","flags":[]},{"time":"1030","flags":[]},{"time":"1115","flags":[]},{"time":"1200","flags":[]},{"time":"1245","flags":[]},{"time":"1400","flags":[]},{"time":"1445","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1745","flags":[]},{"time":"1900","flags":[]},{"time":"2115","flags":[]},{"time":"2245","flags":["booking"]},{"time":"2359","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Laxo",
+      "to": "Symbister",
+      "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0530","flags":["booking"]},{"time":"0700","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0935","flags":[]},{"time":"1030","flags":[]},{"time":"1115","flags":[]},{"time":"1200","flags":[]},{"time":"1400","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1755","flags":[]},{"time":"1830","flags":[]},{"time":"2030","flags":[]},{"time":"2200","flags":[]},{"time":"2330","flags":["booking"]},{"time":"0030","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Symbister",
+      "to": "Laxo",
+      "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0500","flags":["booking"]},{"time":"0615","flags":[]},{"time":"0645","flags":[]},{"time":"0745","flags":[]},{"time":"0830","flags":[]},{"time":"0915","flags":[]},{"time":"1030","flags":[]},{"time":"1115","flags":[]},{"time":"1245","flags":[]},{"time":"1445","flags":[]},{"time":"1530","flags":[]},{"time":"1615","flags":[]},{"time":"1700","flags":[]},{"time":"1745","flags":[]},{"time":"1900","flags":[]},{"time":"2115","flags":[]},{"time":"2245","flags":["booking"]},{"time":"2359","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Laxo",
+      "to": "Symbister",
+      "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0530","flags":["booking"]},{"time":"0700","flags":[]},{"time":"0830","flags":[]},{"time":"1030","flags":[]},{"time":"1200","flags":[]},{"time":"1400","flags":[]},{"time":"1530","flags":[]},{"time":"1700","flags":[]},{"time":"1830","flags":[]},{"time":"2030","flags":[]},{"time":"2200","flags":[]},{"time":"2330","flags":["booking"]}
+      ]
+    },
+    {
+      "route": "Whalsay",
+      "from": "Symbister",
+      "to": "Laxo",
+      "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0500","flags":["booking"]},{"time":"0615","flags":[]},{"time":"0745","flags":[]},{"time":"0915","flags":[]},{"time":"1115","flags":[]},{"time":"1245","flags":[]},{"time":"1445","flags":[]},{"time":"1615","flags":[]},{"time":"1745","flags":[]},{"time":"1900","flags":[]},{"time":"2115","flags":[]},{"time":"2245","flags":["booking"]}
+      ]
+    }
+  ]
+}

@@ -90,6 +90,12 @@ export interface WorkerProfile {
   available_from:      string | null;
   is_diaspora:         boolean;
   is_public:           boolean;
+  // Shift-side fields — the unified profile is a superset used by Jobs + Shifts.
+  experience_summary:  string | null;
+  hourly_rate_min:     number | null;
+  hourly_rate_max:     number | null;
+  is_open_to_work:     boolean;
+  open_to_categories:  string[];
   created_at:          string;
   updated_at:          string;
 }
@@ -346,10 +352,12 @@ export async function deleteCvDocument(id: string): Promise<void> {
 // ── Applications ────────────────────────────────────────────────────────────────
 
 export async function hasApplied(jobId: string, userId: string): Promise<boolean> {
+  // Exclude withdrawn — a withdrawn application should let the worker re-apply,
+  // so the job shows "Apply" again (not "View application").
   const { count, error } = await supabase
     .from('job_applications')
     .select('id', { count: 'exact', head: true })
-    .eq('job_id', jobId).eq('applicant_id', userId);
+    .eq('job_id', jobId).eq('applicant_id', userId).neq('status', 'withdrawn');
   if (error) return false;
   return (count ?? 0) > 0;
 }
@@ -442,6 +450,25 @@ export async function fetchSavedJobIds(userId: string): Promise<Set<string>> {
   const { data, error } = await supabase.from('saved_jobs').select('job_id').eq('user_id', userId);
   if (error) return new Set();
   return new Set((data ?? []).map((r: any) => r.job_id as string));
+}
+
+/** Full Job rows the user has bookmarked, most-recently-saved first. */
+export async function fetchSavedJobs(userId: string): Promise<Job[]> {
+  const { data: saved, error } = await supabase
+    .from('saved_jobs').select('job_id, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const rows = (saved ?? []) as { job_id: string; created_at: string }[];
+  if (!rows.length) return [];
+  const ids = rows.map(r => r.job_id);
+  // Hydrate the same way as fetchJobs so JobCard renders identically.
+  const { data, error: jErr } = await supabase.from('jobs').select(JOB_SELECT).in('id', ids);
+  if (jErr) throw jErr;
+  const jobs = (data ?? []) as Job[];
+  // Preserve saved-order (created_at desc) — the `.in()` query loses it.
+  const rank = new Map(ids.map((id, i) => [id, i] as const));
+  return jobs.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
 }
 
 // ── AI cover letter ──────────────────────────────────────────────────────────

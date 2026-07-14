@@ -12,12 +12,16 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { useAlert } from '@/components/BrandedAlert';
+import { ContentActions } from '@/components/ContentActions';
+import { ShiftOwnerHub } from '@/components/ShiftOwnerHub';
 import {
   fetchShift, fetchMyApplication, submitInterest, withdrawApplication,
+  checkIn, checkOut,
   formatPay, formatDuration, formatShiftDate, URGENCY_CONFIG, CATEGORY_LABELS,
-  shiftDisplayBusiness,
+  shiftDisplayBusiness, hoursWorked,
   type Shift, type ShiftApplication, type CheckInStatus,
 } from '@/lib/shifts-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.shifts;
 
@@ -34,6 +38,7 @@ export default function ShiftDetailScreen() {
   const [submitting, setSubmitting]   = useState(false);
   const [showMessage, setShowMessage] = useState(false);
   const [message, setMessage]         = useState('');
+  const [checkingInOut, setCheckingInOut] = useState(false);
 
   const successAnim = useRef(new Animated.Value(0)).current;
 
@@ -49,12 +54,17 @@ export default function ShiftDetailScreen() {
       .finally(() => setLoading(false));
   }, [id, profile]);
 
+  useEffect(() => {
+    if (shift?.id) track('content_viewed', { objectType: 'shift', objectId: shift.id });
+  }, [shift?.id]);
+
   const handleSubmitInterest = async () => {
     if (!profile || !shift) return;
     setSubmitting(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await submitInterest(shift.id, profile.id, message || undefined);
+      track('shift_applied', { objectType: 'shift', objectId: shift.id });
       const app = await fetchMyApplication(shift.id, profile.id);
       setApplication(app);
       setShowMessage(false);
@@ -69,7 +79,7 @@ export default function ShiftDetailScreen() {
 
   const handleWithdraw = () => {
     alert({
-      title: 'Withdraw interest?',
+      title: 'Withdraw application?',
       message: 'You can re-apply at any time.',
       actions: [
         { label: 'Cancel', style: 'cancel' },
@@ -82,6 +92,46 @@ export default function ShiftDetailScreen() {
         }},
       ],
     });
+  };
+
+  // Refresh the worker's application from the server so the accepted card can
+  // advance (null → checked_in → checked_out) after a check in/out.
+  const refreshApplication = async () => {
+    if (!shift || !profile) return;
+    const app = await fetchMyApplication(shift.id, profile.id);
+    setApplication(app);
+  };
+
+  // checkIn/checkOut already fire the notify-worker-checkin edge function; we
+  // just persist + refresh here (no duplicate notification).
+  const handleCheckIn = async () => {
+    if (!application || checkingInOut) return;
+    setCheckingInOut(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await checkIn(application.id);
+      await refreshApplication();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      alert({ title: 'Error', message: e?.message ?? 'Could not check in.' });
+    } finally {
+      setCheckingInOut(false);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (!application || checkingInOut) return;
+    setCheckingInOut(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await checkOut(application.id);
+      await refreshApplication();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      alert({ title: 'Error', message: e?.message ?? 'Could not check out.' });
+    } finally {
+      setCheckingInOut(false);
+    }
   };
 
   if (loading) {
@@ -118,6 +168,17 @@ export default function ShiftDetailScreen() {
           <FontAwesome5 name={S.icon as any} size={12} color={S.color} solid />
           <Text style={styles.backPillText}>Shifts</Text>
         </TouchableOpacity>
+        <View style={{ flex: 1 }} />
+        {!isOwnShift ? (
+          <ContentActions
+            contentType="shift"
+            contentId={shift.id}
+            authorId={shift.employer_id}
+            authorName={biz.name}
+            icon="ellipsis-v"
+            color={colors.textSecondary}
+          />
+        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -183,22 +244,10 @@ export default function ShiftDetailScreen() {
         {/* ── CTA ── */}
         <View style={styles.ctaSection}>
           {isOwnShift ? (
-            <View style={styles.ownShiftCard}>
-              <View style={[styles.ownShiftIconWrap, { backgroundColor: S.color + '18' }]}>
-                <FontAwesome5 name="briefcase" size={16} color={S.color} solid />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.ownShiftTitle, { color: S.color }]}>You posted this shift</Text>
-                <Text style={styles.ownShiftSub}>View and manage applications below</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.ownShiftBtn, { backgroundColor: S.color }]}
-                onPress={() => router.push('/my-posted-shifts')}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.ownShiftBtnText}>Manage →</Text>
-              </TouchableOpacity>
-            </View>
+            <ShiftOwnerHub
+              shift={shift}
+              onShiftUpdate={(p) => setShift((prev) => (prev ? { ...prev, ...p } : prev))}
+            />
           ) : spotsLeft === 0 && !hasApplied ? (
             <View style={styles.fullCard}>
               <FontAwesome5 name="user-slash" size={18} color={colors.textMuted} />
@@ -207,8 +256,15 @@ export default function ShiftDetailScreen() {
                 <Text style={styles.fullSub}>All positions have been filled.</Text>
               </View>
             </View>
-          ) : isAccepted ? (
-            <AcceptedBlock cis={application?.check_in_status ?? null} />
+          ) : isAccepted && application ? (
+            <AcceptedBlock
+              cis={application.check_in_status ?? null}
+              worked={hoursWorked(application, shift.start_at, shift.end_at)}
+              startAt={shift.start_at}
+              onCheckIn={handleCheckIn}
+              onCheckOut={handleCheckOut}
+              busy={checkingInOut}
+            />
           ) : hasApplied ? (
             <View style={{ gap: 10 }}>
               <Animated.View style={[
@@ -219,7 +275,7 @@ export default function ShiftDetailScreen() {
                   <FontAwesome5 name="paper-plane" size={16} color={S.color} solid />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.appliedTitle, { color: S.color }]}>Interest submitted</Text>
+                  <Text style={[styles.appliedTitle, { color: S.color }]}>Application sent</Text>
                   <Text style={styles.appliedSub}>The employer will be in touch if you're selected.</Text>
                 </View>
               </Animated.View>
@@ -254,7 +310,7 @@ export default function ShiftDetailScreen() {
                   >
                     {submitting
                       ? <ActivityIndicator color="#fff" size="small" />
-                      : <Text style={styles.applyBtnText}>Submit interest</Text>
+                      : <Text style={styles.applyBtnText}>Submit application</Text>
                     }
                   </TouchableOpacity>
                 </View>
@@ -266,7 +322,7 @@ export default function ShiftDetailScreen() {
                 activeOpacity={0.85}
               >
                 <FontAwesome5 name="paper-plane" size={14} color="#fff" solid />
-                <Text style={styles.applyBtnText}>Submit interest</Text>
+                <Text style={styles.applyBtnText}>Apply for this shift</Text>
               </TouchableOpacity>
             )
           )}
@@ -280,9 +336,17 @@ export default function ShiftDetailScreen() {
 
 // ── Accepted / check-in status block ─────────────────────────────────────────
 
-function AcceptedBlock({ cis }: { cis: CheckInStatus }) {
-  const router = useRouter();
+// Check-in opens 2 hours before the shift start.
+const CHECKIN_LEAD_MS = 2 * 60 * 60 * 1000;
 
+function AcceptedBlock({ cis, worked, startAt, onCheckIn, onCheckOut, busy }: {
+  cis: CheckInStatus;
+  worked: { label: string; actual: boolean } | null;
+  startAt: string;
+  onCheckIn: () => void;
+  onCheckOut: () => void;
+  busy: boolean;
+}) {
   const configs = {
     employer_confirmed: {
       icon: 'check-double', iconColor: colors.success, bg: colors.successLight,
@@ -294,24 +358,53 @@ function AcceptedBlock({ cis }: { cis: CheckInStatus }) {
     },
     checked_in: {
       icon: 'map-marker-alt', iconColor: S.color, bg: S.light,
-      title: "You're checked in", sub: 'Manage your shift from My Applications.',
+      title: "You're checked in", sub: "You're on the clock. Tap below when you've finished.",
     },
   };
 
+  // Currently checked in → offer "I've finished this shift".
+  if (cis === 'checked_in') {
+    const cfg = configs.checked_in;
+    return (
+      <View style={{ gap: 10 }}>
+        <View style={[styles.statusCard, { backgroundColor: cfg.bg }]}>
+          <FontAwesome5 name={cfg.icon as any} size={20} color={cfg.iconColor} solid />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.statusTitle, { color: cfg.iconColor }]}>{cfg.title}</Text>
+            <Text style={styles.statusSub}>{cfg.sub}</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.checkActionBtn, { backgroundColor: colors.warning }, busy && { opacity: 0.7 }]}
+          onPress={onCheckOut}
+          disabled={busy}
+          activeOpacity={0.85}
+        >
+          <FontAwesome5 name="flag-checkered" size={14} color="#fff" solid />
+          <Text style={styles.checkActionText}>I've finished this shift</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Checked out / employer confirmed → read-only status (+ worked hours).
   if (cis && cis in configs) {
     const cfg = configs[cis as keyof typeof configs];
+    const showHours = worked && (cis === 'checked_out' || cis === 'employer_confirmed');
     return (
       <View style={[styles.statusCard, { backgroundColor: cfg.bg }]}>
         <FontAwesome5 name={cfg.icon as any} size={20} color={cfg.iconColor} solid />
         <View style={{ flex: 1 }}>
           <Text style={[styles.statusTitle, { color: cfg.iconColor }]}>{cfg.title}</Text>
           <Text style={styles.statusSub}>{cfg.sub}</Text>
+          {showHours ? <Text style={styles.statusHours}>{worked!.label} worked{worked!.actual ? '' : ' (scheduled)'}</Text> : null}
         </View>
       </View>
     );
   }
 
-  // null — confirmed but not yet checked in
+  // null — confirmed but not yet checked in.
+  const checkinOpen = Date.now() >= new Date(startAt).getTime() - CHECKIN_LEAD_MS;
   return (
     <View style={{ gap: 10 }}>
       <View style={[styles.statusCard, { backgroundColor: colors.jobsLight }]}>
@@ -321,14 +414,22 @@ function AcceptedBlock({ cis }: { cis: CheckInStatus }) {
           <Text style={styles.statusSub}>The employer accepted your application.</Text>
         </View>
       </View>
-      <TouchableOpacity
-        style={styles.checkinPrompt}
-        onPress={() => router.push('/my-shift-applications')}
-        activeOpacity={0.8}
-      >
-        <FontAwesome5 name="sign-in-alt" size={12} color={S.color} />
-        <Text style={[styles.checkinPromptText, { color: S.color }]}>Check in when your shift starts →</Text>
-      </TouchableOpacity>
+      {checkinOpen ? (
+        <TouchableOpacity
+          style={[styles.checkActionBtn, { backgroundColor: S.color }, busy && { opacity: 0.7 }]}
+          onPress={onCheckIn}
+          disabled={busy}
+          activeOpacity={0.85}
+        >
+          <FontAwesome5 name="sign-in-alt" size={14} color="#fff" solid />
+          <Text style={styles.checkActionText}>Check in to this shift</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.checkinPrompt}>
+          <FontAwesome5 name="clock" size={12} color={colors.textMuted} />
+          <Text style={[styles.checkinPromptText, { color: colors.textMuted }]}>Check-in opens 2 hours before the shift starts</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -473,20 +574,14 @@ const styles = StyleSheet.create({
   },
   statusTitle: { fontSize: fontSize.sm, fontWeight: '800', marginBottom: 2 },
   statusSub:   { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
+  statusHours: { fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '800', marginTop: 4 },
   checkinPrompt: { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', paddingVertical: 8 },
   checkinPromptText: { fontSize: fontSize.sm, fontWeight: '700' },
-
-  // Own shift
-  ownShiftCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: radius.xl,
-    borderWidth: 1.5, borderColor: S.color + '33', padding: spacing.md,
+  checkActionBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, height: 54, borderRadius: radius.lg,
   },
-  ownShiftIconWrap: { width: 44, height: 44, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
-  ownShiftTitle:    { fontSize: fontSize.sm, fontWeight: '800' },
-  ownShiftSub:      { fontSize: fontSize.xs, color: colors.textMuted },
-  ownShiftBtn:      { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.full },
-  ownShiftBtnText:  { color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
+  checkActionText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
 
   // Full
   fullCard: {

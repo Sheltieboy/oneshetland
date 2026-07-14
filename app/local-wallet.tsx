@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -44,6 +44,10 @@ const TOP_UP_AMOUNTS = [
   { pence: 10000, label: '£100' },
 ];
 
+// Mirrors the bounds enforced server-side by local-wallet-topup-intent (£5–£500).
+const TOP_UP_MIN_PENCE = 500;
+const TOP_UP_MAX_PENCE = 50_000;
+
 export default function WalletScreen() {
   const router = useRouter();
   const { profile } = useAuth();
@@ -57,6 +61,32 @@ export default function WalletScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [toppingUp, setToppingUp] = useState<number | null>(null);
   const [confirmAmount, setConfirmAmount] = useState<number | null>(null);
+  const [customAmount, setCustomAmount] = useState('');
+  const [customError, setCustomError] = useState<string | null>(null);
+
+  // Parse the custom-amount field (pounds) into pence, validating bounds.
+  // Returns null + sets an error message if invalid.
+  const parseCustomAmount = (): number | null => {
+    const pounds = parseFloat(customAmount.replace(/[^0-9.]/g, ''));
+    if (!customAmount.trim() || isNaN(pounds) || pounds <= 0) {
+      setCustomError('Enter an amount to top up');
+      return null;
+    }
+    const pence = Math.round(pounds * 100);
+    if (pence < TOP_UP_MIN_PENCE || pence > TOP_UP_MAX_PENCE) {
+      setCustomError(`Amount must be between £${TOP_UP_MIN_PENCE / 100} and £${TOP_UP_MAX_PENCE / 100}`);
+      return null;
+    }
+    setCustomError(null);
+    return pence;
+  };
+
+  const requestCustomTopUp = () => {
+    const pence = parseCustomAmount();
+    if (pence == null) return;
+    setCustomAmount('');
+    requestTopUp(pence);
+  };
 
   // Tapping an amount: if there's a saved card it would charge off-session with
   // no Stripe UI, so show our confirm step first. With no card on file, fall
@@ -202,6 +232,9 @@ export default function WalletScreen() {
             style={styles.payAtTillBtn}
             onPress={() => router.push('/local-pay')}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Pay at till"
+            accessibilityHint="Opens a QR code to pay at a participating business"
           >
             <FontAwesome5 name="qrcode" size={13} color="#fff" />
             <Text style={styles.payAtTillText}>Pay at till</Text>
@@ -220,6 +253,9 @@ export default function WalletScreen() {
                 onPress={() => requestTopUp(amt.pence)}
                 disabled={!!toppingUp}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`Top up ${amt.label}`}
+                accessibilityState={{ disabled: !!toppingUp, busy: toppingUp === amt.pence }}
               >
                 {toppingUp === amt.pence
                   ? <ActivityIndicator color={S.color} size="small" />
@@ -228,6 +264,39 @@ export default function WalletScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* Custom amount */}
+          <View style={styles.customRow}>
+            <View style={styles.customInputWrap}>
+              <Text style={styles.customPrefix}>£</Text>
+              <TextInput
+                style={styles.customInput}
+                value={customAmount}
+                onChangeText={(t) => { setCustomAmount(t); if (customError) setCustomError(null); }}
+                placeholder="Other amount"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                editable={!toppingUp}
+                onSubmitEditing={requestCustomTopUp}
+                accessibilityLabel="Custom top-up amount in pounds"
+                accessibilityHint={`Enter an amount between £${TOP_UP_MIN_PENCE / 100} and £${TOP_UP_MAX_PENCE / 100}`}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.customGoBtn, { backgroundColor: S.color }, (!!toppingUp || !customAmount.trim()) && { opacity: 0.5 }]}
+              onPress={requestCustomTopUp}
+              disabled={!!toppingUp || !customAmount.trim()}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Top up custom amount"
+            >
+              <FontAwesome5 name="arrow-right" size={13} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {customError && (
+            <Text style={styles.customError} accessibilityLiveRegion="polite">{customError}</Text>
+          )}
         </View>
 
         {/* ── My Wallet hub sections ──────────────────────────────────────
@@ -311,7 +380,7 @@ export default function WalletScreen() {
                 {(work.worker.hasWorkerProfile || work.worker.appCount > 0) && (
                   <HubFootLink
                     label="Worker profile"
-                    onPress={() => router.push('/shift-worker-profile')}
+                    onPress={() => router.push('/work-profile')}
                   />
                 )}
                 {work.employer.activeShifts > 0 && (
@@ -503,6 +572,17 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   topUpBtnText: { fontSize: fontSize.sm, fontWeight: '900' },
+
+  customRow: { flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'stretch' },
+  customInputWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 12,
+  },
+  customPrefix: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary, marginRight: 4 },
+  customInput: { flex: 1, paddingVertical: 12, fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
+  customGoBtn: { width: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  customError: { fontSize: fontSize.xs, color: colors.error, marginTop: 8 },
 
   txList: { gap: 8 },
   txRow:  {

@@ -35,6 +35,7 @@ import MemoryCard from '@/components/MemoryCard';
 import SectionHero from '@/components/SectionHero';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
+import { track } from '@/lib/analytics';
 import MemoryDetailScreen from '../memory/[id]';
 import { eraTone } from '@/lib/memory-eras';
 
@@ -67,6 +68,7 @@ export default function MemoriesScreen() {
 
   const [pins, setPins]       = useState<MemoryPin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -92,9 +94,12 @@ export default function MemoriesScreen() {
         maxLng: VIEW_BOUNDS.maxLng,
       });
       setPins(data);
+      setLoadError(false);
     } catch {
-      // Surface to UI? For now silently empty — the empty state is OK to show.
-      setPins([]);
+      // A genuine failure (network down / RPC error) is NOT the same as
+      // "no stories yet" — flag it so the feed can offer a retry instead of
+      // wrongly telling folk to be the first.
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -145,6 +150,7 @@ export default function MemoriesScreen() {
       try {
         const r = await searchMemories(q);
         setResults(r);
+        track('search_performed', { props: { section: 'memories', query: q, results_count: r.length } });
       } catch {
         setResults([]);
       } finally {
@@ -345,7 +351,23 @@ export default function MemoriesScreen() {
               ) : null}
             </View>
 
-            {recent.length === 0 && !loading ? (
+            {loadError && pins.length === 0 && !loading ? (
+              <View style={styles.empty}>
+                <FontAwesome5 name="cloud-rain" size={28} color={SECTION.color} />
+                <Text style={styles.emptyTitle}>Couldna load the stories</Text>
+                <Text style={styles.emptyBody}>
+                  Something went agley fetching the auld stories — likely a
+                  blink in the connection. Pull doon to try again.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => { setLoading(true); void load(); }}
+                  style={[styles.retryBtn, { backgroundColor: SECTION.color }]}
+                >
+                  <FontAwesome5 name="redo" size={13} color="#fff" />
+                  <Text style={styles.retryBtnText}>Try again</Text>
+                </TouchableOpacity>
+              </View>
+            ) : recent.length === 0 && !loading ? (
               <View style={styles.empty}>
                 <FontAwesome5 name="book-open" size={28} color={SECTION.color} />
                 <Text style={styles.emptyTitle}>No stories yet</Text>
@@ -763,5 +785,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 19,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    marginTop: spacing.xs,
+  },
+  retryBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: fontSize.sm,
   },
 });

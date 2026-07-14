@@ -1,0 +1,103 @@
+{
+  "source": "ferry-yell-unst-fetlar",
+  "effectiveFrom": "2026-07-04",
+  "legend": {
+    "*": "booking required (sailing only operates if a booking is made before close of Booking Office, or 1800 for online bookings); orange-shaded cells are also booking-only",
+    "N": "not on a particular day(s), e.g. 1500NTh = the 1500 will not sail on Thursday",
+    "O": "only on a particular day(s), e.g. 1500SaO = the 1500 is only available on Saturday",
+    "H": "via Hamars Ness (Fetlar)",
+    "G": "connection marker (Gutcher)",
+    "B": "connection marker (Belmont)"
+  },
+  "journeyMins": { "Yell": 20, "Unst-Yell": 10, "Fetlar-Unst-Yell": 25 },
+  "notes": [
+    "All times shown are departure times from the ferry terminal indicated.",
+    "Unst & Fetlar 2250/2305/2335 bookable sailings will only operate 4 nights from 6, Monday to Saturday in any week."
+  ],
+  "routes": [
+    { "route": "Yell", "from": "Toft", "to": "Ulsta", "dayGroup": "Monday-Thursday",
+      "departures": [
+        {"time":"0545","flags":["booking"]}, {"time":"0640","flags":[]}, {"time":"0745","flags":[]}, {"time":"0815","flags":[]}, {"time":"0845","flags":[]}, {"time":"0915","flags":[]}, {"time":"0945","flags":[]}, {"time":"1045","flags":[]}, {"time":"1115","flags":[]}, {"time":"1145","flags":[]}, {"time":"1215","flags":[]}, {"time":"1245","flags":[]}, {"time":"1355","flags":[]}, {"time":"1430","flags":[]}, {"time":"1500","flags":[]}, {"time":"1525","flags":[]}, {"time":"1600","flags":[]}, {"time":"1630","flags":[]}, {"time":"1655","flags":[]}, {"time":"1730","flags":[]}, {"time":"1805","flags":[]}, {"time":"1855","flags":[]}, {"time":"2015","flags":[]}, {"time":"2105","flags":[]}, {"time":"2200","flags":[]}, {"time":"2330","flags":["booking"]}
+      ] },
+    { "route": "Yell", "from": "Ulsta", "to": "Toft", "dayGroup": "Monday-Thursday",
+      "departures": [
+        {"time":"0515","flags":["booking"]}, {"time":"0615","flags":[]}, {"time":"0705","flags":[]}, {"time":"0745","flags":[]}, {"time":"0815","flags":[]}, {"time":"0845","flags":[]}, {"time":"0915","flags":[]}, {"time":"0945","flags":[]}, {"time":"1045","flags":[]}, {"time":"1115","flags":[]}, {"time":"1145","flags":[]}, {"time":"1215","flags":[]}, {"time":"1245","flags":[]}, {"time":"1355","flags":[]}, {"time":"1430","flags":[]}, {"time":"1500","flags":[]}, {"time":"1530","flags":[]}, {"time":"1600","flags":[]}, {"time":"1630","flags":[]}, {"time":"1655","flags":[]}, {"time":"1735","flags":[]}, {"time":"1830","flags":[]}, {"time":"1920","flags":[]}, {"time":"2040","flags":[]}, {"time":"2130","flags":[]}, {"time":"2230","flags":["booking"]}
+      ] },
+    { "route": "Yell", "from": "Toft", "to": "Ulsta", "dayGroup": "Friday",
+      "departures": [
+        {"time":"0545","flags":["booking"]}, {"time":"0640","flags":[]}, {"time":"0745","flags":[]}, {"time":"0815","flags":[]}, {"time":"0845","flags":[]}, {"time":"0915","flags":[]}, {"time":"0945","flags":[]}, {"time":"1045","flags":[]}, {"time":"1115","flags":[]}, {"time":"1145","flags":[]}, {"time":"1215","flags":[]}, {"time":"1245","flags":[]}, {"time":"1355","flags":[]}, {"time":"1430","flags":[]}, {"time":"1500","flags":[]}, {"time":"1525","flags":[]}, {"time":"1600","flags":[]}, {"time":"1630","flags":[]}, {"time":"1655","flags":[]}, {"time":"1730","flags":[]}, {"time":"1805","flags":[]}, {"time":"1855","flags":[]}, {"time":"2015","flags":[]}, {"time":"2105","flags":[]}, {"time":"2200","flags":[]}, {"time":"2359","flags":["booking"]}
+      ] },
+    { "route": "Yell", "from": "Ulsta", "to": "Toft", "dayGroup": "Friday",
+      "departures": [
+        {"time":"0515","flags":["booking"]}, {"time":"0615","flags":[]}, {"time":"0705","flags":[]}, {"time":"0745","flags":[]}, {"time":"0815","flags":[]}, {"time":"0845","flags":[]}, {"time":"0915","flags":[]}, {"time":"0945","flags":[]}, {"time":"1045","flags":[]}, {"time":"1115","flags":[]}, {"time":"1145","flags":[]}, {"time":"1215","flags":[]}, {"time":"1245","flags":[]}, {"time":"1355","flags":[]}, {"time":"1430","flags":[]}, {"time":"1500","flags":[]}, {"time":"1530","flags":[]}, {"time":"1600","flags":[]}, {"time":"1630","flags":[]}, {"time":"1655","flags":[]}, {"time":"1735","flags":[]}, {"time":"1830","flags":[]}, {"time":"1920","flags":[]}, {"time":"2040","flags":[]}, {"time":"2130","flags":[]}, {"time":"2330","flags":["booking"]}
+      ] },
+    { "route": "Yell", "from": "Toft", "to": "Ulsta", "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0545","flags":["booking"]}, {"time":"0640","flags":[]}, {"time":"0745","flags":[]}, {"time":"0845","flags":[]}, {"time":"0945","flags":[]}, {"time":"1100","flags":[]}, {"time":"1200","flags":[]}, {"time":"1355","flags":[]}, {"time":"1500","flags":[]}, {"time":"1600","flags":[]}, {"time":"1655","flags":[]}, {"time":"1805","flags":[]}, {"time":"1855","flags":[]}, {"time":"2015","flags":[]}, {"time":"2105","flags":[]}, {"time":"2200","flags":[]}, {"time":"2359","flags":["booking"]}
+      ] },
+    { "route": "Yell", "from": "Ulsta", "to": "Toft", "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0515","flags":["booking"]}, {"time":"0615","flags":[]}, {"time":"0705","flags":[]}, {"time":"0815","flags":[]}, {"time":"0915","flags":[]}, {"time":"1030","flags":[]}, {"time":"1130","flags":[]}, {"time":"1245","flags":[]}, {"time":"1430","flags":[]}, {"time":"1530","flags":[]}, {"time":"1630","flags":[]}, {"time":"1735","flags":[]}, {"time":"1830","flags":[]}, {"time":"1920","flags":[]}, {"time":"2040","flags":[]}, {"time":"2130","flags":[]}, {"time":"2330","flags":["booking"]}
+      ] },
+    { "route": "Yell", "from": "Toft", "to": "Ulsta", "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0545","flags":["booking"]}, {"time":"0640","flags":[]}, {"time":"0745","flags":[]}, {"time":"0845","flags":[]}, {"time":"0945","flags":[]}, {"time":"1100","flags":[]}, {"time":"1200","flags":[]}, {"time":"1355","flags":[]}, {"time":"1500","flags":[]}, {"time":"1600","flags":[]}, {"time":"1655","flags":[]}, {"time":"1805","flags":[]}, {"time":"1855","flags":[]}, {"time":"2015","flags":[]}, {"time":"2105","flags":[]}, {"time":"2200","flags":[]}, {"time":"2330","flags":["booking"]}
+      ] },
+    { "route": "Yell", "from": "Ulsta", "to": "Toft", "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0515","flags":["booking"]}, {"time":"0615","flags":[]}, {"time":"0705","flags":[]}, {"time":"0815","flags":[]}, {"time":"0915","flags":[]}, {"time":"1030","flags":[]}, {"time":"1130","flags":[]}, {"time":"1245","flags":[]}, {"time":"1430","flags":[]}, {"time":"1530","flags":[]}, {"time":"1630","flags":[]}, {"time":"1735","flags":[]}, {"time":"1830","flags":[]}, {"time":"1920","flags":[]}, {"time":"2040","flags":[]}, {"time":"2130","flags":[]}, {"time":"2230","flags":["booking"]}
+      ] },
+
+    { "route": "Bluemull", "from": "Gutcher", "to": "Belmont", "dayGroup": "Monday",
+      "departures": [
+        {"time":"0610","flags":[]}, {"time":"0645","flags":[]}, {"time":"0715","flags":[]}, {"time":"0725","flags":["H"]}, {"time":"0745","flags":[]}, {"time":"0825","flags":[]}, {"time":"0840","flags":[]}, {"time":"0930","flags":[]}, {"time":"1000","flags":[]}, {"time":"1010","flags":[]}, {"time":"1045","flags":[]}, {"time":"1115","flags":[]}, {"time":"1130","flags":["H"]}, {"time":"1150","flags":[]}, {"time":"1220","flags":[]}, {"time":"1330","flags":[]}, {"time":"1400","flags":[]}, {"time":"1430","flags":[]}, {"time":"1500","flags":[]}, {"time":"1540","flags":[]}, {"time":"1615","flags":["H"]}, {"time":"1630","flags":[]}, {"time":"1700","flags":[]}, {"time":"1715","flags":[]}, {"time":"1740","flags":[]}, {"time":"1815","flags":[]}, {"time":"1855","flags":[]}, {"time":"2010","flags":[]}, {"time":"2100","flags":[]}, {"time":"2215","flags":[]}, {"time":"2250","flags":["booking"]}
+      ] },
+    { "route": "Bluemull", "from": "Belmont", "to": "Gutcher", "dayGroup": "Monday",
+      "departures": [
+        {"time":"0625","flags":[]}, {"time":"0700","flags":[]}, {"time":"0730","flags":[]}, {"time":"0800","flags":[]}, {"time":"0825","flags":[]}, {"time":"0840","flags":[]}, {"time":"0855","flags":["H"]}, {"time":"0945","flags":[]}, {"time":"1015","flags":[]}, {"time":"1025","flags":["H"]}, {"time":"1100","flags":[]}, {"time":"1135","flags":[]}, {"time":"1205","flags":[]}, {"time":"1415","flags":[]}, {"time":"1445","flags":[]}, {"time":"1515","flags":[]}, {"time":"1555","flags":[]}, {"time":"1645","flags":[]}, {"time":"1715","flags":[]}, {"time":"1725","flags":["H"]}, {"time":"1755","flags":[]}, {"time":"1830","flags":[]}, {"time":"1905","flags":["H"]}, {"time":"2045","flags":[]}, {"time":"2110","flags":["H"]}, {"time":"2230","flags":["booking"]}, {"time":"2305","flags":["H","booking"]}
+      ] },
+    { "route": "Bluemull", "from": "H. Ness", "to": "Gutcher", "dayGroup": "Monday",
+      "departures": [
+        {"time":"0655","flags":["G"]}, {"time":"0755","flags":["B"]}, {"time":"0940","flags":["G"]}, {"time":"1055","flags":["G"]}, {"time":"1215","flags":["G"]}, {"time":"1640","flags":["G"]}, {"time":"1940","flags":["G","booking"]}, {"time":"2140","flags":["G","booking"]}, {"time":"2335","flags":["G","booking"]}
+      ] },
+
+    { "route": "Bluemull", "from": "Gutcher", "to": "Belmont", "dayGroup": "Tuesday-Friday",
+      "departures": [
+        {"time":"0610","flags":[]}, {"time":"0645","flags":[]}, {"time":"0715","flags":[]}, {"time":"0725","flags":["H"]}, {"time":"0745","flags":[]}, {"time":"0825","flags":[]}, {"time":"0840","flags":[]}, {"time":"0930","flags":[]}, {"time":"1000","flags":[]}, {"time":"1010","flags":[]}, {"time":"1045","flags":[]}, {"time":"1115","flags":[]}, {"time":"1130","flags":["H"]}, {"time":"1150","flags":[]}, {"time":"1235","flags":[]}, {"time":"1345","flags":[]}, {"time":"1400","flags":[]}, {"time":"1445","flags":[]}, {"time":"1500","flags":["H"]}, {"time":"1520","flags":[]}, {"time":"1600","flags":[]}, {"time":"1615","flags":["H"]}, {"time":"1630","flags":[]}, {"time":"1700","flags":[]}, {"time":"1715","flags":[]}, {"time":"1740","flags":[]}, {"time":"1815","flags":[]}, {"time":"1855","flags":[]}, {"time":"2010","flags":[]}, {"time":"2100","flags":[]}, {"time":"2215","flags":[]}, {"time":"2250","flags":["booking"]}
+      ] },
+    { "route": "Bluemull", "from": "Belmont", "to": "Gutcher", "dayGroup": "Tuesday-Friday",
+      "departures": [
+        {"time":"0625","flags":[]}, {"time":"0700","flags":[]}, {"time":"0730","flags":[]}, {"time":"0800","flags":[]}, {"time":"0825","flags":[]}, {"time":"0840","flags":[]}, {"time":"0855","flags":["H"]}, {"time":"0945","flags":[]}, {"time":"1015","flags":[]}, {"time":"1025","flags":["H"]}, {"time":"1100","flags":[]}, {"time":"1135","flags":[]}, {"time":"1205","flags":[]}, {"time":"1345","flags":[]}, {"time":"1355","flags":["H"]}, {"time":"1415","flags":[]}, {"time":"1500","flags":[]}, {"time":"1535","flags":[]}, {"time":"1600","flags":[]}, {"time":"1615","flags":[]}, {"time":"1645","flags":[]}, {"time":"1715","flags":[]}, {"time":"1725","flags":["H"]}, {"time":"1755","flags":[]}, {"time":"1830","flags":[]}, {"time":"1905","flags":["H"]}, {"time":"2045","flags":[]}, {"time":"2110","flags":["H"]}, {"time":"2230","flags":["booking"]}, {"time":"2305","flags":["H","booking"]}
+      ] },
+    { "route": "Bluemull", "from": "H. Ness", "to": "Gutcher", "dayGroup": "Tuesday-Friday",
+      "departures": [
+        {"time":"0655","flags":["G"]}, {"time":"0755","flags":["B"]}, {"time":"0940","flags":["G"]}, {"time":"1055","flags":["G"]}, {"time":"1215","flags":["G"]}, {"time":"1430","flags":["G"]}, {"time":"1530","flags":["B"]}, {"time":"1640","flags":["G"]}, {"time":"1940","flags":["G","booking"]}, {"time":"2140","flags":["G","booking"]}, {"time":"2335","flags":["G","booking"]}
+      ] },
+
+    { "route": "Bluemull", "from": "Gutcher", "to": "Belmont", "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0610","flags":[]}, {"time":"0645","flags":[]}, {"time":"0715","flags":[]}, {"time":"0725","flags":["H"]}, {"time":"0745","flags":[]}, {"time":"0825","flags":[]}, {"time":"0840","flags":[]}, {"time":"0930","flags":[]}, {"time":"1000","flags":[]}, {"time":"1010","flags":[]}, {"time":"1045","flags":[]}, {"time":"1115","flags":[]}, {"time":"1130","flags":["H"]}, {"time":"1150","flags":[]}, {"time":"1235","flags":[]}, {"time":"1400","flags":[]}, {"time":"1445","flags":[]}, {"time":"1520","flags":[]}, {"time":"1600","flags":[]}, {"time":"1615","flags":["H"]}, {"time":"1630","flags":[]}, {"time":"1700","flags":[]}, {"time":"1715","flags":[]}, {"time":"1740","flags":[]}, {"time":"1815","flags":[]}, {"time":"1855","flags":[]}, {"time":"2010","flags":[]}, {"time":"2100","flags":[]}, {"time":"2215","flags":[]}, {"time":"2250","flags":["booking"]}
+      ] },
+    { "route": "Bluemull", "from": "Belmont", "to": "Gutcher", "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0625","flags":[]}, {"time":"0700","flags":[]}, {"time":"0730","flags":[]}, {"time":"0800","flags":[]}, {"time":"0825","flags":[]}, {"time":"0840","flags":[]}, {"time":"0855","flags":["H"]}, {"time":"0945","flags":[]}, {"time":"1015","flags":[]}, {"time":"1025","flags":["H"]}, {"time":"1100","flags":[]}, {"time":"1135","flags":[]}, {"time":"1205","flags":[]}, {"time":"1345","flags":[]}, {"time":"1415","flags":[]}, {"time":"1500","flags":[]}, {"time":"1535","flags":[]}, {"time":"1600","flags":[]}, {"time":"1615","flags":[]}, {"time":"1645","flags":[]}, {"time":"1715","flags":[]}, {"time":"1725","flags":["H"]}, {"time":"1755","flags":[]}, {"time":"1830","flags":[]}, {"time":"1905","flags":["H"]}, {"time":"2045","flags":[]}, {"time":"2110","flags":["H"]}, {"time":"2230","flags":["booking"]}, {"time":"2305","flags":["H","booking"]}
+      ] },
+    { "route": "Bluemull", "from": "H. Ness", "to": "Gutcher", "dayGroup": "Saturday",
+      "departures": [
+        {"time":"0655","flags":["G"]}, {"time":"0755","flags":["B"]}, {"time":"0940","flags":["G"]}, {"time":"1055","flags":["G"]}, {"time":"1530","flags":["B"]}, {"time":"1640","flags":["G"]}, {"time":"1940","flags":["G","booking"]}, {"time":"2140","flags":["G","booking"]}, {"time":"2335","flags":["G","booking"]}
+      ] },
+
+    { "route": "Bluemull", "from": "Gutcher", "to": "Belmont", "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0610","flags":["booking"]}, {"time":"0645","flags":["booking"]}, {"time":"0725","flags":["H","booking"]}, {"time":"0930","flags":[]}, {"time":"1030","flags":[]}, {"time":"1100","flags":["H"]}, {"time":"1245","flags":[]}, {"time":"1440","flags":[]}, {"time":"1505","flags":[]}, {"time":"1530","flags":["H"]}, {"time":"1630","flags":[]}, {"time":"1700","flags":[]}, {"time":"1740","flags":[]}, {"time":"1815","flags":[]}, {"time":"1850","flags":[]}, {"time":"2015","flags":[]}, {"time":"2100","flags":[]}, {"time":"2215","flags":[]}
+      ] },
+    { "route": "Bluemull", "from": "Belmont", "to": "Gutcher", "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0625","flags":["booking"]}, {"time":"0700","flags":["booking"]}, {"time":"0825","flags":["booking"]}, {"time":"0945","flags":[]}, {"time":"1045","flags":[]}, {"time":"1205","flags":[]}, {"time":"1345","flags":[]}, {"time":"1455","flags":[]}, {"time":"1520","flags":[]}, {"time":"1645","flags":[]}, {"time":"1715","flags":[]}, {"time":"1755","flags":[]}, {"time":"1830","flags":[]}, {"time":"1900","flags":["H"]}, {"time":"2000","flags":[]}, {"time":"2050","flags":[]}, {"time":"2110","flags":["H"]}, {"time":"2230","flags":["booking"]}
+      ] },
+    { "route": "Bluemull", "from": "H. Ness", "to": "Gutcher", "dayGroup": "Sunday",
+      "departures": [
+        {"time":"0755","flags":["B","booking"]}, {"time":"1130","flags":["B"]}, {"time":"1600","flags":["G"]}, {"time":"1930","flags":["B","booking"]}, {"time":"2140","flags":["G","booking"]}
+      ] }
+  ]
+}

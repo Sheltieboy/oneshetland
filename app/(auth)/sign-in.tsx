@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -151,6 +152,14 @@ export default function SignInScreen() {
 
           <Text style={styles.legal}>
             Members must be 18 or over. Fetch is for goods only — no alcohol, tobacco, vapes, cash, or passengers.
+            {'\n'}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/terms')}>
+              Terms of Service
+            </Text>{' '}
+            ·{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/privacy')}>
+              Privacy Policy
+            </Text>
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -267,5 +276,10 @@ const styles = StyleSheet.create({
     color: colors.textLight,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  legalLink: {
+    color: colors.accent,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });

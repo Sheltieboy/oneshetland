@@ -16,6 +16,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 
 const REVEAL = require('../assets/splash-reveal.mp4');
 const POSTER = require('../assets/splash-reveal-poster.png');
+const CREAM = '#F4EDDF'; // the field the reveal is painted on — matches SplashAnimation
 
 export function SplashReveal({ onEnd }: { onEnd: () => void }) {
   const [ended, setEnded] = useState(false);
@@ -24,6 +25,9 @@ export function SplashReveal({ onEnd }: { onEnd: () => void }) {
   const player = useVideoPlayer(REVEAL, (p) => {
     p.loop = false;
     p.muted = true;
+    // Don't seize the iOS audio session on launch — otherwise this decorative,
+    // muted splash video stops whatever music/video the user had playing.
+    p.audioMixingMode = 'mixWithOthers';
     p.play();
   });
 
@@ -44,9 +48,11 @@ export function SplashReveal({ onEnd }: { onEnd: () => void }) {
   }, [player, onEnd]);
 
   return (
-    <View style={StyleSheet.absoluteFill}>
+    // Cream field behind the video so there's no black flash before its first
+    // frame renders (the reveal is painted on cream).
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: CREAM }]}>
       <VideoView
-        style={StyleSheet.absoluteFill}
+        style={[StyleSheet.absoluteFill, { backgroundColor: CREAM }]}
         player={player}
         contentFit="cover"
         nativeControls={false}

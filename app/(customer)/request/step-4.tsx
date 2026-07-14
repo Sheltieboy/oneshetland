@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { haptic } from '@/lib/haptics';
+import { track } from '@/lib/analytics';
 import { useAlert } from '@/components/BrandedAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -15,6 +16,7 @@ import { useRequest } from '@/context/RequestContext';
 import { useAuth } from '@/context/AuthContext';
 import { logCompliance } from '@/lib/compliance';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Card } from '@/components/ui/Card';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -64,6 +66,9 @@ export default function Step4ReviewScreen() {
   const [distanceMiles, setDistanceMiles] = useState<number | null>(null);
   const [feeLoading, setFeeLoading] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
+  // Manual postcodes — only used when an address has no coords/postcode.
+  const [pickupPcManual, setPickupPcManual] = useState('');
+  const [destPcManual, setDestPcManual] = useState('');
 
   const calculateFee = useCallback(() => {
     setFeeLoading(true);
@@ -87,12 +92,17 @@ export default function Step4ReviewScreen() {
       return;
     }
 
-    // Fallback: use postcodes via edge function (e.g. saved addresses without coords)
-    const pickupPostcode = formData.pickupPostcode || extractPostcode(formData.pickupLocation);
-    const destPostcode   = formData.destinationPostcode || extractPostcode(formData.destinationAddress);
+    // Fallback: use postcodes via edge function (saved addresses without coords,
+    // or a manually entered postcode when the place had none).
+    const pickupPostcode = formData.pickupPostcode || extractPostcode(formData.pickupLocation) || extractPostcode(pickupPcManual);
+    const destPostcode   = formData.destinationPostcode || extractPostcode(formData.destinationAddress) || extractPostcode(destPcManual);
 
     if (!pickupPostcode || !destPostcode) {
-      setFeeError('Select both addresses from the suggestions to get a fee estimate.');
+      // No coords and no valid postcode → can't price. Leave the fee unset so
+      // the request can't be submitted cheaply; the UI below asks for a postcode.
+      setFeePence(null);
+      setDistanceMiles(null);
+      setFeeError(null);
       setFeeLoading(false);
       return;
     }
@@ -124,7 +134,8 @@ export default function Step4ReviewScreen() {
       })
       .finally(() => { clearTimeout(timeout); setFeeLoading(false); });
   }, [formData.pickupLat, formData.pickupLng, formData.destinationLat, formData.destinationLng,
-      formData.pickupPostcode, formData.pickupLocation, formData.destinationPostcode, formData.destinationAddress]);
+      formData.pickupPostcode, formData.pickupLocation, formData.destinationPostcode, formData.destinationAddress,
+      pickupPcManual, destPcManual]);
 
   // Calculate fee on mount
   useEffect(() => { calculateFee(); }, [calculateFee]);
@@ -132,6 +143,14 @@ export default function Step4ReviewScreen() {
   const needsLiability =
     formData.categorySlug === 'pharmacy' ||
     formData.categorySlug === 'takeaway';
+
+  // The fee uses coords when BOTH ends have them (haversine), else postcodes for
+  // both (calculate-fee). So if we can't use coords-for-both, any end without a
+  // postcode needs one — including the "mixed" case (one has coords, one only a
+  // postcode), which otherwise silently produced no fee.
+  const bothHaveCoords = formData.pickupLat != null && formData.pickupLng != null && formData.destinationLat != null && formData.destinationLng != null;
+  const pickupNeedsPc = !bothHaveCoords && !(formData.pickupPostcode || extractPostcode(formData.pickupLocation) || extractPostcode(pickupPcManual));
+  const destNeedsPc = !bothHaveCoords && !(formData.destinationPostcode || extractPostcode(formData.destinationAddress) || extractPostcode(destPcManual));
 
   async function handleSubmit() {
     setSubmitError(null);
@@ -185,6 +204,23 @@ export default function Step4ReviewScreen() {
     }
 
     try {
+      // Resolve the drop-off region slug → UUID (FK to public.regions) so the
+      // request can be matched to drivers' runs by area.
+      let destinationRegionId: string | null = null;
+      if (formData.destinationRegionSlug) {
+        const { data: regionRow } = await supabase
+          .from('regions').select('id').eq('slug', formData.destinationRegionSlug).maybeSingle();
+        destinationRegionId = regionRow?.id ?? null;
+      }
+      // Turn the chosen "when" into an expiry — if unmatched by then it lapses
+      // (instead of sitting pending forever).
+      const nowMs = Date.now();
+      const neededByIso = formData.schedulingMode === 'by' ? formData.neededBy : null;
+      const expiresAt =
+        formData.schedulingMode === 'by' && neededByIso ? neededByIso
+        : formData.schedulingMode === 'flexible' ? new Date(nowMs + 7 * 24 * 60 * 60 * 1000).toISOString()
+        : new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();
+
       // Race the insert against a 12-second timeout so we never hang silently
       const insertPromise = supabase.from('delivery_requests').insert({
         customer_id: profile.id,
@@ -194,13 +230,16 @@ export default function Step4ReviewScreen() {
         pickup_notes: formData.pickupNotes || null,
         already_paid: formData.alreadyPaid,
         ready_for_collection: formData.readyForCollection,
-        destination_region_id: null,
+        destination_region_id: destinationRegionId,
         destination_area: formData.destinationArea || null,
         destination_address: formData.destinationAddress,
         contact_phone: formData.contactPhone || null,
         delivery_notes: formData.deliveryNotes || null,
         liability_acknowledged: formData.liabilityAcknowledged,
         base_fee_pence: feePence ?? null,
+        needed_by: neededByIso,
+        scheduling_mode: formData.schedulingMode,
+        expires_at: expiresAt,
         status: 'pending',
       });
 
@@ -222,6 +261,10 @@ export default function Step4ReviewScreen() {
 
       // Notify all approved drivers about the new request (non-blocking)
       if (inserted?.id) {
+        track('delivery_request_created', {
+          orderId: inserted.id,
+          props:   { category: formData.categorySlug },
+        });
         const { data: { session } } = await supabase.auth.getSession();
         fetch('https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/notify-drivers', {
           method: 'POST',
@@ -306,6 +349,19 @@ export default function Step4ReviewScreen() {
                 </Pressable>
               </View>
             )}
+            {!feeLoading && feePence == null && !feeError && (pickupNeedsPc || destNeedsPc) && (
+              <View style={{ gap: spacing.sm, marginTop: spacing.xs }}>
+                <Text style={styles.feeErrorText}>We couldn&apos;t find a postcode to price this — add it to get a fee.</Text>
+                {pickupNeedsPc && (
+                  <Input label="Pickup postcode" placeholder="e.g. ZE1 0AA" value={pickupPcManual}
+                    onChangeText={(v) => setPickupPcManual(v.toUpperCase())} autoCapitalize="characters" />
+                )}
+                {destNeedsPc && (
+                  <Input label="Delivery postcode" placeholder="e.g. ZE2 9LA" value={destPcManual}
+                    onChangeText={(v) => setDestPcManual(v.toUpperCase())} autoCapitalize="characters" />
+                )}
+              </View>
+            )}
             {!feeLoading && feePence != null && (
               <>
                 <Text style={styles.feeAmount}>{penceToGBP(feePence + SERVICE_FEE_PENCE)}</Text>
@@ -381,7 +437,7 @@ export default function Step4ReviewScreen() {
             label={feeLoading ? 'Calculating fee…' : 'Submit delivery request'}
             onPress={handleSubmit}
             loading={submitting}
-            disabled={feeLoading}
+            disabled={feeLoading || feePence == null || (needsLiability && !formData.liabilityAcknowledged)}
             variant="secondary"
             size="lg"
             fullWidth

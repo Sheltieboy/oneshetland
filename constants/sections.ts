@@ -86,8 +86,8 @@ export const SECTIONS = {
   },
 
   services: {
-    color:       '#6B47BF',
-    light:       '#EDE9FE',
+    color:       '#4F46E5',   // indigo — the Directory list; deliberately distinct from violet Local
+    light:       '#E0E7FF',
     icon:        'store',
     label:       'Services',
     description: 'The Shetland business and services directory',
@@ -116,7 +116,7 @@ export const SECTIONS = {
     color:       '#2A8B5C',
     light:       '#D1FAE5',
     icon:        'briefcase',
-    label:       'Jobs',
+    label:       'Work',
     description: 'Employment opportunities across Shetland',
     live:        true,
   },

@@ -30,6 +30,7 @@ const ACCENTS: Record<string, string> = {
   spik_sprint:   '#10B981',
   spik_snap:     '#F59E0B',
   guess_da_wird: '#0EA5E9',
+  map_it:        '#0E8FAC',
 };
 
 export default function GameStatsScreen() {

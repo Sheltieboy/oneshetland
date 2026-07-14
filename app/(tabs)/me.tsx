@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Alert,
+  RefreshControl, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -40,6 +40,8 @@ function MenuRow({ icon, iconColor, label, sublabel, badge, badgeColor, onPress,
       style={[styles.menuRow, last && { borderBottomWidth: 0 }]}
       onPress={onPress}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={[label, sublabel, badge].filter(Boolean).join('. ')}
     >
       <View style={[styles.menuIconWrap, { backgroundColor: iconColor + '18' }]}>
         <FontAwesome5 name={icon as any} size={13} color={iconColor} solid />
@@ -218,9 +220,19 @@ export default function MeTab() {
 
         <View style={styles.body}>
 
-          {/* Shifts (worker + employer) and Fetch (customer + driver) entries
-              have moved into My Wallet → "Work" and "Fetch" sections. Profile
-              stays focused on identity and money config. */}
+          {/* ── Jobs & Shifts ───────────────────────────────────────────────── */}
+          <SectionCard title="Work" accentColor={colors.jobs}>
+            <MenuRow
+              icon="briefcase"
+              iconColor={colors.jobs}
+              label="My work"
+              sublabel="Profile, applications and postings"
+              onPress={() => { Haptics.selectionAsync(); router.push('/my-work'); }}
+              last
+            />
+          </SectionCard>
+
+          {/* Fetch (customer + driver) entries live in My Wallet → "Fetch". */}
 
           {/* ── Payments & Banking ──────────────────────────────────────────── */}
           <SectionCard title="Payments & Banking" accentColor={colors.jobs}>
@@ -414,6 +426,13 @@ export default function MeTab() {
               label="Notification settings"
               sublabel="Choose what you're notified about, quiet hours"
               onPress={() => { Haptics.selectionAsync(); router.push('/notification-preferences'); }}
+            />
+            <MenuRow
+              icon="ban"
+              iconColor={colors.navy}
+              label="Blocked users"
+              sublabel="People you've blocked — unblock them anytime"
+              onPress={() => { Haptics.selectionAsync(); router.push('/blocked-users'); }}
               last
             />
           </SectionCard>
@@ -438,8 +457,44 @@ export default function MeTab() {
               icon="user-edit"
               iconColor={colors.textMuted}
               label="Edit profile"
-              sublabel="Name, bio, location, phone"
+              sublabel="Name, photo, bio, location, phone"
               onPress={() => { Haptics.selectionAsync(); router.push('/edit-profile'); }}
+            />
+
+            <MenuRow
+              icon="lock"
+              iconColor={colors.textMuted}
+              label="Password & security"
+              sublabel="Change your email or password"
+              onPress={() => { Haptics.selectionAsync(); router.push('/security'); }}
+            />
+
+            <MenuRow
+              icon="shield-alt"
+              iconColor={colors.textMuted}
+              label="Privacy Policy"
+              sublabel="How we use and protect your data"
+              onPress={() => { Haptics.selectionAsync(); Linking.openURL('https://oneshetland.com/privacy'); }}
+            />
+            <MenuRow
+              icon="file-contract"
+              iconColor={colors.textMuted}
+              label="Terms of Service"
+              sublabel="The rules for using OneShetland"
+              onPress={() => { Haptics.selectionAsync(); Linking.openURL('https://oneshetland.com/terms'); }}
+            />
+
+            {/* Account deletion (Apple 5.1.1(v) / Google Play). Routes to the
+                canonical /account screen, whose two-step confirm flow calls
+                deleteAccount() → the `delete-account` edge function. We never
+                duplicate the destructive logic here. */}
+            <MenuRow
+              icon="user-slash"
+              iconColor="#DC2626"
+              label="Delete account"
+              sublabel="Permanently remove your account and personal data"
+              onPress={() => { Haptics.selectionAsync(); router.push('/account'); }}
+              last
             />
 
             <View style={styles.infoBlock}>

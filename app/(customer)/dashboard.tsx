@@ -67,6 +67,7 @@ const STATUS_LABEL: Record<string, string> = {
   pending: 'Waiting for driver',
   matched: 'Driver on the way',
   collected: 'Out for delivery',
+  expired: 'No driver found',
 };
 
 export default function CustomerDashboard({ embedded = false }: { embedded?: boolean } = {}) {
@@ -356,17 +357,23 @@ export default function CustomerDashboard({ embedded = false }: { embedded?: boo
                                 label: 'Yes, cancel',
                                 style: 'destructive',
                                 onPress: async () => {
-                                  await supabase
-                                    .from('delivery_requests')
-                                    .update({ status: 'cancelled' })
-                                    .eq('id', req.id);
                                   if (isMatched) {
-                                    const { data: { session } } = await supabase.auth.getSession();
-                                    fetch('https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/notify-drivers', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-                                      body: JSON.stringify({ request_id: req.id, event: 'cancelled' }),
+                                    // Release the card pre-authorisation hold via cancel-payment.
+                                    const { error } = await supabase.functions.invoke('cancel-payment', {
+                                      body: { request_id: req.id },
+                                    });
+                                    if (error) {
+                                      alert({ title: 'Error', message: 'Could not cancel the request. Please try again.' });
+                                      return;
+                                    }
+                                    supabase.functions.invoke('notify-drivers', {
+                                      body: { request_id: req.id, event: 'cancelled' },
                                     }).catch(() => {});
+                                  } else {
+                                    await supabase
+                                      .from('delivery_requests')
+                                      .update({ status: 'cancelled' })
+                                      .eq('id', req.id);
                                   }
                                   fadeOutRequest(req.id);
                                 },

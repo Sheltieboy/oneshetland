@@ -23,6 +23,7 @@ import {
   JOB_CATEGORIES, CONTRACT_LABELS, REMOTE_LABELS,
   type ContractType, type RemoteMode, type PayPeriod, type JobInput,
 } from '@/lib/jobs-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.jobs;
 const CONTRACTS: ContractType[] = ['full-time', 'part-time', 'casual', 'apprenticeship', 'freelance', 'volunteer'];
@@ -111,7 +112,7 @@ export default function JobPostScreen() {
       };
       let targetId = jobId as string | undefined;
       if (isEdit && jobId) await updateJob(jobId, payload);
-      else { const j = await createJob(profile.id, payload); targetId = j.id; }
+      else { const j = await createJob(profile.id, payload); targetId = j.id; track('job_posted', { objectType: 'job', objectId: j.id, businessId: businessId ?? null }); }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/job-applicants?jobId=${targetId}`);
     } catch (e: any) {

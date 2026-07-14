@@ -45,7 +45,7 @@ serve(async (req) => {
       });
     }
 
-    const { application_id, status } = await req.json();
+    const { application_id, status, reason } = await req.json();
     if (!application_id || !status) {
       return new Response(JSON.stringify({ error: 'application_id and status required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -82,12 +82,15 @@ serve(async (req) => {
         data:       { screen: 'my-shift-applications' },
       });
     } else if (status === 'rejected') {
+      const filled = reason === 'filled';
       await sendUserPush(supabase, {
         userId:     app.worker_id,
         module:     'shifts',
         categoryId: 'shifts.application_rejected',
-        title:      'Application update',
-        body:       `Your application for "${shiftTitle}" was not successful this time.`,
+        title:      filled ? 'Shift now filled' : 'Application update',
+        body:       filled
+          ? `Thanks for applying — "${shiftTitle}" has now been filled.`
+          : `Your application for "${shiftTitle}" was not successful this time.`,
         data:       { screen: 'my-shift-applications' },
       });
     }

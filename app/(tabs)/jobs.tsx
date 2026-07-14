@@ -32,6 +32,7 @@ import { fetchOpenShifts, CATEGORY_LABELS, type Shift } from '@/lib/shifts-api';
 import { fetchMyBusinesses, toggleAddon, type LocalBusiness } from '@/lib/local-api';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
+import { track } from '@/lib/analytics';
 
 type Tier = 'jobs' | 'shifts';
 const JOBS = SECTIONS.jobs;
@@ -80,7 +81,11 @@ export default function WorkHubScreen() {
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   useEffect(() => {
-    const h = setTimeout(() => { void load(); }, 280);
+    const h = setTimeout(() => {
+      void load();
+      const q = query.trim();
+      if (q) track('search_performed', { props: { section: 'jobs', query: q } });
+    }, 280);
     return () => clearTimeout(h);
   }, [query, category, tier]);
 
@@ -92,7 +97,13 @@ export default function WorkHubScreen() {
   const onToggleSave = async (jobId: string) => {
     if (!profile) { goToSignIn(); return; }
     const next = new Set(saved);
-    if (await toggleSavedJob(profile.id, jobId)) next.add(jobId); else next.delete(jobId);
+    if (await toggleSavedJob(profile.id, jobId)) {
+      next.add(jobId);
+      track('item_saved', { objectType: 'job', objectId: jobId });
+    } else {
+      next.delete(jobId);
+      track('item_unsaved', { objectType: 'job', objectId: jobId });
+    }
     setSaved(next);
   };
 
@@ -125,7 +136,7 @@ export default function WorkHubScreen() {
     <SafeAreaView style={styles.safe} edges={[]}>
       <View style={{ flex: 1, backgroundColor: colors.screenBackground }}>
         {/* Cinematic banner — tints to the active tier; "Work" over it */}
-        <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Find work" photo={SECTION_HEROES.jobs} />
+        <TabScreenHeader section={tier === 'jobs' ? JOBS : SHIFTS} title="Work" eyebrow="Jobs & short shifts" photo={SECTION_HEROES.jobs} />
         {/* Work switch */}
         <View style={styles.header}>
           <View style={styles.switchRow}>
@@ -144,16 +155,6 @@ export default function WorkHubScreen() {
               ? 'Find permanent, part-time and seasonal work across Shetland.'
               : 'Pick up casual, same-day and short-notice shifts across Shetland.'}
           </Text>
-
-          {/* Quick links */}
-          <View style={styles.quickRow}>
-            <QuickLink color={accent} icon="user-tie" label="My profile / CV" onPress={() => (profile ? router.push('/work-profile') : goToSignIn())} />
-            {tier === 'jobs' ? (
-              <QuickLink color={accent} icon="clipboard-list" label="My applications" onPress={() => (profile ? router.push('/my-job-applications') : goToSignIn())} />
-            ) : (
-              <QuickLink color={accent} icon="clipboard-list" label="My shifts" onPress={() => (profile ? router.push('/my-shift-applications') : goToSignIn())} />
-            )}
-          </View>
 
           {/* Search */}
           <View style={styles.searchBar}>
@@ -253,15 +254,6 @@ function Pill({ icon, label, active, color, onPress }: { icon: string; label: st
     <TouchableOpacity style={[styles.switchPill, active && { backgroundColor: color }]} onPress={onPress} activeOpacity={0.85}>
       <FontAwesome5 name={icon as any} size={12} color={active ? '#fff' : colors.textSecondary} solid />
       <Text style={[styles.switchText, { color: active ? '#fff' : colors.textSecondary }]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function QuickLink({ icon, label, color, onPress }: { icon: string; label: string; color: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.quickLink} onPress={onPress} activeOpacity={0.85}>
-      <View style={[styles.quickIcon, { backgroundColor: color + '1A' }]}><FontAwesome5 name={icon as any} size={14} color={color} solid /></View>
-      <Text style={styles.quickLinkText}>{label}</Text>
     </TouchableOpacity>
   );
 }

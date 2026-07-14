@@ -29,6 +29,7 @@ import ShetlandMap from '../../assets/Shetland_UK_blank_map.svg';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { track } from '@/lib/analytics';
 import { submitScore } from '@/lib/games-api';
 import { GameArt, GAME_COLORS, GAME_LIGHTS } from '@/components/GameArt';
 // shetland-geometry kept available for distance maths inside lib/map-it.ts
@@ -153,7 +154,11 @@ export default function MapItScreen() {
   const userId = profile?.id ?? 'anon';
 
   const [state, dispatch] = useReducer(reducer, INIT);
-  const submittedRef = useRef(false);
+  const [saveError, setSaveError] = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const submittedRef = useRef(false);   // true only once the score has actually saved
+  const savingRef    = useRef(false);   // guards against overlapping in-flight saves
+  const completedRef = useRef(false);
   const poolRef      = useRef<Place[]>([]);
 
   // Boot — load pool, pick daily places, resume session if any.
@@ -198,14 +203,16 @@ export default function MapItScreen() {
     });
   }, [state.phase, state.results, state.places, state.gameMode, userId]);
 
-  // On daily done: submit score + update cumulative level pts.
-  useEffect(() => {
-    if (state.phase !== 'done' || state.gameMode !== 'daily' || submittedRef.current) return;
+  // Submit today's score. Only marks submittedRef once the save actually
+  // succeeds, so a failed save can be retried (and never silently "succeeds").
+  const saveDailyScore = useCallback(async () => {
+    if (!profile?.id || submittedRef.current || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(false);
     const total = totalScore(state.results);
-    // Add to lifetime pts (used for level calculation)
-    addCumulativePts(total).catch(() => {});
-    if (profile?.id) {
-      submitScore(profile.id, 'map_it', total, {
+    try {
+      await submitScore(profile.id, 'map_it', total, {
         metadata: {
           date: todayKey(),
           rounds: state.results.map(r => ({
@@ -213,16 +220,40 @@ export default function MapItScreen() {
             distance: Math.round(r.distanceKm * 100) / 100, points: r.points,
           })),
         },
-      }).catch(() => {});
+      });
       submittedRef.current = true;
+    } catch (e) {
+      console.error('Map It score submit failed', e);
+      setSaveError(true);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
-  }, [state.phase, state.gameMode, state.results, profile?.id]);
+  }, [profile?.id, state.results]);
+
+  // On daily done: submit score + update cumulative level pts.
+  useEffect(() => {
+    if (state.phase !== 'done' || state.gameMode !== 'daily' || submittedRef.current) return;
+    const total = totalScore(state.results);
+    // Add to lifetime pts (used for level calculation)
+    addCumulativePts(total).catch(() => {});
+    saveDailyScore();
+  }, [state.phase, state.gameMode, state.results, saveDailyScore]);
 
   // Practice done: still add cumulative pts (unlocks levels) but no leaderboard.
   useEffect(() => {
     if (state.phase !== 'done' || state.gameMode !== 'practice') return;
     addCumulativePts(totalScore(state.results)).catch(() => {});
   }, [state.phase, state.gameMode, state.results]);
+
+  // Analytics: fire once each time a round/game ends (daily or practice).
+  // Reset the guard whenever we leave the done screen so play-again counts again.
+  useEffect(() => {
+    if (state.phase !== 'done') { completedRef.current = false; return; }
+    if (completedRef.current) return;
+    completedRef.current = true;
+    track('game_completed', { props: { game: 'map_it', score: totalScore(state.results) } });
+  }, [state.phase, state.results]);
 
   const startPractice = useCallback(() => {
     const pool = poolRef.current;
@@ -294,6 +325,9 @@ export default function MapItScreen() {
         onShare={state.gameMode === 'daily' ? () => shareResults(state.places, state.results) : undefined}
         onClose={() => router.back()}
         onPlayMore={startPractice}
+        saveError={state.gameMode === 'daily' && saveError}
+        saving={saving}
+        onRetrySave={saveDailyScore}
       />
     );
   }
@@ -485,18 +519,37 @@ function categoryIcon(category: string): string {
 
 // ── Map canvas (SVG with custom projection + pinch/pan) ─────────────────────
 
-// ViewBox zoom limits (viewBox width drives zoom: smaller = more zoomed in)
-const MIN_VB_W = SVG_NATURAL_W / 8;   // 8× max zoom
-const MAX_VB_W = SVG_NATURAL_W;       // 1× (full map)
-
 type VB = { x: number; y: number; w: number; h: number };
 const FULL_VB: VB = { x: 0, y: 0, w: SVG_NATURAL_W, h: SVG_NATURAL_H };
 
-function clampVB(vb: VB): VB {
-  const w = Math.max(MIN_VB_W, Math.min(MAX_VB_W, vb.w));
-  const h = w * (SVG_NATURAL_H / SVG_NATURAL_W);
-  const x = Math.max(0, Math.min(SVG_NATURAL_W - w, vb.x));
-  const y = Math.max(0, Math.min(SVG_NATURAL_H - h, vb.y));
+// The "base" viewBox is the fully-zoomed-out view. We size it to the canvas's
+// aspect ratio so the map fills the canvas edge-to-edge (no letterbox strips)
+// while never distorting the islands. When the canvas is wider than the map's
+// natural aspect we extend the view into the surrounding sea on the sides
+// (the canvas backdrop is the same sea colour, so it reads seamlessly); when
+// it's narrower we extend top/bottom. The whole archipelago always stays in
+// view at base zoom.
+function computeBaseVb(cw: number, ch: number): VB {
+  if (!cw || !ch) return FULL_VB;
+  const canvasAR  = cw / ch;
+  const contentAR = SVG_NATURAL_W / SVG_NATURAL_H;
+  if (canvasAR >= contentAR) {
+    const h = SVG_NATURAL_H;
+    const w = h * canvasAR;
+    return { x: (SVG_NATURAL_W - w) / 2, y: 0, w, h };
+  }
+  const w = SVG_NATURAL_W;
+  const h = w / canvasAR;
+  return { x: 0, y: (SVG_NATURAL_H - h) / 2, w, h };
+}
+
+// Clamp a viewBox to stay within the base view, max 8× zoom in. Height tracks
+// the base aspect ratio so the render never distorts.
+function clampVB(vb: VB, base: VB): VB {
+  const w = Math.max(base.w / 8, Math.min(base.w, vb.w));
+  const h = w * (base.h / base.w);
+  const x = Math.max(base.x, Math.min(base.x + base.w - w, vb.x));
+  const y = Math.max(base.y, Math.min(base.y + base.h - h, vb.y));
   return { x, y, w, h };
 }
 
@@ -520,7 +573,32 @@ function MapCanvas({
   // Sync refs — readable inside PanResponder callbacks without stale closures
   const vbRef    = useRef<VB>(FULL_VB);
   const savedVb  = useRef<VB>(FULL_VB);
+  const baseVbRef = useRef<VB>(FULL_VB);
   const phaseRef = useRef(phase);
+
+  // Coalesce viewBox updates to one React render per animation frame. The pinch/
+  // pan handlers fire faster than the screen refreshes; without this each event
+  // triggered a full SVG re-render, which made zooming feel janky. We update
+  // vbRef synchronously (so tap math stays exact) but only setVb once per frame.
+  const rafRef     = useRef<number | null>(null);
+  const pendingRef = useRef<VB | null>(null);
+  const applyVb = useCallback((next: VB) => {
+    vbRef.current = next;
+    pendingRef.current = next;
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        if (pendingRef.current) setVb(pendingRef.current);
+      });
+    }
+  }, []);
+  // Flush any pending frame immediately (call at gesture end) so the final
+  // position is committed without waiting.
+  const flushVb = useCallback(() => {
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    if (pendingRef.current) { setVb(pendingRef.current); pendingRef.current = null; }
+  }, []);
+  useEffect(() => () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); }, []);
   const onTapRef = useRef(onTap);
   const rectRef  = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   // Canvas page-origin (top-left in screen coordinates) — populated after layout
@@ -530,24 +608,26 @@ function MapCanvas({
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { onTapRef.current = onTap;  }, [onTap]);
 
-  // Fit SVG's 832×1582 aspect into the canvas, letterboxed
-  const rect = useMemo(() => {
-    if (!size.w || !size.h) return null;
-    const svgAR    = SVG_NATURAL_W / SVG_NATURAL_H;
-    const canvasAR = size.w / size.h;
-    let rw: number, rh: number;
-    if (canvasAR > svgAR) { rh = size.h; rw = rh * svgAR; }
-    else                  { rw = size.w; rh = rw / svgAR; }
-    return { x: (size.w - rw) / 2, y: (size.h - rh) / 2, w: rw, h: rh };
-  }, [size.w, size.h]);
+  // The SVG fills the entire canvas (no letterbox) — the base viewBox is sized
+  // to the canvas aspect so the islands aren't distorted (preserveAspectRatio
+  // is "none"). This makes the map reach the screen edges instead of sitting in
+  // a narrow centred column.
+  const rect = useMemo(
+    () => (size.w && size.h ? { x: 0, y: 0, w: size.w, h: size.h } : null),
+    [size.w, size.h],
+  );
+  const baseVb = useMemo(() => computeBaseVb(size.w, size.h), [size.w, size.h]);
 
   useEffect(() => { rectRef.current = rect; }, [rect]);
+  useEffect(() => { baseVbRef.current = baseVb; }, [baseVb]);
 
-  // Reset on each new round
+  // Reset to the full (base) view on each new round, and whenever the base
+  // changes (first layout / rotation).
   useEffect(() => {
-    vbRef.current = FULL_VB; savedVb.current = FULL_VB;
-    setVb(FULL_VB);
-  }, [answer?.id]);
+    const b = baseVbRef.current;
+    vbRef.current = b; savedVb.current = b;
+    setVb(b);
+  }, [answer?.id, baseVb]);
 
   // Measure the canvas's top-left position in screen space.
   // PanResponder gives pageX/pageY (absolute), so we subtract the canvas
@@ -642,19 +722,20 @@ function MapCanvas({
           gst.pinchFocalSvgY = s?.y ?? SVG_NATURAL_H / 2;
         }
         gst.isTap = false;
+        const base  = baseVbRef.current;
         const dist  = pinchDist(touches);
         const scale = dist / gst.pinchStartDist;
         const rawW  = gst.pinchStartVb.w / scale;
-        const w     = Math.max(MIN_VB_W, Math.min(MAX_VB_W, rawW));
-        const h     = w * SVG_NATURAL_H / SVG_NATURAL_W;
+        const w     = Math.max(base.w / 8, Math.min(base.w, rawW));
+        const h     = w * (base.h / base.w);
         const fracX = (gst.pinchFocalCanvasX - r.x) / r.w;
         const fracY = (gst.pinchFocalCanvasY - r.y) / r.h;
         const next  = clampVB({
           x: gst.pinchFocalSvgX - fracX * w,
           y: gst.pinchFocalSvgY - fracY * h,
           w, h,
-        });
-        vbRef.current = next; setVb(next);
+        }, base);
+        applyVb(next);
 
       } else if (!gst.isPinch) {
         // ── Pan ───────────────────────────────────────────────────────────
@@ -665,8 +746,8 @@ function MapCanvas({
           ...sv,
           x: sv.x - (gs.dx / r.w) * sv.w,
           y: sv.y - (gs.dy / r.h) * sv.h,
-        });
-        vbRef.current = next; setVb(next);
+        }, baseVbRef.current);
+        applyVb(next);
       }
     },
 
@@ -675,19 +756,22 @@ function MapCanvas({
         const dist     = Math.sqrt(gs.dx * gs.dx + gs.dy * gs.dy);
         const duration = Date.now() - gst.tapStartTime;
         if (dist < 12 && duration < 500 && phaseRef.current === 'playing') {
+          // The tap always lands within the visible viewBox, so any resulting
+          // coordinate is valid — including the sea around the islands (a guess
+          // can legitimately be offshore). No need to reject by natural bounds.
           const svgCoord = canvasToSvg(gst.tapCanvasX, gst.tapCanvasY, vbRef.current);
-          if (svgCoord &&
-              svgCoord.x >= 0 && svgCoord.x <= SVG_NATURAL_W &&
-              svgCoord.y >= 0 && svgCoord.y <= SVG_NATURAL_H) {
+          if (svgCoord) {
             onTapRef.current(svgYToLat(svgCoord.y), svgXToLng(svgCoord.x));
           }
         }
       }
+      flushVb();
       savedVb.current = { ...vbRef.current };
       gst.isTap = false; gst.isPinch = false;
     },
 
     onPanResponderTerminate: () => {
+      flushVb();
       savedVb.current = { ...vbRef.current };
       gst.isTap = false; gst.isPinch = false;
     },
@@ -967,6 +1051,7 @@ function LevelBadge({ pts }: { pts: number }) {
 
 function DoneScreen({
   results, gameMode, onShare, onClose, onPlayMore, alreadyPlayed,
+  saveError, saving, onRetrySave,
 }: {
   results:        RoundResult[];
   gameMode:       'daily' | 'practice';
@@ -974,6 +1059,9 @@ function DoneScreen({
   onClose:        () => void;
   onPlayMore?:    () => void;
   alreadyPlayed?: boolean;
+  saveError?:     boolean;
+  saving?:        boolean;
+  onRetrySave?:   () => void;
 }) {
   const total  = totalScore(results);
   const rounds = gameMode === 'practice' ? PRACTICE_ROUNDS : ROUNDS_PER_DAY;
@@ -1024,6 +1112,23 @@ function DoneScreen({
             </View>
           )}
         </View>
+
+        {/* Score-save failure — daily scores only count once saved. */}
+        {saveError && (
+          <View style={doneStyles.saveErrorBox}>
+            <FontAwesome5 name="exclamation-triangle" size={13} color="#FCA5A5" solid />
+            <Text style={doneStyles.saveErrorText}>
+              Couldn't save your score. It won't count on the leaderboard until it saves.
+            </Text>
+            <TouchableOpacity
+              style={[doneStyles.saveRetryBtn, saving && { opacity: 0.6 }]}
+              onPress={onRetrySave}
+              disabled={saving}
+            >
+              <Text style={doneStyles.saveRetryText}>{saving ? 'Saving…' : 'Retry'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Level progress */}
         {cumulativePts > 0 && <LevelBadge pts={cumulativePts} />}
@@ -1336,6 +1441,10 @@ const revealStyles = StyleSheet.create({
 
 const doneStyles = StyleSheet.create({
   body: { flex: 1, padding: spacing.md, gap: 18 },
+  saveErrorBox:  { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingHorizontal: 14, paddingVertical: 12, backgroundColor: 'rgba(185,28,28,0.22)', borderColor: 'rgba(252,165,165,0.5)', borderWidth: 1, borderRadius: radius.md },
+  saveErrorText: { flex: 1, minWidth: 160, fontSize: 13, color: '#FECACA', fontWeight: '600' },
+  saveRetryBtn:  { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#DC2626', borderRadius: radius.full },
+  saveRetryText: { fontSize: 13, fontWeight: '900', color: '#fff' },
   headline: { alignItems: 'center', gap: 6, paddingTop: 16 },
   headlineLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
   total: { color: '#fff', fontSize: 56, fontWeight: '900', letterSpacing: 0.4 },

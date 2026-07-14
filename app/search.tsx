@@ -167,7 +167,7 @@ export default function SearchScreen() {
               onSubmitEditing={() => rememberSearch(query)}
             />
             {(query.length > 0 || activeCat) && (
-              <TouchableOpacity onPress={() => { setQuery(''); setActiveCat(null); }} hitSlop={10}>
+              <TouchableOpacity onPress={() => { setQuery(''); setActiveCat(null); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
                 <FontAwesome5 name="times-circle" size={16} color={colors.textMuted} solid />
               </TouchableOpacity>
             )}

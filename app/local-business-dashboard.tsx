@@ -15,7 +15,6 @@ import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
-import { useStripe } from '@stripe/stripe-react-native';
 import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
@@ -28,9 +27,8 @@ import {
   fetchLoyaltyProgram, upsertLoyaltyProgram,
   fetchBusinessOffers, deactivateOffer,
   fetchBusinessCode, refreshBusinessCode,
-  createBusinessOnboardingLink, createSubscriptionIntent, createBillingPortalLink,
-  previewSubscriptionChange, applySubscriptionChange,
-  createBoostIntent, fetchBoostPrices, isOnBoost,
+  createBusinessOnboardingLink, createBillingPortalLink,
+  isOnBoost,
   requestNfcTile, NFC_TILE_URL_PREFIX,
   isBusinessFeatured, TIER_LABELS, TIER_PRICE,
   formatOfferDiscount, daysRemaining,
@@ -41,12 +39,13 @@ import {
   type BusinessWalletReceipt, type BusinessAddon, type AddonKey,
 } from '@/lib/local-api';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { track } from '@/lib/analytics';
 import { setAcceptsBookings, fetchBusinessServices } from '@/lib/book-api';
 import { fetchBusinessEvents, type OsEvent } from '@/lib/events-api';
 import {
   fetchMyAlertAccess, requestAlertAccess,
   sendAlert, cancelAlert, fetchMyBusinessAlerts, activateAlertAccess,
-  createAlertAddonIntent, fetchScheduledAlerts,
+  fetchScheduledAlerts,
   type PartnerAlert, type AlertAccess, type AlertType,
 } from '@/lib/alerts-api';
 import { supabase } from '@/lib/supabase';
@@ -97,10 +96,6 @@ export default function BusinessDashboardScreen() {
   const [orphanedShiftCount, setOrphanedShiftCount] = useState(0);
   const [backfilling,        setBackfilling]        = useState(false);
 
-  // Boost prices (loaded from admin_config)
-  const [boostPrices, setBoostPrices] = useState<{ one: number | null; two: number | null; three: number | null }>({ one: null, two: null, three: null });
-  const [boostBusy,   setBoostBusy]   = useState<1 | 2 | 3 | null>(null);
-
   const [addons, setAddons] = useState<BusinessAddon[]>([]);
   const [addonsBusy, setAddonsBusy] = useState<AddonKey | null>(null);
   const [bizEvents, setBizEvents] = useState<OsEvent[]>([]);
@@ -126,10 +121,6 @@ export default function BusinessDashboardScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
   };
-
-  useEffect(() => {
-    fetchBoostPrices().then(setBoostPrices).catch(() => {});
-  }, []);
 
   const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -203,162 +194,12 @@ export default function BusinessDashboardScreen() {
     return () => { if (codeTimerRef.current) clearInterval(codeTimerRef.current); };
   }, [activeBusiness?.id]);
 
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const { alert: brandedAlert } = useAlert();
-  const [upgradeBusy, setUpgradeBusy] = useState(false);
 
-  // EXISTING-SUBSCRIBER flow: preview the proration, ask the user to confirm,
-  // then apply. No Payment Sheet — Stripe charges the saved card directly.
-  const handleTierChange = async (newTier: 'pro' | 'premium') => {
-    if (!activeBusiness) return;
-    setUpgradeBusy(true);
-    try {
-      const preview = await previewSubscriptionChange(activeBusiness.id, newTier);
-
-      if (preview.noChange) {
-        brandedAlert({ title: 'Already on this plan', message: 'No changes made.' });
-        return;
-      }
-
-      const amount   = (preview.previewAmountPence / 100).toFixed(2);
-      const symbol   = preview.currency?.toLowerCase() === 'gbp' ? '£' : preview.currency?.toUpperCase() + ' ';
-      const monthly  = newTier === 'premium' ? '£49.99' : '£19.99';
-      const tierName = newTier === 'premium' ? 'Premium' : 'Pro';
-      const renewDate = preview.nextRenewalAt
-        ? new Date(preview.nextRenewalAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-        : 'your next billing date';
-
-      const isUpgrade = preview.previewAmountPence > 0;
-      const action    = isUpgrade ? 'Upgrade' : 'Switch';
-
-      brandedAlert({
-        title:   `${action} to ${tierName}?`,
-        message: isUpgrade
-          ? `You'll pay ${symbol}${amount} today (unused portion of your current plan is credited).\n\nThen ${monthly}/month from ${renewDate}.`
-          : `No charge today — you've been credited for the difference.\n\nThen ${monthly}/month from ${renewDate}.`,
-        icon:    newTier === 'premium' ? 'crown' : 'star',
-        accent:  newTier === 'premium' ? PREMIUM_PURPLE : S.color,
-        actions: [
-          { label: 'Cancel', style: 'cancel', onPress: () => setUpgradeBusy(false) },
-          {
-            label: 'Confirm',
-            style: 'primary',
-            onPress: async () => {
-              try {
-                await applySubscriptionChange(activeBusiness.id, newTier);
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setActiveBusiness(prev => prev ? { ...prev, subscription_tier: newTier } as LocalBusiness : prev);
-                pollForTier(activeBusiness.id, newTier);
-              } catch (e: any) {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                brandedAlert({
-                  title: 'Change failed',
-                  message: e?.message ?? 'Try again.',
-                  icon: 'exclamation-triangle',
-                  accent: colors.error,
-                  actions: [{ label: 'OK', style: 'primary' }],
-                });
-              } finally {
-                setUpgradeBusy(false);
-              }
-            },
-          },
-        ],
-      });
-    } catch (e: any) {
-      brandedAlert({ title: 'Could not preview', message: e?.message ?? 'Try again.' });
-      setUpgradeBusy(false);
-    }
-  };
-
-  // After a successful Payment Sheet, poll the businesses table until the
-  // webhook has flipped the tier in the DB. Bails after ~20s — by then the
-  // optimistic UI is correct enough that the user can carry on.
-  const pollForTier = async (businessId: string, expected: 'pro' | 'premium') => {
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await new Promise(r => setTimeout(r, 2000));
-      try {
-        const fresh = await fetchMyBusinesses(profile!.id);
-        const updated = fresh.find(b => b.id === businessId);
-        if (updated?.subscription_tier === expected || updated?.subscription_tier === 'premium') {
-          setBusinesses(fresh);
-          setActiveBusiness(updated);
-          return;
-        }
-      } catch { /* keep trying */ }
-    }
-  };
-
-  const startCheckout = async (tier: 'pro' | 'premium') => {
-    if (!activeBusiness || upgradeBusy) return;
-
-    // Pre-flight: card must be set up centrally in Me before subscribing
-    if (!profile?.has_payment_method) {
-      brandedAlert({
-        title: 'Payment card needed',
-        message: 'Add a payment card in your account before subscribing.',
-        actions: [
-          { label: 'Not now', style: 'cancel' },
-          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup') },
-        ],
-      });
-      return;
-    }
-
-    // EXISTING SUBSCRIBER → preview + confirm + apply with proration
-    // (no Payment Sheet — saved card is auto-charged for the prorated amount)
-    if (activeBusiness.subscription_tier !== 'free' && activeBusiness.stripe_subscription_id) {
-      await handleTierChange(tier);
-      return;
-    }
-
-    // FIRST-TIME SUBSCRIBER → Payment Sheet flow
-    setUpgradeBusy(true);
-    try {
-      // 1. Server: create the incomplete subscription + ephemeral key
-      const intent = await createSubscriptionIntent(activeBusiness.id, tier);
-
-      // 2. Init the Payment Sheet with those values
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName:        'OneShetland',
-        customerId:                 intent.customer,
-        customerEphemeralKeySecret: intent.ephemeralKey,
-        paymentIntentClientSecret:  intent.paymentIntent,
-        allowsDelayedPaymentMethods: false,
-        defaultBillingDetails:      { name: activeBusiness.name },
-        returnURL:                  'oneshetland-fetch://stripe-redirect',
-      });
-      if (initError) throw new Error(initError.message);
-
-      // 3. Present sheet → user pays
-      const { error: sheetError } = await presentPaymentSheet();
-      if (sheetError) {
-        if (sheetError.code === 'Canceled') return;            // user backed out
-        throw new Error(sheetError.message);
-      }
-
-      // 4. Success — Stripe will fire customer.subscription.updated and our
-      //    webhook will flip the tier. There's a small race window so we:
-      //    (a) optimistically update the UI right away
-      //    (b) poll in the background to confirm the DB caught up (and to
-      //        replace the local optimistic value with the authoritative one)
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setActiveBusiness(prev => prev ? { ...prev, subscription_tier: tier } as LocalBusiness : prev);
-
-      brandedAlert({
-        title: `Welcome to ${tier === 'premium' ? 'Premium' : 'Pro'}!`,
-        message: 'Your subscription is active. The new features are unlocked below.',
-      });
-
-      // Poll up to ~20 seconds for the webhook to confirm the tier in the DB
-      pollForTier(activeBusiness.id, tier);
-    } catch (e: any) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      brandedAlert({ title: 'Could not start checkout', message: e?.message ?? 'Try again' });
-    } finally {
-      setUpgradeBusy(false);
-    }
-  };
+  // Plan upgrades and short-term boosts are paid digital purchases. Their in-app
+  // purchase paths (subscription checkout / proration / boost PaymentIntent) have
+  // been removed for store compliance. The dashboard now shows the current plan
+  // and which features are on, read-only.
 
   const handleBackfillShifts = async () => {
     if (!activeBusiness || !profile) return;
@@ -401,78 +242,8 @@ export default function BusinessDashboardScreen() {
     });
   };
 
-  const handleBoost = async (weeks: 1 | 2 | 3) => {
-    if (!activeBusiness || boostBusy) return;
-
-    // Pre-flight: card must be set up in Me before purchasing a boost
-    if (!profile?.has_payment_method) {
-      brandedAlert({
-        title: 'Payment card needed',
-        message: 'Add a payment card in your account before purchasing a boost.',
-        actions: [
-          { label: 'Not now', style: 'cancel' },
-          { label: 'Add card', style: 'primary', onPress: () => router.push('/payment-setup') },
-        ],
-      });
-      return;
-    }
-
-    setBoostBusy(weeks);
-    try {
-      // 1. Server: create the PaymentIntent
-      const intent = await createBoostIntent(activeBusiness.id, weeks);
-
-      // 2. Init the Payment Sheet
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName:        'OneShetland',
-        customerId:                 intent.customer,
-        customerEphemeralKeySecret: intent.ephemeralKey,
-        paymentIntentClientSecret:  intent.paymentIntent,
-        allowsDelayedPaymentMethods: false,
-        defaultBillingDetails:      { name: activeBusiness.name },
-        returnURL:                  'oneshetland-fetch://stripe-redirect',
-      });
-      if (initError) throw new Error(initError.message);
-
-      // 3. Present sheet → user pays
-      const { error: sheetError } = await presentPaymentSheet();
-      if (sheetError) {
-        if (sheetError.code === 'Canceled') return;
-        throw new Error(sheetError.message);
-      }
-
-      // 4. Success — the webhook will flip tier to 'pro' and extend
-      //    subscription_until. Optimistic UI + poll to confirm.
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const optimisticUntil = new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000);
-      setActiveBusiness(prev => prev ? {
-        ...prev,
-        subscription_tier:  'pro',
-        subscription_until: optimisticUntil.toISOString(),
-      } as LocalBusiness : prev);
-
-      brandedAlert({
-        title:   `Boost active!`,
-        message: `Pro features unlocked for the next ${weeks} week${weeks === 1 ? '' : 's'}. No subscription — just enjoy.`,
-        icon:    'bolt',
-        accent:  S.color,
-        actions: [{ label: 'Great', style: 'primary' }],
-      });
-
-      pollForTier(activeBusiness.id, 'pro');
-    } catch (e: any) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      brandedAlert({
-        title:   'Could not start boost',
-        message: e?.message ?? 'Try again.',
-        icon:    'exclamation-triangle',
-        accent:  colors.error,
-        actions: [{ label: 'OK', style: 'primary' }],
-      });
-    } finally {
-      setBoostBusy(null);
-    }
-  };
+  // Listing boost is a paid digital purchase; its in-app purchase path has been
+  // removed for store compliance. The boost CTA is no longer rendered.
 
   const openBillingPortal = async () => {
     if (!activeBusiness) return;
@@ -548,7 +319,7 @@ export default function BusinessDashboardScreen() {
     if (activeBusiness.subscription_tier !== 'premium') {
       return brandedAlert({
         title: 'Premium feature',
-        message: 'In-app bookings are part of the Premium tier (£49.99/mo). Upgrade to enable.',
+        message: 'In-app bookings aren\'t enabled on your current plan.',
       });
     }
     if (value && bookServiceCount === 0) {
@@ -583,53 +354,19 @@ export default function BusinessDashboardScreen() {
   const handleAddonToggle = async (key: AddonKey, enabled: boolean) => {
     if (!activeBusiness) return;
     const isPremium = (PREMIUM_ADDON_KEYS as readonly string[]).includes(key);
-    if (isPremium && enabled && activeBusiness.subscription_tier !== 'premium') {
+    // ENABLING a premium add-on is a paid digital purchase (it can add a paid
+    // extra to the subscription). That in-app purchase path has been removed for
+    // store compliance, so we show a neutral locked state instead of charging.
+    // Disabling a premium add-on, and all standard/free add-on toggles, still work.
+    if (isPremium && enabled) {
       brandedAlert({
-        title: 'Premium required',
-        message: 'Upgrade to Premium to unlock this add-on.',
-        icon: 'crown',
-        accent: PREMIUM_PURPLE,
-        actions: [
-          { label: 'Not now', style: 'cancel' },
-          { label: 'See plans', style: 'primary', onPress: () => setExpanded(prev => ({ ...prev, plan: true })) },
-        ],
+        title: 'Premium feature',
+        message: 'This add-on isn\'t enabled on your current plan.',
+        icon: 'lock',
+        accent: colors.textMuted,
+        actions: [{ label: 'OK', style: 'primary' }],
       });
       return;
-    }
-    if (isPremium && enabled) {
-      const currentEnabled = addons.filter(
-        a => a.enabled && (PREMIUM_ADDON_KEYS as readonly string[]).includes(a.addon_key),
-      );
-      if (currentEnabled.length >= 1) {
-        const extra = currentEnabled.length;
-        const monthlyCost = (extra * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(2);
-        brandedAlert({
-          title: `Add ${ADDON_META[key].label}?`,
-          message: `Your Premium plan includes 1 premium add-on. This is an extra, adding £${monthlyCost}/month to your subscription.`,
-          icon: ADDON_META[key].icon,
-          accent: PREMIUM_PURPLE,
-          actions: [
-            { label: 'Cancel', style: 'cancel' },
-            {
-              label: 'Enable (+£15/mo)',
-              style: 'primary',
-              onPress: async () => {
-                setAddonsBusy(key);
-                try {
-                  await toggleAddon(activeBusiness.id, key, true);
-                  setAddons(prev => prev.map(a => a.addon_key === key ? { ...a, enabled: true } : a));
-                  Haptics.selectionAsync();
-                } catch (e: any) {
-                  brandedAlert({ title: 'Could not enable add-on', message: e?.message ?? 'Try again.' });
-                } finally {
-                  setAddonsBusy(null);
-                }
-              },
-            },
-          ],
-        });
-        return;
-      }
     }
     setAddonsBusy(key);
     try {
@@ -753,6 +490,22 @@ export default function BusinessDashboardScreen() {
           </View>
         </View>
 
+        {/* ── Analytics ── */}
+        <TouchableOpacity
+          style={styles.backfillBanner}
+          onPress={() => router.push({ pathname: '/local-business-analytics', params: { businessId: activeBusiness.id } })}
+          activeOpacity={0.85}
+        >
+          <View style={styles.backfillIcon}>
+            <FontAwesome5 name="chart-line" size={11} color={S.color} solid />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.backfillTitle}>Analytics</Text>
+            <Text style={styles.backfillSub}>Views, engagement &amp; revenue for {activeBusiness.name}.</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={11} color={S.color} />
+        </TouchableOpacity>
+
         {/* ── Backfill orphaned shifts banner ── */}
         {orphanedShiftCount > 0 && (
           <TouchableOpacity
@@ -807,9 +560,9 @@ export default function BusinessDashboardScreen() {
                 <>
                   {!isPremium && (
                     <View style={styles.addonUpgradeBanner}>
-                      <FontAwesome5 name="crown" size={12} color={PREMIUM_PURPLE} solid />
+                      <FontAwesome5 name="lock" size={12} color={colors.textMuted} solid />
                       <Text style={styles.addonUpgradeText}>
-                        Upgrade to <Text style={{ fontWeight: '900' }}>Premium</Text> to enable Bookings, Services, Events, Membership and Products.
+                        Bookings, Services, Events, Membership and Products are <Text style={{ fontWeight: '900' }}>premium features</Text>, not enabled on your current plan.
                       </Text>
                     </View>
                   )}
@@ -829,7 +582,12 @@ export default function BusinessDashboardScreen() {
                         const meta    = ADDON_META[key];
                         const addon   = addons.find(a => a.addon_key === key);
                         const on      = addon?.enabled ?? false;
-                        const locked  = premiumKeys.includes(key) && !isPremium;
+                        const isPremiumKey = premiumKeys.includes(key);
+                        // Enabling a premium add-on is a paid purchase (removed for
+                        // store compliance). Lock premium add-ons that are currently
+                        // off so they read as a locked feature; an already-on premium
+                        // add-on stays toggleable so it can be turned off.
+                        const locked  = isPremiumKey && !on;
                         const busy    = addonsBusy === key;
                         const enabledPremiumCount = addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key)).length;
                         const isFirstPremium = on && premiumKeys.includes(key) &&
@@ -845,7 +603,7 @@ export default function BusinessDashboardScreen() {
                                 {premiumKeys.includes(key) && on && (
                                   <View style={[styles.addonBadge, { backgroundColor: isFirstPremium ? PREMIUM_PURPLE + '20' : '#FEF3C7' }]}>
                                     <Text style={[styles.addonBadgeText, { color: isFirstPremium ? PREMIUM_PURPLE : '#92400E' }]}>
-                                      {isFirstPremium ? 'Included' : '+£15/mo'}
+                                      {isFirstPremium ? 'Included' : `+£${(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo`}
                                     </Text>
                                   </View>
                                 )}
@@ -1047,84 +805,9 @@ export default function BusinessDashboardScreen() {
             })}
           </View>
 
-          {/* Single primary CTA based on current tier */}
-          {activeBusiness.subscription_tier === 'free' && (
-            <View style={{ gap: 6, marginTop: 14 }}>
-              <TouchableOpacity
-                style={[styles.upgradeBtn, { backgroundColor: S.color }, upgradeBusy && { opacity: 0.7 }]}
-                onPress={() => startCheckout('pro')}
-                disabled={upgradeBusy}
-                activeOpacity={0.85}
-              >
-                {upgradeBusy ? <ActivityIndicator color="#fff" /> : (
-                  <>
-                    <FontAwesome5 name="star" size={11} color="#fff" solid />
-                    <Text style={styles.upgradeBtnText}>Upgrade to Pro · £19.99/mo</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => startCheckout('premium')} disabled={upgradeBusy} style={{ paddingVertical: 6 }}>
-                <Text style={[styles.upgradeSecondary, { color: PREMIUM_PURPLE }]}>
-                  Or unlock everything with Premium · £49.99/mo →
-                </Text>
-              </TouchableOpacity>
-
-              {/* ── Boost — short-term Pro without a subscription ── */}
-              {(boostPrices.one || boostPrices.two || boostPrices.three) && (
-                <View style={styles.boostBlock}>
-                  <View style={styles.boostHeader}>
-                    <FontAwesome5 name="bolt" size={11} color={S.color} solid />
-                    <Text style={styles.boostHeadline}>Or try Pro for a short time</Text>
-                  </View>
-                  <Text style={styles.boostHint}>
-                    One-off payment. No subscription, no renewal — just unlocked for the duration.
-                  </Text>
-                  <View style={styles.boostOptionsRow}>
-                    {[
-                      { weeks: 1 as const, pence: boostPrices.one,   label: '1 week'  },
-                      { weeks: 2 as const, pence: boostPrices.two,   label: '2 weeks' },
-                      { weeks: 3 as const, pence: boostPrices.three, label: '3 weeks' },
-                    ].filter(o => o.pence).map(o => {
-                      const busy = boostBusy === o.weeks;
-                      return (
-                        <TouchableOpacity
-                          key={o.weeks}
-                          style={[styles.boostOption, busy && { opacity: 0.6 }]}
-                          onPress={() => handleBoost(o.weeks)}
-                          disabled={!!boostBusy}
-                          activeOpacity={0.85}
-                        >
-                          {busy ? (
-                            <ActivityIndicator color={S.color} size="small" />
-                          ) : (
-                            <>
-                              <Text style={styles.boostOptionLabel}>{o.label}</Text>
-                              <Text style={styles.boostOptionPrice}>£{(o.pence! / 100).toFixed(2)}</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-          {activeBusiness.subscription_tier === 'pro' && (
-            <TouchableOpacity
-              style={[styles.upgradeBtn, { backgroundColor: PREMIUM_PURPLE, marginTop: 14 }, upgradeBusy && { opacity: 0.7 }]}
-              onPress={() => startCheckout('premium')}
-              disabled={upgradeBusy}
-              activeOpacity={0.85}
-            >
-              {upgradeBusy ? <ActivityIndicator color="#fff" /> : (
-                <>
-                  <FontAwesome5 name="crown" size={11} color="#fff" solid />
-                  <Text style={styles.upgradeBtnText}>Upgrade to Premium · £49.99/mo</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+          {/* In-app plan upgrades and boosts have been removed for store
+              compliance. The feature checklist above shows, read-only, which
+              features the current plan includes and which are locked. */}
           {activeBusiness.subscription_tier === 'premium' && (
             <View style={styles.allUnlocked}>
               <FontAwesome5 name="crown" size={13} color={PREMIUM_PURPLE} solid />
@@ -1189,6 +872,7 @@ export default function BusinessDashboardScreen() {
                   }
                   try {
                     await requestNfcTile(activeBusiness.id);
+                    track('nfc_tile_requested', { businessId: activeBusiness.id });
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     brandedAlert({
                       title: 'Tile requested!',
@@ -1610,63 +1294,10 @@ export default function BusinessDashboardScreen() {
               await loadAll(activeBusiness);
             } catch {}
           }}
-          onActivate={async () => {
-            setAlertBusy(true);
-            try {
-              const result = await createAlertAddonIntent(activeBusiness.id);
-
-              if ((result as any).activated) {
-                // Saved card charged silently — already active in DB
-                await loadAll(activeBusiness);
-                brandedAlert({ title: 'Urgent Alerts activated!', message: 'You can now broadcast urgent messages to every OneShetland user.' });
-                return;
-              }
-
-              // Needs Payment Sheet (no saved card, or card requires action)
-              const intent = result as any;
-              if (!intent.paymentIntent || !intent.ephemeralKey || !intent.customer) {
-                throw new Error('Payment details missing — please try again.');
-              }
-              const { error: initError } = await initPaymentSheet({
-                merchantDisplayName:         'OneShetland',
-                customerId:                  intent.customer,
-                customerEphemeralKeySecret:  intent.ephemeralKey,
-                paymentIntentClientSecret:   intent.paymentIntent,
-                allowsDelayedPaymentMethods: false,
-                returnURL: 'oneshetland-fetch://stripe-redirect',
-              });
-              if (initError) throw new Error(initError.message);
-
-              const { error: sheetError } = await presentPaymentSheet();
-              if (sheetError) {
-                if (sheetError.code !== 'Canceled') {
-                  brandedAlert({ title: 'Payment failed', message: sheetError.message });
-                }
-                return;
-              }
-
-              // Sheet completed — webhook will flip status; poll until it lands
-              let retries = 0;
-              const poll = async () => {
-                await loadAll(activeBusiness);
-                retries++;
-                if (retries < 6) setTimeout(poll, 2000);
-              };
-              await poll();
-
-              brandedAlert({ title: 'Urgent Alerts activated!', message: 'You can now broadcast urgent messages to every OneShetland user.' });
-            } catch (e: any) {
-              // Already active means a previous payment succeeded but the UI
-              // didn't refresh — just reload silently rather than showing an error
-              if (e.message?.toLowerCase().includes('already active')) {
-                await loadAll(activeBusiness);
-              } else {
-                brandedAlert({ title: 'Error', message: e.message ?? 'Could not start payment' });
-              }
-            } finally {
-              setAlertBusy(false);
-            }
-          }}
+          // The £10/mo urgent-alerts add-on is a paid digital purchase; its
+          // in-app activation/payment path has been removed for store
+          // compliance. Businesses that already have access keep composing and
+          // sending alerts; the paid activation CTA is no longer shown.
         />
 
         {/* ── Offers — Pro+ only ── */}
@@ -1771,7 +1402,7 @@ function AlertsCard({
   sendLater, scheduledFor, alertDuration,
   onMessageChange, onTypeChange,
   onToggleSendLater, onPickTime, onDurationChange,
-  onRequestAccess, onSendAlert, onCancelAlert, onActivate,
+  onRequestAccess, onSendAlert, onCancelAlert,
 }: {
   access:             AlertAccess | null;
   activeAlerts:       PartnerAlert[];
@@ -1792,7 +1423,6 @@ function AlertsCard({
   onRequestAccess:    () => void;
   onSendAlert:        () => void;
   onCancelAlert:      (id: string) => void;
-  onActivate:         () => void;
 }) {
   const router = useRouter();
   const { alert } = useAlert();
@@ -1825,7 +1455,7 @@ function AlertsCard({
       {!access && (
         <View style={alertStyles.stateBox}>
           <Text style={alertStyles.stateDesc}>
-            Instantly push urgent messages — ferry updates, event changes, road closures — to every OneShetland user. Requires approval from OneShetland and a £10/month add-on.
+            Instantly push urgent messages — ferry updates, event changes, road closures — to every OneShetland user. Requires approval from OneShetland.
           </Text>
           <TouchableOpacity
             style={[alertStyles.requestBtn, requestingAccess && { opacity: 0.6 }]}
@@ -1851,28 +1481,15 @@ function AlertsCard({
         </View>
       )}
 
-      {/* State: approved but not yet paying */}
+      {/* State: approved but not yet active.
+          The paid in-app activation CTA has been removed for store compliance —
+          this now shows a neutral locked status only. */}
       {access?.status === 'approved' && (
         <View style={[alertStyles.stateBox, { backgroundColor: '#F0FBF3', borderColor: '#34C759' + '40' }]}>
           <FontAwesome5 name="check-circle" size={18} color="#34C759" />
           <Text style={[alertStyles.stateDesc, { textAlign: 'center' }]}>
-            Approved! Activate the £10/month add-on to start sending alerts.
+            Approved. Urgent Alerts is a premium feature and isn&apos;t active on your account yet.
           </Text>
-          <TouchableOpacity
-            style={[alertStyles.activateBtn, alertBusy && { opacity: 0.7 }]}
-            activeOpacity={0.85}
-            onPress={onActivate}
-            disabled={alertBusy}
-          >
-            {alertBusy ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <FontAwesome5 name="lock-open" size={11} color="#fff" />
-                <Text style={alertStyles.activateBtnText}>Activate — £10/month</Text>
-              </>
-            )}
-          </TouchableOpacity>
         </View>
       )}
 
@@ -2322,6 +1939,7 @@ function LoyaltyModal({
         points_per_pound: type === 'points' ? parseFloat(pointsPer) : null,
         points_for_pound: type === 'points' ? parseInt(pointsFor) : null,
       });
+      track('loyalty_program_created', { businessId });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
     } catch (e: any) {

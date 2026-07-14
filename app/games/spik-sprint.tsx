@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { track } from '@/lib/analytics';
 import { loadSpikGameWords, makeSprintQuestion, type SpikGameWord } from '@/lib/spik-games-data';
 import { submitScore, fetchTopScores, type LeaderboardRow } from '@/lib/games-api';
 import { GameArt, GAME_COLORS, GAME_LIGHTS } from '@/components/GameArt';
@@ -61,6 +62,8 @@ export default function SpikSprintScreen() {
   const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
   const [feedback, setFeedback] = useState<'right' | 'wrong' | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
+  const [saveError, setSaveError] = useState(false);
+  const [saving, setSaving]       = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // endRoundRef always points to the latest endRound so the stale-closure
@@ -131,15 +134,23 @@ export default function SpikSprintScreen() {
     if (timerRef.current) clearInterval(timerRef.current);
     setPhase('done');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    track('game_completed', { props: { game: 'spik_sprint', score } });
 
     if (profile && score > 0) {
+      setSaving(true);
+      setSaveError(false);
       try {
         await submitScore(profile.id, 'spik_sprint', score, {
           durationMs: ROUND_SECONDS * 1000,
           metadata: { best_streak: bestStreak },
           xpEarned: score,    // 1 XP per correct
         });
-      } catch (e) { console.error('Score submit failed', e); }
+      } catch (e) {
+        console.error('Score submit failed', e);
+        setSaveError(true);
+      } finally {
+        setSaving(false);
+      }
     }
 
     try {
@@ -148,6 +159,25 @@ export default function SpikSprintScreen() {
     } catch {}
   };
   endRoundRef.current = endRound;
+
+  const retrySave = async () => {
+    if (!profile || score <= 0 || saving) return;
+    setSaving(true);
+    setSaveError(false);
+    try {
+      await submitScore(profile.id, 'spik_sprint', score, {
+        durationMs: ROUND_SECONDS * 1000,
+        metadata: { best_streak: bestStreak },
+        xpEarned: score,
+      });
+      try { setLeaderboard(await fetchTopScores('spik_sprint', 'all', 5)); } catch {}
+    } catch (e) {
+      console.error('Score submit retry failed', e);
+      setSaveError(true);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAnswer = (idx: number) => {
     if (!question || phase !== 'playing') return;
@@ -367,9 +397,25 @@ export default function SpikSprintScreen() {
               </View>
             )}
 
-            {profile && (
+            {profile && !saveError && (
               <View style={styles.xpEarned}>
                 <Text style={[styles.xpText, { color: S.color }]}>+{score} XP</Text>
+              </View>
+            )}
+
+            {profile && saveError && (
+              <View style={styles.saveErrorBox}>
+                <FontAwesome5 name="exclamation-triangle" size={13} color="#B91C1C" solid />
+                <Text style={styles.saveErrorText}>
+                  Couldn't save your score. It won't count on the leaderboard until it saves.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.saveRetryBtn, saving && { opacity: 0.6 }]}
+                  onPress={retrySave}
+                  disabled={saving}
+                >
+                  <Text style={styles.saveRetryText}>{saving ? 'Saving…' : 'Retry'}</Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -651,6 +697,10 @@ const styles = StyleSheet.create({
 
   xpEarned: { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#D1FAE5', borderRadius: radius.full, marginTop: 8 },
   xpText:   { fontSize: fontSize.sm, fontWeight: '900' },
+  saveErrorBox:  { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#FEE2E2', borderRadius: radius.md, maxWidth: 320 },
+  saveErrorText: { flex: 1, minWidth: 180, fontSize: fontSize.sm, color: '#7F1D1D', fontWeight: '600' },
+  saveRetryBtn:  { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#B91C1C', borderRadius: radius.full },
+  saveRetryText: { fontSize: fontSize.sm, fontWeight: '900', color: '#fff' },
 
   miniLb: { width: '100%', backgroundColor: '#fff', borderRadius: radius.lg, padding: 12, marginTop: 16, borderWidth: 1, borderColor: colors.border },
   miniLbTitle: { fontSize: 11, color: colors.textMuted, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },

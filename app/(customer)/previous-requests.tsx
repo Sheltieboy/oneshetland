@@ -49,7 +49,7 @@ export default function PreviousRequestsScreen() {
       .from('delivery_requests')
       .select('id, category_slug, pickup_name, destination_area, destination_address, status, created_at')
       .eq('customer_id', profile.id)
-      .in('status', ['delivered', 'cancelled'])
+      .in('status', ['delivered', 'cancelled', 'expired'])
       .order('created_at', { ascending: false });
 
     setRequests((data as PastRequest[]) ?? []);

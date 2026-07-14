@@ -248,7 +248,7 @@ serve(async (req) => {
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
       // Use the atomic counter RPC — the previous `supabase.rpc('tickets_sold')`
       // wrote a query-builder object into the column, corrupting tickets_sold.
-      await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }).catch(() => {});
+      try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
 
       return new Response(JSON.stringify({
         free:       true,
@@ -310,7 +310,7 @@ serve(async (req) => {
       const walletRef = walletTransferId ? `wallet_${walletTransferId}` : `wallet_${crypto.randomUUID()}`;
       await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now, stripe_payment_intent_id: walletRef }).eq('id', order.id);
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
-      await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }).catch(() => {});
+      try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
       await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: null, type: 'spend', amount_pence: -chargeTotalPence, stripe_transfer_id: walletTransferId, description: `Tickets — ${event.title}` });
       return new Response(JSON.stringify({ charged: true, wallet: true, order_id: order.id, tokens: tokensByIndex, ticket_ids: ticketIdsByIndex }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

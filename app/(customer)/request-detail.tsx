@@ -56,6 +56,7 @@ interface WaitingEvent {
   waiting_fee_pence: number | null;
 }
 
+const SERVICE_FEE_PENCE = 150; // £1.50 OneShetland service fee, added on top of the driver's fee
 const GRACE_SECS = 300;   // 5 min grace before fee starts
 const PERIOD_SECS = 300;  // 5 min billing period
 const PERIOD_PENCE = 150; // £1.50 per period
@@ -255,28 +256,33 @@ export default function RequestDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             setCancelling(true);
-            const { error } = await supabase
-              .from('delivery_requests')
-              .update({ status: 'cancelled' })
-              .eq('id', id);
 
-            if (error) {
-              setCancelling(false);
-              alert({ title: 'Error', message: 'Could not cancel the request. Please try again.' });
-              return;
-            }
-
-            // Notify the driver if they had already accepted
             if (isMatched) {
-              const { data: { session } } = await supabase.auth.getSession();
-              fetch('https://nkrtmakxygkvxuxriiil.supabase.co/functions/v1/notify-drivers', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${session?.access_token}`,
-                },
-                body: JSON.stringify({ request_id: id, event: 'cancelled' }),
+              // A driver already accepted → route through cancel-payment so the
+              // card pre-authorisation hold is released, not left dangling.
+              const { error: fnError } = await supabase.functions.invoke('cancel-payment', {
+                body: { request_id: id },
+              });
+              if (fnError) {
+                setCancelling(false);
+                alert({ title: 'Error', message: 'Could not cancel the request. Please try again.' });
+                return;
+              }
+              // Let the driver know (non-fatal).
+              supabase.functions.invoke('notify-drivers', {
+                body: { request_id: id, event: 'cancelled' },
               }).catch(() => {/* non-fatal */});
+            } else {
+              // Not yet matched → no payment hold to release.
+              const { error } = await supabase
+                .from('delivery_requests')
+                .update({ status: 'cancelled' })
+                .eq('id', id);
+              if (error) {
+                setCancelling(false);
+                alert({ title: 'Error', message: 'Could not cancel the request. Please try again.' });
+                return;
+              }
             }
 
             setCancelling(false);
@@ -289,9 +295,13 @@ export default function RequestDetailScreen() {
 
   const baseFee = request.base_fee_pence;
   const waitFee = isDelivered ? (request.waiting_fee_pence ?? 0) : liveWaitingFee;
+  // The £1.50 OneShetland service fee is added ON TOP of the driver's delivery
+  // fee. It must be shown throughout tracking — omitting it here (and only
+  // revealing it in the captured total) is what made the fee appear to "jump".
+  const serviceFee = baseFee != null ? SERVICE_FEE_PENCE : 0;
   const totalFee = isDelivered
-    ? (request.total_fee_pence ?? (baseFee ?? 0) + waitFee)
-    : (baseFee ?? 0) + waitFee;
+    ? (request.total_fee_pence ?? (baseFee ?? 0) + serviceFee + waitFee)
+    : (baseFee ?? 0) + serviceFee + waitFee;
 
   return (
     <ScreenScaffold
@@ -432,7 +442,8 @@ export default function RequestDetailScreen() {
               <Text style={styles.sectionLabel}>
                 {isDelivered ? 'Payment charged' : 'Payment pre-authorised'}
               </Text>
-              <FeeRow label="Delivery fee" value={penceToGBP(baseFee)} />
+              <FeeRow label="Delivery fee (to your driver)" value={penceToGBP(baseFee)} />
+              <FeeRow label="OneShetland service fee" value={penceToGBP(serviceFee)} />
               {(waitFee > 0) && (
                 <FeeRow
                   label={isDelivered ? 'Waiting fee' : 'Waiting fee (running)'}

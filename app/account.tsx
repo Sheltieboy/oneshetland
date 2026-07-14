@@ -5,10 +5,13 @@ import {
   StyleSheet,
   Pressable,
   Image,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { deleteAccount } from '@/lib/moderation';
+import { clearPushToken } from '@/lib/notifications';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { FormScrollView } from '@/components/ui/FormScrollView';
 import { Button } from '@/components/ui/Button';
@@ -58,8 +61,10 @@ function LinkRow({
         pressed && { opacity: 0.7 },
       ]}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
     >
-      <Text style={styles.accountLinkIcon}>{icon}</Text>
+      <Text style={styles.accountLinkIcon} accessibilityElementsHidden importantForAccessibility="no">{icon}</Text>
       <Text style={styles.accountLinkLabel}>{label}</Text>
       <Text style={styles.accountLinkArrow}>›</Text>
     </Pressable>
@@ -77,6 +82,7 @@ export default function AccountScreen() {
   const [phone, setPhone] = useState(profile?.phone ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [driverNotes, setDriverNotes] = useState('');
@@ -86,6 +92,7 @@ export default function AccountScreen() {
   const [vehicleReg, setVehicleReg] = useState('');
   const [savingVehicle, setSavingVehicle] = useState(false);
   const [vehicleSaved, setVehicleSaved] = useState(false);
+  const [removingCard, setRemovingCard] = useState(false);
 
   // Sync form fields when profile first loads
   useEffect(() => {
@@ -190,6 +197,103 @@ export default function AccountScreen() {
       actions: [
         { label: 'Cancel',   style: 'cancel' },
         { label: 'Sign out', style: 'destructive', onPress: signOut },
+      ],
+    });
+  }
+
+  // Account deletion (Apple 5.1.1(v) / Google Play). Two-step, deliberate
+  // confirmation: first a "what happens" warning, then a final "permanently
+  // delete?" gate before we actually call the edge function.
+  async function performDelete() {
+    const currentUserId = session?.user.id;
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      // Mirror the sign-out cleanup: clear this device's push token (best-effort,
+      // the server session is already dead), then clear the local session.
+      if (currentUserId) {
+        try { await clearPushToken(currentUserId); } catch { /* non-fatal */ }
+      }
+      await supabase.auth.signOut();
+      // Route back to the auth screen. The auth state change will also redirect,
+      // but replace explicitly so there's no flash of a logged-in screen.
+      router.replace('/(auth)/sign-in');
+    } catch (err: any) {
+      setDeleting(false);
+      alert({
+        title: 'Could not delete account',
+        message: err?.message
+          ? `${err.message}\n\nPlease try again, or contact support if this keeps happening.`
+          : 'Something went wrong. Please try again, or contact support if this keeps happening.',
+        icon: 'exclamation-triangle',
+        accent: colors.error,
+      });
+    }
+  }
+
+  function confirmDeleteFinal() {
+    alert({
+      title: 'Permanently delete?',
+      message: 'This cannot be undone. Tap "Delete forever" to remove your account now.',
+      icon: 'trash-alt',
+      accent: colors.error,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Delete forever', style: 'destructive', onPress: performDelete },
+      ],
+    });
+  }
+
+  function handleDeleteAccount() {
+    alert({
+      title: 'Delete account?',
+      message:
+        'This is permanent. Your profile, posts and comments are removed; you\'ll be signed out and can\'t sign back in. ' +
+        'Records required for orders and payments are kept in anonymised form.',
+      icon: 'user-slash',
+      accent: colors.error,
+      actions: [
+        { label: 'Cancel', style: 'cancel' },
+        { label: 'Continue', style: 'destructive', onPress: confirmDeleteFinal },
+      ],
+    });
+  }
+
+  // Removing a card must go through the service-role `remove-card` edge function:
+  // it detaches the card in Stripe AND re-syncs profiles.has_payment_method (a
+  // locked column the client can't write — the lock trigger would revert it).
+  function handleRemoveCard() {
+    alert({
+      title: 'Remove payment method?',
+      message: 'Your saved card will be removed from your account. You can add one again any time.',
+      icon: 'credit-card',
+      accent: colors.error,
+      actions: [
+        { label: 'Keep card', style: 'cancel' },
+        {
+          label: 'Remove card',
+          style: 'destructive',
+          onPress: async () => {
+            setRemovingCard(true);
+            try {
+              const { data, error } = await supabase.functions.invoke('remove-card', { body: {} });
+              if (error || (data as { error?: string } | null)?.error) {
+                throw new Error((data as { error?: string } | null)?.error ?? error?.message ?? 'Could not remove the card.');
+              }
+              await refreshProfile();
+              haptic.success();
+            } catch (e) {
+              haptic.error();
+              alert({
+                title: "Couldn't remove card",
+                message: e instanceof Error ? e.message : 'Please try again.',
+                actions: [{ label: 'OK', style: 'cancel' }],
+              });
+            } finally {
+              setRemovingCard(false);
+            }
+          },
+        },
       ],
     });
   }
@@ -330,6 +434,13 @@ export default function AccountScreen() {
                 label={profile?.has_payment_method ? 'Update payment method' : 'Set up payment method'}
                 onPress={() => { haptic.light(); router.push('/payment-setup'); }}
               />
+              {profile?.has_payment_method && (
+                <LinkRow
+                  icon="🗑️"
+                  label={removingCard ? 'Removing…' : 'Remove payment method'}
+                  onPress={() => { if (!removingCard) { haptic.light(); handleRemoveCard(); } }}
+                />
+              )}
               <LinkRow
                 icon="📍"
                 label="Saved addresses"
@@ -506,6 +617,11 @@ export default function AccountScreen() {
                 icon="🔔"
                 label="Notifications"
                 onPress={() => { haptic.light(); router.push('/notification-preferences'); }}
+              />
+              <LinkRow
+                icon="🚫"
+                label="Blocked users"
+                onPress={() => { haptic.light(); router.push('/blocked-users'); }}
                 last
               />
             </View>
@@ -528,6 +644,24 @@ export default function AccountScreen() {
             />
           </Card>
 
+          {/* ── Legal ─────────────────────────────────────────────────── */}
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>Legal</Text>
+            <View style={styles.linkGroup}>
+              <LinkRow
+                icon="🔒"
+                label="Privacy Policy"
+                onPress={() => { haptic.light(); Linking.openURL('https://oneshetland.com/privacy'); }}
+              />
+              <LinkRow
+                icon="📄"
+                label="Terms of Service"
+                onPress={() => { haptic.light(); Linking.openURL('https://oneshetland.com/terms'); }}
+                last
+              />
+            </View>
+          </Card>
+
           {/* ── Session ───────────────────────────────────────────────── */}
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>Session</Text>
@@ -538,6 +672,25 @@ export default function AccountScreen() {
               size="md"
               fullWidth
             />
+
+            {/* Danger zone — permanent account deletion */}
+            <View style={styles.dangerDivider} />
+            <Pressable
+              style={({ pressed }) => [styles.dangerRow, pressed && { opacity: 0.7 }]}
+              onPress={() => { haptic.light(); handleDeleteAccount(); }}
+              disabled={deleting}
+              accessibilityRole="button"
+              accessibilityLabel="Delete account"
+            >
+              <Text style={styles.dangerIcon} accessibilityElementsHidden importantForAccessibility="no">🗑️</Text>
+              <Text style={styles.dangerLabel}>
+                {deleting ? 'Deleting account…' : 'Delete account'}
+              </Text>
+              {!deleting && <Text style={styles.dangerArrow}>›</Text>}
+            </Pressable>
+            <Text style={styles.dangerHint}>
+              Permanently removes your account and personal data. This can't be undone.
+            </Text>
           </Card>
 
         </View>
@@ -686,6 +839,29 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
     textAlign: 'right',
+  },
+
+  // Danger zone (account deletion)
+  dangerDivider: { height: 1, backgroundColor: colors.border, marginTop: spacing.md, marginBottom: spacing.xs },
+  dangerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  dangerIcon: { fontSize: 18, width: 26 },
+  dangerLabel: {
+    flex: 1,
+    fontSize: fontSize.md,
+    color: colors.error,
+    fontWeight: '700',
+  },
+  dangerArrow: { fontSize: fontSize.xl, color: colors.error },
+  dangerHint: {
+    fontSize: fontSize.xs,
+    color: colors.textLight,
+    lineHeight: 16,
+    marginTop: 2,
   },
 
   // Driver card specifics

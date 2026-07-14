@@ -9,11 +9,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useLocalSearchParams, router } from 'expo-router';
 import { colors, fontSize, radius, spacing, shadow } from '@/constants/theme';
 import { fetchSpikEntry, decodeEntities, type SpikEntry } from '@/lib/oneshetland-api';
 import { paletteFor, type PosPalette } from '@/lib/spik-palette';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
+import { track } from '@/lib/analytics';
 
 function stripHtml(str: string): string {
   return decodeEntities(str.replace(/<[^>]*>/g, '').trim());
@@ -32,6 +35,10 @@ export default function SpikDetailScreen() {
       .catch(() => setError('Could not load word'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (entry?.id) track('content_viewed', { objectType: 'spik_word', objectId: String(entry.id) });
+  }, [entry?.id]);
 
   const pal = paletteFor(entry?.part_of_speech);
 
@@ -131,8 +138,11 @@ export default function SpikDetailScreen() {
             <Section>
               <Label>PRONUNCIATION</Label>
               <Text style={styles.subLabel}>SAY IT LIKE THIS</Text>
-              <View style={[styles.pronChip, { backgroundColor: pal.bg }]}>
-                <Text style={[styles.pronText, { color: pal.text }]}>/{entry.pronunciation}/</Text>
+              <View style={styles.pronRow}>
+                <View style={[styles.pronChip, { backgroundColor: pal.bg }]}>
+                  <Text style={[styles.pronText, { color: pal.text }]}>/{entry.pronunciation}/</Text>
+                </View>
+                {entry.audio_url ? <PronunciationPlayer url={entry.audio_url} color={pal.bar} /> : null}
               </View>
               {entry.alternate_spelling ? (
                 <View style={styles.altRow}>
@@ -145,6 +155,19 @@ export default function SpikDetailScreen() {
             <Section>
               <Label>ALSO WRITTEN</Label>
               <Text style={styles.pronValue}>{entry.alternate_spelling}</Text>
+            </Section>
+          ) : null}
+
+          {/* Hear it — shown when there's audio but no written pronunciation
+              to say it like (the pron section above already carries the
+              speaker button when a pronunciation string exists). */}
+          {entry.audio_url && !entry.pronunciation ? (
+            <Section>
+              <Label>HEAR IT SPOKEN</Label>
+              <View style={styles.pronRow}>
+                <PronunciationPlayer url={entry.audio_url} color={pal.bar} />
+                <Text style={styles.hearItHint}>Tap to hear "{entry.word}"</Text>
+              </View>
             </Section>
           ) : null}
 
@@ -233,6 +256,42 @@ function BackBar({ color }: { color: string }) {
       style={{ marginLeft: spacing.md, marginTop: 8 }}
       onPress={() => router.back()}
     />
+  );
+}
+
+// Tappable speaker button that plays a word's pronunciation recording.
+// Mounted only when a word actually has an audio_url, so useAudioPlayer
+// always receives a real source. Mirrors the AudioTile play/pause pattern
+// used on the memory detail screen.
+function PronunciationPlayer({ url, color }: { url: string; color: string }) {
+  const player = useAudioPlayer(url);
+  const status = useAudioPlayerStatus(player);
+  const isPlaying = status.playing;
+
+  const toggle = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (status.playing) {
+      player.pause();
+    } else {
+      // Replay from the start once it has reached the end.
+      if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration)) {
+        player.seekTo(0);
+      }
+      player.play();
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={toggle}
+      activeOpacity={0.85}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={isPlaying ? 'Pause pronunciation' : 'Play pronunciation'}
+      style={[styles.audioBtn, { backgroundColor: color }]}
+    >
+      <FontAwesome5 name={isPlaying ? 'pause' : 'volume-up'} size={15} color="#fff" solid />
+    </TouchableOpacity>
   );
 }
 
@@ -333,6 +392,9 @@ const styles = StyleSheet.create({
 
   // Pronunciation
   subLabel:  { color: colors.textLight, fontSize: fontSize.xs, fontWeight: '600', letterSpacing: 0.8, marginBottom: 8 },
+  pronRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  audioBtn:  { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', ...shadow.card },
+  hearItHint:{ color: colors.textSecondary, fontSize: fontSize.sm, flex: 1 },
   pronChip:  { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
   pronText:  { fontSize: fontSize.md, fontWeight: '700' },
   pronValue: { color: colors.textPrimary, fontSize: fontSize.xl, fontWeight: '700' },

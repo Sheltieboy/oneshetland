@@ -51,7 +51,7 @@ serve(async (req) => {
 
     const { data: business } = await svc
       .from('local_businesses')
-      .select('id, owner_id, name, email, stripe_customer_id, stripe_subscription_id, subscription_tier')
+      .select('id, owner_id, name, email, stripe_customer_id, business_stripe_customer_id, has_business_payment_method, stripe_subscription_id, subscription_tier')
       .eq('id', business_id)
       .single();
 
@@ -80,6 +80,40 @@ serve(async (req) => {
       apiVersion: '2023-10-16',
       httpClient: Stripe.createFetchHttpClient(),
     });
+
+    // Try to charge a SAVED card silently first: business card → personal card.
+    // (off_session + confirm is your proven one-off pattern.) Only if there's no
+    // saved card, or it needs 3DS / is declined, do we fall through to the card
+    // form below.
+    const { data: prof } = await svc.from('profiles')
+      .select('stripe_customer_id, has_payment_method').eq('id', user.id).maybeSingle();
+    let cardCustomer: string | null = null;
+    let cardPm: string | null = null;
+    if (business.has_business_payment_method && business.business_stripe_customer_id) {
+      const pm = await firstCard(stripe, business.business_stripe_customer_id as string);
+      if (pm) { cardCustomer = business.business_stripe_customer_id as string; cardPm = pm; }
+    }
+    if (!cardCustomer && prof?.has_payment_method && prof.stripe_customer_id) {
+      const pm = await firstCard(stripe, prof.stripe_customer_id as string);
+      if (pm) { cardCustomer = prof.stripe_customer_id as string; cardPm = pm; }
+    }
+    if (cardCustomer && cardPm) {
+      try {
+        const pi = await stripe.paymentIntents.create({
+          amount: amountPence, currency: 'gbp', customer: cardCustomer,
+          payment_method: cardPm, off_session: true, confirm: true,
+          description: `OneShetland Local · ${weeks}-week Pro boost · ${business.name}`,
+          metadata: { type: 'local_boost', business_id, owner_id: user.id, weeks: String(weeks), amount_pence: String(amountPence) },
+        });
+        if (pi.status === 'succeeded') {
+          await svc.from('local_boost_purchases').insert({
+            business_id, owner_id: user.id, weeks, amount_pence: amountPence,
+            stripe_payment_intent_id: pi.id, status: 'pending',
+          });
+          return json({ charged: true, payment_intent_id: pi.id, amountPence, weeks });
+        }
+      } catch (_e) { /* declined / needs auth → fall through to the card form */ }
+    }
 
     // Create or reuse customer
     let customerId = business.stripe_customer_id;
@@ -142,6 +176,22 @@ serve(async (req) => {
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
   }
 });
+
+// Returns a customer's default card payment method (or its first attached card).
+// Null if the customer has no card.
+async function firstCard(stripe: Stripe, customerId: string): Promise<string | null> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+    const def = (customer.invoice_settings?.default_payment_method as string | null) ?? null;
+    if (def) return def;
+    const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+    if (methods.data.length > 0) {
+      await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: methods.data[0].id } });
+      return methods.data[0].id;
+    }
+  } catch (_e) { /* treat as no card */ }
+  return null;
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

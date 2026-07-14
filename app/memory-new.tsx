@@ -15,14 +15,16 @@
  * then uploads each piece of media against the new memory_id.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Image, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { track } from '@/lib/analytics';
 import { SECTIONS } from '@/constants/sections';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
@@ -65,6 +67,26 @@ const ERA_SUGGESTIONS = [
   '2000s', 'Recent',
 ];
 
+// ── Draft autosave ───────────────────────────────────────────────────────────
+// A half-written story is precious — losing it to a phone call or an
+// accidental back-swipe stings. We stash the text fields in AsyncStorage as
+// the user types and offer to bring them back next time. Media drafts aren't
+// persisted (the picked file URIs are transient), so we note how many were
+// attached and gently remind the user to re-add them.
+const DRAFT_KEY = '@memories:new-draft';
+
+interface SavedDraft {
+  title:      string;
+  body:       string;
+  era:        string;
+  tags:       string[];
+  placeName:  string;
+  visibility: MemoryVisibility;
+  point:      { lat: number; lng: number } | null;
+  mediaCount: number;
+  savedAt:    number;
+}
+
 const VISIBILITY_OPTIONS: { value: MemoryVisibility; label: string; sub: string }[] = [
   { value: 'public',    label: 'Public',    sub: 'Anyone can see this story' },
   { value: 'community', label: 'Community', sub: 'Signed-in OneShetland members only' },
@@ -104,6 +126,21 @@ export default function MemoryNewScreen() {
   const [recording, setRecording]   = useState(false);
   const [saving, setSaving]         = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(isEditing);
+  // Upload progress: which file we're on (1-based) out of how many. null =
+  // not uploading. On slow island connections this is the difference between
+  // "it hung, force-quit" and "ah, it's working through my three photos".
+  const [uploadProg, setUploadProg] = useState<{ current: number; total: number } | null>(null);
+  // A recovered draft, offered for one-tap restore. Only ever set for a
+  // brand-new story (we never autosave over an edit or a threaded reply).
+  const [recoverable, setRecoverable] = useState<SavedDraft | null>(null);
+
+  // Drafts are only for the plain "new story" flow — not edits, not sub-
+  // memories (those carry their own context we don't want to mix up).
+  const draftEligible = !isEditing && !isChild;
+
+  const clearDraft = useCallback(async () => {
+    try { await AsyncStorage.removeItem(DRAFT_KEY); } catch { /* non-fatal */ }
+  }, []);
 
   // Edit mode: pull the existing memory and pre-fill every field. Existing
   // media stays attached to the memory — any drafts added here are appended.
@@ -131,6 +168,67 @@ export default function MemoryNewScreen() {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memoryIdParam, profile?.id]);
+
+  // On mount (new-story flow only), look for a saved draft and offer to
+  // resume it rather than restoring silently — the user might want a fresh
+  // start. We skip drafts that are effectively empty or stale (>7 days).
+  useEffect(() => {
+    if (!draftEligible) return;
+    let alive = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(DRAFT_KEY);
+        if (!raw || !alive) return;
+        const d = JSON.parse(raw) as SavedDraft;
+        const hasContent = d.title?.trim() || d.body?.trim() || d.mediaCount > 0 || d.point;
+        const fresh = d.savedAt && Date.now() - d.savedAt < 7 * 24 * 60 * 60 * 1000;
+        if (hasContent && fresh) setRecoverable(d);
+        else void clearDraft();
+      } catch { /* non-fatal */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftEligible]);
+
+  const restoreDraft = () => {
+    if (!recoverable) return;
+    setTitle(recoverable.title ?? '');
+    setBody(recoverable.body ?? '');
+    setEra(recoverable.era ?? '');
+    setTags(recoverable.tags ?? []);
+    setPlaceName(recoverable.placeName ?? '');
+    setVisibility(recoverable.visibility ?? 'public');
+    if (recoverable.point) setPoint(recoverable.point);
+    setRecoverable(null);
+  };
+
+  const dismissDraft = () => {
+    setRecoverable(null);
+    void clearDraft();
+  };
+
+  // Autosave the text fields as the user types. Debounced so we're not
+  // hammering AsyncStorage on every keystroke. Skipped until the screen is
+  // settled (and never while saving/uploading).
+  const hadContent = useRef(false);
+  useEffect(() => {
+    if (!draftEligible || saving) return;
+    const anyContent = !!(title.trim() || body.trim() || drafts.length > 0 || point);
+    // Don't write an empty draft on first paint; but once there's been
+    // content, keep saving (so clearing a field still persists).
+    if (!anyContent && !hadContent.current) return;
+    hadContent.current = true;
+    const t = setTimeout(() => {
+      const payload: SavedDraft = {
+        title, body, era, tags, placeName, visibility, point,
+        mediaCount: drafts.length,
+        savedAt: Date.now(),
+      };
+      void AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(payload)).catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, body, era, tags, placeName, visibility, point, drafts.length, draftEligible, saving]);
 
   // ── Attach media ─────────────────────────────────────────────────────────
 
@@ -234,12 +332,17 @@ export default function MemoryNewScreen() {
           visibility,
         });
         memoryId = memory.id;
+        track('memory_created', { props: { has_media: drafts.length > 0 } });
       }
 
       // 2. Upload any newly-added media sequentially (small N — keeps UI
-      //    predictable, and keeps display_order stable).
+      //    predictable, and keeps display_order stable). We surface
+      //    "Uploading N of M…" as each file completes so a slow upload reads
+      //    as progress, not a hang. (The REST/FormData uploader doesn't
+      //    expose per-byte progress, so we advance per finished file.)
       for (let i = 0; i < drafts.length; i++) {
         const d = drafts[i];
+        setUploadProg({ current: i + 1, total: drafts.length });
         const media = await uploadMemoryMedia({
           memoryId,
           uploaderId:      profile.id,
@@ -254,6 +357,11 @@ export default function MemoryNewScreen() {
           void requestTranscription(media.id);
         }
       }
+      setUploadProg(null);
+
+      // Story saved cleanly — drop any recovered draft so we don't offer to
+      // resume something that's already published.
+      void clearDraft();
 
       // 3. Off to the detail screen — pin will be visible on next focus
       //    of the map screen too (it reloads on focus).
@@ -262,6 +370,7 @@ export default function MemoryNewScreen() {
       alert({ title: 'Could not save', message: err?.message ?? 'Please try again.' });
     } finally {
       setSaving(false);
+      setUploadProg(null);
     }
   };
 
@@ -286,6 +395,31 @@ export default function MemoryNewScreen() {
         </View>
       ) : (
       <ScrollView contentContainerStyle={[styles.scroll, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
+        {/* Resume-your-draft affordance */}
+        {recoverable ? (
+          <View style={styles.draftBanner}>
+            <View style={styles.draftBannerIcon}>
+              <FontAwesome5 name="history" size={14} color={SECTION.color} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.draftBannerTitle}>Pick up whaur you left aff?</Text>
+              <Text style={styles.draftBannerSub}>
+                We saved a draft o your story{recoverable.mediaCount > 0
+                  ? ` (you'll need tae re-add ${recoverable.mediaCount} ${recoverable.mediaCount === 1 ? 'file' : 'files'})`
+                  : ''}.
+              </Text>
+              <View style={styles.draftBannerActions}>
+                <TouchableOpacity onPress={restoreDraft} style={styles.draftRestoreBtn}>
+                  <Text style={styles.draftRestoreText}>Resume draft</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={dismissDraft} style={styles.draftDiscardBtn}>
+                  <Text style={styles.draftDiscardText}>Start fresh</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         {/* Location picker (skip for sub-memories — they inherit) */}
         {!isChild ? (
           <View style={styles.cardSection}>
@@ -505,9 +639,43 @@ export default function MemoryNewScreen() {
           </View>
         </View>
 
+        {/* Upload progress — per-file + overall so a slow island upload reads
+            as steady progress, not a hang. */}
+        {uploadProg ? (
+          <View style={styles.uploadCard}>
+            <View style={styles.uploadRow}>
+              <ActivityIndicator size="small" color={SECTION.color} />
+              <Text style={styles.uploadText}>
+                Uploading {uploadProg.current} of {uploadProg.total}…
+              </Text>
+              <Text style={styles.uploadPct}>
+                {Math.round((uploadProg.current / uploadProg.total) * 100)}%
+              </Text>
+            </View>
+            <View style={styles.uploadTrack}>
+              <View
+                style={[
+                  styles.uploadFill,
+                  {
+                    width: `${Math.round((uploadProg.current / uploadProg.total) * 100)}%`,
+                    backgroundColor: SECTION.color,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.uploadHint}>
+              Haud on — dinna close the app till your story's awa.
+            </Text>
+          </View>
+        ) : null}
+
         {/* Save */}
         <Button
-          label={isEditing ? 'Save changes' : isChild ? 'Add to story' : 'Save story'}
+          label={
+            uploadProg
+              ? `Uploading ${uploadProg.current}/${uploadProg.total}…`
+              : isEditing ? 'Save changes' : isChild ? 'Add to story' : 'Save story'
+          }
           icon="check"
           color={SECTION.color}
           fullWidth
@@ -732,5 +900,96 @@ const styles = StyleSheet.create({
   saveBtn: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
+  },
+  draftBanner: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: SECTION.color,
+    backgroundColor: SECTION.light,
+  },
+  draftBannerIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.white,
+  },
+  draftBannerTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  draftBannerSub: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  draftBannerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  draftRestoreBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: SECTION.color,
+  },
+  draftRestoreText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: fontSize.xs,
+  },
+  draftDiscardBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  draftDiscardText: {
+    color: colors.textMuted,
+    fontWeight: '600',
+    fontSize: fontSize.xs,
+  },
+  uploadCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    gap: spacing.sm,
+  },
+  uploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  uploadText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  uploadPct: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  uploadTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.offWhite,
+    overflow: 'hidden',
+  },
+  uploadFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  uploadHint: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
   },
 });

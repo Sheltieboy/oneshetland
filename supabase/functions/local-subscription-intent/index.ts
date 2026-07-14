@@ -56,7 +56,7 @@ serve(async (req) => {
 
     const { data: business } = await svc
       .from('local_businesses')
-      .select('id, owner_id, name, email, stripe_customer_id')
+      .select('id, owner_id, name, email, stripe_customer_id, business_stripe_customer_id, has_business_payment_method')
       .eq('id', business_id)
       .single();
 
@@ -77,8 +77,31 @@ serve(async (req) => {
       return json({ error: `Stripe price ID for ${tier} not configured. Set it in Admin → Config.` }, 500);
     }
 
-    // 1. Create or reuse Stripe customer
-    let customerId = business.stripe_customer_id;
+    // 1. Pick the card: BUSINESS card → PERSONAL card → the sub-customer's own
+    //    saved card. The subscription is created on whichever customer holds the
+    //    card, and we CONSOLIDATE local_businesses.stripe_customer_id onto it so
+    //    the billing portal / plan-changes / add-on line-items keep working.
+    //    First-time-only (upgrades use local-subscription-change), so reassigning
+    //    is safe. A saved card is charged silently; only a no-card business sees
+    //    the card form.
+    const { data: prof } = await svc.from('profiles')
+      .select('stripe_customer_id, has_payment_method').eq('id', user.id).maybeSingle();
+
+    let customerId: string | null = null;
+    let paymentMethodId: string | null = null;
+
+    if (business.has_business_payment_method && business.business_stripe_customer_id) {
+      const pm = await firstCard(stripe, business.business_stripe_customer_id as string);
+      if (pm) { customerId = business.business_stripe_customer_id as string; paymentMethodId = pm; }
+    }
+    if (!customerId && prof?.has_payment_method && prof.stripe_customer_id) {
+      const pm = await firstCard(stripe, prof.stripe_customer_id as string);
+      if (pm) { customerId = prof.stripe_customer_id as string; paymentMethodId = pm; }
+    }
+    if (!customerId && business.stripe_customer_id) {
+      customerId = business.stripe_customer_id as string;
+      paymentMethodId = await firstCard(stripe, customerId);
+    }
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: business.email ?? user.email ?? undefined,
@@ -86,19 +109,16 @@ serve(async (req) => {
         metadata: { business_id, owner_id: user.id, type: 'local_business' },
       });
       customerId = customer.id;
-      await svc
-        .from('local_businesses')
-        .update({ stripe_customer_id: customerId })
-        .eq('id', business_id);
+    }
+    if (customerId !== business.stripe_customer_id) {
+      await svc.from('local_businesses').update({ stripe_customer_id: customerId }).eq('id', business_id);
     }
 
-    // 2. Create an *incomplete* subscription. Stripe attaches a PaymentIntent
-    //    to its first invoice — we use that PaymentIntent's clientSecret in
-    //    the Payment Sheet. Once the customer pays, Stripe activates the sub
-    //    and fires customer.subscription.updated → our webhook flips the tier.
+    // 2. Create an *incomplete* subscription so we get a PaymentIntent to inspect.
     const subscription = await stripe.subscriptions.create({
       customer:         customerId,
       items:            [{ price: priceId }],
+      ...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
       payment_behavior: 'default_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },
       expand:           ['latest_invoice.payment_intent'],
@@ -108,12 +128,24 @@ serve(async (req) => {
     // deno-lint-ignore no-explicit-any
     const latestInvoice = subscription.latest_invoice as any;
     const paymentIntent = latestInvoice?.payment_intent;
+
+    // 3. Saved card → confirm OFF-SESSION so it charges silently (the webhook
+    //    then flips the tier). Falls through to the card form only with no saved
+    //    card, or a card that needs 3DS / is declined.
+    const alreadyPaid = ['active', 'trialing'].includes(subscription.status) || paymentIntent?.status === 'succeeded';
+    if (alreadyPaid) return json({ activated: true, subscriptionId: subscription.id });
+    if (paymentMethodId && paymentIntent?.id) {
+      try {
+        const confirmed = await stripe.paymentIntents.confirm(paymentIntent.id, { payment_method: paymentMethodId, off_session: true });
+        if (confirmed.status === 'succeeded') return json({ activated: true, subscriptionId: subscription.id });
+      } catch (_e) { /* needs auth / declined → fall through to card form */ }
+    }
+
     if (!paymentIntent?.client_secret) {
       return json({ error: 'Stripe did not return a PaymentIntent for the subscription' }, 500);
     }
 
-    // 3. Ephemeral key — lets the Payment Sheet show the customer's saved
-    //    payment methods (and remember new ones).
+    // 4. Ephemeral key — lets the sheet/Elements show the customer's saved cards.
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customerId },
       { apiVersion: '2023-10-16' },
@@ -131,6 +163,22 @@ serve(async (req) => {
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
   }
 });
+
+// Returns a customer's default card payment method (or its first attached card),
+// setting it as default for future renewals. Null if the customer has no card.
+async function firstCard(stripe: Stripe, customerId: string): Promise<string | null> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId) as Stripe.Customer;
+    const def = (customer.invoice_settings?.default_payment_method as string | null) ?? null;
+    if (def) return def;
+    const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+    if (methods.data.length > 0) {
+      await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: methods.data[0].id } });
+      return methods.data[0].id;
+    }
+  } catch (_e) { /* treat as no card */ }
+  return null;
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

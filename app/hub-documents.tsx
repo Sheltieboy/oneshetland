@@ -102,7 +102,7 @@ export default function HubDocumentsScreen() {
           accent={S.color}
           onBack={() => router.back()}
           rightElement={isAdmin ? (
-            <IconButton icon="plus" color={S.color} onPress={() => setEditorOpen(true)} />
+            <IconButton icon="plus" color={S.color} onPress={() => setEditorOpen(true)} accessibilityLabel="Add document" />
           ) : undefined}
         />
       }

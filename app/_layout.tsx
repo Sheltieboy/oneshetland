@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';   // must be first import in the entry file
 import { useEffect, useState, useRef, Component, ReactNode } from 'react';
 import { View, Text, ScrollView } from 'react-native';
-import { Stack, useRouter, useSegments, useGlobalSearchParams, useRootNavigationState } from 'expo-router';
+import { Stack, useRouter, useSegments, useGlobalSearchParams, useRootNavigationState, usePathname } from 'expo-router';
 import { sanitizeNext } from '@/lib/auth-redirect';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -11,6 +11,7 @@ import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { initAnalytics, identifyAnalytics, track } from '@/lib/analytics';
 import { registerPushToken, notificationRoute } from '@/lib/notifications';
 import { SCREEN_PUSH, MODAL_PRESENT, SECTION_ROOT } from '@/constants/nav';
 import { SplashAnimation } from '@/components/SplashAnimation';
@@ -46,6 +47,17 @@ function RootNavigator() {
   const segments = useSegments();
   const router = useRouter();
   const navParams = useGlobalSearchParams<{ next?: string }>();
+  const pathname = usePathname();
+
+  // ── Analytics: init once, identify on auth change, autocapture screen views ──
+  useEffect(() => { void initAnalytics(); }, []);
+  useEffect(() => {
+    const role = (profile as any)?.role;
+    identifyAnalytics(!session ? 'visitor' : role === 'admin' ? 'admin' : 'user');
+  }, [session, profile]);
+  useEffect(() => {
+    if (pathname) track('screen_viewed', { props: { route: pathname } });
+  }, [pathname]);
 
   // Track whether the app was cold-launched via a deep link (universal link or
   // custom scheme). If so, we must NOT auto-redirect signed-in users to /(tabs)
@@ -221,6 +233,7 @@ function RootNavigator() {
           <Stack.Screen name="(driver)" />
           <Stack.Screen name="(admin)" />
           <Stack.Screen name="account" />
+          <Stack.Screen name="blocked-users" />
           <Stack.Screen name="notifications" />
           <Stack.Screen name="home" />
           <Stack.Screen name="search" options={{ ...MODAL_PRESENT }} />
@@ -230,13 +243,12 @@ function RootNavigator() {
           <Stack.Screen name="spik-filter" />
           <Stack.Screen name="shift-detail" />
           <Stack.Screen name="shift-post" options={{ ...MODAL_PRESENT }} />
-          <Stack.Screen name="shifts-browse" />
-          <Stack.Screen name="employer-applications" />
           <Stack.Screen name="employer-profile" />
           <Stack.Screen name="my-posted-shifts" />
           <Stack.Screen name="my-shift-applications" />
-          <Stack.Screen name="shift-worker-profile" />
+          <Stack.Screen name="my-work" />
           <Stack.Screen name="edit-profile" />
+          <Stack.Screen name="security" />
           <Stack.Screen name="local-businesses-browse" />
           <Stack.Screen name="local-combined-feed" />
           <Stack.Screen name="local-business-detail" />
@@ -260,7 +272,9 @@ function RootNavigator() {
           <Stack.Screen name="job-post" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="job-applicants" />
           <Stack.Screen name="business-jobs" />
+          <Stack.Screen name="my-posted-jobs" />
           <Stack.Screen name="my-job-applications" />
+          <Stack.Screen name="saved-jobs" />
           <Stack.Screen name="work-profile" />
           <Stack.Screen name="hub-donate" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="give/[id]" />
@@ -273,6 +287,7 @@ function RootNavigator() {
           <Stack.Screen name="local-my-gifts" />
           <Stack.Screen name="local-stamp-scanner" />
           <Stack.Screen name="local-offers" />
+          <Stack.Screen name="local-bookable-browse" />
           <Stack.Screen name="local-offer-new" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="local-wallet" />
           <Stack.Screen name="local-pay" />

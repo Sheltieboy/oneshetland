@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,12 +39,14 @@ export default function HubsScreen() {
 
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<HubType | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const load = useCallback(async () => {
-    try { setHubs(await fetchActiveHubs()); }
-    catch { setHubs([]); }
+    try { setHubs(await fetchActiveHubs()); setLoadError(false); }
+    catch { setHubs([]); setLoadError(true); }
     finally { setLoading(false); }
   }, []);
 
@@ -54,7 +56,17 @@ export default function HubsScreen() {
     setRefreshing(true); await load(); setRefreshing(false);
   }, [load]);
 
-  const visible = filter === 'all' ? hubs : hubs.filter(h => h.type === filter);
+  const q = searchQuery.trim().toLowerCase();
+  const visible = (filter === 'all' ? hubs : hubs.filter(h => h.type === filter))
+    .filter(h => {
+      if (!q) return true;
+      return (
+        h.name?.toLowerCase().includes(q) ||
+        (h.area ?? '').toLowerCase().includes(q) ||
+        (h.description ?? '').toLowerCase().includes(q) ||
+        HUB_TYPE_LABELS[h.type].toLowerCase().includes(q)
+      );
+    });
   const cols = isTablet ? (screenWidth >= 1100 ? 3 : 2) : 1;
   const maxW = isTablet ? Math.min(900, contentWidth - spacing.lg * 2) : undefined;
 
@@ -96,6 +108,27 @@ export default function HubsScreen() {
           <FontAwesome5 name="chevron-right" size={14} color="rgba(255,255,255,0.85)" />
         </TouchableOpacity>
 
+        {/* Search box */}
+        <View style={styles.searchWrap}>
+          <FontAwesome5 name="search" size={13} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search hubs by name…"
+            placeholderTextColor={colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+          {searchQuery.length > 0 ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear search">
+              <FontAwesome5 name="times-circle" size={15} color={colors.textMuted} solid />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
         {/* Type filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
           {TYPE_FILTERS.map(t => (
@@ -114,11 +147,28 @@ export default function HubsScreen() {
 
         {loading ? (
           <View style={styles.center}><ActivityIndicator color={S.color} /></View>
+        ) : loadError && hubs.length === 0 ? (
+          <View style={styles.empty}>
+            <FontAwesome5 name="cloud-rain" size={30} color={colors.textLight} />
+            <Text style={styles.emptyTitle}>Couldna load the hubs</Text>
+            <Text style={styles.emptyBody}>Likely a blink in the connection. Pull doon to try again.</Text>
+            <TouchableOpacity
+              onPress={() => { setLoading(true); void load(); }}
+              style={[styles.retryBtn, { backgroundColor: S.color }]}
+              accessibilityRole="button"
+              accessibilityLabel="Try again"
+            >
+              <FontAwesome5 name="redo" size={13} color="#fff" />
+              <Text style={styles.retryBtnText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
         ) : visible.length === 0 ? (
           <View style={styles.empty}>
             <FontAwesome5 name="users" size={30} color={colors.textLight} />
-            <Text style={styles.emptyTitle}>No hubs yet</Text>
-            <Text style={styles.emptyBody}>Be the first — start a Hub for your group.</Text>
+            <Text style={styles.emptyTitle}>{q || filter !== 'all' ? 'No matching hubs' : 'No hubs yet'}</Text>
+            <Text style={styles.emptyBody}>
+              {q || filter !== 'all' ? 'Try a different search or filter.' : 'Be the first — start a Hub for your group.'}
+            </Text>
           </View>
         ) : (
           <View style={[styles.grid, { gap: spacing.md }]}>
@@ -182,6 +232,13 @@ const styles = StyleSheet.create({
   createTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
   createSub: { color: 'rgba(255,255,255,0.85)', fontSize: fontSize.xs, marginTop: 1 },
 
+  searchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', borderRadius: 999, borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 9, marginBottom: spacing.md,
+  },
+  searchInput: { flex: 1, fontSize: fontSize.sm, color: colors.textPrimary, padding: 0 },
+
   filterRow: { marginBottom: spacing.md },
   chip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
@@ -206,5 +263,11 @@ const styles = StyleSheet.create({
   center: { paddingVertical: spacing.xl, alignItems: 'center' },
   empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: 10 },
   emptyTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
-  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted },
+  emptyBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    borderRadius: radius.md, marginTop: spacing.xs,
+  },
+  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: fontSize.sm },
 });

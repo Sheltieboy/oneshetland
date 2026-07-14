@@ -52,7 +52,10 @@ import {
 } from '@/lib/boats-prefs';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { ContentActions } from '@/components/ContentActions';
+import { fetchBlockedIds } from '@/lib/moderation';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
+import { track } from '@/lib/analytics';
 
 const SECTION = SECTIONS.daBoats;
 
@@ -155,6 +158,7 @@ export default function BoatProfileScreen() {
   const [profile, setProfile]       = useState<VesselProfile | null>(null);
   const [timeline, setTimeline]     = useState<VesselTimelineEntry[]>([]);
   const [comments, setComments]     = useState<VesselComment[]>([]);
+  const [blockedIds, setBlockedIds] = useState<string[]>([]);
   const [loading, setLoading]       = useState(true);
   const [saved, setSaved]           = useState(false);
   const [showEvidence, setShowEv]   = useState(false);
@@ -174,6 +178,8 @@ export default function BoatProfileScreen() {
 
   /** Local preview URI for a freshly-picked image (before upload). */
   const [draftPhoto, setDraftPhoto]       = useState<PickedFile | null>(null);
+  /** "This is a photo of the boat" — also submit the pick to the gallery (pending). */
+  const [photoIsOfBoat, setPhotoIsOfBoat] = useState(false);
   /** When editing, the existing image_url + path so we can show or replace. */
   const [editingPhotoUrl, setEditingPhotoUrl]   = useState<string | null>(null);
   const [editingPhotoPath, setEditingPhotoPath] = useState<string | null>(null);
@@ -214,6 +220,7 @@ export default function BoatProfileScreen() {
 
   const clearDraftPhoto = () => {
     setDraftPhoto(null);
+    setPhotoIsOfBoat(false);
     if (editingId) setRemoveExisting(true);
   };
 
@@ -224,6 +231,13 @@ export default function BoatProfileScreen() {
       setComments(c);
     } catch { /* swallow */ }
   }, [id]);
+
+  // Blocked-author ids — comments by blocked users are hidden client-side.
+  const loadBlocked = useCallback(async () => {
+    if (!viewer?.id) { setBlockedIds([]); return; }
+    try { setBlockedIds(await fetchBlockedIds()); } catch { /* non-fatal */ }
+  }, [viewer?.id]);
+  useEffect(() => { void loadBlocked(); }, [loadBlocked]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -261,6 +275,10 @@ export default function BoatProfileScreen() {
   }, [id, viewer?.id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (profile?.vessel?.id) track('content_viewed', { objectType: 'vessel', objectId: profile.vessel.id });
+  }, [profile?.vessel?.id]);
 
   // ── Community corrections ─────────────────────────────────────────────────
   const refreshEdits = useCallback(async () => {
@@ -377,6 +395,7 @@ export default function BoatProfileScreen() {
           subjectType:     draftSubject,
           parentCommentId: replyTo?.id ?? null,
           imageFile:       draftPhoto,
+          addToGallery:    photoIsOfBoat && !!draftPhoto,
         });
       }
       setDraft('');
@@ -384,6 +403,7 @@ export default function BoatProfileScreen() {
       setEditingId(null);
       setDraftSubject('general');
       setDraftPhoto(null);
+      setPhotoIsOfBoat(false);
       setEditingPhotoUrl(null);
       setEditingPhotoPath(null);
       setRemoveExisting(false);
@@ -404,6 +424,7 @@ export default function BoatProfileScreen() {
     setEditingPhotoUrl(c.image_url);
     setEditingPhotoPath(c.image_path);
     setRemoveExisting(false);
+    setPhotoIsOfBoat(false);
   };
 
   const cancelEdit = () => {
@@ -412,6 +433,7 @@ export default function BoatProfileScreen() {
     setReplyTo(null);
     setDraftSubject('general');
     setDraftPhoto(null);
+    setPhotoIsOfBoat(false);
     setEditingPhotoUrl(null);
     setEditingPhotoPath(null);
     setRemoveExisting(false);
@@ -438,7 +460,11 @@ export default function BoatProfileScreen() {
     });
   };
 
-  const threaded = useMemo(() => threadComments(comments), [comments]);
+  const threaded = useMemo(() => {
+    const blocked = new Set(blockedIds);
+    const visible = comments.filter(c => !c.author_id || !blocked.has(c.author_id));
+    return threadComments(visible);
+  }, [comments, blockedIds]);
 
   if (loading) {
     return (
@@ -509,6 +535,9 @@ export default function BoatProfileScreen() {
             style={[styles.editPill, editMode && { backgroundColor: SECTION.color, borderColor: SECTION.color }]}
             hitSlop={8}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={editMode ? 'Finish suggesting edits' : 'Suggest edits'}
+            accessibilityState={{ selected: editMode }}
           >
             <FontAwesome5
               name={editMode ? 'check' : 'pencil-alt'}
@@ -525,10 +554,23 @@ export default function BoatProfileScreen() {
               </View>
             ) : null}
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleShare} style={styles.iconBtn} hitSlop={12}>
+          <TouchableOpacity
+            onPress={handleShare}
+            style={styles.iconBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Share this boat"
+          >
             <FontAwesome5 name="share-alt" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleSaveToggle} style={styles.iconBtn} hitSlop={12}>
+          <TouchableOpacity
+            onPress={handleSaveToggle}
+            style={styles.iconBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={saved ? 'Saved — tap to remove from saved' : 'Save this boat'}
+            accessibilityState={{ selected: saved }}
+          >
             <FontAwesome5
               name="heart"
               size={22}
@@ -811,6 +853,12 @@ export default function BoatProfileScreen() {
                         <FontAwesome5 name="external-link-alt" size={9} color="#fff" />
                       </View>
                     ) : null}
+                    {mm.approval_status === 'pending' ? (
+                      <View style={styles.photoPending}>
+                        <FontAwesome5 name="clock" size={9} color="#fff" />
+                        <Text style={styles.photoPendingText}>Waiting for approval</Text>
+                      </View>
+                    ) : null}
                   </TouchableOpacity>
                 );
               })}
@@ -926,6 +974,7 @@ export default function BoatProfileScreen() {
                   onReply={() => { setReplyTo(c); setEditingId(null); setDraft(''); }}
                   onEdit={() => startEdit(c)}
                   onDelete={() => removeComment(c)}
+                  onBlocked={() => { void loadBlocked(); void reloadComments(); }}
                   startEdit={startEdit}
                   removeComment={removeComment}
                   setReplyTo={(rt) => { setReplyTo(rt); setEditingId(null); setDraft(''); }}
@@ -1017,6 +1066,33 @@ export default function BoatProfileScreen() {
               );
             })()}
 
+            {/* "This is a photo of the boat" — offers to add a freshly-picked
+                photo to the gallery. Held for approval before it shows publicly.
+                Only on a new post with a new pick (not while editing). */}
+            {draftPhoto && !editingId ? (
+              <TouchableOpacity
+                onPress={() => setPhotoIsOfBoat(v => !v)}
+                style={styles.galleryOptRow}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.galleryOptBox,
+                    { borderColor: SECTION.color },
+                    photoIsOfBoat ? { backgroundColor: SECTION.color } : null,
+                  ]}
+                >
+                  {photoIsOfBoat ? <FontAwesome5 name="check" size={11} color="#fff" /> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.galleryOptText}>This is a photo of the boat</Text>
+                  <Text style={styles.galleryOptHint}>
+                    Add it to her Photos — shown once a moderator approves it.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : null}
+
             <View style={styles.composerActions}>
               {/* Photo button on the left */}
               {viewer ? (
@@ -1101,7 +1177,7 @@ export default function BoatProfileScreen() {
 
 function CommentNode({
   comment, viewerId, isAuthor,
-  onReply, onEdit, onDelete,
+  onReply, onEdit, onDelete, onBlocked,
   startEdit, removeComment, setReplyTo,
   depth = 0,
 }: {
@@ -1111,6 +1187,7 @@ function CommentNode({
   onReply: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onBlocked: () => void;
   startEdit: (c: VesselComment) => void;
   removeComment: (c: VesselComment) => void;
   setReplyTo: (c: VesselComment | null) => void;
@@ -1177,7 +1254,19 @@ function CommentNode({
                 <Text style={[styles.commentLink, { color: colors.error }]}>Delete</Text>
               </TouchableOpacity>
             </>
-          ) : null}
+          ) : (
+            <ContentActions
+              contentType="vessel_comment"
+              contentId={comment.id}
+              authorId={comment.author_id}
+              authorName={comment.author?.full_name}
+              onBlocked={onBlocked}
+              icon="ellipsis-h"
+              size={13}
+              color={colors.textMuted}
+              style={styles.commentActions}
+            />
+          )}
         </View>
 
         {/* Nested replies */}
@@ -1192,6 +1281,7 @@ function CommentNode({
                 onReply={() => setReplyTo(comment)}
                 onEdit={() => startEdit(r)}
                 onDelete={() => removeComment(r)}
+                onBlocked={onBlocked}
                 startEdit={startEdit}
                 removeComment={removeComment}
                 setReplyTo={setReplyTo}
@@ -1303,15 +1393,15 @@ function SuggestPencil({ onPress, active }: { onPress: () => void; active?: bool
   return (
     <TouchableOpacity
       onPress={onPress}
-      hitSlop={12}
-      style={styles.pencilBtn}
-      accessibilityLabel="Suggest a change"
+      hitSlop={10}
+      style={[styles.pencilBtn, active && { backgroundColor: SECTION.light }]}
+      accessibilityRole="button"
+      accessibilityLabel={active ? 'Suggest a change (changes already suggested)' : 'Suggest a change'}
     >
       <FontAwesome5
         name="pencil-alt"
-        size={12}
-        color={active ? SECTION.color : colors.textMuted}
-        style={{ opacity: active ? 1 : 0.45 }}
+        size={18}
+        color={active ? SECTION.color : colors.textSecondary}
       />
     </TouchableOpacity>
   );
@@ -1765,6 +1855,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 28, 38, 0.7)',
     alignItems: 'center', justifyContent: 'center',
   },
+  photoPending: {
+    position: 'absolute',
+    left: 4, right: 4, bottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6, paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(15, 28, 38, 0.82)',
+  },
+  photoPendingText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
 
   timelineRow: {
     flexDirection: 'row',
@@ -1905,6 +2010,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textSecondary,
   },
+  commentActions: {
+    width: 24, height: 24,
+  },
 
   composer: {
     marginTop: spacing.lg,
@@ -2011,6 +2119,31 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
+  // "This is a photo of the boat" gallery opt-in
+  galleryOptRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  galleryOptBox: {
+    width: 22, height: 22, borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+    marginTop: 1,
+  },
+  galleryOptText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  galleryOptHint: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+
   // Comment-rendered photo
   commentPhotoWrap: {
     marginTop: 8,
@@ -2062,7 +2195,8 @@ const styles = StyleSheet.create({
   factChip: { flexDirection: 'row', alignItems: 'center', gap: 5 },
 
   pencilBtn: {
-    paddingHorizontal: 4, paddingVertical: 2,
+    minWidth: 44, minHeight: 44,
+    borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
 

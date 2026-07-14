@@ -66,6 +66,58 @@ const SHETLAND_REGION = {
   longitudeDelta: 1.6,
 };
 
+// ── Grid clustering ──────────────────────────────────────────────────────────
+//
+// react-native-maps has no built-in clustering, and we deliberately don't add
+// a new dependency. Instead we do lightweight grid clustering: divide the
+// visible world into a grid whose cell size scales with the current zoom
+// (latitudeDelta), then collapse every pin that lands in the same cell into a
+// single count bubble. Zoom in → cells shrink → clusters break apart until
+// you're looking at individual pins. Below the parish threshold we stop
+// clustering entirely so close-up browsing always shows real pins.
+//
+// Keeping ~14 cells across the viewport gives a readable Lerwick (hundreds of
+// pins collapse to a handful of bubbles) without over-merging.
+const CLUSTER_CELLS = 14;
+// Once the view is tighter than this (≈ one parish) we show every pin.
+const CLUSTER_DISABLE_DELTA = 0.08;
+
+interface Cluster {
+  /** Stable key for React. */
+  key:    string;
+  lat:    number;
+  lng:    number;
+  /** The pins gathered into this cell. */
+  pins:   MemoryPin[];
+}
+
+function buildClusters(pins: MemoryPin[], latDelta: number): Cluster[] {
+  const cell = Math.max(latDelta / CLUSTER_CELLS, 1e-4);
+  const buckets = new Map<string, MemoryPin[]>();
+  for (const p of pins) {
+    if (typeof p.lat !== 'number' || typeof p.lng !== 'number') continue;
+    const gx = Math.floor(p.lng / cell);
+    const gy = Math.floor(p.lat / cell);
+    const k = `${gx}:${gy}`;
+    const arr = buckets.get(k);
+    if (arr) arr.push(p);
+    else buckets.set(k, [p]);
+  }
+  const out: Cluster[] = [];
+  for (const [k, group] of buckets) {
+    // Cluster centre = mean of its members (looks tidier than the cell centre).
+    let sumLat = 0, sumLng = 0;
+    for (const p of group) { sumLat += p.lat; sumLng += p.lng; }
+    out.push({
+      key:  k,
+      lat:  sumLat / group.length,
+      lng:  sumLng / group.length,
+      pins: group,
+    });
+  }
+  return out;
+}
+
 interface MemoryMapNativeProps {
   pins:           MemoryPin[];
   onOpenPin?:     (pin: MemoryPin) => void;
@@ -155,6 +207,35 @@ export function MemoryMapNative({
     onOpenPin?.(pin);
   };
 
+  // ── Clustering ─────────────────────────────────────────────────────────────
+  // Collapse nearby pins into count bubbles while zoomed out; show real pins
+  // once we're in close. Recomputed only when the pin set or zoom changes.
+  const clusterers = latDelta > CLUSTER_DISABLE_DELTA;
+  const clusters = useMemo(
+    () => (clusterers ? buildClusters(pins, latDelta) : []),
+    [pins, latDelta, clusterers],
+  );
+
+  // Tapping a cluster zooms the map in on its members' bounds so the cluster
+  // breaks apart — the standard "expand on tap" gesture, no extra dependency.
+  const handleClusterPress = (cluster: Cluster) => {
+    markerTouchedAt.current = Date.now();
+    const lats = cluster.pins.map(p => p.lat);
+    const lngs = cluster.pins.map(p => p.lng);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    // Pad the bounds a touch, and floor the span so a tight cluster still
+    // zooms in meaningfully rather than barely nudging.
+    const latSpan = Math.max((maxLat - minLat) * 1.6, 0.02);
+    const lngSpan = Math.max((maxLng - minLng) * 1.6, 0.02);
+    mapRef.current?.animateToRegion?.({
+      latitude:       (minLat + maxLat) / 2,
+      longitude:      (minLng + maxLng) / 2,
+      latitudeDelta:  latSpan,
+      longitudeDelta: lngSpan,
+    }, 450);
+  };
+
   const handleMapPress = (e: any) => {
     if (Date.now() - markerTouchedAt.current < 450) return;
     if (!onDropPin) return;
@@ -241,17 +322,39 @@ export function MemoryMapNative({
           </Marker>
         ) : null}
 
-        {/* Memory pins */}
-        {pins.map(pin => (
-          <MemoryMarker
-            key={pin.id}
-            pin={pin}
-            selected={pin.id === selectedId}
-            showLabel={showLabels}
-            zoomedIn={latDelta < 0.3}
-            onOpen={() => handleMarkerOpen(pin)}
-          />
-        ))}
+        {/* Memory pins — clustered into count bubbles while zoomed out, then
+            broken out into individual markers once we're in close. A single
+            pin in a cell renders as the real marker even while clustering is
+            on, so lone stories never hide behind a "1" bubble. */}
+        {clusterers
+          ? clusters.map(c =>
+              c.pins.length === 1 ? (
+                <MemoryMarker
+                  key={c.pins[0].id}
+                  pin={c.pins[0]}
+                  selected={c.pins[0].id === selectedId}
+                  showLabel={showLabels}
+                  zoomedIn={latDelta < 0.3}
+                  onOpen={() => handleMarkerOpen(c.pins[0])}
+                />
+              ) : (
+                <ClusterMarker
+                  key={c.key}
+                  cluster={c}
+                  onPress={() => handleClusterPress(c)}
+                />
+              ),
+            )
+          : pins.map(pin => (
+              <MemoryMarker
+                key={pin.id}
+                pin={pin}
+                selected={pin.id === selectedId}
+                showLabel={showLabels}
+                zoomedIn={latDelta < 0.3}
+                onOpen={() => handleMarkerOpen(pin)}
+              />
+            ))}
       </MapView>
 
       {/* ── Place search overlay ──────────────────────────────────────── */}
@@ -361,6 +464,44 @@ function iconForPlaceCategory(cat: string): string {
   }
 }
 
+// ── Cluster bubble ───────────────────────────────────────────────────────────
+//
+// A count bubble standing in for several pins gathered into one grid cell.
+// Sized up a little for bigger counts so a busy Lerwick reads at a glance.
+// Tapping zooms in on the cluster's bounds (handled by the parent).
+
+function ClusterMarker({
+  cluster, onPress,
+}: {
+  cluster: Cluster;
+  onPress: () => void;
+}) {
+  const n = cluster.pins.length;
+  const big = n >= 25;
+  const size = big ? 48 : n >= 10 ? 42 : 36;
+
+  return (
+    <Marker
+      coordinate={{ latitude: cluster.lat, longitude: cluster.lng }}
+      anchor={{ x: 0.5, y: 0.5 }}
+      tracksViewChanges={false}
+      onPress={onPress}
+      accessibilityLabel={`${n} stories here — tap to zoom in`}
+    >
+      <View style={styles.pinWrap}>
+        <View
+          style={[
+            styles.clusterBubble,
+            { width: size, height: size, borderRadius: size / 2, backgroundColor: SECTION.color },
+          ]}
+        >
+          <Text style={styles.clusterCount}>{n > 99 ? '99+' : n}</Text>
+        </View>
+      </View>
+    </Marker>
+  );
+}
+
 // ── One memory marker ───────────────────────────────────────────────────────
 //
 // Each marker manages its own tracksViewChanges flag because:
@@ -437,6 +578,11 @@ function MemoryMarker({
       onPress={onOpen}
       title={pin.title ?? 'Memory'}
       description={pin.place_name ?? undefined}
+      accessibilityLabel={
+        `Story: ${pin.title ?? 'Untitled'}` +
+        (pin.place_name ? `, ${pin.place_name}` : '') +
+        (pin.era ? `, ${pin.era}` : '')
+      }
     >
       {/* Transparent halo expands the touchable area to ~52 px without
           changing the visible pin size. iOS hit-tests the entire view
@@ -534,6 +680,22 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  clusterBubble: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  clusterCount: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 14,
   },
   pinDraftHead: {
     width: 28,

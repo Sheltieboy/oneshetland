@@ -32,6 +32,7 @@ import {
   fetchHub, fetchHubCampaigns, createCampaign, updateCampaign, fetchHubDonations, createHubNotice,
   type Hub, type HubCampaign,
 } from '@/lib/hubs-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.community;
 const DURATIONS = [
@@ -113,6 +114,7 @@ export default function HubCampaignsScreen() {
         await updateCampaign(editId, { title: title.trim(), story: story.trim() || null, goal_pence: goalPence, cover_url: cover });
       } else {
         const created = await createCampaign(id, { title: title.trim(), story: story.trim() || null, goal_pence: goalPence, ends_at, cover_url: cover });
+        track('campaign_published', { hubId: id, objectType: 'campaign', objectId: created.id });
         if (postNotice) {
           await createHubNotice(id, {
             title: `Fundraiser: ${title.trim()}`,

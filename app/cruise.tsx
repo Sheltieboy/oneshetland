@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator,
-  Image, ImageBackground, type LayoutChangeEvent,
+  Image, ImageBackground, RefreshControl, type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
@@ -19,7 +19,7 @@ import { CruiseSeasonStats } from '@/components/cruise/CruiseSeasonStats';
 import { CruiseScopeView } from '@/components/cruise/CruiseScopeView';
 import { CruiseMap, type MapMarker, type MapLine } from '@/components/cruise/CruiseMap';
 import {
-  getMonthDays, getUpcomingDaysRich, getSeasonOrigins, getScopeData, getScopeAvailability, getCruiseHomeCard, scopeRange, SCOPES, baro, BARO, monthLabel, fmtDateShort, CRUISE_HERO, LERWICK,
+  getMonthDays, getUpcomingDaysRich, getSeasonOrigins, getScopeData, getScopeAvailability, getCruiseHomeCard, scopeRange, SCOPES, baro, BARO, monthLabel, fmtDateShort, londonToday, londonMonth, CRUISE_HERO, LERWICK,
   type CruiseDay, type CruiseDayRich, type Barometer, type Origin, type CruiseScope, type ScopeData,
 } from '@/lib/cruise-api';
 
@@ -37,22 +37,37 @@ export default function CruiseScreen() {
   const insets = useSafeAreaInsets();
   const { sidePadding, isTablet } = useAppLayout();
 
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => londonMonth());
   const [days, setDays] = useState<Record<string, CruiseDay>>({});
   const [upcoming, setUpcoming] = useState<CruiseDayRich[]>([]);
   const [loading, setLoading] = useState(true);
   const [gridW, setGridW] = useState(0);
   const [origins, setOrigins] = useState<Origin[]>([]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = londonToday();
   const [scope, setScope] = useState<CruiseScope>('season');
   const range = scope === 'season' ? null : scopeRange(scope, today);
   const [scopeData, setScopeData] = useState<ScopeData | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
   const [nextDate, setNextDate] = useState<string | null>(null);
   const [avail, setAvail] = useState<Record<'today' | 'weekend' | 'week', boolean>>({ today: true, weekend: true, week: true });
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { getScopeAvailability(today).then(setAvail).catch(() => {}); }, [today]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        getUpcomingDaysRich(40).then(setUpcoming),
+        getMonthDays(month).then(setDays),
+        getScopeAvailability(today).then(setAvail),
+        getSeasonOrigins().then(setOrigins),
+        range ? getScopeData(range.from, range.to).then(setScopeData) : Promise.resolve(),
+      ]);
+    } catch { /* keep the last good data on a failed refresh */ }
+    setRefreshing(false);
+  }, [month, today, range?.from, range?.to]);
 
   useEffect(() => {
     if (!range) { setScopeData(null); return; }
@@ -105,7 +120,11 @@ export default function CruiseScreen() {
         </View>
       </ImageBackground>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: sidePadding + spacing.lg, paddingBottom: spacing.xxl }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: sidePadding + spacing.lg, paddingBottom: spacing.xxl }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} colors={[ACCENT]} />}
+      >
         {/* Scope pills */}
         <View style={styles.pills}>
           {SCOPES.map((s) => {
@@ -146,8 +165,8 @@ export default function CruiseScreen() {
         <View style={styles.monthRow}>
           <Text style={styles.monthTitle}>{monthLabel(month)}</Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity onPress={() => setMonth(shiftMonth(month, -1))} hitSlop={8} style={styles.navBtn}><FontAwesome5 name="chevron-left" size={12} color={colors.textPrimary} /></TouchableOpacity>
-            <TouchableOpacity onPress={() => setMonth(shiftMonth(month, 1))} hitSlop={8} style={styles.navBtn}><FontAwesome5 name="chevron-right" size={12} color={colors.textPrimary} /></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Previous month" onPress={() => setMonth(shiftMonth(month, -1))} hitSlop={8} style={styles.navBtn}><FontAwesome5 name="chevron-left" size={12} color={colors.textPrimary} /></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Next month" onPress={() => setMonth(shiftMonth(month, 1))} hitSlop={8} style={styles.navBtn}><FontAwesome5 name="chevron-right" size={12} color={colors.textPrimary} /></TouchableOpacity>
           </View>
         </View>
 

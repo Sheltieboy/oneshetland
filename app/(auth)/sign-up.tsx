@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -305,7 +306,14 @@ export default function SignUpScreen() {
           </View>
 
           <Text style={styles.legal}>
-            By creating an account you agree to our terms of service. You must be 18 or over.
+            By creating an account you agree to our{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/terms')}>
+              Terms of Service
+            </Text>{' '}
+            and{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/privacy')}>
+              Privacy Policy
+            </Text>. You must be 18 or over.
             Fetch is for goods only — no alcohol, tobacco, vapes, cash, or passengers.
           </Text>
         </ScrollView>
@@ -427,6 +435,11 @@ const styles = StyleSheet.create({
     color: colors.textLight,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  legalLink: {
+    color: colors.accent,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 
   // Success state

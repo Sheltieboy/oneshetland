@@ -61,7 +61,7 @@ function SuccessScreen({ onContinue }: { onContinue: () => void }) {
 
         <View style={successStyles.card}>
           {[
-            { icon: 'pound-sign', text: 'You keep the delivery fee, less a small £1.50 service fee per delivery' },
+            { icon: 'pound-sign', text: 'You keep 100% of the delivery fee — the customer pays a £1.50 OneShetland service fee on top' },
             { icon: 'clock',      text: 'Payouts within 2 working days of each delivery' },
             { icon: 'shield-alt', text: 'Payments handled securely by Stripe' },
           ].map((row, i) => (

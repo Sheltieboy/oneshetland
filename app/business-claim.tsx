@@ -25,6 +25,7 @@ import {
   fetchBusiness, fetchMyClaim, submitBusinessClaim,
   type LocalBusiness, type BusinessClaim,
 } from '@/lib/local-api';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.local;
 
@@ -78,6 +79,7 @@ export default function BusinessClaimScreen() {
         role:          role.trim() || null,
         evidence:      evidence.trim() || null,
       });
+      track('business_claim_submitted', { businessId: business.id });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Show success INLINE — this screen is presented as a modal and the alert
       // lives at the app root, so iOS can't present it over us (it's swallowed).

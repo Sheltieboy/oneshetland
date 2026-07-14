@@ -29,6 +29,8 @@ import { useAlert } from '@/components/BrandedAlert';
 
 interface Run {
   id: string;
+  origin_region_id: string | null;
+  destination_region_id: string | null;
   departure_start: string;
   departure_end: string;
   status: string;
@@ -42,12 +44,23 @@ interface PendingRequest {
   category_slug: string;
   pickup_name: string;
   pickup_location: string;
+  destination_region_id: string | null;
   destination_area: string | null;
   destination_address: string;
   already_paid: boolean;
   ready_for_collection: boolean;
   created_at: string;
   base_fee_pence: number | null;
+  needed_by: string | null;
+}
+
+/** Does a driver's open run cover this request? Region + category + timing. */
+function runCoversRequest(run: Run, req: PendingRequest): boolean {
+  if (run.status !== 'open') return false;
+  if (!run.destination_region_id || run.destination_region_id !== req.destination_region_id) return false;
+  if (!run.categories_accepted.includes(req.category_slug)) return false;
+  if (req.needed_by && new Date(req.needed_by) < new Date(run.departure_start)) return false;
+  return true;
 }
 
 interface MatchedRequest {
@@ -113,10 +126,10 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
     const [driverRes, runsRes, pendingRes, matchedRes] = await Promise.all([
       supabase.from('driver_profiles').select('*').eq('id', profile.id).single(),
       supabase.from('runs')
-        .select('id, departure_start, departure_end, status, ferry_crossing, notes, categories_accepted')
+        .select('id, origin_region_id, destination_region_id, departure_start, departure_end, status, ferry_crossing, notes, categories_accepted')
         .eq('driver_id', profile.id).gte('departure_end', now).order('departure_start', { ascending: true }),
       supabase.from('delivery_requests')
-        .select('id, category_slug, pickup_name, pickup_location, destination_area, destination_address, already_paid, ready_for_collection, created_at, base_fee_pence')
+        .select('id, category_slug, pickup_name, pickup_location, destination_region_id, destination_area, destination_address, already_paid, ready_for_collection, created_at, base_fee_pence, needed_by')
         .eq('status', 'pending').order('created_at', { ascending: true }),
       supabase.from('delivery_requests')
         .select('id, category_slug, pickup_name, pickup_location, destination_area, destination_address, delivery_notes, status, already_paid, base_fee_pence, run_id, runs!inner(driver_id)')
@@ -157,16 +170,20 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
             onPress: async () => {
               const now = new Date();
               const threeHoursLater = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+              // Seed a REAL run from the request — its drop-off area + category.
+              // The driver can widen it and add more "along the way" after.
               const { data: newRun, error: runError } = await supabase
                 .from('runs')
                 .insert({
                   driver_id: profile!.id,
+                  destination_region_id: req?.destination_region_id ?? null,
+                  destination_area: destination,
                   departure_start: now.toISOString(),
                   departure_end: threeHoursLater.toISOString(),
                   status: 'open',
                   ferry_crossing: false,
-                  categories_accepted: ['takeaway', 'grocery', 'pharmacy', 'parcel', 'other'],
-                  notes: `Origin: Lerwick\nDestination: ${destination}`,
+                  categories_accepted: req?.category_slug ? [req.category_slug] : [],
+                  notes: null,
                 })
                 .select('id')
                 .single();
@@ -176,12 +193,14 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
               }
               setRuns((prev) => [...prev, {
                 id: newRun.id,
+                origin_region_id: null,
+                destination_region_id: req?.destination_region_id ?? null,
                 departure_start: now.toISOString(),
                 departure_end: threeHoursLater.toISOString(),
                 status: 'open',
                 ferry_crossing: false,
-                notes: `Origin: Lerwick\nDestination: ${destination}`,
-                categories_accepted: ['takeaway', 'grocery', 'pharmacy', 'parcel', 'other'],
+                notes: null,
+                categories_accepted: req?.category_slug ? [req.category_slug] : [],
               }]);
               acceptRequest(requestId, newRun.id);
             },
@@ -302,6 +321,13 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
   const isApproved = driverProfile?.driver_status === 'approved';
   const isBankConnected = driverProfile?.stripe_onboarding_complete && driverProfile?.stripe_payouts_enabled;
   const canAccept = isApproved && isBankConnected;
+
+  // Show requests on the driver's routes first. With no open run yet, show
+  // everything so they can start a run from a request.
+  const openRunsForMatch = runs.filter((r) => r.status === 'open');
+  const visiblePending = openRunsForMatch.length > 0
+    ? pendingRequests.filter((req) => openRunsForMatch.some((run) => runCoversRequest(run, req)))
+    : pendingRequests;
 
   return (
     <ScreenScaffold embedded={embedded}>
@@ -593,33 +619,35 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
         {isApproved && (
           <View style={styles.section}>
             <View style={styles.sectionRow}>
-              <Text style={styles.sectionTitle}>Open requests</Text>
-              {pendingRequests.length > 0 && (
+              <Text style={styles.sectionTitle}>{openRunsForMatch.length > 0 ? 'On your route' : 'Open requests'}</Text>
+              {visiblePending.length > 0 && (
                 <View style={[styles.countBadge, styles.countBadgeAccent]}>
-                  <Text style={styles.countBadgeText}>{pendingRequests.length}</Text>
+                  <Text style={styles.countBadgeText}>{visiblePending.length}</Text>
                 </View>
               )}
             </View>
             <Text style={styles.sectionSub}>
-              {isBankConnected
-                ? 'Accept a request to add it to one of your runs.'
-                : 'Connect your bank account to start accepting requests.'}
+              {!isBankConnected
+                ? 'Connect your bank account to start accepting requests.'
+                : openRunsForMatch.length > 0
+                  ? 'Requests heading the same way as one of your runs.'
+                  : 'Accepting a request starts a run to carry it — then you can add more along the way.'}
             </Text>
             {loadingPending ? (
               <>
                 <SkeletonCard />
                 <SkeletonCard />
               </>
-            ) : pendingRequests.length === 0 ? (
+            ) : visiblePending.length === 0 ? (
               <Card padded={false}>
                 <EmptyState
                   icon="inbox"
-                  title="No open requests"
+                  title={openRunsForMatch.length > 0 ? 'Nothing on your route yet' : 'No open requests'}
                   body="New delivery requests from customers will appear here."
                 />
               </Card>
             ) : (
-              pendingRequests.map((req) => (
+              visiblePending.map((req) => (
                 <Card key={req.id} style={styles.pendingCard}>
                   <View style={styles.pendingHeader}>
                     <Text style={styles.pendingCategory}>{req.category_slug.toUpperCase()}</Text>
@@ -670,7 +698,7 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
 
                   {req.base_fee_pence != null && (
                     <Text style={styles.feeNote}>
-                      Customer charged £{(req.base_fee_pence / 100).toFixed(2)} on delivery
+                      You earn £{(req.base_fee_pence / 100).toFixed(2)} · customer pays £{((req.base_fee_pence + 150) / 100).toFixed(2)} (incl. £1.50 service fee)
                     </Text>
                   )}
 

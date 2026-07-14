@@ -27,11 +27,26 @@ import {
 const S = SECTIONS.events;
 
 const FILTER_DATES = [
-  { label: 'Today',     days: 0 },
-  { label: 'This week', days: 7 },
-  { label: 'This month',days: 30 },
-  { label: 'All upcoming', days: 365 },
+  { label: 'Today',        kind: 'today' as const },
+  { label: 'This week',    kind: 'week'  as const },
+  { label: 'This month',   kind: 'month' as const },
+  { label: 'All upcoming', kind: 'all'   as const },
 ];
+
+/** Upper bound for a date filter — a real calendar week/month, not a rolling window. */
+function rangeUpperBound(kind: 'today' | 'week' | 'month' | 'all'): string | undefined {
+  if (kind === 'all') return undefined;
+  const d = new Date();
+  if (kind === 'today') {
+    d.setHours(23, 59, 59, 999);
+  } else if (kind === 'week') {
+    d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); // through this Sunday
+    d.setHours(23, 59, 59, 999);
+  } else {
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+  }
+  return d.toISOString();
+}
 
 export default function WhatsOnTab() {
   const router  = useRouter();
@@ -58,6 +73,7 @@ export default function WhatsOnTab() {
   const [dateFilter,    setDateFilter]    = useState(1);  // index into FILTER_DATES
   const [categoryFilter,setCategoryFilter] = useState<string | null>(null);
   const [freeOnly,      setFreeOnly]      = useState(false);
+  const [searchQuery,   setSearchQuery]   = useState('');
 
   const PAGE = 20;
   const offsetRef = useRef(0);
@@ -65,9 +81,7 @@ export default function WhatsOnTab() {
   const buildQueryOpts = useCallback((offset = 0) => {
     const fd = FILTER_DATES[dateFilter];
     const from = new Date().toISOString();
-    const to   = fd.days === 365
-      ? undefined
-      : (() => { const d = new Date(); d.setDate(d.getDate() + fd.days); return d.toISOString(); })();
+    const to   = rangeUpperBound(fd.kind);
     return {
       category: categoryFilter ?? undefined,
       from,
@@ -117,9 +131,19 @@ export default function WhatsOnTab() {
     fetchPublishedEvents({ from, to, limit: 200 }).then(setMonthEvents).catch(() => setMonthEvents([]));
   }, [viewMode, calMonth]);
 
-  const visibleEvents = freeOnly
+  const q = searchQuery.trim().toLowerCase();
+  const visibleEvents = (freeOnly
     ? events.filter(e => !e.has_tickets || (e.ticket_types?.length ? isFreeEvent(e.ticket_types) : !e.price_text))
-    : events;
+    : events
+  ).filter(e => {
+    if (!q) return true;
+    return (
+      e.title?.toLowerCase().includes(q) ||
+      e.venue?.toLowerCase().includes(q) ||
+      e.description?.toLowerCase().includes(q) ||
+      e.business?.name?.toLowerCase().includes(q)
+    );
+  });
 
   // Derived highlight rows + calendar buckets.
   const featured = highlights.filter(e => e.is_featured).slice(0, 8);
@@ -138,7 +162,7 @@ export default function WhatsOnTab() {
   const goEvent = (id: string) => router.push({ pathname: '/events/[id]', params: { id } });
 
   // Highlights header for the list (featured strip + on-sale row).
-  const showHighlights = !categoryFilter && !freeOnly;
+  const showHighlights = !categoryFilter && !freeOnly && !q;
   const listHeader = showHighlights && (featured.length > 0 || ticketed.length > 0) ? (
     <View style={styles.highlightsWrap}>
       {featured.length > 0 && (
@@ -212,6 +236,30 @@ export default function WhatsOnTab() {
             ))}
           </View>
         </View>
+
+        {/* Keyword search — list mode only */}
+        {viewMode === 'list' && (
+          <View style={styles.searchBar}>
+            <View style={styles.searchWrap}>
+              <FontAwesome5 name="search" size={13} color={colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search events by name, venue or organiser…"
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                returnKeyType="search"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {searchQuery.length > 0 ? (
+                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+                  <FontAwesome5 name="times-circle" size={15} color={colors.textMuted} solid />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        )}
 
         {/* Date chips — list mode only */}
         {viewMode === 'list' && (
@@ -295,7 +343,9 @@ export default function WhatsOnTab() {
         <View style={styles.center}>
           <FontAwesome5 name="calendar-times" size={36} color={S.color + '60'} />
           <Text style={styles.emptyTitle}>No events found</Text>
-          <Text style={styles.emptyText}>Try changing the date or category filter</Text>
+          <Text style={styles.emptyText}>
+            {q ? 'No events match your search — try a different keyword or clear it' : 'Try changing the date or category filter'}
+          </Text>
         </View>
       ) : (
         <FlatList
@@ -516,6 +566,13 @@ const styles = StyleSheet.create({
   dayPanel: { paddingHorizontal: spacing.md, paddingBottom: spacing.xxl, gap: 10 },
   dayHeading: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary },
   dayEmpty: { fontSize: fontSize.sm, color: colors.textMuted },
+  searchBar:   { paddingHorizontal: spacing.md, paddingTop: 10 },
+  searchWrap:  {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.screenBackground, borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 9,
+  },
+  searchInput: { flex: 1, fontSize: fontSize.sm, color: colors.textPrimary, padding: 0 },
   filterRow:   { paddingHorizontal: spacing.md, paddingVertical: 8, gap: 6, flexDirection: 'row', alignItems: 'center' },
   chip: {
     paddingHorizontal: 12, paddingVertical: 6,

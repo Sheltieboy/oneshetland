@@ -32,7 +32,9 @@ import {
 } from '@/lib/hubs-api';
 import { fetchHubEvents, type OsEvent } from '@/lib/events-api';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
+import { ContentActions } from '@/components/ContentActions';
 import { useAlert } from '@/components/BrandedAlert';
+import { track } from '@/lib/analytics';
 
 const S = SECTIONS.community;
 
@@ -92,6 +94,10 @@ export default function HubDetailScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  useEffect(() => {
+    if (hub?.id) track('content_viewed', { objectType: 'hub', objectId: hub.id, hubId: hub.id });
+  }, [hub?.id]);
+
   const accent = tint(hub?.brand_color) ?? S.color;
   const isAdmin   = membership?.status === 'active' && (membership.role === 'owner' || membership.role === 'committee');
   const isExpired = !isAdmin && membership?.status === 'active' && !!membership?.paid_until && new Date(membership.paid_until) <= new Date();
@@ -123,6 +129,7 @@ export default function HubDetailScreen() {
   // Tap a tier: free → join; paid + saved card → our confirm sheet; paid + no
   // card → straight to Stripe's Payment Sheet (which is itself the confirm).
   const onTapTier = (type: HubMembershipType) => {
+    if (hub) track('hub_membership_started', { hubId: hub.id, objectType: 'membership_type', objectId: type.id });
     if (!profile) { goToSignIn(); return; }
     if (type.price_pence <= 0) { onJoinFree(type); return; }
     // Always open the confirm sheet — it offers wallet AND card. The card path
@@ -291,7 +298,7 @@ export default function HubDetailScreen() {
       ))}
     </View>
   ) : (
-    <TouchableOpacity style={[styles.joinBtn, { backgroundColor: accent }]} onPress={() => onJoinFree()} disabled={acting} activeOpacity={0.85}>
+    <TouchableOpacity style={[styles.joinBtn, { backgroundColor: accent }]} onPress={() => { track('hub_membership_started', { hubId: hub.id, objectType: 'membership_type' }); onJoinFree(); }} disabled={acting} activeOpacity={0.85}>
       {acting ? <ActivityIndicator color="#fff" /> : (
         <>
           <FontAwesome5 name="user-plus" size={13} color="#fff" solid />
@@ -327,9 +334,9 @@ export default function HubDetailScreen() {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Contact</Text>
       <View style={styles.infoCard}>
-        {hub.contact_phone ? <InfoRow icon="phone" label={hub.contact_phone} onPress={() => Linking.openURL(`tel:${hub.contact_phone}`)} accent={accent} /> : null}
-        {hub.contact_email ? <InfoRow icon="envelope" label={hub.contact_email} onPress={() => Linking.openURL(`mailto:${hub.contact_email}`)} accent={accent} /> : null}
-        {hub.website ? <InfoRow icon="globe" label={hub.website} onPress={() => Linking.openURL(hub.website!)} accent={accent} /> : null}
+        {hub.contact_phone ? <InfoRow icon="phone" label={hub.contact_phone} onPress={() => { track('contact_clicked', { objectType: 'hub', objectId: hub.id, hubId: hub.id, props: { method: 'phone' } }); Linking.openURL(`tel:${hub.contact_phone}`); }} accent={accent} /> : null}
+        {hub.contact_email ? <InfoRow icon="envelope" label={hub.contact_email} onPress={() => { track('contact_clicked', { objectType: 'hub', objectId: hub.id, hubId: hub.id, props: { method: 'email' } }); Linking.openURL(`mailto:${hub.contact_email}`); }} accent={accent} /> : null}
+        {hub.website ? <InfoRow icon="globe" label={hub.website} onPress={() => { track('contact_clicked', { objectType: 'hub', objectId: hub.id, hubId: hub.id, props: { method: 'website' } }); Linking.openURL(hub.website!); }} accent={accent} /> : null}
       </View>
     </View>
   ) : null;
@@ -384,6 +391,14 @@ export default function HubDetailScreen() {
               <Text style={styles.noticeTitle} numberOfLines={2}>{n.title}</Text>
               {n.visibility !== 'public' && (
                 <View style={styles.memberTag}><FontAwesome5 name="lock" size={8} color="#6B47BF" solid /><Text style={styles.memberTagText}>Members</Text></View>
+              )}
+              {!isAdmin && (
+                <ContentActions
+                  contentType="notice"
+                  contentId={n.id}
+                  authorId={n.publisher_user_id}
+                  style={{ marginLeft: 'auto' }}
+                />
               )}
             </View>
             {n.body ? <Text style={styles.noticeBody} numberOfLines={3}>{n.body}</Text> : null}

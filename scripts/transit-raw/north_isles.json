@@ -1,0 +1,351 @@
+{
+  "source": "bus-north_isles",
+  "timetableActive": "2024-07-01",
+  "legend": {
+    "DAR": "Dial-a-Ride",
+    "M": "Mondays only",
+    "W": "Wednesdays only",
+    "Th": "Thursdays only",
+    "F": "Fridays only",
+    "NF": "Not Fridays",
+    "Sat": "Saturdays only",
+    "NSat": "Not Saturdays",
+    "Sch": "School days only",
+    "NSch": "School holidays only",
+    "Sum": "April to September only",
+    "FER": "Ferry Service",
+    "FERC": "Awaits ferry connections at Ulsta"
+  },
+  "notes": [
+    "Service 24 bus travels with passengers on the Yell Sound ferry crossing",
+    "Service 28 bus travels with passengers on the ferry between Belmont and Gutcher, passengers may remain seated on the bus during these crossings",
+    "Service 28 passengers must change to/from the Service 24 bus at Gutcher in order to continue their journey",
+    "Service 29 operates on Fetlar only, all Fetlar passengers must travel on the ferry from Hamars Ness to Gutcher as foot passengers and connect with Service 24 at Gutcher",
+    "Dial-a-Ride Services have DAR above the time column, and may also have a letter to show which day or days the service will operate on. Dial-a-Ride Services are bookable up until 1600 on the day before travel. Bookings on 01595 745745.",
+    "In the integrated table the column headers are service numbers (24, 28, 29, 30) or FER (ferry); these are recorded in each trip's codes along with any day footnotes."
+  ],
+  "services": [
+    {
+      "service": "24/28/29/30",
+      "name": "North Isles Integrated Bus & Ferry Service",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "Fetlar-Unst-Yell to Mainland (Lerwick); toward Mainland ferry",
+      "trips": [
+        { "codes": ["29", "DAR"], "calls": [ {"stop":"Funzie","time":"0730"}, {"stop":"Houbie","time":"0740"}, {"stop":"Hamars Ness","time":"0755"} ] },
+        { "codes": ["28"], "calls": [ {"stop":"Baltasound","time":"0735"}, {"stop":"Haroldswick","time":"0740"}, {"stop":"Saxavord","time":"0745"}, {"stop":"Baltasound","time":"0755"}, {"stop":"Uyeasound","time":"0810"}, {"stop":"Belmont","time":"0825"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Hamars Ness","time":"0755"}, {"stop":"Belmont","time":"0825"}, {"stop":"Gutcher","time":"0840"} ] },
+        { "codes": ["24"], "calls": [ {"stop":"Cullivoe","time":"0820"}, {"stop":"Gutcher","time":"0840"}, {"stop":"Sellafirth","time":"0843"}, {"stop":"Camb","time":"0848"}, {"stop":"Mid Yell Junction","time":"0850"}, {"stop":"West Sandwick","time":"0855"}, {"stop":"Ulsta","time":"0905"} ] },
+        { "codes": ["30"], "calls": [ {"stop":"West Sandwick","time":"0820"}, {"stop":"Mid Yell School","time":"0835"}, {"stop":"Aywick","time":"0845"}, {"stop":"Burravoe","time":"0900"}, {"stop":"Ulsta","time":"0910"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Ulsta","time":"0915"}, {"stop":"Toft","time":"0930"} ] },
+        { "codes": ["24"], "calls": [ {"stop":"Toft","time":"0930"}, {"stop":"Voe","time":"0947"}, {"stop":"Nesting Junction","time":"0959"}, {"stop":"Girlsta","time":"1002"}, {"stop":"Tingwall Crossroads","time":"1008"}, {"stop":"Viking Bus Station","time":"1020"}, {"stop":"Esplanade","time":"1021"}, {"stop":"Gilbert Bain Hospital","time":"1024"}, {"stop":"Tesco","time":"1026"} ] }
+      ]
+    },
+    {
+      "service": "24/28/29/30",
+      "name": "North Isles Integrated Bus & Ferry Service",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Fetlar-Unst-Yell to Mainland (Lerwick); toward Mainland ferry",
+      "trips": [
+        { "codes": ["29", "DAR"], "calls": [ {"stop":"Funzie","time":"0730"}, {"stop":"Houbie","time":"0740"}, {"stop":"Hamars Ness","time":"0755"} ] },
+        { "codes": ["28"], "calls": [ {"stop":"Baltasound","time":"0735"}, {"stop":"Haroldswick","time":"0740"}, {"stop":"Saxavord","time":"0745"}, {"stop":"Baltasound","time":"0755"}, {"stop":"Uyeasound","time":"0810"}, {"stop":"Belmont","time":"0825"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Hamars Ness","time":"0755"}, {"stop":"Belmont","time":"0825"}, {"stop":"Gutcher","time":"0840"} ] },
+        { "codes": ["24"], "calls": [ {"stop":"Cullivoe","time":"0820"}, {"stop":"Gutcher","time":"0840"}, {"stop":"Sellafirth","time":"0843"}, {"stop":"Camb","time":"0848"}, {"stop":"Mid Yell Junction","time":"0850"}, {"stop":"West Sandwick","time":"0855"}, {"stop":"Ulsta","time":"0905"} ] },
+        { "codes": ["30"], "calls": [ {"stop":"West Sandwick","time":"0820"}, {"stop":"Mid Yell School","time":"0835"}, {"stop":"Aywick","time":"0845"}, {"stop":"Burravoe","time":"0900"}, {"stop":"Ulsta","time":"0910"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Ulsta","time":"0915"} ] }
+      ]
+    },
+    {
+      "service": "24/28/29/30",
+      "name": "North Isles Integrated Bus & Ferry Service",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "Mainland (Lerwick) to Yell-Unst-Fetlar; away from Mainland ferry",
+      "trips": [
+        { "codes": ["24"], "calls": [ {"stop":"Tesco","time":"1420"}, {"stop":"Gilbert Bain Hospital","time":"1421"}, {"stop":"Viking Bus Station","time":"1425"}, {"stop":"Viking Bus Station","time":"1435"}, {"stop":"Tingwall Crossroads","time":"1441"}, {"stop":"Girlsta","time":"1443"}, {"stop":"Nesting Junction","time":"1445"}, {"stop":"Voe","time":"1458"}, {"stop":"Toft","time":"1525"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Toft","time":"1525"}, {"stop":"Ulsta","time":"1545"} ] },
+        { "codes": ["30", "DAR"], "calls": [ {"stop":"Ulsta","time":"1550"}, {"stop":"Burravoe","time":"1600"}, {"stop":"Aywick","time":"1615"}, {"stop":"Mid Yell School","time":"1625"} ] },
+        { "codes": ["24"], "calls": [ {"stop":"Ulsta","time":"1545"}, {"stop":"West Sandwick","time":"1555"}, {"stop":"Mid Yell Junction","time":"1600"}, {"stop":"Camb","time":"1602"}, {"stop":"Sellafirth","time":"1607"}, {"stop":"Gutcher","time":"1612"}, {"stop":"Cullivoe","time":"1627"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Gutcher","time":"1615"}, {"stop":"Hamars Ness","time":"1640"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Gutcher","time":"1630"}, {"stop":"Belmont","time":"1640"} ] },
+        { "codes": ["28"], "calls": [ {"stop":"Gutcher","time":"1630"}, {"stop":"Belmont","time":"1640"}, {"stop":"Uyeasound","time":"1650"}, {"stop":"Baltasound","time":"1700"}, {"stop":"Haroldswick","time":"1710"}, {"stop":"Saxavord","time":"1715"}, {"stop":"Baltasound","time":"1720"} ] },
+        { "codes": ["29", "DAR"], "calls": [ {"stop":"Hamars Ness","time":"1640"}, {"stop":"Houbie","time":"1655"}, {"stop":"Funzie","time":"1705"} ] }
+      ]
+    },
+    {
+      "service": "24/28/29/30",
+      "name": "North Isles Integrated Bus & Ferry Service",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Mainland (Lerwick) to Yell-Unst-Fetlar; away from Mainland ferry",
+      "trips": [
+        { "codes": ["24"], "calls": [ {"stop":"Tesco","time":"1355"}, {"stop":"Gilbert Bain Hospital","time":"1356"}, {"stop":"Viking Bus Station","time":"1400"}, {"stop":"Viking Bus Station","time":"1410"}, {"stop":"Tingwall Crossroads","time":"1416"}, {"stop":"Girlsta","time":"1418"}, {"stop":"Nesting Junction","time":"1421"}, {"stop":"Voe","time":"1433"}, {"stop":"Toft","time":"1500"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Toft","time":"1500"}, {"stop":"Ulsta","time":"1515"} ] },
+        { "codes": ["30", "DAR"], "calls": [ {"stop":"Ulsta","time":"1520"}, {"stop":"Burravoe","time":"1530"}, {"stop":"Aywick","time":"1545"}, {"stop":"Mid Yell School","time":"1555"} ] },
+        { "codes": ["24"], "calls": [ {"stop":"Ulsta","time":"1515"}, {"stop":"West Sandwick","time":"1525"}, {"stop":"Mid Yell Junction","time":"1530"}, {"stop":"Camb","time":"1532"}, {"stop":"Sellafirth","time":"1537"}, {"stop":"Gutcher","time":"1542"}, {"stop":"Cullivoe","time":"1557"} ] },
+        { "codes": ["FER"], "calls": [ {"stop":"Gutcher","time":"1550"}, {"stop":"Belmont","time":"1600"}, {"stop":"Hamars Ness","time":"1630"} ] },
+        { "codes": ["28"], "calls": [ {"stop":"Belmont","time":"1600"}, {"stop":"Uyeasound","time":"1610"}, {"stop":"Baltasound","time":"1620"}, {"stop":"Haroldswick","time":"1630"}, {"stop":"Saxavord","time":"1635"} ] },
+        { "codes": ["29", "DAR"], "calls": [ {"stop":"Hamars Ness","time":"1630"}, {"stop":"Houbie","time":"1645"}, {"stop":"Funzie","time":"1655"} ] }
+      ]
+    },
+
+    {
+      "service": "28",
+      "name": "Unst Service",
+      "direction": "inbound",
+      "dayGroup": "Monday-Saturday",
+      "directionNote": "Baltasound/Haroldswick area toward Gutcher (ferry); printed as first (upper) block",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Baltasound","time":"0735"}, {"stop":"Haroldswick","time":"0740"}, {"stop":"Saxavord","time":"0745"}, {"stop":"Baltasound","time":"0755"}, {"stop":"Uyeasound","time":"0810"}, {"stop":"Belmont","time":"0825"}, {"stop":"Gutcher","time":"0835"} ] },
+        { "codes": ["Sch"], "calls": [ {"stop":"Baltasound","time":"0815"}, {"stop":"Haroldswick","time":"0825"}, {"stop":"Saxavord","time":"0830"}, {"stop":"Setters Hill Estate","time":"0840"}, {"stop":"Baltasound JHS","time":"0845"} ] },
+        { "codes": ["Sat"], "calls": [ {"stop":"Baltasound","time":"1445"}, {"stop":"Haroldswick","time":"1455"}, {"stop":"Saxavord","time":"1500"}, {"stop":"Baltasound","time":"1510"}, {"stop":"Uyeasound","time":"1525"}, {"stop":"Belmont","time":"1530"} ] },
+        { "codes": [], "calls": [ {"stop":"Baltasound","time":"1530"}, {"stop":"Baltasound","time":"1535"}, {"stop":"Uyeasound","time":"1545"}, {"stop":"Belmont","time":"1615"} ] },
+        { "codes": ["Sum", "NSat"], "calls": [ {"stop":"Baltasound","time":"1605"}, {"stop":"Haroldswick","time":"1610"}, {"stop":"Saxavord","time":"1615"}, {"stop":"Baltasound","time":"1625"}, {"stop":"Uyeasound","time":"1635"}, {"stop":"Belmont","time":"1645"} ] }
+      ]
+    },
+    {
+      "service": "28",
+      "name": "Unst Service",
+      "direction": "outbound",
+      "dayGroup": "Monday-Saturday",
+      "directionNote": "Gutcher (ferry) toward Baltasound/Haroldswick; printed as second (lower) block",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Gutcher","time":"0840"}, {"stop":"Belmont","time":"0850"}, {"stop":"Uyeasound","time":"0855"}, {"stop":"Baltasound","time":"0910"} ] },
+        { "codes": [], "calls": [ {"stop":"Baltasound","time":"0955"}, {"stop":"Belmont","time":"1020"}, {"stop":"Uyeasound","time":"1025"}, {"stop":"Baltasound","time":"1040"}, {"stop":"Haroldswick","time":"1050"}, {"stop":"Saxavord","time":"1055"}, {"stop":"Baltasound","time":"1100"} ] },
+        { "codes": ["Sch"], "calls": [ {"stop":"Baltasound JHS","time":"1540"}, {"stop":"Baltasound","time":"1545"}, {"stop":"Haroldswick","time":"1555"}, {"stop":"Saxavord","time":"1600"}, {"stop":"Baltasound","time":"1610"} ] },
+        { "codes": ["Sat"], "calls": [ {"stop":"Gutcher","time":"1550"}, {"stop":"Belmont","time":"1600"}, {"stop":"Uyeasound","time":"1610"}, {"stop":"Baltasound","time":"1620"}, {"stop":"Haroldswick","time":"1630"}, {"stop":"Saxavord","time":"1635"} ] },
+        { "codes": ["NSat"], "calls": [ {"stop":"Gutcher","time":"1630"}, {"stop":"Belmont","time":"1640"}, {"stop":"Uyeasound","time":"1650"}, {"stop":"Baltasound","time":"1700"}, {"stop":"Haroldswick","time":"1710"}, {"stop":"Saxavord","time":"1715"}, {"stop":"Baltasound","time":"1720"} ] },
+        { "codes": ["Sch", "F"], "calls": [ {"stop":"Belmont","time":"1750"}, {"stop":"Uyeasound","time":"1800"}, {"stop":"Baltasound","time":"1810"}, {"stop":"Haroldswick","time":"1820"}, {"stop":"Saxavord","time":"1825"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Belmont","time":"1910"}, {"stop":"Uyeasound","time":"1920"}, {"stop":"Baltasound","time":"1930"}, {"stop":"Haroldswick","time":"1940"}, {"stop":"Saxavord","time":"1945"} ] }
+      ]
+    },
+
+    {
+      "service": "81",
+      "name": "North Unst Shopper",
+      "direction": "inbound",
+      "dayGroup": "Wednesday",
+      "directionNote": "Burrafirth (north tip) to Baltasound; upper block",
+      "trips": [
+        { "codes": ["DAR", "W"], "calls": [ {"stop":"Burrafirth","time":"0930"}, {"stop":"Norwick","time":"0940"}, {"stop":"Haroldswick","time":"0950"}, {"stop":"Baltasound","time":"1005"} ] }
+      ]
+    },
+    {
+      "service": "81",
+      "name": "North Unst Shopper",
+      "direction": "outbound",
+      "dayGroup": "Wednesday",
+      "directionNote": "Baltasound to Burrafirth (north tip); lower block",
+      "trips": [
+        { "codes": ["DAR", "W"], "calls": [ {"stop":"Baltasound","time":"1055"}, {"stop":"Haroldswick","time":"1110"}, {"stop":"Norwick","time":"1120"}, {"stop":"Burrafirth","time":"1130"} ] }
+      ]
+    },
+
+    {
+      "service": "82",
+      "name": "South Unst Shopper",
+      "direction": "inbound",
+      "dayGroup": "Friday",
+      "directionNote": "Uyeasound to Baltasound; upper block",
+      "trips": [
+        { "codes": ["DAR", "F"], "calls": [ {"stop":"Uyeasound","time":"0930"}, {"stop":"Westing","time":"0940"}, {"stop":"Baltasound","time":"1000"} ] }
+      ]
+    },
+    {
+      "service": "82",
+      "name": "South Unst Shopper",
+      "direction": "outbound",
+      "dayGroup": "Friday",
+      "directionNote": "Baltasound to Uyeasound; lower block",
+      "trips": [
+        { "codes": ["DAR", "F"], "calls": [ {"stop":"Baltasound","time":"1100"}, {"stop":"Westing","time":"1120"}, {"stop":"Uyeasound","time":"1130"} ] }
+      ]
+    },
+
+    {
+      "service": "24Y",
+      "name": "Yell Service",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "Cullivoe (north) to Ulsta (Mainland ferry); upper block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Cullivoe","time":"0625"}, {"stop":"Gutcher","time":"0633"}, {"stop":"Sellafirth","time":"0638"}, {"stop":"Camb","time":"0643"}, {"stop":"Mid Yell Junction","time":"0645"}, {"stop":"West Sandwick","time":"0650"}, {"stop":"Ulsta","time":"0700"} ] },
+        { "codes": ["Sch"], "calls": [ {"stop":"Cullivoe","time":"0820"}, {"stop":"Gutcher","time":"0835"}, {"stop":"Sellafirth","time":"0838"}, {"stop":"Camb","time":"0843"}, {"stop":"Mid Yell Junction","time":"0845"}, {"stop":"Mid Yell School","time":"0850"} ] },
+        { "codes": [], "calls": [ {"stop":"Cullivoe","time":"1305"}, {"stop":"Gutcher","time":"1325"}, {"stop":"Sellafirth","time":"1328"}, {"stop":"Camb","time":"1333"}, {"stop":"Mid Yell Junction","time":"1335"}, {"stop":"West Sandwick","time":"1340"}, {"stop":"Ulsta","time":"1350"} ] },
+        { "codes": [], "calls": [ {"stop":"Cullivoe","time":"1640"}, {"stop":"Gutcher","time":"1700"}, {"stop":"Sellafirth","time":"1703"}, {"stop":"Camb","time":"1708"}, {"stop":"Mid Yell Junction","time":"1710"}, {"stop":"West Sandwick","time":"1715"}, {"stop":"Ulsta","time":"1725"} ] }
+      ]
+    },
+    {
+      "service": "24Y",
+      "name": "Yell Service",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Cullivoe (north) to Ulsta (Mainland ferry); upper block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Cullivoe","time":"0625"}, {"stop":"Gutcher","time":"0633"}, {"stop":"Sellafirth","time":"0638"}, {"stop":"Camb","time":"0643"}, {"stop":"Mid Yell Junction","time":"0645"}, {"stop":"West Sandwick","time":"0650"}, {"stop":"Ulsta","time":"0700"} ] },
+        { "codes": [], "calls": [ {"stop":"Cullivoe","time":"1040"}, {"stop":"Gutcher","time":"1055"}, {"stop":"Sellafirth","time":"1058"}, {"stop":"Camb","time":"1103"}, {"stop":"Mid Yell Junction","time":"1105"}, {"stop":"West Sandwick","time":"1110"}, {"stop":"Ulsta","time":"1120"} ] },
+        { "codes": [], "calls": [ {"stop":"Cullivoe","time":"1530"}, {"stop":"Gutcher","time":"1545"}, {"stop":"Sellafirth","time":"1548"}, {"stop":"Camb","time":"1553"}, {"stop":"Mid Yell Junction","time":"1555"}, {"stop":"West Sandwick","time":"1600"}, {"stop":"Ulsta","time":"1610"} ] },
+        { "codes": [], "calls": [ {"stop":"Cullivoe","time":"1640"}, {"stop":"Gutcher","time":"1655"}, {"stop":"Sellafirth","time":"1658"}, {"stop":"Camb","time":"1703"}, {"stop":"Mid Yell Junction","time":"1705"}, {"stop":"West Sandwick","time":"1710"}, {"stop":"Ulsta","time":"1720"} ] }
+      ]
+    },
+    {
+      "service": "24Y",
+      "name": "Yell Service",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "Ulsta (Mainland ferry) to Cullivoe (north); lower block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Ulsta","time":"0715"}, {"stop":"West Sandwick","time":"0725"}, {"stop":"Mid Yell Junction","time":"0730"}, {"stop":"Camb","time":"0732"}, {"stop":"Sellafirth","time":"0737"}, {"stop":"Gutcher","time":"0742"}, {"stop":"Cullivoe","time":"0757"} ] },
+        { "codes": [], "calls": [ {"stop":"Ulsta","time":"0935"}, {"stop":"West Sandwick","time":"0945"}, {"stop":"Mid Yell Junction","time":"0950"}, {"stop":"Camb","time":"0952"}, {"stop":"Sellafirth","time":"0957"}, {"stop":"Gutcher","time":"1002"}, {"stop":"Cullivoe","time":"1017"} ] },
+        { "codes": ["Sch", "F"], "calls": [ {"stop":"Mid Yell School","time":"1415"}, {"stop":"Mid Yell Junction","time":"1423"}, {"stop":"Camb","time":"1425"}, {"stop":"Sellafirth","time":"1430"}, {"stop":"Gutcher","time":"1435"}, {"stop":"Cullivoe","time":"1445"} ] },
+        { "codes": ["Sch", "NF"], "calls": [ {"stop":"Mid Yell School","time":"1555"}, {"stop":"Mid Yell Junction","time":"1603"}, {"stop":"Camb","time":"1605"}, {"stop":"Sellafirth","time":"1610"}, {"stop":"Gutcher","time":"1615"}, {"stop":"Cullivoe","time":"1625"} ] },
+        { "codes": ["DAR", "Sch", "F"], "calls": [ {"stop":"Mid Yell School","time":"1555"}, {"stop":"Mid Yell Junction","time":"1603"}, {"stop":"Camb","time":"1605"}, {"stop":"Sellafirth","time":"1610"}, {"stop":"Gutcher","time":"1615"}, {"stop":"Cullivoe","time":"1625"} ] },
+        { "codes": ["Sch", "F", "FERC"], "calls": [ {"stop":"Ulsta","time":"1710"}, {"stop":"West Sandwick","time":"1720"}, {"stop":"Mid Yell Junction","time":"1725"}, {"stop":"Camb","time":"1727"}, {"stop":"Sellafirth","time":"1732"}, {"stop":"Gutcher","time":"1737"}, {"stop":"Cullivoe","time":"1752"} ] },
+        { "codes": ["FERC"], "calls": [ {"stop":"Ulsta","time":"1820"}, {"stop":"West Sandwick","time":"1830"}, {"stop":"Mid Yell Junction","time":"1835"}, {"stop":"Camb","time":"1837"}, {"stop":"Sellafirth","time":"1842"}, {"stop":"Gutcher","time":"1847"}, {"stop":"Cullivoe","time":"1902"} ] }
+      ]
+    },
+    {
+      "service": "24Y",
+      "name": "Yell Service",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Ulsta (Mainland ferry) to Cullivoe (north); lower block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Ulsta","time":"0715"}, {"stop":"West Sandwick","time":"0725"}, {"stop":"Mid Yell Junction","time":"0730"}, {"stop":"Camb","time":"0732"}, {"stop":"Sellafirth","time":"0737"}, {"stop":"Gutcher","time":"0742"}, {"stop":"Cullivoe","time":"0757"} ] },
+        { "codes": [], "calls": [ {"stop":"Ulsta","time":"0915"}, {"stop":"West Sandwick","time":"0925"}, {"stop":"Mid Yell Junction","time":"0930"}, {"stop":"Camb","time":"0932"}, {"stop":"Sellafirth","time":"0937"}, {"stop":"Gutcher","time":"0942"}, {"stop":"Cullivoe","time":"0957"} ] },
+        { "codes": ["FERC"], "calls": [ {"stop":"Ulsta","time":"1820"}, {"stop":"West Sandwick","time":"1830"}, {"stop":"Mid Yell Junction","time":"1835"}, {"stop":"Camb","time":"1837"}, {"stop":"Sellafirth","time":"1842"}, {"stop":"Gutcher","time":"1847"}, {"stop":"Cullivoe","time":"1902"} ] }
+      ]
+    },
+
+    {
+      "service": "71",
+      "name": "North Yell Service",
+      "direction": "inbound",
+      "dayGroup": "Thursday/Monday",
+      "directionNote": "Cullivoe to Mid Yell; upper block. Column 1 runs Thursdays (Th), column 2 runs Mondays (M)",
+      "trips": [
+        { "codes": ["DAR", "Th"], "calls": [ {"stop":"Cullivoe","time":"1040"}, {"stop":"Gutcher","time":"1045"}, {"stop":"Camb","time":"1055"}, {"stop":"Mid Yell","time":"1100"} ] },
+        { "codes": ["DAR", "M"], "calls": [ {"stop":"Cullivoe","time":"1110"}, {"stop":"Gutcher","time":"1115"}, {"stop":"Camb","time":"1125"}, {"stop":"Mid Yell","time":"1130"} ] }
+      ]
+    },
+    {
+      "service": "71",
+      "name": "North Yell Service",
+      "direction": "outbound",
+      "dayGroup": "Thursday/Monday",
+      "directionNote": "Mid Yell to Cullivoe; lower block. Column 1 runs Thursdays (Th), column 2 runs Mondays (M)",
+      "trips": [
+        { "codes": ["DAR", "Th"], "calls": [ {"stop":"Mid Yell","time":"1130"}, {"stop":"Camb","time":"1135"}, {"stop":"Gutcher","time":"1145"}, {"stop":"Cullivoe","time":"1150"} ] },
+        { "codes": ["DAR", "M"], "calls": [ {"stop":"Mid Yell","time":"1210"}, {"stop":"Camb","time":"1220"}, {"stop":"Gutcher","time":"1225"}, {"stop":"Cullivoe","time":"1230"} ] }
+      ]
+    },
+
+    {
+      "service": "29",
+      "name": "Fetlar Service",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "Funzie to Hamars Ness (ferry terminal); upper block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Funzie","time":"0730"}, {"stop":"Houbie","time":"0740"}, {"stop":"Hamars Ness","time":"0755"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Funzie","time":"1020"}, {"stop":"Houbie","time":"1030"}, {"stop":"Hamars Ness","time":"1045"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Funzie","time":"1610"}, {"stop":"Houbie","time":"1620"}, {"stop":"Hamars Ness","time":"1635"} ] }
+      ]
+    },
+    {
+      "service": "29",
+      "name": "Fetlar Service",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Funzie to Hamars Ness (ferry terminal); upper block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Funzie","time":"0730"}, {"stop":"Houbie","time":"0740"}, {"stop":"Hamars Ness","time":"0755"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Funzie","time":"1020"}, {"stop":"Houbie","time":"1030"}, {"stop":"Hamars Ness","time":"1045"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Funzie","time":"1600"}, {"stop":"Houbie","time":"1610"}, {"stop":"Hamars Ness","time":"1625"} ] }
+      ]
+    },
+    {
+      "service": "29",
+      "name": "Fetlar Service",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "Hamars Ness (ferry terminal) to Funzie; lower block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"0755"}, {"stop":"Houbie","time":"0810"}, {"stop":"Funzie","time":"0820"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"1050"}, {"stop":"Houbie","time":"1105"}, {"stop":"Funzie","time":"1115"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"1640"}, {"stop":"Houbie","time":"1655"}, {"stop":"Funzie","time":"1705"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"1935"}, {"stop":"Houbie","time":"1950"}, {"stop":"Funzie","time":"2000"} ] }
+      ]
+    },
+    {
+      "service": "29",
+      "name": "Fetlar Service",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Hamars Ness (ferry terminal) to Funzie; lower block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"0755"}, {"stop":"Houbie","time":"0810"}, {"stop":"Funzie","time":"0820"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"1050"}, {"stop":"Houbie","time":"1105"}, {"stop":"Funzie","time":"1115"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"1630"}, {"stop":"Houbie","time":"1645"}, {"stop":"Funzie","time":"1655"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Hamars Ness","time":"1930"}, {"stop":"Houbie","time":"1945"}, {"stop":"Funzie","time":"1955"} ] }
+      ]
+    },
+
+    {
+      "service": "30",
+      "name": "East Yell Service",
+      "direction": "inbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "West Sandwick / Mid Yell School to Ulsta (Mainland ferry); upper block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Mid Yell School","time":"0625"}, {"stop":"Aywick","time":"0635"}, {"stop":"Burravoe","time":"0650"}, {"stop":"Ulsta","time":"0700"} ] },
+        { "codes": ["Sch"], "calls": [ {"stop":"West Sandwick","time":"0820"}, {"stop":"Mid Yell School","time":"0835"}, {"stop":"Aywick","time":"0845"}, {"stop":"Burravoe","time":"0900"}, {"stop":"Ulsta","time":"0910"} ] },
+        { "codes": ["NSch"], "calls": [ {"stop":"Mid Yell School","time":"0835"}, {"stop":"Aywick","time":"0845"}, {"stop":"Burravoe","time":"0900"}, {"stop":"Ulsta","time":"0910"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Mid Yell School","time":"1205"}, {"stop":"Aywick","time":"1215"}, {"stop":"Burravoe","time":"1230"}, {"stop":"Ulsta","time":"1240"} ] },
+        { "codes": ["DAR", "NF"], "calls": [ {"stop":"Mid Yell School","time":"1655"}, {"stop":"Aywick","time":"1705"}, {"stop":"Burravoe","time":"1720"}, {"stop":"Ulsta","time":"1730"} ] }
+      ]
+    },
+    {
+      "service": "30",
+      "name": "East Yell Service",
+      "direction": "inbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Mid Yell School to Ulsta (Mainland ferry); upper block",
+      "trips": [
+        { "codes": ["DAR"], "calls": [ {"stop":"Mid Yell School","time":"0625"}, {"stop":"Aywick","time":"0635"}, {"stop":"Burravoe","time":"0650"}, {"stop":"Ulsta","time":"0700"} ] },
+        { "codes": [], "calls": [ {"stop":"Mid Yell School","time":"0835"}, {"stop":"Aywick","time":"0845"}, {"stop":"Burravoe","time":"0900"}, {"stop":"Ulsta","time":"0910"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Mid Yell School","time":"1555"}, {"stop":"Aywick","time":"1605"}, {"stop":"Burravoe","time":"1620"}, {"stop":"Ulsta","time":"1630"} ] }
+      ]
+    },
+    {
+      "service": "30",
+      "name": "East Yell Service",
+      "direction": "outbound",
+      "dayGroup": "Monday-Friday",
+      "directionNote": "Ulsta (Mainland ferry) to Mid Yell School / West Sandwick; lower block",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Ulsta","time":"0940"}, {"stop":"Burravoe","time":"0950"}, {"stop":"Aywick","time":"1005"}, {"stop":"Mid Yell School","time":"1015"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Ulsta","time":"1245"}, {"stop":"Burravoe","time":"1255"}, {"stop":"Aywick","time":"1310"}, {"stop":"Mid Yell School","time":"1320"} ] },
+        { "codes": ["Sch", "F"], "calls": [ {"stop":"Mid Yell School","time":"1410"}, {"stop":"West Sandwick","time":"1435"} ] },
+        { "codes": ["Sch", "NF"], "calls": [ {"stop":"Mid Yell School","time":"1550"}, {"stop":"West Sandwick","time":"1615"} ] },
+        { "codes": ["DAR", "Sch", "F"], "calls": [ {"stop":"Mid Yell School","time":"1550"}, {"stop":"West Sandwick","time":"1615"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Ulsta","time":"1550"}, {"stop":"Burravoe","time":"1600"}, {"stop":"Aywick","time":"1615"}, {"stop":"Mid Yell School","time":"1625"} ] },
+        { "codes": ["DAR", "F"], "calls": [ {"stop":"Ulsta","time":"1710"}, {"stop":"Burravoe","time":"1720"}, {"stop":"Aywick","time":"1735"}, {"stop":"Mid Yell School","time":"1745"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Ulsta","time":"1820"}, {"stop":"Burravoe","time":"1830"}, {"stop":"Aywick","time":"1845"}, {"stop":"Mid Yell School","time":"1855"} ] }
+      ]
+    },
+    {
+      "service": "30",
+      "name": "East Yell Service",
+      "direction": "outbound",
+      "dayGroup": "Saturday",
+      "directionNote": "Ulsta (Mainland ferry) to Mid Yell School; lower block",
+      "trips": [
+        { "codes": [], "calls": [ {"stop":"Ulsta","time":"0915"}, {"stop":"Burravoe","time":"0925"}, {"stop":"Aywick","time":"0940"}, {"stop":"Mid Yell School","time":"0950"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Ulsta","time":"1520"}, {"stop":"Burravoe","time":"1530"}, {"stop":"Aywick","time":"1545"}, {"stop":"Mid Yell School","time":"1555"} ] },
+        { "codes": ["DAR"], "calls": [ {"stop":"Ulsta","time":"1820"}, {"stop":"Burravoe","time":"1830"}, {"stop":"Aywick","time":"1845"}, {"stop":"Mid Yell School","time":"1855"} ] }
+      ]
+    }
+  ]
+}

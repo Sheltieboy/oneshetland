@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import { logCompliance } from '@/lib/compliance';
+import { track } from '@/lib/analytics';
 import { supabase } from '@/lib/supabase';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { FormScrollView } from '@/components/ui/FormScrollView';
@@ -85,6 +86,8 @@ export default function ApplyDriverScreen() {
       alert({ title: 'Could not submit application', message: msg });
       return;
     }
+
+    track('driver_application_submitted', {});
 
     // Log compliance — driver terms accepted at point of application
     logCompliance({ eventType: 'driver.terms_accepted', documentVersion: '1.0', description: 'Accepted Fetch driver terms at application', metadata: { screen: 'apply-driver' } });

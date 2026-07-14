@@ -9,7 +9,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import DisplayText from '@/components/DisplayText';
-import { getCruiseDay, baro, fmtTime, fmtDateLong, hoursAshore, type CruiseDay, type CruiseVisit } from '@/lib/cruise-api';
+import { getCruiseDay, baro, fmtTime, fmtDateLong, hoursAshore, peakWindow, type CruiseDay, type CruiseVisit } from '@/lib/cruise-api';
 import { CruiseDayTimeline } from '@/components/cruise/CruiseDayTimeline';
 
 const ACCENT = '#0E6E8C';
@@ -43,11 +43,13 @@ export default function CruiseDayScreen() {
   const departures = visits.map((v) => v.departure_at).filter(Boolean) as string[];
   const firstIn = arrivals.length ? arrivals.slice().sort()[0] : null;
   const lastOut = departures.length ? departures.slice().sort().slice(-1)[0] : null;
-  const berths = new Set(visits.map((v) => v.berth_area_group).filter(Boolean)).size;
+  const berths = [...new Set(visits.map((v) => v.berth_area_group).filter(Boolean))] as string[];
+  const anyTender = visits.some((v) => v.is_tender);
+  const peak = busy ? peakWindow(visits) : null;
   const chips: { label: string; value: string }[] = [
     ...(firstIn ? [{ label: 'First in', value: fmtTime(firstIn) }] : []),
     ...(lastOut ? [{ label: 'Last out', value: fmtTime(lastOut) }] : []),
-    ...(berths ? [{ label: berths === 1 ? 'Berth area' : 'Berth areas', value: String(berths) }] : []),
+    ...(berths.length ? [{ label: berths.length === 1 ? 'Berth' : 'Berths', value: berths.join(', ') }] : []),
   ];
 
   return (
@@ -77,7 +79,14 @@ export default function CruiseDayScreen() {
         </View>
 
         {busy ? (
-          <View style={styles.heads}><Text style={styles.headsText}>Lerwick town centre and the waterfront will be busy with visitors, roughly 9am–5pm.</Text></View>
+          <View style={styles.heads}>
+            <Text style={styles.headsTitle}>Plan for extra footfall{peak ? ` ~${peak.label}` : ' through the day'}</Text>
+            <Text style={styles.headsText}>
+              Town and the waterfront will be busy with visitors — worth having extra hands on, more stock out, and the kettle on.
+              {berths.length > 0 ? ` Ships berth at ${berths.join(' and ')}.` : ''}
+              {anyTender ? ' Some come ashore by tender, so folk arrive in waves.' : ''}
+            </Text>
+          </View>
         ) : null}
 
         {chips.length > 0 && (
@@ -147,6 +156,7 @@ const styles = StyleSheet.create({
   bannerMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
 
   heads: { backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 12, marginTop: 10 },
+  headsTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: 3 },
   headsText: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
 
   chipRow: { flexDirection: 'row', gap: 8, marginTop: 10 },

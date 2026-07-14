@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { getConfig } from '../_shared/admin-config.ts';
+import { getConfig, getAddonPrice } from '../_shared/admin-config.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,9 +73,9 @@ serve(async (req) => {
       return json({ extras, billed: false });
     }
 
-    const addonPrice = await getConfig(svc, 'stripe.price.local_addon', Deno.env.get('STRIPE_PRICE_LOCAL_ADDON') ?? null);
+    const addonPrice = await getAddonPrice(svc, 'stripe.price.local_addon', Deno.env.get('STRIPE_PRICE_LOCAL_ADDON') ?? Deno.env.get('STRIPE_PRICE_ADDON') ?? null);
     if (!addonPrice) {
-      return json({ error: 'Add-on price not configured. Set stripe.price.local_addon in Admin → Config.' }, 500);
+      return json({ error: 'Add-on price not configured. Set stripe.price.addon in Admin → Config.' }, 500);
     }
 
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {

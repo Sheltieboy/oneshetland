@@ -20,6 +20,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
+import { getAnalyticsConsent, setAnalyticsConsent } from '@/lib/analytics';
 import {
   fetchPreferences, updatePreferences, NOTIFICATION_GROUPS, modulesInGroup,
   type NotificationPreferences, type ModuleInfo,
@@ -35,6 +36,13 @@ export default function NotificationPreferencesScreen() {
   const [showStart, setShowStart] = useState(false);
   const [showEnd, setShowEnd]     = useState(false);
   const [expanded, setExpanded]   = useState<Record<string, boolean>>({});
+  const [analyticsOn, setAnalyticsOn] = useState(getAnalyticsConsent());
+
+  const toggleAnalytics = async (v: boolean) => {
+    Haptics.selectionAsync();
+    setAnalyticsOn(v);
+    await setAnalyticsConsent(v);
+  };
 
   const load = useCallback(async () => {
     if (!profile) { setLoading(false); return; }
@@ -260,6 +268,31 @@ export default function NotificationPreferencesScreen() {
               )}
             </>
           )}
+        </View>
+
+        {/* ── Privacy ── */}
+        <View style={styles.sectionLabelWrap}>
+          <Text style={styles.sectionLabel}>Privacy</Text>
+          <Text style={styles.sectionHint}>
+            Control what usage data OneShetland collects.
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={[styles.iconWrap, { backgroundColor: colors.navy + '14' }]}>
+              <FontAwesome5 name="chart-bar" size={13} color={colors.navy} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Share anonymous usage data</Text>
+              <Text style={styles.rowSub}>Helps us improve OneShetland. No ads, never sold.</Text>
+            </View>
+            <Switch
+              value={analyticsOn}
+              onValueChange={toggleAnalytics}
+              trackColor={{ false: colors.border, true: colors.navy }}
+            />
+          </View>
         </View>
 
         <Text style={styles.footnote}>
