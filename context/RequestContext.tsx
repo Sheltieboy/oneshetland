@@ -22,6 +22,7 @@ export interface RequestFormData {
   liabilityAcknowledged: boolean;
   schedulingMode: 'asap' | 'by' | 'flexible';
   neededBy: string | null; // ISO, only when schedulingMode === 'by'
+  caughtRunId: string | null; // set if the customer "catches" a specific run
 }
 
 const initialData: RequestFormData = {
@@ -46,6 +47,7 @@ const initialData: RequestFormData = {
   liabilityAcknowledged: false,
   schedulingMode: 'asap',
   neededBy: null,
+  caughtRunId: null,
 };
 
 interface RequestContextType {

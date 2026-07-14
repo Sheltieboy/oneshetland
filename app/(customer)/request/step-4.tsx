@@ -224,6 +224,7 @@ export default function Step4ReviewScreen() {
       // Race the insert against a 12-second timeout so we never hang silently
       const insertPromise = supabase.from('delivery_requests').insert({
         customer_id: profile.id,
+        run_id: formData.caughtRunId,
         category_slug: formData.categorySlug,
         pickup_name: formData.pickupName,
         pickup_location: formData.pickupLocation,

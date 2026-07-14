@@ -328,6 +328,7 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
   const visiblePending = openRunsForMatch.length > 0
     ? pendingRequests.filter((req) => openRunsForMatch.some((run) => runCoversRequest(run, req)))
     : pendingRequests;
+  const matchedFees = visiblePending.reduce((s, r) => s + (r.base_fee_pence ?? 0), 0);
 
   return (
     <ScreenScaffold embedded={embedded}>
@@ -630,7 +631,7 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
               {!isBankConnected
                 ? 'Connect your bank account to start accepting requests.'
                 : openRunsForMatch.length > 0
-                  ? 'Requests heading the same way as one of your runs.'
+                  ? `Fill your run with deliveries heading the same way${matchedFees > 0 ? ` — £${(matchedFees / 100).toFixed(2)} in fees to add.` : '.'}`
                   : 'Accepting a request starts a run to carry it — then you can add more along the way.'}
             </Text>
             {loadingPending ? (

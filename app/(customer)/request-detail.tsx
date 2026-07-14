@@ -114,6 +114,7 @@ export default function RequestDetailScreen() {
   const [liveWaitingFee, setLiveWaitingFee] = useState(0);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [extending, setExtending] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -235,6 +236,19 @@ export default function RequestDetailScreen() {
     ? Math.max(0, GRACE_SECS - (Date.now() - arrivedAt.getTime()) / 1000)
     : 0;
   const inGrace = graceRemaining > 0;
+
+  async function handleExtend() {
+    if (!request) return;
+    setExtending(true);
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await supabase
+      .from('delivery_requests')
+      .update({ expires_at: expires, reminder_sent_at: null })
+      .eq('id', id).eq('status', 'pending');
+    setExtending(false);
+    if (error) { alert({ title: 'Error', message: 'Could not extend. Please try again.' }); return; }
+    alert({ title: 'Kept open', message: "We'll keep looking for a driver for another day." });
+  }
 
   async function handleCancel() {
     if (!request) return;
@@ -490,6 +504,19 @@ export default function RequestDetailScreen() {
               <DetailRow label="Notes" value={request.delivery_notes} />
             )}
           </Card>
+
+          {/* ── Keep looking (still waiting for a driver) ── */}
+          {request.status === 'pending' && (
+            <Button
+              label={extending ? 'Extending…' : 'Keep looking · +24h'}
+              onPress={handleExtend}
+              loading={extending}
+              variant="secondary"
+              size="md"
+              fullWidth
+              style={styles.cancelBtn}
+            />
+          )}
 
           {/* ── Cancel request ── */}
           {(request.status === 'pending' || request.status === 'matched') && (

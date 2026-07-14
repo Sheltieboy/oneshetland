@@ -63,7 +63,7 @@ serve(async (req) => {
     // can resolve the assigned driver on cancellation)
     const { data: request } = await supabase
       .from('delivery_requests')
-      .select('category_slug, pickup_name, destination_area, destination_address, base_fee_pence, run_id')
+      .select('category_slug, pickup_name, destination_area, destination_address, base_fee_pence, run_id, destination_region_id, needed_by')
       .eq('id', request_id)
       .single();
 
@@ -110,40 +110,64 @@ serve(async (req) => {
       });
     }
 
-    // ── New request: fan out to all approved drivers ──
-    // Fetch IDs of all approved drivers
-    const { data: approvedDrivers } = await supabase
-      .from('driver_profiles')
-      .select('id')
-      .eq('driver_status', 'approved');
+    const json200 = (b: unknown) =>
+      new Response(JSON.stringify(b), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    if (!approvedDrivers?.length) {
-      return new Response(JSON.stringify({ sent: 0 }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const feeLabel = request.base_fee_pence ? ` — £${(request.base_fee_pence / 100).toFixed(2)}` : '';
+    const body = `${request.pickup_name ?? request.category_slug} → ${destination}${feeLabel}`;
+    const nowIso = new Date().toISOString();
+
+    // ── New request: route-targeted, not a blanket broadcast ──
+    // 1) If the customer caught a SPECIFIC run, tell only that run's driver.
+    if (request.run_id) {
+      const { data: run } = await supabase.from('runs').select('driver_id').eq('id', request.run_id).maybeSingle();
+      if (run?.driver_id) {
+        await sendUserPush(supabase, {
+          userId: run.driver_id, module: 'fetch', categoryId: 'fetch.request_on_route',
+          title: 'A request for your run 🧭', body, data: { request_id },
+        });
+        return json200({ sent: 1, targeted: 'run' });
+      }
     }
 
-    const driverIds = approvedDrivers.map((d) => d.id);
+    // 2) Otherwise notify drivers whose OPEN run fits this route (region +
+    //    category + timing). Fall back to all approved drivers only if none
+    //    match — so a request without a matching run is still seen/actionable.
+    let driverIds: string[] = [];
+    let onRoute = false;
+    if (request.destination_region_id) {
+      const { data: matchRuns } = await supabase
+        .from('runs')
+        .select('driver_id, departure_start, categories_accepted')
+        .eq('status', 'open')
+        .eq('destination_region_id', request.destination_region_id)
+        .gte('departure_end', nowIso);
+      const set = new Set<string>();
+      for (const r of matchRuns ?? []) {
+        const catOk = Array.isArray(r.categories_accepted) && r.categories_accepted.includes(request.category_slug);
+        const timeOk = !request.needed_by || new Date(request.needed_by) >= new Date(r.departure_start);
+        if (catOk && timeOk && r.driver_id) set.add(r.driver_id as string);
+      }
+      driverIds = [...set];
+      onRoute = driverIds.length > 0;
+    }
 
-    const feeLabel = request.base_fee_pence
-      ? ` — £${(request.base_fee_pence / 100).toFixed(2)}`
-      : '';
-    const body = `${request.pickup_name ?? request.category_slug} → ${destination}${feeLabel}`;
+    if (!onRoute) {
+      const { data: approvedDrivers } = await supabase
+        .from('driver_profiles').select('id').eq('driver_status', 'approved');
+      driverIds = (approvedDrivers ?? []).map((d) => d.id as string);
+    }
+    if (driverIds.length === 0) return json200({ sent: 0 });
 
-    // Send to all approved drivers — the helper honours each driver's
-    // notification preferences / quiet hours and resolves their push token.
     await sendUserPushBulk(supabase, driverIds, {
       module:     'fetch',
-      categoryId: 'fetch.new_request',
-      title:      'New delivery request 📬',
+      categoryId: onRoute ? 'fetch.request_on_route' : 'fetch.new_request',
+      title:      onRoute ? 'A request on your route 🧭' : 'New delivery request 📬',
       body,
       data:       { request_id },
     });
 
-    return new Response(
-      JSON.stringify({ sent: approvedDrivers.length }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+    return json200({ sent: driverIds.length, targeted: onRoute ? 'route' : 'all' });
 
   } catch (err) {
     console.error('[notify-drivers]', err);

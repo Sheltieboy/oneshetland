@@ -48,7 +48,34 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_expired: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0 };
+
+    // ── Fetch: nudge the customer shortly BEFORE a request expires ───────────
+    // Still pending, not yet reminded, expiring within the next ~2 hours. One
+    // nudge per request (reminder_sent_at), so they can extend or cancel before
+    // it silently lapses.
+    const soonIso = new Date(now.getTime() + 2 * 60 * 60_000).toISOString();
+    const { data: expiringReq } = await svc
+      .from('delivery_requests')
+      .select('id, customer_id, category_slug')
+      .eq('status', 'pending')
+      .is('reminder_sent_at', null)
+      .not('expires_at', 'is', null)
+      .gt('expires_at', nowIso)
+      .lt('expires_at', soonIso)
+      .limit(200);
+    for (const r of expiringReq ?? []) {
+      await sendUserPush(svc, {
+        userId:     r.customer_id,
+        module:     'fetch',
+        categoryId: 'fetch.expiring',
+        title:      'Still need this delivery?',
+        body:       `No driver has taken your ${r.category_slug ?? 'delivery'} yet. Tap to keep looking or cancel.`,
+        data:       { request_id: r.id, event: 'expiring' },
+      });
+      await svc.from('delivery_requests').update({ reminder_sent_at: nowIso }).eq('id', r.id);
+      result.fetch_reminded++;
+    }
 
     // ── Fetch: expire unmatched delivery requests ────────────────────────────
     // A pending request past its expires_at (set from the customer's "when")

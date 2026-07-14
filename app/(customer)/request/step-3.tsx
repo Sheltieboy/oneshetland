@@ -49,6 +49,7 @@ export default function RequestStep3() {
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [showRegionPicker, setShowRegionPicker] = useState(false);
+  const [matchingRuns, setMatchingRuns] = useState<{ id: string; departure_start: string; origin: { name: string } | null; destination: { name: string } | null }[]>([]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -59,6 +60,28 @@ export default function RequestStep3() {
       .order('created_at', { ascending: false })
       .then(({ data }) => setSavedAddresses((data as SavedAddress[]) ?? []));
   }, [profile?.id]);
+
+  // "Catch a run" — open runs already heading to the chosen area (right category + timing).
+  useEffect(() => {
+    if (!formData.destinationRegionSlug || !formData.categorySlug) { setMatchingRuns([]); return; }
+    let alive = true;
+    (async () => {
+      const { data: reg } = await supabase.from('regions').select('id').eq('slug', formData.destinationRegionSlug).maybeSingle();
+      if (!alive || !reg?.id) { if (alive) setMatchingRuns([]); return; }
+      const { data } = await supabase.from('runs')
+        .select('id, departure_start, categories_accepted, origin:origin_region_id(name), destination:destination_region_id(name)')
+        .eq('status', 'open').eq('destination_region_id', reg.id)
+        .gte('departure_end', new Date().toISOString())
+        .order('departure_start', { ascending: true });
+      if (!alive) return;
+      const nb = formData.schedulingMode === 'by' && formData.neededBy ? new Date(formData.neededBy) : null;
+      const runs = ((data ?? []) as unknown as { id: string; departure_start: string; categories_accepted: string[] | null; origin: { name: string } | null; destination: { name: string } | null }[])
+        .filter((r) => (r.categories_accepted ?? []).includes(formData.categorySlug) && (!nb || nb >= new Date(r.departure_start)));
+      setMatchingRuns(runs);
+      if (!runs.some((r) => r.id === formData.caughtRunId)) update({ caughtRunId: null });
+    })();
+    return () => { alive = false; };
+  }, [formData.destinationRegionSlug, formData.categorySlug, formData.schedulingMode, formData.neededBy]);
 
   function applySavedAddress(addr: SavedAddress) {
     const fullAddress = addr.postcode
@@ -243,6 +266,27 @@ export default function RequestStep3() {
             })}
           </View>
         </View>
+
+        {/* Catch a run — attach to a driver already heading there */}
+        {matchingRuns.length > 0 && (
+          <View style={{ marginBottom: spacing.sm }}>
+            <Text style={styles.fieldLabel}>Catch a run</Text>
+            <Text style={styles.fieldHint}>A driver&apos;s already heading there — attach for a faster match (optional)</Text>
+            {matchingRuns.map((r) => {
+              const on = formData.caughtRunId === r.id;
+              return (
+                <Pressable key={r.id} onPress={() => { haptic.select(); update({ caughtRunId: on ? null : r.id }); }}
+                  style={[styles.runOption, on && styles.runOptionOn]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.runOptionTitle}>{r.origin?.name ?? 'Lerwick'} → {r.destination?.name ?? ''}</Text>
+                    <Text style={styles.runOptionSub}>{new Date(r.departure_start).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
+                  </View>
+                  <Text style={[styles.runOptionAction, on && { color: colors.accent }]}>{on ? '✓ On this run' : 'Catch it'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
         {/* Region picker modal */}
         <Modal visible={showRegionPicker} animationType="slide" presentationStyle="pageSheet">
@@ -443,6 +487,16 @@ const styles = StyleSheet.create({
   whenChipOn: { borderColor: colors.accent, backgroundColor: colors.accentLight },
   whenChipText: { fontSize: fontSize.sm, fontWeight: '600', color: colors.textMuted },
   whenChipTextOn: { color: colors.accent },
+
+  runOption: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.white,
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: 10, marginTop: 6,
+  },
+  runOptionOn: { borderColor: colors.accent, backgroundColor: colors.accentLight },
+  runOptionTitle: { fontSize: fontSize.sm, fontWeight: '700', color: colors.navy },
+  runOptionSub: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
+  runOptionAction: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textLight },
 });
 
 const modal = StyleSheet.create({
