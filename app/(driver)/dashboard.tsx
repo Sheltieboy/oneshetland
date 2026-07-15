@@ -31,6 +31,8 @@ interface Run {
   id: string;
   origin_region_id: string | null;
   destination_region_id: string | null;
+  origin: { name: string } | null;
+  destination: { name: string } | null;
   departure_start: string;
   departure_end: string;
   status: string;
@@ -126,7 +128,7 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
     const [driverRes, runsRes, pendingRes, matchedRes] = await Promise.all([
       supabase.from('driver_profiles').select('*').eq('id', profile.id).single(),
       supabase.from('runs')
-        .select('id, origin_region_id, destination_region_id, departure_start, departure_end, status, ferry_crossing, notes, categories_accepted')
+        .select('id, origin_region_id, destination_region_id, origin:origin_region_id(name), destination:destination_region_id(name), departure_start, departure_end, status, ferry_crossing, notes, categories_accepted')
         .eq('driver_id', profile.id).gte('departure_end', now).order('departure_start', { ascending: true }),
       supabase.from('delivery_requests')
         .select('id, category_slug, pickup_name, pickup_location, destination_region_id, destination_area, destination_address, already_paid, ready_for_collection, created_at, base_fee_pence, needed_by')
@@ -136,7 +138,7 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
         .in('status', ['matched', 'collected']).eq('runs.driver_id', profile.id).order('created_at', { ascending: false }),
     ]);
     setDriverProfile(driverRes.data as DriverProfile | null);
-    setRuns((runsRes.data as Run[]) ?? []);
+    setRuns((runsRes.data as unknown as Run[]) ?? []);
     setPendingRequests((pendingRes.data as PendingRequest[]) ?? []);
     setMatchedRequests((matchedRes.data as MatchedRequest[]) ?? []);
     setLoadingDriver(false);
@@ -195,6 +197,8 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
                 id: newRun.id,
                 origin_region_id: null,
                 destination_region_id: req?.destination_region_id ?? null,
+                origin: null,
+                destination: destination ? { name: destination } : null,
                 departure_start: now.toISOString(),
                 departure_end: threeHoursLater.toISOString(),
                 status: 'open',
@@ -277,6 +281,25 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
       body: JSON.stringify({ request_id: requestId }),
     }).catch(() => {/* non-fatal */});
+  }
+
+  function confirmCancelRun(runId: string) {
+    alert({
+      title: 'Cancel run?',
+      message: "This removes the run. Requests you caught but haven't started go back to the pool.",
+      actions: [
+        { label: 'Keep run', style: 'cancel' },
+        {
+          label: 'Yes, cancel run',
+          style: 'destructive',
+          onPress: async () => {
+            await supabase.from('runs').update({ status: 'cancelled' }).eq('id', runId).eq('status', 'open');
+            await supabase.from('delivery_requests').update({ run_id: null }).eq('run_id', runId).eq('status', 'pending');
+            fetchData();
+          },
+        },
+      ],
+    });
   }
 
   async function acceptRequest(requestId: string, runId: string) {
@@ -528,8 +551,8 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
                 : start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
               const timeRange = `${start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
               const noteLines = (run.notes ?? '').split('\n');
-              const originLine = noteLines.find((l) => l.startsWith('Origin:'))?.replace('Origin: ', '') ?? 'Lerwick';
-              const destLine = noteLines.find((l) => l.startsWith('Destination:'))?.replace('Destination: ', '') ?? '—';
+              const originLine = run.origin?.name ?? noteLines.find((l) => l.startsWith('Origin:'))?.replace('Origin: ', '') ?? 'Lerwick';
+              const destLine = run.destination?.name ?? noteLines.find((l) => l.startsWith('Destination:'))?.replace('Destination: ', '') ?? '—';
 
               const canCancel = run.status === 'open';
 
@@ -606,6 +629,15 @@ export default function DriverDashboard({ embedded = false }: { embedded?: boole
                   )}
                   <View style={styles.runStatusRow}>
                     <StatusBadge status={run.status} />
+                    {canCancel && (
+                      <Pressable
+                        onPress={() => { haptic.warning(); confirmCancelRun(run.id); }}
+                        hitSlop={8}
+                        style={({ pressed }) => [styles.runCancelBtn, pressed && { opacity: 0.6 }]}
+                      >
+                        <Text style={styles.runCancelText}>Cancel run</Text>
+                      </Pressable>
+                    )}
                   </View>
                 </Card>
               );
@@ -1072,7 +1104,9 @@ const styles = StyleSheet.create({
   },
   categoryText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '500' },
   categoryMore: { fontSize: fontSize.xs, color: colors.textLight, alignSelf: 'center' },
-  runStatusRow: { alignItems: 'flex-start' },
+  runStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  runCancelBtn: { paddingVertical: 4, paddingHorizontal: 8 },
+  runCancelText: { fontSize: fontSize.sm, fontWeight: '700', color: '#DC2626' },
 
   // ── Pending / matched cards shared ──
   pendingCard: { marginBottom: spacing.sm },
