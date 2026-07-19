@@ -132,7 +132,10 @@ async function hubDonation(svc: any, userId: string, body: any): Promise<Respons
     p_title: ga?.title ?? null, p_first: ga?.first_name ?? null, p_last: ga?.last_name ?? null,
     p_address: ga?.address ?? null, p_postcode: ga?.postcode ?? null,
   });
-  if (rpcErr) console.error('[wallet-checkout] record_hub_donation failed (money moved):', rpcErr);
+  if (rpcErr) return await refundUnfulfilled(svc, {
+    userId, refundPence: amount, transferId, purpose: 'hub_donation',
+    recipientId: hub.id, detail: { campaign_id: campaignId }, cause: rpcErr,
+  });
 
   await svc.from('local_wallet_transactions').insert({
     user_id: userId, business_id: null, type: 'spend', amount_pence: -amount,
@@ -181,7 +184,10 @@ async function hubMembership(svc: any, userId: string, body: any): Promise<Respo
     p_hub: hub.id, p_user: userId, p_type: t.id, p_period: t.period,
     p_payment_pence: t.price_pence, p_pi: `wallet_${transferId}`,
   });
-  if (rpcErr) console.error('[wallet-checkout] activate_hub_membership failed (money moved):', rpcErr);
+  if (rpcErr) return await refundUnfulfilled(svc, {
+    userId, refundPence: debitTotal, transferId, purpose: 'hub_membership',
+    recipientId: hub.id, detail: { membership_type_id: t.id }, cause: rpcErr,
+  });
 
   await svc.from('local_wallet_transactions').insert({
     user_id: userId, business_id: null, type: 'spend', amount_pence: -debitTotal,
@@ -228,7 +234,10 @@ async function unitPurchase(svc: any, userId: string, body: any): Promise<Respon
     paid_amount_pence: item.price_pence, uses_remaining: item.uses_per_purchase,
     payment_intent_id: `wallet_${transferId}`, expires_at: expiresAt,
   }).select('id, uses_remaining, expires_at').single();
-  if (insErr) console.error('[wallet-checkout] unit purchase insert failed (money moved):', insErr);
+  if (insErr) return await refundUnfulfilled(svc, {
+    userId, refundPence: item.price_pence, transferId, purpose: 'unit_purchase',
+    recipientId: item.business_id, detail: { unit_item_id: item.id }, cause: insErr,
+  });
 
   await svc.from('local_wallet_transactions').insert({
     user_id: userId, business_id: biz.id, type: 'spend', amount_pence: -item.price_pence,
@@ -265,6 +274,62 @@ async function shiftBoost(svc: any, userId: string, body: any): Promise<Response
   });
 
   return json({ ok: true, balance_pence: newBalance, boosted_until: boostedUntil });
+}
+
+// Reverse a Stripe Connect transfer in full (used when a purchase's money moved
+// but the entitlement couldn't be granted). Idempotent on the transfer id.
+async function reverseTransfer(transferId: string): Promise<void> {
+  const res = await fetch(`https://api.stripe.com/v1/transfers/${transferId}/reversals`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Stripe-Version': STRIPE_API_VERSION,
+      'Idempotency-Key': `reverse_${transferId}`,
+    },
+    body: new URLSearchParams({ description: 'OneShetland: purchase could not be completed' }),
+  });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error?.message ?? `Transfer reversal failed (HTTP ${res.status})`);
+}
+
+/**
+ * The money moved (wallet debited + transfer sent) but granting the entitlement
+ * failed. Make the customer whole: reverse the transfer, refund the wallet, and
+ * record the outcome in failed_fulfilments so nothing is ever silently lost.
+ * Returns the Response to send the customer.
+ */
+async function refundUnfulfilled(svc: any, o: {
+  userId: string; refundPence: number; transferId: string | null;
+  purpose: string; recipientId: string | null; detail: Record<string, unknown>; cause: unknown;
+}): Promise<Response> {
+  let transferReversed = !o.transferId; // nothing to reverse counts as done
+  let walletRefunded = false;
+
+  if (o.transferId) {
+    try { await reverseTransfer(o.transferId); transferReversed = true; }
+    catch (e) { console.error(`[wallet-checkout] reverse transfer ${o.transferId} failed:`, e); }
+  }
+  try { await svc.rpc('wallet_credit', { p_user: o.userId, p_amount: o.refundPence }); walletRefunded = true; }
+  catch (e) { console.error('[wallet-checkout] wallet refund failed:', e); }
+
+  const fullyReversed = transferReversed && walletRefunded;
+  try {
+    await svc.from('failed_fulfilments').insert({
+      user_id: o.userId, purpose: o.purpose, recipient_id: o.recipientId,
+      amount_pence: o.refundPence, transfer_id: o.transferId,
+      transfer_reversed: transferReversed, wallet_refunded: walletRefunded,
+      resolved: fullyReversed,
+      error: String((o.cause as { message?: string })?.message ?? o.cause).slice(0, 500),
+      detail: o.detail,
+    });
+  } catch (e) { console.error('[wallet-checkout] failed_fulfilments insert failed:', e); }
+
+  return json({
+    error: fullyReversed
+      ? "Something went wrong completing your purchase, so we've refunded you in full — you haven't been charged. Please try again."
+      : "Something went wrong completing your purchase. We've been alerted and will make sure you're not left out of pocket — please contact us if anything looks off.",
+  }, 502);
 }
 
 // Stripe Connect transfer (raw fetch, no SDK — matches local-wallet-pay).
