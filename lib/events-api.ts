@@ -466,7 +466,10 @@ export async function fetchMyEventTickets(userId: string): Promise<EventTicket[]
       business:events(business:local_businesses(id, name, logo_url))
     `)
     .eq('holder_id', userId)
-    .in('status', ['valid', 'used', 'pending_payment'])
+    // Only PAID tickets ('valid'/'used'). 'pending_payment' rows are created the
+    // moment checkout starts, so including them showed tickets to a customer who
+    // backed out before paying.
+    .in('status', ['valid', 'used'])
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as any[];
