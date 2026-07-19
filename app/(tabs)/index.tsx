@@ -47,6 +47,7 @@ import { BrushAccent, BrushDivider } from '@/components/Brush';
 import { CruiseTodayCard } from '@/components/CruiseTodayCard';
 import { TodayAtAGlance } from '@/components/TodayAtAGlance';
 import { ShetlandTodayCard } from '@/components/ShetlandTodayCard';
+import { NearbyDealsTicker } from '@/components/NearbyDealsTicker';
 import { NotificationBell } from '@/components/NotificationBell';
 import { useAuth } from '@/context/AuthContext';
 
@@ -409,6 +410,9 @@ function HomeHeader({ name, spik, urgent, scrollY }: {
           </TouchableOpacity>
           <NotificationBell size={48} />
         </View>
+
+        {/* Deals near you — docked to the bottom of the header, opens a drawer. */}
+        <NearbyDealsTicker variant="onDark" style={{ marginTop: spacing.sm }} />
 
         {urgent ? (
           <TouchableOpacity style={[styles.urgentChip, { marginTop: spacing.sm, alignSelf: 'flex-start' }]} onPress={() => router.push('/(tabs)/whats-on')} activeOpacity={0.85}>
@@ -1496,6 +1500,11 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={[]}>
       <Stack.Screen options={{ headerShown: false }} />
 
+      {/* Oversized OneShetland ring watermark, bleeding off the edge behind everything */}
+      <View pointerEvents="none" style={styles.ringWatermark}>
+        <Image source={LOGO} style={styles.ringWatermarkImg} resizeMode="contain" />
+      </View>
+
       {/* Floating alert pill — absolute overlay, appears above hero */}
       {visibleAlert && (
         <AlertPill
@@ -1593,6 +1602,8 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container:  { flex: 1, backgroundColor: '#0a1628' },
+  ringWatermark: { position: 'absolute', width: 640, height: 640, right: -230, top: '20%', opacity: 0.1, zIndex: 0 },
+  ringWatermarkImg: { width: '100%', height: '100%' },
   scrollView: { flex: 1 },
   scroll:     { paddingBottom: spacing.xxl },
 
