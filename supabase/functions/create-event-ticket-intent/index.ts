@@ -15,9 +15,13 @@ function stripeHeaders(): HeadersInit {
   };
 }
 
-async function createPaymentIntent(params: Record<string, string>): Promise<any> {
+async function createPaymentIntent(params: Record<string, string>, idempotencyKey?: string): Promise<any> {
+  const headers: Record<string, string> = { ...stripeHeaders() };
+  // Idempotency-Key makes a retried create (lost response, double-tap) return the
+  // ORIGINAL PaymentIntent instead of charging the saved card a second time.
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const res = await fetch('https://api.stripe.com/v1/payment_intents', {
-    method: 'POST', headers: stripeHeaders(), body: new URLSearchParams(params),
+    method: 'POST', headers, body: new URLSearchParams(params),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error?.message ?? `Stripe PI failed (${res.status})`);
@@ -347,12 +351,15 @@ serve(async (req) => {
           payment_method: pmId,
           confirm:        'true',
           off_session:    'true',
-        });
+        }, `evt-order-${order.id}`);
 
         if (pi.status === 'succeeded') {
           await supabase.from('event_ticket_orders').update({ stripe_payment_intent_id: pi.id, status: 'paid', paid_at: new Date().toISOString() }).eq('id', order.id);
           await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
-          await supabase.from('events').update({ tickets_sold: event.tickets_sold + totalTickets }).eq('id', event_id);
+          // Use the atomic counter RPC — `event.tickets_sold` was never selected,
+          // so `event.tickets_sold + totalTickets` was NaN and the raw update
+          // failed AFTER the card was charged (500 → client retry → double charge).
+          try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
 
           return new Response(JSON.stringify({
             charged:    true,

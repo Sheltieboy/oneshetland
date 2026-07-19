@@ -58,6 +58,14 @@ serve(async (req) => {
 
     if (intent.metadata?.user_id !== user.id) return json({ error: 'Forbidden' }, 403);
     if (intent.status !== 'succeeded') return json({ error: 'Payment not completed' }, 400);
+    // CRITICAL: only a PaymentIntent that was actually created as a wallet top-up
+    // may be redeemed as wallet credit. Without this, any of the user's other
+    // succeeded card payments (a hub donation, membership, gift, ticket — which
+    // all stamp metadata.user_id and hand the PI id back to the client) could be
+    // replayed here to mint free wallet credit funded by the platform.
+    if (intent.metadata?.type !== 'local_wallet_topup') {
+      return json({ error: 'This payment is not a wallet top-up.' }, 400);
+    }
 
     // Amount comes from Stripe (server-verified), never the client.
     const amount = intent.amount;

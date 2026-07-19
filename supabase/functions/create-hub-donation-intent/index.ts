@@ -27,9 +27,13 @@ async function listSavedCard(customerId: string): Promise<string | null> {
   if (!res.ok) throw new Error(data.error?.message ?? `Stripe payment_methods list failed (HTTP ${res.status})`);
   return data.data?.[0]?.id ?? null;
 }
-async function createPaymentIntent(params: Record<string, string>): Promise<any> {
+async function createPaymentIntent(params: Record<string, string>, idempotencyKey?: string): Promise<any> {
+  const headers: Record<string, string> = { ...stripeHeaders() };
+  // Idempotency-Key makes a retried create (lost response, double-tap) return the
+  // ORIGINAL PaymentIntent instead of charging the saved card a second time.
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const res  = await fetch('https://api.stripe.com/v1/payment_intents', {
-    method: 'POST', headers: stripeHeaders(), body: new URLSearchParams(params),
+    method: 'POST', headers, body: new URLSearchParams(params),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error?.message ?? `Stripe PaymentIntent failed (HTTP ${res.status})`);
@@ -125,7 +129,7 @@ serve(async (req) => {
       if (!customerId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
       const pmId = await listSavedCard(customerId);
       if (!pmId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
-      const pi = await createPaymentIntent({ ...baseParams, customer: customerId, payment_method: pmId, confirm: 'true', off_session: 'true' });
+      const pi = await createPaymentIntent({ ...baseParams, customer: customerId, payment_method: pmId, confirm: 'true', off_session: 'true' }, `donation-${user.id}-${campaign.id}-${amount}`);
       if (pi.status !== 'succeeded') return json({ error: `Payment did not complete (status: ${pi.status}).` }, 402);
       return json({ charged: true, payment_intent_id: pi.id });
     }

@@ -306,8 +306,11 @@ async function analyticsAddon(svc: any, userId: string, body: any): Promise<Resp
   const { data: priceRow } = await svc.from('admin_config').select('value').eq('key', 'analytics.addon_price_pence').maybeSingle();
   const amount = Math.round(Number(priceRow?.value)) || 1000; // default £10
 
-  const { error: debitErr } = await svc.rpc('wallet_debit', { p_user: userId, p_spend: amount, p_cashback: 0 });
-  if (debitErr) return json({ error: "Not enough wallet balance — top up or use a card." }, 402);
+  // wallet_debit signals "insufficient funds" by returning data === null with NO
+  // error. Checking only `debitErr` let the add-on activate free on a £0 balance;
+  // guard on the null return like every other spend handler does.
+  const { data: debitBalance, error: debitErr } = await svc.rpc('wallet_debit', { p_user: userId, p_spend: amount, p_cashback: 0 });
+  if (debitErr || debitBalance == null) return json({ error: "Not enough wallet balance — top up or use a card." }, 402);
 
   await svc.from('local_wallet_transactions').insert({
     user_id: userId, business_id: null, type: 'spend', amount_pence: -amount,

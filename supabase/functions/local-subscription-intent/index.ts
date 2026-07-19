@@ -56,11 +56,18 @@ serve(async (req) => {
 
     const { data: business } = await svc
       .from('local_businesses')
-      .select('id, owner_id, name, email, stripe_customer_id, business_stripe_customer_id, has_business_payment_method')
+      .select('id, owner_id, name, email, stripe_customer_id, business_stripe_customer_id, has_business_payment_method, stripe_subscription_id')
       .eq('id', business_id)
       .single();
 
     if (!business || business.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
+
+    // This endpoint creates a NEW subscription. If one already exists, a retry or
+    // mis-routed call here would create a SECOND active subscription that bills
+    // every month. Plan changes must go through local-subscription-change.
+    if (business.stripe_subscription_id) {
+      return json({ error: 'This business already has a subscription. Use change-plan to switch tiers.', code: 'ALREADY_SUBSCRIBED' }, 409);
+    }
 
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
       apiVersion: '2023-10-16',

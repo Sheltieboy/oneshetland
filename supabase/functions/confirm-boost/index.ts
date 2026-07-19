@@ -47,9 +47,14 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { shift_id } = await req.json();
+    const { shift_id, payment_intent_id } = await req.json();
     if (!shift_id) {
       return new Response(JSON.stringify({ error: 'shift_id required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!payment_intent_id) {
+      return new Response(JSON.stringify({ error: 'payment_intent_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -71,6 +76,39 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // Verify the boost was actually PAID FOR. Without this, anyone could call
+    // this endpoint with a shift_id and get a free 24h feature + a push blast to
+    // every matching worker. Retrieve the PaymentIntent from Stripe and require
+    // it to have succeeded and to belong to THIS shift + employer.
+    const piRes = await fetch(
+      `https://api.stripe.com/v1/payment_intents/${payment_intent_id}`,
+      { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': '2023-10-16' } },
+    );
+    const pi = await piRes.json();
+    if (!piRes.ok) throw new Error(pi.error?.message ?? `Stripe retrieve failed (HTTP ${piRes.status})`);
+    const m = (pi.metadata ?? {}) as Record<string, string>;
+    if (pi.status !== 'succeeded' || m.type !== 'shift_boost' || m.shift_id !== shift_id || m.employer_id !== user.id) {
+      return new Response(JSON.stringify({ error: 'Payment could not be verified for this boost.' }), {
+        status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Idempotency: claim this PaymentIntent exactly once. A UNIQUE primary key on
+    // consumed_payment_intents means a replay (double-tap, or re-using the same
+    // payment after the 24h window expires) hits 23505 and is refused here — so a
+    // single £2.99 payment can never yield more than one boost or notification blast.
+    const { error: claimErr } = await supabase
+      .from('consumed_payment_intents')
+      .insert({ payment_intent_id, purpose: 'shift_boost', user_id: user.id });
+    if (claimErr) {
+      if (claimErr.code === '23505') {
+        return new Response(JSON.stringify({ ok: true, notified: 0, already: true }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      throw claimErr;
     }
 
     // Set boosted_until to 24 hours from now

@@ -30,9 +30,13 @@ async function listSavedCard(customerId: string): Promise<string | null> {
   return data.data?.[0]?.id ?? null;
 }
 
-async function createPaymentIntent(params: Record<string, string>): Promise<any> {
+async function createPaymentIntent(params: Record<string, string>, idempotencyKey?: string): Promise<any> {
+  const headers: Record<string, string> = { ...stripeHeaders() };
+  // Idempotency-Key makes a retried create (lost response, double-tap) return the
+  // ORIGINAL PaymentIntent instead of charging the saved card a second time.
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const res  = await fetch('https://api.stripe.com/v1/payment_intents', {
-    method: 'POST', headers: stripeHeaders(), body: new URLSearchParams(params),
+    method: 'POST', headers, body: new URLSearchParams(params),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error?.message ?? `Stripe PaymentIntent failed (HTTP ${res.status})`);
@@ -178,7 +182,7 @@ serve(async (req) => {
         payment_method: pmId,
         confirm:        'true',
         off_session:    'true',
-      });
+      }, `unit-${user.id}-${item.id}`);
 
       if (paymentIntent.status !== 'succeeded') {
         return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${paymentIntent.status}). Please check your card.` }), {

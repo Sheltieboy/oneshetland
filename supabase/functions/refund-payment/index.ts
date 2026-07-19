@@ -82,9 +82,15 @@ serve(async (req) => {
       form.set('refund_application_fee', 'true'); // and return our platform fee too
     }
 
+    // Idempotency: a double-click or a retry after a timed-out response must not
+    // issue a second refund (which, with reverse_transfer, claws back from the
+    // driver/business twice or leaves the platform eating it). Keyed on the
+    // payment + amount, so a genuine second partial refund of a DIFFERENT amount
+    // still goes through, but an identical retry returns the original refund.
+    const idemKey = `refund:${payment_intent_id}:${amount ?? 'full'}`;
     const refRes = await fetch(`${STRIPE}/refunds`, {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idemKey },
       body: form.toString(),
     });
     const refund = await refRes.json();
