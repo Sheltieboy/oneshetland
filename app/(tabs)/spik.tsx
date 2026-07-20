@@ -224,23 +224,34 @@ export default function SpikTab() {
           </View>
         }
       >
-        <View style={styles.searchBox}>
-          <FontAwesome5 name="search" size={13} color="rgba(255,255,255,0.45)" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search words…"
-            placeholderTextColor="rgba(255,255,255,0.35)"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-          />
-          {searchQuery.length > 0 && (
-            <Pressable onPress={() => { setSearchQuery(''); loadLetter(activeLetter); }} hitSlop={15}>
-              <FontAwesome5 name="times-circle" size={14} color="rgba(255,255,255,0.45)" />
-            </Pressable>
-          )}
+        <View style={styles.headerControls}>
+          <View style={styles.searchBox}>
+            <FontAwesome5 name="search" size={13} color="rgba(255,255,255,0.45)" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search words…"
+              placeholderTextColor="rgba(255,255,255,0.35)"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => { setSearchQuery(''); loadLetter(activeLetter); }} hitSlop={15}>
+                <FontAwesome5 name="times-circle" size={14} color="rgba(255,255,255,0.45)" />
+              </Pressable>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.addWirdBtn, { backgroundColor: SECTIONS.spik.color }]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/spik-add'); }}
+            activeOpacity={0.85}
+            hitSlop={8}
+          >
+            <FontAwesome5 name="plus" size={12} color="#fff" />
+            <Text style={styles.addWirdText}>Add a wird</Text>
+          </TouchableOpacity>
         </View>
       </TabScreenHeader>
 
@@ -334,13 +345,20 @@ const styles = StyleSheet.create({
   wordCountNum:   { fontSize: fontSize.xl, fontWeight: '800', lineHeight: 22 },
   wordCountLabel: { color: 'rgba(255,255,255,0.45)', fontSize: fontSize.xs },
 
+  headerControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchBox: {
+    flex: 1,
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: radius.full,
     paddingHorizontal: 14, height: 40, gap: 8,
   },
   searchInput: { flex: 1, color: '#fff', fontSize: fontSize.md, paddingVertical: 0 },
+  addWirdBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    height: 40, paddingHorizontal: 14, borderRadius: radius.full,
+  },
+  addWirdText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
 
   alphaWrap: { backgroundColor: colors.navyDark, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   alphaRow:  { paddingHorizontal: 8, paddingVertical: 8, gap: 2 },

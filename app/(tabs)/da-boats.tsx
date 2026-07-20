@@ -245,6 +245,18 @@ export default function DaBoatsScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
+
+          {/* Add a boat — community submission */}
+          <TouchableOpacity
+            style={styles.addBoatBtn}
+            onPress={() => router.push('/boat-add')}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Add a boat"
+          >
+            <FontAwesome5 name="plus" size={14} color="#fff" />
+            <Text style={styles.addBoatBtnText}>Add a boat</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Decade chips */}
@@ -680,6 +692,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
     paddingVertical: 0,
+  },
+  addBoatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: spacing.md,
+    paddingVertical: 14,
+    borderRadius: 999,
+    backgroundColor: SECTION.color,
+  },
+  addBoatBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
   },
 
   chipRow: {

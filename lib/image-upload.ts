@@ -176,6 +176,24 @@ export async function uploadAvatar(
 }
 
 /**
+ * Upload a Spik "local variation" audio clip (the word itself, or its example
+ * sentence) recorded by a contributor. Public-read bucket `spik-audio`; RLS
+ * lets a signed-in user write under their own folder.
+ * Path: <word_id>/<user_id>/<kind>-<uuid>.<ext>. Returns the public URL.
+ */
+export async function uploadSpikAudio(
+  userId: string,
+  wordId: number,
+  kind: 'word' | 'sentence',
+  file: PickedFile,
+): Promise<string> {
+  const ext = extFromFile(file);
+  const path = `${wordId}/${userId}/${kind}-${newFilename(ext)}`;
+  const { publicUrl } = await uploadBlob('spik-audio', path, file);
+  return publicUrl;
+}
+
+/**
  * Delete a previously-uploaded image. Pass the stored `path` (the value
  * that was returned in {@link UploadedImage}.path), not the public URL.
  *

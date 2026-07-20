@@ -240,6 +240,9 @@ function RootNavigator() {
           <Stack.Screen name="(tabs)" options={{ ...SECTION_ROOT }} />
           <Stack.Screen name="spik-detail" />
           <Stack.Screen name="spik-suggest" options={{ ...MODAL_PRESENT }} />
+          <Stack.Screen name="spik-add" options={{ ...MODAL_PRESENT }} />
+          <Stack.Screen name="spik-add-variation" options={{ ...MODAL_PRESENT }} />
+          <Stack.Screen name="boat-add" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="spik-filter" />
           <Stack.Screen name="shift-detail" />
           <Stack.Screen name="shift-post" options={{ ...MODAL_PRESENT }} />

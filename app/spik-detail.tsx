@@ -17,6 +17,7 @@ import { fetchSpikEntry, decodeEntities, type SpikEntry } from '@/lib/oneshetlan
 import { paletteFor, type PosPalette } from '@/lib/spik-palette';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { track } from '@/lib/analytics';
+import { fetchWordVariations, type SpikVariation } from '@/lib/spik-variations-api';
 
 function stripHtml(str: string): string {
   return decodeEntities(str.replace(/<[^>]*>/g, '').trim());
@@ -27,6 +28,7 @@ export default function SpikDetailScreen() {
   const [entry, setEntry]     = useState<SpikEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
+  const [variations, setVariations] = useState<SpikVariation[]>([]);
 
   useEffect(() => {
     if (!id) { setError('Invalid word'); setLoading(false); return; }
@@ -34,6 +36,11 @@ export default function SpikDetailScreen() {
       .then(setEntry)
       .catch(() => setError('Could not load word'))
       .finally(() => setLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    fetchWordVariations(Number(id)).then(setVariations).catch(() => setVariations([]));
   }, [id]);
 
   useEffect(() => {
@@ -201,6 +208,40 @@ export default function SpikDetailScreen() {
             </Section>
           ) : null}
 
+          {/* Local variations */}
+          <Section>
+            <View style={styles.variationsHeader}>
+              <Label>LOCAL VARIATIONS</Label>
+              <TouchableOpacity
+                style={[styles.addVariationBtn, { backgroundColor: pal.bg }]}
+                activeOpacity={0.85}
+                onPress={() => router.push({
+                  pathname: '/spik-add-variation',
+                  params: { id: String(entry.id), word: entry.word },
+                })}
+              >
+                <FontAwesome5 name="plus" size={10} color={pal.text} />
+                <Text style={[styles.addVariationText, { color: pal.text }]}>Add your version</Text>
+              </TouchableOpacity>
+            </View>
+
+            {variations.length === 0 ? (
+              <Text style={styles.variationsEmpty}>No local variations yet — add yours.</Text>
+            ) : (
+              groupByRegion(variations).map(group => (
+                <View key={group.region} style={styles.regionGroup}>
+                  <View style={styles.regionHeaderRow}>
+                    <FontAwesome5 name="map-marker-alt" size={11} color={pal.bar} />
+                    <Text style={[styles.regionName, { color: pal.bar }]}>{group.region}</Text>
+                  </View>
+                  {group.items.map(v => (
+                    <VariationCard key={v.id} variation={v} pal={pal} />
+                  ))}
+                </View>
+              ))
+            )}
+          </Section>
+
           {/* Suggest */}
           <View style={[styles.suggestBlock, { borderTopColor: pal.bar, borderTopWidth: 3 }]}>
             <Text style={styles.suggestTitle}>Make a Suggestion</Text>
@@ -297,6 +338,58 @@ function PronunciationPlayer({ url, color }: { url: string; color: string }) {
 
 function Section({ children }: { children: React.ReactNode }) {
   return <View style={styles.section}>{children}</View>;
+}
+
+// Group approved variations by region, preserving the server ordering
+// (region_name → created_at) that fetchWordVariations applies.
+function groupByRegion(items: SpikVariation[]): { region: string; items: SpikVariation[] }[] {
+  const groups: { region: string; items: SpikVariation[] }[] = [];
+  for (const v of items) {
+    const region = v.region_name?.trim() || 'Elsewhere';
+    const last = groups[groups.length - 1];
+    if (last && last.region === region) last.items.push(v);
+    else groups.push({ region, items: [v] });
+  }
+  return groups;
+}
+
+// A single contributed variation: local spelling / pronunciation, a play
+// button for the word clip, and (if present) the example sentence + its clip.
+function VariationCard({ variation, pal }: { variation: SpikVariation; pal: PosPalette }) {
+  const v = variation;
+  return (
+    <View style={styles.variationCard}>
+      <View style={styles.variationTopRow}>
+        <View style={styles.variationWordCol}>
+          {v.variant_spelling ? (
+            <Text style={styles.variationSpelling}>{v.variant_spelling}</Text>
+          ) : null}
+          {v.pronunciation ? (
+            <Text style={styles.variationPron}>/{v.pronunciation}/</Text>
+          ) : null}
+        </View>
+        {v.word_audio_url ? <PronunciationPlayer url={v.word_audio_url} color={pal.bar} /> : null}
+      </View>
+
+      {v.sentence_text ? (
+        <View style={[styles.variationSentenceBox, { borderLeftColor: pal.bar }]}>
+          <Text style={styles.variationSentenceText}>"{v.sentence_text}"</Text>
+          {v.sentence_audio_url ? (
+            <View style={styles.variationSentenceAudio}>
+              <PronunciationPlayer url={v.sentence_audio_url} color={pal.bar} />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {v.show_name && v.contributor_name ? (
+        <View style={styles.variationCredit}>
+          <FontAwesome5 name="user" size={9} color={colors.textLight} solid />
+          <Text style={styles.variationCreditText}>Added by {v.contributor_name}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -420,6 +513,28 @@ const styles = StyleSheet.create({
   originTagText:    { fontSize: fontSize.sm, fontWeight: '600' },
   originTagMuted:   { backgroundColor: colors.offWhite, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
   originTagTextMuted: { color: colors.textSecondary, fontSize: fontSize.sm, fontWeight: '600' },
+
+  // Local variations
+  variationsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  addVariationBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.full },
+  addVariationText: { fontSize: fontSize.xs, fontWeight: '700' },
+  variationsEmpty: { color: colors.textMuted, fontSize: fontSize.sm, lineHeight: 20 },
+  regionGroup: { marginTop: 4, marginBottom: 8, gap: 8 },
+  regionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  regionName: { fontSize: fontSize.sm, fontWeight: '800', letterSpacing: 0.2 },
+  variationCard: { backgroundColor: colors.offWhite, borderRadius: radius.md, padding: 12, gap: 10 },
+  variationTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  variationWordCol: { flex: 1, gap: 3 },
+  variationSpelling: { color: colors.textPrimary, fontSize: fontSize.lg, fontWeight: '700' },
+  variationPron: { color: colors.textSecondary, fontSize: fontSize.sm, fontWeight: '600' },
+  variationSentenceBox: {
+    borderLeftWidth: 3, borderRadius: radius.sm, backgroundColor: '#fff',
+    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+  },
+  variationSentenceText: { color: colors.textSecondary, fontSize: fontSize.sm, lineHeight: 22, fontStyle: 'italic' },
+  variationSentenceAudio: { flexDirection: 'row' },
+  variationCredit: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  variationCreditText: { color: colors.textLight, fontSize: fontSize.xs, fontWeight: '600' },
 
   // Suggest
   suggestBlock: {
