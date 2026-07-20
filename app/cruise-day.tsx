@@ -10,6 +10,7 @@ import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import DisplayText from '@/components/DisplayText';
 import { getCruiseDay, baro, fmtTime, fmtDateLong, hoursAshore, peakWindow, type CruiseDay, type CruiseVisit } from '@/lib/cruise-api';
+import { shipImageSource } from '@/lib/cruise-ship-images';
 import { CruiseDayTimeline } from '@/components/cruise/CruiseDayTimeline';
 
 const ACCENT = '#0E6E8C';
@@ -114,12 +115,13 @@ export default function CruiseDayScreen() {
         ) : (
           visits.map((v) => {
             const name = v.ship?.name ?? v.ship_name_cache ?? 'Ship';
+            const shipImg = shipImageSource(v.ship);
             const st = STATUS[v.status] ?? STATUS.scheduled;
             const hrs = hoursAshore(v);
             return (
               <TouchableOpacity key={v.id} style={styles.shipRow} activeOpacity={0.85} onPress={() => router.push({ pathname: '/cruise-ship', params: { id: v.id } })}>
-                {v.ship?.image_url ? (
-                  <Image source={{ uri: v.ship.image_url }} style={styles.thumb} />
+                {shipImg ? (
+                  <Image source={shipImg} style={styles.thumb} />
                 ) : (
                   <View style={[styles.thumb, styles.thumbPlaceholder]}><FontAwesome5 name="ship" size={20} color={colors.textLight} /></View>
                 )}

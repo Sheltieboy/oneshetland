@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, radius, fontSize } from '@/constants/theme';
 import { getCruiseHomeCard, baro, fmtDateShort, type CruiseHomeCard } from '@/lib/cruise-api';
+import { shipImageSource } from '@/lib/cruise-ship-images';
 
 const ACCENT = '#0E6E8C';
 
@@ -29,15 +30,16 @@ export function CruiseTodayCard({ style }: { style?: StyleProp<ViewStyle> }) {
   return (
     <TouchableOpacity style={[styles.card, style]} activeOpacity={0.85} onPress={() => router.push({ pathname: '/cruise-day', params: { date: card.date } })}>
       <View style={styles.thumbs}>
-        {card.thumbs.slice(0, 3).map((t, i) =>
-          t.image ? (
-            <Image key={t.id} source={{ uri: t.image }} style={[styles.thumb, { marginLeft: i ? -14 : 0, zIndex: 3 - i }]} />
+        {card.thumbs.slice(0, 3).map((t, i) => {
+          const src = shipImageSource({ name: t.name, image_url: t.image });
+          return src ? (
+            <Image key={t.id} source={src} style={[styles.thumb, { marginLeft: i ? -14 : 0, zIndex: 3 - i }]} />
           ) : (
             <View key={t.id} style={[styles.thumb, styles.thumbPh, { marginLeft: i ? -14 : 0, zIndex: 3 - i }]}>
               <FontAwesome5 name="ship" size={14} color={colors.textLight} />
             </View>
-          ),
-        )}
+          );
+        })}
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={styles.label}>

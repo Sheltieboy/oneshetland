@@ -9,6 +9,7 @@ import {
   baro, fmtDateShort, fmtTime, LERWICK,
   type ScopeData, type CruiseVisit,
 } from '@/lib/cruise-api';
+import { shipImageSource } from '@/lib/cruise-ship-images';
 
 const ACCENT = '#0E6E8C';
 
@@ -122,10 +123,11 @@ export function CruiseScopeView({
           {multiday ? <Text style={st.dateHeader}>{fmtDateShort(date)}</Text> : null}
           {byDate[date].map((v) => {
             const name = v.ship?.name ?? v.ship_name_cache ?? 'Cruise ship';
+            const shipImg = shipImageSource(v.ship);
             return (
               <TouchableOpacity key={v.id} style={st.shipRow} activeOpacity={0.85} onPress={() => router.push({ pathname: '/cruise-ship', params: { id: v.id } })}>
-                {v.ship?.image_url ? (
-                  <Image source={{ uri: v.ship.image_url }} style={st.thumb} />
+                {shipImg ? (
+                  <Image source={shipImg} style={st.thumb} />
                 ) : (
                   <View style={[st.thumb, st.thumbPlaceholder]}><FontAwesome5 name="ship" size={18} color={colors.textLight} /></View>
                 )}

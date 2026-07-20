@@ -10,6 +10,7 @@ import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import DisplayText from '@/components/DisplayText';
 import { getCruiseVisit, getShipOtherCalls, routePoints, baro, fmtTime, fmtDateShort, fmtDateLong, hoursAshore, ashorePlan, trackUrl, type CruiseVisit, type CruiseDay, type OtherCall } from '@/lib/cruise-api';
+import { shipImageSource } from '@/lib/cruise-ship-images';
 import { CruiseMap, type MapMarker, type MapLine } from '@/components/cruise/CruiseMap';
 
 const ACCENT = '#0E6E8C';
@@ -46,6 +47,7 @@ export default function CruiseShipScreen() {
   }
 
   const name = visit.ship?.name ?? visit.ship_name_cache ?? 'Cruise ship';
+  const shipImg = shipImageSource(visit.ship);
   const b = baro(day?.barometer);
   const hrs = hoursAshore(visit);
   const inPort = visit.status === 'in_port';
@@ -73,8 +75,8 @@ export default function CruiseShipScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: sidePadding + spacing.lg, paddingBottom: spacing.xxl }}>
         {/* Photo */}
         <View style={styles.photoWrap}>
-          {visit.ship?.image_url ? (
-            <Image source={{ uri: visit.ship.image_url }} style={styles.photo} resizeMode="cover" />
+          {shipImg ? (
+            <Image source={shipImg} style={styles.photo} resizeMode="cover" />
           ) : (
             <View style={[styles.photo, styles.photoPlaceholder]}><FontAwesome5 name="ship" size={40} color={colors.textLight} /></View>
           )}
