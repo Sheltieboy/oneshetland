@@ -228,7 +228,7 @@ export default function WorkProfileScreen() {
                 <TouchableOpacity onPress={addCoverLetter} hitSlop={8} style={styles.addBtn}><FontAwesome5 name="plus" size={11} color={S.color} solid /><Text style={[styles.addBtnText, { color: S.color }]}>Add</Text></TouchableOpacity>
               ) : null}
             </View>
-            <Text style={styles.intro}>Reusable templates. You can also draft a tailored one with AI when you apply.</Text>
+            <Text style={styles.intro}>Reusable templates. You can also draft a tailored one with Peerie Bot when you apply.</Text>
             {docs.length === 0 ? (
               <EmptyState icon="file-alt" title="No saved cover letters" body="None yet." accent={S.color} variant="card" />
             ) : docs.map(d => (

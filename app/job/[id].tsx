@@ -259,7 +259,7 @@ function ApplySheet({ job, userId, onClose, onApplied }: { job: Job; userId: str
       <View style={styles.coverHead}>
         <Text style={styles.coverLabel}>Cover note (optional)</Text>
         <TouchableOpacity onPress={draftAi} disabled={aiBusy} style={styles.aiBtn} hitSlop={8}>
-          {aiBusy ? <ActivityIndicator size="small" color={S.color} /> : <><FontAwesome5 name="magic" size={11} color={S.color} solid /><Text style={styles.aiBtnText}>Draft with AI</Text></>}
+          {aiBusy ? <ActivityIndicator size="small" color={S.color} /> : <><FontAwesome5 name="magic" size={11} color={S.color} solid /><Text style={styles.aiBtnText}>Draft with Peerie Bot</Text></>}
         </TouchableOpacity>
       </View>
       <TextInput
