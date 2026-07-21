@@ -383,6 +383,17 @@ export default function MeTab() {
           </SectionCard>
 
           {/* ── Your activity ───────────────────────────────────────────────── */}
+          <SectionCard title="Invite & earn" accentColor={SECTIONS.local.color}>
+            <MenuRow
+              icon="gift"
+              iconColor={SECTIONS.local.color}
+              label="Invite friends"
+              sublabel="Give £5, get £5 when a friend joins and spends"
+              onPress={() => { Haptics.selectionAsync(); router.push('/referrals'); }}
+              last
+            />
+          </SectionCard>
+
           <SectionCard title="Your activity" accentColor={colors.accent}>
             <MenuRow
               icon="map-marker-alt"

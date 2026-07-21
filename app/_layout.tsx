@@ -293,6 +293,7 @@ function RootNavigator() {
           <Stack.Screen name="local-verify" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="local-offers" />
           <Stack.Screen name="local-loyalty-hub" />
+          <Stack.Screen name="referrals" />
           <Stack.Screen name="local-bookable-browse" />
           <Stack.Screen name="local-offer-new" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="local-wallet" />
