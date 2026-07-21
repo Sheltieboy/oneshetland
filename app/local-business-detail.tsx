@@ -438,6 +438,20 @@ export default function BusinessDetailScreen() {
                     <Text style={[styles.loyaltyCountNum, { color: accent }]}>{card?.points_balance ?? 0}</Text>
                     <Text style={styles.loyaltyCountRest}> points</Text>
                   </Text>
+                  {(() => {
+                    const per = program.points_for_pound ?? 100;
+                    const spend = Math.floor((card?.points_balance ?? 0) / per) * per;
+                    if (!card || spend < per) return null;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.redeemBtn, { backgroundColor: accent }]}
+                        onPress={() => router.push({ pathname: '/local-redeem', params: { kind: 'points', ref_id: card.id, amount: String(spend) } })}
+                      >
+                        <FontAwesome5 name="tag" size={11} color="#fff" solid />
+                        <Text style={styles.redeemBtnText}>Redeem £{(spend / per).toFixed(spend % per === 0 ? 0 : 2)} off</Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </>
               )}
               <TouchableOpacity
