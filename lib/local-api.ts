@@ -198,12 +198,17 @@ export interface LocalBusiness {
   has_loyalty?:      boolean;
 }
 
+/** One rung of a reward ladder: reach `stamps` to unlock `reward`. */
+export interface RewardTier { stamps: number; reward: string; }
+
 export interface LoyaltyProgram {
   id:                string;
   business_id:       string;
   type:              LoyaltyType;
   stamps_required:   number | null;
   stamp_reward:      string | null;
+  /** Multi-tier ladder (ascending). null/empty = single-reward mode above. */
+  reward_tiers:      RewardTier[] | null;
   points_per_pound:  number | null;
   points_for_pound:  number | null;
   is_active:         boolean;
@@ -218,6 +223,8 @@ export interface LoyaltyCard {
   stamps_collected:  number;
   points_balance:    number;
   total_redeemed:    number;
+  /** Stamp threshold of the highest ladder tier claimed this cycle (0 = none). */
+  tiers_redeemed_upto: number;
   last_stamp_at:     string | null;
   created_at:        string;
   // joined
@@ -483,8 +490,39 @@ export interface LoyaltyProgramInput {
   type: LoyaltyType;
   stamps_required?: number | null;
   stamp_reward?: string | null;
+  reward_tiers?: RewardTier[] | null;
   points_per_pound?: number | null;
   points_for_pound?: number | null;
+}
+
+/** Clean a raw tiers value (from DB or a form) into an ascending, valid list. */
+export function normalizeTiers(raw: unknown): RewardTier[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((t) => ({ stamps: Number((t as RewardTier)?.stamps), reward: String((t as RewardTier)?.reward ?? '').trim() }))
+    .filter((t) => Number.isFinite(t.stamps) && t.stamps > 0)
+    .sort((a, b) => a.stamps - b.stamps);
+}
+
+export interface LadderState {
+  tiers: RewardTier[];
+  top: number;
+  ready: RewardTier | null;   // reached but unclaimed — redeem this now
+  next: RewardTier | null;    // the next rung still to reach
+}
+
+/** Compute ladder progress for a card. Returns null for single-reward programmes. */
+export function ladderState(
+  program: Pick<LoyaltyProgram, 'reward_tiers'> | null | undefined,
+  stampsCollected: number,
+  redeemedUpto: number,
+): LadderState | null {
+  const tiers = normalizeTiers(program?.reward_tiers);
+  if (tiers.length === 0) return null;
+  const top = tiers[tiers.length - 1].stamps;
+  const ready = tiers.find((t) => t.stamps <= stampsCollected && t.stamps > redeemedUpto) ?? null;
+  const next = tiers.find((t) => t.stamps > stampsCollected) ?? null;
+  return { tiers, top, ready, next };
 }
 
 export async function upsertLoyaltyProgram(businessId: string, input: LoyaltyProgramInput): Promise<LoyaltyProgram> {

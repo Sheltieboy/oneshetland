@@ -35,7 +35,8 @@ import {
   fetchBusinessWalletReceipts,
   fetchBusinessAddons, toggleAddon,
   ADDON_META, PREMIUM_ADDON_KEYS, EXTRA_ADDON_MONTHLY_PENCE, countExtraPremiumAddons,
-  type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType,
+  normalizeTiers,
+  type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType, type RewardTier,
   type BusinessWalletReceipt, type BusinessAddon, type AddonKey,
 } from '@/lib/local-api';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -1923,6 +1924,8 @@ function LoyaltyModal({
   const [type, setType]           = useState<LoyaltyType>('stamps');
   const [stamps, setStamps]       = useState('9');
   const [reward, setReward]       = useState('');
+  // Optional extra reward-ladder rungs above the base reward.
+  const [extraTiers, setExtraTiers] = useState<RewardTier[]>([]);
   const [pointsPer, setPointsPer] = useState('10');
   const [pointsFor, setPointsFor] = useState('100');
   const [saving, setSaving]       = useState(false);
@@ -1931,27 +1934,43 @@ function LoyaltyModal({
   useEffect(() => {
     if (program) {
       setType(program.type);
-      setStamps(String(program.stamps_required ?? 9));
-      setReward(program.stamp_reward ?? '');
+      const tiers = normalizeTiers(program.reward_tiers);
+      if (tiers.length > 1) {
+        setStamps(String(tiers[0].stamps));
+        setReward(tiers[0].reward);
+        setExtraTiers(tiers.slice(1));
+      } else {
+        setStamps(String(program.stamps_required ?? 9));
+        setReward(program.stamp_reward ?? '');
+        setExtraTiers([]);
+      }
       setPointsPer(String(program.points_per_pound ?? 10));
       setPointsFor(String(program.points_for_pound ?? 100));
     }
   }, [program, visible]);
 
   const save = async () => {
+    let tiers: RewardTier[] = [];
     if (type === 'stamps') {
       if (!reward.trim()) return alert({ title: 'Reward required', message: 'Describe what the customer gets.' });
       const n = parseInt(stamps); if (!n || n < 2) return alert({ title: 'Min 2 stamps', message: 'Try 5–10' });
+      tiers = normalizeTiers([{ stamps: n, reward: reward.trim() }, ...extraTiers]);
+      if (extraTiers.length > 0 && tiers.length !== extraTiers.length + 1) {
+        return alert({ title: 'Check your reward tiers', message: 'Each tier needs a different stamp count and a reward.' });
+      }
     } else {
       const pp = parseFloat(pointsPer); const pf = parseInt(pointsFor);
       if (!pp || pp <= 0 || !pf || pf <= 0) return alert({ title: 'Invalid points config' });
     }
+    const ladder = type === 'stamps' && tiers.length > 1;
     setSaving(true);
     try {
       await upsertLoyaltyProgram(businessId, {
         type,
-        stamps_required: type === 'stamps' ? parseInt(stamps) : null,
-        stamp_reward:    type === 'stamps' ? reward.trim() : null,
+        // Headline stamps/reward = the top rung, so legacy readers still show something.
+        stamps_required: type === 'stamps' ? (ladder ? tiers[tiers.length - 1].stamps : parseInt(stamps)) : null,
+        stamp_reward:    type === 'stamps' ? (ladder ? tiers[tiers.length - 1].reward : reward.trim()) : null,
+        reward_tiers:    ladder ? tiers : null,
         points_per_pound: type === 'points' ? parseFloat(pointsPer) : null,
         points_for_pound: type === 'points' ? parseInt(pointsFor) : null,
       });
@@ -1996,6 +2015,41 @@ function LoyaltyModal({
                 placeholder="e.g. Free coffee of your choice"
                 placeholderTextColor={colors.textLight}
               />
+
+              {/* Reward ladder — optional extra rungs at higher stamp counts. */}
+              {extraTiers.map((t, i) => (
+                <View key={i} style={{ marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={modalStyles.label}>Reward {i + 2} — at how many stamps</Text>
+                    <TouchableOpacity onPress={() => setExtraTiers(prev => prev.filter((_, j) => j !== i))}>
+                      <FontAwesome5 name="times-circle" size={16} color={colors.textLight} />
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={modalStyles.input}
+                    value={t.stamps ? String(t.stamps) : ''}
+                    onChangeText={v => setExtraTiers(prev => prev.map((x, j) => j === i ? { ...x, stamps: parseInt(v) || 0 } : x))}
+                    keyboardType="number-pad"
+                    placeholder={`e.g. ${(parseInt(stamps) || 5) * (i + 2)}`}
+                    placeholderTextColor={colors.textLight}
+                  />
+                  <Text style={modalStyles.label}>What they get</Text>
+                  <TextInput
+                    style={modalStyles.input}
+                    value={t.reward}
+                    onChangeText={v => setExtraTiers(prev => prev.map((x, j) => j === i ? { ...x, reward: v } : x))}
+                    placeholder="e.g. Free lunch"
+                    placeholderTextColor={colors.textLight}
+                  />
+                </View>
+              ))}
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.md }}
+                onPress={() => setExtraTiers(prev => [...prev, { stamps: 0, reward: '' }])}
+              >
+                <FontAwesome5 name="plus-circle" size={14} color={S.color} solid />
+                <Text style={{ color: S.color, fontWeight: '800', fontSize: fontSize.sm }}>Add another reward tier</Text>
+              </TouchableOpacity>
             </>
           ) : (
             <>

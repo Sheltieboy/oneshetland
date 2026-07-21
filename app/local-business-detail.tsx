@@ -22,7 +22,7 @@ import {
   redeemReward, redeemOffer, fetchMyRedeemedOfferIds,
   fetchBusinessAddons,
   CATEGORY_LABELS, CATEGORY_ICONS,
-  formatOfferDiscount, daysRemaining,
+  formatOfferDiscount, daysRemaining, ladderState,
   type LocalBusiness, type LoyaltyProgram, type LoyaltyCard, type LocalOffer, type BusinessAddon,
 } from '@/lib/local-api';
 import { fetchPublishedEvents, formatShortDate, formatTime, type OsEvent } from '@/lib/events-api';
@@ -231,9 +231,10 @@ export default function BusinessDetailScreen() {
     return { feature: locked.label, tier: TIER_LABEL[FEATURE_MIN_TIER[locked.feature]] };
   })();
   const stamps  = card?.stamps_collected ?? 0;
-  const needed  = program?.stamps_required ?? 10;
+  const ladder  = ladderState(program, stamps, card?.tiers_redeemed_upto ?? 0);
+  const needed  = ladder ? ladder.top : (program?.stamps_required ?? 10);
   const progress = Math.min(1, stamps / needed);
-  const rewardReady = program?.type === 'stamps' && stamps >= needed;
+  const rewardReady = program?.type === 'stamps' && (ladder ? !!ladder.ready : stamps >= needed);
 
   // ── Hero (always full-bleed) ───────────────────────────────────────────────
   const heroSection = (
@@ -399,7 +400,7 @@ export default function BusinessDetailScreen() {
             <View style={styles.loyaltyCard}>
               {program.type === 'stamps' ? (
                 <>
-                  <Text style={styles.loyaltyReward}>{program.stamp_reward ?? 'Loyalty reward'}</Text>
+                  <Text style={styles.loyaltyReward}>{ladder ? 'Rewards ladder' : (program.stamp_reward ?? 'Loyalty reward')}</Text>
                   <Text style={styles.loyaltyCount}>
                     <Text style={[styles.loyaltyCountNum, { color: accent }]}>{stamps}</Text>
                     <Text style={styles.loyaltyCountRest}> / {needed} stamps</Text>
@@ -417,10 +418,35 @@ export default function BusinessDetailScreen() {
                       );
                     })}
                   </View>
+
+                  {/* Ladder rungs — claimed / ready / still to reach */}
+                  {ladder && (
+                    <View style={styles.ladderList}>
+                      {ladder.tiers.map((t) => {
+                        const claimed = (card?.tiers_redeemed_upto ?? 0) >= t.stamps;
+                        const isReady = ladder.ready?.stamps === t.stamps;
+                        const toGo = t.stamps - stamps;
+                        return (
+                          <View key={t.stamps} style={styles.ladderRow}>
+                            <View style={[styles.ladderDot, { backgroundColor: claimed || isReady ? accent : accent + '22' }]}>
+                              <FontAwesome5 name={claimed ? 'check' : 'star'} size={9} color={claimed || isReady ? '#fff' : accent} solid />
+                            </View>
+                            <Text style={[styles.ladderReward, claimed && { textDecorationLine: 'line-through', color: colors.textLight }]} numberOfLines={1}>
+                              {t.reward}
+                            </Text>
+                            <Text style={[styles.ladderStatus, { color: isReady ? accent : colors.textLight }]}>
+                              {claimed ? 'Claimed' : isReady ? 'Ready' : `${t.stamps} stamps${toGo > 0 ? ` · ${toGo} to go` : ''}`}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+
                   {!rewardReady && needed - stamps > 0 && needed - stamps <= 2 && (
                     <View style={[styles.nudge, { backgroundColor: accent + '14' }]}>
                       <Text style={[styles.nudgeText, { color: accent }]}>
-                        ✨ Just {needed - stamps} more {needed - stamps === 1 ? 'stamp' : 'stamps'}{program.stamp_reward ? ` for ${program.stamp_reward}` : ' to your reward'}!
+                        ✨ Just {needed - stamps} more {needed - stamps === 1 ? 'stamp' : 'stamps'}{(ladder?.next?.reward ?? program.stamp_reward) ? ` for ${ladder?.next?.reward ?? program.stamp_reward}` : ' to your reward'}!
                       </Text>
                     </View>
                   )}
@@ -432,7 +458,7 @@ export default function BusinessDetailScreen() {
                       activeOpacity={0.85}
                     >
                       <FontAwesome5 name="gift" size={13} color="#fff" solid />
-                      <Text style={styles.redeemBtnText}>Redeem reward</Text>
+                      <Text style={styles.redeemBtnText}>Redeem {ladder?.ready ? ladder.ready.reward : 'reward'}</Text>
                     </TouchableOpacity>
                   )}
                 </>
@@ -1045,6 +1071,11 @@ const styles = StyleSheet.create({
   redeemBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
   nudge: { borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 12, marginTop: 8 },
   nudgeText: { fontSize: fontSize.xs, fontWeight: '800', textAlign: 'center' },
+  ladderList: { marginTop: 12, gap: 8 },
+  ladderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ladderDot: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  ladderReward: { flex: 1, fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
+  ladderStatus: { fontSize: 11, fontWeight: '800' },
 
   collectBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

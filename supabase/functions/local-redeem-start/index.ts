@@ -79,10 +79,19 @@ serve(async (req) => {
       business_id = card.business_id;
       if (kind === 'reward') {
         if (program.type !== 'stamps') return json({ error: 'Not a stamp card' }, 400);
-        if (card.stamps_collected < (program.stamps_required ?? 999)) {
-          return json({ error: 'Card not complete yet' }, 400);
+        const tiers = normalizeTiers(program.reward_tiers);
+        if (tiers.length > 0) {
+          // Ladder: the lowest tier reached but not yet claimed.
+          const upto = card.tiers_redeemed_upto ?? 0;
+          const ready = tiers.find((t) => t.stamps > upto && t.stamps <= (card.stamps_collected ?? 0));
+          if (!ready) return json({ error: 'No reward ready to claim' }, 400);
+          detail = { title: ready.reward || 'Reward', subtitle: `${ready.stamps}-stamp reward` };
+        } else {
+          if (card.stamps_collected < (program.stamps_required ?? 999)) {
+            return json({ error: 'Card not complete yet' }, 400);
+          }
+          detail = { title: program.stamp_reward || 'Reward', subtitle: 'Stamp card reward' };
         }
-        detail = { title: program.stamp_reward || 'Reward', subtitle: 'Stamp card reward' };
       } else {
         if (program.type !== 'points') return json({ error: 'Not a points card' }, 400);
         const spend = Math.floor(Number(amount) || 0);
@@ -137,6 +146,16 @@ function describeOffer(o: Record<string, unknown>): string {
   if (t === 'bogo') return '2 for 1';
   if (t === 'freebie') return 'Freebie';
   return (o.title as string) ?? 'Offer';
+}
+
+/** Parse a programme's reward_tiers into a clean ascending list. */
+function normalizeTiers(raw: unknown): { stamps: number; reward: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    // deno-lint-ignore no-explicit-any
+    .map((t: any) => ({ stamps: Number(t?.stamps), reward: String(t?.reward ?? '') }))
+    .filter((t) => Number.isFinite(t.stamps) && t.stamps > 0)
+    .sort((a, b) => a.stamps - b.stamps);
 }
 
 function json(body: unknown, status = 200): Response {

@@ -59,13 +59,30 @@ serve(async (req) => {
       await svc.from('local_offers').update({ redemption_count: (offer.redemption_count ?? 0) + 1 }).eq('id', red.ref_id);
     } else if (red.kind === 'reward') {
       const { data: card } = await svc.from('local_loyalty_cards').select('*').eq('id', red.ref_id).single();
-      const { data: program } = card ? await svc.from('local_loyalty_programs').select('stamps_required').eq('id', card.program_id).single() : { data: null };
-      if (!card || !program || card.stamps_collected < (program.stamps_required ?? 999)) {
-        return json({ error: 'Card is no longer complete' }, 409);
+      const { data: program } = card ? await svc.from('local_loyalty_programs').select('stamps_required, reward_tiers').eq('id', card.program_id).single() : { data: null };
+      if (!card || !program) return json({ error: 'Card not found' }, 404);
+      const tiers = normalizeTiers(program.reward_tiers);
+      if (tiers.length > 0) {
+        // Ladder: claim the lowest ready tier; reset the whole card only at the top.
+        const upto = card.tiers_redeemed_upto ?? 0;
+        const ready = tiers.find((t) => t.stamps > upto && t.stamps <= (card.stamps_collected ?? 0));
+        if (!ready) return json({ error: 'No reward ready to claim' }, 409);
+        const isTop = ready.stamps === tiers[tiers.length - 1].stamps;
+        await svc.from('local_loyalty_cards').update(
+          isTop
+            ? { stamps_collected: 0, tiers_redeemed_upto: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null, nudge_reminded_at: null }
+            : { tiers_redeemed_upto: ready.stamps, total_redeemed: (card.total_redeemed ?? 0) + 1 },
+        ).eq('id', card.id);
+        await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: card.user_id, business_id: card.business_id, type: 'reward', amount: ready.stamps });
+      } else {
+        // Legacy single reward.
+        if ((card.stamps_collected ?? 0) < (program.stamps_required ?? 999)) {
+          return json({ error: 'Card is no longer complete' }, 409);
+        }
+        // Reset stamps and re-arm the "reward ready" reminder for the next cycle.
+        await svc.from('local_loyalty_cards').update({ stamps_collected: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null }).eq('id', card.id);
+        await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: card.user_id, business_id: card.business_id, type: 'reward', amount: program.stamps_required });
       }
-      // Reset stamps and re-arm the "reward ready" reminder for the next cycle.
-      await svc.from('local_loyalty_cards').update({ stamps_collected: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null }).eq('id', card.id);
-      await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: card.user_id, business_id: card.business_id, type: 'reward', amount: program.stamps_required });
     } else if (red.kind === 'points') {
       const { data: card } = await svc.from('local_loyalty_cards').select('*').eq('id', red.ref_id).single();
       const spend = red.amount ?? 0;
@@ -91,6 +108,16 @@ serve(async (req) => {
 
 async function cancel(svc: ReturnType<typeof createClient>, id: string) {
   await svc.from('local_redemptions').update({ status: 'cancelled' }).eq('id', id);
+}
+
+/** Parse a programme's reward_tiers into a clean ascending list. */
+function normalizeTiers(raw: unknown): { stamps: number; reward: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    // deno-lint-ignore no-explicit-any
+    .map((t: any) => ({ stamps: Number(t?.stamps), reward: String(t?.reward ?? '') }))
+    .filter((t) => Number.isFinite(t.stamps) && t.stamps > 0)
+    .sort((a, b) => a.stamps - b.stamps);
 }
 
 function json(body: unknown, status = 200): Response {
