@@ -417,6 +417,13 @@ export default function BusinessDetailScreen() {
                       );
                     })}
                   </View>
+                  {!rewardReady && needed - stamps > 0 && needed - stamps <= 2 && (
+                    <View style={[styles.nudge, { backgroundColor: accent + '14' }]}>
+                      <Text style={[styles.nudgeText, { color: accent }]}>
+                        ✨ Just {needed - stamps} more {needed - stamps === 1 ? 'stamp' : 'stamps'}{program.stamp_reward ? ` for ${program.stamp_reward}` : ' to your reward'}!
+                      </Text>
+                    </View>
+                  )}
                   {rewardReady && (
                     <TouchableOpacity
                       style={[styles.redeemBtn, { backgroundColor: accent }, busy && { opacity: 0.7 }]}
@@ -438,6 +445,18 @@ export default function BusinessDetailScreen() {
                     <Text style={[styles.loyaltyCountNum, { color: accent }]}>{card?.points_balance ?? 0}</Text>
                     <Text style={styles.loyaltyCountRest}> points</Text>
                   </Text>
+                  {(() => {
+                    const per = program.points_for_pound ?? 100;
+                    const bal = card?.points_balance ?? 0;
+                    if (bal <= 0 || bal >= per) return null;
+                    return (
+                      <View style={[styles.nudge, { backgroundColor: accent + '14' }]}>
+                        <Text style={[styles.nudgeText, { color: accent }]}>
+                          ✨ Just {per - bal} more {per - bal === 1 ? 'point' : 'points'} for £1 off
+                        </Text>
+                      </View>
+                    );
+                  })()}
                   {(() => {
                     const per = program.points_for_pound ?? 100;
                     const spend = Math.floor((card?.points_balance ?? 0) / per) * per;
@@ -1024,6 +1043,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: radius.md, marginTop: 4,
   },
   redeemBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+  nudge: { borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 12, marginTop: 8 },
+  nudgeText: { fontSize: fontSize.xs, fontWeight: '800', textAlign: 'center' },
 
   collectBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

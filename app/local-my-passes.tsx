@@ -89,6 +89,10 @@ function PassCard({ pass }: { pass: MyPass }) {
   const expiresLabel = pass.expires_at
     ? `Expires ${formatDate(pass.expires_at)}`
     : 'No expiry';
+  const daysToExpiry = pass.expires_at
+    ? Math.ceil((new Date(pass.expires_at).getTime() - Date.now()) / 86_400_000)
+    : null;
+  const expiringSoon = daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= 7 && pass.uses_remaining > 0;
 
   return (
     <View style={styles.card}>
@@ -102,7 +106,13 @@ function PassCard({ pass }: { pass: MyPass }) {
             <Text style={styles.cardBiz} numberOfLines={1}>{pass.business_name}</Text>
           )}
         </View>
-        {pass.from_gift && (
+        {expiringSoon ? (
+          <View style={styles.expirePill}>
+            <Text style={styles.expirePillText}>
+              {daysToExpiry === 0 ? 'Expires today' : `${daysToExpiry}d left`}
+            </Text>
+          </View>
+        ) : pass.from_gift && (
           <View style={styles.giftPill}>
             <FontAwesome5 name="gift" size={9} color={S.color} solid />
             <Text style={styles.giftPillText}>Gift</Text>
@@ -161,6 +171,8 @@ const styles = StyleSheet.create({
     backgroundColor: S.color + '15', borderWidth: 1, borderColor: S.color + '35',
   },
   giftPillText: { fontSize: 10, color: S.color, fontWeight: '900', letterSpacing: 0.4 },
+  expirePill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full, backgroundColor: '#FEF3C7' },
+  expirePillText: { fontSize: 10, color: '#B45309', fontWeight: '900', letterSpacing: 0.3 },
 
   cardBottom: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
