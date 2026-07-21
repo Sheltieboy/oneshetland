@@ -14,11 +14,12 @@ import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/
  *   • Event reminders   — 24h before the event, to every valid ticket-holder (module 'events')
  *   • Fetch expiry nudges + auto-expiry (module 'fetch')
  *   • Analytics add-on wallet renewal (module 'business')
+ *   • Loyalty "just one more stamp" — cards one short (module 'loyalty')
  *   • Loyalty "your reward is waiting" — completed stamp cards (module 'loyalty')
  *   • Pass expiry "use it before you lose it" — within 48h (module 'wallet')
  *
  * Extension points (left as TODO): daily "wird o' da day", at-risk streak
- * nudges, "one more stamp" almost-there pushes, cruise "arriving today".
+ * nudges, cruise "arriving today".
  *
  * Auth: if CRON_SECRET is set, callers must send a matching `x-cron-secret`
  * header. (pg_cron / Scheduled Functions can attach it.)
@@ -52,7 +53,7 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_reward: 0, pass_expiring: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0 };
 
     // ── Fetch: nudge the customer shortly BEFORE a request expires ───────────
     // Still pending, not yet reminded, expiring within the next ~2 hours. One
@@ -289,6 +290,44 @@ serve(async (req) => {
         }
       }
     } catch (e) { console.error('[reminder-runner] analytics renewal failed', e); }
+
+    // ── Loyalty: "just one more stamp" ───────────────────────────────────────
+    // Cards that are exactly one stamp short and haven't been nudged for this
+    // fill. nudge_reminded_at re-arms on every stamp, so it fires once per card
+    // when it reaches N-1. (Two columns can't be compared in PostgREST — filter
+    // in code.)
+    try {
+      const { data: near } = await svc
+        .from('local_loyalty_cards')
+        .select('id, user_id, stamps_collected, program:local_loyalty_programs(type, stamps_required, stamp_reward, is_active), business:local_businesses(name)')
+        .is('nudge_reminded_at', null)
+        .gt('stamps_collected', 0)
+        .limit(500);
+      for (const c of near ?? []) {
+        // deno-lint-ignore no-explicit-any
+        const prog = (c as any).program;
+        // deno-lint-ignore no-explicit-any
+        const bizName = (c as any).business?.name ?? 'a Shetland business';
+        if (!prog || prog.type !== 'stamps' || prog.is_active === false) continue;
+        const needed = prog.stamps_required ?? 0;
+        // deno-lint-ignore no-explicit-any
+        const left = needed - (c as any).stamps_collected;
+        if (needed <= 0 || left !== 1) continue;   // exactly one to go
+        const reward = (prog.stamp_reward as string | null)?.trim();
+        await sendUserPush(svc, {
+          userId:     (c as { user_id: string }).user_id,
+          module:     'loyalty',
+          categoryId: 'loyalty.almost_there',
+          title:      'Just one more stamp ⭐️',
+          body:       reward
+            ? `One more visit to ${bizName} and ${reward} is yours.`
+            : `You're one stamp away from your reward at ${bizName}.`,
+          data:       { screen: 'local-my-cards', card_id: (c as { id: string }).id },
+        });
+        await svc.from('local_loyalty_cards').update({ nudge_reminded_at: nowIso }).eq('id', (c as { id: string }).id);
+        result.loyalty_nudge++;
+      }
+    } catch (e) { console.error('[reminder-runner] loyalty almost-there nudges failed', e); }
 
     // ── Loyalty: "your reward is waiting" ────────────────────────────────────
     // Stamp cards that have reached their target but haven't been reminded yet.

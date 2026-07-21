@@ -118,6 +118,7 @@ serve(async (req) => {
       .update({
         stamps_collected: newStamps,
         last_stamp_at: new Date().toISOString(),
+        nudge_reminded_at: null,   // re-arm the "one more stamp" reminder as the card fills
       })
       .eq('id', card.id);
 
