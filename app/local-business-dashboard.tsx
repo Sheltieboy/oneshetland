@@ -491,7 +491,23 @@ export default function BusinessDashboardScreen() {
           </View>
         </View>
 
-        {/* ── Confirm a redemption (staff scan/verify) ── */}
+        {/* ── Loyalty till (scan the member's one card) ── */}
+        <TouchableOpacity
+          style={[styles.backfillBanner, { backgroundColor: S.color, borderColor: S.color }]}
+          onPress={() => router.push({ pathname: '/local-till', params: { businessId: activeBusiness.id } })}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.backfillIcon, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+            <FontAwesome5 name="qrcode" size={11} color="#fff" solid />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.backfillTitle, { color: '#fff' }]}>Loyalty till</Text>
+            <Text style={[styles.backfillSub, { color: 'rgba(255,255,255,0.9)' }]}>Scan a customer’s card to add a stamp, add points or give a reward.</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={11} color="rgba(255,255,255,0.8)" />
+        </TouchableOpacity>
+
+        {/* ── Confirm a redemption (customer-generated code / passes) ── */}
         <TouchableOpacity
           style={styles.backfillBanner}
           onPress={() => router.push('/local-verify')}
@@ -502,7 +518,7 @@ export default function BusinessDashboardScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.backfillTitle}>Confirm a redemption</Text>
-            <Text style={styles.backfillSub}>Scan or enter a customer’s code to redeem an offer, reward or pass.</Text>
+            <Text style={styles.backfillSub}>Scan or enter a customer’s one-time code (passes &amp; app redemptions).</Text>
           </View>
           <FontAwesome5 name="chevron-right" size={11} color={S.color} />
         </TouchableOpacity>

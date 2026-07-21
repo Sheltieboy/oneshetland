@@ -68,6 +68,16 @@ export default function MyCardsScreen() {
           data={cards}
           keyExtractor={c => c.id}
           renderItem={({ item }) => <CardRow card={item} />}
+          ListHeaderComponent={
+            <TouchableOpacity style={[styles.showCardBtn, { backgroundColor: S.color }]} onPress={() => router.push('/my-loyalty-code')} activeOpacity={0.9}>
+              <FontAwesome5 name="qrcode" size={16} color="#fff" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.showCardTitle}>Show my card</Text>
+                <Text style={styles.showCardSub}>One code for every Shetland shop — scan to collect or redeem</Text>
+              </View>
+              <FontAwesome5 name="chevron-right" size={13} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
+          }
           contentContainerStyle={[styles.listContent, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
           ListEmptyComponent={
@@ -208,4 +218,8 @@ const styles = StyleSheet.create({
 
   walletBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#000', borderRadius: radius.md, paddingVertical: 10 },
   walletBtnText: { color: '#000', fontSize: fontSize.xs, fontWeight: '800' },
+
+  showCardBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.lg, padding: 16, marginBottom: 4 },
+  showCardTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
+  showCardSub: { color: 'rgba(255,255,255,0.9)', fontSize: fontSize.xs, marginTop: 2, lineHeight: 15 },
 });
