@@ -176,12 +176,16 @@ serve(async (req) => {
       ?? p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag]?.[0];
     const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag]?.[0];
     if (!keyBag?.key || !certBag?.cert) return json({ error: 'Could not read certificate/key from .p12' }, 500);
-    const wwdrCert = forge.pki.certificateFromPem(wwdrPem);
+    // APPLE_WWDR_PEM may hold one OR several WWDR intermediates (e.g. G4 + G6).
+    // Include them all so the pass always carries the correct chain.
+    const wwdrCerts = (wwdrPem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [])
+      .map((block) => forge.pki.certificateFromPem(block));
+    if (wwdrCerts.length === 0) return json({ error: 'APPLE_WWDR_PEM has no certificate' }, 500);
 
     const p7 = forge.pkcs7.createSignedData();
     p7.content = forge.util.createBuffer(bin(manifestBytes));
     p7.addCertificate(certBag.cert);
-    p7.addCertificate(wwdrCert);
+    for (const c of wwdrCerts) p7.addCertificate(c);
     p7.addSigner({
       key: keyBag.key,
       certificate: certBag.cert,
