@@ -67,57 +67,33 @@ serve(async (req) => {
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
 
-    let cardId = url.searchParams.get('card_id');
-    if (!cardId && req.method === 'POST') cardId = (await req.json().catch(() => ({}))).card_id ?? null;
-    if (!cardId) return json({ error: 'card_id required' }, 400);
-
-    const { data: card } = await anon.from('local_loyalty_cards').select('*').eq('id', cardId).maybeSingle();
-    if (!card) return json({ error: 'Card not found' }, 404);
+    // The single member card — its QR carries the member_code every shop scans.
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const { data: program } = await svc.from('local_loyalty_programs').select('*').eq('id', card.program_id).single();
-    const { data: business } = await svc.from('local_businesses').select('name, logo_url').eq('id', card.business_id).single();
-    const { data: prof } = await svc.from('profiles').select('display_name, full_name').eq('id', card.user_id).maybeSingle();
-    if (!program) return json({ error: 'No programme' }, 404);
-
-    const stamps = card.stamps_collected ?? 0;
-    const tiers = normalizeTiers(program.reward_tiers);
-    let pointsLabel: string; let pointsValue: string; let rewardText: string;
-    if (program.type === 'points') {
-      pointsLabel = 'Points'; pointsValue = String(card.points_balance ?? 0);
-      rewardText = `${program.points_for_pound ?? 100} points = £1 off`;
-    } else if (tiers.length) {
-      pointsLabel = 'Stamps'; pointsValue = `${stamps} / ${tiers[tiers.length - 1].stamps}`;
-      rewardText = tiers.map((t) => `${t.stamps}: ${t.reward}`).join('   ·   ');
-    } else {
-      pointsLabel = 'Stamps'; pointsValue = `${stamps} / ${program.stamps_required ?? 10}`;
-      rewardText = program.stamp_reward ?? 'Reward';
-    }
+    const { data: memberCode, error: mcErr } = await svc.rpc('ensure_member_code', { p_user: user.id });
+    if (mcErr || !memberCode) return json({ error: 'Could not load your member code' }, 500);
+    const { data: prof } = await svc.from('profiles').select('display_name, full_name').eq('id', user.id).maybeSingle();
+    const memberName = prof?.display_name || prof?.full_name || 'OneShetland member';
 
     const suffix = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '');
-    const classId = `${ISSUER_ID}.biz_${suffix(card.business_id)}`;
-    const objectId = `${ISSUER_ID}.card_${suffix(card.id)}`;
-    const bizName = business?.name ?? ORG;
+    const classId = `${ISSUER_ID}.member`;
+    const objectId = `${ISSUER_ID}.member_${suffix(user.id)}`;
 
     const loyaltyClass: Record<string, unknown> = {
       id: classId,
       issuerName: ORG,
-      programName: `${bizName} loyalty`,
+      programName: 'Shop Local Shetland',
       reviewStatus: 'UNDER_REVIEW',
       hexBackgroundColor: BG,
     };
-    if (business?.logo_url && business.logo_url.startsWith('https://')) {
-      loyaltyClass.programLogo = { sourceUri: { uri: business.logo_url } };
-    }
 
     const loyaltyObject = {
       id: objectId,
       classId,
       state: 'ACTIVE',
-      accountName: prof?.display_name || prof?.full_name || 'OneShetland member',
-      accountId: card.user_id,
-      loyaltyPoints: { label: pointsLabel, balance: { string: pointsValue } },
-      barcode: { type: 'QR_CODE', value: card.id, alternateText: bizName },
-      textModulesData: [{ header: 'Reward', body: rewardText }],
+      accountName: memberName,
+      accountId: String(memberCode),
+      barcode: { type: 'QR_CODE', value: String(memberCode), alternateText: String(memberCode) },
+      textModulesData: [{ header: 'Your card', body: 'Show at any taking-part Shetland shop to collect or redeem.' }],
       hexBackgroundColor: BG,
     };
 

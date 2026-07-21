@@ -15,7 +15,10 @@ import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/components/BrandedAlert';
 import { getMyMemberCode } from '@/lib/member-card';
+import { APPLE_WALLET_SUPPORTED, addToAppleWallet } from '@/lib/apple-wallet';
+import { GOOGLE_WALLET_SUPPORTED, addToGoogleWallet } from '@/lib/google-wallet';
 
 const S = SECTIONS.local;
 
@@ -23,8 +26,19 @@ export default function MyLoyaltyCodeScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
+  const { alert } = useAlert();
   const [code, setCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wallet, setWallet] = useState(false);
+
+  const addWallet = async (which: 'apple' | 'google') => {
+    setWallet(true);
+    try {
+      if (which === 'apple') await addToAppleWallet(); else await addToGoogleWallet();
+    } catch (e) {
+      alert({ title: 'Wallet', message: e instanceof Error ? e.message : 'Could not add the pass.' });
+    } finally { setWallet(false); }
+  };
 
   useEffect(() => {
     if (!profile) return;
@@ -57,6 +71,14 @@ export default function MyLoyaltyCodeScreen() {
             stamp or points, or to give you a reward that’s ready.
           </Text>
 
+          {(APPLE_WALLET_SUPPORTED || GOOGLE_WALLET_SUPPORTED) && (
+            <TouchableOpacity style={styles.walletBtn} disabled={wallet} onPress={() => addWallet(APPLE_WALLET_SUPPORTED ? 'apple' : 'google')} activeOpacity={0.85}>
+              {wallet
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <><FontAwesome5 name="wallet" size={13} color="#fff" solid /><Text style={styles.walletBtnText}>Add to {APPLE_WALLET_SUPPORTED ? 'Apple' : 'Google'} Wallet</Text></>}
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={styles.linkBtn} onPress={() => router.push('/local-my-cards')} activeOpacity={0.85}>
             <FontAwesome5 name="layer-group" size={13} color={S.color} solid />
             <Text style={[styles.linkText, { color: S.color }]}>See my stamps &amp; points</Text>
@@ -79,6 +101,8 @@ const styles = StyleSheet.create({
   orLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: colors.textLight },
   code: { fontSize: 30, fontWeight: '900', letterSpacing: 4 },
   help: { fontSize: fontSize.sm, color: colors.textMuted, lineHeight: 20, textAlign: 'center', paddingHorizontal: 8 },
+  walletBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#000', borderRadius: radius.lg, paddingVertical: 14 },
+  walletBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
   linkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: S.light, borderRadius: radius.lg, paddingVertical: 14 },
   linkText: { fontSize: fontSize.sm, fontWeight: '800' },
 });

@@ -10,13 +10,13 @@ import { supabase, SUPABASE_URL } from './supabase';
 
 export const APPLE_WALLET_SUPPORTED = Platform.OS === 'ios';
 
-export async function addLoyaltyCardToAppleWallet(cardId: string): Promise<void> {
+export async function addToAppleWallet(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
   if (!token) throw new Error('Please sign in first.');
 
-  const url = `${SUPABASE_URL}/functions/v1/apple-wallet-pass?card_id=${encodeURIComponent(cardId)}`;
-  const fileUri = `${FileSystem.cacheDirectory}oneshetland-${cardId}.pkpass`;
+  const url = `${SUPABASE_URL}/functions/v1/apple-wallet-pass`;
+  const fileUri = `${FileSystem.cacheDirectory}oneshetland-member.pkpass`;
   const res = await FileSystem.downloadAsync(url, fileUri, { headers: { Authorization: `Bearer ${token}` } });
 
   if (res.status !== 200) {

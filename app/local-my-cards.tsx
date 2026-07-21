@@ -17,9 +17,6 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
-import { useAlert } from '@/components/BrandedAlert';
-import { APPLE_WALLET_SUPPORTED, addLoyaltyCardToAppleWallet } from '@/lib/apple-wallet';
-import { GOOGLE_WALLET_SUPPORTED, addLoyaltyCardToGoogleWallet } from '@/lib/google-wallet';
 import {
   fetchMyLoyaltyCards, CATEGORY_ICONS,
   type LoyaltyCard,
@@ -99,8 +96,6 @@ export default function MyCardsScreen() {
 
 function CardRow({ card }: { card: LoyaltyCard }) {
   const router = useRouter();
-  const { alert } = useAlert();
-  const [addingWallet, setAddingWallet] = useState(false);
   const isStamp = card.program?.type === 'stamps';
   const stamps  = card.stamps_collected;
   const needed  = card.program?.stamps_required ?? 10;
@@ -147,50 +142,6 @@ function CardRow({ card }: { card: LoyaltyCard }) {
 
       {card.program?.stamp_reward && (
         <Text style={styles.cardReward}>{card.program.stamp_reward}</Text>
-      )}
-
-      {APPLE_WALLET_SUPPORTED && (
-        <TouchableOpacity
-          style={styles.walletBtn}
-          disabled={addingWallet}
-          onPress={async () => {
-            setAddingWallet(true);
-            try {
-              await addLoyaltyCardToAppleWallet(card.id);
-            } catch (e) {
-              alert({ title: 'Apple Wallet', message: e instanceof Error ? e.message : 'Could not add the pass.' });
-            } finally {
-              setAddingWallet(false);
-            }
-          }}
-          activeOpacity={0.85}
-        >
-          {addingWallet
-            ? <ActivityIndicator size="small" color="#000" />
-            : <><FontAwesome5 name="wallet" size={12} color="#000" solid /><Text style={styles.walletBtnText}>Add to Apple Wallet</Text></>}
-        </TouchableOpacity>
-      )}
-
-      {GOOGLE_WALLET_SUPPORTED && (
-        <TouchableOpacity
-          style={styles.walletBtn}
-          disabled={addingWallet}
-          onPress={async () => {
-            setAddingWallet(true);
-            try {
-              await addLoyaltyCardToGoogleWallet(card.id);
-            } catch (e) {
-              alert({ title: 'Google Wallet', message: e instanceof Error ? e.message : 'Could not add the pass.' });
-            } finally {
-              setAddingWallet(false);
-            }
-          }}
-          activeOpacity={0.85}
-        >
-          {addingWallet
-            ? <ActivityIndicator size="small" color="#000" />
-            : <><FontAwesome5 name="wallet" size={12} color="#000" solid /><Text style={styles.walletBtnText}>Add to Google Wallet</Text></>}
-        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );

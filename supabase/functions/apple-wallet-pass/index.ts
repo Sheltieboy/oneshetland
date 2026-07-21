@@ -104,49 +104,30 @@ serve(async (req) => {
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
 
-    let cardId = url.searchParams.get('card_id');
-    if (!cardId && req.method === 'POST') cardId = (await req.json().catch(() => ({}))).card_id ?? null;
-    if (!cardId) return json({ error: 'card_id required' }, 400);
-
-    // RLS lets the user read only their own card.
-    const { data: card } = await anon.from('local_loyalty_cards').select('*').eq('id', cardId).maybeSingle();
-    if (!card) return json({ error: 'Card not found' }, 404);
+    // The single member card — its QR carries the member_code that any shop's
+    // till scans. One pass per person, works everywhere.
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const { data: program } = await svc.from('local_loyalty_programs').select('*').eq('id', card.program_id).single();
-    const { data: business } = await svc.from('local_businesses').select('name').eq('id', card.business_id).single();
-    if (!program) return json({ error: 'No programme' }, 404);
-
-    // ── Compose the pass content ────────────────────────────────────────────
-    const stamps = card.stamps_collected ?? 0;
-    const tiers = normalizeTiers(program.reward_tiers);
-    let primary: string; let reward: string;
-    if (program.type === 'points') {
-      primary = `${card.points_balance ?? 0} pts`;
-      reward = `${program.points_for_pound ?? 100} pts = £1 off`;
-    } else if (tiers.length) {
-      primary = `${stamps} / ${tiers[tiers.length - 1].stamps}`;
-      reward = tiers.map((t) => `${t.stamps}: ${t.reward}`).join('   ');
-    } else {
-      primary = `${stamps} / ${program.stamps_required ?? 10}`;
-      reward = program.stamp_reward ?? 'Reward';
-    }
+    const { data: memberCode, error: mcErr } = await svc.rpc('ensure_member_code', { p_user: user.id });
+    if (mcErr || !memberCode) return json({ error: 'Could not load your member code' }, 500);
+    const { data: prof } = await svc.from('profiles').select('display_name, full_name').eq('id', user.id).maybeSingle();
+    const memberName = prof?.display_name || prof?.full_name || 'Member';
 
     const passJson = {
       formatVersion: 1,
       passTypeIdentifier: PASS_TYPE_ID,
       teamIdentifier: TEAM_ID,
       organizationName: ORG,
-      description: `${business?.name ?? ORG} loyalty card`,
-      serialNumber: card.id,
+      description: 'OneShetland loyalty card',
+      serialNumber: `member-${memberCode}`,
       backgroundColor: BG,
       foregroundColor: 'rgb(255,255,255)',
       labelColor: 'rgb(255,255,255)',
-      logoText: business?.name ?? ORG,
-      barcodes: [{ format: 'PKBarcodeFormatQR', message: card.id, messageEncoding: 'iso-8859-1' }],
+      logoText: 'Shop Local Shetland',
+      barcodes: [{ format: 'PKBarcodeFormatQR', message: String(memberCode), messageEncoding: 'iso-8859-1', altText: String(memberCode) }],
       storeCard: {
-        primaryFields: [{ key: 'balance', label: program.type === 'points' ? 'POINTS' : 'STAMPS', value: primary }],
-        secondaryFields: [{ key: 'reward', label: 'REWARD', value: reward }],
-        auxiliaryFields: [{ key: 'business', label: 'AT', value: business?.name ?? ORG }],
+        primaryFields: [{ key: 'member', label: 'MEMBER', value: memberName }],
+        secondaryFields: [{ key: 'code', label: 'CODE', value: String(memberCode) }],
+        auxiliaryFields: [{ key: 'hint', label: '', value: 'Show at any Shetland shop' }],
       },
     };
 
