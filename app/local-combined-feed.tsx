@@ -164,6 +164,22 @@ export default function LocalCombinedFeed() {
             />
           </View>
 
+          {/* SHOP LOCAL SHETLAND — the island-wide loyalty hub (flagship of Local) */}
+          <TouchableOpacity
+            style={[styles.loyaltyBanner, { backgroundColor: S.color }]}
+            activeOpacity={0.9}
+            onPress={() => { Haptics.selectionAsync(); router.push('/local-loyalty-hub' as any); }}
+          >
+            <View style={styles.loyaltyIcon}>
+              <FontAwesome5 name="star" size={18} color="#fff" solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.loyaltyTitle}>Shop Local Shetland</Text>
+              <Text style={styles.loyaltySub}>One card for every shop — stamps, points & deals across the isles</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={13} color="rgba(255,255,255,0.8)" />
+          </TouchableOpacity>
+
           {/* EVENTS */}
           <SectionHeader label={areaLabel ? `Events in ${areaLabel}` : "What's on"} title="Upcoming events"
             color={EVENTS_COLOR} onSeeAll={() => router.push('/(tabs)/whats-on' as any)} />
@@ -641,6 +657,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: 10,
     paddingHorizontal: spacing.md, paddingTop: 16,
   },
+  loyaltyBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: spacing.md, marginTop: 12,
+    borderRadius: radius.lg, padding: 14,
+  },
+  loyaltyIcon: {
+    width: 42, height: 42, borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center',
+  },
+  loyaltyTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
+  loyaltySub: { color: 'rgba(255,255,255,0.9)', fontSize: fontSize.xs, marginTop: 2, lineHeight: 15 },
   shortcutCard: {
     flex: 1, backgroundColor: '#fff', borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border,

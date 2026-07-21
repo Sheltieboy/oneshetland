@@ -577,6 +577,46 @@ export async function fetchActiveOffers(): Promise<LocalOffer[]> {
   return offers.map(o => ({ ...o, business: bizMap[o.business_id] ?? null }));
 }
 
+/** Shop Local Shetland — every business running an active stamp/points
+ *  programme, for the island-wide loyalty hub (mirrors the web /loyalty page). */
+export interface LoyaltyHubBusiness {
+  business: Pick<LocalBusiness, 'id' | 'name' | 'logo_url' | 'category' | 'brand_color' | 'address' | 'slug'>;
+  program: Pick<LoyaltyProgram, 'type' | 'stamps_required' | 'stamp_reward' | 'points_per_pound' | 'points_for_pound'>;
+}
+
+export async function fetchLoyaltyBusinesses(limit = 120): Promise<LoyaltyHubBusiness[]> {
+  const { data: progs, error } = await supabase
+    .from('local_loyalty_programs')
+    .select('business_id, type, stamps_required, stamp_reward, points_per_pound, points_for_pound')
+    .eq('is_active', true)
+    .limit(limit);
+  if (error) throw error;
+  const rows = (progs ?? []) as (LoyaltyHubBusiness['program'] & { business_id: string })[];
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map(p => p.business_id))];
+  const { data: biz } = await supabase
+    .from('local_businesses')
+    .select('id, name, logo_url, category, brand_color, address, slug')
+    .eq('is_active', true)
+    .in('id', ids);
+  const bizMap = Object.fromEntries(
+    ((biz ?? []) as LoyaltyHubBusiness['business'][]).map(b => [b.id, b]),
+  );
+  return rows
+    .filter(p => bizMap[p.business_id])
+    .map(p => ({
+      business: bizMap[p.business_id],
+      program: {
+        type: p.type,
+        stamps_required: p.stamps_required,
+        stamp_reward: p.stamp_reward,
+        points_per_pound: p.points_per_pound,
+        points_for_pound: p.points_for_pound,
+      },
+    }));
+}
+
 export type NearbyOffer = Omit<LocalOffer, 'business'> & {
   distance_km: number;
   business: Pick<LocalBusiness, 'id' | 'name' | 'logo_url' | 'category' | 'accepts_bookings' | 'subscription_tier' | 'is_active' | 'lat' | 'lng'>;
