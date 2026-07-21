@@ -490,6 +490,22 @@ export default function BusinessDashboardScreen() {
           </View>
         </View>
 
+        {/* ── Confirm a redemption (staff scan/verify) ── */}
+        <TouchableOpacity
+          style={styles.backfillBanner}
+          onPress={() => router.push('/local-verify')}
+          activeOpacity={0.85}
+        >
+          <View style={styles.backfillIcon}>
+            <FontAwesome5 name="qrcode" size={11} color={S.color} solid />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.backfillTitle}>Confirm a redemption</Text>
+            <Text style={styles.backfillSub}>Scan or enter a customer’s code to redeem an offer, reward or pass.</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={11} color={S.color} />
+        </TouchableOpacity>
+
         {/* ── Analytics ── */}
         <TouchableOpacity
           style={styles.backfillBanner}

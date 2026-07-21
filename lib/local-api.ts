@@ -577,6 +577,48 @@ export async function fetchActiveOffers(): Promise<LocalOffer[]> {
   return offers.map(o => ({ ...o, business: bizMap[o.business_id] ?? null }));
 }
 
+export type NearbyOffer = Omit<LocalOffer, 'business'> & {
+  distance_km: number;
+  business: Pick<LocalBusiness, 'id' | 'name' | 'logo_url' | 'category' | 'accepts_bookings' | 'subscription_tier' | 'is_active' | 'lat' | 'lng'>;
+};
+
+/** Active offers whose business has coordinates, sorted nearest-first from `coords`.
+ *  Returns the closest ones with a distance on each — deliberately never filters
+ *  to empty, so the caller can highlight a "within 1 mile" band yet still show the
+ *  nearest deals island-wide (Shetland is spread out). */
+export async function fetchNearbyOffers(
+  coords: { lat: number; lng: number },
+  limit = 40,
+): Promise<NearbyOffer[]> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('local_offers')
+    .select('*')
+    .eq('is_active', true)
+    .lte('valid_from', now)
+    .gte('valid_until', now);
+  if (error) throw error;
+  const offers = (data ?? []) as LocalOffer[];
+  if (!offers.length) return [];
+
+  const businessIds = [...new Set(offers.map(o => o.business_id))];
+  const { data: biz } = await supabase
+    .from('local_businesses')
+    .select('id, name, logo_url, category, accepts_bookings, subscription_tier, is_active, lat, lng')
+    .in('id', businessIds)
+    .eq('is_active', true);
+  const bizMap = new Map((biz ?? []).map((b: any) => [b.id, b]));
+
+  const out: NearbyOffer[] = [];
+  for (const o of offers) {
+    const b: any = bizMap.get(o.business_id);
+    if (!b || b.lat == null || b.lng == null) continue;   // no coords → can't place it near you
+    out.push({ ...o, business: b, distance_km: distanceKm(coords.lat, coords.lng, b.lat, b.lng) });
+  }
+  out.sort((a, b) => a.distance_km - b.distance_km);
+  return out.slice(0, limit);
+}
+
 /** All offers (active + expired) for a business — used by both the public profile and the owner dashboard */
 export async function fetchBusinessOffers(businessId: string, includeExpired = false): Promise<LocalOffer[]> {
   const now = new Date().toISOString();
@@ -629,6 +671,35 @@ export async function redeemOffer(offerId: string): Promise<void> {
     body: { offer_id: offerId },
   });
   if (error) throw await fnErr(error, 'Could not redeem offer.');
+}
+
+// ── Staff-verified redemption backbone ──────────────────────────────────────
+export type RedeemKind = 'offer' | 'reward' | 'pass' | 'points';
+export type RedemptionTicket = {
+  id: string; code: string; token: string; kind: RedeemKind;
+  detail: { title?: string; subtitle?: string }; expires_at: string;
+};
+
+/** Customer starts a redemption → short code + QR token for staff to verify. */
+export async function startRedemption(kind: RedeemKind, refId: string, amount?: number): Promise<RedemptionTicket> {
+  const { data, error } = await supabase.functions.invoke('local-redeem-start', {
+    body: { kind, ref_id: refId, amount },
+  });
+  if (error) throw await fnErr(error, 'Could not start redemption.');
+  return data as RedemptionTicket;
+}
+
+/** Staff confirm a customer's code or scanned QR token → applies the effect. */
+export async function verifyRedemption(input: { code?: string; token?: string }): Promise<{ ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } }> {
+  const { data, error } = await supabase.functions.invoke('local-redeem-verify', { body: input });
+  if (error) throw await fnErr(error, 'Could not verify.');
+  return data as { ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } };
+}
+
+/** Poll a redemption's status (customer side) — flips to 'consumed' when staff verify. */
+export async function getRedemptionStatus(id: string): Promise<'pending' | 'consumed' | 'expired' | 'cancelled' | null> {
+  const { data } = await supabase.from('local_redemptions').select('status').eq('id', id).maybeSingle();
+  return (data?.status as 'pending' | 'consumed' | 'expired' | 'cancelled' | undefined) ?? null;
 }
 
 export async function fetchMyRedeemedOfferIds(userId: string): Promise<string[]> {

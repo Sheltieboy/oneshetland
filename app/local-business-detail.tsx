@@ -172,57 +172,17 @@ export default function BusinessDetailScreen() {
     }
   };
 
-  const handleRedeemReward = async () => {
+  // Redemption now goes through the staff-verified backbone: the customer opens
+  // a "show at till" screen (code + QR), staff confirm, and only then does it
+  // count. No balance changes here.
+  const handleRedeemReward = () => {
     if (!card) return;
-    alert({
-      title: 'Redeem reward?',
-      message: 'Show this to staff to claim. The card will reset to 0 stamps once redeemed.',
-      actions: [
-        { label: 'Cancel', style: 'cancel' },
-        { label: 'Redeem', style: 'primary', onPress: async () => {
-          setBusy(true);
-          try {
-            await redeemReward(card.id);
-            track('loyalty_reward_redeemed', { businessId: business?.id });
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            await load();
-            alert({ title: 'Redeemed!', message: 'Show staff your card. Enjoy 🎉' });
-          } catch (e: any) {
-            alert({ title: 'Error', message: e.message });
-          } finally {
-            setBusy(false);
-          }
-        }},
-      ],
-    });
+    router.push({ pathname: '/local-redeem', params: { kind: 'reward', ref_id: card.id } });
   };
 
-  const handleRedeemOffer = async (offer: LocalOffer) => {
+  const handleRedeemOffer = (offer: LocalOffer) => {
     if (!profile) { goToSignIn(`/local-business-detail?id=${id}`); return; }
-    alert({
-      title: 'Claim this offer?',
-      message: `Show staff to use "${offer.title}". You can only use this offer once.`,
-      actions: [
-        { label: 'Cancel', style: 'cancel' },
-        { label: 'Claim', style: 'primary', onPress: async () => {
-          setBusy(true);
-          try {
-            await redeemOffer(offer.id);
-            track('offer_redeemed', { businessId: business?.id, objectType: 'offer', objectId: offer.id });
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            await load();
-            alert({
-              title: 'Offer claimed ✓',
-              message: `Show the "Claimed" badge on "${offer.title}" to staff in the shop to get your discount — it's a one-time use.`,
-            });
-          } catch (e: any) {
-            alert({ title: 'Error', message: e.message });
-          } finally {
-            setBusy(false);
-          }
-        }},
-      ],
-    });
+    router.push({ pathname: '/local-redeem', params: { kind: 'offer', ref_id: offer.id } });
   };
 
   if (loading) {

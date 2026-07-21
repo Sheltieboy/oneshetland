@@ -11,9 +11,9 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { router, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
@@ -123,6 +123,15 @@ function PassCard({ pass }: { pass: MyPass }) {
           <Text style={styles.metricLabel}>{formatPence(pass.paid_amount_pence)} paid</Text>
         </View>
       </View>
+      {pass.uses_remaining > 0 && (
+        <TouchableOpacity
+          style={[styles.useBtn, { backgroundColor: S.color }]}
+          onPress={() => router.push({ pathname: '/local-redeem', params: { kind: 'pass', ref_id: pass.id } })}
+        >
+          <FontAwesome5 name="qrcode" size={13} color="#fff" />
+          <Text style={styles.useBtnText}>Use at till</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -163,4 +172,6 @@ const styles = StyleSheet.create({
   metricValue: { fontSize: 20, fontWeight: '900', color: colors.textPrimary, lineHeight: 22 },
   metricValueSmall: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   metricLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  useBtn: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.md, paddingVertical: 11 },
+  useBtnText: { color: '#fff', fontWeight: '700', fontSize: fontSize.sm },
 });
