@@ -63,7 +63,8 @@ serve(async (req) => {
       if (!card || !program || card.stamps_collected < (program.stamps_required ?? 999)) {
         return json({ error: 'Card is no longer complete' }, 409);
       }
-      await svc.from('local_loyalty_cards').update({ stamps_collected: 0, total_redeemed: (card.total_redeemed ?? 0) + 1 }).eq('id', card.id);
+      // Reset stamps and re-arm the "reward ready" reminder for the next cycle.
+      await svc.from('local_loyalty_cards').update({ stamps_collected: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null }).eq('id', card.id);
       await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: card.user_id, business_id: card.business_id, type: 'reward', amount: program.stamps_required });
     } else if (red.kind === 'points') {
       const { data: card } = await svc.from('local_loyalty_cards').select('*').eq('id', red.ref_id).single();

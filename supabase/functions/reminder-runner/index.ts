@@ -12,9 +12,13 @@ import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/
  * Covers today:
  *   • Booking reminders — 24h and 1h before the appointment (module 'bookings')
  *   • Event reminders   — 24h before the event, to every valid ticket-holder (module 'events')
+ *   • Fetch expiry nudges + auto-expiry (module 'fetch')
+ *   • Analytics add-on wallet renewal (module 'business')
+ *   • Loyalty "your reward is waiting" — completed stamp cards (module 'loyalty')
+ *   • Pass expiry "use it before you lose it" — within 48h (module 'wallet')
  *
- * Extension points (left as TODO — Phase 3): daily "wird o' da day",
- * at-risk streak nudges, membership/boost expiry, cruise "arriving today".
+ * Extension points (left as TODO): daily "wird o' da day", at-risk streak
+ * nudges, "one more stamp" almost-there pushes, cruise "arriving today".
  *
  * Auth: if CRON_SECRET is set, callers must send a matching `x-cron-secret`
  * header. (pg_cron / Scheduled Functions can attach it.)
@@ -48,7 +52,7 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_reward: 0, pass_expiring: 0 };
 
     // ── Fetch: nudge the customer shortly BEFORE a request expires ───────────
     // Still pending, not yet reminded, expiring within the next ~2 hours. One
@@ -285,6 +289,73 @@ serve(async (req) => {
         }
       }
     } catch (e) { console.error('[reminder-runner] analytics renewal failed', e); }
+
+    // ── Loyalty: "your reward is waiting" ────────────────────────────────────
+    // Stamp cards that have reached their target but haven't been reminded yet.
+    // PostgREST can't compare two columns, so we pull un-reminded cards with a
+    // stamp on them + their programme/business, then filter in code.
+    try {
+      const { data: cards } = await svc
+        .from('local_loyalty_cards')
+        .select('id, user_id, stamps_collected, program:local_loyalty_programs(type, stamps_required, stamp_reward, is_active), business:local_businesses(name)')
+        .is('reward_reminded_at', null)
+        .gt('stamps_collected', 0)
+        .limit(500);
+      for (const c of cards ?? []) {
+        // deno-lint-ignore no-explicit-any
+        const prog = (c as any).program;
+        // deno-lint-ignore no-explicit-any
+        const bizName = (c as any).business?.name ?? 'a Shetland business';
+        if (!prog || prog.type !== 'stamps' || prog.is_active === false) continue;
+        const needed = prog.stamps_required ?? 0;
+        // deno-lint-ignore no-explicit-any
+        if (needed <= 0 || (c as any).stamps_collected < needed) continue;
+        const reward = (prog.stamp_reward as string | null)?.trim();
+        await sendUserPush(svc, {
+          userId:     (c as { user_id: string }).user_id,
+          module:     'loyalty',
+          categoryId: 'loyalty.reward_ready',
+          title:      'Your reward is waiting 🎁',
+          body:       reward
+            ? `You've earned ${reward} at ${bizName}. Show your phone at the till to redeem.`
+            : `Your loyalty reward at ${bizName} is ready. Show your phone at the till to redeem.`,
+          data:       { screen: 'local-my-cards', card_id: (c as { id: string }).id },
+        });
+        await svc.from('local_loyalty_cards').update({ reward_reminded_at: nowIso }).eq('id', (c as { id: string }).id);
+        result.loyalty_reward++;
+      }
+    } catch (e) { console.error('[reminder-runner] loyalty reward reminders failed', e); }
+
+    // ── Passes: "use it before it expires" ───────────────────────────────────
+    // Purchased passes with uses left, expiring within ~48h, not yet reminded.
+    try {
+      const expiryWindow = new Date(now.getTime() + 48 * 60 * 60_000).toISOString();
+      const { data: passes } = await svc
+        .from('book_unit_purchases')
+        .select('id, owner_id, business:local_businesses(name), item:book_unit_items(name)')
+        .gt('uses_remaining', 0)
+        .is('expiry_reminded_at', null)
+        .not('expires_at', 'is', null)
+        .gt('expires_at', nowIso)
+        .lt('expires_at', expiryWindow)
+        .limit(500);
+      for (const p of passes ?? []) {
+        // deno-lint-ignore no-explicit-any
+        const bizName = (p as any).business?.name ?? 'a Shetland business';
+        // deno-lint-ignore no-explicit-any
+        const itemName = (p as any).item?.name ?? 'pass';
+        await sendUserPush(svc, {
+          userId:     (p as { owner_id: string }).owner_id,
+          module:     'wallet',
+          categoryId: 'wallet.pass_expiring',
+          title:      'Your pass expires soon ⏳',
+          body:       `Your ${itemName} at ${bizName} expires within 48 hours — use it before you lose it.`,
+          data:       { screen: 'local-my-passes', purchase_id: (p as { id: string }).id },
+        });
+        await svc.from('book_unit_purchases').update({ expiry_reminded_at: nowIso }).eq('id', (p as { id: string }).id);
+        result.pass_expiring++;
+      }
+    } catch (e) { console.error('[reminder-runner] pass expiry reminders failed', e); }
 
     return json({ ok: true, ran_at: nowIso, ...result });
   } catch (err) {
