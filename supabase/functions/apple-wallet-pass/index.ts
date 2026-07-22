@@ -157,11 +157,13 @@ serve(async (req) => {
       ?? p12.getBags({ bagType: forge.pki.oids.keyBag })[forge.pki.oids.keyBag]?.[0];
     const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag]?.[0];
     if (!keyBag?.key || !certBag?.cert) return json({ error: 'Could not read certificate/key from .p12' }, 500);
-    // APPLE_WWDR_PEM may hold one OR several WWDR intermediates (e.g. G4 + G6).
-    // Include them all so the pass always carries the correct chain.
+    // APPLE_WWDR_PEM may hold one OR several WWDR intermediates. Apple pass
+    // signing needs the RSA intermediate (G4); newer ECDSA ones (e.g. G6) can't
+    // be parsed by forge, so skip any that fail rather than aborting.
     const wwdrCerts = (wwdrPem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [])
-      .map((block) => forge.pki.certificateFromPem(block));
-    if (wwdrCerts.length === 0) return json({ error: 'APPLE_WWDR_PEM has no certificate' }, 500);
+      .map((block) => { try { return forge.pki.certificateFromPem(block); } catch { return null; } })
+      .filter((c): c is ReturnType<typeof forge.pki.certificateFromPem> => c !== null);
+    if (wwdrCerts.length === 0) return json({ error: 'No usable (RSA) WWDR certificate — use the WWDR G4 cert' }, 500);
 
     const p7 = forge.pkcs7.createSignedData();
     p7.content = forge.util.createBuffer(bin(manifestBytes));
