@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
+import { fulfilByType } from '../_shared/fulfilment.ts';
 
 /**
  * stripe-webhook
@@ -100,6 +101,27 @@ serve(async (req) => {
               })
               .eq('stripe_payment_intent_id', eventData.id as string);
           }
+        }
+
+        // Safety net for client-confirm-driven card flows (wallet top-up, unit
+        // purchase, gift, event tickets, hub donation, hub membership). Normally
+        // the client calls the matching confirm-* function after PaymentSheet
+        // succeeds; if it never does (app killed / offline), fulfil here instead.
+        // Idempotent on the PaymentIntent id, so it's a no-op when the client
+        // already confirmed. Never let a fulfilment error 500 the webhook —
+        // Stripe would retry the whole event and re-run the blocks above.
+        try {
+          const fulfilRes = await fulfilByType(supabase, {
+            id:       eventData.id as string,
+            amount:   (eventData.amount as number) ?? 0,
+            metadata: meta,
+            status:   eventData.status as string | undefined,
+          });
+          if (fulfilRes) {
+            console.log(`[stripe-webhook] fulfil ${meta.type} (${eventData.id}): ${fulfilRes.note}`);
+          }
+        } catch (fulfilErr) {
+          console.error(`[stripe-webhook] fulfil failed for ${meta.type} (${eventData.id}):`, fulfilErr);
         }
 
         break;

@@ -985,6 +985,23 @@ export default function BusinessDashboardScreen() {
           <WalletReceiptsCard receipts={walletReceipts} accentColor={S.color} />
         )}
 
+        {/* ── Money & transactions — full statement + CSV export ── */}
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => router.push({ pathname: '/local-business-transactions', params: { businessId: activeBusiness.id } } as any)}
+        >
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+              <FontAwesome5 name="receipt" size={13} color={S.color} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Money &amp; transactions</Text>
+              <Text style={styles.cardSub}>Full statement · export for your accounts</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={13} color={colors.textLight} />
+          </View>
+        </TouchableOpacity>
+
         {/* ── Loyalty programme — Pro+ only ── */}
         {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
         <View style={styles.card}>

@@ -16,6 +16,7 @@ import { registerPushToken, notificationRoute } from '@/lib/notifications';
 import { SCREEN_PUSH, MODAL_PRESENT, SECTION_ROOT } from '@/constants/nav';
 import { SplashAnimation } from '@/components/SplashAnimation';
 import { BrandedAlertProvider } from '@/components/BrandedAlert';
+import { ChargeApprovalListener } from '@/components/ChargeApprovalListener';
 import { INTRO_SEEN_KEY } from './intro';
 
 // Temporary error boundary — catches JS crashes and shows the error
@@ -285,6 +286,7 @@ function RootNavigator() {
           <Stack.Screen name="memory-new" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="hub-notice-compose" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="local-business-dashboard" />
+          <Stack.Screen name="local-business-transactions" />
           <Stack.Screen name="local-my-cards" />
           <Stack.Screen name="local-my-passes" />
           <Stack.Screen name="local-my-gifts" />
@@ -345,6 +347,10 @@ function RootNavigator() {
           onDone={() => setSplashGone(true)}
         />
       )}
+
+      {/* Global: pops the approve/decline prompt when a business scans this
+          customer's member card to request a wallet payment. Renders null until one arrives. */}
+      <ChargeApprovalListener />
     </>
   );
 }

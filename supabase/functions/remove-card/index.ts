@@ -66,7 +66,7 @@ serve(async (req) => {
     // List the customer's saved cards.
     const listRes = await fetch(
       `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=100`,
-      { headers: { Authorization: `Bearer ${stripeKey}` } },
+      { headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' } },
     );
     const listData = await listRes.json();
     if (!listRes.ok) throw new Error(listData.error?.message ?? 'Could not read payment methods from Stripe');
@@ -88,7 +88,7 @@ serve(async (req) => {
     for (const pmId of targets) {
       const detachRes = await fetch(`https://api.stripe.com/v1/payment_methods/${pmId}/detach`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${stripeKey}` },
+        headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' },
       });
       const detachData = await detachRes.json();
       if (!detachRes.ok) throw new Error(detachData.error?.message ?? 'Could not remove the card from Stripe');
@@ -98,7 +98,7 @@ serve(async (req) => {
     // Re-check Stripe and set the flag to match reality (service role bypasses the lock trigger).
     const recheckRes = await fetch(
       `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-      { headers: { Authorization: `Bearer ${stripeKey}` } },
+      { headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' } },
     );
     const recheckData = await recheckRes.json();
     if (!recheckRes.ok) throw new Error(recheckData.error?.message ?? 'Could not read payment methods from Stripe');

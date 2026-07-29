@@ -141,7 +141,7 @@ export default function PayScreen() {
         {step === 'code' && (
           <View style={styles.content}>
             <View style={[styles.iconWrap, { backgroundColor: S.light }]}>
-              <FontAwesome5 name="qrcode" size={26} color={S.color} solid />
+              <FontAwesome5 name="store" size={24} color={S.color} solid />
             </View>
             <Text style={styles.title}>Enter business code</Text>
             <Text style={styles.subtitle}>

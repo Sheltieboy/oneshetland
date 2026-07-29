@@ -5,7 +5,7 @@
  * THIS business, then act: add a stamp, add points, redeem a ready reward, or
  * apply an offer. Backed by the loyalty-till edge function.
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -13,7 +13,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { tillLookup, tillAction, type TillLookup } from '@/lib/member-card';
+import { tillLookup, tillAction, createChargeRequest, getChargeStatus, type TillLookup } from '@/lib/member-card';
 
 // Soft-load expo-camera (mirrors local-verify.tsx).
 let _CameraView: React.ComponentType<any> = View;
@@ -39,7 +39,36 @@ export default function LocalTillScreen() {
   const [code, setCode] = useState('');
   const [amount, setAmount] = useState('');
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
+  const [chargeAmount, setChargeAmount] = useState('');
+  const [charge, setCharge] = useState<{ requestId: string; amountPence: number; status: string } | null>(null);
   const lockRef = useRef(false);
+
+  // Poll the pending charge until the customer approves / declines / it lapses.
+  useEffect(() => {
+    if (!charge || (charge.status !== 'pending' && charge.status !== 'charging')) return;
+    const t = setInterval(async () => {
+      const s = await getChargeStatus(charge.requestId).catch(() => null);
+      if (s && s !== charge.status) {
+        setCharge((c) => (c ? { ...c, status: s } : c));
+        if (s === 'paid') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [charge]);
+
+  async function requestCharge() {
+    const pence = Math.round((parseFloat(chargeAmount) || 0) * 100);
+    if (!(pence >= 50)) { setToast({ ok: false, text: 'Enter at least £0.50' }); return; }
+    setBusy(true); setToast(null);
+    try {
+      const r = await createChargeRequest(code, pence, businessId);
+      setCharge({ requestId: r.request_id, amountPence: r.amount_pence, status: 'pending' });
+      Haptics.selectionAsync();
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setToast({ ok: false, text: e instanceof Error ? e.message : 'Could not start the charge' });
+    } finally { setBusy(false); }
+  }
 
   async function lookup(memberCode: string) {
     if (lockRef.current) return;
@@ -70,7 +99,7 @@ export default function LocalTillScreen() {
     try { setData(await tillLookup(code, businessId)); } catch { /* keep */ }
   }
 
-  function reset() { setData(null); setCode(''); setManual(''); setAmount(''); setToast(null); lockRef.current = false; }
+  function reset() { setData(null); setCode(''); setManual(''); setAmount(''); setToast(null); setChargeAmount(''); setCharge(null); lockRef.current = false; }
 
   const program = data?.program;
   const card = data?.card;
@@ -154,6 +183,34 @@ export default function LocalTillScreen() {
               </TouchableOpacity>
             ))}
 
+            {/* ── Charge by scan ─────────────────────────────────────────────── */}
+            <View style={styles.chargeBox}>
+              {!charge ? (
+                <>
+                  <Text style={styles.chargeLabel}>Take a wallet payment</Text>
+                  <View style={styles.pointsRow}>
+                    <TextInput style={styles.amountInput} value={chargeAmount} onChangeText={(t) => setChargeAmount(t.replace(/[^0-9.]/g, ''))} placeholder="£ amount" placeholderTextColor={colors.textLight} keyboardType="decimal-pad" />
+                    <TouchableOpacity style={[styles.action, { backgroundColor: '#0E7490', flex: 1, opacity: parseFloat(chargeAmount) > 0 && !busy ? 1 : 0.4 }]}
+                      disabled={!(parseFloat(chargeAmount) > 0) || busy} onPress={requestCharge}>
+                      <FontAwesome5 name="wallet" size={13} color="#fff" solid /><Text style={styles.actionText}>Request £{(parseFloat(chargeAmount) > 0 ? parseFloat(chargeAmount) : 0).toFixed(2)}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.chargeHint}>The customer approves it on their own phone before you&apos;re paid.</Text>
+                </>
+              ) : (
+                <View style={{ alignItems: 'center', gap: 6 }}>
+                  {(charge.status === 'pending' || charge.status === 'charging') && (
+                    <><ActivityIndicator color="#0E7490" /><Text style={styles.chargeWait}>Waiting for {data.customer.name} to approve £{(charge.amountPence / 100).toFixed(2)}…</Text></>
+                  )}
+                  {charge.status === 'paid' && <Text style={[styles.chargeResult, { color: '#16a34a' }]}>✓ Paid £{(charge.amountPence / 100).toFixed(2)}</Text>}
+                  {charge.status === 'declined' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Customer declined</Text>}
+                  {charge.status === 'expired' && <Text style={[styles.chargeResult, { color: '#d97706' }]}>Request expired — try again</Text>}
+                  {charge.status === 'failed' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Payment failed (not charged)</Text>}
+                  <TouchableOpacity onPress={() => setCharge(null)}><Text style={styles.chargeCancel}>{charge.status === 'pending' || charge.status === 'charging' ? 'Cancel' : 'New charge'}</Text></TouchableOpacity>
+                </View>
+              )}
+            </View>
+
             {busy && <ActivityIndicator color={ACCENT} style={{ marginTop: 8 }} />}
 
             <TouchableOpacity style={styles.nextBtn} onPress={reset}>
@@ -192,4 +249,11 @@ const styles = StyleSheet.create({
   amountInput: { width: 96, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 12, fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
   nextBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   nextText: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '800' },
+
+  chargeBox: { borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed', borderRadius: radius.md, padding: 12, gap: 8, marginTop: 4 },
+  chargeLabel: { fontSize: 11, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  chargeHint: { fontSize: 11, color: colors.textLight },
+  chargeWait: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: '700', textAlign: 'center' },
+  chargeResult: { fontSize: fontSize.md, fontWeight: '900', textAlign: 'center' },
+  chargeCancel: { fontSize: 12, color: colors.textMuted, fontWeight: '800', marginTop: 2 },
 });

@@ -74,6 +74,21 @@ serve(async (req) => {
       });
       if (error) throw new Error(error.message);
       result = data;
+
+      // Fallback: a WEB ticket's QR encodes the BACKUP code (the raw token only
+      // ever lives on the buyer's device), so a raw-token miss may actually be a
+      // scanned backup-code QR. Retry it as a backup code before giving up.
+      if (result?.result === 'not_found' || result?.result === 'invalid_token') {
+        const asBackup = String(raw_token).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (asBackup.length >= 6) {
+          const { data: bData } = await supabase.rpc('validate_backup_code', {
+            p_backup_code: asBackup,
+            p_event_id:    event_id,
+            p_scanner_id:  user.id,
+          });
+          if (bData?.result && bData.result !== 'not_found') result = bData;
+        }
+      }
     } else {
       const { data, error } = await supabase.rpc('validate_backup_code', {
         p_backup_code: backup_code,

@@ -24,9 +24,13 @@ async function listSavedCard(customerId: string): Promise<string | null> {
   if (!res.ok) throw new Error(data.error?.message ?? `Stripe payment_methods list failed (HTTP ${res.status})`);
   return data.data?.[0]?.id ?? null;
 }
-async function createPaymentIntent(params: Record<string, string>): Promise<any> {
+async function createPaymentIntent(params: Record<string, string>, idempotencyKey?: string): Promise<any> {
+  const headers: Record<string, string> = { ...stripePostHeaders() as Record<string, string> };
+  // Idempotency-Key makes a retried create (lost response, double-tap) return the
+  // ORIGINAL PaymentIntent instead of charging the saved card a second time.
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const res  = await fetch('https://api.stripe.com/v1/payment_intents', {
-    method: 'POST', headers: stripePostHeaders(), body: new URLSearchParams(params),
+    method: 'POST', headers, body: new URLSearchParams(params),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error?.message ?? `Stripe PaymentIntent failed (HTTP ${res.status})`);
@@ -141,7 +145,7 @@ serve(async (req) => {
         payment_method: bizPm,
         confirm:        'true',
         off_session:    'true',
-      });
+      }, `boost-biz-${business_id}-${shift_id}`);
       if (pi.status !== 'succeeded') {
         return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${pi.status}). Please check the business card.` }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
@@ -178,7 +182,7 @@ serve(async (req) => {
         payment_method: pmId,
         confirm:        'true',
         off_session:    'true',
-      });
+      }, `boost-${user.id}-${shift_id}`);
 
       if (paymentIntent.status !== 'succeeded') {
         return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${paymentIntent.status}). Please check your card.` }), {

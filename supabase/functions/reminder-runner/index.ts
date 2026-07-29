@@ -53,7 +53,18 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0 };
+
+    // ── Event tickets: release capacity held by abandoned orders ─────────────
+    // Pending (never-paid) ticket orders keep their reserved seats forever,
+    // slowly making a popular event look sold out. Expire orders older than 60
+    // min (Stripe's success webhook flips genuinely-paid ones to 'paid' within
+    // seconds, so only truly-dead orders are still pending by then) — giving the
+    // seats back, voiding the tickets and cancelling the orders.
+    try {
+      const { data: expired } = await svc.rpc('expire_stale_ticket_orders', { p_older_than_minutes: 60 });
+      result.ticket_orders_expired = typeof expired === 'number' ? expired : 0;
+    } catch (e) { console.error('[reminder-runner] ticket-order expiry failed', e); }
 
     // ── Fetch: nudge the customer shortly BEFORE a request expires ───────────
     // Still pending, not yet reminded, expiring within the next ~2 hours. One

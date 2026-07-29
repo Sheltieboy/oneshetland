@@ -128,7 +128,7 @@ serve(async (req) => {
     // Get the customer's default payment method from Stripe
     const pmRes = await fetch(
       `https://api.stripe.com/v1/customers/${customerProfile.stripe_customer_id}/payment_methods?type=card&limit=1`,
-      { headers: { 'Authorization': `Bearer ${stripeKey}` } },
+      { headers: { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' } },
     );
     const pmData = await pmRes.json();
     const paymentMethodId = pmData.data?.[0]?.id;
@@ -177,6 +177,7 @@ serve(async (req) => {
       headers: {
         'Authorization': `Bearer ${stripeKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Stripe-Version': '2023-10-16',
       },
       body: new URLSearchParams(piBody),
     });

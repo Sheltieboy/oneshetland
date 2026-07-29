@@ -75,7 +75,7 @@ serve(async (req) => {
     let voided = false;
     if (request.payment_intent_id && request.payment_status === 'authorised') {
       const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
-      const headers = { 'Authorization': `Bearer ${stripeKey}` };
+      const headers = { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' };
 
       const piRes = await fetch(`${STRIPE}/payment_intents/${request.payment_intent_id}`, { headers });
       const pi = await piRes.json();

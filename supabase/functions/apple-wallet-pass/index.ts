@@ -200,8 +200,6 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error('[apple-wallet-pass]', err);
-    const msg = err instanceof Error ? err.message : 'Unknown error';
-    // TEMP: surface the real error to the client so we can diagnose signing.
-    return json({ error: `DIAG: ${msg}` }, 500);
+    return json({ error: 'Could not generate pass' }, 500);
   }
 });

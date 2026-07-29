@@ -1,11 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { calculateCommission } from '../_shared/commission.ts';
-import { getCommissionConfig } from '../_shared/commission-config.ts';
-import { sendUserPush } from '../_shared/send-push.ts';
-
-// Stripe API version pinned via header below — kept aligned with authorise-payment.
-const STRIPE_API_VERSION = '2023-10-16';
+import { executeWalletPayment } from '../_shared/wallet-pay.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,125 +63,12 @@ serve(async (req) => {
       .single();
 
     if (!business) return json({ error: 'Business not found' }, 404);
-    if (business.owner_id === user.id) return json({ error: "Can't pay yourself" }, 403);
-    if (!business.accepts_wallet) return json({ error: "This business doesn't accept wallet payments yet" }, 400);
-    if (!business.stripe_account_id || !business.payout_enabled) {
-      return json({ error: 'Business hasn\'t finished Stripe onboarding' }, 400);
-    }
 
-    // Cashback is BUSINESS-FUNDED — comes out of the merchant's transfer.
-    // The customer's wallet still gets the credit; the business absorbs the
-    // cost of the loyalty incentive they themselves set. See migration 034.
-    const cashbackPence = Math.floor(amount_pence * (business.cashback_percent ?? 0) / 100);
-
-    // Platform commission — admin-editable, see fees.wallet.* in admin_config.
-    const walletCfg = await getCommissionConfig(svc, 'wallet');
-    const platformFee = calculateCommission(amount_pence, walletCfg, 'wallet').fee_pence;
-    const transferAmount = amount_pence - platformFee - cashbackPence;
-
-    // Refuse if the business would receive nothing (or negative) after fee +
-    // cashback — typically only happens if a business sets an extreme cashback
-    // rate that combined with the platform fee exceeds the payment.
-    if (transferAmount < 1) {
-      return json({
-        error: 'This payment can\'t be processed — the business\'s cashback rate and platform fee together exceed the payment amount.',
-      }, 400);
-    }
-
-    // Atomically debit the spend and credit cashback in a single guarded
-    // statement (migration 065). Returns NULL if funds don't cover the spend —
-    // this prevents the lost-update race the old read-modify-write allowed.
-    const { data: newBalance, error: debitErr } = await svc
-      .rpc('wallet_debit', { p_user: user.id, p_spend: amount_pence, p_cashback: cashbackPence });
-    if (debitErr) throw debitErr;
-    if (newBalance == null) {
-      return json({ error: 'Insufficient balance — top up first' }, 402);
-    }
-
-    // Stripe Connect transfer — raw fetch (no SDK) to avoid the esm.sh Stripe
-    // build's Node-compat shim, which crashes under newer Supabase edge
-    // runtimes. Same pattern as authorise-payment.
-    let transferId: string | null = null;
-    try {
-      const transferBody = new URLSearchParams({
-        amount:      String(transferAmount),
-        currency:    'gbp',
-        destination: business.stripe_account_id,
-        description: `OneShetland Marketplace payment from ${user.id.slice(0, 8)} (£${(platformFee / 100).toFixed(2)} platform fee${cashbackPence > 0 ? ` + £${(cashbackPence / 100).toFixed(2)} cashback to customer` : ''})`,
-        'metadata[user_id]':               user.id,
-        'metadata[business_id]':           business.id,
-        'metadata[application_fee_label]': 'OneShetland platform fee',
-        'metadata[application_fee_pence]': String(platformFee),
-        'metadata[cashback_to_customer_pence]': String(cashbackPence),
-      });
-
-      const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
-        method: 'POST',
-        headers: {
-          'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-          'Content-Type':   'application/x-www-form-urlencoded',
-          'Stripe-Version': STRIPE_API_VERSION,
-          // Idempotency: protects against a duplicate transfer if this request is
-          // retried at the network layer within Stripe's 24h window.
-          'Idempotency-Key': crypto.randomUUID(),
-        },
-        body: transferBody,
-      });
-      const transferJson = await transferRes.json();
-      if (!transferRes.ok) {
-        throw new Error(transferJson.error?.message ?? `Stripe transfer failed (HTTP ${transferRes.status})`);
-      }
-      transferId = transferJson.id;
-    } catch (stripeErr) {
-      console.error('[local-wallet-pay] Stripe transfer failed:', stripeErr);
-      // Refund customer by reversing the net change atomically: we debited the
-      // spend and credited cashback, so the reversal credits (spend − cashback).
-      await svc.rpc('wallet_credit', { p_user: user.id, p_amount: amount_pence - cashbackPence });
-      return json({ error: 'Payment to business failed — wallet refunded' }, 502);
-    }
-
-    // Record transactions
-    await svc.from('local_wallet_transactions').insert([
-      {
-        user_id: user.id,
-        business_id: business.id,
-        type: 'spend',
-        amount_pence: -amount_pence,
-        platform_fee_pence: platformFee,
-        cashback_pence: cashbackPence,
-        stripe_transfer_id: transferId,
-        description: `Payment at ${business.name}`,
-      },
-      ...(cashbackPence > 0 ? [{
-        user_id: user.id,
-        business_id: business.id,
-        type: 'cashback',
-        amount_pence: cashbackPence,
-        description: `${business.cashback_percent}% cashback from ${business.name}`,
-      }] : []),
-    ]);
-
-    // Receipts (best-effort): customer paid, owner received.
-    try {
-      const paid = `£${(amount_pence / 100).toFixed(2)}`;
-      const cashbackNote = cashbackPence > 0 ? ` You earned £${(cashbackPence / 100).toFixed(2)} cashback.` : '';
-      await sendUserPush(svc, {
-        userId: user.id, module: 'wallet', categoryId: 'wallet.payment',
-        title: 'Payment sent',
-        body: `You paid ${paid} at ${business.name}.${cashbackNote}`,
-        data: { screen: 'local-wallet' },
-      });
-      if (business.owner_id) {
-        await sendUserPush(svc, {
-          userId: business.owner_id, module: 'business', categoryId: 'business.payment_received',
-          title: 'Payment received 💷',
-          body: `A customer paid ${paid} at ${business.name}.`,
-          data: { screen: 'local-business-dashboard' },
-        });
-      }
-    } catch (e) { console.error('[local-wallet-pay] notify failed', e); }
-
-    return json({ balance_pence: newBalance, cashback_pence: cashbackPence });
+    // Shared execution path (fee, cashback, atomic debit, transfer, refund-on-fail,
+    // receipts) — identical to the scan-to-charge flow so the money logic can't drift.
+    const result = await executeWalletPayment(svc, { userId: user.id, business, amountPence: amount_pence });
+    if (!result.ok) return json({ error: result.error }, result.status);
+    return json({ balance_pence: result.balance_pence, cashback_pence: result.cashback_pence });
   } catch (err) {
     console.error('[local-wallet-pay]', err);
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);

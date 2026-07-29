@@ -61,7 +61,7 @@ serve(async (req) => {
     // Ask Stripe whether the customer actually has a saved card.
     const pmRes = await fetch(
       `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-      { headers: { Authorization: `Bearer ${stripeKey}` } },
+      { headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' } },
     );
     const pmData = await pmRes.json();
     if (!pmRes.ok) throw new Error(pmData.error?.message ?? 'Could not read payment methods from Stripe');

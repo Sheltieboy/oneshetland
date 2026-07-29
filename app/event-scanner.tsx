@@ -66,6 +66,15 @@ const RESULT_LABELS: Record<string, string> = {
   invalid_token:     '✗ Invalid QR code',
 };
 
+// Auto-format the backup code as XXXX-XXXX. The attendee's ticket shows the dash,
+// but staff should only need to type the 8 characters — the dash appears itself
+// after the 4th. Backspacing works naturally (the dash re-derives from the clean
+// characters). The server strips non-alphanumerics anyway, so this is cosmetic.
+function formatBackupCode(raw: string): string {
+  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  return clean.length > 4 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
+}
+
 export default function EventScannerScreen() {
   const { id: eventId } = useLocalSearchParams<{ id: string }>();
   const router           = useRouter();
@@ -298,7 +307,7 @@ export default function EventScannerScreen() {
             <TextInput
               style={styles.backupField}
               value={backupCode}
-              onChangeText={t => setBackupCode(t.toUpperCase())}
+              onChangeText={t => setBackupCode(formatBackupCode(t))}
               placeholder="XXXX-XXXX"
               placeholderTextColor={colors.textLight}
               autoCapitalize="characters"

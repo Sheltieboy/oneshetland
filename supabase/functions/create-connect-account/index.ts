@@ -52,7 +52,7 @@ serve(async (req) => {
 
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
     if (!stripeKey) return json({ error: 'Stripe not configured' }, 500);
-    const sHeaders = { 'Authorization': `Bearer ${stripeKey}` };
+    const sHeaders = { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' };
 
     // Resolve an existing Connect account — profiles first, then driver_profiles
     // (covers drivers who onboarded before profiles became the source of truth).

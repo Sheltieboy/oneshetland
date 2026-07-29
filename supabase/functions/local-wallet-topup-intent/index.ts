@@ -48,10 +48,19 @@ serve(async (req) => {
     // Default to saved-card mode so older app builds (which don't pass this
     // flag yet) still get the centralised-payment UX. Falls back to
     // PaymentSheet automatically if the customer has no saved card.
-    const { amount_pence, use_saved_card = true } = await req.json();
+    const { amount_pence, use_saved_card = true, idempotency_key } = await req.json();
     if (!amount_pence || amount_pence < 500 || amount_pence > 50_000) {
       return json({ error: 'Amount must be £5–£500' }, 400);
     }
+
+    // Idempotency-Key on the off-session charge below: a retry (lost response /
+    // double-tap) returns the ORIGINAL PaymentIntent instead of charging the
+    // saved card a second time. Prefer a per-attempt key the client sends so
+    // genuine repeat top-ups of the same amount aren't blocked; fall back to a
+    // deterministic key (Stripe keys live 24h) for older builds.
+    const topupIdemKey = typeof idempotency_key === 'string' && idempotency_key
+      ? `topup-${user.id}-${idempotency_key}`
+      : `topup-${user.id}-${amount_pence}`;
 
     const baseParams: Record<string, string> = {
       amount:   String(amount_pence),
@@ -92,6 +101,7 @@ serve(async (req) => {
               'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
               'Content-Type':   'application/x-www-form-urlencoded',
               'Stripe-Version': STRIPE_API_VERSION,
+              'Idempotency-Key': topupIdemKey,
             },
             body: new URLSearchParams({
               ...baseParams,

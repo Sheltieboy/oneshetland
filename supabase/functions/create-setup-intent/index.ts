@@ -82,7 +82,7 @@ serve(async (req) => {
       if (!stripeCustomerId) {
         const customerRes = await fetch('https://api.stripe.com/v1/customers', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${stripeSecretKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: { 'Authorization': `Bearer ${stripeSecretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': '2023-10-16' },
           body: new URLSearchParams({
             email: business.email ?? user.email ?? '',
             name: business.name ?? '',
@@ -111,7 +111,7 @@ serve(async (req) => {
       if (!stripeCustomerId) {
         const customerRes = await fetch('https://api.stripe.com/v1/customers', {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${stripeSecretKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: { 'Authorization': `Bearer ${stripeSecretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': '2023-10-16' },
           body: new URLSearchParams({
             email: user.email ?? '',
             name: profile?.full_name ?? '',
@@ -135,6 +135,7 @@ serve(async (req) => {
       headers: {
         'Authorization': `Bearer ${stripeSecretKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Stripe-Version': '2023-10-16',
       },
       body: new URLSearchParams({
         customer: stripeCustomerId,

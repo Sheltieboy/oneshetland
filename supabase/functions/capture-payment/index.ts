@@ -126,7 +126,7 @@ serve(async (req) => {
 
       const piGetRes = await fetch(
         `https://api.stripe.com/v1/payment_intents/${request.payment_intent_id}`,
-        { headers: { 'Authorization': `Bearer ${stripeKey}` } },
+        { headers: { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' } },
       );
       const piExisting = await piGetRes.json();
       if (piGetRes.ok && piExisting.application_fee_amount != null) {
@@ -140,6 +140,7 @@ serve(async (req) => {
         headers: {
           'Authorization': `Bearer ${stripeKey}`,
           'Content-Type': 'application/x-www-form-urlencoded',
+          'Stripe-Version': '2023-10-16',
         },
         body: new URLSearchParams(updateBody),
       });
@@ -157,6 +158,7 @@ serve(async (req) => {
         headers: {
           'Authorization': `Bearer ${stripeKey}`,
           'Content-Type': 'application/x-www-form-urlencoded',
+          'Stripe-Version': '2023-10-16',
         },
         body: new URLSearchParams({ amount_to_capture: String(totalPence) }),
       },
