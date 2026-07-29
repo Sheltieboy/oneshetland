@@ -35,3 +35,13 @@ assets/cruise-pics/
 assets/cruise-dump.csv
 assets/cruise-dump.sql
 assets/cruise-import.csv
+
+# Signing secrets & certificates — NEVER commit (Wallet / Apple push certs)
+oneshetland-*.json
+*.p12
+*.b64
+*.cer
+*.certSigningRequest
+wwdr.pem
+.DS_Store
+supabase/.temp/
