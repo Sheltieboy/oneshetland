@@ -8,7 +8,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
-import { Job, CONTRACT_LABELS, REMOTE_LABELS, formatJobPay, payIsShown } from '@/lib/jobs-api';
+import { Job, CONTRACT_LABELS, REMOTE_LABELS, formatJobPay, payIsShown, jobDisplayBusiness } from '@/lib/jobs-api';
 
 const S = SECTIONS.jobs;
 
@@ -35,12 +35,13 @@ export function JobCard({
   onToggleSave?: () => void;
 }) {
   const accent = tint(job.business?.brand_color);
+  const disp = jobDisplayBusiness(job);
   const featured = job.is_featured || (job.boosted_until != null && new Date(job.boosted_until) > new Date());
   return (
     <TouchableOpacity style={[styles.card, featured && { borderColor: accent + '66' }]} onPress={onPress} activeOpacity={0.85}>
       <View style={[styles.logo, { backgroundColor: accent + '14' }]}>
-        {job.business?.logo_url
-          ? <Image source={{ uri: job.business.logo_url }} style={styles.logoImg} />
+        {disp.logo_url
+          ? <Image source={{ uri: disp.logo_url }} style={styles.logoImg} resizeMode="contain" />
           : <FontAwesome5 name="briefcase" size={18} color={accent} solid />}
       </View>
 
@@ -53,8 +54,9 @@ export function JobCard({
         ) : null}
         <Text style={styles.title} numberOfLines={2}>{job.title}</Text>
         <Text style={styles.org} numberOfLines={1}>
-          {job.business?.name ?? 'A Shetland employer'}
-          {job.business?.is_verified ? '  ·  ✓ Verified' : ''}
+          {disp.name}
+          {disp.is_verified ? '  ·  ✓ Verified' : ''}
+          {job.source_label ? `  ·  ${job.source_label}` : ''}
         </Text>
 
         <View style={styles.chips}>

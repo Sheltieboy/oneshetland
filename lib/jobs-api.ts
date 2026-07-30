@@ -43,7 +43,7 @@ export const JOB_CATEGORIES = [
 
 export interface Job {
   id:                  string;
-  employer_id:         string;
+  employer_id:         string | null;
   posted_as_business_id: string | null;
   title:               string;
   description:         string | null;
@@ -75,6 +75,10 @@ export interface Job {
   posted_at:           string;
   created_at:          string;
   updated_at:          string;
+  source:              string | null;
+  source_label:        string | null;
+  external_employer_name: string | null;
+  external_employer_logo_url: string | null;
   business?:           { id: string; name: string; logo_url: string | null; brand_color: string | null; slug: string | null; is_verified: boolean } | null;
 }
 
@@ -168,6 +172,21 @@ export function payIsShown(j: Pick<Job, 'pay_min' | 'pay_max' | 'pay_hidden'>): 
 
 const JOB_SELECT =
   '*, business:local_businesses(id,name,logo_url,brand_color,slug,is_verified)';
+
+/** Employer name/logo for a job: OneShetland business, else external (syndicated)
+ *  employer, else a generic fallback. */
+export function jobDisplayBusiness(
+  j: Pick<Job, 'business' | 'external_employer_name' | 'external_employer_logo_url'>,
+): { name: string; logo_url: string | null; is_verified: boolean } {
+  if (j.business) return { name: j.business.name, logo_url: j.business.logo_url, is_verified: j.business.is_verified };
+  if (j.external_employer_name) return { name: j.external_employer_name, logo_url: j.external_employer_logo_url ?? null, is_verified: false };
+  return { name: 'A Shetland employer', logo_url: null, is_verified: false };
+}
+
+/** True for syndicated listings that apply out to an external board (no in-app apply). */
+export function isExternalJob(j: Pick<Job, 'source'>): boolean {
+  return !!j.source;
+}
 
 // ── Jobs: browse / read ─────────────────────────────────────────────────────────
 

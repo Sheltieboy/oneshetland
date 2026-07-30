@@ -23,6 +23,7 @@ import {
   fetchJob, hasApplied, applyToJob, ensureWorkerProfile, generateCoverLetter,
   fetchSavedJobIds, toggleSavedJob,
   formatJobPay, payIsShown, CONTRACT_LABELS, REMOTE_LABELS,
+  jobDisplayBusiness, isExternalJob,
   type Job, type WorkerProfile,
 } from '@/lib/jobs-api';
 import { track } from '@/lib/analytics';
@@ -79,7 +80,9 @@ export default function JobDetailScreen() {
     );
   }
 
-  const isOwnPost = profile?.id === job.employer_id;
+  const external  = isExternalJob(job);
+  const disp      = jobDisplayBusiness(job);
+  const isOwnPost = !external && profile?.id === job.employer_id;
   const isClosed  = job.status === 'closed' || job.status === 'filled';
   const featured = job.is_featured || (job.boosted_until != null && new Date(job.boosted_until) > new Date());
 
@@ -111,8 +114,8 @@ export default function JobDetailScreen() {
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.head}>
             <View style={[styles.logo, { backgroundColor: S.light }]}>
-              {job.business?.logo_url
-                ? <Image source={{ uri: job.business.logo_url }} style={styles.logoImg} />
+              {disp.logo_url
+                ? <Image source={{ uri: disp.logo_url }} style={styles.logoImg} resizeMode="contain" />
                 : <FontAwesome5 name="briefcase" size={22} color={S.color} solid />}
             </View>
             <View style={{ flex: 1 }}>
@@ -120,9 +123,10 @@ export default function JobDetailScreen() {
               <Text style={styles.title}>{job.title}</Text>
               <TouchableOpacity disabled={!job.business?.slug} onPress={() => job.business?.slug && router.push(`/b/${job.business.slug}`)}>
                 <Text style={styles.org}>
-                  {job.business?.name ?? 'A Shetland employer'}{job.business?.is_verified ? '  ·  ✓ Verified' : ''}
+                  {disp.name}{disp.is_verified ? '  ·  ✓ Verified' : ''}
                 </Text>
               </TouchableOpacity>
+              {job.source_label ? <Text style={styles.sourceLabel}>Listed {job.source_label}</Text> : null}
             </View>
           </View>
 
@@ -148,7 +152,7 @@ export default function JobDetailScreen() {
             </View>
           ) : null}
 
-          {job.apply_url || job.apply_email ? (
+          {!external && (job.apply_url || job.apply_email) ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Other ways to apply</Text>
               {job.apply_url ? <TouchableOpacity onPress={() => Linking.openURL(job.apply_url!)}><Text style={styles.link}>{job.apply_url}</Text></TouchableOpacity> : null}
@@ -160,7 +164,19 @@ export default function JobDetailScreen() {
         </ScrollView>
 
         {/* Sticky apply bar */}
-        {!isOwnPost ? (
+        {external ? (
+          <View style={styles.applyBar}>
+            <TouchableOpacity
+              style={[styles.applyBtn, { backgroundColor: S.color }]}
+              onPress={() => job.apply_url && Linking.openURL(job.apply_url)}
+              activeOpacity={0.9}
+              disabled={!job.apply_url}
+            >
+              <FontAwesome5 name="external-link-alt" size={14} color="#fff" solid />
+              <Text style={styles.applyBtnText}>Apply on official site</Text>
+            </TouchableOpacity>
+          </View>
+        ) : !isOwnPost ? (
           <View style={styles.applyBar}>
             {applied ? (
               <View style={[styles.appliedPill]}>
@@ -306,6 +322,7 @@ const styles = StyleSheet.create({
   featured: { fontSize: 11, fontWeight: '800', color: S.color, marginBottom: 2 },
   title: { fontSize: 24, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.4 },
   org: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: '600', marginTop: 4 },
+  sourceLabel: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 3 },
 
   payCard: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: spacing.md, borderRadius: radius.md },
   payText: { fontSize: fontSize.lg, fontWeight: '900' },
