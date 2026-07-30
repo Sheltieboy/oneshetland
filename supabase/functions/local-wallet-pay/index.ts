@@ -10,14 +10,13 @@ const corsHeaders = {
 /**
  * local-wallet-pay
  *
- * Customer enters the business's rotating code + an amount.
- * Server:
- *   - validates code
- *   - debits customer's wallet
- *   - credits cashback (if business has cashback_percent > 0)
- *   - transfers funds to business's Stripe Connect account (minus platform fee — see fees.wallet.* in admin_config)
+ * Customer pays a business from their wallet — identifying the business by
+ * either the rotating till `code` (typed at the counter) OR an `nfc_token`
+ * (tapped their tile). Server debits the wallet, credits cashback, and transfers
+ * to the business's Stripe Connect account (minus platform fee). Points-based
+ * loyalty auto-earns via the local_wallet_transactions trigger.
  *
- * Body: { code: string, amount_pence: number }
+ * Body: { code?: string, nfc_token?: string, amount_pence: number }  (one of code|nfc_token)
  * Returns: { balance_pence: number, cashback_pence: number }
  */
 serve(async (req) => {
@@ -40,26 +39,34 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { code, amount_pence } = await req.json();
-    if (!code || amount_pence == null || amount_pence < 50) {
-      return json({ error: 'Invalid code or amount (min £0.50)' }, 400);
+    const { code, nfc_token, amount_pence } = await req.json();
+    if ((!code && !nfc_token) || amount_pence == null || amount_pence < 50) {
+      return json({ error: 'Need a code or tile, and an amount of at least £0.50' }, 400);
     }
 
-    // Validate code
-    const { data: codeRow } = await svc
-      .from('local_business_codes')
-      .select('business_id, expires_at')
-      .eq('current_code', code)
-      .maybeSingle();
-    if (!codeRow) return json({ error: 'Code not found' }, 404);
-    if (new Date(codeRow.expires_at).getTime() < Date.now()) {
-      return json({ error: 'Code expired — ask for a fresh one' }, 410);
+    // Resolve the business — by tapped tile, or by the typed rotating till code.
+    let businessId: string;
+    if (nfc_token) {
+      const { data: b } = await svc.from('local_businesses').select('id').eq('nfc_token', nfc_token).maybeSingle();
+      if (!b) return json({ error: 'Tile not recognised' }, 404);
+      businessId = b.id;
+    } else {
+      const { data: codeRow } = await svc
+        .from('local_business_codes')
+        .select('business_id, expires_at')
+        .eq('current_code', code)
+        .maybeSingle();
+      if (!codeRow) return json({ error: 'Code not found' }, 404);
+      if (new Date(codeRow.expires_at).getTime() < Date.now()) {
+        return json({ error: 'Code expired — ask for a fresh one' }, 410);
+      }
+      businessId = codeRow.business_id;
     }
 
     const { data: business } = await svc
       .from('local_businesses')
       .select('id, name, owner_id, accepts_wallet, cashback_percent, stripe_account_id, payout_enabled')
-      .eq('id', codeRow.business_id)
+      .eq('id', businessId)
       .single();
 
     if (!business) return json({ error: 'Business not found' }, 404);

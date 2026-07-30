@@ -86,7 +86,7 @@ export default function BookUnitsScreen() {
           <FontAwesome5 name="chevron-left" size={14} color={S.color} />
           <Text style={[styles.backText, { color: S.color }]}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Units</Text>
+        <Text style={styles.headerTitle}>Passes & packs</Text>
         <TouchableOpacity
           onPress={openNew}
           hitSlop={12}
@@ -108,7 +108,7 @@ export default function BookUnitsScreen() {
               <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
                 <FontAwesome5 name="ticket-alt" size={28} color={S.color} solid />
               </View>
-              <Text style={styles.emptyTitle}>No units yet</Text>
+              <Text style={styles.emptyTitle}>No passes yet</Text>
               <Text style={styles.emptySub}>
                 Sell tickets, class packs, day passes, or gift vouchers — things that aren't tied to a specific time slot.
               </Text>
@@ -118,7 +118,7 @@ export default function BookUnitsScreen() {
                 activeOpacity={0.85}
               >
                 <FontAwesome5 name="plus" size={11} color="#fff" />
-                <Text style={styles.primaryBtnText}>Add your first unit</Text>
+                <Text style={styles.primaryBtnText}>Add your first pass</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -183,7 +183,7 @@ export default function BookUnitsScreen() {
                 activeOpacity={0.85}
               >
                 <FontAwesome5 name="plus" size={11} color={S.color} />
-                <Text style={[styles.addMoreText, { color: S.color }]}>Add another unit</Text>
+                <Text style={[styles.addMoreText, { color: S.color }]}>Add another pass</Text>
               </TouchableOpacity>
             </>
           )}
@@ -242,7 +242,7 @@ function UnitEditor({
 
   const save = async () => {
     const trimmedName = name.trim();
-    if (!trimmedName) return alert({ title: 'Name required', message: 'Give your unit a short name.' });
+    if (!trimmedName) return alert({ title: 'Name required', message: 'Give your pass a short name.' });
 
     const priceNum = parseFloat(priceText || '0');
     if (Number.isNaN(priceNum) || priceNum <= 0) {
@@ -263,7 +263,7 @@ function UnitEditor({
     if (hasExpiry) {
       const vd = parseInt(validDaysText);
       if (Number.isNaN(vd) || vd <= 0) {
-        return alert({ title: 'Validity needed', message: 'Enter how many days the unit is valid, or turn the expiry off.' });
+        return alert({ title: 'Validity needed', message: 'Enter how many days the pass is valid, or turn the expiry off.' });
       }
       validDays = vd;
     }
@@ -297,7 +297,7 @@ function UnitEditor({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title={isNew ? 'New unit' : 'Edit unit'}>
+    <Sheet visible={visible} onClose={onClose} title={isNew ? 'New pass or pack' : 'Edit pass'}>
             <ScrollView style={{ maxHeight: 500 }} keyboardShouldPersistTaps="handled">
               <Text style={modalStyles.label}>Name</Text>
               <TextInput
@@ -327,7 +327,7 @@ function UnitEditor({
                 placeholderTextColor={colors.textLight}
               />
 
-              <Text style={modalStyles.label}>Uses per purchase</Text>
+              <Text style={modalStyles.label}>Uses per pass</Text>
               <TextInput
                 style={modalStyles.input}
                 value={usesText} onChangeText={setUses}
@@ -384,7 +384,7 @@ function UnitEditor({
                     placeholder="e.g. 90"
                     placeholderTextColor={colors.textLight}
                   />
-                  <Text style={modalStyles.hintText}>Number of days from purchase before the unit expires.</Text>
+                  <Text style={modalStyles.hintText}>Number of days from purchase before the pass expires.</Text>
                 </>
               )}
             </ScrollView>
@@ -401,7 +401,7 @@ function UnitEditor({
               >
                 {saving
                   ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={modalStyles.saveText}>{isNew ? 'Add unit' : 'Save changes'}</Text>}
+                  : <Text style={modalStyles.saveText}>{isNew ? 'Add pass' : 'Save changes'}</Text>}
               </TouchableOpacity>
             </View>
     </Sheet>

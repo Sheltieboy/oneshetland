@@ -481,6 +481,8 @@ export default function BusinessDashboardScreen() {
           </ScrollView>
         )}
 
+        <Text style={styles.groupHeader}>At the counter</Text>
+
         {/* ── Till code ── */}
         <View style={styles.codeCard}>
           <Text style={styles.codeLabel}>Till code · show to customer</Text>
@@ -523,152 +525,7 @@ export default function BusinessDashboardScreen() {
           <FontAwesome5 name="chevron-right" size={11} color={S.color} />
         </TouchableOpacity>
 
-        {/* ── Analytics ── */}
-        <TouchableOpacity
-          style={styles.backfillBanner}
-          onPress={() => router.push({ pathname: '/local-business-analytics', params: { businessId: activeBusiness.id } })}
-          activeOpacity={0.85}
-        >
-          <View style={styles.backfillIcon}>
-            <FontAwesome5 name="chart-line" size={11} color={S.color} solid />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.backfillTitle}>Analytics</Text>
-            <Text style={styles.backfillSub}>Views, engagement &amp; revenue for {activeBusiness.name}.</Text>
-          </View>
-          <FontAwesome5 name="chevron-right" size={11} color={S.color} />
-        </TouchableOpacity>
-
-        {/* ── Backfill orphaned shifts banner ── */}
-        {orphanedShiftCount > 0 && (
-          <TouchableOpacity
-            style={styles.backfillBanner}
-            onPress={handleBackfillShifts}
-            disabled={backfilling}
-            activeOpacity={0.85}
-          >
-            <View style={styles.backfillIcon}>
-              <FontAwesome5 name="link" size={11} color={S.color} solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.backfillTitle}>
-                {orphanedShiftCount} shift{orphanedShiftCount === 1 ? '' : 's'} not linked to a business
-              </Text>
-              <Text style={styles.backfillSub}>
-                Tap to link {orphanedShiftCount === 1 ? 'it' : 'them all'} to {activeBusiness.name}.
-              </Text>
-            </View>
-            {backfilling
-              ? <ActivityIndicator size="small" color={S.color} />
-              : <FontAwesome5 name="chevron-right" size={11} color={S.color} />}
-          </TouchableOpacity>
-        )}
-
-        {/* ── Add-ons & features ── */}
-        {(() => {
-          const isPremium = activeBusiness.subscription_tier === 'premium';
-          const enabledCount = addons.filter(a => a.enabled).length;
-          const extraCount = countExtraPremiumAddons(addons);
-          const premiumKeys = PREMIUM_ADDON_KEYS as readonly string[];
-          const addonGroups: Array<{ label: string; keys: AddonKey[] }> = [
-            { label: 'Premium add-ons', keys: ['bookings', 'services', 'events', 'membership', 'products'] },
-            { label: 'Standard add-ons', keys: ['offers', 'stamps', 'enquiries', 'payments', 'featured'] },
-          ];
-          return (
-            <View style={styles.card}>
-              <TouchableOpacity style={styles.cardHeader} onPress={() => toggleCard('addons')} activeOpacity={0.7}>
-                <View style={[styles.cardIcon, { backgroundColor: PREMIUM_PURPLE + '18' }]}>
-                  <FontAwesome5 name="puzzle-piece" size={13} color={PREMIUM_PURPLE} solid />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>Add-ons &amp; features</Text>
-                  <Text style={styles.cardSub}>
-                    {enabledCount} active · {isPremium ? `${extraCount} extra at £${(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo` : 'Premium unlocks more'}
-                  </Text>
-                </View>
-                <FontAwesome5 name={expanded.addons ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textMuted} />
-              </TouchableOpacity>
-
-              {expanded.addons && (
-                <>
-                  {!isPremium && (
-                    <View style={styles.addonUpgradeBanner}>
-                      <FontAwesome5 name="lock" size={12} color={colors.textMuted} solid />
-                      <Text style={styles.addonUpgradeText}>
-                        Bookings, Services, Events, Membership and Products are <Text style={{ fontWeight: '900' }}>premium features</Text>, not enabled on your current plan.
-                      </Text>
-                    </View>
-                  )}
-                  {isPremium && extraCount > 0 && (
-                    <View style={[styles.addonUpgradeBanner, { backgroundColor: PREMIUM_PURPLE + '10', borderColor: PREMIUM_PURPLE + '30' }]}>
-                      <FontAwesome5 name="info-circle" size={12} color={PREMIUM_PURPLE} />
-                      <Text style={[styles.addonUpgradeText, { color: PREMIUM_PURPLE }]}>
-                        1 premium add-on included · {extraCount} extra at £{(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo added to your subscription.
-                      </Text>
-                    </View>
-                  )}
-
-                  {addonGroups.map(group => (
-                    <View key={group.label} style={styles.addonGroup}>
-                      <Text style={styles.subSectionLabel}>{group.label}</Text>
-                      {group.keys.map(key => {
-                        const meta    = ADDON_META[key];
-                        const addon   = addons.find(a => a.addon_key === key);
-                        const on      = addon?.enabled ?? false;
-                        const isPremiumKey = premiumKeys.includes(key);
-                        // Enabling a premium add-on is a paid purchase (removed for
-                        // store compliance). Lock premium add-ons that are currently
-                        // off so they read as a locked feature; an already-on premium
-                        // add-on stays toggleable so it can be turned off.
-                        const locked  = isPremiumKey && !on;
-                        const busy    = addonsBusy === key;
-                        const enabledPremiumCount = addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key)).length;
-                        const isFirstPremium = on && premiumKeys.includes(key) &&
-                          addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key))[0]?.addon_key === key;
-                        return (
-                          <View key={key} style={styles.addonRow}>
-                            <View style={[styles.addonIconWrap, { backgroundColor: locked ? colors.border : PREMIUM_PURPLE + '14' }]}>
-                              <FontAwesome5 name={meta.icon} size={12} color={locked ? colors.textLight : PREMIUM_PURPLE} solid />
-                            </View>
-                            <View style={{ flex: 1, gap: 2 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Text style={[styles.addonLabel, locked && { color: colors.textLight }]}>{meta.label}</Text>
-                                {premiumKeys.includes(key) && on && (
-                                  <View style={[styles.addonBadge, { backgroundColor: isFirstPremium ? PREMIUM_PURPLE + '20' : '#FEF3C7' }]}>
-                                    <Text style={[styles.addonBadgeText, { color: isFirstPremium ? PREMIUM_PURPLE : '#92400E' }]}>
-                                      {isFirstPremium ? 'Included' : `+£${(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo`}
-                                    </Text>
-                                  </View>
-                                )}
-                                {locked && (
-                                  <View style={[styles.addonBadge, { backgroundColor: colors.border }]}>
-                                    <Text style={[styles.addonBadgeText, { color: colors.textMuted }]}>Premium</Text>
-                                  </View>
-                                )}
-                              </View>
-                              <Text style={styles.addonDesc} numberOfLines={1}>{meta.description}</Text>
-                            </View>
-                            {busy
-                              ? <ActivityIndicator size="small" color={PREMIUM_PURPLE} />
-                              : <Switch
-                                  value={on}
-                                  onValueChange={v => handleAddonToggle(key, v)}
-                                  disabled={locked}
-                                  trackColor={{ false: colors.border, true: PREMIUM_PURPLE + '66' }}
-                                  thumbColor={on ? PREMIUM_PURPLE : colors.textLight}
-                                  ios_backgroundColor={colors.border}
-                                />
-                            }
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ))}
-                </>
-              )}
-            </View>
-          );
-        })()}
+        <Text style={styles.groupHeader}>Money</Text>
 
         {/* ── Plan, payments & payouts (merged) ── */}
         <View style={styles.card}>
@@ -1002,6 +859,8 @@ export default function BusinessDashboardScreen() {
           </View>
         </TouchableOpacity>
 
+        <Text style={styles.groupHeader}>Loyalty &amp; offers</Text>
+
         {/* ── Loyalty programme — Pro+ only ── */}
         {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
         <View style={styles.card}>
@@ -1033,6 +892,62 @@ export default function BusinessDashboardScreen() {
           </TouchableOpacity>
         </View>
         )}
+
+        {/* ── Offers — Pro+ only ── */}
+        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+              <FontAwesome5 name="tags" size={13} color={S.color} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Offers</Text>
+              <Text style={styles.cardSub}>{offers.filter(o => o.is_active).length} active</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.cardIconBtn, { backgroundColor: S.color }]}
+              onPress={() => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness.id } })}
+            >
+              <FontAwesome5 name="plus" size={11} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {offers.length > 0 && (
+            <View style={{ gap: 8, marginTop: 12 }}>
+              {offers.map(o => (
+                <View key={o.id} style={[styles.offerLine, !o.is_active && { opacity: 0.5 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.offerLineTitle}>{o.title}</Text>
+                    <Text style={styles.offerLineMeta}>
+                      {formatOfferDiscount(o)} · {o.redemption_count} claim{o.redemption_count !== 1 ? 's' : ''}
+                      {o.is_active ? ` · ${daysRemaining(o.valid_until)}d left` : ' · ended'}
+                    </Text>
+                  </View>
+                  {o.is_active && (
+                    <TouchableOpacity onPress={() => {
+                      brandedAlert({
+                        title: 'End this offer?',
+                        message: 'It will no longer be visible to customers.',
+                        actions: [
+                          { label: 'Cancel', style: 'cancel' },
+                          { label: 'End', style: 'destructive', onPress: async () => {
+                            await deactivateOffer(o.id);
+                            loadAll(activeBusiness);
+                          }},
+                        ],
+                      });
+                    }}>
+                      <FontAwesome5 name="times" size={12} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+        )}
+
+        <Text style={styles.groupHeader}>Sell &amp; list</Text>
 
         {/* ── Bookings — Premium only; hidden otherwise (Plan card handles awareness) ── */}
         {activeBusiness.subscription_tier === 'premium' && (
@@ -1086,7 +1001,7 @@ export default function BusinessDashboardScreen() {
                 activeOpacity={0.85}
               >
                 <FontAwesome5 name="ticket-alt" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Units</Text>
+                <Text style={[styles.bookActionText, { color: S.color }]}>Passes & packs</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1195,6 +1110,128 @@ export default function BusinessDashboardScreen() {
             </View>
           </View>
         )}
+
+        {/* ── Analytics ── */}
+        <TouchableOpacity
+          style={styles.backfillBanner}
+          onPress={() => router.push({ pathname: '/local-business-analytics', params: { businessId: activeBusiness.id } })}
+          activeOpacity={0.85}
+        >
+          <View style={styles.backfillIcon}>
+            <FontAwesome5 name="chart-line" size={11} color={S.color} solid />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.backfillTitle}>Analytics</Text>
+            <Text style={styles.backfillSub}>Views, engagement &amp; revenue for {activeBusiness.name}.</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={11} color={S.color} />
+        </TouchableOpacity>
+
+        {/* ── Add-ons & features ── */}
+        {(() => {
+          const isPremium = activeBusiness.subscription_tier === 'premium';
+          const enabledCount = addons.filter(a => a.enabled).length;
+          const extraCount = countExtraPremiumAddons(addons);
+          const premiumKeys = PREMIUM_ADDON_KEYS as readonly string[];
+          const addonGroups: Array<{ label: string; keys: AddonKey[] }> = [
+            { label: 'Premium add-ons', keys: ['bookings', 'services', 'events', 'membership', 'products'] },
+            { label: 'Standard add-ons', keys: ['offers', 'stamps', 'enquiries', 'payments', 'featured'] },
+          ];
+          return (
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.cardHeader} onPress={() => toggleCard('addons')} activeOpacity={0.7}>
+                <View style={[styles.cardIcon, { backgroundColor: PREMIUM_PURPLE + '18' }]}>
+                  <FontAwesome5 name="puzzle-piece" size={13} color={PREMIUM_PURPLE} solid />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>Add-ons &amp; features</Text>
+                  <Text style={styles.cardSub}>
+                    {enabledCount} active · {isPremium ? `${extraCount} extra at £${(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo` : 'Premium unlocks more'}
+                  </Text>
+                </View>
+                <FontAwesome5 name={expanded.addons ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              {expanded.addons && (
+                <>
+                  {!isPremium && (
+                    <View style={styles.addonUpgradeBanner}>
+                      <FontAwesome5 name="lock" size={12} color={colors.textMuted} solid />
+                      <Text style={styles.addonUpgradeText}>
+                        Bookings, Services, Events, Membership and Products are <Text style={{ fontWeight: '900' }}>premium features</Text>, not enabled on your current plan.
+                      </Text>
+                    </View>
+                  )}
+                  {isPremium && extraCount > 0 && (
+                    <View style={[styles.addonUpgradeBanner, { backgroundColor: PREMIUM_PURPLE + '10', borderColor: PREMIUM_PURPLE + '30' }]}>
+                      <FontAwesome5 name="info-circle" size={12} color={PREMIUM_PURPLE} />
+                      <Text style={[styles.addonUpgradeText, { color: PREMIUM_PURPLE }]}>
+                        1 premium add-on included · {extraCount} extra at £{(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo added to your subscription.
+                      </Text>
+                    </View>
+                  )}
+
+                  {addonGroups.map(group => (
+                    <View key={group.label} style={styles.addonGroup}>
+                      <Text style={styles.subSectionLabel}>{group.label}</Text>
+                      {group.keys.map(key => {
+                        const meta    = ADDON_META[key];
+                        const addon   = addons.find(a => a.addon_key === key);
+                        const on      = addon?.enabled ?? false;
+                        const isPremiumKey = premiumKeys.includes(key);
+                        // Enabling a premium add-on is a paid purchase (removed for
+                        // store compliance). Lock premium add-ons that are currently
+                        // off so they read as a locked feature; an already-on premium
+                        // add-on stays toggleable so it can be turned off.
+                        const locked  = isPremiumKey && !on;
+                        const busy    = addonsBusy === key;
+                        const enabledPremiumCount = addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key)).length;
+                        const isFirstPremium = on && premiumKeys.includes(key) &&
+                          addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key))[0]?.addon_key === key;
+                        return (
+                          <View key={key} style={styles.addonRow}>
+                            <View style={[styles.addonIconWrap, { backgroundColor: locked ? colors.border : PREMIUM_PURPLE + '14' }]}>
+                              <FontAwesome5 name={meta.icon} size={12} color={locked ? colors.textLight : PREMIUM_PURPLE} solid />
+                            </View>
+                            <View style={{ flex: 1, gap: 2 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={[styles.addonLabel, locked && { color: colors.textLight }]}>{meta.label}</Text>
+                                {premiumKeys.includes(key) && on && (
+                                  <View style={[styles.addonBadge, { backgroundColor: isFirstPremium ? PREMIUM_PURPLE + '20' : '#FEF3C7' }]}>
+                                    <Text style={[styles.addonBadgeText, { color: isFirstPremium ? PREMIUM_PURPLE : '#92400E' }]}>
+                                      {isFirstPremium ? 'Included' : `+£${(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo`}
+                                    </Text>
+                                  </View>
+                                )}
+                                {locked && (
+                                  <View style={[styles.addonBadge, { backgroundColor: colors.border }]}>
+                                    <Text style={[styles.addonBadgeText, { color: colors.textMuted }]}>Premium</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.addonDesc} numberOfLines={1}>{meta.description}</Text>
+                            </View>
+                            {busy
+                              ? <ActivityIndicator size="small" color={PREMIUM_PURPLE} />
+                              : <Switch
+                                  value={on}
+                                  onValueChange={v => handleAddonToggle(key, v)}
+                                  disabled={locked}
+                                  trackColor={{ false: colors.border, true: PREMIUM_PURPLE + '66' }}
+                                  thumbColor={on ? PREMIUM_PURPLE : colors.textLight}
+                                  ios_backgroundColor={colors.border}
+                                />
+                            }
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+          );
+        })()}
 
         {/* ── Schedule picker modal ── */}
         {/* ── Schedule presets modal ── */}
@@ -1350,58 +1387,29 @@ export default function BusinessDashboardScreen() {
           // sending alerts; the paid activation CTA is no longer shown.
         />
 
-        {/* ── Offers — Pro+ only ── */}
-        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5 name="tags" size={13} color={S.color} solid />
+        {/* ── Backfill orphaned shifts banner ── */}
+        {orphanedShiftCount > 0 && (
+          <TouchableOpacity
+            style={styles.backfillBanner}
+            onPress={handleBackfillShifts}
+            disabled={backfilling}
+            activeOpacity={0.85}
+          >
+            <View style={styles.backfillIcon}>
+              <FontAwesome5 name="link" size={11} color={S.color} solid />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Offers</Text>
-              <Text style={styles.cardSub}>{offers.filter(o => o.is_active).length} active</Text>
+              <Text style={styles.backfillTitle}>
+                {orphanedShiftCount} shift{orphanedShiftCount === 1 ? '' : 's'} not linked to a business
+              </Text>
+              <Text style={styles.backfillSub}>
+                Tap to link {orphanedShiftCount === 1 ? 'it' : 'them all'} to {activeBusiness.name}.
+              </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.cardIconBtn, { backgroundColor: S.color }]}
-              onPress={() => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness.id } })}
-            >
-              <FontAwesome5 name="plus" size={11} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          {offers.length > 0 && (
-            <View style={{ gap: 8, marginTop: 12 }}>
-              {offers.map(o => (
-                <View key={o.id} style={[styles.offerLine, !o.is_active && { opacity: 0.5 }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.offerLineTitle}>{o.title}</Text>
-                    <Text style={styles.offerLineMeta}>
-                      {formatOfferDiscount(o)} · {o.redemption_count} claim{o.redemption_count !== 1 ? 's' : ''}
-                      {o.is_active ? ` · ${daysRemaining(o.valid_until)}d left` : ' · ended'}
-                    </Text>
-                  </View>
-                  {o.is_active && (
-                    <TouchableOpacity onPress={() => {
-                      brandedAlert({
-                        title: 'End this offer?',
-                        message: 'It will no longer be visible to customers.',
-                        actions: [
-                          { label: 'Cancel', style: 'cancel' },
-                          { label: 'End', style: 'destructive', onPress: async () => {
-                            await deactivateOffer(o.id);
-                            loadAll(activeBusiness);
-                          }},
-                        ],
-                      });
-                    }}>
-                      <FontAwesome5 name="times" size={12} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
+            {backfilling
+              ? <ActivityIndicator size="small" color={S.color} />
+              : <FontAwesome5 name="chevron-right" size={11} color={S.color} />}
+          </TouchableOpacity>
         )}
 
         {/* ── Public profile link ── */}
@@ -2167,6 +2175,7 @@ const styles = StyleSheet.create({
 
   // Merged-card sub-sections
   subSectionLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  groupHeader:     { fontSize: 12, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginTop: 18, marginBottom: 6 },
   subDivider:      { height: 1, backgroundColor: colors.border, marginTop: 16, marginBottom: 14 },
 
   // Plan card feature checklist

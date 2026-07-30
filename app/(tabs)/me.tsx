@@ -232,6 +232,23 @@ export default function MeTab() {
             />
           </SectionCard>
 
+          {/* ── Your businesses — direct access to the full admin dashboard ──── */}
+          {myBusinesses.length > 0 && (
+            <SectionCard title="Your businesses" accentColor={SECTIONS.local.color}>
+              {myBusinesses.map((biz, i) => (
+                <MenuRow
+                  key={biz.id}
+                  icon="store"
+                  iconColor={SECTIONS.local.color}
+                  label={biz.name}
+                  sublabel="Manage listing, loyalty, wallet, sales & money"
+                  onPress={() => { Haptics.selectionAsync(); router.push({ pathname: '/local-business-dashboard', params: { id: biz.id } }); }}
+                  last={i === myBusinesses.length - 1}
+                />
+              ))}
+            </SectionCard>
+          )}
+
           {/* Fetch (customer + driver) entries live in My Wallet → "Fetch". */}
 
           {/* ── Payments & Banking ──────────────────────────────────────────── */}

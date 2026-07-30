@@ -882,6 +882,27 @@ export async function payWithWallet(code: string, amountPence: number): Promise<
   return data;
 }
 
+/** Pay a business identified by a tapped NFC tile (no till code needed). */
+export async function payWithWalletViaTile(nfcToken: string, amountPence: number): Promise<{ balance_pence: number; cashback_pence: number }> {
+  const { data, error } = await supabase.functions.invoke('local-wallet-pay', {
+    body: { nfc_token: nfcToken, amount_pence: amountPence },
+  });
+  if (error) throw await fnErr(error, 'Could not pay with wallet.');
+  return data;
+}
+
+export interface ResolvedTile {
+  business_id: string; business_name: string; accepts_wallet: boolean; payout_ready: boolean;
+  cashback_percent: number | null; has_loyalty: boolean; program_type: 'stamps' | 'points' | null; stamp_reward: string | null;
+}
+/** Turn a tapped tile token into the business + what it offers (for the landing). */
+export async function resolveNfcTile(token: string): Promise<ResolvedTile | null> {
+  const { data, error } = await supabase.rpc('resolve_nfc_tile', { p_token: token });
+  if (error) throw await fnErr(error, 'Could not read the tile.');
+  const row = Array.isArray(data) ? data[0] : data;
+  return (row as ResolvedTile) ?? null;
+}
+
 // ── Business owner: incoming wallet payments (receipts) ──────────────────────
 //
 // What the shop sees when customers pay them via wallet. Backed by the
