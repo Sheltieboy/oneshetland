@@ -6,7 +6,7 @@
 -- caught by any csv cleanup).
 alter table public.local_businesses drop constraint if exists local_businesses_source_check;
 alter table public.local_businesses add constraint local_businesses_source_check
-  check (source = any (array['owner','csv','google','wordpress','livinglerwick','shetlandindex']));
+  check (source = any (array['owner','csv','google','wordpress','livinglerwick','shetlandindex','openstreetmap']));
 
 insert into public.local_businesses
   (name, category, address, phone, website, description, logo_url, source, is_claimed, is_active)
