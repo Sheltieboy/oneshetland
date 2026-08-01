@@ -334,6 +334,63 @@ export async function fulfilHubMembership(svc: SupabaseClient, pi: FulfilPI): Pr
  * (e.g. Fetch delivery / local_boost, which the webhook handles inline, or the
  * *_wallet variants, which are fulfilled synchronously at purchase time).
  */
+/* ── Shop Shetland product orders ─────────────────────────────────────────
+   Unlike the flows above, the webhook is the PRIMARY finalisation path for
+   card-paid product orders (there is no client confirm-* call). Idempotent
+   via the pending→paid status guard on the UPDATE. */
+export async function fulfilProductOrder(svc: SupabaseClient, pi: FulfilPI): Promise<FulfilResult> {
+  const orderId = pi.metadata.order_id;
+  if (!orderId) return { granted: false, note: 'no order_id in metadata' };
+
+  // Status-guarded flip: only ONE caller ever moves pending → paid.
+  const { data: flipped } = await svc
+    .from('product_orders')
+    .update({ status: 'paid', paid_via: 'card', paid_at: new Date().toISOString(), expires_at: null, payment_intent_id: pi.id })
+    .eq('id', orderId)
+    .eq('status', 'pending')
+    .select('id, business_id, buyer_id, total_pence, fulfilment')
+    .maybeSingle();
+  if (!flipped) return { granted: false, note: 'order not pending (already fulfilled or expired)' };
+
+  // Commit reserved stock to sold.
+  const { data: items } = await svc
+    .from('product_order_items')
+    .select('product_id, variant_id, qty, title')
+    .eq('order_id', orderId);
+  for (const it of items ?? []) {
+    if (it.product_id) {
+      await svc.rpc('commit_product_stock', { p_product: it.product_id, p_variant: it.variant_id ?? null, p_qty: it.qty });
+    }
+  }
+
+  // Tell the shop.
+  try {
+    const { data: biz } = await svc.from('local_businesses').select('owner_id, name').eq('id', flipped.business_id).maybeSingle();
+    if (biz?.owner_id) {
+      const n = (items ?? []).reduce((s, i) => s + i.qty, 0);
+      await sendUserPush(svc, {
+        userId: biz.owner_id, module: 'business', categoryId: 'business.order',
+        title: '🛍️ New shop order!',
+        body: `£${(flipped.total_pence / 100).toFixed(2)} — ${n === 1 ? (items?.[0]?.title ?? '1 item') : `${n} items`} (${flipped.fulfilment})`,
+        data: { order_id: orderId, event: 'product_order' },
+      });
+    }
+  } catch (e) { console.error('[fulfil:product] notify failed', e); }
+
+  // Server-side conversion event (registered in analytics_event_defs).
+  try {
+    await svc.from('analytics_events').insert({
+      event_name: 'product_order_paid', platform: 'web', user_type: 'user',
+      user_id: flipped.buyer_id, business_id: flipped.business_id,
+      is_conversion: true, category: 'sales',
+      props: { order_id: orderId, total_pence: flipped.total_pence, fulfilment: flipped.fulfilment },
+      consent: true,
+    });
+  } catch (e) { console.error('[fulfil:product] analytics failed', e); }
+
+  return { granted: true, note: `order ${orderId} paid + stock committed` };
+}
+
 export async function fulfilByType(svc: SupabaseClient, pi: FulfilPI): Promise<FulfilResult | null> {
   switch (pi.metadata.type) {
     case 'local_wallet_topup': return fulfilWalletTopup(svc, pi);
@@ -342,6 +399,7 @@ export async function fulfilByType(svc: SupabaseClient, pi: FulfilPI): Promise<F
     case 'event_tickets':      return fulfilEventTickets(svc, pi);
     case 'hub_donation':       return fulfilHubDonation(svc, pi);
     case 'hub_membership':     return fulfilHubMembership(svc, pi);
+    case 'product_order':      return fulfilProductOrder(svc, pi);
     default:                   return null;
   }
 }

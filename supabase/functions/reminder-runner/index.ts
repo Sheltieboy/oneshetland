@@ -53,7 +53,38 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0 };
+
+    // ── Shop orders: expire unpaid checkouts + release their reserved stock ──
+    // A pending product_order holds stock (reserved) so nobody else can buy
+    // the last one; if payment never lands within the TTL the hold must die.
+    // Status-guarded flip keeps this safe against a webhook racing in.
+    try {
+      const { data: staleOrders } = await svc
+        .from('product_orders')
+        .select('id')
+        .eq('status', 'pending')
+        .lt('expires_at', new Date().toISOString())
+        .limit(100);
+      for (const o of staleOrders ?? []) {
+        const { data: flipped } = await svc
+          .from('product_orders')
+          .update({ status: 'expired' })
+          .eq('id', o.id).eq('status', 'pending')
+          .select('id').maybeSingle();
+        if (!flipped) continue; // paid in the meantime — leave it alone
+        const { data: its } = await svc
+          .from('product_order_items')
+          .select('product_id, variant_id, qty')
+          .eq('order_id', o.id);
+        for (const it of its ?? []) {
+          if (it.product_id) {
+            await svc.rpc('release_product_stock', { p_product: it.product_id, p_variant: it.variant_id ?? null, p_qty: it.qty });
+          }
+        }
+        result.product_orders_expired++;
+      }
+    } catch (e) { console.error('[reminder-runner] product-order expiry failed', e); }
 
     // ── Event tickets: release capacity held by abandoned orders ─────────────
     // Pending (never-paid) ticket orders keep their reserved seats forever,
