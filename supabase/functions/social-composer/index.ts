@@ -75,8 +75,10 @@ const fmtTime = (iso: string) =>
 const fmtDow = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/London' }).toUpperCase();
 
-const utm = (path: string, campaign: string) =>
-  `${SITE}${path}?utm_source=facebook&utm_medium=social&utm_campaign=${campaign}`;
+// Clean short links — captions show e.g. oneshetland.com/go/spik. The /go/*
+// redirect on the website attaches the utm params AND server-logs a
+// social_link_clicked analytics event, so clicks count in /admin/analytics.
+const go = (slug: string) => `${SITE}/go/${slug}`;
 
 /* ── Optional Peerie Bot caption polish ─────────────────────────────────── */
 
@@ -153,7 +155,7 @@ serve(async (req) => {
           const pool = (words ?? []).filter((w: { id: number }) => !usedIds.has(String(w.id)));
           if (pool.length) {
             const w = pool[Math.floor(Math.random() * pool.length)];
-            const link = utm('/spik', 'wird_o_da_day');
+            const link = go('spik');
             const template =
               `WORD OF THE DAY 🗣️\n\n${w.word} — ${w.short_meaning}\n\n“${w.example_sentence}”\n\nDiscover more Shetland words: ${link}`;
             const caption = await polishCaption(template, `Shetland dialect word of the day: "${w.word}" meaning "${w.short_meaning}".`);
@@ -164,7 +166,7 @@ serve(async (req) => {
               link_url: link,
               scheduled_for: nextLondonHour(Number(cfg('wird_of_day').hour ?? 8)),
             });
-            if (!error) result.wird_of_day++;
+            if (!error) result.wird_of_day++; else result.errors.push(`wird insert: ${error.message}`);
           }
           await touch('wird_of_day');
         }
@@ -195,7 +197,7 @@ serve(async (req) => {
           let events = await fetchWindow(7);
           if (events.length < 3) { days = 14; events = await fetchWindow(14); }
           if (events.length) {
-            const link = utm('/whats-on', 'whats_on_roundup');
+            const link = go('whats-on');
             const lines = events.map((e: { title: string; starts_at: string; venue: string | null }) =>
               `${fmtDow(e.starts_at)} ${new Date(e.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' })} · ${e.title}${e.venue ? ` — ${e.venue}` : ''}`).join('\n');
             const template =
@@ -208,7 +210,7 @@ serve(async (req) => {
               link_url: link,
               scheduled_for: nextLondonHour(Number(cfg('whats_on_roundup').hour ?? 9)),
             });
-            if (!error) result.whats_on_roundup++;
+            if (!error) result.whats_on_roundup++; else result.errors.push(`roundup insert: ${error.message}`);
           }
           await touch('whats_on_roundup');
         }
@@ -231,7 +233,7 @@ serve(async (req) => {
             .order('posted_at', { ascending: false })
             .limit(Number(cfg('jobs_roundup').max_jobs ?? 6));
           if (count && jobs?.length) {
-            const link = utm('/jobs', 'jobs_roundup');
+            const link = go('jobs');
             const lines = jobs.map((j: { title: string; external_employer_name: string | null; locality: string | null; location: string | null; local_businesses?: { name?: string } | { name?: string }[] }) => {
               const biz = Array.isArray(j.local_businesses) ? j.local_businesses[0] : j.local_businesses;
               const employer = biz?.name ?? j.external_employer_name;
@@ -247,7 +249,7 @@ serve(async (req) => {
               link_url: link,
               scheduled_for: nextLondonHour(Number(cfg('jobs_roundup').hour ?? 9)),
             });
-            if (!error) result.jobs_roundup++;
+            if (!error) result.jobs_roundup++; else result.errors.push(`jobs insert: ${error.message}`);
           }
           await touch('jobs_roundup');
         }
@@ -279,7 +281,7 @@ serve(async (req) => {
           if (doneIds.has(e.id)) continue;
           const b = Array.isArray(e.local_businesses) ? e.local_businesses[0] : e.local_businesses;
           const where = [e.venue, e.locality].filter(Boolean).join(', ');
-          const link = utm(`/whats-on/${e.id}`, 'event_spotlight');
+          const link = go(`event/${e.id}`);
           const template =
             `${e.title} 🎟️\n\n${fmtDay(e.starts_at)} · ${fmtTime(e.starts_at)}${where ? `\n${where}` : ''}\n\nTickets & details: ${link}`;
           const caption = await polishCaption(template, `Event by ${b?.name ?? 'a local business'} in Shetland: ${e.title}.`);
