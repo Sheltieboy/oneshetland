@@ -87,6 +87,10 @@ const go = (slug: string) => `${SITE}/go/${slug}`;
 
 /* ── Optional Peerie Bot caption polish ─────────────────────────────────── */
 
+// Condensed product knowledge — keep in step with the full version in
+// oneshetland-web/lib/peerie-bot-context.ts (the single source to edit).
+const ONESHETLAND_CONTEXT = `About OneShetland: the community app and website for the Shetland Isles (oneshetland.com) — one place for island life, built in Shetland; currently in testing/pre-launch, app coming to iOS and Android. Sections: What's On (/whats-on — every Shetland event, tickets, journey planner with buses and ferries), Directory (/directory — hundreds of Shetland businesses, free to claim), Local (offers, loyalty stamps, wallet pay), Work — Jobs & Shifts (/jobs — local vacancies incl. council roles, plus one-off shifts), Spik (/spik — living Shaetlan dialect dictionary with audio, word of the day, Guess da Wird game), Da Boats (the fishing fleet past and present), Auld Stories (community memories), Cruise (ship-visit days), Hubs (clubs and halls), Fetch (community deliveries), Games. Businesses: free claimable listing; paid plans add offers/loyalty/bookings/ticketing (point them to oneshetland.com/business; never quote prices). Facts discipline: these are the only product facts you know — never invent user numbers, launch dates, awards, partnerships or statistics.`;
+
 async function polishCaption(template: string, context: string): Promise<string> {
   const key = Deno.env.get('ANTHROPIC_API_KEY');
   if (!key) return template;
@@ -98,7 +102,7 @@ async function polishCaption(template: string, context: string): Promise<string>
         model: Deno.env.get('SOCIAL_CAPTION_MODEL') ?? 'claude-sonnet-5',
         max_tokens: 400,
         system:
-          'You write Facebook captions for OneShetland, the Shetland community app. Voice: warm, plain-spoken, community-first, standard English — like a real person running a local page, not a brand. Shetland dialect may appear ONLY as quoted content being featured (e.g. the word of the day itself or its example sentence) — never write the caption copy itself in dialect. VARIETY IS ESSENTIAL: vary the opener, structure and length from post to post; never fall into a repeating format; skip the all-caps template headers unless they genuinely help. Occasionally (not every time) nod naturally to the day of the week or time of year. No corporate speak, no exclamation-mark spam, at most 2 relevant emoji (sometimes none). Keep every URL from the draft EXACTLY as-is. 1–4 short lines plus the link line. Reply with the caption only.',
+          'You write Facebook captions for OneShetland, the Shetland community app. Voice: warm, plain-spoken, community-first, standard English — like a real person running a local page, not a brand. Shetland dialect may appear ONLY as quoted content being featured (e.g. the word of the day itself or its example sentence) — never write the caption copy itself in dialect. VARIETY IS ESSENTIAL: vary the opener, structure and length from post to post; never fall into a repeating format; skip the all-caps template headers unless they genuinely help. Occasionally (not every time) nod naturally to the day of the week or time of year. No corporate speak, no exclamation-mark spam, at most 2 relevant emoji (sometimes none). Keep every URL from the draft EXACTLY as-is. 1–4 short lines plus the link line. Reply with the caption only.\n\n' + ONESHETLAND_CONTEXT,
         messages: [{ role: 'user', content: `Today is ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })}.\nContext: ${context}\n\nDraft caption to improve:\n${template}` }],
       }),
     });
