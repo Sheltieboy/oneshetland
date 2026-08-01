@@ -1,0 +1,103 @@
+/* OneShetland brand tokens — v1.0.0
+   Generated from tokens.json. Import once at the root of the app. */
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
+
+:root {
+  --os-navy: #17395B;
+  --os-navy-light: #2E5A85;
+  --os-navy-dark: #0F2740;
+  --os-teal: #2A8E82;
+  --os-teal-light: #3FB0A2;
+  --os-teal-dark: #1D6B62;
+  --os-amber: #EFAE4A;
+  --os-amber-light: #F7C878;
+  --os-amber-dark: #C88C2E;
+  --os-coral: #E1604C;
+  --os-coral-light: #EC8271;
+  --os-coral-dark: #B84634;
+  --os-purple: #A45FAE;
+  --os-purple-light: #BC81C4;
+  --os-purple-dark: #7E458A;
+  --os-indigo: #5C5FA0;
+  --os-indigo-light: #7C7FBB;
+  --os-indigo-dark: #43467A;
+
+  --os-paper: #F4F3F0;
+  --os-haar: #E4E3DE;
+  --os-stane: #9A9A96;
+  --os-peat: #4A4A48;
+  --os-ink: #101112;
+  --os-white: #FFFFFF;
+
+  --os-bg: var(--os-paper);
+  --os-surface: var(--os-white);
+  --os-text: var(--os-ink);
+  --os-text-muted: var(--os-peat);
+  --os-border: rgba(16, 17, 18, 0.16);
+  --os-primary: var(--os-navy);
+
+  --os-font-heading: "Barlow Condensed", system-ui, sans-serif;
+  --os-font-body: "Barlow", system-ui, sans-serif;
+  --os-heading-weight: 600;
+  --os-heading-tracking: -0.02em;
+  --os-label-tracking: 0.22em;
+
+  --os-text-display: 58px;
+  --os-text-h1: 42px;
+  --os-text-h2: 34px;
+  --os-text-h3: 25px;
+  --os-text-h4: 20px;
+  --os-text-body: 16px;
+  --os-text-small: 14px;
+  --os-text-micro: 11px;
+
+  --os-radius-none: 0px;
+  --os-radius-sm: 2px;
+  --os-radius-md: 4px;
+  --os-radius-lg: 7px;
+
+  --os-space-1: 4px;
+  --os-space-2: 8px;
+  --os-space-3: 12px;
+  --os-space-4: 16px;
+  --os-space-6: 24px;
+  --os-space-8: 32px;
+  --os-space-12: 48px;
+  --os-space-16: 64px;
+
+  --os-shadow-sm: 0 1px 2px rgba(16, 17, 18, 0.10);
+  --os-shadow-md: 0 3px 10px rgba(16, 17, 18, 0.12);
+  --os-shadow-lg: 0 12px 32px rgba(16, 17, 18, 0.18);
+}
+
+body {
+  background: var(--os-bg);
+  color: var(--os-text);
+  font-family: var(--os-font-body);
+  font-size: var(--os-text-body);
+  line-height: 1.6;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--os-font-heading);
+  font-weight: var(--os-heading-weight);
+  letter-spacing: var(--os-heading-tracking);
+  line-height: 1.1;
+}
+a { color: var(--os-navy); text-underline-offset: 3px; }
+a:hover { color: var(--os-coral); }
+:focus-visible { outline: 2px solid var(--os-navy); outline-offset: 2px; }
+::selection { background: rgba(23, 57, 91, 0.18); }
+
+/* Section accents — set one per screen, then use var(--os-accent) inside it. */
+[data-section="directory"]   { --os-accent: var(--os-navy); }
+[data-section="wallet"]      { --os-accent: var(--os-teal); }
+[data-section="whats-on"]    { --os-accent: var(--os-amber); }
+[data-section="fetch"]       { --os-accent: var(--os-coral); }
+[data-section="work"]        { --os-accent: var(--os-navy); }
+[data-section="hubs"]        { --os-accent: var(--os-purple); }
+[data-section="spik"]        { --os-accent: var(--os-indigo); }
+[data-section="aald-stories"]{ --os-accent: var(--os-indigo); }
+[data-section="da-boats"]    { --os-accent: var(--os-indigo); }
+[data-section="cruise"]      { --os-accent: var(--os-teal); }
+[data-section="games"]       { --os-accent: var(--os-amber); }
+[data-section="alerts"]      { --os-accent: var(--os-amber); }

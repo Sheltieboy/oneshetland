@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108" role="img" aria-label="OneShetland rings">
+  <title>OneShetland rings mark — the brand&#39;s &#34;O&#34;</title>
+  <g fill="none" stroke="currentColor" stroke-width="2.3">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"></ellipse>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"></ellipse>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"></ellipse>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"></ellipse>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"></ellipse>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"></ellipse>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"></ellipse>
+  </g>
+</svg>

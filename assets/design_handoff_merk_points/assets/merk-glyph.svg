@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 90" width="100" height="90" role="img" aria-label="merk">
+  <title>Merk currency symbol</title>
+  <g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt">
+    <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+    <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+    <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+  </g>
+</svg>

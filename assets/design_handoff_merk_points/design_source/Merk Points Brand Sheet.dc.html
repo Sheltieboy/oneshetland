@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/industry-9cdeae14-a5b1-4c8c-b78e-86abba7b6b4d/styles.css">
+<script src="_ds/industry-9cdeae14-a5b1-4c8c-b78e-86abba7b6b4d/_ds_bundle.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&display=swap">
+<style>
+  body { margin: 0; background: #f2f2f3; }
+  a { color: #C98A1F; text-decoration: none; }
+  a:hover { color: #0B2836; }
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#f2f2f3;color:#1d1f20;font-family:Barlow,system-ui,sans-serif;padding:64px 48px 96px">
+  <div style="max-width:1160px;margin:0 auto;display:flex;flex-direction:column;gap:56px">
+
+    <!-- masthead -->
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:32px;border-bottom:1px solid rgba(11,40,54,.18);padding-bottom:20px">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#5980a6">OneShetland · Loyalty sub-brand</div>
+        <h1 style="font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:600;font-size:52px;line-height:1;margin:0;letter-spacing:-.01em;color:#0B2836;text-transform:uppercase">Merk Points — brand identity</h1>
+      </div>
+      <div style="display:grid;grid-template-columns:auto auto;gap:2px 18px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:rgba(29,31,32,.62);text-align:right">
+        <span>Sheet</span><span style="color:#0B2836">01 / 01</span>
+        <span>Issue</span><span style="color:#0B2836">v1 · 2026</span>
+        <span>Struck in</span><span style="color:#0B2836">Gold · Navy</span>
+      </div>
+    </div>
+
+    <!-- 01 hero coin -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:13px;letter-spacing:.2em;color:#5980a6">01</span>
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:22px;letter-spacing:.06em;text-transform:uppercase;color:#0B2836">The minted coin</span>
+      </div>
+      <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);background:radial-gradient(circle at 50% 38%, #0f3243 0%, #0B2836 46%, #081E29 100%);padding:64px 40px 56px;display:flex;flex-direction:column;align-items:center;gap:40px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <dc-import name="MerkCoin" size="{{ heroSize }}" hint-size="440px,440px"></dc-import>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;max-width:560px;text-align:center">
+          <div style="font-family:Barlow,system-ui,sans-serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:#E6AC48">One merk · earned on every £1 spent locally</div>
+          <p style="margin:0;font-size:13.5px;line-height:1.7;color:rgba(244,239,230,.72);text-wrap:pretty">Struck face: rings mint mark above, merk denomination at centre, arced legend on the rim. Reeded edge, beaded inner ring and an engine-turned field — all relief, no flat fills. Merks are a reward, never cash.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 02 lockups -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:13px;letter-spacing:.2em;color:#5980a6">02</span>
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:22px;letter-spacing:.06em;text-transform:uppercase;color:#0B2836">Lockups</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:28px">
+        <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);background:#fbfaf7;padding:44px 40px;display:flex;flex-direction:column;gap:28px;justify-content:space-between">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:center;gap:32px">
+            <dc-import name="MerkCoin" size="132" hint-size="132px,132px"></dc-import>
+            <dc-import name="MerkWordmark" size="54" tone="light" align="left" hint-size="260px,100px"></dc-import>
+          </div>
+          <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(29,31,32,.6)">Horizontal lockup — app headers, signage, receipts</div>
+        </div>
+        <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);background:#fbfaf7;padding:44px 40px;display:flex;flex-direction:column;gap:28px;align-items:center;justify-content:space-between">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:26px">
+            <dc-import name="MerkCoin" size="124" hint-size="124px,124px"></dc-import>
+            <dc-import name="MerkWordmark" size="42" tone="light" align="center" hint-size="220px,80px"></dc-import>
+          </div>
+          <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(29,31,32,.6);text-align:center">Stacked lockup — window decals, badges</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 03 the glyph -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:13px;letter-spacing:.2em;color:#5980a6">03</span>
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:22px;letter-spacing:.06em;text-transform:uppercase;color:#0B2836">The merk currency symbol</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:28px">
+        <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);background:#fbfaf7;padding:44px;display:flex;flex-direction:column;align-items:center;gap:30px">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <dc-import name="MerkGlyph" size="150" color="#0B2836" hint-size="167px,150px"></dc-import>
+          <div style="display:flex;align-items:flex-end;gap:26px;color:#0B2836">
+            <dc-import name="MerkGlyph" size="44" color="#0B2836" hint-size="49px,44px"></dc-import>
+            <dc-import name="MerkGlyph" size="26" color="#0B2836" hint-size="29px,26px"></dc-import>
+            <dc-import name="MerkGlyph" size="14" color="#0B2836" hint-size="16px,14px"></dc-import>
+          </div>
+          <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(29,31,32,.6);text-align:center">Capital M, two bars — holds at 14px</div>
+        </div>
+        <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);background:#fbfaf7;padding:44px 40px;display:flex;flex-direction:column;gap:22px;justify-content:center">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <sc-for list="{{ prices }}" as="row" hint-placeholder-count="4">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;border-bottom:1px solid rgba(11,40,54,.12);padding-bottom:13px">
+                <span style="font-size:14.5px;color:#1d1f20">{{ row.what }}</span>
+                <span style="display:flex;align-items:center;gap:5px;font-family:'Barlow Condensed',system-ui,sans-serif;font-size:26px;color:#0B2836">
+                  <dc-import name="MerkGlyph" size="19" color="#C98A1F" hint-size="21px,19px"></dc-import>
+                  {{ row.merks }}
+                </span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(29,31,32,.6)">Inline in prices — gold glyph, condensed numerals</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 04 on dark / on light -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:13px;letter-spacing:.2em;color:#5980a6">04</span>
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:22px;letter-spacing:.06em;text-transform:uppercase;color:#0B2836">On dark / on light</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">
+        <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);background:#081E29;padding:38px;display:flex;flex-direction:column;gap:26px">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:center;gap:22px">
+            <dc-import name="MerkCoin" size="76" hint-size="76px,76px"></dc-import>
+            <dc-import name="MerkWordmark" size="32" tone="dark" align="left" hint-size="170px,60px"></dc-import>
+          </div>
+          <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(244,239,230,.55)">On navy — app hero, #081E29</div>
+        </div>
+        <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);background:#ffffff;padding:38px;display:flex;flex-direction:column;gap:26px">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:center;gap:22px">
+            <dc-import name="MerkCoin" size="76" hint-size="76px,76px"></dc-import>
+            <dc-import name="MerkWordmark" size="32" tone="light" align="left" hint-size="170px,60px"></dc-import>
+          </div>
+          <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:rgba(29,31,32,.6)">On white — email, print, receipts</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 05 palette + type -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:13px;letter-spacing:.2em;color:#5980a6">05</span>
+        <span style="font-family:'Barlow Condensed',system-ui,sans-serif;font-size:22px;letter-spacing:.06em;text-transform:uppercase;color:#0B2836">Palette &amp; type</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:28px">
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px">
+          <sc-for list="{{ swatches }}" as="sw" hint-placeholder-count="6">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="blueprint" style="position:relative;height:76px;border:1px solid rgba(11,40,54,.2);background:{{ sw.hex }}">
+                <i class="corner tl"></i><i class="corner br"></i>
+              </div>
+              <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#0B2836;min-height:24px">{{ sw.name }}</div>
+              <div style="font-size:10px;letter-spacing:.06em;color:rgba(29,31,32,.55)">{{ sw.hex }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div class="blueprint" style="position:relative;border:1px solid rgba(11,40,54,.2);padding:26px 28px;display:flex;flex-direction:column;gap:18px">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="font-family:'Playfair Display','Hoefler Text',Baskerville,Georgia,serif;font-size:30px;color:#0B2836;line-height:1">Merk Points</div>
+            <div style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(29,31,32,.6)">Playfair Display · Medium · wordmark</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="font-size:13px;letter-spacing:.3em;text-transform:uppercase;color:#C98A1F">Shop local · Earn a merk</div>
+            <div style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(29,31,32,.6)">Barlow · Medium · strapline &amp; legend</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;gap:24px;border-top:1px solid rgba(11,40,54,.18);padding-top:18px;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(29,31,32,.55)">
+      <span>Merk Points — a OneShetland scheme</span>
+      <span>Merks are a reward, never cash</span>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;heroCoinSize&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:440,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:240,&quot;max&quot;:620,&quot;unit&quot;:&quot;px&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      heroSize: Number(this.props.heroCoinSize ?? 440),
+      prices: [
+        { what: "A swim at Clickimin", merks: "250" },
+        { what: "Shetland Museum entry", merks: "180" },
+        { what: "Film at Mareel", merks: "400" },
+        { what: "Single bus fare, Lerwick", merks: "10" }
+      ],
+      swatches: [
+        { name: "Navy", hex: "#0B2836" },
+        { name: "Navy deep", hex: "#081E29" },
+        { name: "Gold", hex: "#C98A1F" },
+        { name: "Gold bright", hex: "#E6AC48" },
+        { name: "Engraved", hex: "#2B1E06" },
+        { name: "Paper", hex: "#FBFAF7" }
+      ]
+    };
+  }
+}
+
+</script>
+</body>
+</html>

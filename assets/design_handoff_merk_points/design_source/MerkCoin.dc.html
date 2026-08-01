@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/industry-9cdeae14-a5b1-4c8c-b78e-86abba7b6b4d/styles.css">
+<script src="_ds/industry-9cdeae14-a5b1-4c8c-b78e-86abba7b6b4d/_ds_bundle.js"></script>
+</helmet>
+<div style="position:relative;flex:none;width:{{ box }};height:{{ box }}">
+  <div style="position:absolute;top:0;left:0;width:480px;height:480px;transform-origin:top left;transform:{{ scale }}">
+
+    <!-- reeded / milled edge -->
+    <div style="position:absolute;inset:0;border-radius:50%;background:repeating-conic-gradient(from 0deg, #b8791a 0deg 0.55deg, #f3cd83 0.55deg 1.15deg, #c88d24 1.15deg 1.8deg);box-shadow:0 18px 34px -12px rgba(20,14,2,.55), 0 2px 3px rgba(20,14,2,.35)"></div>
+    <div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 30% 24%, rgba(255,247,220,.75), rgba(255,247,220,0) 42%), radial-gradient(circle at 74% 82%, rgba(90,58,4,.45), rgba(90,58,4,0) 48%)"></div>
+
+    <!-- raised outer rim -->
+    <div style="position:absolute;inset:11px;border-radius:50%;background:radial-gradient(circle at 30% 26%, #F6D079 0%, #E6AC48 52%, #C6871D 100%);box-shadow:inset 0 2px 2px rgba(255,248,224,.85), inset 0 -3px 5px rgba(74,48,2,.45), 0 1px 0 rgba(255,245,215,.5)"></div>
+
+    <!-- struck field, sunk below the rim -->
+    <div style="position:absolute;inset:31px;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 32% 26%, #F6D079 0%, #E6AC48 54%, #C6871D 100%);box-shadow:inset 0 5px 10px rgba(52,34,2,.42), inset 0 -4px 8px rgba(255,243,205,.42)">
+      <div style="position:absolute;inset:0;background:repeating-conic-gradient(from 0deg, rgba(52,34,2,.14) 0deg 0.9deg, rgba(255,246,214,.10) 0.9deg 2.4deg);mask-image:radial-gradient(circle, rgba(0,0,0,0) 26%, #000 52%, #000 78%, rgba(0,0,0,0) 96%);-webkit-mask-image:radial-gradient(circle, rgba(0,0,0,0) 26%, #000 52%, #000 78%, rgba(0,0,0,0) 96%)"></div>
+      <div style="position:absolute;inset:0;background:repeating-radial-gradient(circle at 50% 50%, rgba(255,247,219,.16) 0 1.5px, rgba(52,34,2,.10) 1.5px 4px);opacity:.7"></div>
+      <div style="position:absolute;inset:0;background:radial-gradient(circle at 28% 22%, rgba(255,251,232,.6), rgba(255,251,232,0) 45%)"></div>
+    </div>
+
+    <!-- beaded inner ring + arced legend -->
+    <svg viewBox="0 0 480 480" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">
+      <defs>
+        <path id="merk-arc-bottom" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g opacity="{{ legendOpacity }}">
+        <g fill="rgba(255,243,206,.55)" style="font-family:Barlow, system-ui, sans-serif;font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:Barlow, system-ui, sans-serif;font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g opacity="{{ rimOpacity }}">
+        <g fill="rgba(255,243,206,.5)" style="font-family:Barlow, system-ui, sans-serif;font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:Barlow, system-ui, sans-serif;font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+
+    <!-- mint mark: OneShetland rings, engraved -->
+    <div style="position:absolute;top:48px;left:50%;transform:translateX(-50%);width:104px;height:104px">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"></ellipse>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"></ellipse>
+          <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"></ellipse>
+        </g>
+      </svg>
+    </div>
+
+    <!-- denomination -->
+    <div style="position:absolute;top:170px;left:50%;transform:translateX(-50%);width:168px;height:148px">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:520,&quot;height&quot;:520},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:480,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:48,&quot;max&quot;:800,&quot;unit&quot;:&quot;px&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const size = Number(this.props.size ?? 480);
+    return {
+      box: size + "px",
+      scale: "scale(" + (size / 480) + ")",
+      legendOpacity: size >= 150 ? 1 : 0,
+      rimOpacity: size >= 300 ? 1 : 0
+    };
+  }
+}
+
+</script>
+</body>
+</html>

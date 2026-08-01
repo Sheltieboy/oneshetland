@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merk Points — brand asset reference</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap">
+<link rel="stylesheet" href="../assets/merk-tokens.css">
+<link rel="stylesheet" href="../assets/merk-brand.css">
+<style>
+  body { margin: 0; background: #f2f2f3; color: var(--merk-paper-ink);
+         font-family: var(--merk-font-ui); padding: 56px 40px 80px; }
+  main { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 52px; }
+  h1 { font-family: var(--merk-font-display); font-weight: 600; text-transform: uppercase;
+       font-size: 40px; margin: 0; color: var(--merk-navy); letter-spacing: -.01em; }
+  h2 { font-family: var(--merk-font-display); font-weight: 600; text-transform: uppercase;
+       font-size: 19px; letter-spacing: .06em; margin: 0; color: var(--merk-navy); }
+  .cell { border: 1px solid rgba(11,40,54,.2); background: var(--merk-paper);
+          padding: 40px; display: flex; align-items: center; gap: 40px; flex-wrap: wrap; }
+  .cap { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: rgba(29,31,32,.6); }
+  .row { display: flex; gap: 28px; flex-wrap: wrap; }
+  .row > * { min-width: 0; }
+  .row > * { flex: 1; }
+  .price { display: flex; align-items: center; gap: 6px; font-family: var(--merk-font-display);
+           font-size: 26px; color: var(--merk-navy); }
+  .price .merk-glyph { color: var(--merk-gold); }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <div class="cap" style="color:#5980a6">OneShetland · loyalty sub-brand</div>
+    <h1>Merk Points — asset reference</h1>
+    <p style="margin:6px 0 0;max-width:60ch;font-size:14px;line-height:1.7">Every mark below is CSS + inline SVG only — no raster images, no icon font. Copy the markup and the two stylesheets in <code>assets/</code> into the target codebase, or port the layers into the framework's component model.</p>
+  </header>
+
+  <section style="display:flex;flex-direction:column;gap:14px">
+    <h2>01 — The coin, full detail (≥ 300px)</h2>
+    <div class="cell" style="justify-content:center;background:radial-gradient(circle at 50% 38%, #0f3243 0%, #0B2836 46%, #081E29 100%)">
+      <div class="merk-coin" data-size-band="l" style="--merk-coin-size: 440">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-hero" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-hero" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-hero" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-hero" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-hero" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-hero" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div>
+    </div>
+    <div class="cap">Reeded edge · raised rim · engine-turned field · beaded ring · rim legend</div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px">
+    <h2>02 — Size bands</h2>
+    <div class="cell" style="align-items:flex-end;gap:48px">
+      <div style="display:flex;flex-direction:column;gap:14px;align-items:center"><div class="merk-coin" data-size-band="m" style="--merk-coin-size: 200">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-a" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-a" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-a" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-a" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-a" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-a" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div><span class="cap">200px · band m</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px;align-items:center"><div class="merk-coin" data-size-band="s" style="--merk-coin-size: 132">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-b" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-b" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-b" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-b" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-b" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-b" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div><span class="cap">132px · band s</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px;align-items:center"><div class="merk-coin" data-size-band="s" style="--merk-coin-size: 76">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-c" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-c" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-c" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-c" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-c" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-c" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div><span class="cap">76px · band s</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px;align-items:center"><div class="merk-coin" data-size-band="s" style="--merk-coin-size: 56">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-d" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-d" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-d" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-d" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-d" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-d" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div><span class="cap">56px · minimum</span></div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px">
+    <h2>03 — Lockups</h2>
+    <div class="row">
+      <div class="cell" style="flex-direction:column;align-items:flex-start;gap:26px">
+        <div class="merk-lockup" style="font-size:34px">
+          <div class="merk-coin" data-size-band="s" style="--merk-coin-size: 84">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-lh" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-lh" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-lh" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-lh" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-lh" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-lh" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div>
+          <div class="merk-lockup__text">
+            <div class="merk-wordmark" style="font-size:34px">Merk Points</div>
+            <div class="merk-strapline">Shop local · Earn a merk</div>
+          </div>
+        </div>
+        <div class="cap">Horizontal — app headers, signage, receipts</div>
+      </div>
+      <div class="cell" style="flex-direction:column;align-items:center;gap:26px">
+        <div class="merk-lockup merk-lockup--stacked" style="font-size:36px;gap:26px">
+          <div class="merk-coin" data-size-band="s" style="--merk-coin-size: 88">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-ls" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-ls" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-ls" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-ls" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-ls" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-ls" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div>
+          <div class="merk-lockup__text">
+            <div class="merk-wordmark" style="font-size:36px">Merk Points</div>
+            <div class="merk-strapline">Shop local · Earn a merk</div>
+          </div>
+        </div>
+        <div class="cap">Stacked — decals, badges, splash</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px">
+    <h2>04 — The merk currency symbol</h2>
+    <div class="row">
+      <div class="cell" style="flex-direction:column;align-items:center;gap:28px">
+        <span style="font-size:150px;line-height:1;color:var(--merk-navy)"><svg class="merk-glyph" viewBox="0 0 100 90" aria-label="merk" role="img"><g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt"><path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"/><path d="M 10 38 L 90 38" stroke-width="6.4"/><path d="M 10 52 L 90 52" stroke-width="6.4"/></g></svg></span>
+        <div style="display:flex;align-items:flex-end;gap:26px;color:var(--merk-navy)">
+          <span style="font-size:44px;line-height:1"><svg class="merk-glyph" viewBox="0 0 100 90" aria-label="merk" role="img"><g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt"><path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"/><path d="M 10 38 L 90 38" stroke-width="6.4"/><path d="M 10 52 L 90 52" stroke-width="6.4"/></g></svg></span>
+          <span style="font-size:26px;line-height:1"><svg class="merk-glyph" viewBox="0 0 100 90" aria-label="merk" role="img"><g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt"><path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"/><path d="M 10 38 L 90 38" stroke-width="6.4"/><path d="M 10 52 L 90 52" stroke-width="6.4"/></g></svg></span>
+          <span style="font-size:14px;line-height:1"><svg class="merk-glyph" viewBox="0 0 100 90" aria-label="merk" role="img"><g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt"><path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"/><path d="M 10 38 L 90 38" stroke-width="6.4"/><path d="M 10 52 L 90 52" stroke-width="6.4"/></g></svg></span>
+        </div>
+        <div class="cap">Capital M, two bars — holds at 14px</div>
+      </div>
+      <div class="cell" style="flex-direction:column;align-items:stretch;gap:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(11,40,54,.12);padding-bottom:12px"><span style="font-size:14.5px">A swim at Clickimin</span><span class="price"><svg class="merk-glyph" viewBox="0 0 100 90" aria-label="merk" role="img"><g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt"><path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"/><path d="M 10 38 L 90 38" stroke-width="6.4"/><path d="M 10 52 L 90 52" stroke-width="6.4"/></g></svg>250</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(11,40,54,.12);padding-bottom:12px"><span style="font-size:14.5px">Shetland Museum entry</span><span class="price"><svg class="merk-glyph" viewBox="0 0 100 90" aria-label="merk" role="img"><g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt"><path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"/><path d="M 10 38 L 90 38" stroke-width="6.4"/><path d="M 10 52 L 90 52" stroke-width="6.4"/></g></svg>180</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(11,40,54,.12);padding-bottom:12px"><span style="font-size:14.5px">Film at Mareel</span><span class="price"><svg class="merk-glyph" viewBox="0 0 100 90" aria-label="merk" role="img"><g fill="none" stroke="currentColor" stroke-linejoin="miter" stroke-linecap="butt"><path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"/><path d="M 10 38 L 90 38" stroke-width="6.4"/><path d="M 10 52 L 90 52" stroke-width="6.4"/></g></svg>400</span></div>
+        <div class="cap">Inline in prices — gold glyph, condensed numerals</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:14px">
+    <h2>05 — On dark / on light</h2>
+    <div class="row">
+      <div class="cell merk-on-dark" style="background:var(--merk-navy-deep);flex-direction:column;align-items:flex-start;gap:24px">
+        <div class="merk-lockup" style="font-size:32px">
+          <div class="merk-coin" data-size-band="s" style="--merk-coin-size: 76">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-od" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-od" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-od" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-od" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-od" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-od" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div>
+          <div class="merk-lockup__text">
+            <div class="merk-wordmark" style="font-size:32px">Merk Points</div>
+            <div class="merk-strapline">Shop local · Earn a merk</div>
+          </div>
+        </div>
+        <div class="cap" style="color:rgba(244,239,230,.55)">On navy #081E29</div>
+      </div>
+      <div class="cell" style="background:#fff;flex-direction:column;align-items:flex-start;gap:24px">
+        <div class="merk-lockup" style="font-size:32px">
+          <div class="merk-coin" data-size-band="s" style="--merk-coin-size: 76">
+  <div class="merk-coin__stage">
+    <div class="merk-coin__edge"></div>
+    <div class="merk-coin__sheen"></div>
+    <div class="merk-coin__rim"></div>
+    <div class="merk-coin__field">
+      <div class="merk-coin__guilloche-radial"></div>
+      <div class="merk-coin__guilloche-rings"></div>
+      <div class="merk-coin__field-light"></div>
+    </div>
+    <svg class="merk-coin__engraving" viewBox="0 0 480 480">
+      <defs>
+        <path id="merk-arc-bottom-ol" d="M 240 240 m -158 0 a 158 158 0 0 0 316 0" fill="none"></path>
+        <path id="merk-arc-top-ol" d="M 240 240 m -202 0 a 202 202 0 0 1 404 0" fill="none"></path>
+      </defs>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(255,246,214,.5)" stroke-width="1.3"></circle>
+      <circle cx="240" cy="240" r="183.6" fill="none" stroke="rgba(60,40,4,.4)" stroke-width="1.1"></circle>
+      <circle cx="240" cy="240" r="186" fill="none" stroke="rgba(43,30,6,.5)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <circle cx="240" cy="240" r="186.9" fill="none" stroke="rgba(255,246,214,.42)" stroke-width="4.6" stroke-dasharray="1.5 7.6" stroke-linecap="round"></circle>
+      <g data-legend>
+        <g fill="rgba(255,243,206,.55)" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-ol" startOffset="50%" text-anchor="middle" dy="1.4">ONE MERK</textPath></text>
+        </g>
+        <g fill="#2B1E06" style="font-family:var(--merk-font-ui);font-size:19px;font-weight:500;letter-spacing:.34em">
+          <text><textPath href="#merk-arc-bottom-ol" startOffset="50%" text-anchor="middle">ONE MERK</textPath></text>
+        </g>
+      </g>
+      <g data-rim>
+        <g fill="rgba(255,243,206,.5)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-ol" startOffset="50%" text-anchor="middle" dy="1.2">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+        <g fill="rgba(43,30,6,.78)" style="font-family:var(--merk-font-ui);font-size:11px;font-weight:500;letter-spacing:.42em">
+          <text><textPath href="#merk-arc-top-ol" startOffset="50%" text-anchor="middle">· SHOP LOCAL · EARN A MERK ·</textPath></text>
+        </g>
+      </g>
+    </svg>
+    <div class="merk-coin__mintmark">
+      <svg viewBox="0 0 108 108" style="width:100%;height:100%">
+        <g fill="none" stroke="rgba(255,246,214,.62)" stroke-width="2.3" transform="translate(0,1.5)">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+        <g fill="none" stroke="#2B1E06" stroke-width="2.3" stroke-opacity=".9">
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(0 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(26 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(52 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(78 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(104 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(130 54 54)"/>
+      <ellipse cx="54" cy="54" rx="35" ry="45" transform="rotate(156 54 54)"/>
+        </g>
+      </svg>
+    </div>
+    <div class="merk-coin__denomination">
+      <svg viewBox="0 0 100 90" style="width:100%;height:100%">
+        <g transform="translate(0,1.8)" stroke="rgba(255,246,214,.72)" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+        <g stroke="#2B1E06" fill="none" stroke-linejoin="miter" stroke-linecap="butt">
+          <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+          <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+          <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+        </g>
+      </svg>
+    </div>
+  </div>
+</div>
+          <div class="merk-lockup__text">
+            <div class="merk-wordmark" style="font-size:32px">Merk Points</div>
+            <div class="merk-strapline">Shop local · Earn a merk</div>
+          </div>
+        </div>
+        <div class="cap">On white — email, print, receipts</div>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

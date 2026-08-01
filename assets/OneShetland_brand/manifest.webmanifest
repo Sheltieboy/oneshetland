@@ -1,0 +1,38 @@
+{
+  "name": "OneShetland",
+  "short_name": "OneShetland",
+  "description": "Everything Shetland, in one place.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F3F0",
+  "theme_color": "#17395B",
+  "icons": [
+    {
+      "src": "/brand/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/brand/apple-touch-icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/android-play-store-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/android-adaptive-foreground-432.png",
+      "sizes": "432x432",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/brand/android-adaptive-monochrome-432.png",
+      "sizes": "432x432",
+      "type": "image/png",
+      "purpose": "monochrome"
+    }
+  ]
+}

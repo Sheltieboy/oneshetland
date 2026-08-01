@@ -1,0 +1,25 @@
+/* Merk Points — brand tokens
+   Merk Points is the loyalty sub-brand of OneShetland.
+   Every colour, size and type value used by the brand assets lives here. */
+
+:root {
+  /* Brand colour */
+  --merk-navy:        #0B2836;  /* primary brand ink, OneShetland navy */
+  --merk-navy-deep:   #081E29;  /* dark ground / app hero */
+  --merk-gold:        #C98A1F;  /* gold, base — straplines, inline glyph */
+  --merk-gold-bright: #E6AC48;  /* gold, bright — coin mid-tone, on-dark accent */
+  --merk-gold-light:  #F6D079;  /* coin highlight */
+  --merk-gold-dark:   #C6871D;  /* coin shadow */
+  --merk-engraved:    #2B1E06;  /* struck/engraved dark tone on the coin */
+  --merk-paper:       #FBFAF7;  /* cream neutral for light grounds */
+  --merk-paper-ink:   #1D1F20;  /* body text on paper */
+
+  /* Type */
+  --merk-font-wordmark: "Playfair Display", "Hoefler Text", Baskerville, Georgia, serif;
+  --merk-font-ui:       Barlow, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --merk-font-display:  "Barlow Condensed", "Barlow", system-ui, sans-serif;
+
+  /* Strapline / legend lettering */
+  --merk-tracking-strapline: 0.30em;
+  --merk-tracking-legend:    0.34em;
+}

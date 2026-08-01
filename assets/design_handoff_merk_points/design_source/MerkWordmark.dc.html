@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&display=swap">
+</helmet>
+<div style="display:flex;flex-direction:column;gap:{{ gap }};align-items:{{ align }};text-align:{{ align }}">
+  <div style="font-family:'Playfair Display','Hoefler Text',Baskerville,Georgia,serif;font-weight:500;letter-spacing:0.005em;line-height:0.98;white-space:nowrap;color:{{ inkA }};font-size:{{ wordSize }}">Merk Points</div>
+  <div style="font-family:Barlow,system-ui,sans-serif;font-weight:500;text-transform:uppercase;letter-spacing:0.3em;line-height:1;color:{{ inkB }};font-size:{{ lineSize }}">Shop local · Earn a merk</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:520,&quot;height&quot;:140},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:56,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:16,&quot;max&quot;:160,&quot;unit&quot;:&quot;px&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;light&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;\&quot;light\&quot; | \&quot;dark\&quot;&quot;},&quot;align&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;left&quot;,&quot;options&quot;:[&quot;left&quot;,&quot;center&quot;],&quot;tsType&quot;:&quot;\&quot;left\&quot; | \&quot;center\&quot;&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const size = Number(this.props.size ?? 56);
+    const dark = (this.props.tone ?? "light") === "dark";
+    return {
+      wordSize: size + "px",
+      lineSize: Math.max(8, Math.round(size * 0.2)) + "px",
+      gap: Math.round(size * 0.24) + "px",
+      align: this.props.align ?? "left",
+      inkA: dark ? "#F4EFE6" : "#0B2836",
+      inkB: dark ? "#E6AC48" : "#C98A1F"
+    };
+  }
+}
+
+</script>
+</body>
+</html>

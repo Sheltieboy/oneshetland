@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<svg viewBox="0 0 100 90" style="display:inline-block;vertical-align:-0.12em;width:{{ w }};height:{{ h }};overflow:visible">
+  <g fill="none" stroke="{{ tone }}" stroke-linejoin="miter" stroke-linecap="butt">
+    <path d="M 20 79 L 20 15 L 50 53 L 80 15 L 80 79" stroke-width="10"></path>
+    <path d="M 10 38 L 90 38" stroke-width="6.4"></path>
+    <path d="M 10 52 L 90 52" stroke-width="6.4"></path>
+  </g>
+</svg>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:220,&quot;height&quot;:200},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:120,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:10,&quot;max&quot;:400,&quot;unit&quot;:&quot;px&quot;},&quot;color&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#0B2836&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#0B2836&quot;,&quot;#C98A1F&quot;,&quot;#2B1E06&quot;,&quot;#F6D079&quot;]}}">
+class Component extends DCLogic {
+  renderVals() {
+    const size = Number(this.props.size ?? 120);
+    return {
+      w: (size * 100 / 90) + "px",
+      h: size + "px",
+      tone: this.props.color ?? "#0B2836"
+    };
+  }
+}
+
+</script>
+</body>
+</html>
