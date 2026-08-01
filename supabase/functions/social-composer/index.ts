@@ -60,6 +60,11 @@ const nextLondonHour = (hour: number): string => {
   return now.toISOString();
 };
 
+/** ±25 min of randomness — a feed posting at 08:00:00 sharp every day reads
+ *  as a robot; 08:11 one day and 07:43 the next reads as a person. */
+const jitter = (iso: string): string =>
+  new Date(new Date(iso).getTime() + Math.round((Math.random() * 50 - 25) * 60_000)).toISOString();
+
 const isoWeek = (d: Date): string => {
   const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7)); // nearest Thursday
@@ -93,8 +98,8 @@ async function polishCaption(template: string, context: string): Promise<string>
         model: Deno.env.get('SOCIAL_CAPTION_MODEL') ?? 'claude-sonnet-5',
         max_tokens: 400,
         system:
-          'You write Facebook captions for OneShetland, the Shetland community app. Voice: warm, plain-spoken, community-first, standard English. Shetland dialect may appear ONLY as quoted content being featured (e.g. the word of the day itself or its example sentence) — never write the caption copy itself in dialect. No corporate speak, no exclamation-mark spam, at most 2 relevant emoji. Keep every URL from the draft EXACTLY as-is. 1–4 short lines plus the link line. Reply with the caption only.',
-        messages: [{ role: 'user', content: `Context: ${context}\n\nDraft caption to improve:\n${template}` }],
+          'You write Facebook captions for OneShetland, the Shetland community app. Voice: warm, plain-spoken, community-first, standard English — like a real person running a local page, not a brand. Shetland dialect may appear ONLY as quoted content being featured (e.g. the word of the day itself or its example sentence) — never write the caption copy itself in dialect. VARIETY IS ESSENTIAL: vary the opener, structure and length from post to post; never fall into a repeating format; skip the all-caps template headers unless they genuinely help. Occasionally (not every time) nod naturally to the day of the week or time of year. No corporate speak, no exclamation-mark spam, at most 2 relevant emoji (sometimes none). Keep every URL from the draft EXACTLY as-is. 1–4 short lines plus the link line. Reply with the caption only.',
+        messages: [{ role: 'user', content: `Today is ${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' })}.\nContext: ${context}\n\nDraft caption to improve:\n${template}` }],
       }),
     });
     if (!res.ok) return template;
@@ -164,7 +169,7 @@ serve(async (req) => {
               caption,
               image_url: `${SITE}/api/social-image?kind=wird&id=${w.id}`,
               link_url: link,
-              scheduled_for: nextLondonHour(Number(cfg('wird_of_day').hour ?? 8)),
+              scheduled_for: jitter(nextLondonHour(Number(cfg('wird_of_day').hour ?? 8))),
             });
             if (!error) result.wird_of_day++; else result.errors.push(`wird insert: ${error.message}`);
           }
@@ -208,7 +213,7 @@ serve(async (req) => {
               caption,
               image_url: `${SITE}/api/social-image?kind=roundup&start=${today.ymd}&days=${days}`,
               link_url: link,
-              scheduled_for: nextLondonHour(Number(cfg('whats_on_roundup').hour ?? 9)),
+              scheduled_for: jitter(nextLondonHour(Number(cfg('whats_on_roundup').hour ?? 9))),
             });
             if (!error) result.whats_on_roundup++; else result.errors.push(`roundup insert: ${error.message}`);
           }
@@ -247,7 +252,7 @@ serve(async (req) => {
               caption,
               image_url: `${SITE}/api/social-image?kind=jobs`,
               link_url: link,
-              scheduled_for: nextLondonHour(Number(cfg('jobs_roundup').hour ?? 9)),
+              scheduled_for: jitter(nextLondonHour(Number(cfg('jobs_roundup').hour ?? 9))),
             });
             if (!error) result.jobs_roundup++; else result.errors.push(`jobs insert: ${error.message}`);
           }
@@ -291,7 +296,7 @@ serve(async (req) => {
             caption,
             image_url: `${SITE}/api/social-image?kind=event&id=${e.id}`,
             link_url: link,
-            scheduled_for: nextLondonHour(Number(cfg('event_spotlight').hour ?? 18)),
+            scheduled_for: jitter(nextLondonHour(Number(cfg('event_spotlight').hour ?? 18))),
           });
           if (!error) { created++; result.event_spotlight++; }
         }
