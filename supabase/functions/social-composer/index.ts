@@ -11,7 +11,10 @@ import { createServiceClient } from '../_shared/send-push.ts';
  * Recipes (rows in social_recipes; each has an `enabled` switch):
  *   • wird_of_day      — one Spik dictionary word a day, never repeated
  *   • whats_on_roundup — Mondays: the next 7 days of events in one card
+ *                        (widens to 14 days when the week is thin, so the
+ *                        card never goes out looking empty)
  *   • event_spotlight  — events published by PREMIUM businesses get their own post
+ *   • jobs_roundup     — Wednesdays: newest open jobs + total count
  *
  * Idempotent: social_posts has a unique (kind, entity_id) index, so re-runs
  * (or overlapping runs) can never queue a duplicate.
@@ -120,7 +123,7 @@ serve(async (req) => {
     const svc = createServiceClient();
     const now = new Date();
     const today = londonParts(now);
-    const result = { wird_of_day: 0, whats_on_roundup: 0, event_spotlight: 0, errors: [] as string[] };
+    const result = { wird_of_day: 0, whats_on_roundup: 0, event_spotlight: 0, jobs_roundup: 0, errors: [] as string[] };
 
     type Recipe = { key: string; enabled: boolean; config: Record<string, unknown> };
     const { data: recipeRows } = await svc.from('social_recipes').select('*');
@@ -175,26 +178,33 @@ serve(async (req) => {
         if (isMonday || force) {
           const week = isoWeek(now);
           const from = `${today.ymd}T00:00:00Z`;
-          const to = new Date(now.getTime() + 7 * 86400_000).toISOString();
           const max = Number(cfg('whats_on_roundup').max_events ?? 8);
-          const { data: events } = await svc
-            .from('events')
-            .select('id, title, starts_at, venue, locality')
-            .eq('status', 'published').eq('is_hidden', false)
-            .gte('starts_at', from).lt('starts_at', to)
-            .order('starts_at', { ascending: true })
-            .limit(max);
-          if (events?.length) {
+          const fetchWindow = async (days: number) => {
+            const to = new Date(now.getTime() + days * 86400_000).toISOString();
+            const { data } = await svc
+              .from('events')
+              .select('id, title, starts_at, venue, locality')
+              .eq('status', 'published').eq('is_hidden', false)
+              .gte('starts_at', from).lt('starts_at', to)
+              .order('starts_at', { ascending: true })
+              .limit(max);
+            return data ?? [];
+          };
+          // A one-event card looks dead — widen to a fortnight when thin.
+          let days = 7;
+          let events = await fetchWindow(7);
+          if (events.length < 3) { days = 14; events = await fetchWindow(14); }
+          if (events.length) {
             const link = utm('/whats-on', 'whats_on_roundup');
             const lines = events.map((e: { title: string; starts_at: string; venue: string | null }) =>
-              `${fmtDow(e.starts_at)} · ${e.title}${e.venue ? ` — ${e.venue}` : ''}`).join('\n');
+              `${fmtDow(e.starts_at)} ${new Date(e.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' })} · ${e.title}${e.venue ? ` — ${e.venue}` : ''}`).join('\n');
             const template =
-              `WHAT'S ON THIS WEEK 📅\n\n${lines}\n\nFull details & tickets: ${link}`;
-            const caption = await polishCaption(template, `Weekly roundup of ${events.length} events happening in Shetland this week.`);
+              `${days <= 7 ? "WHAT'S ON THIS WEEK" : 'COMING UP IN SHETLAND'} 📅\n\n${lines}\n\nFull details & tickets: ${link}`;
+            const caption = await polishCaption(template, `Roundup of ${events.length} events happening in Shetland over the next ${days} days.`);
             const { error } = await svc.from('social_posts').insert({
               kind: 'whats_on_roundup', entity_type: 'week', entity_id: week,
               caption,
-              image_url: `${SITE}/api/social-image?kind=roundup&start=${today.ymd}`,
+              image_url: `${SITE}/api/social-image?kind=roundup&start=${today.ymd}&days=${days}`,
               link_url: link,
               scheduled_for: nextLondonHour(Number(cfg('whats_on_roundup').hour ?? 9)),
             });
@@ -203,6 +213,45 @@ serve(async (req) => {
           await touch('whats_on_roundup');
         }
       } catch (e) { result.errors.push(`whats_on_roundup: ${e}`); }
+    }
+
+    /* ── Jobs roundup (Wednesdays) — newest open roles + total count ──────── */
+    if (enabled('jobs_roundup')) {
+      try {
+        const isWednesday = today.weekday === 'Wed';
+        if (isWednesday || force) {
+          const week = isoWeek(now);
+          const { count } = await svc
+            .from('jobs').select('id', { count: 'exact', head: true })
+            .eq('status', 'open').eq('is_hidden', false);
+          const { data: jobs } = await svc
+            .from('jobs')
+            .select('title, external_employer_name, locality, location, local_businesses!posted_as_business_id(name)')
+            .eq('status', 'open').eq('is_hidden', false)
+            .order('posted_at', { ascending: false })
+            .limit(Number(cfg('jobs_roundup').max_jobs ?? 6));
+          if (count && jobs?.length) {
+            const link = utm('/jobs', 'jobs_roundup');
+            const lines = jobs.map((j: { title: string; external_employer_name: string | null; locality: string | null; location: string | null; local_businesses?: { name?: string } | { name?: string }[] }) => {
+              const biz = Array.isArray(j.local_businesses) ? j.local_businesses[0] : j.local_businesses;
+              const employer = biz?.name ?? j.external_employer_name;
+              return `• ${j.title}${employer ? ` — ${employer}` : ''}`;
+            }).join('\n');
+            const template =
+              `HIRING IN SHETLAND 💼\n\n${lines}\n\n${count} open role${count === 1 ? '' : 's'} across the isles — browse and apply: ${link}`;
+            const caption = await polishCaption(template, `Weekly jobs roundup: ${count} open roles in Shetland right now.`);
+            const { error } = await svc.from('social_posts').insert({
+              kind: 'jobs_roundup', entity_type: 'week', entity_id: week,
+              caption,
+              image_url: `${SITE}/api/social-image?kind=jobs`,
+              link_url: link,
+              scheduled_for: nextLondonHour(Number(cfg('jobs_roundup').hour ?? 9)),
+            });
+            if (!error) result.jobs_roundup++;
+          }
+          await touch('jobs_roundup');
+        }
+      } catch (e) { result.errors.push(`jobs_roundup: ${e}`); }
     }
 
     /* ── Event spotlight — premium businesses' events get their own post ─── */
