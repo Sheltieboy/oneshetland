@@ -91,6 +91,7 @@ const SCREEN_ALIASES: Record<string, string> = {
   'local-my-gifts':       '/local-my-gifts',
   'local-my-bookings':    '/local-my-bookings',
   'my-event-tickets':     '/my-event-tickets',
+  'my-orders':            '/my-orders',
   notices:                '/notices',
 };
 
@@ -105,6 +106,13 @@ export function notificationRoute(
   if (screen === 'job-applicants' && typeof data.job_id === 'string') {
     return `/job-applicants?jobId=${data.job_id}`;
   }
+
+  // Shop orders: the merchant inbox needs its businessId param. (Must resolve
+  // BEFORE the generic order_id fallback below, which is event tickets'.)
+  if (screen === 'business-orders' && typeof data.business_id === 'string') {
+    return `/business-orders?businessId=${data.business_id}`;
+  }
+  if (typeof data.product_order_id === 'string') return '/my-orders';
 
   if (screen && SCREEN_ALIASES[screen]) return SCREEN_ALIASES[screen];
 

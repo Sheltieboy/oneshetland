@@ -243,7 +243,8 @@ serve(async (req) => {
         userId: biz.owner_id, module: 'business', categoryId: 'business.order',
         title: '🛍️ New shop order!',
         body: `£${(totalPence / 100).toFixed(2)} — ${lines.length === 1 ? lines[0].title : `${totalQty} items`} (${fulfilment})`,
-        data: { order_id: order.id, event: 'product_order' },
+        // NOTE: not `order_id` — that key routes to event tickets in the app.
+        data: { screen: 'business-orders', product_order_id: order.id, business_id: businessId },
       });
       return json({ charged: true, order_id: order.id, balance_pence: res.balance_pence });
     }

@@ -1007,6 +1007,39 @@ export default function BusinessDashboardScreen() {
           </View>
         )}
 
+        {/* ── Products (Shop Shetland) — Premium only ── */}
+        {activeBusiness.subscription_tier === 'premium' && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+                <FontAwesome5 name="shopping-bag" size={13} color={S.color} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Products</Text>
+                <Text style={styles.cardSub}>Sell across OneShetland — 5% per sale, and we promote your shop</Text>
+              </View>
+            </View>
+            <View style={styles.bookActionsRow}>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/business-products', params: { businessId: activeBusiness.id } } as any)}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="shopping-bag" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Products</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/business-orders', params: { businessId: activeBusiness.id } } as any)}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="box-open" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Orders</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* ── Jobs — shown when the (free) jobs add-on is enabled ── */}
         {addons.find(a => a.addon_key === 'jobs')?.enabled && (
           <TouchableOpacity

@@ -372,7 +372,8 @@ export async function fulfilProductOrder(svc: SupabaseClient, pi: FulfilPI): Pro
         userId: biz.owner_id, module: 'business', categoryId: 'business.order',
         title: '🛍️ New shop order!',
         body: `£${(flipped.total_pence / 100).toFixed(2)} — ${n === 1 ? (items?.[0]?.title ?? '1 item') : `${n} items`} (${flipped.fulfilment})`,
-        data: { order_id: orderId, event: 'product_order' },
+        // NOTE: not `order_id` — that key routes to event tickets in the app.
+        data: { screen: 'business-orders', product_order_id: orderId, business_id: flipped.business_id },
       });
     }
   } catch (e) { console.error('[fulfil:product] notify failed', e); }

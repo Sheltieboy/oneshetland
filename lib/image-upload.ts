@@ -31,7 +31,7 @@ import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type BusinessMediaKind = 'logo' | 'cover' | 'offer' | 'service' | 'unit';
+export type BusinessMediaKind = 'logo' | 'cover' | 'offer' | 'service' | 'unit' | 'product';
 
 export interface UploadedImage {
   /** Storage path within the bucket (NOT a URL). Save this if you ever need to delete. */

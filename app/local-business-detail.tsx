@@ -32,6 +32,7 @@ import {
   type BookUnitItem, type BookService,
 } from '@/lib/book-api';
 import { supabase } from '@/lib/supabase';
+import { fetchShopProducts, type Product as ShopProduct } from '@/lib/products-api';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { addRecentlyViewed, businessResult } from '@/lib/search';
@@ -102,6 +103,7 @@ export default function BusinessDetailScreen() {
   const [services, setServices]     = useState<BookService[]>([]);
   const [addons, setAddons]         = useState<BusinessAddon[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<OsEvent[]>([]);
+  const [shopProducts, setShopProducts] = useState<ShopProduct[]>([]);
 
   // Fail-open: if addons haven't loaded yet, show all sections.
   const addonOn = (key: string) =>
@@ -128,6 +130,8 @@ export default function BusinessDetailScreen() {
         fetchBusinessAddons(id).catch(() => [] as BusinessAddon[]),
         fetchPublishedEvents({ businessId: id, limit: 5 }).catch(() => [] as OsEvent[]),
       ]);
+      // Shop products load separately (non-blocking, fails soft).
+      fetchShopProducts(id).then(setShopProducts).catch(() => {});
       setBusiness(b);
       if (b) addRecentlyViewed(businessResult(b));
       setProgram(p);
@@ -703,9 +707,38 @@ export default function BusinessDetailScreen() {
           );
         })() : null;
 
+  // ── Shop — real products for sale (Shop Shetland) ──────────────────────────
+  const shopSection = shopProducts.length > 0 ? (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Shop</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm }}>
+        {shopProducts.map((p) => (
+          <TouchableOpacity
+            key={p.id}
+            style={{ width: '47%', backgroundColor: colors.cardBackground, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }}
+            activeOpacity={0.85}
+            onPress={() => router.push({ pathname: '/product-detail', params: { id: p.id } } as never)}
+          >
+            {p.photos[0] ? (
+              <Image source={{ uri: p.photos[0] }} style={{ width: '100%', aspectRatio: 1 }} />
+            ) : (
+              <View style={{ width: '100%', aspectRatio: 1, backgroundColor: accent + '14', alignItems: 'center', justifyContent: 'center' }}>
+                <FontAwesome5 name="shopping-bag" size={22} color={accent} />
+              </View>
+            )}
+            <View style={{ padding: spacing.sm }}>
+              <Text numberOfLines={1} style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary }}>{p.title}</Text>
+              <Text style={{ fontSize: fontSize.sm, fontWeight: '800', color: accent }}>{formatPence(p.price_pence)}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  ) : null;
+
   // ── Add-on placeholder sections (for add-ons not yet fully built) ──────────
   const placeholderSections = (shows('addonSections') ? addons : [])
-          .filter(a => a.enabled && ['products', 'membership', 'enquiries'].includes(a.addon_key))
+          .filter(a => a.enabled && ['membership', 'enquiries'].includes(a.addon_key))
           .map(addon => {
             const icons: Record<string, string> = {
               products:   'shopping-bag',
@@ -894,6 +927,7 @@ export default function BusinessDetailScreen() {
                 {servicesSection}
                 {ticketsSection}
                 {offersSection}
+                {shopSection}
                 {loyaltySection}
                 {eventsSection}
                 {placeholderSections}
@@ -913,6 +947,7 @@ export default function BusinessDetailScreen() {
               {descriptionSection}
               {loyaltySection}
               {offersSection}
+              {shopSection}
               {hiringSection}
               {eventsSection}
               {servicesSection}
