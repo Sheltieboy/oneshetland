@@ -88,7 +88,7 @@ async function polishCaption(template: string, context: string): Promise<string>
         model: Deno.env.get('SOCIAL_CAPTION_MODEL') ?? 'claude-sonnet-5',
         max_tokens: 400,
         system:
-          'You write Facebook captions for OneShetland, the Shetland community app. Voice: warm, plain, community-first, a light natural touch of Shaetlan dialect (never forced or panto). No corporate speak, no exclamation-mark spam, at most 2 relevant emoji. Keep every URL from the draft EXACTLY as-is. 1–4 short lines plus the link line. Reply with the caption only.',
+          'You write Facebook captions for OneShetland, the Shetland community app. Voice: warm, plain-spoken, community-first, standard English. Shetland dialect may appear ONLY as quoted content being featured (e.g. the word of the day itself or its example sentence) — never write the caption copy itself in dialect. No corporate speak, no exclamation-mark spam, at most 2 relevant emoji. Keep every URL from the draft EXACTLY as-is. 1–4 short lines plus the link line. Reply with the caption only.',
         messages: [{ role: 'user', content: `Context: ${context}\n\nDraft caption to improve:\n${template}` }],
       }),
     });
@@ -152,7 +152,7 @@ serve(async (req) => {
             const w = pool[Math.floor(Math.random() * pool.length)];
             const link = utm('/spik', 'wird_o_da_day');
             const template =
-              `WIRD O' DA DAY 🗣️\n\n${w.word} — ${w.short_meaning}\n\n“${w.example_sentence}”\n\nMair Shaetlan wirds: ${link}`;
+              `WORD OF THE DAY 🗣️\n\n${w.word} — ${w.short_meaning}\n\n“${w.example_sentence}”\n\nDiscover more Shetland words: ${link}`;
             const caption = await polishCaption(template, `Shetland dialect word of the day: "${w.word}" meaning "${w.short_meaning}".`);
             const { error } = await svc.from('social_posts').insert({
               kind: 'wird_of_day', entity_type: 'spik_word', entity_id: String(w.id),
@@ -189,7 +189,7 @@ serve(async (req) => {
             const lines = events.map((e: { title: string; starts_at: string; venue: string | null }) =>
               `${fmtDow(e.starts_at)} · ${e.title}${e.venue ? ` — ${e.venue}` : ''}`).join('\n');
             const template =
-              `WHIT'S ON DIS WEEK 📅\n\n${lines}\n\nFull details & tickets: ${link}`;
+              `WHAT'S ON THIS WEEK 📅\n\n${lines}\n\nFull details & tickets: ${link}`;
             const caption = await polishCaption(template, `Weekly roundup of ${events.length} events happening in Shetland this week.`);
             const { error } = await svc.from('social_posts').insert({
               kind: 'whats_on_roundup', entity_type: 'week', entity_id: week,
