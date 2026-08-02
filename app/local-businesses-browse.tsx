@@ -24,6 +24,7 @@ import {
   isBusinessFeatured, CATEGORY_LABELS,
   type LocalBusiness, type LocalCategory, type LocalOffer,
 } from '@/lib/local-api';
+import { fetchProductThumbs, type ProductThumbs } from '@/lib/products-api';
 import { isBookableLive } from '@/lib/book-api';
 
 // Directory uses the indigo "services" accent — deliberately distinct from
@@ -62,6 +63,7 @@ export default function BrowseBusinessesScreen() {
 
   const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
   const [offersMap, setOffersMap]   = useState<Map<string, LocalOffer>>(new Map());
+  const [thumbsMap, setThumbsMap]   = useState<Record<string, ProductThumbs>>({});
   const [filter, setFilter]         = useState<LocalCategory | ''>('');
   const [bookableOnly, setBookableOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,6 +75,7 @@ export default function BrowseBusinessesScreen() {
       const data = await fetchActiveBusinesses(filter || undefined);
       setBusinesses(data);
       const offers = await fetchActiveOffersForBusinesses(data.map(b => b.id));
+      fetchProductThumbs(data.map(b => b.id)).then(setThumbsMap).catch(() => {});
       const map = new Map<string, LocalOffer>();
       for (const o of offers) { if (!map.has(o.business_id)) map.set(o.business_id, o); }
       setOffersMap(map);
@@ -101,6 +104,7 @@ export default function BrowseBusinessesScreen() {
 
   const renderItem = ({ item }: { item: LocalBusiness }) => (
     <BusinessCard
+      thumbs={thumbsMap[item.id]}
       business={item}
       offer={offersMap.get(item.id)}
       featured={isBusinessFeatured(item)}
@@ -227,12 +231,13 @@ export default function BrowseBusinessesScreen() {
 // BusinessCard — styled like EventCard
 // ---------------------------------------------------------------------------
 
-function BusinessCard({ business, offer, featured, numCols, onPress }: {
+function BusinessCard({ business, offer, featured, numCols, onPress, thumbs }: {
   business: LocalBusiness;
   offer?: LocalOffer;
   featured?: boolean;
   numCols: number;
   onPress: () => void;
+  thumbs?: ProductThumbs;
 }) {
   const router   = useRouter();
   const cat      = business.category ?? 'other';
@@ -288,6 +293,17 @@ function BusinessCard({ business, offer, featured, numCols, onPress }: {
               <Text style={styles.cardInfoText} numberOfLines={1}>{business.address}</Text>
             </View>
           </View>
+          {thumbs && thumbs.photos.length > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+              {thumbs.photos.map((ph, i) => (
+                <Image key={ph} source={{ uri: ph }}
+                  style={{ width: 26, height: 26, borderRadius: 7, borderWidth: 2, borderColor: '#fff', marginLeft: i === 0 ? 0 : -8, zIndex: 3 - i }} />
+              ))}
+              <Text style={{ marginLeft: 6, fontSize: fontSize.xs, fontWeight: '700', color: S.color }}>
+                {thumbs.count > thumbs.photos.length ? `+${thumbs.count - thumbs.photos.length} in the shop` : 'Shop \u2192'}
+              </Text>
+            </View>
+          )}
           <View style={styles.cardFootRow}>
             <BadgePills business={business} catColor={catColor} />
             {offer && (

@@ -193,6 +193,32 @@ export async function fetchMyOrders(): Promise<ProductOrder[]> {
   return (data ?? []) as ProductOrder[];
 }
 
+export type ProductThumbs = { photos: string[]; count: number };
+
+/** One batched query: product thumbs for a set of businesses (≤3 photos + count). */
+export async function fetchProductThumbs(businessIds: string[]): Promise<Record<string, ProductThumbs>> {
+  const out: Record<string, ProductThumbs> = {};
+  if (!businessIds.length) return out;
+  try {
+    const { data } = await supabase
+      .from('products')
+      .select('business_id, photos')
+      .in('business_id', [...new Set(businessIds)])
+      .eq('is_active', true)
+      .is('sold_at', null)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    for (const p of (data ?? []) as { business_id: string; photos: string[] }[]) {
+      const photo = p.photos?.[0];
+      const entry = (out[p.business_id] ??= { photos: [], count: 0 });
+      entry.count += 1;
+      if (photo && entry.photos.length < 3) entry.photos.push(photo);
+    }
+    for (const k of Object.keys(out)) if (out[k].photos.length === 0) delete out[k];
+  } catch { /* decorative — never break a listing */ }
+  return out;
+}
+
 /* ── Merchant ────────────────────────────────────────────────────────────── */
 
 export async function fetchMerchantProducts(businessId: string): Promise<Product[]> {
