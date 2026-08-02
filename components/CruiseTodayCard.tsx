@@ -13,16 +13,24 @@ import { shipImageSource } from '@/lib/cruise-ship-images';
 
 const ACCENT = '#0E6E8C';
 
-export function CruiseTodayCard({ style }: { style?: StyleProp<ViewStyle> }) {
+/**
+ * `card` lets a parent that has already loaded the call (the Home screen, which
+ * needs the ship count for its Today strip) hand it straight over instead of
+ * making us fetch the same thing twice. Omit it and we load our own.
+ */
+export function CruiseTodayCard({ style, card: cardProp }: { style?: StyleProp<ViewStyle>; card?: CruiseHomeCard | null }) {
   const router = useRouter();
-  const [card, setCard] = useState<CruiseHomeCard | null>(null);
+  const [ownCard, setOwnCard] = useState<CruiseHomeCard | null>(null);
+  const supplied = cardProp !== undefined;
 
   useEffect(() => {
+    if (supplied) return;
     let alive = true;
-    getCruiseHomeCard().then((c) => { if (alive) setCard(c); }).catch(() => {});
+    getCruiseHomeCard().then((c) => { if (alive) setOwnCard(c); }).catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [supplied]);
 
+  const card = supplied ? cardProp : ownCard;
   if (!card) return null;
   const b = baro(card.barometer);
   const names = card.thumbs.map((t) => t.name).slice(0, 2).join(', ') + (card.thumbs.length > 2 ? ` +${card.thumbs.length - 2}` : '');

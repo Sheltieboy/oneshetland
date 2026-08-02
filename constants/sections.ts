@@ -152,7 +152,7 @@ export const SECTIONS = {
     color:       '#9F1239',   // rose-800 — warm, nostalgic, distinct from every other section
     light:       '#FFE4E6',
     icon:        'book-open',
-    label:       'Auld Stories',
+    label:       'Aald Memories',
     description: 'A living map of Shetland, pinned with stories, voices, photos and films',
     live:        true,
   },

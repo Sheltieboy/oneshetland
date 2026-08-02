@@ -122,7 +122,7 @@ function MoreSheet({
               <View style={[styles.moreChip, { backgroundColor: active ? item.color : item.color + '1A' }]}>
                 <FontAwesome5 name={item.icon as any} size={20} color={active ? '#fff' : item.color} solid />
               </View>
-              <Text style={styles.moreLabel} numberOfLines={1}>{item.label}</Text>
+              <Text style={styles.moreLabel} numberOfLines={2}>{item.label}</Text>
             </TouchableOpacity>
           );
         })}

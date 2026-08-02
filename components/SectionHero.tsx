@@ -26,7 +26,7 @@
  * Usage:
  *   <SectionHero
  *     section="memories"
- *     title="Auld Stories"
+ *     title="Aald Memories"
  *     eyebrow="The living map"
  *     photo={require('@/assets/section-heroes/memories.jpg')}
  *   />

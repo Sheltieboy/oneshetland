@@ -87,7 +87,17 @@ function notableToday(snap: TodaySnapshot | null): string | null {
   return null;
 }
 
-export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<ViewStyle>; wide?: boolean }) {
+export function ShetlandTodayCard({
+  style, wide = false, extraSummary, onExpandedChange,
+}: {
+  style?: StyleProp<ViewStyle>;
+  wide?: boolean;
+  /** Appended to the collapsed summary line — e.g. "2 ships in port". */
+  extraSummary?: string | null;
+  /** Fires when the card opens or closes, so the parent can show detail bands
+   *  alongside it rather than stacking a second strip underneath at rest. */
+  onExpandedChange?: (expanded: boolean) => void;
+}) {
   const [mode, setMode]   = useState<Mode>('lerwick');
   const [place, setPlace] = useState('Lerwick');
   const [snap, setSnap]   = useState<TodaySnapshot | null>(null);
@@ -235,6 +245,8 @@ export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<V
     void AsyncStorage.setItem(OPEN_KEY, next);
   };
 
+  useEffect(() => { onExpandedChange?.(expanded); }, [expanded, onExpandedChange]);
+
   // Next tide from now; wraps to the first of the day once the last has passed.
   const nextTide = tideEvents.find(e => e.fraction > nowFraction) ?? tideEvents[0] ?? null;
 
@@ -242,6 +254,7 @@ export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<V
     w.label !== '—' ? w.label : null,
     snap?.sunset ? `Sunset ${snap.sunset}` : null,
     nextTide ? `${nextTide.type === 'flow' ? 'Flow' : 'Ebb'} ${nextTide.time}` : null,
+    extraSummary || null,
   ].filter(Boolean).join(' · ');
 
   if (!expanded) {

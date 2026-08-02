@@ -86,7 +86,7 @@ const SLIDES: Slide[] = [
   },
   {
     title: "There's lots more inside",
-    body:  "Tap the More button to find the Directory, Auld Stories, Da Boats, Games, Hubs and more. You can explore it all without signing in.",
+    body:  "Tap the More button to find the Directory, Aald Memories, Da Boats, Games, Hubs and more. You can explore it all without signing in.",
     icon:  'ellipsis-h',
     color: '#12B3D6',
     bg:    colors.navy,

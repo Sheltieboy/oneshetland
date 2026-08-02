@@ -45,6 +45,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { FeaturedBusinessesBar } from '@/components/FeaturedBusinessesBar';
 import { BrushAccent } from '@/components/Brush';
 import { CruiseTodayCard } from '@/components/CruiseTodayCard';
+import { getCruiseHomeCard, type CruiseHomeCard } from '@/lib/cruise-api';
 import { TodayAtAGlance } from '@/components/TodayAtAGlance';
 import { ShetlandTodayCard } from '@/components/ShetlandTodayCard';
 import { NearbyDealsTicker } from '@/components/NearbyDealsTicker';
@@ -356,26 +357,25 @@ function HomeHeader({ name, spik, urgent, scrollY }: {
   return (
     <View style={styles.hero}>
       <View style={[styles.heroContent, { paddingTop: insets.top + 10 }]}>
-        {/* Brand row — always pinned */}
+        {/* Mark + wordmark + actions — always pinned. The tagline is gone (it's
+            marketing copy for someone who hasn't installed it), but the name
+            stays so the header still reads as OneShetland. */}
         <View style={styles.heroTopRow}>
-          <View style={styles.heroLogoRow}>
-            <View style={styles.heroLogoMedallion}>
-              <Image source={LOGO} style={styles.heroLogo} resizeMode="contain" />
-            </View>
-            <View style={styles.heroBrandBlock}>
-              <DisplayText weight="black" style={styles.heroBrand} numberOfLines={1}>OneShetland</DisplayText>
-              <Text style={styles.heroBrandTag} numberOfLines={2}>Everything Shetland,{'\n'}in one place</Text>
-            </View>
+          <View style={styles.heroLogoMedallion}>
+            <Image source={LOGO} style={styles.heroLogo} resizeMode="contain" />
           </View>
+          <DisplayText weight="black" style={styles.heroBrand} numberOfLines={1}>OneShetland</DisplayText>
+          <View style={{ flex: 1 }} />
           <View style={styles.heroHeaderActions}>
             <TouchableOpacity style={styles.walletBtn} onPress={() => router.push('/local-wallet')} activeOpacity={0.8} hitSlop={8} accessibilityLabel="My Wallet">
-              <FontAwesome5 name="wallet" size={13} color={colors.navy} solid />
+              <FontAwesome5 name="wallet" size={13} color="#fff" solid />
               {walletPence != null && (
                 <Text style={styles.walletBtnText}>
                   {walletPence % 100 === 0 ? `£${Math.round(walletPence / 100)}` : formatPence(walletPence)}
                 </Text>
               )}
             </TouchableOpacity>
+            <NotificationBell size={38} />
             <TouchableOpacity style={styles.profileAvatar} onPress={() => router.push('/(tabs)/me')} activeOpacity={0.8} hitSlop={8}>
               <Text style={styles.profileAvatarText}>{initials}</Text>
             </TouchableOpacity>
@@ -403,13 +403,13 @@ function HomeHeader({ name, spik, urgent, scrollY }: {
           </View>
         </Animated.View>
 
-        {/* Search + notifications — persistent; dock under the brand row as the welcome collapses */}
+        {/* Search — persistent; docks under the mark row as the welcome collapses.
+            The bell now lives up in the actions row, so this runs full width. */}
         <View style={styles.heroSearchRow}>
           <TouchableOpacity style={[styles.heroSearchFull, { flex: 1 }]} onPress={() => router.push('/search')} activeOpacity={0.85} accessibilityLabel="Search">
             <FontAwesome5 name="search" size={15} color={colors.textMuted} />
             <Text style={styles.heroSearchText} numberOfLines={1}>Search Shetland…</Text>
           </TouchableOpacity>
-          <NotificationBell size={48} />
         </View>
 
         {/* Deals near you — docked to the bottom of the header, opens a drawer. */}
@@ -433,7 +433,7 @@ function HomeHeader({ name, spik, urgent, scrollY }: {
 /**
  * A scannable grid of every destination in the app, so older / non-technical
  * users can discover the sections hidden behind the phone "More" sheet (Fetch,
- * Hubs, Spik, Auld Stories, Da Boats, Games, Cruise, Profile, …) rather than
+ * Hubs, Spik, Aald Memories, Da Boats, Games, Cruise, Profile, …) rather than
  * relying on the 5-slot bottom bar. Renders from the single nav-model source of
  * truth (NAV + PROFILE) so it can never drift from the rest of navigation.
  * Visual reference: the MoreSheet tiles in components/AppTabBar.tsx.
@@ -445,7 +445,7 @@ function HomeHeader({ name, spik, urgent, scrollY }: {
 // Profile is omitted — it's the avatar in the header. Fetch gets its own
 // full-width card below the grid (rendered separately).
 const EXPLORE_GROUPS: { title: string; labels: string[] }[] = [
-  { title: 'Community & culture', labels: ['Spik', 'Games', 'Hubs', 'Auld Stories', 'Da Boats', 'Cruise'] },
+  { title: 'Community & culture', labels: ['Spik', 'Games', 'Hubs', 'Aald Memories', 'Da Boats', 'Cruise'] },
 ];
 
 interface ExploreLive { lkBoats?: number; stories?: number; runs?: number; runRoute?: string }
@@ -455,7 +455,7 @@ interface ExploreLive { lkBoats?: number; stories?: number; runs?: number; runRo
 function exploreCaption(label: string, live: ExploreLive, spikWord?: string): string {
   switch (label) {
     case 'Da Boats':     return live.lkBoats != null ? `${live.lkBoats} LK boats`        : 'Vessel heritage';
-    case 'Auld Stories': return live.stories != null ? `${live.stories} stories`         : 'Living memory';
+    case 'Aald Memories': return live.stories != null ? `${live.stories} stories`         : 'Living memory';
     case 'Fetch':        return live.runs ? `${live.runs} run${live.runs === 1 ? '' : 's'} on now` : 'Get it delivered';
     case 'Spik':         return spikWord && spikWord !== '…' ? `Wird: ${spikWord}`       : 'Shetland dialect';
     case 'Games':        return 'Play & compete';
@@ -471,7 +471,7 @@ function ExploreGrid({ spikWord }: { spikWord?: string }) {
   const items: NavDest[] = [...NAV.filter(d => d.label !== 'Home'), PROFILE];
   const byLabel = (label: string) => items.find(d => d.label === label);
 
-  // Live counts for the Da Boats / Auld Stories / Fetch captions. Each is
+  // Live counts for the Da Boats / Aald Memories / Fetch captions. Each is
   // independent — one failure just falls back to its static caption.
   const [live, setLive] = useState<ExploreLive>({});
   useEffect(() => {
@@ -1026,6 +1026,30 @@ function GamesRow() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+/**
+ * Priority of the OneShetland universe (Darren, Aug 2026):
+ *   businesses · What's On · Local · Work · Hubs · Fetch · Aald Memories ·
+ *   Cruises · Spik · Da Boats
+ * Used to rank the "For you" feed so the lightest-weight sections can't lead
+ * it. Deliberately NOT used for navigation or section order.
+ */
+const SECTION_RANK: Partial<Record<SectionKey, number>> = {
+  local: 1, services: 1,      // businesses + the Local section
+  events: 2, notices: 2, news: 2,   // What's On, incl. alerts
+  shifts: 4, jobs: 4,         // Work
+  community: 5,               // Hubs
+  fetch: 6,
+  memories: 7,                // Aald Memories
+  cruise: 8, tourism: 8,
+  spik: 9, games: 9,
+  daBoats: 10,
+};
+
+/** Tiles about the reader's own live commitments — never demoted by rank. */
+const LIVE_TILE_IDS = new Set([
+  'my-delivery', 'my-booking', 'my-application', 'my-reward', 'my-gift', 'urgent',
+]);
+
 // For You — dynamic, data-driven tiles
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -1206,6 +1230,20 @@ export default function HomeScreen() {
   const [partnerAlerts, setPartnerAlerts] = useState<PartnerAlert[]>([]);
   const [freshProducts, setFreshProducts] = useState<FreshProduct[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+
+  // Today strip: at rest it's a single line, so the cruise call rides along in
+  // its summary rather than stacking a second band underneath. The full cruise
+  // card appears alongside once the strip is opened.
+  const [cruise, setCruise] = useState<CruiseHomeCard | null>(null);
+  const [todayOpen, setTodayOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getCruiseHomeCard().then(c => { if (alive) setCruise(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const cruiseSummary = cruise
+    ? `${cruise.ships_count} ${cruise.ships_count === 1 ? 'ship' : 'ships'} ${cruise.isToday ? 'in port' : 'due'}`
+    : null;
 
   // Concierge content fetched from DB with seed fallback.
   useEffect(() => { fetchFreshProducts(10).then(setFreshProducts).catch(() => {}); }, []);
@@ -1511,7 +1549,18 @@ export default function HomeScreen() {
       });
     }
 
-    return out.slice(0, 6);
+    // Rank by how much of the OneShetland universe each tile speaks for, so a
+    // saved vessel can't lead the feed ahead of a business or what's on. Your
+    // own live commitments (a delivery in flight, a booking, an alert) ignore
+    // the ranking and stay on top — they're about you, not about a section.
+    // This orders THIS FEED only; nav and section order are untouched.
+    const rank = (t: ForYouTile) =>
+      LIVE_TILE_IDS.has(t.id) ? 0 : (SECTION_RANK[t.iconKey] ?? 5);
+    return out
+      .map((t, i) => ({ t, i }))
+      .sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i)  // stable within a rank
+      .map(x => x.t)
+      .slice(0, 6);
   }, [personal, savedBoats, recentBoats, engagement, nearby, events, notices, jobs, shifts, router]);
 
   // ── Personal note in the banner ────────────────────────────────────────
@@ -1598,9 +1647,17 @@ export default function HomeScreen() {
               weather), the original tall layout on phone. */}
           {/* The two "today" cards are a tight pair (spacing.md between them);
               everything below is on the section rhythm (spacing.xl). */}
-          <ShetlandTodayCard wide={isTablet} style={{ marginHorizontal: spacing.lg, marginTop: spacing.xl }} />
-          {/* Cruise — in port today / next call (hidden when no calls) */}
-          <CruiseTodayCard style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }} />
+          <ShetlandTodayCard
+            wide={isTablet}
+            extraSummary={cruiseSummary}
+            onExpandedChange={setTodayOpen}
+            style={{ marginHorizontal: spacing.lg, marginTop: spacing.xl }}
+          />
+          {/* Cruise detail — only alongside the opened Today card; when the
+              strip is collapsed the ship count already rides in its summary. */}
+          {(isTablet || todayOpen) && (
+            <CruiseTodayCard card={cruise} style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }} />
+          )}
           {/* For you — your personal/contextual items, surfaced high. Hidden when
               there's nothing personal, so the page leads with Explore instead. */}
           <ForYouRow tiles={tiles} />
@@ -1648,50 +1705,25 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     gap: 0,
   },
+  // Slim mark + actions row, straight on the navy — no frosted panel to box it in.
   heroTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-    // Frosted light panel — same colour as the logo backing, photo shows through
-    backgroundColor: 'rgba(240,242,245,0.82)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
-    paddingVertical: 8,
-    paddingLeft: 8,
-    paddingRight: 12,
-  },
-  heroLogoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    flex: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  heroBrandBlock: {
-    flexShrink: 1,
-    minWidth: 0,
+    marginBottom: spacing.sm,
   },
   heroLogoMedallion: {
-    width: 52, height: 52,
+    width: 38, height: 38,
     alignItems: 'center', justifyContent: 'center',
   },
   heroLogo: {
-    width: 50, height: 50,
+    width: 36, height: 36,
   },
   heroBrand: {
-    fontSize: 18,
-    color: colors.navy,
-    letterSpacing: -0.3,
-  },
-  heroBrandTag: {
-    fontSize: 11,
-    color: 'rgba(3,47,76,0.6)',
-    fontWeight: '500',
-    marginTop: -1,
-    lineHeight: 14,
+    fontSize: 16,
+    color: '#fff',
+    letterSpacing: -0.2,
+    marginLeft: 8,
+    flexShrink: 1,
   },
   heroHeaderActions: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -1700,12 +1732,12 @@ const styles = StyleSheet.create({
   walletBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     height: 34, borderRadius: 17, paddingHorizontal: 11,
-    backgroundColor: 'rgba(255,255,255,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.16)',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(3,47,76,0.12)',
+    borderColor: 'rgba(255,255,255,0.28)',
   },
-  walletBtnText: { color: colors.navy, fontSize: 13, fontWeight: '800' },
+  walletBtnText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   profileAvatar: {
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: colors.accent,
@@ -1858,7 +1890,8 @@ const styles = StyleSheet.create({
   // Sections container — single white block, no dark gaps
   sectionsCard: {
     backgroundColor: colors.screenBackground,
-    paddingTop: spacing.lg,
+    // No top padding: every section carries its own top margin (spacing.xl),
+    // so adding padding here would stack into a void under the hero.
     paddingBottom: spacing.lg,
   },
   searchEntry: {

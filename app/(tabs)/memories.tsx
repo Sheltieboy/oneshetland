@@ -254,7 +254,7 @@ export default function MemoriesScreen() {
           <View style={styles.nearWrap}>
             <View style={styles.nearHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.nearEyebrow}>Auld stories near</Text>
+                <Text style={styles.nearEyebrow}>Aald memories near</Text>
                 <Text style={styles.nearTitle}>
                   {nearPlace.name}
                   <Text style={styles.nearSub}>
@@ -453,7 +453,7 @@ export default function MemoriesScreen() {
         >
           <SectionHero
             section="memories"
-            title="Auld Stories"
+            title="Aald Memories"
             eyebrow="The living map"
             photo={memoriesHero}
           />

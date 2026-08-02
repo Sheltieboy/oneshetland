@@ -5,7 +5,7 @@ import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/
  * notify-engagement
  *
  * The social layer that brings people back: comments, reactions and replies on
- * Auld Stories (memories) and Da Boats (vessels). Previously all silent.
+ * Aald Memories (memories) and Da Boats (vessels). Previously all silent.
  *
  *   event 'memory_comment' { comment_id }  → story author (someone commented).
  *   event 'memory_reaction'{ memory_id, actor_id } → story author (someone reacted).
