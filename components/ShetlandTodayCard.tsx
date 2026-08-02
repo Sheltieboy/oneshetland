@@ -51,6 +51,41 @@ const clampPct = (f: number) => Math.min(95, Math.max(5, f * 100));
 
 type Mode = 'lerwick' | 'mine';
 const PREF_KEY = 'shetland_today_loc';
+const OPEN_KEY = 'shetland_today_open';
+
+/** "16h 47m" → 1007. Null if it can't be read. */
+function daylightMinutes(s: string | undefined): number | null {
+  if (!s) return null;
+  const m = s.match(/(\d+)\s*h(?:\s*(\d+)\s*m)?/i);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2] ?? 0);
+}
+
+/**
+ * Is today worth opening the card for? Returns a short phrase, or null on an
+ * ordinary day. This is what earns the card its space: on a plain grey day it
+ * stays a one-line strip, and on a day folk would actually want the detail
+ * (weather worth knowing about, or the daylight at either extreme) it opens
+ * itself — see the `expanded` rule below, which never overrides a real choice.
+ */
+function notableToday(snap: TodaySnapshot | null): string | null {
+  const code = snap?.weatherCode;
+  if (code != null) {
+    if (code >= 95)               return 'Thunder forecast';
+    if (code >= 85)               return 'Snow showers';
+    if (code >= 71 && code <= 77) return 'Snow';
+    if (code >= 65 && code <= 67) return 'Heavy rain';
+    if (code === 45 || code === 48) return 'Fog';
+  }
+  const mins = daylightMinutes(snap?.daylight);
+  if (mins != null && snap) {
+    // Simmer dim at one end, the depths of winter at the other — both are
+    // things folk here actually mark.
+    if (mins >= 18 * 60 + 30) return `Simmer dim · ${snap.daylight} of daylight`;
+    if (mins <= 6 * 60 + 30)  return `Only ${snap.daylight} of daylight`;
+  }
+  return null;
+}
 
 export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<ViewStyle>; wide?: boolean }) {
   const [mode, setMode]   = useState<Mode>('lerwick');
@@ -58,6 +93,8 @@ export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<V
   const [snap, setSnap]   = useState<TodaySnapshot | null>(null);
   const [tide, setTide]   = useState<TideResult | null>(null);
   const [loading, setLoading] = useState(true);
+  // null = the reader has never chosen, so we're free to decide for them.
+  const [savedOpen, setSavedOpen] = useState<'open' | 'closed' | null>(null);
   const hasLocation = !!(Location?.requestForegroundPermissionsAsync);
 
   // Weather + tides for a location, fetched together.
@@ -140,6 +177,14 @@ export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<V
 
   useEffect(() => {
     let alive = true;
+    AsyncStorage.getItem(OPEN_KEY)
+      .then(v => { if (alive && (v === 'open' || v === 'closed')) setSavedOpen(v); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
     (async () => {
       const saved = (await AsyncStorage.getItem(PREF_KEY)) as Mode | null;
       if (!alive) return;
@@ -172,6 +217,69 @@ export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<V
   const nowFraction = (now.getHours() * 60 + now.getMinutes()) / 1440;
   const tideEvents = tide?.events ?? [];
 
+  const notable = notableToday(snap);
+
+  // A stated choice always wins — we never re-open something the reader shut,
+  // however dramatic the weather. Only when they've never chosen do we decide,
+  // and then we open only for a day worth opening for. Tablets have the room,
+  // so they keep the full card.
+  const expanded = wide
+    ? true
+    : savedOpen === 'open'   ? true
+    : savedOpen === 'closed' ? false
+    : !!notable;
+
+  const toggle = () => {
+    const next = expanded ? 'closed' : 'open';
+    setSavedOpen(next);
+    void AsyncStorage.setItem(OPEN_KEY, next);
+  };
+
+  // Next tide from now; wraps to the first of the day once the last has passed.
+  const nextTide = tideEvents.find(e => e.fraction > nowFraction) ?? tideEvents[0] ?? null;
+
+  const summary = [
+    w.label !== '—' ? w.label : null,
+    snap?.sunset ? `Sunset ${snap.sunset}` : null,
+    nextTide ? `${nextTide.type === 'flow' ? 'Flow' : 'Ebb'} ${nextTide.time}` : null,
+  ].filter(Boolean).join(' · ');
+
+  if (!expanded) {
+    return (
+      <ImageBackground
+        source={pickImage(snap?.weatherCode ?? null)}
+        style={[styles.card, styles.cardCollapsed, style]}
+        imageStyle={styles.image}
+      >
+        <View style={styles.scrim} />
+        <TouchableOpacity
+          onPress={toggle}
+          activeOpacity={0.85}
+          style={styles.collapsedRow}
+          accessibilityRole="button"
+          accessibilityLabel={`Shetland today. ${snap?.tempC != null ? `${snap.tempC} degrees` : ''} ${place}. ${summary}${notable ? `. ${notable}` : ''}`}
+          accessibilityHint="Opens the full weather, daylight and tide times"
+        >
+          <FontAwesome5 name={w.icon as any} size={22} color="#fff" solid />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.collapsedTitle} numberOfLines={1}>
+              {snap?.tempC != null ? `${snap.tempC}°` : '—'} · {place}
+            </Text>
+            {!!summary && <Text style={styles.collapsedSub} numberOfLines={1}>{summary}</Text>}
+            {!!notable && (
+              <View style={styles.notableChip}>
+                <Text style={styles.notableText} numberOfLines={1}>{notable}</Text>
+              </View>
+            )}
+          </View>
+          {loading && !snap
+            ? <ActivityIndicator color="rgba(255,255,255,0.8)" />
+            : <FontAwesome5 name="chevron-down" size={12} color="rgba(255,255,255,0.85)" />}
+        </TouchableOpacity>
+      </ImageBackground>
+    );
+  }
+
   return (
     <ImageBackground
       source={pickImage(snap?.weatherCode ?? null)}
@@ -181,7 +289,22 @@ export function ShetlandTodayCard({ style, wide = false }: { style?: StyleProp<V
       <View style={styles.scrim} />
 
       <View style={styles.topRow}>
-        <Text style={styles.kicker}>SHETLAND TODAY</Text>
+        {wide ? (
+          <Text style={styles.kicker}>SHETLAND TODAY</Text>
+        ) : (
+          <TouchableOpacity
+            onPress={toggle}
+            activeOpacity={0.8}
+            hitSlop={10}
+            style={styles.kickerBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Shetland today"
+            accessibilityHint="Collapses this to a single line"
+          >
+            <Text style={styles.kicker}>SHETLAND TODAY</Text>
+            <FontAwesome5 name="chevron-up" size={10} color="rgba(255,255,255,0.85)" />
+          </TouchableOpacity>
+        )}
         {hasLocation ? (
           <View style={styles.toggle}>
             <Pill label="Lerwick" active={mode === 'lerwick'} onPress={() => choose('lerwick')} />
@@ -301,6 +424,19 @@ const styles = StyleSheet.create({
 
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   kicker: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
+  kickerBtn: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+
+  // Collapsed — a single glanceable strip. Keeps the photo, drops everything
+  // that needs reading rather than glancing.
+  cardCollapsed: { minHeight: 0, padding: spacing.md, gap: 0 },
+  collapsedRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  collapsedTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  collapsedSub: { color: 'rgba(255,255,255,0.8)', fontSize: fontSize.sm, marginTop: 1 },
+  notableChip: {
+    alignSelf: 'flex-start', marginTop: 6, borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 9, paddingVertical: 3,
+  },
+  notableText: { color: '#fff', fontSize: 11, fontWeight: '800' },
 
   toggle: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: radius.full, padding: 2 },
   pill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.full },
