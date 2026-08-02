@@ -363,9 +363,16 @@ export async function spawnFetchRequest(svc: SupabaseClient, orderId: string): P
   let feePence: number | null = null;
   try {
     const pickupPc = (biz.address ?? '').match(/ZE\d\s*\d[A-Z]{2}/i)?.[0] ?? 'ZE1 0LL';
+    const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calculate-fee`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '' },
+      headers: {
+        'Content-Type': 'application/json',
+        // calculate-fee rejects requests with no Authorization header — this
+        // runs server-side, so the service key is the caller.
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
       body: JSON.stringify({ pickup_postcode: pickupPc, destination_postcode: order.delivery_postcode }),
     });
     const data = await res.json();
