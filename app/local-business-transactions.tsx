@@ -24,7 +24,7 @@ interface Txn {
 
 const KIND_LABEL: Record<string, string> = {
   wallet_payment: 'Wallet payment', pass_sale: 'Pass / pack', gift_sale: 'Gift',
-  booking_deposit: 'Booking deposit', ticket_sale: 'Event tickets', boost: 'Boost',
+  booking_deposit: 'Booking deposit', ticket_sale: 'Event tickets', product_sale: 'Shop order', boost: 'Boost',
 };
 
 type PresetKey = 'this_month' | 'last_month' | 'last_90' | 'this_year' | 'all';
