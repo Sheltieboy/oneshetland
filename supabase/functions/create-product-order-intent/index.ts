@@ -4,6 +4,7 @@ import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { executeWalletPayment, type PayBusiness } from '../_shared/wallet-pay.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
+import { spawnFetchRequest } from '../_shared/fulfilment.ts';
 
 /**
  * create-product-order-intent — Shop Shetland checkout.
@@ -23,10 +24,15 @@ import { sendUserPush } from '../_shared/send-push.ts';
  *
  * Body: {
  *   business_id, items: [{ product_id, variant_id?, qty }],
- *   fulfilment: 'collect' | 'post',
- *   delivery?: { name, address, postcode, phone? },   // post only
+ *   fulfilment: 'collect' | 'post' | 'fetch',
+ *   delivery?: { name, address, postcode, phone?, region_slug? },  // post + fetch
+ *                                                    // region_slug required for fetch
  *   note?, pay_with?: 'card' | 'wallet', use_saved_card?: boolean
  * }
+ *
+ * fulfilment 'fetch': goods paid here (shipping_pence = 0); once paid, a Fetch
+ * delivery_request is spawned (already_paid) and the buyer pays the driver's
+ * fee through the normal Fetch pre-auth rails when a driver accepts.
  *
  * Unpaid orders expire after 30 min (reminder-runner releases the stock).
  */
@@ -97,7 +103,7 @@ serve(async (req) => {
     const items: Item[] = Array.isArray(body.items) ? body.items : [];
     const payWith: string = body.pay_with === 'wallet' ? 'wallet' : 'card';
     if (!businessId || !items.length || items.length > 20) return json({ error: 'Bad basket' }, 400);
-    if (!['collect', 'post'].includes(fulfilment)) return json({ error: 'Bad fulfilment' }, 400);
+    if (!['collect', 'post', 'fetch'].includes(fulfilment)) return json({ error: 'Bad fulfilment' }, 400);
     for (const it of items) {
       it.qty = Math.floor(Number(it.qty));
       if (!it.product_id || !Number.isFinite(it.qty) || it.qty < 1 || it.qty > 99) return json({ error: 'Bad basket item' }, 400);
@@ -117,10 +123,25 @@ serve(async (req) => {
     const { data: ship } = await svc.from('business_shipping').select('*').eq('business_id', businessId).maybeSingle();
     const collectEnabled = ship?.collect_enabled ?? true;
     if (fulfilment === 'collect' && !collectEnabled) return json({ error: 'Collection is not available from this shop' }, 400);
-    if (fulfilment === 'post') {
-      if (!ship?.post_enabled) return json({ error: "This shop doesn't post orders" }, 400);
+    if (fulfilment === 'post' && !ship?.post_enabled) return json({ error: "This shop doesn't post orders" }, 400);
+    if (fulfilment === 'fetch' && !ship?.fetch_enabled) return json({ error: "This shop doesn't offer Fetch delivery" }, 400);
+    if (fulfilment === 'post' || fulfilment === 'fetch') {
       const d = body.delivery ?? {};
       if (!d.name?.trim() || !d.address?.trim() || !d.postcode?.trim()) return json({ error: 'Delivery name, address and postcode are needed' }, 400);
+      if (fulfilment === 'fetch') {
+        // Drivers' runs are matched on region, so a Fetch order needs a real one.
+        const { data: reg } = d.region_slug
+          ? await svc.from('regions').select('slug').eq('slug', d.region_slug).maybeSingle()
+          : { data: null };
+        if (!reg) return json({ error: 'Choose the area you want it dropped off in' }, 400);
+        // The driver's fee is pre-authorised on the buyer's card the moment
+        // they accept, so a card has to be on file — otherwise a driver
+        // commits to a run they can't be paid for. (Same gate as Fetch itself.)
+        const { data: p } = await svc.from('profiles').select('has_payment_method').eq('id', user.id).maybeSingle();
+        if (!p?.has_payment_method) {
+          return json({ error: "Add a payment card before choosing Fetch — your driver's fee is authorised when they accept, and only charged on delivery." }, 400);
+        }
+      }
     }
 
     // ── Load + validate products, compute snapshot prices ──────────────────
@@ -208,6 +229,7 @@ serve(async (req) => {
       delivery_name: d.name?.trim() || null,
       delivery_address: d.address?.trim() || null,
       delivery_postcode: d.postcode?.trim() || null,
+      delivery_region_slug: fulfilment === 'fetch' ? d.region_slug : null,
       contact_phone: d.phone?.trim() || null,
       buyer_note: body.note?.trim() || null,
       expires_at: new Date(Date.now() + ORDER_TTL_MIN * 60_000).toISOString(),
@@ -246,6 +268,23 @@ serve(async (req) => {
         // NOTE: not `order_id` — that key routes to event tickets in the app.
         data: { screen: 'business-orders', product_order_id: order.id, business_id: businessId },
       });
+      // Fetch lane: spawn the delivery request and ping matching drivers now
+      // (notify-drivers needs the buyer's JWT, which only this path holds —
+      // the card/webhook path spawns without the ping; the request still
+      // appears on the Fetch board).
+      if (fulfilment === 'fetch') {
+        try {
+          await spawnFetchRequest(svc, order.id);
+          const { data: o2 } = await svc.from('product_orders').select('delivery_request_id').eq('id', order.id).maybeSingle();
+          if (o2?.delivery_request_id) {
+            fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/notify-drivers`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: authHeader, apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '' },
+              body: JSON.stringify({ request_id: o2.delivery_request_id }),
+            }).catch(() => {});
+          }
+        } catch (e) { console.error('[create-product-order-intent] fetch spawn failed', e); }
+      }
       return json({ charged: true, order_id: order.id, balance_pence: res.balance_pence });
     }
 

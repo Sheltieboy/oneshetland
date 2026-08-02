@@ -70,6 +70,7 @@ export default function BusinessProductsScreen() {
   const [collect, setCollect] = useState(true);
   const [collectNote, setCollectNote] = useState('');
   const [post, setPost] = useState(false);
+  const [fetchIt, setFetchIt] = useState(false);
   const [shet, setShet] = useState('');
   const [uk, setUk] = useState('');
   const [extra, setExtra] = useState('');
@@ -86,7 +87,7 @@ export default function BusinessProductsScreen() {
       setShipping(ship);
       if (ship) {
         setCollect(ship.collect_enabled); setCollectNote(ship.collect_note ?? '');
-        setPost(ship.post_enabled); setShet(pounds(ship.post_shetland_pence));
+        setPost(ship.post_enabled); setFetchIt(ship.fetch_enabled); setShet(pounds(ship.post_shetland_pence));
         setUk(pounds(ship.post_uk_pence)); setExtra(pounds(ship.post_per_extra_item_pence));
         setFreeOver(pounds(ship.free_over_pence));
       }
@@ -161,6 +162,7 @@ export default function BusinessProductsScreen() {
         collect_enabled: collect,
         collect_note: collectNote.trim() || null,
         post_enabled: post,
+        fetch_enabled: fetchIt,
         post_shetland_pence: toPence(shet),
         post_uk_pence: toPence(uk),
         post_per_extra_item_pence: toPence(extra) ?? 0,
@@ -256,6 +258,15 @@ export default function BusinessProductsScreen() {
                 <PriceInput label="Free postage over £" value={freeOver} onChange={setFreeOver} placeholder="—" />
               </View>
             )}
+            <View style={styles.switchRow}>
+              <Text style={styles.switchLabel}>Fetch delivery 🚗</Text>
+              <Switch value={fetchIt} onValueChange={setFetchIt} trackColor={{ true: S.color }} />
+            </View>
+            <Text style={styles.shipSub}>
+              A OneShetland community driver collects the order from you and takes it to the buyer, usually within a day or two.
+              The buyer pays the driver&rsquo;s fee — nothing for you to set up; just have the order ready when a driver&rsquo;s assigned.
+            </Text>
+
             {shipMsg && <Text style={styles.shipMsg}>{shipMsg}</Text>}
             <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: S.color, alignSelf: 'flex-end' }]} onPress={saveShip} disabled={shipSaving}>
               <Text style={styles.primaryBtnText}>{shipSaving ? 'Saving…' : 'Save'}</Text>

@@ -171,7 +171,7 @@ export type ProductOrderResult = {
 export async function createProductOrder(body: {
   business_id: string;
   items: { product_id: string; variant_id?: string | null; qty: number }[];
-  fulfilment: 'collect' | 'post';
+  fulfilment: 'collect' | 'post' | 'fetch';
   delivery?: { name: string; address: string; postcode: string; phone?: string };
   note?: string;
   pay_with?: 'card' | 'wallet';
@@ -325,7 +325,7 @@ export async function fetchShipping(businessId: string): Promise<BusinessShippin
   return (data ?? null) as BusinessShipping | null;
 }
 
-export async function saveShipping(row: Omit<BusinessShipping, 'fetch_enabled'>): Promise<void> {
+export async function saveShipping(row: BusinessShipping): Promise<void> {
   const { error } = await supabase.from('business_shipping').upsert(row);
   if (error) throw error;
 }

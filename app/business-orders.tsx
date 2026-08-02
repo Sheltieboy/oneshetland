@@ -35,9 +35,12 @@ const NEXT: Record<string, { label: string; to: string; forFulfilment?: string }
   paid: [{ label: 'Accept order', to: 'accepted' }],
   accepted: [
     { label: 'Ready to collect', to: 'ready', forFulfilment: 'collect' },
+    { label: 'Ready for the driver', to: 'ready', forFulfilment: 'fetch' },
     { label: 'Mark as posted', to: 'posted', forFulfilment: 'post' },
   ],
-  ready: [{ label: 'Collected — complete', to: 'completed' }],
+  // fetch orders leave 'ready' via the driver (collected → delivered syncs the
+  // order automatically), so no merchant button for that lane.
+  ready: [{ label: 'Collected — complete', to: 'completed', forFulfilment: 'collect' }],
   posted: [{ label: 'Complete', to: 'completed' }],
   handed_over: [{ label: 'Complete', to: 'completed' }],
 };
@@ -77,8 +80,11 @@ function OrderCard({ o, onMoved }: { o: ProductOrder; onMoved: () => void }) {
       ))}
       {o.shipping_pence > 0 && <Text style={styles.itemDim}>Postage — {formatPence(o.shipping_pence)}</Text>}
 
-      {o.fulfilment === 'post' && o.delivery_address && (
-        <Text style={styles.address}>📮 {o.delivery_name} · {o.delivery_address}, {o.delivery_postcode}{o.contact_phone ? ` · ${o.contact_phone}` : ''}</Text>
+      {(o.fulfilment === 'post' || o.fulfilment === 'fetch') && o.delivery_address && (
+        <Text style={styles.address}>{o.fulfilment === 'fetch' ? '🚗' : '📮'} {o.delivery_name} · {o.delivery_address}, {o.delivery_postcode}{o.contact_phone ? ` · ${o.contact_phone}` : ''}</Text>
+      )}
+      {o.fulfilment === 'fetch' && o.status === 'ready' && (
+        <Text style={styles.itemDim}>Waiting for a Fetch driver to collect — the order updates itself from here.</Text>
       )}
       {!!o.buyer_note && <Text style={styles.note}>“{o.buyer_note}”</Text>}
       {!!o.tracking_ref && <Text style={styles.itemDim}>Tracking: {o.tracking_ref}</Text>}

@@ -53,7 +53,7 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0 };
 
     // ── Shop orders: expire unpaid checkouts + release their reserved stock ──
     // A pending product_order holds stock (reserved) so nobody else can buy
@@ -85,6 +85,43 @@ serve(async (req) => {
         result.product_orders_expired++;
       }
     } catch (e) { console.error('[reminder-runner] product-order expiry failed', e); }
+
+    // ── Shop orders on the Fetch lane: 48h with no driver → nudge both sides ──
+    // The goods are paid; if no driver has picked the run up in two days the
+    // buyer and merchant should talk about a plan B (collect, post, re-list).
+    try {
+      const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60_000).toISOString();
+      const { data: stuck } = await svc
+        .from('product_orders')
+        .select('id, buyer_id, business_id, delivery_request_id, paid_at')
+        .eq('fulfilment', 'fetch')
+        .is('fetch_nudged_at', null)
+        .not('delivery_request_id', 'is', null)
+        .lt('paid_at', twoDaysAgo)
+        .in('status', ['paid', 'accepted', 'ready'])
+        .limit(50);
+      for (const o of stuck ?? []) {
+        const { data: dr } = await svc.from('delivery_requests').select('status').eq('id', o.delivery_request_id).maybeSingle();
+        if (dr?.status !== 'pending') continue; // matched/moving — no nudge needed
+        const { data: biz } = await svc.from('local_businesses').select('name, owner_id').eq('id', o.business_id).maybeSingle();
+        await sendUserPush(svc, {
+          userId: o.buyer_id, module: 'wallet', categoryId: 'wallet.order_update',
+          title: 'Still looking for a driver',
+          body: `No Fetch driver has picked up your order from ${biz?.name ?? 'the shop'} yet. You could arrange collection with the shop instead.`,
+          data: { screen: 'my-orders', product_order_id: o.id },
+        });
+        if (biz?.owner_id) {
+          await sendUserPush(svc, {
+            userId: biz.owner_id, module: 'business', categoryId: 'business.order',
+            title: 'Fetch order still waiting',
+            body: 'A shop order has waited 2 days for a driver. You may want to offer the buyer collection or post instead.',
+            data: { screen: 'business-orders', product_order_id: o.id, business_id: o.business_id },
+          });
+        }
+        await svc.from('product_orders').update({ fetch_nudged_at: nowIso }).eq('id', o.id);
+        result.fetch_orders_nudged++;
+      }
+    } catch (e) { console.error('[reminder-runner] fetch-order nudge failed', e); }
 
     // ── Event tickets: release capacity held by abandoned orders ─────────────
     // Pending (never-paid) ticket orders keep their reserved seats forever,

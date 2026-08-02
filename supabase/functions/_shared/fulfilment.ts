@@ -334,6 +334,67 @@ export async function fulfilHubMembership(svc: SupabaseClient, pi: FulfilPI): Pr
  * (e.g. Fetch delivery / local_boost, which the webhook handles inline, or the
  * *_wallet variants, which are fulfilled synchronously at purchase time).
  */
+/**
+ * Spawn the Fetch delivery request for a PAID shop order with fulfilment
+ * 'fetch'. Goods are already paid (already_paid=true); the delivery fee rides
+ * the existing Fetch pre-auth/capture rails when a driver accepts. Fee is
+ * estimated postcode→postcode via the calculate-fee function; falls back to
+ * central Lerwick when the business address has no parseable postcode.
+ * Idempotent via the delivery_request_id null-guard on the UPDATE.
+ */
+export async function spawnFetchRequest(svc: SupabaseClient, orderId: string): Promise<void> {
+  const { data: order } = await svc
+    .from('product_orders')
+    .select('id, business_id, buyer_id, fulfilment, delivery_request_id, delivery_name, delivery_address, delivery_postcode, delivery_region_slug, contact_phone, buyer_note')
+    .eq('id', orderId).maybeSingle();
+  if (!order || order.fulfilment !== 'fetch' || order.delivery_request_id) return;
+
+  const { data: biz } = await svc
+    .from('local_businesses').select('name, address').eq('id', order.business_id).maybeSingle();
+  if (!biz) return;
+
+  // The drop-off region is what drivers' runs are matched on — without it the
+  // request can never be covered by a run.
+  const { data: region } = order.delivery_region_slug
+    ? await svc.from('regions').select('id, name').eq('slug', order.delivery_region_slug).maybeSingle()
+    : { data: null };
+
+  // Fee estimate — business postcode from its address, Lerwick fallback.
+  let feePence: number | null = null;
+  try {
+    const pickupPc = (biz.address ?? '').match(/ZE\d\s*\d[A-Z]{2}/i)?.[0] ?? 'ZE1 0LL';
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calculate-fee`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '' },
+      body: JSON.stringify({ pickup_postcode: pickupPc, destination_postcode: order.delivery_postcode }),
+    });
+    const data = await res.json();
+    if (res.ok && Number.isFinite(data.fee_pence)) feePence = data.fee_pence;
+  } catch { /* fee stays null; the fetch flow's minimum applies */ }
+
+  const { data: dr, error } = await svc.from('delivery_requests').insert({
+    customer_id: order.buyer_id,
+    category_slug: 'shop-collection',
+    pickup_name: biz.name,
+    pickup_location: biz.address ?? 'Shetland',
+    pickup_notes: `Shop Shetland order — goods already paid. Ref ${order.id.slice(0, 8)}.`,
+    already_paid: true,
+    ready_for_collection: false, // merchant flips this via "Ready" on the order
+    destination_region_id: region?.id ?? null,
+    destination_area: region?.name ?? null,
+    destination_address: [order.delivery_name, order.delivery_address, order.delivery_postcode].filter(Boolean).join(', '),
+    delivery_notes: order.buyer_note ?? null,
+    contact_phone: order.contact_phone ?? null,
+    liability_acknowledged: true,
+    base_fee_pence: feePence,
+    total_fee_pence: feePence,
+    status: 'pending',
+  }).select('id').single();
+  if (error || !dr) { console.error('[spawnFetchRequest] insert failed', error); return; }
+
+  await svc.from('product_orders').update({ delivery_request_id: dr.id }).eq('id', orderId);
+}
+
 /* ── Shop Shetland product orders ─────────────────────────────────────────
    Unlike the flows above, the webhook is the PRIMARY finalisation path for
    card-paid product orders (there is no client confirm-* call). Idempotent
@@ -388,6 +449,12 @@ export async function fulfilProductOrder(svc: SupabaseClient, pi: FulfilPI): Pro
       consent: true,
     });
   } catch (e) { console.error('[fulfil:product] analytics failed', e); }
+
+  // Fetch lane: spawn the community-driver delivery request.
+  if (flipped.fulfilment === 'fetch') {
+    try { await spawnFetchRequest(svc, orderId); }
+    catch (e) { console.error('[fulfil:product] fetch spawn failed', e); }
+  }
 
   return { granted: true, note: `order ${orderId} paid + stock committed` };
 }

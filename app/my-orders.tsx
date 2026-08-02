@@ -56,7 +56,9 @@ export default function MyOrdersScreen() {
               <View style={styles.cardTop}>
                 <View style={[styles.pill, { backgroundColor: (STATUS_COLOR[o.status] ?? '#64748b') + '22' }]}>
                   <Text style={[styles.pillText, { color: STATUS_COLOR[o.status] ?? '#64748b' }]}>
-                    {BUYER_STATUS_LABEL[o.status] ?? o.status}
+                    {o.fulfilment === 'fetch' && o.status === 'ready' ? 'Waiting for a driver 🚗'
+                      : o.fulfilment === 'fetch' && o.status === 'handed_over' ? 'With your driver 🚗'
+                      : BUYER_STATUS_LABEL[o.status] ?? o.status}
                   </Text>
                 </View>
                 <Text style={styles.when}>

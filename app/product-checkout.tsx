@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { formatPence, fetchWalletBalance } from '@/lib/local-api';
 import {
   fetchProduct, createProductOrder, shippingQuote,
@@ -40,12 +41,14 @@ export default function ProductCheckoutScreen() {
   const [businessName, setBusinessName] = useState('');
   const [walletPence, setWalletPence] = useState(0);
 
-  const [fulfilment, setFulfilment] = useState<'collect' | 'post'>('collect');
+  const [fulfilment, setFulfilment] = useState<'collect' | 'post' | 'fetch'>('collect');
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [postcode, setPostcode] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
+  const [regionSlug, setRegionSlug] = useState('');
+  const [regions, setRegions] = useState<{ slug: string; name: string }[]>([]);
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -65,11 +68,19 @@ export default function ProductCheckoutScreen() {
     }).finally(() => setLoading(false));
   }, [productId, variantId, profile?.id]);
 
+  // Drop-off areas for the Fetch lane — drivers' runs are matched on region.
+  useEffect(() => {
+    supabase.from('regions').select('slug, name').order('display_order')
+      .then(({ data }) => setRegions((data ?? []) as { slug: string; name: string }[]));
+  }, []);
+
   const unit = (product?.price_pence ?? 0) + (variant?.price_delta_pence ?? 0);
   const itemsPence = unit * qty;
   const postOk = !!shipping?.post_enabled && !product?.collect_only;
   const collectOk = shipping?.collect_enabled ?? true;
-  const eff = fulfilment === 'post' && postOk ? 'post' : 'collect';
+  const fetchOk = !!shipping?.fetch_enabled; // local hand-to-hand — collect-only items are fine
+  const eff: 'collect' | 'post' | 'fetch' =
+    fulfilment === 'post' && postOk ? 'post' : fulfilment === 'fetch' && fetchOk ? 'fetch' : 'collect';
   const quote = useMemo(() =>
     eff === 'post' ? shippingQuote(shipping, itemsPence, qty, postcode || 'XX', !!product?.free_uk_post) : 0,
   [eff, shipping, itemsPence, qty, postcode, product?.free_uk_post]);
@@ -77,8 +88,11 @@ export default function ProductCheckoutScreen() {
 
   function validate(): string | null {
     if (!session) return 'Sign in to buy — it takes a minute.';
-    if (eff === 'post' && (!name.trim() || !address.trim() || !postcode.trim())) {
+    if (eff !== 'collect' && (!name.trim() || !address.trim() || !postcode.trim())) {
       return 'Fill in the delivery name, address and postcode first.';
+    }
+    if (eff === 'fetch' && !regionSlug) {
+      return "Choose the area you want it dropped off in — that's how drivers find it.";
     }
     return null;
   }
@@ -86,8 +100,10 @@ export default function ProductCheckoutScreen() {
   const orderBody = (payWith: 'card' | 'wallet', useSaved: boolean) => ({
     business_id: product!.business_id,
     items: [{ product_id: product!.id, variant_id: variant?.id ?? null, qty }],
-    fulfilment: eff as 'collect' | 'post',
-    delivery: eff === 'post' ? { name, address, postcode, phone } : undefined,
+    fulfilment: eff,
+    delivery: eff !== 'collect'
+      ? { name, address, postcode, phone, region_slug: eff === 'fetch' ? regionSlug : undefined }
+      : undefined,
     note: note || undefined,
     pay_with: payWith,
     use_saved_card: useSaved,
@@ -192,12 +208,41 @@ export default function ProductCheckoutScreen() {
             )}
           </TouchableOpacity>
         )}
+        {fetchOk && (
+          <TouchableOpacity style={[styles.option, eff === 'fetch' && { borderColor: S.color, borderWidth: 2 }]} onPress={() => setFulfilment('fetch')}>
+            <Text style={styles.optionTitle}>Fetch it 🚗 — a community driver brings it over</Text>
+            <Text style={styles.optionSub}>
+              Your order joins the Fetch board and a driver picks it up when they&rsquo;re next passing — usually within a day or two.
+              The driver&rsquo;s fee is separate: your card is authorised when they accept, and only charged once it&rsquo;s delivered. You&rsquo;ll need a card saved for this.
+            </Text>
+            {eff === 'fetch' && (
+              <View style={{ gap: spacing.xs, marginTop: spacing.xs }}>
+                <Text style={styles.optionSub}>Which area are you in?</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.xs }}>
+                  {regions.map((r) => (
+                    <TouchableOpacity key={r.slug} onPress={() => setRegionSlug(r.slug)}
+                      style={[styles.regionChip, regionSlug === r.slug && { backgroundColor: S.color, borderColor: S.color }]}>
+                      <Text style={[styles.regionChipText, regionSlug === r.slug && { color: '#fff' }]}>{r.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Name" placeholderTextColor={colors.textMuted} />
+                <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="Address" placeholderTextColor={colors.textMuted} />
+                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+                  <TextInput style={[styles.input, { flex: 1 }]} value={postcode} onChangeText={setPostcode} autoCapitalize="characters" placeholder="Postcode" placeholderTextColor={colors.textMuted} />
+                  <TextInput style={[styles.input, { flex: 1 }]} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="Phone (optional)" placeholderTextColor={colors.textMuted} />
+                </View>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
         <TextInput style={[styles.input, { minHeight: 56 }]} value={note} onChangeText={setNote} multiline
           placeholder="A note for the shop (optional)" placeholderTextColor={colors.textMuted} />
 
         <View style={styles.card}>
           <Row label="Items" value={formatPence(itemsPence)} />
-          <Row label={eff === 'post' ? 'Postage' : 'Collection'} value={quote === 0 ? 'Free' : formatPence(quote)} />
+          <Row label={eff === 'post' ? 'Postage' : eff === 'fetch' ? 'Fetch delivery' : 'Collection'}
+            value={eff === 'fetch' ? 'Driver fee paid separately' : quote === 0 ? 'Free' : formatPence(quote)} />
           <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.totalValue}>{formatPence(total)}</Text></View>
         </View>
 
@@ -246,6 +291,11 @@ const styles = StyleSheet.create({
   },
   optionTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   optionSub: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
+  regionChip: {
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.screenBackground,
+  },
+  regionChipText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textSecondary },
   input: {
     backgroundColor: colors.screenBackground, borderWidth: 1, borderColor: colors.border,
     borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2,
