@@ -65,6 +65,7 @@ import {
 } from '@/lib/concierge-api';
 import { loadSavedBoats, loadRecentBoats, VesselStub } from '@/lib/boats-prefs';
 import { fetchHomeData, type HomeData } from '@/lib/home-data';
+import { fetchFreshProducts, type FreshProduct } from '@/lib/products-api';
 import {
   bumpSectionEngagement, getRecentEngagement, EngagementKey, EngagementEntry,
 } from '@/lib/engagement';
@@ -1160,6 +1161,37 @@ const ENGAGEMENT_TO_PATH: Record<EngagementKey, string> = {
   jobs:     '/(tabs)/jobs',
 };
 
+
+// ── Fresh in the shops — cross-business product rail (Shop Shetland) ───────
+function ShopRow({ products }: { products: FreshProduct[] }) {
+  const router = useRouter();
+  if (products.length === 0) return null;
+  return (
+    <SectionRow
+      title="Fresh in the shops"
+      subtitle="Buy from Shetland's makers"
+      color={SECTIONS.local.color}
+      action={{ label: 'Directory', onPress: () => router.push('/local-businesses-browse' as never) }}
+    >
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
+        {products.map((pr) => (
+          <TouchableOpacity
+            key={pr.id}
+            activeOpacity={0.85}
+            style={{ width: 132 }}
+            onPress={() => router.push({ pathname: '/product-detail', params: { id: pr.id } } as never)}
+          >
+            <Image source={{ uri: pr.photo }} style={{ width: 132, height: 132, borderRadius: radius.lg, backgroundColor: SECTIONS.local.light }} />
+            <Text numberOfLines={1} style={{ marginTop: 6, fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary }}>{pr.title}</Text>
+            <Text numberOfLines={1} style={{ fontSize: fontSize.xs, color: colors.textMuted }}>{pr.business_name}</Text>
+            <Text style={{ fontSize: fontSize.sm, fontWeight: '800', color: SECTIONS.local.color }}>{formatPence(pr.price_pence)}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </SectionRow>
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const { profile } = useAuth();
@@ -1172,9 +1204,11 @@ export default function HomeScreen() {
   const [engagement, setEngagement]     = useState<Array<{ key: EngagementKey; entry: EngagementEntry }>>([]);
   const [heroKey, setHeroKey]           = useState<HeroKey>(() => pickHeroImage(null));
   const [partnerAlerts, setPartnerAlerts] = useState<PartnerAlert[]>([]);
+  const [freshProducts, setFreshProducts] = useState<FreshProduct[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
   // Concierge content fetched from DB with seed fallback.
+  useEffect(() => { fetchFreshProducts(10).then(setFreshProducts).catch(() => {}); }, []);
   const [events,  setEvents]  = useState<HomeEvent[]>([]);
   const [notices, setNotices] = useState<HomeNotice[]>([]);
   const [jobs,    setJobs]    = useState<HomeJob[]>([]);
@@ -1568,6 +1602,7 @@ export default function HomeScreen() {
           {/* For you — your personal/contextual items, surfaced high. Hidden when
               there's nothing personal, so the page leads with Explore instead. */}
           <ForYouRow tiles={tiles} />
+          <ShopRow products={freshProducts} />
           {/* Explore — persistent grid of every section (discoverability).
               Phone only: on tablet the NavRail sidebar already lists every
               section, so the grid would just be a redundant duplicate. */}
