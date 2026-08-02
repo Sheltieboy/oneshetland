@@ -359,6 +359,20 @@ export default function BusinessDashboardScreen() {
     // extra to the subscription). That in-app purchase path has been removed for
     // store compliance, so we show a neutral locked state instead of charging.
     // Disabling a premium add-on, and all standard/free add-on toggles, still work.
+    // Offers / stamps / wallet payments are Pro features everywhere else in
+    // the product — a free-tier toggle that "works" but does nothing is
+    // misleading, so gate enabling behind Pro with an honest nudge.
+    const needsPro = ['offers', 'stamps', 'payments'].includes(key);
+    if (needsPro && enabled && !tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro')) {
+      brandedAlert({
+        title: 'Pro feature',
+        message: 'Offers, loyalty stamps and wallet payments come with the Pro plan. Upgrade from Plan & billing to switch this on.',
+        icon: 'lock',
+        accent: colors.textMuted,
+        actions: [{ label: 'OK', style: 'primary' }],
+      });
+      return;
+    }
     if (isPremium && enabled) {
       brandedAlert({
         title: 'Premium feature',

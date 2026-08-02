@@ -168,7 +168,7 @@ export default function StampScannerScreen() {
         <View style={styles.tip}>
           <FontAwesome5 name="info-circle" size={11} color={colors.textMuted} />
           <Text style={styles.tipText}>
-            Codes expire after 60 seconds. If yours doesn't work, ask staff for a fresh one.
+            Codes refresh every minute. If yours doesn't work, ask staff to show a fresh one.
           </Text>
         </View>
       </View>
