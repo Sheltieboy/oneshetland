@@ -134,7 +134,7 @@ serve(async (req) => {
     const svc = createServiceClient();
     const now = new Date();
     const today = londonParts(now);
-    const result = { wird_of_day: 0, whats_on_roundup: 0, event_spotlight: 0, jobs_roundup: 0, errors: [] as string[] };
+    const result = { wird_of_day: 0, whats_on_roundup: 0, event_spotlight: 0, jobs_roundup: 0, new_product: 0, errors: [] as string[] };
 
     type Recipe = { key: string; enabled: boolean; config: Record<string, unknown> };
     const { data: recipeRows } = await svc.from('social_recipes').select('*');
@@ -263,6 +263,49 @@ serve(async (req) => {
           await touch('jobs_roundup');
         }
       } catch (e) { result.errors.push(`jobs_roundup: ${e}`); }
+    }
+
+    /* ── New product spotlights — Shop Shetland's marketing loop ─────────── */
+    if (enabled('new_product')) {
+      try {
+        const maxPerRun = Number(cfg('new_product').max_per_run ?? 2);
+        const { data: candidates } = await svc
+          .from('products')
+          .select('id, title, price_pence, stock_mode, photos, created_at, business:local_businesses(name, is_active)')
+          .eq('is_active', true)
+          .is('sold_at', null)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        const { data: done } = await svc
+          .from('social_posts').select('entity_id').eq('kind', 'new_product').limit(5000);
+        const doneIds = new Set((done ?? []).map((d: { entity_id: string | null }) => d.entity_id));
+        let created = 0;
+        for (const prod of (candidates ?? []) as Record<string, unknown>[]) {
+          if (created >= maxPerRun) break;
+          if (doneIds.has(prod.id as string)) continue;
+          const biz = (Array.isArray(prod.business) ? (prod.business as Record<string, unknown>[])[0] : prod.business) as { name?: string; is_active?: boolean } | null;
+          if (!biz?.is_active) continue;
+          if (!(prod.photos as string[])?.length) continue;             // photo-less posts don't sell
+          if ((biz.name ?? '').toUpperCase().startsWith('DEMO')) continue; // never market test data
+          const price = `£${((prod.price_pence as number) / 100).toFixed(2)}`;
+          const modeLine = prod.stock_mode === 'one_off' ? '\nOne of a kind — first come, first served.'
+            : prod.stock_mode === 'made_to_order' ? '\nMade to order, just for you.' : '';
+          const link = go(`product/${prod.id}`);
+          const template =
+            `NEW IN 🛍️\n\n${prod.title} — ${price}, from ${biz.name}.${modeLine}\n\nSee it: ${link}`;
+          const caption = await polishCaption(template, `New product for sale on OneShetland: "${prod.title}" (${price}) from ${biz.name}.`);
+          const { error } = await svc.from('social_posts').insert({
+            kind: 'new_product', entity_type: 'product', entity_id: prod.id,
+            caption,
+            image_url: `${SITE}/api/social-image?kind=product&id=${prod.id}`,
+            link_url: link,
+            scheduled_for: jitter(nextLondonHour(Number(cfg('new_product').hour ?? 11))),
+          });
+          if (!error) { created++; result.new_product++; }
+          else result.errors.push(`new_product insert: ${error.message}`);
+        }
+        await touch('new_product');
+      } catch (e) { result.errors.push(`new_product: ${e}`); }
     }
 
     /* ── Event spotlight — premium businesses' events get their own post ─── */
