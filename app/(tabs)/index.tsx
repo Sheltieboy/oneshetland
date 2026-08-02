@@ -43,7 +43,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { GameArt } from '@/components/GameArt';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { FeaturedBusinessesBar } from '@/components/FeaturedBusinessesBar';
-import { BrushAccent, BrushDivider } from '@/components/Brush';
+import { BrushAccent } from '@/components/Brush';
 import { CruiseTodayCard } from '@/components/CruiseTodayCard';
 import { TodayAtAGlance } from '@/components/TodayAtAGlance';
 import { ShetlandTodayCard } from '@/components/ShetlandTodayCard';
@@ -1596,9 +1596,11 @@ export default function HomeScreen() {
           {/* Shetland today — weather + daylight + tides on the contextual photo.
               Wide horizontal layout on tablet (the header no longer carries the
               weather), the original tall layout on phone. */}
-          <ShetlandTodayCard wide={isTablet} style={{ marginHorizontal: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.lg }} />
+          {/* The two "today" cards are a tight pair (spacing.md between them);
+              everything below is on the section rhythm (spacing.xl). */}
+          <ShetlandTodayCard wide={isTablet} style={{ marginHorizontal: spacing.lg, marginTop: spacing.xl }} />
           {/* Cruise — in port today / next call (hidden when no calls) */}
-          <CruiseTodayCard style={{ marginHorizontal: spacing.lg, marginBottom: spacing.lg }} />
+          <CruiseTodayCard style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }} />
           {/* For you — your personal/contextual items, surfaced high. Hidden when
               there's nothing personal, so the page leads with Explore instead. */}
           <ForYouRow tiles={tiles} />
@@ -1606,25 +1608,14 @@ export default function HomeScreen() {
           {/* Explore — persistent grid of every section (discoverability).
               Phone only: on tablet the NavRail sidebar already lists every
               section, so the grid would just be a redundant duplicate. */}
-          {!isTablet && (
-            <>
-              <ExploreGrid spikWord={spik.word} />
-              <BrushDivider />
-            </>
-          )}
+          {!isTablet && <ExploreGrid spikWord={spik.word} />}
           {/* Around Shetland — events, work & featured local merged into one
               scannable vertical feed (replaces three separate carousels). */}
           <HappeningRow events={events} jobs={jobs} shifts={shifts} businesses={businesses} />
-          <BrushDivider />
           {/* Local notices — kept (already a rich vertical list w/ campaigns) */}
           <NoticesRow notices={notices} />
           {/* 6. Today's game — phone only; on tablet it lives below the left nav */}
-          {!isTablet && (
-            <>
-              <BrushDivider />
-              <GamesRow />
-            </>
-          )}
+          {!isTablet && <GamesRow />}
         </View>
       </Animated.ScrollView>
     </SafeAreaView>
@@ -1960,7 +1951,10 @@ const styles = StyleSheet.create({
   },
 
   // Row chrome — editorial, not widget
-  row: { gap: spacing.sm },
+  // Every top-level Home section sets its own TOP margin and no bottom one, so
+  // the rhythm stays even and a section that renders nothing (For you with no
+  // tiles, an empty shop rail) collapses without leaving a double gap.
+  row: { gap: spacing.sm, marginTop: spacing.xl },
   rowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
