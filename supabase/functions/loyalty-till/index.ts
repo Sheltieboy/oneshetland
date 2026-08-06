@@ -118,7 +118,14 @@ serve(async (req) => {
         return json({ error: 'Just stamped — give it a moment' }, 429);
       }
       const newStamps = (card!.stamps_collected ?? 0) + 1;
-      await svc.from('local_loyalty_cards').update({ stamps_collected: newStamps, last_stamp_at: new Date().toISOString(), nudge_reminded_at: null }).eq('id', card!.id);
+      // Checked — see local-nfc-stamp: an unchecked write here told staff the
+      // stamp was given while the card stayed on zero.
+      const { data: tillSaved, error: tillErr } = await svc.from('local_loyalty_cards')
+        .update({ stamps_collected: newStamps, last_stamp_at: new Date().toISOString(), nudge_reminded_at: null })
+        .eq('id', card!.id).select('id').maybeSingle();
+      if (tillErr || !tillSaved) {
+        return json({ error: `Couldn't save the stamp: ${tillErr?.message ?? 'the card did not update'}` }, 500);
+      }
       await svc.from('local_loyalty_transactions').insert({ card_id: card!.id, user_id: cust.id, business_id: biz.id, type: 'stamp', amount: 1 });
       const rt = readyTier({ ...card, stamps_collected: newStamps });
       if (rt) {

@@ -116,14 +116,21 @@ serve(async (req) => {
     const needed    = program.stamps_required ?? 10;
     const rewardReady = program.type === 'stamps' && newStamps >= needed;
 
-    await svc
+    // Checked: an unchecked failure here reports "Stamp collected!" to the
+    // customer while the card stays on zero.
+    const { data: saved, error: saveErr } = await svc
       .from('local_loyalty_cards')
       .update({
         stamps_collected: newStamps,
         last_stamp_at: new Date().toISOString(),
         nudge_reminded_at: null,   // re-arm the "one more stamp" reminder as the card fills
       })
-      .eq('id', card.id);
+      .eq('id', card.id)
+      .select('id')
+      .maybeSingle();
+    if (saveErr || !saved) {
+      return json({ error: `Couldn't save your stamp: ${saveErr?.message ?? 'the card did not update'}` }, 500);
+    }
 
     await svc.from('local_loyalty_transactions').insert({
       card_id: card.id,
