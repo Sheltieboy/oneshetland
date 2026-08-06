@@ -24,7 +24,7 @@ import { collectStampViaNfc, resolveNfcTile, payWithWalletViaTile, fetchWalletBa
 
 const S = SECTIONS.local;
 
-type Phase = 'resolving' | 'menu' | 'locating' | 'stamping' | 'stampDone' | 'amount' | 'paying' | 'payDone' | 'error';
+type Phase = 'resolving' | 'signedOut' | 'menu' | 'locating' | 'stamping' | 'stampDone' | 'amount' | 'paying' | 'payDone' | 'error';
 interface StampResult { stamps: number; needed: number; reward_ready: boolean; business_name: string; business_id: string; }
 
 export default function NfcTapScreen() {
@@ -43,7 +43,7 @@ export default function NfcTapScreen() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!profile) { router.replace('/'); return; }
+    if (!profile) { setPhase('signedOut'); return; }
     resolve();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, profile?.id, token]);
@@ -116,11 +116,37 @@ export default function NfcTapScreen() {
           {phase === 'stamping' && <Loading icon="stamp" title="Stamping…" subtitle="Almost there" />}
           {phase === 'paying' && <Loading icon="wallet" title="Paying…" subtitle="One moment" />}
 
+          {/* ── Signed out — say what's needed and come back here after ── */}
+          {phase === 'signedOut' && (
+            <View style={{ alignItems: 'center', gap: 14, alignSelf: 'stretch' }}>
+              <View style={[styles.bigIcon, { backgroundColor: S.light }]}><FontAwesome5 name="user-plus" size={34} color={S.color} solid /></View>
+              <Text style={styles.title}>Sign in to collect</Text>
+              <Text style={styles.errBody}>
+                Your stamps and wallet live in your OneShetland account. Sign in and we&apos;ll bring you
+                straight back to this tile.
+              </Text>
+              <View style={{ alignSelf: 'stretch', gap: 10, marginTop: 8 }}>
+                <TouchableOpacity
+                  style={[styles.action, { backgroundColor: S.color }]}
+                  onPress={() => router.push({ pathname: '/(auth)/sign-in', params: { next: `/nfc/${token}` } })}
+                >
+                  <Text style={styles.actionText}>Sign in</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={() => router.push({ pathname: '/(auth)/sign-up', params: { next: `/nfc/${token}` } })}
+                >
+                  <Text style={styles.secondaryBtnText}>Create an account — it&apos;s free</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           {/* ── Choice menu ── */}
           {phase === 'menu' && tile && (
-            <View style={{ alignItems: 'center', gap: 14, alignSelf: 'stretch' }}>
+            <View style={{ alignItems: 'center', gap: 10, alignSelf: 'stretch' }}>
               <View style={[styles.bigIcon, { backgroundColor: S.light }]}><FontAwesome5 name="store" size={34} color={S.color} solid /></View>
-              <Text style={styles.subtitle}>You&apos;re at</Text>
+              <Text style={styles.eyebrow}>You&apos;re at</Text>
               <Text style={styles.title}>{tile.business_name}</Text>
               <View style={{ alignSelf: 'stretch', gap: 10, marginTop: 8 }}>
                 {canStamp && (
@@ -236,22 +262,25 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl },
   bigIcon: { width: 108, height: 108, borderRadius: 54, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: fontSize.xl, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' },
-  subtitle: { fontSize: fontSize.md, color: colors.textMuted, fontWeight: '600', textAlign: 'center' },
-  hint: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
+  // This screen sits on navy — all type here must be light, not the
+  // light-theme ink tokens used elsewhere.
+  title: { fontSize: 30, fontWeight: '900', color: '#fff', textAlign: 'center', letterSpacing: -0.4, lineHeight: 34 },
+  eyebrow: { fontSize: 12, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase', color: 'rgba(255,255,255,0.62)', textAlign: 'center' },
+  subtitle: { fontSize: fontSize.md, color: 'rgba(255,255,255,0.75)', fontWeight: '600', textAlign: 'center' },
+  hint: { fontSize: fontSize.sm, color: 'rgba(255,255,255,0.62)', textAlign: 'center' },
   err: { fontSize: fontSize.sm, color: colors.error, fontWeight: '700', textAlign: 'center' },
   action: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: radius.full, paddingVertical: 15 },
   actionText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
   amountWrap: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 6, marginTop: 8 },
-  amountPrefix: { fontSize: 34, fontWeight: '900', color: colors.textMuted },
-  amountInput: { fontSize: 50, fontWeight: '900', color: colors.textPrimary, minWidth: 120, textAlign: 'center' },
+  amountPrefix: { fontSize: 34, fontWeight: '900', color: 'rgba(255,255,255,0.6)' },
+  amountInput: { fontSize: 50, fontWeight: '900', color: '#fff', minWidth: 120, textAlign: 'center' },
   stampCount: { flexDirection: 'row', alignItems: 'baseline', paddingHorizontal: 22, paddingVertical: 12, borderRadius: radius.full, marginTop: 4 },
   stampCountNum: { fontSize: 32, fontWeight: '900' },
-  stampCountTotal: { fontSize: fontSize.lg, color: colors.textMuted, fontWeight: '700' },
-  errBody: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 20, paddingHorizontal: 12 },
+  stampCountTotal: { fontSize: fontSize.lg, color: 'rgba(255,255,255,0.7)', fontWeight: '700' },
+  errBody: { fontSize: fontSize.sm, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 20, paddingHorizontal: 12 },
   actionRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   primaryBtn: { paddingHorizontal: 22, paddingVertical: 12, borderRadius: radius.full },
   primaryBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
   secondaryBtn: { paddingVertical: 12, alignItems: 'center' },
-  secondaryBtnText: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700' },
+  secondaryBtnText: { color: 'rgba(255,255,255,0.78)', fontSize: fontSize.sm, fontWeight: '700' },
 });

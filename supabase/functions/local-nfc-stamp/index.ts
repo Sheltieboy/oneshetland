@@ -78,13 +78,16 @@ serve(async (req) => {
       .maybeSingle();
     if (!program) return json({ error: `${business.name} hasn't set up a loyalty programme yet` }, 404);
 
-    // Get or create card
-    let { data: card } = await svc
+    // Get or create card. Surface a lookup failure rather than silently
+    // treating it as "no card" — that path quietly creates a duplicate.
+    const { data: existingCard, error: cardErr } = await svc
       .from('local_loyalty_cards')
       .select('*')
       .eq('user_id', user.id)
       .eq('program_id', program.id)
       .maybeSingle();
+    if (cardErr) return json({ error: `Could not read your card: ${cardErr.message}` }, 500);
+    let card = existingCard;
 
     if (!card) {
       const { data: newCard, error } = await svc
@@ -113,14 +116,22 @@ serve(async (req) => {
     const needed = program.stamps_required ?? 10;
     const rewardReady = program.type === 'stamps' && newStamps >= needed;
 
-    await svc
+    // This is the write that actually earns the stamp. Its result was
+    // previously unchecked, so a failure here returned "Stamp collected!" to
+    // the customer while the card stayed on zero — check it and say so.
+    const { data: saved, error: saveErr } = await svc
       .from('local_loyalty_cards')
       .update({
         stamps_collected: newStamps,
         last_stamp_at: new Date().toISOString(),
         nudge_reminded_at: null,   // re-arm the "one more stamp" reminder as the card fills
       })
-      .eq('id', card.id);
+      .eq('id', card.id)
+      .select('id, stamps_collected')
+      .maybeSingle();
+    if (saveErr || !saved) {
+      return json({ error: `Couldn't save your stamp: ${saveErr?.message ?? 'the card did not update'}` }, 500);
+    }
 
     await svc.from('local_loyalty_transactions').insert({
       card_id: card.id,
