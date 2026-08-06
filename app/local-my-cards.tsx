@@ -94,12 +94,57 @@ export default function MyCardsScreen() {
   );
 }
 
+/** Up to two initials from the business name — "DEMO — Shetland Makkers" → "SM". */
+function initialsOf(name: string): string {
+  const words = name
+    .replace(/[—–-]/g, ' ')
+    .split(/\s+/)
+    .filter(w => /[a-z]/i.test(w) && !/^(the|and|of|at|de|da)$/i.test(w));
+  const picked = words.length > 1 ? [words[0], words[words.length - 1]] : words;
+  return picked.slice(0, 2).map(w => w[0].toUpperCase()).join('') || '★';
+}
+
+/**
+ * A real stamp card rather than a progress bar — one slot per stamp, filled
+ * ones carrying the shop's initials like an ink stamp. A bar reads as "37%
+ * loaded"; this reads as "three stamps, two to go", which is what the customer
+ * is actually counting.
+ *
+ * Long cards (10+) shrink the slots rather than wrapping, so the row stays one
+ * glanceable line.
+ */
+function StampRow({ collected, needed, name }: { collected: number; needed: number; name: string }) {
+  const marks = initialsOf(name);
+  const size = needed > 12 ? 20 : needed > 8 ? 26 : 32;
+  const font = size <= 20 ? 8 : size <= 26 ? 10 : 12;
+  return (
+    <View style={styles.stampRow} accessibilityLabel={`${collected} of ${needed} stamps collected`}>
+      {Array.from({ length: needed }).map((_, i) => {
+        const filled = i < collected;
+        return (
+          <View
+            key={i}
+            style={[
+              styles.stamp,
+              { width: size, height: size, borderRadius: size / 2 },
+              filled
+                ? { backgroundColor: S.color, borderColor: S.color }
+                : { borderColor: colors.border, borderStyle: 'dashed' },
+            ]}
+          >
+            {filled && <Text style={[styles.stampText, { fontSize: font }]}>{marks}</Text>}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function CardRow({ card }: { card: LoyaltyCard }) {
   const router = useRouter();
   const isStamp = card.program?.type === 'stamps';
   const stamps  = card.stamps_collected;
   const needed  = card.program?.stamps_required ?? 10;
-  const progress = Math.min(1, stamps / needed);
   const rewardReady = isStamp && stamps >= needed;
 
   return (
@@ -134,11 +179,7 @@ function CardRow({ card }: { card: LoyaltyCard }) {
         )}
       </View>
 
-      {isStamp && (
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { backgroundColor: S.color, width: `${progress * 100}%` }]} />
-        </View>
-      )}
+      {isStamp && <StampRow collected={stamps} needed={needed} name={card.business?.name ?? ''} />}
 
       {card.program?.stamp_reward && (
         <Text style={styles.cardReward}>{card.program.stamp_reward}</Text>
@@ -164,8 +205,9 @@ const styles = StyleSheet.create({
   readyBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
   readyBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
-  progressTrack: { height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' },
-  progressFill:  { height: 6, borderRadius: 3 },
+  stampRow:  { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7 },
+  stamp:     { borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  stampText: { color: '#fff', fontWeight: '900', letterSpacing: 0.2 },
 
   walletBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#000', borderRadius: radius.md, paddingVertical: 10 },
   walletBtnText: { color: '#000', fontSize: fontSize.xs, fontWeight: '800' },
