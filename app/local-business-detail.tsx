@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { track } from '@/lib/analytics';
+import { formatDay } from '@/lib/opening-hours';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -783,13 +784,14 @@ export default function BusinessDetailScreen() {
         {days.map((d, i) => {
           const val = oh[d.key];
           if (!val) return null;
+          const shown = formatDay(val);
           const isToday = i === todayIdx;
           return (
             <View key={d.key} style={styles.hoursRow}>
               <Text style={[styles.hoursDay, isToday && { color: accent, fontWeight: '800' }]}>
                 {d.label}{isToday ? ' · Today' : ''}
               </Text>
-              <Text style={[styles.hoursTime, isToday && { color: accent, fontWeight: '800' }]}>{val}</Text>
+              <Text style={[styles.hoursTime, isToday && { color: accent, fontWeight: '800' }]}>{shown}</Text>
             </View>
           );
         })}

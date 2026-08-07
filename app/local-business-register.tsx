@@ -29,6 +29,8 @@ import {
 } from '@/lib/local-api';
 import { uploadBusinessImage, extractBrandColor, type PickedFile } from '@/lib/image-upload';
 import { track } from '@/lib/analytics';
+import { OpeningHoursEditor } from '@/components/business/OpeningHoursEditor';
+import { hasAnyHours, type OpeningHoursMap } from '@/lib/opening-hours';
 
 const S = SECTIONS.local;
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
@@ -66,6 +68,7 @@ export default function BusinessRegisterScreen() {
   const [brandColor, setBrandColor] = useState<string | null>(null);
   const [tags, setTags]           = useState<string[]>([]);
   const [customTag, setCustomTag] = useState('');
+  const [hours, setHours]         = useState<OpeningHoursMap>({});
 
   // Payment / payout overrides — both off by default (use central card/bank)
   const [useBusinessPayment, setUseBusinessPayment] = useState(false);
@@ -91,6 +94,7 @@ export default function BusinessRegisterScreen() {
         setLogoUrl(b.logo_url ?? null);
         setBrandColor(b.brand_color ?? null);
         setTags(b.tags ?? []);
+        setHours((b.opening_hours as OpeningHoursMap) ?? {});
         setUseBusinessPayment((b as any).use_business_payment ?? false);
         setUseBusinessPayout((b as any).use_business_payout  ?? false);
       }
@@ -151,6 +155,7 @@ export default function BusinessRegisterScreen() {
       website: website.trim() || null,
       email:   email.trim()   || null,
       tags,
+      opening_hours: hasAnyHours(hours) ? hours : null,
       use_business_payment: useBusinessPayment,
       use_business_payout:  useBusinessPayout,
     };
@@ -380,6 +385,15 @@ export default function BusinessRegisterScreen() {
                 <FontAwesome5 name="plus" size={13} color="#fff" />
               </TouchableOpacity>
             </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Opening hours</Text>
+            <Text style={styles.fieldHint}>
+              Worth filling in properly — it&apos;s what puts you in a visitor&apos;s plan for the right part of
+              the day, and stops folk turning up when you&apos;re shut.
+            </Text>
+            <OpeningHoursEditor value={hours} onChange={setHours} accent={S.color} />
           </View>
 
           <View style={styles.field}>
