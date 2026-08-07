@@ -59,22 +59,31 @@ serve(async (req) => {
     if (!biz) return json({ error: (myBiz ?? []).length ? 'Pick which business this is for' : 'You do not run a business' }, 403);
 
     // Resolve the customer from their member code.
-    const { data: cust } = await svc.from('profiles').select('id, display_name, full_name').eq('member_code', String(member_code).toUpperCase().trim()).maybeSingle();
-    if (!cust) return json({ error: 'Member code not found' }, 404);
-    if (cust.id === user.id) return json({ error: "That's your own code" }, 400);
+    const { data: found } = await svc.from('profiles').select('id, display_name, full_name').eq('member_code', String(member_code).toUpperCase().trim()).maybeSingle();
+    if (!found) return json({ error: 'Member code not found' }, 404);
+    if (found.id === user.id) return json({ error: "That's your own code" }, 400);
+    // Bound after the guards so the closures below keep the narrowing.
+    const cust = found;
+    const shop = biz;
     const custName = cust.display_name || cust.full_name || 'Member';
 
     const { data: program } = await svc.from('local_loyalty_programs').select('*').eq('business_id', biz.id).eq('is_active', true).maybeSingle();
 
     // Load (or lazily create on write) the customer's card for this business.
+    // Returns the card, or null. On create the insert result is checked — an
+    // unchecked one left the write paths dereferencing null and 500ing blind.
     async function getCard(create = false) {
       if (!program) return null;
-      let { data: card } = await svc.from('local_loyalty_cards').select('*').eq('user_id', cust.id).eq('program_id', program.id).maybeSingle();
-      if (!card && create) {
-        const { data: made } = await svc.from('local_loyalty_cards').insert({ user_id: cust.id, program_id: program.id, business_id: biz.id, stamps_collected: 0, points_balance: 0 }).select('*').single();
-        card = made;
+      const { data: existing } = await svc.from('local_loyalty_cards').select('*').eq('user_id', cust.id).eq('program_id', program.id).maybeSingle();
+      if (existing || !create) return existing ?? null;
+      const { data: made, error: makeErr } = await svc.from('local_loyalty_cards')
+        .insert({ user_id: cust.id, program_id: program.id, business_id: shop.id, stamps_collected: 0, points_balance: 0 })
+        .select('*').single();
+      if (makeErr || !made) {
+        console.error('[loyalty-till] could not open a card', makeErr);
+        return null;
       }
-      return card;
+      return made;
     }
 
     // Ladder helper.
@@ -114,19 +123,20 @@ serve(async (req) => {
     if (action === 'stamp') {
       if (!program || program.type !== 'stamps') return json({ error: 'No stamp card here' }, 400);
       const card = await getCard(true);
-      if (card?.last_stamp_at && (Date.now() - new Date(card.last_stamp_at).getTime()) < 60_000) {
+      if (!card) return json({ error: "Couldn't open a card for this member" }, 500);
+      if (card.last_stamp_at && (Date.now() - new Date(card.last_stamp_at).getTime()) < 60_000) {
         return json({ error: 'Just stamped — give it a moment' }, 429);
       }
-      const newStamps = (card!.stamps_collected ?? 0) + 1;
+      const newStamps = (card.stamps_collected ?? 0) + 1;
       // Checked — see local-nfc-stamp: an unchecked write here told staff the
       // stamp was given while the card stayed on zero.
       const { data: tillSaved, error: tillErr } = await svc.from('local_loyalty_cards')
         .update({ stamps_collected: newStamps, last_stamp_at: new Date().toISOString(), nudge_reminded_at: null })
-        .eq('id', card!.id).select('id').maybeSingle();
+        .eq('id', card.id).select('id').maybeSingle();
       if (tillErr || !tillSaved) {
         return json({ error: `Couldn't save the stamp: ${tillErr?.message ?? 'the card did not update'}` }, 500);
       }
-      await svc.from('local_loyalty_transactions').insert({ card_id: card!.id, user_id: cust.id, business_id: biz.id, type: 'stamp', amount: 1 });
+      await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: shop.id, type: 'stamp', amount: 1 });
       const rt = readyTier({ ...card, stamps_collected: newStamps });
       if (rt) {
         await sendUserPush(svc, { userId: cust.id, module: 'loyalty', categoryId: 'loyalty.reward_ready', title: `🎉 Reward unlocked at ${biz.name}!`, body: rt.reward, data: { screen: 'local-my-cards' } }).catch(() => {});
@@ -142,9 +152,17 @@ serve(async (req) => {
       const pts = Math.floor((spend / 100) * (program.points_per_pound ?? 0));
       if (pts <= 0) return json({ error: 'That earns no points' }, 400);
       const card = await getCard(true);
-      await svc.from('local_loyalty_cards').update({ points_balance: (card!.points_balance ?? 0) + pts, last_stamp_at: new Date().toISOString() }).eq('id', card!.id);
-      await svc.from('local_loyalty_transactions').insert({ card_id: card!.id, user_id: cust.id, business_id: biz.id, type: 'points_earn', amount: pts, note: 'Earned at till' });
-      return json({ ok: true, message: `+${pts} points`, points: (card!.points_balance ?? 0) + pts });
+      if (!card) return json({ error: "Couldn't open a card for this member" }, 500);
+      const newPoints = (card.points_balance ?? 0) + pts;
+      // Checked for the same reason as the stamp write above.
+      const { data: ptsSaved, error: ptsErr } = await svc.from('local_loyalty_cards')
+        .update({ points_balance: newPoints, last_stamp_at: new Date().toISOString() })
+        .eq('id', card.id).select('id').maybeSingle();
+      if (ptsErr || !ptsSaved) {
+        return json({ error: `Couldn't save the points: ${ptsErr?.message ?? 'the card did not update'}` }, 500);
+      }
+      await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: shop.id, type: 'points_earn', amount: pts, note: 'Earned at till' });
+      return json({ ok: true, message: `+${pts} points`, points: newPoints });
     }
 
     // ── REDEEM A REWARD (ladder-aware) ────────────────────────────────────────
@@ -158,15 +176,26 @@ serve(async (req) => {
         const ready = tiers.find((t) => t.stamps > upto && t.stamps <= (card.stamps_collected ?? 0));
         if (!ready) return json({ error: 'No reward ready' }, 409);
         const isTop = ready.stamps === tiers[tiers.length - 1].stamps;
-        await svc.from('local_loyalty_cards').update(isTop
+        const { data: redSaved, error: redErr } = await svc.from('local_loyalty_cards').update(isTop
           ? { stamps_collected: 0, tiers_redeemed_upto: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null, nudge_reminded_at: null }
-          : { tiers_redeemed_upto: ready.stamps, total_redeemed: (card.total_redeemed ?? 0) + 1 }).eq('id', card.id);
-        await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: biz.id, type: 'reward', amount: ready.stamps });
+          : { tiers_redeemed_upto: ready.stamps, total_redeemed: (card.total_redeemed ?? 0) + 1 })
+          .eq('id', card.id).select('id').maybeSingle();
+        // Unchecked, a rejected write would tell staff "Redeemed" while the card
+        // kept its stamps — the same reward claimable again and again.
+        if (redErr || !redSaved) {
+          return json({ error: `Couldn't record the redemption: ${redErr?.message ?? 'the card did not update'}` }, 500);
+        }
+        await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: shop.id, type: 'reward', amount: ready.stamps });
         return json({ ok: true, message: `Redeemed: ${ready.reward}` });
       }
       if ((card.stamps_collected ?? 0) < (program.stamps_required ?? 9999)) return json({ error: 'Card not complete' }, 409);
-      await svc.from('local_loyalty_cards').update({ stamps_collected: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null }).eq('id', card.id);
-      await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: biz.id, type: 'reward', amount: program.stamps_required });
+      const { data: simpleSaved, error: simpleErr } = await svc.from('local_loyalty_cards')
+        .update({ stamps_collected: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null })
+        .eq('id', card.id).select('id').maybeSingle();
+      if (simpleErr || !simpleSaved) {
+        return json({ error: `Couldn't record the redemption: ${simpleErr?.message ?? 'the card did not update'}` }, 500);
+      }
+      await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: shop.id, type: 'reward', amount: program.stamps_required });
       return json({ ok: true, message: `Redeemed: ${program.stamp_reward ?? 'reward'}` });
     }
 
