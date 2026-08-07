@@ -298,6 +298,7 @@ function RootNavigator() {
           <Stack.Screen name="referrals" />
           <Stack.Screen name="my-loyalty-code" />
           <Stack.Screen name="local-till" />
+          <Stack.Screen name="local-counter" options={{ gestureEnabled: false }} />
           <Stack.Screen name="local-bookable-browse" />
           <Stack.Screen name="local-offer-new" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="local-wallet" />

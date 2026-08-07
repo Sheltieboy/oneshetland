@@ -1,6 +1,12 @@
 /**
- * my-loyalty-code.tsx — the member's ONE card. Show this QR (or the code) at any
- * taking-part Shetland business to collect stamps/points or redeem a reward.
+ * my-loyalty-code.tsx — the member's ONE card, and the only code a customer
+ * should ever be asked to show. Staff scan it to add a stamp or points, hand
+ * over a reward that's ready, or ask for a payment (which the customer then
+ * approves on their own phone).
+ *
+ * It reads as "loyalty" in the file name for history's sake, but the card is
+ * deliberately not loyalty-only: a second, payment-specific code at the counter
+ * is exactly what caused staff to scan the wrong thing.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -46,7 +52,7 @@ export default function MyLoyaltyCodeScreen() {
   }, [profile?.id]);
 
   return (
-    <ScreenScaffold header={<ScreenHeader title="My loyalty card" accent={S.color} onBack={() => router.back()} />}>
+    <ScreenScaffold header={<ScreenHeader title="My member card" accent={S.color} onBack={() => router.back()} />}>
       {loading ? (
         <LoadingState accent={S.color} />
       ) : (
@@ -67,9 +73,17 @@ export default function MyLoyaltyCodeScreen() {
           </View>
 
           <Text style={styles.help}>
-            Show this at any taking-part Shetland shop. One card works everywhere — staff scan it to add a
-            stamp or points, or to give you a reward that’s ready.
+            Show this at any taking-part Shetland shop. One card does everything — staff scan it to add a
+            stamp or points, hand over a reward that’s ready, or ask for a payment from your wallet.
           </Text>
+
+          <View style={styles.payNote}>
+            <FontAwesome5 name="shield-alt" size={12} color={colors.textMuted} solid />
+            <Text style={styles.payNoteText}>
+              Nothing is charged by showing this. If a shop asks for a payment, it appears on your phone
+              for you to approve first.
+            </Text>
+          </View>
 
           {(APPLE_WALLET_SUPPORTED || GOOGLE_WALLET_SUPPORTED) && (
             <TouchableOpacity style={styles.walletBtn} disabled={wallet} onPress={() => addWallet(APPLE_WALLET_SUPPORTED ? 'apple' : 'google')} activeOpacity={0.85}>
@@ -101,6 +115,8 @@ const styles = StyleSheet.create({
   orLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: colors.textLight },
   code: { fontSize: 30, fontWeight: '900', letterSpacing: 4 },
   help: { fontSize: fontSize.sm, color: colors.textMuted, lineHeight: 20, textAlign: 'center', paddingHorizontal: 8 },
+  payNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: colors.offWhite, borderRadius: radius.md, padding: spacing.md },
+  payNoteText: { flex: 1, fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 17 },
   walletBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#000', borderRadius: radius.lg, paddingVertical: 14 },
   walletBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
   linkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: S.light, borderRadius: radius.lg, paddingVertical: 14 },

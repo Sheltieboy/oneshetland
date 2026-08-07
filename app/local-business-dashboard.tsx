@@ -497,6 +497,27 @@ export default function BusinessDashboardScreen() {
 
         <Text style={styles.groupHeader}>At the counter</Text>
 
+        {/* ── Counter mode — the screen to leave open on the counter all day.
+             Leads the group because it's the everyday one; everything below is
+             the owner's toolkit for exceptions. ── */}
+        <TouchableOpacity
+          style={styles.counterBanner}
+          onPress={() => router.push({ pathname: '/local-counter', params: { businessId: activeBusiness.id } })}
+          activeOpacity={0.85}
+        >
+          <View style={styles.counterIcon}>
+            <FontAwesome5 name="tablet-alt" size={13} color="#fff" solid />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.counterTitle}>Counter mode</Text>
+            <Text style={styles.counterSub}>
+              A full-screen serving view for the counter — big till code and one-tap scanning. Lock it with a
+              staff PIN and hand over the tablet.
+            </Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={11} color="rgba(255,255,255,0.8)" />
+        </TouchableOpacity>
+
         {/* ── Till code ── */}
         <View style={styles.codeCard}>
           <Text style={styles.codeLabel}>Till code · show to customer</Text>
@@ -2245,6 +2266,10 @@ const styles = StyleSheet.create({
   allUnlockedText: { fontSize: fontSize.sm, fontWeight: '800', color: PREMIUM_PURPLE },
 
   backfillBanner:   { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: S.color + '12', borderRadius: radius.lg, borderWidth: 1, borderColor: S.color + '40' },
+  counterBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, backgroundColor: '#0B0620', borderRadius: radius.lg },
+  counterIcon:   { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.16)' },
+  counterTitle:  { color: '#fff', fontSize: fontSize.sm, fontWeight: '900' },
+  counterSub:    { color: 'rgba(255,255,255,0.75)', fontSize: fontSize.xs, lineHeight: 16, marginTop: 2 },
   backfillIcon:     { width: 30, height: 30, borderRadius: 15, backgroundColor: S.color + '22', alignItems: 'center', justifyContent: 'center' },
   backfillTitle:    { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   backfillSub:      { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1, lineHeight: 16 },

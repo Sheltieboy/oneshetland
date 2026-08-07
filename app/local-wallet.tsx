@@ -228,16 +228,31 @@ export default function WalletScreen() {
         <View style={[styles.balanceCard, { backgroundColor: S.color }]}>
           <Text style={styles.balanceLabel}>Available balance</Text>
           <Text style={styles.balanceAmount}>{formatPence(balance)}</Text>
+          {/* The member card is the one thing to show at a counter, so it leads.
+              Entering a till code is the fallback for when staff can't scan —
+              it used to sit here wearing a QR icon it never had, which is how
+              people ended up showing the wrong code. */}
           <TouchableOpacity
             style={styles.payAtTillBtn}
+            onPress={() => router.push('/my-loyalty-code')}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Show my member card"
+            accessibilityHint="Shows the QR code staff scan for stamps, rewards and payments"
+          >
+            <FontAwesome5 name="id-card" size={13} color="#fff" solid />
+            <Text style={styles.payAtTillText}>Show my member card</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.tillCodeBtn}
             onPress={() => router.push('/local-pay')}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="Pay at till"
-            accessibilityHint="Opens a QR code to pay at a participating business"
+            accessibilityLabel="Enter a till code"
+            accessibilityHint="Type the six-digit code shown at the till to pay from your wallet"
           >
-            <FontAwesome5 name="qrcode" size={13} color="#fff" />
-            <Text style={styles.payAtTillText}>Pay at till</Text>
+            <Text style={styles.tillCodeText}>Or enter a till code</Text>
           </TouchableOpacity>
         </View>
 
@@ -560,6 +575,8 @@ const styles = StyleSheet.create({
   balanceAmount: { color: '#fff', fontSize: 40, fontWeight: '900' },
   payAtTillBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, borderRadius: radius.md, marginTop: 8 },
   payAtTillText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+  tillCodeBtn:   { alignItems: 'center', paddingVertical: 10, marginTop: 2 },
+  tillCodeText:  { color: 'rgba(255,255,255,0.85)', fontSize: fontSize.xs, fontWeight: '700', textDecorationLine: 'underline' },
 
   section:      { paddingHorizontal: spacing.md, marginTop: spacing.lg },
   sectionTitle: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary },
