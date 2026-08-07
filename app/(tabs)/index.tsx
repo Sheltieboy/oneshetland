@@ -67,6 +67,8 @@ import {
 import { loadSavedBoats, loadRecentBoats, VesselStub } from '@/lib/boats-prefs';
 import { fetchHomeData, type HomeData } from '@/lib/home-data';
 import { fetchFreshProducts, type FreshProduct } from '@/lib/products-api';
+import * as Haptics from 'expo-haptics';
+import { cachedAudience, saveAudience, type Audience } from '@/lib/audience';
 import {
   bumpSectionEngagement, getRecentEngagement, EngagementKey, EngagementEntry,
 } from '@/lib/engagement';
@@ -448,6 +450,15 @@ const EXPLORE_GROUPS: { title: string; labels: string[] }[] = [
   { title: 'Community & culture', labels: ['Spik', 'Games', 'Hubs', 'Aald Memories', 'Da Boats', 'Cruise'] },
 ];
 
+/**
+ * Same cards, visitor order: the dialect, the boats and the cruise calls are
+ * what someone new to Shetland actually opens; Hubs is a members' thing.
+ * Nothing is added or removed — only the order within the group.
+ */
+const EXPLORE_GROUPS_VISITING: { title: string; labels: string[] }[] = [
+  { title: 'Community & culture', labels: ['Spik', 'Cruise', 'Da Boats', 'Aald Memories', 'Games', 'Hubs'] },
+];
+
 interface ExploreLive { lkBoats?: number; stories?: number; runs?: number; runRoute?: string }
 
 // Short live/static caption under each Explore card — the bit of depth that
@@ -466,7 +477,7 @@ function exploreCaption(label: string, live: ExploreLive, spikWord?: string): st
   }
 }
 
-function ExploreGrid({ spikWord }: { spikWord?: string }) {
+function ExploreGrid({ spikWord, audience }: { spikWord?: string; audience: Audience }) {
   const router = useRouter();
   const items: NavDest[] = [...NAV.filter(d => d.label !== 'Home'), PROFILE];
   const byLabel = (label: string) => items.find(d => d.label === label);
@@ -511,7 +522,7 @@ function ExploreGrid({ spikWord }: { spikWord?: string }) {
   return (
     <SectionRow title="Explore OneShetland">
       <View style={styles.exploreGroups}>
-        {EXPLORE_GROUPS.map(group => (
+        {(audience === 'visiting' ? EXPLORE_GROUPS_VISITING : EXPLORE_GROUPS).map(group => (
           <View key={group.title} style={styles.exploreGroup}>
             <DisplayText weight="bold" style={styles.exploreGroupTitle}>{group.title}</DisplayText>
             <View style={styles.exploreGrid}>
@@ -1045,6 +1056,27 @@ const SECTION_RANK: Partial<Record<SectionKey, number>> = {
   daBoats: 10,
 };
 
+/**
+ * The same feed, ranked for somebody who is here for a week rather than a
+ * life. What's On and the shops lead; Work, Hubs and Fetch fall to the back
+ * because a visitor can't take a shift or get a parcel run to their hotel.
+ * Spik and Da Boats climb — they're the bits people find charming when
+ * they're new to the place.
+ *
+ * Demotion only. Nothing is removed from the feed, and this touches no
+ * navigation: every section stays exactly where it was.
+ */
+const SECTION_RANK_VISITING: Partial<Record<SectionKey, number>> = {
+  events: 1, notices: 1, news: 1,   // What's On — the whole reason they're out
+  local: 2, services: 2,            // shops, makers, places to eat
+  cruise: 3, tourism: 3,
+  spik: 4,                          // the dialect is a draw, not a footnote
+  daBoats: 5, memories: 5,
+  games: 6,
+  community: 8,                     // Hubs
+  fetch: 9, shifts: 10, jobs: 10,   // resident utility, still reachable
+};
+
 /** Tiles about the reader's own live commitments — never demoted by rank. */
 const LIVE_TILE_IDS = new Set([
   'my-delivery', 'my-booking', 'my-application', 'my-reward', 'my-gift', 'urgent',
@@ -1220,6 +1252,40 @@ export default function HomeScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { sidePadding, cardWidth, screenHeight, isTablet } = useAppLayout();
+
+  // Living here or visiting — a ranking hint only (lib/audience.ts). Seeded
+  // from the cache so the first paint is already in the right order, then
+  // corrected from the profile once it loads.
+  const [audience, setAudienceState] = useState<Audience>('resident');
+  useEffect(() => {
+    let alive = true;
+    cachedAudience().then(a => { if (alive && a) setAudienceState(a); });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!profile) return;
+    // The intro asks before anyone has signed in, so that answer lives in the
+    // device cache. On first sign-in the profile still says 'resident' (the
+    // column default) — which would silently undo a visitor's choice. So when
+    // the profile is still at its default and the cache says otherwise, the
+    // cache wins and gets written up. After that the profile is the truth.
+    void (async () => {
+      const cached = await cachedAudience();
+      if (profile.audience === 'resident' && cached === 'visiting') {
+        setAudienceState('visiting');
+        void saveAudience(profile.id, 'visiting');
+        return;
+      }
+      if (profile.audience) setAudienceState(profile.audience);
+    })();
+  }, [profile?.id, profile?.audience]);
+
+  const toggleAudience = useCallback(() => {
+    const next: Audience = audience === 'visiting' ? 'resident' : 'visiting';
+    setAudienceState(next);                       // optimistic — it's a display preference
+    Haptics.selectionAsync();
+    void saveAudience(profile?.id, next);
+  }, [audience, profile?.id]);
 
   const [refreshing, setRefreshing]     = useState(false);
   const [loaded, setLoaded]             = useState(false);
@@ -1554,14 +1620,18 @@ export default function HomeScreen() {
     // own live commitments (a delivery in flight, a booking, an alert) ignore
     // the ranking and stay on top — they're about you, not about a section.
     // This orders THIS FEED only; nav and section order are untouched.
+    // Someone visiting gets the same tiles in a different order — see
+    // SECTION_RANK_VISITING. Their own live commitments still lead: a booking
+    // they've made here matters more than any section.
+    const table = audience === 'visiting' ? SECTION_RANK_VISITING : SECTION_RANK;
     const rank = (t: ForYouTile) =>
-      LIVE_TILE_IDS.has(t.id) ? 0 : (SECTION_RANK[t.iconKey] ?? 5);
+      LIVE_TILE_IDS.has(t.id) ? 0 : (table[t.iconKey] ?? 5);
     return out
       .map((t, i) => ({ t, i }))
       .sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i)  // stable within a rank
       .map(x => x.t)
       .slice(0, 6);
-  }, [personal, savedBoats, recentBoats, engagement, nearby, events, notices, jobs, shifts, router]);
+  }, [personal, savedBoats, recentBoats, engagement, nearby, events, notices, jobs, shifts, router, audience]);
 
   // ── Personal note in the banner ────────────────────────────────────────
   const personalNote = useMemo(() => {
@@ -1658,6 +1728,32 @@ export default function HomeScreen() {
           {(isTablet || todayOpen) && (
             <CruiseTodayCard card={cruise} style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }} />
           )}
+          {/* Who this is ranked for. One tap, always visible, never a trap —
+              it reorders and nothing more, so there's no state anyone can get
+              stuck in and nothing to go looking for afterwards. */}
+          <TouchableOpacity
+            style={styles.audienceChip}
+            onPress={toggleAudience}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={
+              audience === 'visiting'
+                ? 'Showing the visiting view. Switch to living here.'
+                : 'Showing the living here view. Switch to visiting.'
+            }
+          >
+            <FontAwesome5
+              name={audience === 'visiting' ? 'suitcase-rolling' : 'home'}
+              size={11}
+              color={colors.textMuted}
+              solid
+            />
+            <Text style={styles.audienceChipText}>
+              {audience === 'visiting' ? 'Visiting Shetland' : 'Living here'}
+            </Text>
+            <Text style={styles.audienceChipSwap}>Change</Text>
+          </TouchableOpacity>
+
           {/* For you — your personal/contextual items, surfaced high. Hidden when
               there's nothing personal, so the page leads with Explore instead. */}
           <ForYouRow tiles={tiles} />
@@ -1665,7 +1761,7 @@ export default function HomeScreen() {
           {/* Explore — persistent grid of every section (discoverability).
               Phone only: on tablet the NavRail sidebar already lists every
               section, so the grid would just be a redundant duplicate. */}
-          {!isTablet && <ExploreGrid spikWord={spik.word} />}
+          {!isTablet && <ExploreGrid spikWord={spik.word} audience={audience} />}
           {/* Around Shetland — events, work & featured local merged into one
               scannable vertical feed (replaces three separate carousels). */}
           <HappeningRow events={events} jobs={jobs} shifts={shifts} businesses={businesses} />
@@ -1906,6 +2002,16 @@ const styles = StyleSheet.create({
   // Explore OneShetland — persistent sections grid
   // Rounded surface that sections Explore off — like the Shetland Today card,
   // minus the photo. Coloured cards pop against the white panel.
+  audienceChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start',
+    marginHorizontal: spacing.lg, marginTop: spacing.xl,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: radius.full, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.cardBackground,
+  },
+  audienceChipText: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textSecondary },
+  audienceChipSwap: { fontSize: fontSize.xs, fontWeight: '800', color: colors.accent },
+
   exploreGroups: {
     marginHorizontal: spacing.lg,
     backgroundColor: colors.white,

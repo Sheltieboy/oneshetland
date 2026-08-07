@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { AUDIENCE_LABEL, saveAudience, type Audience } from '@/lib/audience';
 
 export const INTRO_SEEN_KEY = 'intro_seen_v1';
 
@@ -32,6 +33,7 @@ interface Slide {
   color:    string;       // accent + icon colour
   bg:       string;       // background — usually navy, but a few accent-tinted variants
   cta?:     string;       // only set on the last slide
+  question?: boolean;     // renders the living-here / visiting choice
 }
 
 const SLIDES: Slide[] = [
@@ -97,7 +99,18 @@ const SLIDES: Slide[] = [
     icon:  'rocket',
     color: '#12B3D6',
     bg:    colors.navy,
+  },
+  {
+    // The one question we ask. It only reorders Home — nothing is hidden
+    // either way — so there's no wrong answer and no need to explain a
+    // consequence that doesn't exist.
+    title: 'Are you living here, or visiting?',
+    body:  "We'll put the useful bits first. You can change it any time from Home — nothing is hidden either way.",
+    icon:  'compass',
+    color: '#12B3D6',
+    bg:    colors.navy,
     cta:   'Get started',
+    question: true,
   },
 ];
 
@@ -106,6 +119,8 @@ export default function IntroScreen() {
   const { width: SCREEN_W } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
+  // Defaults to 'resident' — the common case, and a no-op if they never tap.
+  const [audience, setAudience] = useState<Audience>('resident');
 
   const lastSlide = index === SLIDES.length - 1;
 
@@ -115,6 +130,9 @@ export default function IntroScreen() {
     } catch {
       // Non-fatal — worst case the intro shows once more.
     }
+    // Nobody is signed in yet at intro, so this lands in the device cache;
+    // Home reconciles it onto the profile at first sign-in.
+    await saveAudience(null, audience);
     router.replace('/(tabs)');
   };
 
@@ -161,6 +179,34 @@ export default function IntroScreen() {
             </View>
             <Text style={styles.title}>{s.title}</Text>
             <Text style={styles.body}>{s.body}</Text>
+
+            {s.question ? (
+              <View style={styles.choices}>
+                {(['resident', 'visiting'] as const).map(opt => {
+                  const active = audience === opt;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.choice, active && { borderColor: s.color, backgroundColor: s.color + '22' }]}
+                      onPress={() => { Haptics.selectionAsync(); setAudience(opt); }}
+                      activeOpacity={0.85}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <FontAwesome5
+                        name={opt === 'visiting' ? 'suitcase-rolling' : 'home'}
+                        size={20}
+                        color={active ? s.color : 'rgba(255,255,255,0.6)'}
+                        solid
+                      />
+                      <Text style={[styles.choiceText, active && { color: '#fff' }]}>
+                        {AUDIENCE_LABEL[opt]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : null}
           </View>
         ))}
       </ScrollView>
@@ -197,6 +243,14 @@ export default function IntroScreen() {
 }
 
 const styles = StyleSheet.create({
+  choices: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xl },
+  choice: {
+    alignItems: 'center', gap: 10, paddingVertical: 20, paddingHorizontal: 18,
+    borderRadius: radius.lg, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)',
+    minWidth: 132,
+  },
+  choiceText: { fontSize: fontSize.sm, fontWeight: '800', color: 'rgba(255,255,255,0.75)' },
+
   topBar: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: spacing.md, paddingVertical: 12,

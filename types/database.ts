@@ -30,6 +30,9 @@ export interface Profile {
   bio: string | null;
   website_url: string | null;
   location_area: string | null; // e.g. "Lerwick", "Yell"
+  // Ranking hint only — reorders Home for someone visiting rather than living
+  // here. Never hides a section, never gates anything. See lib/audience.ts.
+  audience: 'resident' | 'visiting';
   email_verified: boolean;
   is_active: boolean;
   // Games Centre — public handle shown on leaderboards. Null = "Anon".
