@@ -24,6 +24,8 @@ import {
   type ContractType, type RemoteMode, type PayPeriod, type JobInput,
 } from '@/lib/jobs-api';
 import { track } from '@/lib/analytics';
+import { PeerieFill } from '@/components/ai/PeerieFill';
+import { PEERIE_ENDPOINTS } from '@/constants/peerie';
 
 const S = SECTIONS.jobs;
 const CONTRACTS: ContractType[] = ['full-time', 'part-time', 'casual', 'apprenticeship', 'freelance', 'volunteer'];
@@ -80,6 +82,39 @@ export default function JobPostScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Peerie Bot hands back the same field names the web form uses. Empty string
+  // (or 0) means "it wasn't in the description", so leave those alone rather
+  // than blanking a field the poster already filled in.
+  const applyPeerie = (d: Record<string, unknown>) => {
+    const str = (k: string) => (typeof d[k] === 'string' ? (d[k] as string).trim() : '');
+    const num = (k: string) => (typeof d[k] === 'number' ? (d[k] as number) : 0);
+    const bool = (k: string) => d[k] === true;
+
+    if (str('title')) setTitle(str('title'));
+    if (str('description')) setDesc(str('description'));
+    if (str('category') && (JOB_CATEGORIES as readonly string[]).includes(str('category'))) setCategory(str('category'));
+    if (str('location')) setLocation(str('location'));
+    if (CONTRACTS.includes(str('contract_type') as ContractType)) setContract(str('contract_type') as ContractType);
+    if (REMOTES.includes(str('remote_mode') as RemoteMode)) setRemote(str('remote_mode') as RemoteMode);
+
+    const hidden = bool('pay_hidden');
+    setPayHidden(hidden);
+    if (hidden) {
+      if (str('pay_text')) setPayText(str('pay_text'));
+    } else {
+      if (num('pay_min')) setPayMin(String(num('pay_min')));
+      if (num('pay_max')) setPayMax(String(num('pay_max')));
+      if (PERIODS.includes(str('pay_period') as PayPeriod)) setPayPeriod(str('pay_period') as PayPeriod);
+    }
+
+    setRelocation(bool('relocation_support'));
+    setHousing(bool('housing_available'));
+    setSeasonal(bool('is_seasonal'));
+    if (str('season_label')) setSeasonLabel(str('season_label'));
+    if (str('apply_url')) setApplyUrl(str('apply_url'));
+    if (str('apply_email')) setApplyEmail(str('apply_email'));
+  };
+
   const save = async () => {
     if (!title.trim()) { alert({ title: 'Title needed', message: 'Give the role a title.' }); return; }
     if (!profile) return;
@@ -130,6 +165,16 @@ export default function JobPostScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
+          {/* Only on a new post — on an edit it would overwrite what's there. */}
+          {!isEdit ? (
+            <PeerieFill
+              endpoint={PEERIE_ENDPOINTS.job}
+              accent={S.color}
+              placeholder="e.g. We need a full-time sous chef for our Lerwick restaurant, £28–32k, some evenings and weekends, help with accommodation. Email jobs@…"
+              onFill={applyPeerie}
+            />
+          ) : null}
+
           <Field label="Job title *"><TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="e.g. Sous Chef" placeholderTextColor={colors.textLight} /></Field>
           <Field label="Description"><TextInput style={[styles.input, styles.multi]} value={desc} onChangeText={setDesc} placeholder="The role, who you're looking for, hours, perks…" placeholderTextColor={colors.textLight} multiline /></Field>
 

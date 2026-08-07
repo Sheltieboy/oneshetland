@@ -34,6 +34,8 @@ import {
 } from '@/lib/events-api';
 import { fetchHub, createHubNotice } from '@/lib/hubs-api';
 import { track } from '@/lib/analytics';
+import { PeerieFill } from '@/components/ai/PeerieFill';
+import { PEERIE_ENDPOINTS } from '@/constants/peerie';
 
 const S = SECTIONS.events;
 
@@ -170,6 +172,56 @@ export default function EventCreateScreen() {
     }]);
   };
 
+  /**
+   * Map Peerie Bot's fields onto the form. Empty string / [] means "not in the
+   * description", so those are left as they are rather than blanked.
+   */
+  const applyPeerie = (d: Record<string, unknown>) => {
+    const str = (k: string) => (typeof d[k] === 'string' ? (d[k] as string).trim() : '');
+
+    if (str('title')) setTitle(str('title'));
+    if (str('description')) setDescription(str('description'));
+    if ((EVENT_CATEGORIES as readonly string[]).includes(str('category'))) setCategory(str('category'));
+    if (str('venue')) setVenue(str('venue'));
+    // The venue picker fills `address` from Google Places; an area name is a
+    // rough stand-in, so only use it when nothing has been picked yet.
+    if (str('area') && !address.trim()) setAddress(str('area'));
+    if ((AGE_RESTRICTIONS as readonly string[]).includes(str('age_restriction'))) setAgeRestr(str('age_restriction'));
+    if (str('contact_info')) setContactInfo(str('contact_info'));
+    if (str('notes')) setEventNotes(str('notes'));
+
+    // Local Shetland wall-clock — built field by field so it isn't read as UTC.
+    const parseLocal = (v: string): Date | null => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v);
+      if (!m) return null;
+      const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    };
+    const start = parseLocal(str('starts_at'));
+    const end   = parseLocal(str('ends_at'));
+    const doors = parseLocal(str('doors_open_at'));
+    if (start) setStartsAt(start);
+    if (end)   setEndsAt(end);
+    if (doors) setDoorsAt(doors);
+
+    const mode = str('ticket_mode');
+    if (mode === 'none' || mode === 'oneshetland' || mode === 'external') setTicketMode(mode);
+    if (str('ticket_url')) setTicketUrl(str('ticket_url'));
+
+    const tickets = Array.isArray(d.tickets) ? (d.tickets as Array<Record<string, unknown>>) : [];
+    if (tickets.length) {
+      setTicketTypes(tickets.map(t => ({
+        _local: true,
+        name: typeof t.name === 'string' ? t.name : '',
+        price_pence: typeof t.price_gbp === 'number' ? Math.round(t.price_gbp * 100) : 0,
+        quantity_available: null,
+        per_order_max: 10,
+        is_active: true,
+        requires_attendee_details: false,
+      })));
+    }
+  };
+
   const handleSave = async (publish = false) => {
     if (!title.trim()) { alert({ title: 'Title required' }); return; }
     if (!profile) return;
@@ -274,6 +326,16 @@ export default function EventCreateScreen() {
       <ScreenHeader title={isEdit ? 'Edit Event' : 'New Event'} onClose={() => router.back()} accent={S.color} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
+
+        {/* Only on a new event — on an edit it would overwrite what's there. */}
+        {!isEdit ? (
+          <PeerieFill
+            endpoint={PEERIE_ENDPOINTS.event}
+            accent={S.color}
+            placeholder="e.g. Live music at Mareel on Saturday 23rd August, doors 7pm, band on at 8, tickets £12 adult and £6 under-16s, over-16s only."
+            onFill={applyPeerie}
+          />
+        ) : null}
 
         {/* Cover image */}
         <TouchableOpacity style={styles.coverPicker} onPress={pickCover} activeOpacity={0.85}>

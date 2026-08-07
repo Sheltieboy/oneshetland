@@ -23,6 +23,8 @@ import { SECTIONS } from '@/constants/sections';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
+import { PeerieFill } from '@/components/ai/PeerieFill';
+import { PEERIE_ENDPOINTS } from '@/constants/peerie';
 
 const S = SECTIONS.shifts;
 
@@ -314,6 +316,48 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
   const [activePicker, setActivePicker] = useState<PickerTarget>(null);
   const [tempDate, setTempDate]         = useState<Date>(now);
 
+  /**
+   * Map Peerie Bot's fields onto the form. Empty string / 0 means "not in the
+   * description", so those are skipped rather than blanking what's there.
+   * The requirement labels differ slightly between app and web ("PVG" vs
+   * "PVG / Disclosure"), so they're matched loosely rather than by equality.
+   */
+  const applyPeerie = (d: Record<string, unknown>) => {
+    const str = (k: string) => (typeof d[k] === 'string' ? (d[k] as string).trim() : '');
+    const num = (k: string) => (typeof d[k] === 'number' ? (d[k] as number) : 0);
+
+    if (str('title')) setTitle(str('title'));
+    if (str('description')) setDescription(str('description'));
+    if (str('location')) setLocation(str('location'));
+    if (CATEGORIES.some(c => c.id === str('category'))) setCategory(str('category'));
+    if (URGENCY_OPTIONS.some(u => u.id === str('urgency'))) setUrgency(str('urgency'));
+    if (PAY_TYPES.some(p => p.id === str('pay_type'))) setPayType(str('pay_type'));
+    if (num('pay_amount') > 0) setPayAmount(String(num('pay_amount')));
+    if (num('positions') > 0) setPositions(String(num('positions')));
+
+    const wanted = Array.isArray(d.requirements) ? (d.requirements as unknown[]) : [];
+    const matched = REQUIREMENTS.filter(r => wanted.some(w => {
+      if (typeof w !== 'string') return false;
+      const a = r.toLowerCase(), b = w.trim().toLowerCase();
+      return a === b || a.startsWith(b) || b.startsWith(a);
+    }));
+    if (matched.length) setRequirements(matched);
+
+    // "YYYY-MM-DDTHH:mm" is local Shetland wall-clock, so build it field by
+    // field — `new Date(string)` would read it as UTC on some engines.
+    const parseLocal = (v: string): Date | null => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(v);
+      if (!m) return null;
+      const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    };
+    const start = parseLocal(str('starts_at'));
+    const end   = parseLocal(str('ends_at'));
+    if (start) { setStartDate(start); setStartTime(start); }
+    if (end)   { setEndDate(end);     setEndTime(end); }
+    if (start && end) setIsMultiDay(end.toDateString() !== start.toDateString());
+  };
+
   const openPicker = (target: PickerTarget) => {
     const current =
       target === 'startDate' ? startDate :
@@ -456,6 +500,13 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        <PeerieFill
+          endpoint={PEERIE_ENDPOINTS.shift}
+          accent={S.color}
+          placeholder="e.g. Need two bar staff for Saturday night at The Lounge in Lerwick, 7pm till 1am, £13 an hour, must be over 18."
+          onFill={applyPeerie}
+        />
+
         {/* ── Inline business creation — shown when user has no Local business yet ── */}
         {businessesLoaded && myBusinesses.length === 0 && (
           <View style={styles.fieldGroup}>
