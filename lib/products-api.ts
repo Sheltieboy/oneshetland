@@ -143,6 +143,56 @@ export async function fetchShopProducts(businessId: string): Promise<Product[]> 
   return (data ?? []) as Product[];
 }
 
+/** A product's category value — the set is PRODUCT_CATEGORIES above. */
+export type ProductCategory = string;
+
+export type BrowseProduct = Product & { business_name: string };
+export type BrowseSort = 'newest' | 'price_low' | 'price_high';
+
+/**
+ * Everything on sale across Shetland, for the standalone Shop surface.
+ *
+ * Sold-out one-offs are excluded (`sold_at`), and so are products whose shop
+ * has been deactivated — the join can't filter that server-side without an
+ * inner-join hint, so the rows are dropped here and the page asks for a few
+ * more than it needs.
+ */
+export async function browseProducts(opts: {
+  category?: ProductCategory | null;
+  query?: string;
+  sort?: BrowseSort;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<BrowseProduct[]> {
+  const { category = null, query = '', sort = 'newest', limit = 24, offset = 0 } = opts;
+
+  let q = supabase
+    .from('products')
+    .select('*, business:local_businesses!inner(name, is_active)')
+    .eq('is_active', true)
+    .is('sold_at', null)
+    .eq('business.is_active', true);
+
+  if (category) q = q.eq('category', category);
+  if (query.trim()) {
+    const safe = query.trim().replace(/[%,]/g, ' ');
+    q = q.or(`title.ilike.%${safe}%,description.ilike.%${safe}%`);
+  }
+
+  if (sort === 'price_low') q = q.order('price_pence', { ascending: true });
+  else if (sort === 'price_high') q = q.order('price_pence', { ascending: false });
+  else q = q.order('created_at', { ascending: false });
+
+  const { data, error } = await q.range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  return ((data ?? []) as Record<string, unknown>[]).map((p) => {
+    const biz = (Array.isArray(p.business) ? p.business[0] : p.business) as { name?: string } | null;
+    const { business: _drop, ...rest } = p;
+    return { ...(rest as unknown as Product), business_name: biz?.name ?? 'A Shetland shop' };
+  });
+}
+
 export async function fetchProduct(id: string): Promise<{ product: Product; variants: ProductVariant[]; shipping: BusinessShipping | null; businessName: string } | null> {
   const { data: product } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
   if (!product) return null;

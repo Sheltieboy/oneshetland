@@ -1195,7 +1195,7 @@ function ShopRow({ products }: { products: FreshProduct[] }) {
       title="Fresh in the shops"
       subtitle="Buy from Shetland's makers"
       color={SECTIONS.local.color}
-      action={{ label: 'Directory', onPress: () => router.push('/local-businesses-browse' as never) }}
+      action={{ label: 'Shop all', onPress: () => router.push('/shop' as never) }}
     >
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
         {products.map((pr) => (

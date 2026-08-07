@@ -180,6 +180,24 @@ export default function LocalCombinedFeed() {
             <FontAwesome5 name="chevron-right" size={13} color="rgba(255,255,255,0.8)" />
           </TouchableOpacity>
 
+          {/* SHOP SHETLAND — everything on sale, across every shop. Its own
+              banner rather than a fourth shortcut: four cards squeeze the row
+              past readable on a phone. */}
+          <TouchableOpacity
+            style={styles.shopBanner}
+            activeOpacity={0.9}
+            onPress={() => { Haptics.selectionAsync(); router.push('/shop' as any); }}
+          >
+            <View style={[styles.loyaltyIcon, { backgroundColor: S.light }]}>
+              <FontAwesome5 name="shopping-bag" size={16} color={S.color} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shopTitle}>Shop Shetland</Text>
+              <Text style={styles.shopSub}>Everything on sale, from every shop in the isles</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={13} color={colors.textLight} />
+          </TouchableOpacity>
+
           {/* EVENTS */}
           <SectionHeader label={areaLabel ? `Events in ${areaLabel}` : "What's on"} title="Upcoming events"
             color={EVENTS_COLOR} onSeeAll={() => router.push('/(tabs)/whats-on' as any)} />
@@ -668,6 +686,14 @@ const styles = StyleSheet.create({
   },
   loyaltyTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '900' },
   loyaltySub: { color: 'rgba(255,255,255,0.9)', fontSize: fontSize.xs, marginTop: 2, lineHeight: 15 },
+  shopBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: spacing.md, marginTop: 10,
+    borderRadius: radius.lg, padding: 14,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border,
+  },
+  shopTitle: { color: colors.textPrimary, fontSize: fontSize.md, fontWeight: '900' },
+  shopSub:   { color: colors.textMuted, fontSize: fontSize.xs, marginTop: 2, lineHeight: 15 },
   shortcutCard: {
     flex: 1, backgroundColor: '#fff', borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border,
