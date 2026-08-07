@@ -12,13 +12,13 @@
  * so app and web share one tuned prompt per form.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  ActivityIndicator, Animated, Easing, StyleSheet, Text,
-  TextInput, TouchableOpacity, View,
+  ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
-import { PEERIE, RING_COLOURS } from '@/constants/peerie';
+import { PEERIE } from '@/constants/peerie';
+import { AiGlow } from '@/components/ai/AiGlow';
 
 export function PeerieFill({
   endpoint,
@@ -39,32 +39,6 @@ export function PeerieFill({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-
-  // The working glow: a looping walk through the ring colours. Colour
-  // interpolation is not supported by the native driver, hence useNativeDriver
-  // false — it is one border colour, so the cost is negligible.
-  const glow = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!busy) { glow.stopAnimation(); glow.setValue(0); return; }
-    const loop = Animated.loop(
-      Animated.timing(glow, {
-        toValue: 1,
-        duration: 2600,
-        easing: Easing.linear,
-        useNativeDriver: false,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [busy, glow]);
-
-  const borderColor = busy
-    ? glow.interpolate({
-        inputRange: RING_COLOURS.map((_, i) => i / RING_COLOURS.length),
-        outputRange: RING_COLOURS,
-        extrapolate: 'clamp',
-      })
-    : colors.border;
 
   async function run() {
     const body = text.trim();
@@ -90,7 +64,7 @@ export function PeerieFill({
   }
 
   return (
-    <Animated.View style={[styles.card, { borderColor }]}>
+    <AiGlow active={busy} style={styles.card}>
       <View style={styles.header}>
         <View style={[styles.avatar, { backgroundColor: accent }]}>
           <Text style={styles.spark}>{PEERIE.spark}</Text>
@@ -137,15 +111,13 @@ export function PeerieFill({
 
       {done && !busy ? <Text style={styles.done}>Filled in below — have a look ✓</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-    </Animated.View>
+    </AiGlow>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.cardBackground,
-    borderWidth: 1.5,
-    borderRadius: radius.lg,
     padding: spacing.lg,
     marginBottom: spacing.lg,
     gap: spacing.sm,
