@@ -89,6 +89,10 @@ export async function fetchHomeNotices(opts: {
   try {
     const { data, error } = await supabase
       .from('notices')
+      // broadcast_at is deliberately NOT selected: PostgREST fails the whole
+      // request on an unknown column, so asking for it here would empty the
+      // notices feed in the window between an app release and the migration.
+      // Admins read it separately (lib/notices-broadcast).
       .select(`id, severity, title, body, locality, published_at,
                publisher_business_id, publisher_user_id, publisher_hub_id, campaign_id, event_id,
                hub:hubs ( id, name, logo_url, brand_color ),

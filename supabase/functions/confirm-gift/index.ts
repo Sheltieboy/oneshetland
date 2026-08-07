@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendEmail } from '../_shared/send-email.ts';
+import { sendUserPush } from '../_shared/send-push.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -204,6 +205,25 @@ serve(async (req) => {
         .from('book_gifts')
         .update({ email_sent_at: new Date().toISOString() })
         .eq('id', gift.id);
+    }
+
+    // Tell the buyer it actually went. They've just paid for something that
+    // gets delivered to somebody else's inbox, so without this the only
+    // confirmation is silence — and it's the buyer who gets asked "did it
+    // arrive?". Says plainly whether the email went out. Never fatal.
+    try {
+      await sendUserPush(supabase, {
+        userId:     gift.purchaser_id,
+        module:     'wallet',
+        categoryId: 'wallet.gift_sent',
+        title:      emailResult.ok && !emailResult.skipped ? 'Gift sent 🎁' : 'Gift ready 🎁',
+        body:       emailResult.ok && !emailResult.skipped
+          ? `${gift.recipient_name ?? 'They'} will get ${itemName} at ${business?.name ?? 'the business'} by email. Code ${code}.`
+          : `Your gift of ${itemName} is ready — code ${code}. We couldn't email it, so pass the code on yourself.`,
+        data:       { screen: 'local-my-gifts', gift_id: gift.id },
+      });
+    } catch (e) {
+      console.error('[confirm-gift] purchaser push failed (non-fatal)', e);
     }
 
     return new Response(

@@ -53,7 +53,7 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, cruise_today: 0, analytics_renewed: 0, analytics_lapsed: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0 };
 
     // ── Shop orders: expire unpaid checkouts + release their reserved stock ──
     // A pending product_order holds stock (reserved) so nobody else can buy
@@ -305,6 +305,62 @@ serve(async (req) => {
       // Stamp regardless, so a quiet day doesn't retry every 15 min.
       await svc.from('admin_config')
         .upsert({ key: 'last_daily_wird_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
+    }
+
+    // ── Cruise: ships in today (morning, once per London day) ────────────────
+    // Opt-in without needing its own opt-in flag: the `cruise` module defaults
+    // to OFF in notification_preferences, so should_notify() inside
+    // sendUserPushBulk only lets this through for people who switched it on.
+    // Aimed at 7am so shops and taxi drivers know before they open up.
+    if (londonHour >= 7) {
+      const { data: cruiseCfg } = await svc
+        .from('admin_config').select('value').eq('key', 'last_cruise_today_date').maybeSingle();
+      if (cruiseCfg?.value !== todayStr) {
+        const { data: day } = await svc
+          .from('cruise_day_summary')
+          .select('visit_date, ships_count, total_est_pax')
+          .eq('visit_date', todayStr).maybeSingle();
+
+        const ships = Number(day?.ships_count ?? 0);
+        if (ships > 0) {
+          // Name the ships — "2 ships, 4,900 passengers" is the useful bit, but
+          // folk recognise the names.
+          const { data: visits } = await svc
+            .from('cruise_visits')
+            .select('est_pax, ship:cruise_ships(name)')
+            .eq('visit_date', todayStr).neq('status', 'cancelled');
+          const names = (visits ?? [])
+            .map((v: Record<string, unknown>) => {
+              const s = (Array.isArray(v.ship) ? v.ship[0] : v.ship) as { name?: string } | null;
+              return s?.name ?? null;
+            })
+            .filter((n): n is string => !!n);
+
+          const pax = Number(day?.total_est_pax ?? 0);
+          const shipList = names.length === 0 ? ''
+            : names.length === 1 ? names[0]
+            : names.length === 2 ? `${names[0]} and ${names[1]}`
+            : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+          const paxPart = pax > 0 ? ` — around ${pax.toLocaleString('en-GB')} passengers ashore` : '';
+
+          const recipients = new Set<string>();
+          const { data: withCol } = await svc.from('profiles').select('id').not('push_token', 'is', null);
+          for (const r of withCol ?? []) recipients.add(r.id);
+          const { data: toks } = await svc.from('push_tokens').select('user_id');
+          for (const r of toks ?? []) if (r.user_id) recipients.add(r.user_id as string);
+
+          const res = await sendUserPushBulk(svc, [...recipients], {
+            module: 'cruise', categoryId: 'cruise.in_port_today',
+            title: ships === 1 ? 'Ship in today 🚢' : `${ships} ships in today 🚢`,
+            body: shipList ? `${shipList}${paxPart}.` : `Lerwick has ${ships} cruise calls today${paxPart}.`,
+            data: { screen: 'cruise-day', visit_date: todayStr },
+          });
+          result.cruise_today = res.sent;
+        }
+        // Stamp even on a no-ship day, so it doesn't re-scan every run.
+        await svc.from('admin_config')
+          .upsert({ key: 'last_cruise_today_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
+      }
     }
 
     // ── Streak nudge (evening, once per day, to at-risk streaks) ─────────────

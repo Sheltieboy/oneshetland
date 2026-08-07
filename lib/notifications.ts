@@ -112,6 +112,11 @@ export function notificationRoute(
   if (screen === 'business-orders' && typeof data.business_id === 'string') {
     return `/business-orders?businessId=${data.business_id}`;
   }
+
+  // Ships-in-today opens that day's cruise page, which keys on ?date=.
+  if (screen === 'cruise-day' && typeof data.visit_date === 'string') {
+    return `/cruise-day?date=${data.visit_date}`;
+  }
   if (typeof data.product_order_id === 'string') return '/my-orders';
 
   if (screen && SCREEN_ALIASES[screen]) return SCREEN_ALIASES[screen];
