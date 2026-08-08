@@ -37,12 +37,19 @@ interface Props {
   banner?:   React.ReactNode;
   /** Optional eyebrow line (defaults to "OneShetland"). */
   eyebrow?:  string;
+  /**
+   * Line under the title. Defaults to the section's own description, which is
+   * right for a section ROOT and wrong for a screen within it — "Shops,
+   * services, loyalty and bookings" under "Plan a day out" describes the
+   * Local section, not the thing you're looking at.
+   */
+  subtitle?: string;
   /** Banner height. Default 138 — cinematic but compact for a fixed header. */
   height?:   number;
 }
 
 export function TabScreenHeader({
-  section, title, right, children, photo, banner, eyebrow = 'OneShetland', height = 138,
+  section, title, right, children, photo, banner, eyebrow = 'OneShetland', height = 138, subtitle,
 }: Props) {
   // Absorb the status-bar inset so the hero image/tint runs to the very top of
   // the screen — the screen's SafeAreaView must NOT pad the top edge.
@@ -68,7 +75,7 @@ export function TabScreenHeader({
       <View style={styles.titleBlock}>
         <Text style={styles.eyebrow}>{eyebrow.toUpperCase()}</Text>
         <DisplayText weight="black" style={styles.title}>{title ?? section.label}</DisplayText>
-        <Text style={styles.subtitle} numberOfLines={1}>{section.description}</Text>
+        <Text style={styles.subtitle} numberOfLines={1}>{subtitle ?? section.description}</Text>
       </View>
     </View>
   );

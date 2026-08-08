@@ -23,7 +23,7 @@ import {
   ActivityIndicator, Image, Linking, Platform, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -55,6 +55,7 @@ type PickerTarget = 'date' | 'from' | 'to';
 
 export default function PlanDayScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const initial = useMemo(defaultTimes, []);
 
   const [date, setDate] = useState(initial.date);
@@ -145,9 +146,12 @@ export default function PlanDayScreen() {
           photo={SECTION_HEROES.local}
           title="Plan a day out"
           eyebrow="Something to do"
+          subtitle="A day built round what's actually on"
         />
+        {/* The header absorbs the status-bar inset, so the pill has to as well
+            or it lands on top of the clock. */}
         {router.canGoBack() ? (
-          <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+          <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
             <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
           </View>
         ) : null}
