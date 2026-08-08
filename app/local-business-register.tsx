@@ -30,6 +30,10 @@ import {
 import { uploadBusinessImage, extractBrandColor, type PickedFile } from '@/lib/image-upload';
 import { track } from '@/lib/analytics';
 import { OpeningHoursEditor } from '@/components/business/OpeningHoursEditor';
+import { PlannerContextEditor } from '@/components/business/PlannerContextEditor';
+import {
+  EMPTY_PLANNER_CONTEXT, hasPlannerContext, type PlannerContext,
+} from '@/constants/planner-context';
 import { hasAnyHours, type OpeningHoursMap } from '@/lib/opening-hours';
 
 const S = SECTIONS.local;
@@ -69,6 +73,7 @@ export default function BusinessRegisterScreen() {
   const [tags, setTags]           = useState<string[]>([]);
   const [customTag, setCustomTag] = useState('');
   const [hours, setHours]         = useState<OpeningHoursMap>({});
+  const [planner, setPlanner]     = useState<PlannerContext>(EMPTY_PLANNER_CONTEXT);
 
   // Payment / payout overrides — both off by default (use central card/bank)
   const [useBusinessPayment, setUseBusinessPayment] = useState(false);
@@ -95,6 +100,14 @@ export default function BusinessRegisterScreen() {
         setBrandColor(b.brand_color ?? null);
         setTags(b.tags ?? []);
         setHours((b.opening_hours as OpeningHoursMap) ?? {});
+        setPlanner({
+          planner_visitor_ready: (b as any).planner_visitor_ready ?? null,
+          planner_dwell_minutes: (b as any).planner_dwell_minutes ?? null,
+          planner_setting:       (b as any).planner_setting ?? null,
+          planner_good_for:      (b as any).planner_good_for ?? null,
+          planner_booking:       (b as any).planner_booking ?? null,
+          planner_note:          (b as any).planner_note ?? null,
+        });
         setUseBusinessPayment((b as any).use_business_payment ?? false);
         setUseBusinessPayout((b as any).use_business_payout  ?? false);
       }
@@ -156,6 +169,13 @@ export default function BusinessRegisterScreen() {
       email:   email.trim()   || null,
       tags,
       opening_hours: hasAnyHours(hours) ? hours : null,
+      // Only stamp the provenance when they've actually answered something.
+      // 'owner' outranks every rule, inference and bulk-import guess, and the
+      // backfill scripts refuse to touch a row carrying it — so writing it on
+      // an untouched form would freeze our own guess as the owner's word.
+      ...(hasPlannerContext(planner)
+        ? { ...planner, planner_context_source: 'owner' as const }
+        : {}),
       use_business_payment: useBusinessPayment,
       use_business_payout:  useBusinessPayout,
     };
@@ -394,6 +414,10 @@ export default function BusinessRegisterScreen() {
               the day, and stops folk turning up when you&apos;re shut.
             </Text>
             <OpeningHoursEditor value={hours} onChange={setHours} accent={S.color} />
+          </View>
+
+          <View style={styles.field}>
+            <PlannerContextEditor value={planner} onChange={setPlanner} accent={S.color} />
           </View>
 
           <View style={styles.field}>

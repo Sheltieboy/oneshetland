@@ -414,6 +414,16 @@ export interface BusinessUpsertInput {
   website?: string | null;
   email?: string | null;
   opening_hours?: OpeningHours | null;
+  // Day-planner context. `planner_context_source: 'owner'` is a claim, not a
+  // label: the backfill scripts refuse to overwrite a row carrying it, so it
+  // must only be written when the owner has actually answered.
+  planner_visitor_ready?: boolean | null;
+  planner_dwell_minutes?: number | null;
+  planner_setting?: 'indoor' | 'outdoor' | 'both' | null;
+  planner_good_for?: string[] | null;
+  planner_booking?: 'none' | 'advised' | 'required' | null;
+  planner_note?: string | null;
+  planner_context_source?: 'owner';
   // Payment / payout override toggles
   use_business_payment?: boolean;
   use_business_payout?:  boolean;
