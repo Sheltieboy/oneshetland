@@ -68,7 +68,7 @@ import { loadSavedBoats, loadRecentBoats, VesselStub } from '@/lib/boats-prefs';
 import { fetchHomeData, type HomeData } from '@/lib/home-data';
 import { fetchFreshProducts, type FreshProduct } from '@/lib/products-api';
 import * as Haptics from 'expo-haptics';
-import { cachedAudience, saveAudience, type Audience } from '@/lib/audience';
+import { AUDIENCE_LABEL, cachedAudience, saveAudience, type Audience } from '@/lib/audience';
 import {
   bumpSectionEngagement, getRecentEngagement, EngagementKey, EngagementEntry,
 } from '@/lib/engagement';
@@ -458,6 +458,42 @@ const EXPLORE_GROUPS: { title: string; labels: string[] }[] = [
 const EXPLORE_GROUPS_VISITING: { title: string; labels: string[] }[] = [
   { title: 'Community & culture', labels: ['Spik', 'Cruise', 'Da Boats', 'Aald Memories', 'Games', 'Hubs'] },
 ];
+
+/**
+ * PlanDayCard — Home's front door to the day planner (app/plan-day.tsx).
+ *
+ * The form itself is NOT here. A plan takes a date, two times, a way of
+ * getting about and six interests, and putting all that on Home would push
+ * everything else off the screen for a thing most people open once. So this is
+ * the invitation and the planner is the room.
+ *
+ * The one coloured card on Home besides the section grid, which is what makes
+ * it findable — same purple the web tile uses, so it's recognisably the same
+ * feature on both.
+ */
+function PlanDayCard() {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      style={styles.planCard}
+      onPress={() => { Haptics.selectionAsync(); router.push('/plan-day'); }}
+      activeOpacity={0.9}
+      accessibilityRole="button"
+      accessibilityLabel="Plan a day out"
+    >
+      <Text style={styles.planEyebrow}>Something to do</Text>
+      <Text style={styles.planTitleText}>Plan a day out</Text>
+      <Text style={styles.planBody}>
+        Tell us when you&apos;re free and what you fancy — Peerie Bot ✨ will lay out a day
+        with travel times and a map.
+      </Text>
+      <View style={styles.planCta}>
+        <Text style={styles.planCtaText}>Plan my day</Text>
+        <FontAwesome5 name="arrow-right" size={11} color={SECTIONS.local.color} solid />
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 interface ExploreLive { lkBoats?: number; stories?: number; runs?: number; runRoute?: string }
 
@@ -1280,8 +1316,8 @@ export default function HomeScreen() {
     })();
   }, [profile?.id, profile?.audience]);
 
-  const toggleAudience = useCallback(() => {
-    const next: Audience = audience === 'visiting' ? 'resident' : 'visiting';
+  const setAudience = useCallback((next: Audience) => {
+    if (next === audience) return;
     setAudienceState(next);                       // optimistic — it's a display preference
     Haptics.selectionAsync();
     void saveAudience(profile?.id, next);
@@ -1728,36 +1764,56 @@ export default function HomeScreen() {
           {(isTablet || todayOpen) && (
             <CruiseTodayCard card={cruise} style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }} />
           )}
-          {/* Who this is ranked for. One tap, always visible, never a trap —
-              it reorders and nothing more, so there's no state anyone can get
-              stuck in and nothing to go looking for afterwards. */}
-          <TouchableOpacity
-            style={styles.audienceChip}
-            onPress={toggleAudience}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel={
-              audience === 'visiting'
-                ? 'Showing the visiting view. Switch to living here.'
-                : 'Showing the living here view. Switch to visiting.'
-            }
-          >
-            <FontAwesome5
-              name={audience === 'visiting' ? 'suitcase-rolling' : 'home'}
-              size={11}
-              color={colors.textMuted}
-              solid
-            />
-            <Text style={styles.audienceChipText}>
-              {audience === 'visiting' ? 'Visiting Shetland' : 'Living here'}
+          {/* Who this is ranked for.
+              It used to be one pill reading "Living here · Change", which told
+              you the state but not the offer — you could see what you had and
+              no reason to want anything else, so there was nothing in it to
+              click. Both options are on screen now with the live one filled
+              in, which is the whole explanation, and the line above says what
+              pressing it does. Mirrors the web. */}
+          <View style={styles.audienceBlock}>
+            <Text style={styles.audiencePrompt}>
+              Show me Shetland as…{' '}
+              <Text style={styles.audienceHint}>nothing gets hidden, it just reorders.</Text>
             </Text>
-            <Text style={styles.audienceChipSwap}>Change</Text>
-          </TouchableOpacity>
+            <View style={styles.audienceSwitch}>
+              {(['resident', 'visiting'] as Audience[]).map(opt => {
+                const on = audience === opt;
+                return (
+                  <TouchableOpacity
+                    key={opt}
+                    style={[styles.audienceOption, on && styles.audienceOptionOn]}
+                    onPress={() => setAudience(opt)}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={AUDIENCE_LABEL[opt]}
+                  >
+                    <FontAwesome5
+                      name={opt === 'visiting' ? 'suitcase-rolling' : 'home'}
+                      size={11}
+                      color={on ? '#fff' : colors.textMuted}
+                      solid
+                    />
+                    <Text style={[styles.audienceOptionText, on && styles.audienceOptionTextOn]}>
+                      {AUDIENCE_LABEL[opt]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Plan a day out — high up for somebody VISITING, because "what
+              shall we do today" is why they opened the app. Still on the page
+              for everybody else, further down, next to the other things to do. */}
+          {audience === 'visiting' && <PlanDayCard />}
 
           {/* For you — your personal/contextual items, surfaced high. Hidden when
               there's nothing personal, so the page leads with Explore instead. */}
           <ForYouRow tiles={tiles} />
           <ShopRow products={freshProducts} />
+          {audience !== 'visiting' && <PlanDayCard />}
           {/* Explore — persistent grid of every section (discoverability).
               Phone only: on tablet the NavRail sidebar already lists every
               section, so the grid would just be a redundant duplicate. */}
@@ -2002,15 +2058,40 @@ const styles = StyleSheet.create({
   // Explore OneShetland — persistent sections grid
   // Rounded surface that sections Explore off — like the Shetland Today card,
   // minus the photo. Coloured cards pop against the white panel.
-  audienceChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start',
-    marginHorizontal: spacing.lg, marginTop: spacing.xl,
-    paddingHorizontal: 12, paddingVertical: 7,
+  audienceBlock: { marginHorizontal: spacing.lg, marginTop: spacing.xl, gap: 8 },
+  audiencePrompt: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textSecondary },
+  audienceHint: { fontWeight: '500', color: colors.textMuted },
+  audienceSwitch: {
+    flexDirection: 'row', gap: 4, alignSelf: 'flex-start', padding: 4,
     borderRadius: radius.full, borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.cardBackground,
   },
-  audienceChipText: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textSecondary },
-  audienceChipSwap: { fontSize: fontSize.xs, fontWeight: '800', color: colors.accent },
+  audienceOption: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full,
+  },
+  audienceOptionOn: { backgroundColor: colors.navy },
+  audienceOptionText: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textMuted },
+  audienceOptionTextOn: { color: '#fff' },
+
+  // Plan a day out — the planner's front door on Home.
+  planCard: {
+    marginHorizontal: spacing.lg, marginTop: spacing.xl,
+    padding: spacing.md, borderRadius: radius.lg, overflow: 'hidden',
+    backgroundColor: SECTIONS.local.color,
+  },
+  planEyebrow: {
+    fontSize: 10, fontWeight: '900', letterSpacing: 0.8,
+    color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase',
+  },
+  planTitleText: { marginTop: 2, fontSize: fontSize.xl, fontWeight: '900', color: '#fff' },
+  planBody: { marginTop: 4, fontSize: fontSize.sm, lineHeight: 19, color: 'rgba(255,255,255,0.88)' },
+  planCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start',
+    marginTop: spacing.md, paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: radius.full, backgroundColor: '#fff',
+  },
+  planCtaText: { fontSize: fontSize.sm, fontWeight: '900', color: SECTIONS.local.color },
 
   exploreGroups: {
     marginHorizontal: spacing.lg,
