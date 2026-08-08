@@ -130,6 +130,43 @@ function readableError(code: unknown, status: number): string {
   }
 }
 
+/**
+ * What to say while Peerie Bot is thinking.
+ *
+ * Word-for-word the web's progressSteps() (components/visiting/PlanUpgrade.tsx)
+ * — keep the two in step. A twenty-second wait behind one frozen "putting your
+ * day together…" reads as a hang; the same wait narrated reads as work, and
+ * naming what it's doing with the user's OWN answers ("looking for history and
+ * food", "fitting it into 10:00 to 17:00") also shows it heard them.
+ */
+export function progressSteps(q: {
+  from: string; to: string; transport: Transport; interests: Interest[];
+}): string[] {
+  const wanted = q.interests
+    .map(k => INTERESTS.find(i => i.key === k)?.label.toLowerCase())
+    .filter(Boolean) as string[];
+
+  const list =
+    wanted.length === 0 ? 'a bit of everything'
+    : wanted.length === 1 ? wanted[0]
+    : `${wanted.slice(0, -1).join(', ')} and ${wanted[wanted.length - 1]}`;
+
+  return [
+    'Reading your search…',
+    `Looking for ${list}…`,
+    "Checking what's open while you're here…",
+    q.transport === 'walking'
+      ? 'Working out what\'s within walking distance…'
+      : 'Working out the drive between each stop…',
+    `Fitting it into ${q.from} to ${q.to}…`,
+    'Putting them in an order that makes sense…',
+    'Nearly there…',
+  ];
+}
+
+/** How long each line holds before the next — matches the web. */
+export const PROGRESS_STEP_MS = 1900;
+
 /** YYYY-MM-DD in LOCAL time — toISOString() would roll over an evening. */
 export function isoDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');

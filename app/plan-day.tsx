@@ -18,7 +18,7 @@
  * so rather than passing code's work off as the assistant's.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Image, Linking, Platform, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
@@ -37,7 +37,7 @@ import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { AiGlow } from '@/components/ai/AiGlow';
 import { PEERIE } from '@/constants/peerie';
 import {
-  fetchDayPlan, hhmm, INTERESTS, isoDate, longDate,
+  fetchDayPlan, hhmm, INTERESTS, isoDate, longDate, progressSteps, PROGRESS_STEP_MS,
   type DayPlan, type Interest, type Transport,
 } from '@/lib/planner-api';
 
@@ -70,6 +70,23 @@ export default function PlanDayScreen() {
   const [busy, setBusy] = useState(false);
   const [plan, setPlan] = useState<DayPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+
+  /* What the button says while it waits. Frozen on one line a twenty-second
+     wait reads as a hang; narrated it reads as work. Snapshotted when the run
+     starts so editing the form mid-wait can't rewrite the commentary. */
+  const [steps, setSteps] = useState<string[]>([]);
+
+  // Hold on the last line rather than looping — a loop would say it had
+  // started over.
+  useEffect(() => {
+    if (!busy || steps.length === 0) return;
+    const t = setInterval(
+      () => setStep(n => Math.min(n + 1, steps.length - 1)),
+      PROGRESS_STEP_MS,
+    );
+    return () => clearInterval(t);
+  }, [busy, steps.length]);
 
   const windowValid = to.getTime() > from.getTime();
 
@@ -94,6 +111,8 @@ export default function PlanDayScreen() {
   const run = useCallback(async () => {
     if (busy || !windowValid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSteps(progressSteps({ from: hhmm(from), to: hhmm(to), transport, interests: picked }));
+    setStep(0);
     setBusy(true); setError(null);
     try {
       const result = await fetchDayPlan({
@@ -259,8 +278,9 @@ export default function PlanDayScreen() {
             activeOpacity={0.9}
           >
             {busy && <ActivityIndicator size="small" color="#fff" />}
-            <Text style={styles.ctaText}>
-              {busy ? `${PEERIE.name} is putting your day together…` : plan ? 'Plan it again' : 'Plan my day'}
+            <Text style={styles.ctaText} numberOfLines={1}>
+              {busy ? (steps[step] ?? `${PEERIE.name} is putting your day together…`)
+                    : plan ? 'Plan it again' : 'Plan my day'}
             </Text>
           </TouchableOpacity>
         </AiGlow>
