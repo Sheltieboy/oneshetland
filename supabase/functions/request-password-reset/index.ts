@@ -54,8 +54,31 @@ serve(async (req) => {
 
     // No such user (or any other issue) → return ok anyway to avoid leaking
     // which emails are registered.
-    const resetUrl = data?.properties?.action_link;
-    if (error || !resetUrl) return ok();
+    if (error || !data?.properties) return ok();
+
+    /**
+     * Send the TOKEN HASH, not the action_link.
+     *
+     * action_link points at Supabase's /auth/v1/verify, which consumes the
+     * token and bounces the browser on with `?code=`. That code is a PKCE
+     * authorization code, and @supabase/ssr hard-codes flowType: 'pkce' — so
+     * the website tried to exchange it for a session using a code VERIFIER
+     * that was never created, because this link was generated here on the
+     * server and the user's browser was never part of it. The exchange failed
+     * every time and the page reported it as "this link has expired", on the
+     * very first click.
+     *
+     * token_hash + verifyOtp has no verifier and no redirect hop: the page
+     * hands the hash straight back to Supabase and gets a session.
+     */
+    const hashedToken = data.properties.hashed_token;
+    const base = redirect_to || data.properties.redirect_to;
+    if (!hashedToken || !base) return ok();
+
+    const target = new URL(base);
+    target.searchParams.set('token_hash', hashedToken);
+    target.searchParams.set('type', 'recovery');
+    const resetUrl = target.toString();
 
     await sendEmail(svc, {
       templateKey: 'account.password_reset',
