@@ -168,6 +168,8 @@ export interface LocalBusiness {
   website:           string | null;
   email:             string | null;
   opening_hours:     OpeningHours | null;
+  /** Last date opening_hours is known good (seasonal). NULL = no known end. */
+  opening_hours_until: string | null;
   is_verified:       boolean;
   is_active:         boolean;
   accepts_wallet:    boolean;

@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { track } from '@/lib/analytics';
-import { formatDay } from '@/lib/opening-hours';
+import { formatDay, hoursExpired } from '@/lib/opening-hours';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -781,6 +781,16 @@ export default function BusinessDetailScreen() {
     return (
       <View style={styles.hoursCard}>
         <Text style={styles.hoursHeading}>Opening hours</Text>
+        {/* Seasonal hours we know have run out. Shown rather than hidden —
+            they're still the best guide anyone has to what this place does —
+            but never presented as current. Mirrors the web. */}
+        {hoursExpired(business.opening_hours_until, new Date()) && (
+          <Text style={styles.hoursStale}>
+            These were the summer hours, which ran to{' '}
+            {new Date(business.opening_hours_until!).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.
+            Check before you go.
+          </Text>
+        )}
         {days.map((d, i) => {
           const val = oh[d.key];
           if (!val) return null;
@@ -1209,6 +1219,11 @@ const styles = StyleSheet.create({
   hoursCard: {
     marginTop: spacing.sm, backgroundColor: '#fff', borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+  },
+  hoursStale: {
+    marginTop: 6, marginBottom: 4, paddingHorizontal: 10, paddingVertical: 8,
+    borderRadius: radius.sm, backgroundColor: colors.warningLight,
+    fontSize: fontSize.xs, lineHeight: 16, color: colors.warningDark,
   },
   hoursHeading: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 },
   hoursRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
