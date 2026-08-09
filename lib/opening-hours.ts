@@ -47,12 +47,35 @@ export function dayKeyFor(date: Date): DayKey {
 }
 
 /**
+ * Have these hours passed their sell-by date?
+ *
+ * Seasonal opening times come with an end date — Quendale Mill's 10-5 is true
+ * until 11 October and then it isn't. `until` is the last date the hours are
+ * known good; after it they're UNKNOWN, not closed. We know the summer times
+ * expired; we don't know what replaced them, and inventing a winter closure
+ * would be the same mistake pointing the other way.
+ *
+ * Kept in step with the web's lib/opening-hours.ts.
+ */
+export function hoursExpired(until: string | null | undefined, when: Date): boolean {
+  if (!until) return false;
+  const [y, m, d] = until.split('-').map(Number);
+  if (!y || !m || !d) return false;
+  return when.getTime() > new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+}
+
+/**
  * Is it open at this moment? `null` means "we don't know" — no hours recorded,
  * or free text we can't read. Never guess: show "check times" for null, which
  * is a far better answer than a confident wrong one.
  */
-export function isOpenAt(hours: OpeningHoursMap | null | undefined, when: Date): boolean | null {
+export function isOpenAt(
+  hours: OpeningHoursMap | null | undefined,
+  when: Date,
+  until?: string | null,
+): boolean | null {
   if (!hours) return null;
+  if (hoursExpired(until, when)) return null;
   const value = hours[dayKeyFor(when)];
   if (!value) return null;
   if (value.trim().toLowerCase() === CLOSED.toLowerCase()) return false;
