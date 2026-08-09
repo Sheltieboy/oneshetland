@@ -306,7 +306,7 @@ export default function DaBoatsScreen() {
                 <Text style={styles.helpBody}>
                   This archive was gathered and researched to the best of OneShetland's knowledge —
                   but there will be gaps and mistakes. If you know a boat, open its page and tap any
-                  detail to suggest a change, add a date, name an owner or share a photo. Every wee
+                  detail to suggest a change, add a date, name an owner or share a photo. Every
                   correction helps.
                 </Text>
               </View>

@@ -33,7 +33,7 @@ export const TRADES: { key: TradeKey; label: string; blurb: string }[] = [
   { key: "welder",      label: "Welding & fabrication", blurb: "Steelwork, gates, repairs" },
   { key: "chimney",     label: "Chimney sweep",      blurb: "Sweeping, liners, stoves" },
   { key: "damp",        label: "Damp & insulation",  blurb: "Damp, condensation, insulation" },
-  { key: "handyman",    label: "Handyperson",        blurb: "The list of wee jobs" },
+  { key: "handyman",    label: "Handyperson",        blurb: "The list of small jobs" },
   { key: "other",       label: "Something else",     blurb: "Tell us and we'll work it out" },
 ];
 
@@ -59,7 +59,7 @@ export const URGENCIES: { key: Urgency; label: string; blurb: string }[] = [
 export type Scale = "small" | "day" | "multi_day" | "project" | "unsure";
 
 export const SCALES: { key: Scale; label: string; blurb: string }[] = [
-  { key: "small",     label: "A wee job",     blurb: "An hour or two" },
+  { key: "small",     label: "A small job",     blurb: "An hour or two" },
   { key: "day",       label: "About a day",   blurb: "" },
   { key: "multi_day", label: "A few days",    blurb: "" },
   { key: "project",   label: "A big project", blurb: "Weeks or more" },

@@ -1097,6 +1097,29 @@ export default function BusinessDashboardScreen() {
           </TouchableOpacity>
         )}
 
+        {/* ── Job leads — folk looking for a tradesperson.
+             Deliberately NOT gated on a tier or an add-on. A free listing that
+             never rings is why nobody claims theirs, and the trades most worth
+             reaching are the ones nobody has heard of. ── */}
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => router.push({ pathname: '/business-leads', params: { businessId: activeBusiness.id } } as any)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardIcon, { backgroundColor: '#2a8b5c18' }]}>
+              <FontAwesome5 name="tools" size={13} color="#2a8b5c" solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Job leads</Text>
+              <Text style={styles.cardSub}>Folk needing a tradesperson — say what you cover and when</Text>
+            </View>
+            <View style={[styles.cardIconBtn, { backgroundColor: '#2a8b5c' }]}>
+              <FontAwesome5 name="chevron-right" size={11} color="#fff" />
+            </View>
+          </View>
+        </TouchableOpacity>
+
         {/* ── Events — shown when events add-on is enabled ── */}
         {addons.find(a => a.addon_key === 'events')?.enabled && (
           <View style={styles.card}>

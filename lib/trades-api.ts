@@ -128,6 +128,11 @@ export async function postBrief(
     await supabase.from('trade_brief_matches').insert(
       deliverable.map(m => ({ brief_id: brief.id, business_id: m.id, status: 'sent' })),
     );
+
+    /* Same as the web: fire and forget. The brief is saved either way, and a
+       slow push must never make posting a job feel broken. */
+    void supabase.functions.invoke('notify-trade-lead', { body: { brief_id: brief.id } })
+      .catch(() => { /* the lead is visible in the app regardless */ });
   }
   return { ok: true, id: brief.id, sentTo: deliverable.length };
 }

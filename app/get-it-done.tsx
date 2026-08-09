@@ -147,6 +147,14 @@ export default function GetItDoneScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity
+            style={styles.waitingLink}
+            onPress={() => { Haptics.selectionAsync(); router.push('/trade-waiting'); }}
+          >
+            <FontAwesome5 name="clock" size={11} color={ACCENT} solid />
+            <Text style={styles.waitingLinkText}>See what Shetland is waiting for</Text>
+          </TouchableOpacity>
+
           <PeerieFill
             endpoint={PEERIE_ENDPOINTS.brief}
             accent={ACCENT}
@@ -174,7 +182,7 @@ export default function GetItDoneScreen() {
 
           {questions.length > 0 && (
             <View style={styles.questions}>
-              <Text style={styles.questionsTitle}>{PEERIE.name} reckons they&apos;ll ask you this</Text>
+              <Text style={styles.questionsTitle}>{PEERIE.name} will ask you this</Text>
               {questions.map((q, i) => <Text key={i} style={styles.questionsRow}>· {q}</Text>)}
               <Text style={styles.questionsHint}>
                 Worth adding above — it saves a phone call, and lets a trade price it without coming out.
@@ -320,6 +328,14 @@ function badgeStyle(a: string | null) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.screenBackground },
   body: { padding: spacing.md, paddingBottom: spacing.xxl },
+
+  waitingLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start',
+    marginBottom: spacing.md, paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: radius.full, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.cardBackground,
+  },
+  waitingLinkText: { fontSize: fontSize.xs, fontWeight: '800', color: ACCENT },
 
   label: { marginTop: spacing.lg, marginBottom: 6, fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
   hint: { fontSize: fontSize.xs, lineHeight: 17, color: colors.textMuted },
