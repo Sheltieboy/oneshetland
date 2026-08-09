@@ -41,4 +41,5 @@ export const PEERIE_ENDPOINTS = {
   event: `${WEB_BASE_URL}/api/ai/parse-event`,
   job: `${WEB_BASE_URL}/api/ai/parse-job`,
   shift: `${WEB_BASE_URL}/api/ai/parse-shift`,
+  brief: `${WEB_BASE_URL}/api/ai/parse-brief`,
 } as const;

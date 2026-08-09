@@ -495,6 +495,36 @@ function PlanDayCard() {
   );
 }
 
+/**
+ * GetItDoneCard — Home's way in to the trades brief (app/get-it-done.tsx).
+ *
+ * Shown to folk who LIVE here. A visitor doesn't need a joiner, and this is the
+ * complaint heard most often round Shetland: you cannot get a tradesperson.
+ */
+function GetItDoneCard() {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      style={styles.getItDoneCard}
+      onPress={() => { Haptics.selectionAsync(); router.push('/get-it-done'); }}
+      activeOpacity={0.9}
+      accessibilityRole="button"
+      accessibilityLabel="Get it done — find a tradesperson"
+    >
+      <Text style={styles.getItDoneEyebrow}>Need something done?</Text>
+      <Text style={styles.getItDoneTitle}>Find a tradesperson</Text>
+      <Text style={styles.getItDoneBody}>
+        Describe the job and see who actually has room — before you ring round. Peerie Bot ✨
+        writes it up for you.
+      </Text>
+      <View style={styles.getItDoneCta}>
+        <Text style={styles.getItDoneCtaText}>Describe the job</Text>
+        <FontAwesome5 name="arrow-right" size={11} color="#2a8b5c" solid />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 interface ExploreLive { lkBoats?: number; stories?: number; runs?: number; runRoute?: string }
 
 // Short live/static caption under each Explore card — the bit of depth that
@@ -1814,6 +1844,7 @@ export default function HomeScreen() {
           <ForYouRow tiles={tiles} />
           <ShopRow products={freshProducts} />
           {audience !== 'visiting' && <PlanDayCard />}
+          {audience !== 'visiting' && <GetItDoneCard />}
           {/* Explore — persistent grid of every section (discoverability).
               Phone only: on tablet the NavRail sidebar already lists every
               section, so the grid would just be a redundant duplicate. */}
@@ -2073,6 +2104,24 @@ const styles = StyleSheet.create({
   audienceOptionOn: { backgroundColor: colors.navy },
   audienceOptionText: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textMuted },
   audienceOptionTextOn: { color: '#fff' },
+
+  getItDoneCard: {
+    marginHorizontal: spacing.lg, marginTop: spacing.md,
+    padding: spacing.md, borderRadius: radius.lg,
+    backgroundColor: '#2a8b5c',
+  },
+  getItDoneEyebrow: {
+    fontSize: 10, fontWeight: '900', letterSpacing: 0.8,
+    color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase',
+  },
+  getItDoneTitle: { marginTop: 2, fontSize: fontSize.xl, fontWeight: '900', color: '#fff' },
+  getItDoneBody: { marginTop: 4, fontSize: fontSize.sm, lineHeight: 19, color: 'rgba(255,255,255,0.88)' },
+  getItDoneCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start',
+    marginTop: spacing.md, paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: radius.full, backgroundColor: '#fff',
+  },
+  getItDoneCtaText: { fontSize: fontSize.sm, fontWeight: '900', color: '#2a8b5c' },
 
   // Plan a day out — the planner's front door on Home.
   planCard: {
