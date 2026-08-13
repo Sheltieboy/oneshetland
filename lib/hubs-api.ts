@@ -21,7 +21,10 @@ export type NoticeVisibility = 'public' | 'members' | 'committee';
 export const HUB_TYPE_LABELS: Record<HubType, string> = {
   club:      'Club',
   sports:    'Sports club',
-  youth:     'Youth group',
+  // "Youth organisation", not "Youth group" — the Hub belongs to the org and is
+  // run by its adult leaders. Accounts are 18+, so this must not read as an
+  // invitation for under-18s. Kept in step with the web (lib/hubs-data.ts).
+  youth:     'Youth organisation',
   hall:      'Hall / committee',
   charity:   'Charity',
   society:   'Society',
