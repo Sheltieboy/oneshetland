@@ -46,94 +46,15 @@ export type LocalCategory =
 
 export type SubscriptionTier = 'free' | 'pro' | 'premium';
 
-export const TIER_LABELS: Record<SubscriptionTier, string> = {
-  free:    'Free',
-  pro:     'Pro',
-  premium: 'Premium',
-};
-
-export const TIER_PRICE: Record<SubscriptionTier, string> = {
-  free:    '£0',
-  pro:     '£19.99/mo',
-  premium: '£49.99/mo',
-};
+/** Tier labels and prices live in lib/listing-tiers.ts — the file mirrored with
+ *  the web repo, so both products quote the same numbers. Re-exported here so
+ *  the business screens keep importing from one place. */
+export { TIER_LABEL as TIER_LABELS, TIER_PRICE, TIER_PITCH, PREMIUM_ANNUAL_PRICE } from '@/lib/listing-tiers';
 
 export type LoyaltyType = 'stamps' | 'points';
 export type DiscountType = 'percent' | 'fixed' | 'freebie' | 'bogo' | 'other';
 export type WalletTxType = 'topup' | 'spend' | 'refund' | 'cashback';
 export type LoyaltyTxType = 'stamp' | 'points_earn' | 'redeem' | 'reward';
-
-// ── Add-ons ───────────────────────────────────────────────────────────────────
-
-/** Premium add-ons: require Premium plan; 1 included, £15/mo each additional. */
-export const PREMIUM_ADDON_KEYS = ['bookings', 'services', 'events', 'membership', 'products'] as const;
-/** Standard add-ons: available on every plan, owner toggles visibility. */
-export const STANDARD_ADDON_KEYS = ['offers', 'stamps', 'enquiries', 'payments', 'featured', 'jobs'] as const;
-
-export type AddonKey =
-  | typeof PREMIUM_ADDON_KEYS[number]
-  | typeof STANDARD_ADDON_KEYS[number];
-
-export const EXTRA_ADDON_MONTHLY_PENCE = 1000; // £10 per additional premium add-on
-
-export interface AddonMeta {
-  label:       string;
-  description: string;
-  icon:        string;
-  isPremium:   boolean;
-}
-
-export const ADDON_META: Record<AddonKey, AddonMeta> = {
-  bookings:   { label: 'Bookings',   description: 'Let customers book slots, appointments and services online.',     icon: 'calendar-check', isPremium: true  },
-  services:   { label: 'Services',   description: 'Showcase what you offer with a browseable service catalogue.',    icon: 'tools',          isPremium: true  },
-  events:     { label: 'Events',     description: 'Post and promote events that appear in What\'s On.',              icon: 'calendar-alt',   isPremium: true  },
-  membership: { label: 'Membership', description: 'Offer exclusive access, prices or content to paying members.',   icon: 'id-card',        isPremium: true  },
-  products:   { label: 'Products',   description: 'Sell physical or digital products directly through your profile.',icon: 'shopping-bag',   isPremium: true  },
-  offers:     { label: 'Offers',     description: 'Publish time-limited discounts, BOGOs and vouchers.',             icon: 'tag',            isPremium: false },
-  stamps:     { label: 'Stamps & points', description: 'Run a loyalty stamp card or points programme.',             icon: 'stamp',          isPremium: false },
-  enquiries:  { label: 'Enquiries',  description: 'Accept contact and quote requests from customers.',               icon: 'envelope',       isPremium: false },
-  payments:   { label: 'Payments',   description: 'Accept wallet payments, NFC tap-to-pay and cashback.',           icon: 'credit-card',    isPremium: false },
-  featured:   { label: 'Featured promotion', description: 'Boost visibility with a featured listing or Boost.',     icon: 'star',           isPremium: false },
-  jobs:       { label: 'Jobs',       description: 'Post jobs, take applications and manage hiring — free.',     icon: 'briefcase',      isPremium: false },
-};
-
-export interface BusinessAddon {
-  id:          string;
-  business_id: string;
-  addon_key:   AddonKey;
-  enabled:     boolean;
-  config:      Record<string, unknown>;
-  created_at:  string;
-}
-
-/** Returns how many premium add-ons are enabled beyond the first (i.e. billable extras). */
-export function countExtraPremiumAddons(addons: BusinessAddon[]): number {
-  const active = addons.filter(a => a.enabled && (PREMIUM_ADDON_KEYS as readonly string[]).includes(a.addon_key));
-  return Math.max(0, active.length - 1);
-}
-
-export async function fetchBusinessAddons(businessId: string): Promise<BusinessAddon[]> {
-  const { data, error } = await supabase
-    .from('business_addons')
-    .select('*')
-    .eq('business_id', businessId)
-    .order('addon_key');
-  if (error) throw error;
-  return (data ?? []) as BusinessAddon[];
-}
-
-export async function toggleAddon(businessId: string, key: AddonKey, enabled: boolean): Promise<void> {
-  const { error } = await supabase
-    .from('business_addons')
-    .update({ enabled })
-    .eq('business_id', businessId)
-    .eq('addon_key', key);
-  if (error) throw error;
-  // Reconcile billing: adds/removes the £10/mo add-on line item on the
-  // subscription so the monthly total reflects extra premium add-ons.
-  // Best-effort — the toggle itself has already saved.
-  try { await supabase.functions.invoke('sync-business-addons', { body: { business_id: businessId } }); } catch { /* non-fatal */ }
-}
 
 export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness | null> {
   const { data, error } = await supabase

@@ -47,33 +47,6 @@ export async function fetchActiveAlerts(): Promise<PartnerAlert[]> {
   return data ?? [];
 }
 
-// ── Business: alert add-on payment intent ───────────────────────────────────
-
-export interface AlertAddonIntent {
-  paymentIntent:  string;
-  ephemeralKey:   string;
-  customer:       string;
-  subscriptionId: string;
-}
-
-export async function createAlertAddonIntent(businessId: string): Promise<AlertAddonIntent> {
-  const { data, error } = await supabase.functions.invoke('alert-addon-intent', {
-    body: { business_id: businessId },
-  });
-  if (error) {
-    let realMessage = error.message;
-    try {
-      const ctx = (error as any).context;
-      if (ctx && typeof ctx.json === 'function') {
-        const body = await ctx.json();
-        if (body?.error) realMessage = body.error;
-      }
-    } catch { /* fall through */ }
-    throw new Error(realMessage);
-  }
-  return data as AlertAddonIntent;
-}
-
 // ── Business: request access ─────────────────────────────────────────────────
 
 export async function requestAlertAccess(businessId: string): Promise<void> {
@@ -245,18 +218,15 @@ export async function reviewAlertRequest(
   if (error) throw error;
 }
 
-// Mark as active (after payment confirmed — called from Stripe webhook or manually)
-export async function activateAlertAccess(
-  businessId: string,
-  stripeSubscriptionId?: string,
-): Promise<void> {
-  const { error } = await supabase
-    .from('business_alert_access')
-    .update({
-      status:                 'active',
-      activated_at:           new Date().toISOString(),
-      stripe_subscription_id: stripeSubscriptionId ?? null,
-    })
-    .eq('business_id', businessId);
+/**
+ * Accept the alerts usage policy, which is what activates access.
+ *
+ * Replaces the old "pay £10 and let the webhook flip you to active" step. Goes
+ * through an RPC rather than updating the row directly because it moves a
+ * business from 'approved' to 'active' — a client must not write its own status
+ * column. The RPC re-checks ownership, prior admin approval and Premium.
+ */
+export async function acceptAlertPolicy(businessId: string): Promise<void> {
+  const { error } = await supabase.rpc('accept_alert_policy', { p_business_id: businessId });
   if (error) throw error;
 }

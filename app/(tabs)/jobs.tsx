@@ -29,7 +29,7 @@ import {
   JOB_CATEGORIES, type Job,
 } from '@/lib/jobs-api';
 import { fetchOpenShifts, CATEGORY_LABELS, type Shift } from '@/lib/shifts-api';
-import { fetchMyBusinesses, toggleAddon, type LocalBusiness } from '@/lib/local-api';
+import { fetchMyBusinesses, type LocalBusiness } from '@/lib/local-api';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { track } from '@/lib/analytics';
@@ -120,7 +120,6 @@ export default function WorkHubScreen() {
 
   const pickBusiness = async (b: LocalBusiness) => {
     setHireOpen(false);
-    try { await toggleAddon(b.id, 'jobs', true); } catch { /* posting works regardless */ }
     router.push(`/job-post?businessId=${b.id}`);
   };
 

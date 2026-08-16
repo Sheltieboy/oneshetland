@@ -21,10 +21,9 @@ import {
   fetchBusiness, fetchLoyaltyProgram, fetchMyLoyaltyCard,
   fetchBusinessOffers, isFollowing, followBusiness, unfollowBusiness,
   redeemReward, redeemOffer, fetchMyRedeemedOfferIds,
-  fetchBusinessAddons,
   CATEGORY_LABELS, CATEGORY_ICONS,
   formatOfferDiscount, daysRemaining, ladderState,
-  type LocalBusiness, type LoyaltyProgram, type LoyaltyCard, type LocalOffer, type BusinessAddon,
+  type LocalBusiness, type LoyaltyProgram, type LoyaltyCard, type LocalOffer,
 } from '@/lib/local-api';
 import { fetchPublishedEvents, formatShortDate, formatTime, type OsEvent } from '@/lib/events-api';
 import {
@@ -39,7 +38,7 @@ import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { addRecentlyViewed, businessResult } from '@/lib/search';
 import { BusinessLocationMap } from '@/components/BusinessLocationMap';
 import { useAlert } from '@/components/BrandedAlert';
-import { tierUnlocks, FEATURE_MIN_TIER, TIER_LABEL, type ListingFeature } from '@/lib/listing-tiers';
+import { tierUnlocks, TIER_FEATURES, TIER_LABEL, type ListingFeature } from '@/lib/listing-tiers';
 
 const S = SECTIONS.local;
 
@@ -102,18 +101,14 @@ export default function BusinessDetailScreen() {
   }>>([]);
   const [unitItems, setUnitItems]   = useState<BookUnitItem[]>([]);
   const [services, setServices]     = useState<BookService[]>([]);
-  const [addons, setAddons]         = useState<BusinessAddon[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<OsEvent[]>([]);
   const [shopProducts, setShopProducts] = useState<ShopProduct[]>([]);
 
-  // Fail-open: if addons haven't loaded yet, show all sections.
-  const addonOn = (key: string) =>
-    addons.length === 0 || (addons.find(a => a.addon_key === key)?.enabled ?? true);
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [b, p, o, s, units, svcs, addonRows, evs] = await Promise.all([
+      const [b, p, o, s, units, svcs, evs] = await Promise.all([
         fetchBusiness(id),
         fetchLoyaltyProgram(id),
         fetchBusinessOffers(id),
@@ -128,7 +123,6 @@ export default function BusinessDetailScreen() {
           .then(({ data }) => data ?? [], () => [] as any[]),
         fetchBusinessUnitItems(id, false).catch(() => [] as BookUnitItem[]),
         fetchBusinessServices(id, false).catch(() => [] as BookService[]),
-        fetchBusinessAddons(id).catch(() => [] as BusinessAddon[]),
         fetchPublishedEvents({ businessId: id, limit: 5 }).catch(() => [] as OsEvent[]),
       ]);
       // Shop products load separately (non-blocking, fails soft).
@@ -140,7 +134,6 @@ export default function BusinessDetailScreen() {
       setOpenShifts(s as any[]);
       setUnitItems(units);
       setServices(svcs);
-      setAddons(addonRows as BusinessAddon[]);
       setUpcomingEvents(evs);
 
       if (profile) {
@@ -214,8 +207,7 @@ export default function BusinessDetailScreen() {
   const accent = readableAccent(business.brand_color) ?? S.color;
 
   // Tier gating — a richer listing for higher subscription tiers. Governs
-  // DISPLAY only (no selling here — App Store compliance). Sections still also
-  // respect the owner's per-add-on visibility toggles via `addonOn`.
+  // DISPLAY only (no selling here — App Store compliance).
   const tier = business.subscription_tier;
   const shows = (f: ListingFeature) => tierUnlocks(tier, f);
   const showCover = shows('coverPhoto');
@@ -233,7 +225,7 @@ export default function BusinessDetailScreen() {
     ];
     const locked = candidates.find(c => !shows(c.feature));
     if (!locked) return null;
-    return { feature: locked.label, tier: TIER_LABEL[FEATURE_MIN_TIER[locked.feature]] };
+    return { feature: locked.label, tier: TIER_LABEL[TIER_FEATURES[locked.feature]] };
   })();
   const stamps  = card?.stamps_collected ?? 0;
   const ladder  = ladderState(program, stamps, card?.tiers_redeemed_upto ?? 0);
@@ -313,7 +305,7 @@ export default function BusinessDetailScreen() {
   );
 
   // ── Book now (OneShetland Book) ────────────────────────────────────────────
-  const bookCtaSection = shows('tickets') && isBookableLive(business) ? (
+  const bookCtaSection = shows('bookable') && isBookableLive(business) ? (
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.bookCtaBtn}
@@ -333,7 +325,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Tickets & passes (non-time-based unit items) ───────────────────────────
-  const ticketsSection = shows('tickets') && unitItems.length > 0 && addonOn('bookings') ? (
+  const ticketsSection = shows('bookable') && unitItems.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Tickets &amp; passes</Text>
             <View style={{ gap: 10 }}>
@@ -399,7 +391,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Loyalty card ───────────────────────────────────────────────────────────
-  const loyaltySection = shows('loyalty') && program && addonOn('stamps') ? (
+  const loyaltySection = shows('loyalty') && program ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Loyalty</Text>
             <View style={styles.loyaltyCard}>
@@ -517,7 +509,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Offers ─────────────────────────────────────────────────────────────────
-  const offersSection = shows('offers') && offers.length > 0 && addonOn('offers') ? (
+  const offersSection = shows('offers') && offers.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Current offers</Text>
             <View style={{ gap: 8 }}>
@@ -616,7 +608,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Upcoming events (when events add-on enabled) ───────────────────────────
-  const eventsSection = shows('events') && upcomingEvents.length > 0 && addonOn('events') ? (
+  const eventsSection = shows('events') && upcomingEvents.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Upcoming events</Text>
             <View style={{ gap: 8 }}>
@@ -658,8 +650,8 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Services catalogue (when Services add-on enabled) ──────────────────────
-  const servicesSection = shows('services') && addonOn('services') && services.length > 0 ? (() => {
-          const bookable = addonOn('bookings') && isBookableLive(business);
+  const servicesSection = shows('services') && services.length > 0 ? (() => {
+          const bookable = isBookableLive(business);
           return (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Services</Text>
@@ -736,35 +728,6 @@ export default function BusinessDetailScreen() {
       </View>
     </View>
   ) : null;
-
-  // ── Add-on placeholder sections (for add-ons not yet fully built) ──────────
-  const placeholderSections = (shows('addonSections') ? addons : [])
-          .filter(a => a.enabled && ['membership', 'enquiries'].includes(a.addon_key))
-          .map(addon => {
-            const icons: Record<string, string> = {
-              products:   'shopping-bag',
-              membership: 'id-card',
-              enquiries:  'envelope',
-            };
-            const labels: Record<string, string> = {
-              products:   'Products',
-              membership: 'Membership',
-              enquiries:  'Enquiries',
-            };
-            return (
-              <View key={addon.addon_key} style={styles.section}>
-                <View style={styles.addonPlaceholderRow}>
-                  <View style={[styles.addonPlaceholderIcon, { backgroundColor: accent + '14' }]}>
-                    <FontAwesome5 name={icons[addon.addon_key] ?? 'star'} size={13} color={accent} solid />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sectionTitle}>{labels[addon.addon_key] ?? addon.addon_key}</Text>
-                    <Text style={styles.addonPlaceholderSub}>Coming soon</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          });
 
   // ── Info ───────────────────────────────────────────────────────────────────
   // ── Opening hours (rendered inside the Info section) ─────────────────────────
@@ -843,7 +806,7 @@ export default function BusinessDetailScreen() {
                 />
               </>
             )}
-            {shows('wallet') && business.accepts_wallet && addonOn('payments') && (
+            {shows('wallet') && business.accepts_wallet && (
               <>
                 <View style={styles.infoDivider} />
                 <InfoRow
@@ -942,7 +905,6 @@ export default function BusinessDetailScreen() {
                 {shopSection}
                 {loyaltySection}
                 {eventsSection}
-                {placeholderSections}
               </View>
               <View style={styles.sideCol}>
                 {infoSection}
@@ -963,7 +925,6 @@ export default function BusinessDetailScreen() {
               {hiringSection}
               {eventsSection}
               {servicesSection}
-              {placeholderSections}
               {infoSection}
               {upgradeHintSection}
               {ownerSection}

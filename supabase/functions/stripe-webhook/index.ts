@@ -243,40 +243,6 @@ serve(async (req) => {
         };
         const isActive = ['active', 'trialing'].includes(status);
 
-        // ── Alert add-on subscription ────────────────────────────────────
-        if (meta.type === 'alert_addon' && meta.business_id) {
-          if (isActive) {
-            await supabase
-              .from('business_alert_access')
-              .update({
-                status:                 'active',
-                activated_at:           new Date().toISOString(),
-                stripe_subscription_id: subId,
-              })
-              .eq('business_id', meta.business_id);
-          } else {
-            // Payment failed or subscription went inactive — suspend access
-            await supabase
-              .from('business_alert_access')
-              .update({ status: 'suspended' })
-              .eq('business_id', meta.business_id)
-              .eq('stripe_subscription_id', subId);
-          }
-          break;
-        }
-
-        // ── Analytics add-on subscription (any tier, incl. free) ─────────
-        if (meta.type === 'analytics_addon' && meta.business_id) {
-          await supabase
-            .from('business_addons')
-            .update(isActive
-              ? { enabled: true, config: { method: 'card', subscription_id: subId } }
-              : { enabled: false })
-            .eq('business_id', meta.business_id)
-            .eq('addon_key', 'analytics');
-          break;
-        }
-
         // ── Standard business tier subscription ──────────────────────────
         // Map Stripe price IDs to our tiers — read from admin_config first,
         // fall back to env vars so old deployments keep working.
@@ -346,26 +312,6 @@ serve(async (req) => {
       case 'customer.subscription.deleted': {
         const subId      = eventData.id as string;
         const deleteMeta = (eventData.metadata ?? {}) as Record<string, string>;
-
-        // Alert add-on cancelled — suspend access
-        if (deleteMeta.type === 'alert_addon' && deleteMeta.business_id) {
-          await supabase
-            .from('business_alert_access')
-            .update({ status: 'suspended' })
-            .eq('business_id', deleteMeta.business_id)
-            .eq('stripe_subscription_id', subId);
-          break;
-        }
-
-        // Analytics add-on cancelled — disable the add-on
-        if (deleteMeta.type === 'analytics_addon' && deleteMeta.business_id) {
-          await supabase
-            .from('business_addons')
-            .update({ enabled: false })
-            .eq('business_id', deleteMeta.business_id)
-            .eq('addon_key', 'analytics');
-          break;
-        }
 
         // Standard tier subscription cancelled
         const { data: bizDel } = await supabase

@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Switch, Linking, RefreshControl,
+  ActivityIndicator, Switch, Linking, RefreshControl, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -33,11 +33,9 @@ import {
   isBusinessFeatured, TIER_LABELS, TIER_PRICE,
   formatOfferDiscount, daysRemaining,
   fetchBusinessWalletReceipts,
-  fetchBusinessAddons, toggleAddon,
-  ADDON_META, PREMIUM_ADDON_KEYS, EXTRA_ADDON_MONTHLY_PENCE, countExtraPremiumAddons,
   normalizeTiers,
   type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType, type RewardTier,
-  type BusinessWalletReceipt, type BusinessAddon, type AddonKey,
+  type BusinessWalletReceipt,
 } from '@/lib/local-api';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { track } from '@/lib/analytics';
@@ -45,7 +43,7 @@ import { setAcceptsBookings, fetchBusinessServices } from '@/lib/book-api';
 import { fetchBusinessEvents, type OsEvent } from '@/lib/events-api';
 import {
   fetchMyAlertAccess, requestAlertAccess,
-  sendAlert, cancelAlert, fetchMyBusinessAlerts, activateAlertAccess,
+  sendAlert, cancelAlert, fetchMyBusinessAlerts, acceptAlertPolicy,
   fetchScheduledAlerts,
   type PartnerAlert, type AlertAccess, type AlertType,
 } from '@/lib/alerts-api';
@@ -97,8 +95,6 @@ export default function BusinessDashboardScreen() {
   const [orphanedShiftCount, setOrphanedShiftCount] = useState(0);
   const [backfilling,        setBackfilling]        = useState(false);
 
-  const [addons, setAddons] = useState<BusinessAddon[]>([]);
-  const [addonsBusy, setAddonsBusy] = useState<AddonKey | null>(null);
   const [bizEvents, setBizEvents] = useState<OsEvent[]>([]);
 
   // Urgent alert state
@@ -117,8 +113,8 @@ export default function BusinessDashboardScreen() {
   const [alertDuration,    setAlertDuration]    = useState<number | null>(2); // hours, null = no expiry
 
   // Collapsible cards — collapsed by default; the header still shows the key status.
-  const [expanded, setExpanded] = useState<{ addons: boolean; pay: boolean; plan: boolean; nfc: boolean }>({ addons: false, pay: false, plan: false, nfc: false });
-  const toggleCard = (key: 'addons' | 'pay' | 'plan' | 'nfc') => {
+  const [expanded, setExpanded] = useState<{ pay: boolean; plan: boolean; nfc: boolean }>({ pay: false, plan: false, nfc: false });
+  const toggleCard = (key: 'pay' | 'plan' | 'nfc') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
   };
@@ -135,7 +131,7 @@ export default function BusinessDashboardScreen() {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, addonRows, evRows, alertAcc, alertRows, schedRows] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, schedRows] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -151,7 +147,6 @@ export default function BusinessDashboardScreen() {
       target.accepts_wallet
         ? fetchBusinessWalletReceipts(target.id, 20).catch(() => [] as BusinessWalletReceipt[])
         : Promise.resolve([] as BusinessWalletReceipt[]),
-      fetchBusinessAddons(target.id).catch(() => [] as BusinessAddon[]),
       fetchBusinessEvents(target.id).catch(() => [] as OsEvent[]),
       fetchMyAlertAccess(target.id).catch(() => null),
       fetchMyBusinessAlerts(target.id).catch(() => [] as PartnerAlert[]),
@@ -163,7 +158,6 @@ export default function BusinessDashboardScreen() {
     setBookServiceCount(bookSvcs.length);
     setOrphanedShiftCount(orphanCount as number);
     setWalletReceipts(receipts);
-    setAddons(addonRows as BusinessAddon[]);
     setAlertAccess(alertAcc as AlertAccess | null);
     setBizAlerts((alertRows as PartnerAlert[]).filter(a => a.is_active));
     setScheduledAlerts(schedRows as PartnerAlert[]);
@@ -352,59 +346,6 @@ export default function BusinessDashboardScreen() {
     }
   };
 
-  const handleAddonToggle = async (key: AddonKey, enabled: boolean) => {
-    if (!activeBusiness) return;
-    const isPremium = (PREMIUM_ADDON_KEYS as readonly string[]).includes(key);
-    // ENABLING a premium add-on is a paid digital purchase (it can add a paid
-    // extra to the subscription). That in-app purchase path has been removed for
-    // store compliance, so we show a neutral locked state instead of charging.
-    // Disabling a premium add-on, and all standard/free add-on toggles, still work.
-    // Offers / stamps / wallet payments are Pro features everywhere else in
-    // the product — a free-tier toggle that "works" but does nothing is
-    // misleading, so gate enabling behind Pro with an honest nudge.
-    const needsPro = ['offers', 'stamps', 'payments'].includes(key);
-    if (needsPro && enabled && !tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro')) {
-      brandedAlert({
-        title: 'Pro feature',
-        message: 'Offers, loyalty stamps and wallet payments come with the Pro plan. Upgrade from Plan & billing to switch this on.',
-        icon: 'lock',
-        accent: colors.textMuted,
-        actions: [{ label: 'OK', style: 'primary' }],
-      });
-      return;
-    }
-    if (isPremium && enabled) {
-      brandedAlert({
-        title: 'Premium feature',
-        message: 'This add-on isn\'t enabled on your current plan.',
-        icon: 'lock',
-        accent: colors.textMuted,
-        actions: [{ label: 'OK', style: 'primary' }],
-      });
-      return;
-    }
-    setAddonsBusy(key);
-    try {
-      await toggleAddon(activeBusiness.id, key, enabled);
-      setAddons(prev => prev.map(a => a.addon_key === key ? { ...a, enabled } : a));
-      // Keep accepts_bookings in sync so isBookableLive() stays correct.
-      if (key === 'bookings') {
-        if (enabled && bookServiceCount === 0) {
-          brandedAlert({ title: 'Add a service first', message: 'Tap "Services" in the Bookings section and add at least one before going live.' });
-          await toggleAddon(activeBusiness.id, 'bookings', false);
-          setAddons(prev => prev.map(a => a.addon_key === 'bookings' ? { ...a, enabled: false } : a));
-        } else {
-          await setAcceptsBookings(activeBusiness.id, enabled);
-          setActiveBusiness(prev => prev ? { ...prev, accepts_bookings: enabled } as LocalBusiness : prev);
-        }
-      }
-      Haptics.selectionAsync();
-    } catch (e: any) {
-      brandedAlert({ title: 'Could not update add-on', message: e?.message ?? 'Try again.' });
-    } finally {
-      setAddonsBusy(null);
-    }
-  };
 
   const toggleBusinessPayout = async (value: boolean) => {
     if (!activeBusiness) return;
@@ -673,37 +614,6 @@ export default function BusinessDashboardScreen() {
                 : `Renews ${new Date(activeBusiness.subscription_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
             </Text>
           )}
-
-          {/* Monthly breakdown — base + each extra premium add-on */}
-          {activeBusiness.subscription_tier === 'premium' && (() => {
-            const enabledPremium = addons.filter(a => a.enabled && (PREMIUM_ADDON_KEYS as readonly string[]).includes(a.addon_key));
-            const extras = enabledPremium.slice(1);
-            const totalPence = 4999 + extras.length * EXTRA_ADDON_MONTHLY_PENCE;
-            const rowS = { flexDirection: 'row' as const, justifyContent: 'space-between' as const, paddingVertical: 3 };
-            return (
-              <View style={{ marginTop: spacing.sm, backgroundColor: colors.offWhite, borderRadius: radius.md, padding: spacing.sm }}>
-                <View style={rowS}>
-                  <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>Premium plan</Text>
-                  <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.navy }}>£49.99</Text>
-                </View>
-                {extras.map(a => (
-                  <View key={a.addon_key} style={rowS}>
-                    <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>+ Add-on: {ADDON_META[a.addon_key].label}</Text>
-                    <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.navy }}>£{(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(2)}</Text>
-                  </View>
-                ))}
-                <View style={[rowS, { borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4, paddingTop: 6 }]}>
-                  <Text style={{ fontSize: fontSize.md, fontWeight: '700', color: colors.navy }}>Total</Text>
-                  <Text style={{ fontSize: fontSize.md, fontWeight: '800', color: colors.navy }}>£{(totalPence / 100).toFixed(2)}/mo</Text>
-                </View>
-                {extras.length === 0 && (
-                  <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 }}>
-                    Includes one premium add-on. Each additional add-on is £{(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo.
-                  </Text>
-                )}
-              </View>
-            );
-          })()}
 
           {/* Feature checklist — instantly clear what's unlocked vs locked */}
           <View style={styles.featureList}>
@@ -1076,7 +986,7 @@ export default function BusinessDashboardScreen() {
         )}
 
         {/* ── Jobs — shown when the (free) jobs add-on is enabled ── */}
-        {addons.find(a => a.addon_key === 'jobs')?.enabled && (
+        {(
           <TouchableOpacity
             style={styles.card}
             onPress={() => router.push({ pathname: '/business-jobs', params: { businessId: activeBusiness.id } } as any)}
@@ -1121,7 +1031,7 @@ export default function BusinessDashboardScreen() {
         </TouchableOpacity>
 
         {/* ── Events — shown when events add-on is enabled ── */}
-        {addons.find(a => a.addon_key === 'events')?.enabled && (
+        {(
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={[styles.cardIcon, { backgroundColor: SECTIONS.events.color + '18' }]}>
@@ -1217,112 +1127,6 @@ export default function BusinessDashboardScreen() {
           </View>
           <FontAwesome5 name="chevron-right" size={11} color={S.color} />
         </TouchableOpacity>
-
-        {/* ── Add-ons & features ── */}
-        {(() => {
-          const isPremium = activeBusiness.subscription_tier === 'premium';
-          const enabledCount = addons.filter(a => a.enabled).length;
-          const extraCount = countExtraPremiumAddons(addons);
-          const premiumKeys = PREMIUM_ADDON_KEYS as readonly string[];
-          const addonGroups: Array<{ label: string; keys: AddonKey[] }> = [
-            { label: 'Premium add-ons', keys: ['bookings', 'services', 'events', 'membership', 'products'] },
-            { label: 'Standard add-ons', keys: ['offers', 'stamps', 'enquiries', 'payments', 'featured'] },
-          ];
-          return (
-            <View style={styles.card}>
-              <TouchableOpacity style={styles.cardHeader} onPress={() => toggleCard('addons')} activeOpacity={0.7}>
-                <View style={[styles.cardIcon, { backgroundColor: PREMIUM_PURPLE + '18' }]}>
-                  <FontAwesome5 name="puzzle-piece" size={13} color={PREMIUM_PURPLE} solid />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>Add-ons &amp; features</Text>
-                  <Text style={styles.cardSub}>
-                    {enabledCount} active · {isPremium ? `${extraCount} extra at £${(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo` : 'Premium unlocks more'}
-                  </Text>
-                </View>
-                <FontAwesome5 name={expanded.addons ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textMuted} />
-              </TouchableOpacity>
-
-              {expanded.addons && (
-                <>
-                  {!isPremium && (
-                    <View style={styles.addonUpgradeBanner}>
-                      <FontAwesome5 name="lock" size={12} color={colors.textMuted} solid />
-                      <Text style={styles.addonUpgradeText}>
-                        Bookings, Services, Events, Membership and Products are <Text style={{ fontWeight: '900' }}>premium features</Text>, not enabled on your current plan.
-                      </Text>
-                    </View>
-                  )}
-                  {isPremium && extraCount > 0 && (
-                    <View style={[styles.addonUpgradeBanner, { backgroundColor: PREMIUM_PURPLE + '10', borderColor: PREMIUM_PURPLE + '30' }]}>
-                      <FontAwesome5 name="info-circle" size={12} color={PREMIUM_PURPLE} />
-                      <Text style={[styles.addonUpgradeText, { color: PREMIUM_PURPLE }]}>
-                        1 premium add-on included · {extraCount} extra at £{(extraCount * EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo added to your subscription.
-                      </Text>
-                    </View>
-                  )}
-
-                  {addonGroups.map(group => (
-                    <View key={group.label} style={styles.addonGroup}>
-                      <Text style={styles.subSectionLabel}>{group.label}</Text>
-                      {group.keys.map(key => {
-                        const meta    = ADDON_META[key];
-                        const addon   = addons.find(a => a.addon_key === key);
-                        const on      = addon?.enabled ?? false;
-                        const isPremiumKey = premiumKeys.includes(key);
-                        // Enabling a premium add-on is a paid purchase (removed for
-                        // store compliance). Lock premium add-ons that are currently
-                        // off so they read as a locked feature; an already-on premium
-                        // add-on stays toggleable so it can be turned off.
-                        const locked  = isPremiumKey && !on;
-                        const busy    = addonsBusy === key;
-                        const enabledPremiumCount = addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key)).length;
-                        const isFirstPremium = on && premiumKeys.includes(key) &&
-                          addons.filter(a => a.enabled && premiumKeys.includes(a.addon_key))[0]?.addon_key === key;
-                        return (
-                          <View key={key} style={styles.addonRow}>
-                            <View style={[styles.addonIconWrap, { backgroundColor: locked ? colors.border : PREMIUM_PURPLE + '14' }]}>
-                              <FontAwesome5 name={meta.icon} size={12} color={locked ? colors.textLight : PREMIUM_PURPLE} solid />
-                            </View>
-                            <View style={{ flex: 1, gap: 2 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Text style={[styles.addonLabel, locked && { color: colors.textLight }]}>{meta.label}</Text>
-                                {premiumKeys.includes(key) && on && (
-                                  <View style={[styles.addonBadge, { backgroundColor: isFirstPremium ? PREMIUM_PURPLE + '20' : '#FEF3C7' }]}>
-                                    <Text style={[styles.addonBadgeText, { color: isFirstPremium ? PREMIUM_PURPLE : '#92400E' }]}>
-                                      {isFirstPremium ? 'Included' : `+£${(EXTRA_ADDON_MONTHLY_PENCE / 100).toFixed(0)}/mo`}
-                                    </Text>
-                                  </View>
-                                )}
-                                {locked && (
-                                  <View style={[styles.addonBadge, { backgroundColor: colors.border }]}>
-                                    <Text style={[styles.addonBadgeText, { color: colors.textMuted }]}>Premium</Text>
-                                  </View>
-                                )}
-                              </View>
-                              <Text style={styles.addonDesc} numberOfLines={1}>{meta.description}</Text>
-                            </View>
-                            {busy
-                              ? <ActivityIndicator size="small" color={PREMIUM_PURPLE} />
-                              : <Switch
-                                  value={on}
-                                  onValueChange={v => handleAddonToggle(key, v)}
-                                  disabled={locked}
-                                  trackColor={{ false: colors.border, true: PREMIUM_PURPLE + '66' }}
-                                  thumbColor={on ? PREMIUM_PURPLE : colors.textLight}
-                                  ios_backgroundColor={colors.border}
-                                />
-                            }
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ))}
-                </>
-              )}
-            </View>
-          );
-        })()}
 
         {/* ── Schedule picker modal ── */}
         {/* ── Schedule presets modal ── */}
@@ -1472,10 +1276,14 @@ export default function BusinessDashboardScreen() {
               await loadAll(activeBusiness);
             } catch {}
           }}
-          // The £10/mo urgent-alerts add-on is a paid digital purchase; its
-          // in-app activation/payment path has been removed for store
-          // compliance. Businesses that already have access keep composing and
-          // sending alerts; the paid activation CTA is no longer shown.
+          onAcceptPolicy={async () => {
+            try {
+              await acceptAlertPolicy(activeBusiness.id);
+              await loadAll(activeBusiness);
+            } catch (e) {
+              Alert.alert('Could not enable alerts', e instanceof Error ? e.message : 'Please try again.');
+            }
+          }}
         />
 
         {/* ── Backfill orphaned shifts banner ── */}
@@ -1551,7 +1359,7 @@ function AlertsCard({
   sendLater, scheduledFor, alertDuration,
   onMessageChange, onTypeChange,
   onToggleSendLater, onPickTime, onDurationChange,
-  onRequestAccess, onSendAlert, onCancelAlert,
+  onRequestAccess, onSendAlert, onCancelAlert, onAcceptPolicy,
 }: {
   access:             AlertAccess | null;
   activeAlerts:       PartnerAlert[];
@@ -1564,6 +1372,7 @@ function AlertsCard({
   sendLater:          boolean;
   scheduledFor:       Date | null;
   alertDuration:      number | null;
+  onAcceptPolicy:     () => void;
   onMessageChange:    (v: string) => void;
   onTypeChange:       (t: AlertType) => void;
   onToggleSendLater:  () => void;
@@ -1630,15 +1439,22 @@ function AlertsCard({
         </View>
       )}
 
-      {/* State: approved but not yet active.
-          The paid in-app activation CTA has been removed for store compliance —
-          this now shows a neutral locked status only. */}
+      {/* State: approved — one gate left, and it isn't a payment.
+          Accepting the usage policy is free, so this stays in-app. */}
       {access?.status === 'approved' && (
         <View style={[alertStyles.stateBox, { backgroundColor: '#F0FBF3', borderColor: '#34C759' + '40' }]}>
           <FontAwesome5 name="check-circle" size={18} color="#34C759" />
+          <Text style={[alertStyles.stateTitle, { textAlign: 'center' }]}>Approved</Text>
           <Text style={[alertStyles.stateDesc, { textAlign: 'center' }]}>
-            Approved. Urgent Alerts is a premium feature and isn&apos;t active on your account yet.
+            Alerts reach every OneShetland user straight away, and urgent ones arrive outside normal
+            hours. Send one only when it changes what somebody does today — cancelled transport, a
+            road closure, a venue change, severe weather.{'\n\n'}
+            Never for offers, opening hours or minor service changes. If a broken coffee machine goes
+            out as an alert, the next real one gets ignored. Misuse withdraws access.
           </Text>
+          <TouchableOpacity style={alertStyles.activateBtn} onPress={onAcceptPolicy}>
+            <Text style={alertStyles.activateBtnText}>I understand — enable alerts</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -1854,6 +1670,9 @@ const alertStyles = StyleSheet.create({
     backgroundColor: colors.screenBackground,
     borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, gap: 12, alignItems: 'center',
+  },
+  stateTitle: {
+    fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary,
   },
   stateDesc: {
     fontSize: fontSize.sm, color: colors.textSecondary,
