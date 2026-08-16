@@ -100,10 +100,15 @@ export default function EventTicketCheckoutScreen() {
 
   const totalTickets = lineItems.reduce((s, li) => s + li.quantity, 0);
 
-  // Buyer-facing booking fee — flat 95p per ticket, free tickets exempt.
-  // Must match BOOKING_FEE_PENCE in the create-event-ticket-intent edge function.
-  const BOOKING_FEE_PENCE = 95;
-  const bookingFeePence = totalPence > 0 ? BOOKING_FEE_PENCE * totalTickets : 0;
+  // Buyer-facing booking fee — 95p per ticket plus 1.5% of face value, free
+  // tickets exempt. Display only; the edge function recomputes it authoritatively.
+  // Must match create-event-ticket-intent (and the web's TicketModal) exactly,
+  // or the basket shows a total the card is not charged.
+  const BOOKING_FEE_PENCE = 95;   // per ticket
+  const BOOKING_FEE_BPS = 150;    // 1.5% of face value, in basis points
+  const bookingFeePence = totalPence > 0
+    ? BOOKING_FEE_PENCE * totalTickets + Math.floor((totalPence * BOOKING_FEE_BPS) / 10_000)
+    : 0;
   const grandTotalPence = totalPence + bookingFeePence;
 
   // Paid tickets on a saved card charge silently off-session, so show a confirm
@@ -344,7 +349,7 @@ export default function EventTicketCheckoutScreen() {
               <Text style={styles.feeVal}>£{(totalPence / 100).toFixed(2)}</Text>
             </View>
             <View style={styles.feeRow}>
-              <Text style={styles.feeLabel}>Booking fee · 95p × {totalTickets}</Text>
+              <Text style={styles.feeLabel}>Booking fee</Text>
               <Text style={styles.feeVal}>£{(bookingFeePence / 100).toFixed(2)}</Text>
             </View>
             <View style={[styles.feeRow, styles.feeTotalRow]}>
@@ -352,7 +357,7 @@ export default function EventTicketCheckoutScreen() {
               <Text style={styles.feeTotalVal}>£{(grandTotalPence / 100).toFixed(2)}</Text>
             </View>
             <Text style={styles.feeNote}>
-              A small 95p booking fee per ticket helps keep OneShetland running — organisers receive the full ticket price.
+              A small booking fee — 95p a ticket plus 1.5% — helps keep OneShetland running. Organisers receive the full ticket price.
             </Text>
           </View>
         )}

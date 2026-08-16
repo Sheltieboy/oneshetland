@@ -118,10 +118,27 @@ serve(async (req) => {
 
     const totalTickets = line_items.reduce((s: number, li: any) => s + li.quantity, 0);
 
-    // Buyer-facing booking fee: flat 50p per ticket, added on top of face value.
-    // Free tickets carry no fee. This is the platform's cut (covers Stripe + run costs).
-    const BOOKING_FEE_PENCE = 95;
-    const platformFeePence = totalPence > 0 ? BOOKING_FEE_PENCE * totalTickets : 0;
+    // Buyer-facing booking fee: 95p per ticket PLUS 1.5% of face value, added on
+    // top. Free tickets carry no fee. This is the platform's cut.
+    //
+    // Why both parts. This is a destination charge, so Stripe bills US (roughly
+    // 1.5% + 20p of the whole charge) and takes it out of the application fee —
+    // the organiser always receives the full face value. A flat 95p therefore
+    // broke even around a £49 ticket and LOST money above it: a £120 ticket cost
+    // us £1.06 to sell. The 1.5% cancels Stripe's percentage so the fee scales
+    // with the charge, and the 95p covers Stripe's fixed 20p plus our run costs.
+    // Net result: we keep ~70-90p per ticket at any face value, instead of
+    // subsidising expensive ones.
+    //
+    // Math.floor rounds in the BUYER's favour, matching _shared/commission.ts.
+    //
+    // ⚠️ Duplicated client-side for the basket display — keep all three in step:
+    //    app/event-ticket-checkout.tsx  ·  oneshetland-web/components/events/TicketModal.tsx
+    const BOOKING_FEE_PENCE = 95;   // per ticket
+    const BOOKING_FEE_BPS = 150;    // 1.5% of face value, in basis points
+    const platformFeePence = totalPence > 0
+      ? BOOKING_FEE_PENCE * totalTickets + Math.floor((totalPence * BOOKING_FEE_BPS) / 10_000)
+      : 0;
     const chargeTotalPence = totalPence + platformFeePence;
 
     // Atomically reserve slots (prevents overselling)
