@@ -15,12 +15,15 @@ begin;
 -- ── Fixtures ────────────────────────────────────────────────────────────────
 -- Two businesses, identical except for tier, so the only variable is the thing
 -- under test. IDs are fixed and obviously fake.
-insert into public.local_businesses (id, owner_id, name, subscription_tier, stripe_subscription_id, is_active)
+-- category and address are NOT NULL with no default; category is also
+-- constrained to a fixed set.
+insert into public.local_businesses
+  (id, owner_id, name, category, address, subscription_tier, stripe_subscription_id, is_active)
 values
   ('eeeeeeee-0000-0000-0000-000000000001'::uuid,
-   (select id from auth.users limit 1), 'TEST Pro Co', 'pro', 'sub_test_pro', true),
+   (select id from auth.users limit 1), 'TEST Pro Co', 'services', 'TEST address', 'pro', 'sub_test_pro', true),
   ('eeeeeeee-0000-0000-0000-000000000002'::uuid,
-   (select id from auth.users limit 1), 'TEST Premium Co', 'premium', 'sub_test_prem', true);
+   (select id from auth.users limit 1), 'TEST Premium Co', 'services', 'TEST address', 'premium', 'sub_test_prem', true);
 
 -- A service each, because book_bookings requires one.
 insert into public.book_services (id, business_id, name, duration_minutes, price_pence, is_active)
