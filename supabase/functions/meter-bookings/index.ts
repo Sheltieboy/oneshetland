@@ -79,10 +79,17 @@ serve(async (req) => {
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   try {
-    const svc = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    );
+    // Service role only. Supabase's gateway already requires SOME valid JWT, but
+    // that includes every signed-in user — and this function bills people. Any
+    // customer could otherwise trigger a billing run at will. reminder-runner
+    // invokes it with the service key, which is the only caller there should be.
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const auth = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    if (!serviceKey || auth !== serviceKey) {
+      return json({ error: 'Forbidden' }, 403);
+    }
+
+    const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', serviceKey);
 
     const meterPrice = await getConfig(svc, 'stripe.price.booking_meter', Deno.env.get('STRIPE_PRICE_BOOKING_METER') ?? null);
 
