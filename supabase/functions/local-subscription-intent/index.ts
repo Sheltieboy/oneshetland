@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { getConfig } from '../_shared/admin-config.ts';
-import { resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
+import { subscriptionPricesFor, missingPriceError } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,7 +76,7 @@ serve(async (req) => {
     });
 
     // Price ID — admin_config first, env var fallback
-    const { priceId, configKey, annual } = await resolveTierPrice(svc, tier, period);
+    const { tierPrice: priceId, meterPrice, configKey, annual } = await subscriptionPricesFor(svc, tier, period);
     if (!priceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
 
     // 1. Pick the card: BUSINESS card → PERSONAL card → the sub-customer's own
@@ -119,7 +119,9 @@ serve(async (req) => {
     // 2. Create an *incomplete* subscription so we get a PaymentIntent to inspect.
     const subscription = await stripe.subscriptions.create({
       customer:         customerId,
-      items:            [{ price: priceId }],
+      // Pro carries the metered bookings price as a second item. Without it
+      // there is nothing for meter-bookings to report usage against.
+      items:            meterPrice ? [{ price: priceId }, { price: meterPrice }] : [{ price: priceId }],
       ...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
       payment_behavior: 'default_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },

@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
+import { subscriptionPricesFor, resolveBookingMeterPrice, resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,15 +76,30 @@ serve(async (req) => {
     // Resolve the new price. Switching monthly <-> annual on the SAME tier is a
     // real change even though the tier is unchanged, which is why period is part
     // of the lookup rather than an afterthought.
-    const { priceId: newPriceId, configKey, annual } = await resolveTierPrice(svc, tier, period);
+    const { tierPrice: newPriceId, meterPrice, configKey, annual } = await subscriptionPricesFor(svc, tier, period);
+    // The meter price may exist on the CURRENT subscription even when moving to a
+    // tier that shouldn't have it, so resolve it regardless of the target tier.
+    const bookingMeterPrice = await resolveBookingMeterPrice(svc);
     if (!newPriceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
 
     // Fetch the live subscription to get its item id + check current price
     const subscription = await stripe.subscriptions.retrieve(business.stripe_subscription_id);
-    const item = subscription.items.data[0];
-    if (!item) return json({ error: 'Subscription has no items' }, 500);
+    // A Pro subscription carries TWO items — the tier price and the metered
+    // bookings price — and Stripe does not promise an order. Picking data[0]
+    // blind would sometimes have swapped the METER item's price to the new tier
+    // and left the real tier item untouched.
+    const meterItem = bookingMeterPrice
+      ? subscription.items.data.find(i => i.price.id === bookingMeterPrice)
+      : undefined;
+    const item = subscription.items.data.find(i => i.id !== meterItem?.id);
+    if (!item) return json({ error: 'Subscription has no tier item' }, 500);
 
-    if (item.price.id === newPriceId) {
+    // "Already on this plan" is only true if the ITEMS are right too. A Pro
+    // subscription created before the meter existed has the correct tier price
+    // and no meter item, so it would bill £12 and never charge for a booking.
+    // Letting it through here makes switching to Pro a repair as well as a move.
+    const needsMeterRepair = tier === 'pro' && !!meterPrice && !meterItem;
+    if (item.price.id === newPriceId && !needsMeterRepair) {
       return json({ noChange: true, message: 'Already on this plan.' });
     }
 
@@ -136,8 +151,15 @@ serve(async (req) => {
     //   (paid immediately by the saved payment method).
     // cancel_at_period_end: false
     // → if a cancellation was pending, the user is now committing to staying.
+    // Moving to Pro adds the metered bookings item; moving to Premium removes
+    // it, because bookings are included there and a stray meter item would keep
+    // billing 95p a booking on a plan that says it doesn't.
+    const items: Record<string, unknown>[] = [{ id: item.id, price: newPriceId }];
+    if (tier === 'pro' && meterPrice && !meterItem) items.push({ price: meterPrice });
+    if (tier !== 'pro' && meterItem) items.push({ id: meterItem.id, deleted: true });
+
     const updated = await stripe.subscriptions.update(business.stripe_subscription_id, {
-      items: [{ id: item.id, price: newPriceId }],
+      items: items as never,
       proration_behavior:   'create_prorations',
       cancel_at_period_end: false,
       metadata: { ...subscription.metadata, tier },

@@ -55,3 +55,29 @@ export function missingPriceError(tier: Tier, configKey: string, annual: boolean
   return `Stripe price ID for ${tier}${annual ? ' (annual)' : ''} is not configured. ` +
          `Set ${configKey} in Admin → Config.`;
 }
+
+/**
+ * The metered bookings Price, if configured.
+ *
+ * Pro carries this as a SECOND subscription item alongside the £12 tier price;
+ * Premium must not have it, because bookings are included there. Without the
+ * item on the subscription there is nothing for meter-bookings to report usage
+ * against — it looks for the item, doesn't find it, and skips in silence. That
+ * is how metered bookings shipped inert: the meter, the cap and the counting
+ * were all correct, and no subscription ever carried the thing being metered.
+ */
+export async function resolveBookingMeterPrice(svc: SupabaseClient): Promise<string | null> {
+  return await getConfig(svc, 'stripe.price.booking_meter', Deno.env.get('STRIPE_PRICE_BOOKING_METER') ?? null);
+}
+
+/** Which prices a subscription on this tier should carry. */
+export async function subscriptionPricesFor(
+  svc: SupabaseClient,
+  tier: Tier,
+  period: BillingPeriod = 'monthly',
+): Promise<{ tierPrice: string | null; meterPrice: string | null; configKey: string; annual: boolean }> {
+  const { priceId, configKey, annual } = await resolveTierPrice(svc, tier, period);
+  // Metered bookings are a Pro-only mechanism.
+  const meterPrice = tier === 'pro' ? await resolveBookingMeterPrice(svc) : null;
+  return { tierPrice: priceId, meterPrice, configKey, annual };
+}

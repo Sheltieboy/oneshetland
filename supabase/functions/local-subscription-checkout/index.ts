@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
+import { subscriptionPricesFor, missingPriceError } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,7 +67,7 @@ serve(async (req) => {
 
     // Read from admin_config (DB) with env-var fallback. The admin screen
     // populates these without needing a redeploy.
-    const { priceId, configKey, annual } = await resolveTierPrice(svc, tier, period);
+    const { tierPrice: priceId, meterPrice, configKey, annual } = await subscriptionPricesFor(svc, tier, period);
     if (!priceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
 
     // Create or reuse customer
@@ -89,7 +89,11 @@ serve(async (req) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
+      // A metered line item must NOT carry a quantity — Stripe rejects that,
+      // because the quantity is whatever usage gets reported.
+      line_items: meterPrice
+        ? [{ price: priceId, quantity: 1 }, { price: meterPrice }]
+        : [{ price: priceId, quantity: 1 }],
       success_url: `${supabaseUrl}/functions/v1/connect-redirect?business=${business_id}&sub=success`,
       cancel_url:  `${supabaseUrl}/functions/v1/connect-redirect?business=${business_id}&sub=cancelled`,
       metadata: { business_id, owner_id: user.id, tier, period: annual ? 'annual' : 'monthly', type: 'local_subscription' },
