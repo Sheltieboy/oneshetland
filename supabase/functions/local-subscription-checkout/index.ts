@@ -21,7 +21,10 @@ const corsHeaders = {
  *   STRIPE_PRICE_LOCAL_PRO       — recurring price ID for £19.99/mo
  *   STRIPE_PRICE_LOCAL_PREMIUM   — recurring price ID for £49.99/mo
  *
- * Body: { business_id: string, tier: 'pro' | 'premium' }
+ * Body: { business_id: string, tier: 'pro' | 'premium', period?: 'monthly' | 'annual' }
+ *
+ * `period` only applies to premium (annual is twelve months for the price of
+ * ten). Defaults to monthly, so existing callers are unaffected.
  * Returns: { url: string }
  */
 serve(async (req) => {
@@ -44,7 +47,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { business_id, tier } = await req.json();
+    const { business_id, tier, period = 'monthly' } = await req.json();
     if (!business_id || !['pro', 'premium'].includes(tier)) {
       return json({ error: 'business_id + tier (pro|premium) required' }, 400);
     }
@@ -64,15 +67,21 @@ serve(async (req) => {
 
     // Read from admin_config (DB) with env-var fallback. The admin screen
     // populates these without needing a redeploy.
-    const configKey = tier === 'premium' ? 'stripe.price.local_premium' : 'stripe.price.local_pro';
-    const envFallback = tier === 'premium'
-      ? Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM')
-      : Deno.env.get('STRIPE_PRICE_LOCAL_PRO');
+    // Annual is premium-only; anything else falls back to the monthly price.
+    const annual = tier === 'premium' && period === 'annual';
+    const configKey = annual
+      ? 'stripe.price.local_premium_annual'
+      : tier === 'premium' ? 'stripe.price.local_premium' : 'stripe.price.local_pro';
+    const envFallback = annual
+      ? Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM_ANNUAL')
+      : tier === 'premium'
+        ? Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM')
+        : Deno.env.get('STRIPE_PRICE_LOCAL_PRO');
     const priceId = await getConfig(svc, configKey, envFallback ?? null);
 
     if (!priceId) {
       return json({
-        error: `Stripe price ID for ${tier} not configured. Set it in the in-app admin config screen (or the ${tier === 'premium' ? 'STRIPE_PRICE_LOCAL_PREMIUM' : 'STRIPE_PRICE_LOCAL_PRO'} env var).`,
+        error: `Stripe price ID for ${tier}${annual ? ' (annual)' : ''} not configured. Set ${configKey} in the in-app admin config screen.`,
       }, 500);
     }
 
@@ -98,9 +107,9 @@ serve(async (req) => {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${supabaseUrl}/functions/v1/connect-redirect?business=${business_id}&sub=success`,
       cancel_url:  `${supabaseUrl}/functions/v1/connect-redirect?business=${business_id}&sub=cancelled`,
-      metadata: { business_id, owner_id: user.id, tier, type: 'local_subscription' },
+      metadata: { business_id, owner_id: user.id, tier, period: annual ? 'annual' : 'monthly', type: 'local_subscription' },
       subscription_data: {
-        metadata: { business_id, owner_id: user.id, tier },
+        metadata: { business_id, owner_id: user.id, tier, period: annual ? 'annual' : 'monthly' },
       },
     });
 

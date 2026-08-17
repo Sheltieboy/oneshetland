@@ -248,12 +248,16 @@ serve(async (req) => {
         // fall back to env vars so old deployments keep working.
         const proPrice     = await getConfig(supabase, 'stripe.price.local_pro',     Deno.env.get('STRIPE_PRICE_LOCAL_PRO')     ?? null);
         const premiumPrice = await getConfig(supabase, 'stripe.price.local_premium', Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM') ?? null);
+        // Annual Premium bills yearly but grants exactly the same access. Only
+        // the billing period differs, so it maps to the same tier.
+        const premiumAnnualPrice = await getConfig(supabase, 'stripe.price.local_premium_annual', Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM_ANNUAL') ?? null);
 
-        // A subscription may carry an add-on line item alongside the tier item,
-        // so never assume items.data[0] — find the item whose price matches a
-        // tier (premium first), falling back to the first item.
+        // A subscription may carry more than one line item, so never assume
+        // items.data[0] — find the item whose price matches a tier (premium
+        // first), falling back to the first item.
         const tierItem =
           items?.data?.find((i) => i.price?.id === premiumPrice) ??
+          items?.data?.find((i) => i.price?.id === premiumAnnualPrice) ??
           items?.data?.find((i) => i.price?.id === proPrice) ??
           items?.data?.[0];
         const priceId = tierItem?.price?.id;
@@ -268,8 +272,11 @@ serve(async (req) => {
         const periodEndSec = typeof rawPeriodEnd === 'number' && Number.isFinite(rawPeriodEnd) ? rawPeriodEnd : null;
         const periodEndIso = periodEndSec ? new Date(periodEndSec * 1000).toISOString() : null;
 
-        let tier: 'free' | 'pro' | 'premium' = 'free';
-        if (priceId === premiumPrice) tier = 'premium';
+        // Map the price to a tier. `null` means "this is a paid, active
+        // subscription against a price we don't recognise" — which is NOT the
+        // same as "not paying", and must never be treated as such. See below.
+        let tier: 'free' | 'pro' | 'premium' | null = null;
+        if (priceId === premiumPrice || priceId === premiumAnnualPrice) tier = 'premium';
         else if (priceId === proPrice) tier = 'pro';
 
         // Read the current state first so we can tell a genuine downgrade
@@ -280,10 +287,27 @@ serve(async (req) => {
           .eq('stripe_customer_id', customerId)
           .maybeSingle();
 
+        // An ACTIVE subscription on a price we don't recognise must not be read
+        // as "not paying". Previously an unmatched price fell through to 'free',
+        // so adding a Price in the Stripe dashboard and subscribing somebody to
+        // it would charge them and then strip their listing — the worst possible
+        // pairing. Keep whatever tier they already had, and shout, so the
+        // mismatch is fixed by setting the config key rather than by a customer
+        // complaining. Genuinely inactive subscriptions still drop to free.
+        if (isActive && tier === null) {
+          console.error(
+            `[stripe-webhook] ACTIVE subscription ${subId} on unrecognised price ${priceId ?? '(none)'} — ` +
+            `tier left unchanged at "${bizBefore?.subscription_tier ?? 'unknown'}". ` +
+            `Set the matching stripe.price.* key in admin_config.`,
+          );
+        }
+
+        const nextTier = isActive ? (tier ?? bizBefore?.subscription_tier ?? 'free') : 'free';
+
         await supabase
           .from('local_businesses')
           .update({
-            subscription_tier:                 isActive ? tier : 'free',
+            subscription_tier:                 nextTier,
             subscription_until:                isActive ? periodEndIso : null,
             subscription_cancel_at_period_end: isActive ? cancelAtPeriodEnd : false,
             stripe_subscription_id:            subId,
