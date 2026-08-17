@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { getConfig } from '../_shared/admin-config.ts';
+import { resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,7 +28,7 @@ const corsHeaders = {
  *   STRIPE_PRICE_LOCAL_PRO
  *   STRIPE_PRICE_LOCAL_PREMIUM
  *
- * Body: { business_id: string, tier: 'pro' | 'premium' }
+ * Body: { business_id: string, tier: 'pro' | 'premium', period?: 'monthly' | 'annual' }
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -49,7 +50,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { business_id, tier } = await req.json();
+    const { business_id, tier, period = 'monthly' } = await req.json();
     if (!business_id || !['pro', 'premium'].includes(tier)) {
       return json({ error: 'business_id + tier (pro|premium) required' }, 400);
     }
@@ -75,14 +76,8 @@ serve(async (req) => {
     });
 
     // Price ID — admin_config first, env var fallback
-    const configKey = tier === 'premium' ? 'stripe.price.local_premium' : 'stripe.price.local_pro';
-    const envFallback = tier === 'premium'
-      ? Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM')
-      : Deno.env.get('STRIPE_PRICE_LOCAL_PRO');
-    const priceId = await getConfig(svc, configKey, envFallback ?? null);
-    if (!priceId) {
-      return json({ error: `Stripe price ID for ${tier} not configured. Set it in Admin → Config.` }, 500);
-    }
+    const { priceId, configKey, annual } = await resolveTierPrice(svc, tier, period);
+    if (!priceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
 
     // 1. Pick the card: BUSINESS card → PERSONAL card → the sub-customer's own
     //    saved card. The subscription is created on whichever customer holds the
@@ -129,7 +124,7 @@ serve(async (req) => {
       payment_behavior: 'default_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },
       expand:           ['latest_invoice.payment_intent'],
-      metadata:         { business_id, owner_id: user.id, tier, type: 'local_subscription' },
+      metadata:         { business_id, owner_id: user.id, tier, period: annual ? 'annual' : 'monthly', type: 'local_subscription' },
     });
 
     // deno-lint-ignore no-explicit-any

@@ -53,7 +53,7 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, cruise_today: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, cruise_today: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0, bookings_metered: 0 };
 
     // ── Shop orders: expire unpaid checkouts + release their reserved stock ──
     // A pending product_order holds stock (reserved) so nobody else can buy
@@ -383,6 +383,15 @@ serve(async (req) => {
           .upsert({ key: 'last_streak_nudge_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
       }
     }
+
+    // ── Bookings meter (Pro) ─────────────────────────────────────────────────
+    // Reports 95p-per-booking usage to Stripe, capped at 17 a month. Delegated
+    // to its own function rather than inlined: it talks to Stripe subscription
+    // items and wants to be runnable on its own when reconciling a bad month.
+    try {
+      const { data: metered } = await svc.functions.invoke('meter-bookings', { body: {} });
+      result.bookings_metered = (metered as { units?: number } | null)?.units ?? 0;
+    } catch (e) { console.error('[reminder-runner] booking meter failed', e); }
 
     // ── Loyalty: "just one more stamp" ───────────────────────────────────────
     // Cards that are exactly one stamp short and haven't been nudged for this

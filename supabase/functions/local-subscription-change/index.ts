@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { getConfig } from '../_shared/admin-config.ts';
+import { resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,7 +46,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { business_id, tier, preview } = await req.json();
+    const { business_id, tier, preview, period = 'monthly' } = await req.json();
     if (!business_id || !['pro', 'premium'].includes(tier)) {
       return json({ error: 'business_id + tier (pro|premium) required' }, 400);
     }
@@ -73,15 +73,11 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    // Resolve the new price ID
-    const configKey = tier === 'premium' ? 'stripe.price.local_premium' : 'stripe.price.local_pro';
-    const envFallback = tier === 'premium'
-      ? Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM')
-      : Deno.env.get('STRIPE_PRICE_LOCAL_PRO');
-    const newPriceId = await getConfig(svc, configKey, envFallback ?? null);
-    if (!newPriceId) {
-      return json({ error: `Stripe price ID for ${tier} not configured. Set it in Admin → Config.` }, 500);
-    }
+    // Resolve the new price. Switching monthly <-> annual on the SAME tier is a
+    // real change even though the tier is unchanged, which is why period is part
+    // of the lookup rather than an afterthought.
+    const { priceId: newPriceId, configKey, annual } = await resolveTierPrice(svc, tier, period);
+    if (!newPriceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
 
     // Fetch the live subscription to get its item id + check current price
     const subscription = await stripe.subscriptions.retrieve(business.stripe_subscription_id);
@@ -119,13 +115,17 @@ serve(async (req) => {
 
       // current_period_end is per-item in newer API versions
       const periodEndSec = (item as any).current_period_end as number | undefined;
-      const premiumPrice = await getConfig(svc, 'stripe.price.local_premium', null);
+      // Both Premium prices count as premium — an annual subscriber must not be
+      // reported as 'pro' just because they aren't on the monthly price.
+      const { priceId: premiumMonthly } = await resolveTierPrice(svc, 'premium', 'monthly');
+      const { priceId: premiumAnnual }  = await resolveTierPrice(svc, 'premium', 'annual');
+      const onPremium = item.price.id === premiumMonthly || item.price.id === premiumAnnual;
 
       return json({
         previewAmountPence:  prorationPence,
         currency:            invoice.currency,
         nextRenewalAt:       periodEndSec ? new Date(periodEndSec * 1000).toISOString() : null,
-        currentTier:         item.price.id === premiumPrice ? 'premium' : 'pro',
+        currentTier:         onPremium ? 'premium' : 'pro',
         newTier:             tier,
       });
     }

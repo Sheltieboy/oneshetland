@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { getConfig } from '../_shared/admin-config.ts';
+import { resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,23 +67,8 @@ serve(async (req) => {
 
     // Read from admin_config (DB) with env-var fallback. The admin screen
     // populates these without needing a redeploy.
-    // Annual is premium-only; anything else falls back to the monthly price.
-    const annual = tier === 'premium' && period === 'annual';
-    const configKey = annual
-      ? 'stripe.price.local_premium_annual'
-      : tier === 'premium' ? 'stripe.price.local_premium' : 'stripe.price.local_pro';
-    const envFallback = annual
-      ? Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM_ANNUAL')
-      : tier === 'premium'
-        ? Deno.env.get('STRIPE_PRICE_LOCAL_PREMIUM')
-        : Deno.env.get('STRIPE_PRICE_LOCAL_PRO');
-    const priceId = await getConfig(svc, configKey, envFallback ?? null);
-
-    if (!priceId) {
-      return json({
-        error: `Stripe price ID for ${tier}${annual ? ' (annual)' : ''} not configured. Set ${configKey} in the in-app admin config screen.`,
-      }, 500);
-    }
+    const { priceId, configKey, annual } = await resolveTierPrice(svc, tier, period);
+    if (!priceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
 
     // Create or reuse customer
     let customerId = business.stripe_customer_id;

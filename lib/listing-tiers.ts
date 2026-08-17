@@ -43,7 +43,8 @@ export type ListingFeature =
   | "wallet"          // wallet / cashback surfaced on the listing
   | "events"          // upcoming events + their tickets, surfaced on the listing
   | "services"        // services catalogue
-  | "bookable"        // "Book online" CTA, passes and unit items
+  | "bookable"        // "Book online" CTA on the listing
+  | "passesOnListing" // passes / unit items surfaced on the listing
   | "featuredBadge";  // "★ Featured" badge
 
 /** Screens under /business/<id>/manage. */
@@ -78,7 +79,12 @@ export const TIER_FEATURES: Record<Feature, ListingTier> = {
   events:        "free",
   eventsManage:  "free",
 
-  /* Pro — the counter. */
+  /* Pro — the counter, and the booking system on a meter.
+     Bookings, services and availability are one feature, not three: you cannot
+     take a booking without saying what is bookable and when. Pro gets all three
+     at 95p per booking, capped so it can never cost more than Premium — the
+     whole point being that a seasonal business can test bookings in its own
+     season rather than guessing in February. Premium removes the meter. */
   offers:        "pro",
   loyalty:       "pro",
   till:          "pro",
@@ -86,16 +92,17 @@ export const TIER_FEATURES: Record<Feature, ListingTier> = {
   wallet:        "pro",
   enquiries:     "pro",
   analytics:     "pro",
+  bookings:      "pro",
+  services:      "pro",
+  schedule:      "pro",
+  bookable:      "pro",
 
   /* Premium — your own shop. */
   products:      "premium",
   orders:        "premium",
-  services:      "premium",
-  bookings:      "premium",
-  schedule:      "premium",
-  passes:        "premium",
-  bookable:      "premium",
-  featuredBadge: "premium",
+  passes:          "premium",
+  passesOnListing: "premium",
+  featuredBadge:   "premium",
 
   /* Premium AND admin approval AND an accepted usage policy. The tier is the
      cheapest of the three gates — see docs/tier-model.md. */
@@ -137,7 +144,20 @@ export const TIER_PRICE: Record<ListingTier, string> = {
   premium: "£29/mo",
 };
 
-/** Annual Premium — twelve months for the price of ten. Phase 4; no billing yet. */
+/**
+ * Bookings on Pro cost 95p each, capped at 17 a month.
+ *
+ * 17 x 95p = £16.15, so a capped Pro month tops out at £28.15 — strictly less
+ * than Premium's £29, always. At 18 it would be £29.10, i.e. a business paying
+ * MORE than the plan that includes bookings outright, which is exactly the trap
+ * this cap exists to avoid. Change the tier prices and this number must be
+ * rechecked.
+ */
+export const BOOKING_FEE_PENCE = 95;
+export const BOOKING_CAP_UNITS = 17;
+export const BOOKING_CAP_PENCE = BOOKING_FEE_PENCE * BOOKING_CAP_UNITS;
+
+/** Annual Premium — twelve months for the price of ten. */
 export const PREMIUM_ANNUAL_PRICE = "£290/yr";
 
 /** One line per tier for the plans page and the billing screen. */
@@ -152,34 +172,41 @@ export const TIER_PITCH: Record<ListingTier, { headline: string; blurb: string }
     headline: "Turn finders into regulars",
     blurb:
       "Everything in Free, plus the counter tools: offers, a loyalty card, tap-to-stamp, " +
-      "Local Wallet payments, enquiries and your own numbers.",
+      "Local Wallet payments, enquiries, your own numbers — and bookings at 95p each, " +
+      "capped so it never costs more than Premium.",
   },
   premium: {
     headline: "Sell as much as you like",
     blurb:
-      "Everything in Pro, plus your own shop: products and orders, services, bookings, " +
-      "passes, and a featured spot on the OneShetland home screen.",
+      "Everything in Pro with the booking fee removed, plus your own shop: products " +
+      "and orders, passes, and a featured spot on the OneShetland home screen.",
   },
 };
 
 /**
- * The plan comparison, in reading order. Generated from TIER_FEATURES rather
- * than hand-listed, because the hand-listed version never mentioned products,
- * services, passes or orders — i.e. everything Premium actually sold.
+ * The plan comparison, in reading order. Each row states the tier it needs by
+ * reading TIER_FEATURES, so it cannot drift from what the gates actually do —
+ * the hand-listed version this replaced never mentioned products, services,
+ * passes or orders, i.e. everything Premium actually sold.
+ *
+ * A row may also state a tier directly, for things that are a *difference in
+ * terms* rather than a feature you either have or don't — the booking fee being
+ * removed on Premium is the only one today.
  */
-export const PLAN_COMPARISON: { label: string; feature: Feature }[] = [
-  { label: "Your story, photos and contacts", feature: "description" },
-  { label: "Map pin and directions",          feature: "mapPin" },
-  { label: "Jobs and shifts",                 feature: "jobs" },
-  { label: "Events and ticketing",            feature: "eventsManage" },
-  { label: "Time-limited offers",             feature: "offers" },
-  { label: "Loyalty stamps and points",       feature: "loyalty" },
-  { label: "Tap-to-stamp NFC tile",           feature: "nfc" },
-  { label: "Local Wallet payments",           feature: "wallet" },
-  { label: "Customer enquiries",              feature: "enquiries" },
-  { label: "Your analytics",                  feature: "analytics" },
-  { label: "Products and orders",             feature: "products" },
-  { label: "Services and bookings",           feature: "bookings" },
-  { label: "Passes and packs",                feature: "passes" },
-  { label: "Featured homepage spot",          feature: "featuredBadge" },
+export const PLAN_COMPARISON: { label: string; tier: ListingTier }[] = [
+  { label: "Your story, photos and contacts",   tier: TIER_FEATURES.description },
+  { label: "Map pin and directions",            tier: TIER_FEATURES.mapPin },
+  { label: "Jobs and shifts",                   tier: TIER_FEATURES.jobs },
+  { label: "Events and ticketing",              tier: TIER_FEATURES.eventsManage },
+  { label: "Time-limited offers",               tier: TIER_FEATURES.offers },
+  { label: "Loyalty stamps and points",         tier: TIER_FEATURES.loyalty },
+  { label: "Tap-to-stamp NFC tile",             tier: TIER_FEATURES.nfc },
+  { label: "Local Wallet payments",             tier: TIER_FEATURES.wallet },
+  { label: "Customer enquiries",                tier: TIER_FEATURES.enquiries },
+  { label: "Your analytics",                    tier: TIER_FEATURES.analytics },
+  { label: "Services and bookings",             tier: TIER_FEATURES.bookings },
+  { label: "Bookings with no per-booking fee",  tier: "premium" },
+  { label: "Products and orders",               tier: TIER_FEATURES.products },
+  { label: "Passes and packs",                  tier: TIER_FEATURES.passes },
+  { label: "Featured homepage spot",            tier: TIER_FEATURES.featuredBadge },
 ];

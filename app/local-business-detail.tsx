@@ -325,7 +325,7 @@ export default function BusinessDetailScreen() {
   ) : null;
 
   // ── Tickets & passes (non-time-based unit items) ───────────────────────────
-  const ticketsSection = shows('bookable') && unitItems.length > 0 ? (
+  const ticketsSection = shows('passesOnListing') && unitItems.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Tickets &amp; passes</Text>
             <View style={{ gap: 10 }}>
