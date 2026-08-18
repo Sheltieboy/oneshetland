@@ -91,50 +91,72 @@ async function emailPlanChange(
     let nextBillRow = '';
     try {
       if (stripeCustomerId) {
-        // /v1/invoices/upcoming was REMOVED in recent Stripe API versions and
-        // replaced by create_preview — which is why the first version of this
-        // silently produced nothing. local-subscription-change already uses
-        // createPreview, so the account is definitely on a version without the
-        // old endpoint. Try the new one, fall back to the old for older accounts.
         const auth = { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` };
         let due: number | null = null;
-        let baseP: number | null = null;
+        let baseP = 0;
         let adjustP = 0;
 
         // Split the preview into the plan's own price and the proration lines,
         // so the email can show WHY the next bill isn't simply the plan price.
-        // "£37.97" against a £29 plan looks like a mistake until you can see the
-        // £8.97 of catch-up sitting under it.
+        // "£37.97" against a £29 plan reads as a mistake until the £8.97 of
+        // catch-up is sitting underneath it.
         // deno-lint-ignore no-explicit-any
         const readLines = (inv: any) => {
+          // deno-lint-ignore no-explicit-any
           const lines: any[] = inv?.lines?.data ?? [];
-          adjustP = lines.filter(l => l.proration === true)
-                         .reduce((t: number, l: any) => t + (l.amount ?? 0), 0);
-          const base = lines.filter(l => l.proration !== true)
-                            .reduce((t: number, l: any) => t + (l.amount ?? 0), 0);
-          baseP = base || null;
+          adjustP = lines.filter(l => l.proration === true).reduce((t, l) => t + (l.amount ?? 0), 0);
+          baseP   = lines.filter(l => l.proration !== true).reduce((t, l) => t + (l.amount ?? 0), 0);
         };
+
+        // create_preview needs the SUBSCRIPTION as well as the customer —
+        // customer alone returns 400, which is what the log showed.
+        const params = new URLSearchParams({ customer: stripeCustomerId });
+        if (stripeSubscriptionId) params.set('subscription', stripeSubscriptionId);
+        const preview = await fetch('https://api.stripe.com/v1/invoices/create_preview', {
+          method: 'POST',
+          headers: { ...auth, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params,
+        });
+
+        if (preview.ok) {
+          const up = await preview.json();
+          if (typeof up?.amount_due === 'number') due = up.amount_due;
+          readLines(up);
+        } else {
+          const previewErr = (await preview.json())?.error?.message;
+          // /v1/invoices/upcoming is removed on newer API versions; keep it as a
+          // fallback for older accounts rather than assuming.
+          const legacy = await fetch(
+            `https://api.stripe.com/v1/invoices/upcoming?customer=${stripeCustomerId}`, { headers: auth },
+          );
+          if (legacy.ok) {
+            const up = await legacy.json();
+            if (typeof up?.amount_due === 'number') due = up.amount_due;
+            readLines(up);
+          } else {
+            console.error('[stripe-webhook] no upcoming invoice:',
+              'create_preview', preview.status, previewErr, '| upcoming', legacy.status);
+          }
+        }
 
         if (due !== null) {
           const gbp = (n: number) => `£${(Math.abs(n) / 100).toFixed(2)}`;
-          const cell = (v: string, bold = false, top = false) =>
-            `<td style="color:${bold ? '#0F1C26' : '#6B7280'};font-size:${bold ? 15 : 14}px;` +
-            `font-weight:${bold ? 900 : 400};text-align:right;` +
-            `${top ? 'border-top:1px solid #D9D2C7;padding-top:8px' : 'padding-bottom:4px'}">${v}</td>`;
-          const label = (v: string, bold = false, top = false) =>
-            `<tr><td style="color:${bold ? '#0F1C26' : '#6B7280'};font-size:14px;` +
-            `${top ? 'border-top:1px solid #D9D2C7;padding-top:8px' : 'padding-bottom:4px'}">${v}</td>`;
+          const row = (labelText: string, value: string, bold = false, top = false) => {
+            const edge = top ? 'border-top:1px solid #D9D2C7;padding-top:8px' : 'padding-bottom:4px';
+            const ink  = bold ? '#0F1C26' : '#6B7280';
+            return `<tr><td style="color:${ink};font-size:14px;${edge}">${labelText}</td>` +
+                   `<td style="color:#0F1C26;font-size:${bold ? 15 : 14}px;font-weight:${bold ? 900 : 700};` +
+                   `text-align:right;${edge}">${value}</td></tr>`;
+          };
 
-          // Only itemise when there IS an adjustment — on a normal renewal the
+          // Only itemise when there IS an adjustment. On a normal renewal the
           // next bill is just the plan price and a breakdown would be noise.
-          nextBillRow = adjustP !== 0 && baseP
-            ? label(`${NAME[to]} from ${renews}`, false, true) + cell(gbp(baseP), false, true) + '</tr>' +
-              label(adjustP > 0
-                ? 'Catch-up for the rest of this month'
-                : 'Credit for the plan you had') +
-              cell(`${adjustP > 0 ? '' : '−'}${gbp(adjustP)}`) + '</tr>' +
-              label(`Next bill, ${renews}`, true, true) + cell(gbp(due), true, true) + '</tr>'
-            : label(`Next bill, ${renews}`, true, true) + cell(gbp(due), true, true) + '</tr>';
+          nextBillRow = (adjustP !== 0 && baseP !== 0)
+            ? row(`${NAME[to]} from ${renews}`, gbp(baseP), false, true) +
+              row(adjustP > 0 ? 'Catch-up for the rest of this month' : 'Credit for the plan you had',
+                  `${adjustP > 0 ? '' : '−'}${gbp(adjustP)}`) +
+              row(`Next bill, ${renews}`, gbp(due), true, true)
+            : row(`Next bill, ${renews}`, gbp(due), true, true);
         }
       }
     } catch (e) { console.error('[stripe-webhook] upcoming invoice lookup failed:', e); }
