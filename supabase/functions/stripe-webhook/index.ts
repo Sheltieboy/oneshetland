@@ -4,6 +4,7 @@ import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
+import { splitInvoice } from '../_shared/invoice-lines.ts';
 
 /**
  * stripe-webhook
@@ -100,12 +101,19 @@ async function emailPlanChange(
         // so the email can show WHY the next bill isn't simply the plan price.
         // "£37.97" against a £29 plan reads as a mistake until the £8.97 of
         // catch-up is sitting underneath it.
+        let itemised = false;
         // deno-lint-ignore no-explicit-any
         const readLines = (inv: any) => {
-          // deno-lint-ignore no-explicit-any
-          const lines: any[] = inv?.lines?.data ?? [];
-          adjustP = lines.filter(l => l.proration === true).reduce((t, l) => t + (l.amount ?? 0), 0);
-          baseP   = lines.filter(l => l.proration !== true).reduce((t, l) => t + (l.amount ?? 0), 0);
+          const split = splitInvoice(inv);
+          baseP    = split.basePence;
+          adjustP  = split.adjustPence;
+          itemised = split.classified;
+          if (!itemised) {
+            console.warn('[stripe-webhook] no proration lines recognised on preview;',
+              'showing total only. line parents:',
+              // deno-lint-ignore no-explicit-any
+              JSON.stringify((inv?.lines?.data ?? []).map((l: any) => l?.parent?.type ?? 'none')));
+          }
         };
 
         // create_preview needs the SUBSCRIPTION as well as the customer —
@@ -149,9 +157,10 @@ async function emailPlanChange(
                    `text-align:right;${edge}">${value}</td></tr>`;
           };
 
-          // Only itemise when there IS an adjustment. On a normal renewal the
-          // next bill is just the plan price and a breakdown would be noise.
-          nextBillRow = (adjustP !== 0 && baseP !== 0)
+          // Only itemise when a proration was actually recognised AND it moves the
+          // number. Printing a breakdown built from unclassified lines would show
+          // rows that don't add up to the total underneath them.
+          nextBillRow = (itemised && adjustP !== 0 && baseP !== 0)
             ? row(`${NAME[to]} from ${renews}`, gbp(baseP), false, true) +
               row(adjustP > 0 ? 'Catch-up for the rest of this month' : 'Credit for the plan you had',
                   `${adjustP > 0 ? '' : '−'}${gbp(adjustP)}`) +

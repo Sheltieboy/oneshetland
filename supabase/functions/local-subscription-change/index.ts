@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { subscriptionPricesFor, resolveBookingMeterPrice, resolveTierPrice, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
+import { splitInvoice } from '../_shared/invoice-lines.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -128,11 +129,10 @@ serve(async (req) => {
 
       // Sum only the proration line items — these are the immediate charge.
       // Non-proration lines belong to the next renewal period and aren't due now.
-      // deno-lint-ignore no-explicit-any
-      const lines: Array<any> = invoice.lines?.data ?? [];
-      const prorationPence = lines
-        .filter(l => l.proration === true)
-        .reduce((sum: number, l: any) => sum + (l.amount as number), 0);
+      // Classification lives in _shared because Stripe moved `proration` under
+      // `parent` — reading the old top-level field returns undefined for every
+      // line, which quietly quotes the business £0.00 due today.
+      const prorationPence = splitInvoice(invoice).adjustPence;
 
       // current_period_end is per-item in newer API versions
       const periodEndSec = (item as any).current_period_end as number | undefined;
