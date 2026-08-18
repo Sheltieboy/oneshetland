@@ -90,19 +90,41 @@ async function emailPlanChange(
     let nextBillRow = '';
     try {
       if (stripeCustomerId) {
-        const r = await fetch(
-          `https://api.stripe.com/v1/invoices/upcoming?customer=${stripeCustomerId}`,
-          { headers: { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` } },
-        );
-        if (r.ok) {
-          const up = await r.json();
-          const due = typeof up?.amount_due === 'number' ? up.amount_due : null;
-          if (due !== null) {
-            nextBillRow =
-              `<tr><td style="color:#6B7280;font-size:14px;border-top:1px solid #D9D2C7;padding-top:8px">Next bill, ${renews}</td>` +
-              `<td style="color:#0F1C26;font-size:15px;font-weight:900;text-align:right;border-top:1px solid #D9D2C7;padding-top:8px">` +
-              `£${(due / 100).toFixed(2)}</td></tr>`;
+        // /v1/invoices/upcoming was REMOVED in recent Stripe API versions and
+        // replaced by create_preview — which is why the first version of this
+        // silently produced nothing. local-subscription-change already uses
+        // createPreview, so the account is definitely on a version without the
+        // old endpoint. Try the new one, fall back to the old for older accounts.
+        const auth = { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` };
+        let due: number | null = null;
+
+        const preview = await fetch('https://api.stripe.com/v1/invoices/create_preview', {
+          method: 'POST',
+          headers: { ...auth, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ customer: stripeCustomerId }),
+        });
+        if (preview.ok) {
+          const up = await preview.json();
+          if (typeof up?.amount_due === 'number') due = up.amount_due;
+        } else {
+          const legacy = await fetch(
+            `https://api.stripe.com/v1/invoices/upcoming?customer=${stripeCustomerId}`, { headers: auth },
+          );
+          if (legacy.ok) {
+            const up = await legacy.json();
+            if (typeof up?.amount_due === 'number') due = up.amount_due;
+          } else {
+            // Log it. The silent version is why this shipped broken twice.
+            console.error('[stripe-webhook] no upcoming invoice from either endpoint:',
+              preview.status, legacy.status, (await legacy.json())?.error?.message);
           }
+        }
+
+        if (due !== null) {
+          nextBillRow =
+            `<tr><td style="color:#6B7280;font-size:14px;border-top:1px solid #D9D2C7;padding-top:8px">Next bill, ${renews}</td>` +
+            `<td style="color:#0F1C26;font-size:15px;font-weight:900;text-align:right;border-top:1px solid #D9D2C7;padding-top:8px">` +
+            `£${(due / 100).toFixed(2)}</td></tr>`;
         }
       }
     } catch (e) { console.error('[stripe-webhook] upcoming invoice lookup failed:', e); }
