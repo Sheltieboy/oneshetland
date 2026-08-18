@@ -98,40 +98,43 @@ async function emailPlanChange(
         // old endpoint. Try the new one, fall back to the old for older accounts.
         const auth = { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` };
         let due: number | null = null;
+        let baseP: number | null = null;
+        let adjustP = 0;
 
-        // create_preview needs the SUBSCRIPTION as well as the customer —
-        // sending customer alone returns 400, which is what the log showed.
-        // local-subscription-change passes both; I didn't read it closely enough.
-        const params = new URLSearchParams({ customer: stripeCustomerId });
-        if (stripeSubscriptionId) params.set('subscription', stripeSubscriptionId);
-        const preview = await fetch('https://api.stripe.com/v1/invoices/create_preview', {
-          method: 'POST',
-          headers: { ...auth, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: params,
-        });
-        if (preview.ok) {
-          const up = await preview.json();
-          if (typeof up?.amount_due === 'number') due = up.amount_due;
-        } else {
-          const legacy = await fetch(
-            `https://api.stripe.com/v1/invoices/upcoming?customer=${stripeCustomerId}`, { headers: auth },
-          );
-          if (legacy.ok) {
-            const up = await legacy.json();
-            if (typeof up?.amount_due === 'number') due = up.amount_due;
-          } else {
-            // Log it. The silent version is why this shipped broken twice.
-            console.error('[stripe-webhook] no upcoming invoice from either endpoint:',
-              'create_preview', preview.status, (await preview.json())?.error?.message,
-              '| upcoming', legacy.status);
-          }
-        }
+        // Split the preview into the plan's own price and the proration lines,
+        // so the email can show WHY the next bill isn't simply the plan price.
+        // "£37.97" against a £29 plan looks like a mistake until you can see the
+        // £8.97 of catch-up sitting under it.
+        // deno-lint-ignore no-explicit-any
+        const readLines = (inv: any) => {
+          const lines: any[] = inv?.lines?.data ?? [];
+          adjustP = lines.filter(l => l.proration === true)
+                         .reduce((t: number, l: any) => t + (l.amount ?? 0), 0);
+          const base = lines.filter(l => l.proration !== true)
+                            .reduce((t: number, l: any) => t + (l.amount ?? 0), 0);
+          baseP = base || null;
+        };
 
         if (due !== null) {
-          nextBillRow =
-            `<tr><td style="color:#6B7280;font-size:14px;border-top:1px solid #D9D2C7;padding-top:8px">Next bill, ${renews}</td>` +
-            `<td style="color:#0F1C26;font-size:15px;font-weight:900;text-align:right;border-top:1px solid #D9D2C7;padding-top:8px">` +
-            `£${(due / 100).toFixed(2)}</td></tr>`;
+          const gbp = (n: number) => `£${(Math.abs(n) / 100).toFixed(2)}`;
+          const cell = (v: string, bold = false, top = false) =>
+            `<td style="color:${bold ? '#0F1C26' : '#6B7280'};font-size:${bold ? 15 : 14}px;` +
+            `font-weight:${bold ? 900 : 400};text-align:right;` +
+            `${top ? 'border-top:1px solid #D9D2C7;padding-top:8px' : 'padding-bottom:4px'}">${v}</td>`;
+          const label = (v: string, bold = false, top = false) =>
+            `<tr><td style="color:${bold ? '#0F1C26' : '#6B7280'};font-size:14px;` +
+            `${top ? 'border-top:1px solid #D9D2C7;padding-top:8px' : 'padding-bottom:4px'}">${v}</td>`;
+
+          // Only itemise when there IS an adjustment — on a normal renewal the
+          // next bill is just the plan price and a breakdown would be noise.
+          nextBillRow = adjustP !== 0 && baseP
+            ? label(`${NAME[to]} from ${renews}`, false, true) + cell(gbp(baseP), false, true) + '</tr>' +
+              label(adjustP > 0
+                ? 'Catch-up for the rest of this month'
+                : 'Credit for the plan you had') +
+              cell(`${adjustP > 0 ? '' : '−'}${gbp(adjustP)}`) + '</tr>' +
+              label(`Next bill, ${renews}`, true, true) + cell(gbp(due), true, true) + '</tr>'
+            : label(`Next bill, ${renews}`, true, true) + cell(gbp(due), true, true) + '</tr>';
         }
       }
     } catch (e) { console.error('[stripe-webhook] upcoming invoice lookup failed:', e); }
