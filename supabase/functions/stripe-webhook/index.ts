@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
+import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
 
 /**
@@ -16,6 +17,89 @@ import { fulfilByType } from '../_shared/fulfilment.ts';
  *   STRIPE_SECRET_KEY
  *   SUPABASE_SERVICE_ROLE_KEY
  */
+/**
+ * Email the owner when their plan actually CHANGES.
+ *
+ * Guarded on a real tier change, because Stripe fires subscription.updated for
+ * all sorts of things — including usage being reported against the metered
+ * bookings item. Emailing on every event would send a business a message every
+ * time somebody booked them.
+ *
+ * Best-effort: a failed email must never fail the webhook, or Stripe retries a
+ * payment we have already processed.
+ */
+async function emailPlanChange(
+  supabase: any,
+  ownerId: string,
+  businessName: string,
+  businessId: string,
+  from: string,
+  to: string,
+  renewsIso: string | null,
+  reason: 'ended' | 'lapsed' | null,
+): Promise<void> {
+  try {
+    const { data: u } = await supabase.auth.admin.getUserById(ownerId);
+    const email = u?.user?.email;
+    if (!email) return;
+    const meta = u?.user?.user_metadata ?? {};
+    const ownerName =
+      (meta.first_name as string | undefined) ??
+      (meta.full_name as string | undefined)?.split(' ')[0] ?? 'there';
+
+    const manageUrl = `https://oneshetland.com/business/${businessId}/manage/billing`;
+    const renews = renewsIso
+      ? new Date(renewsIso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+      : 'Not set';
+
+    if (to === 'free') {
+      // What they actually lose depends on where they were.
+      const lost = from === 'premium'
+        ? 'Products and orders, passes, the featured spot on the home screen, and the counter tools — offers, loyalty, tap-to-stamp, Local Wallet and your analytics. Bookings stay, at 95p each on Pro.'
+        : 'Offers, your loyalty card, tap-to-stamp, Local Wallet payments, enquiries, your analytics and taking bookings.';
+      await sendEmail(supabase, {
+        templateKey: 'billing.plan_ended',
+        recipientEmail: email,
+        recipientId: ownerId,
+        variables: {
+          owner_name: ownerName,
+          business_name: businessName,
+          ended_reason: reason === 'lapsed' ? ' — we could not take payment' : '',
+          lost_features: lost,
+          manage_url: manageUrl,
+        },
+        metadata: { business_id: businessId, from, to },
+      });
+      return;
+    }
+
+    const isPremium = to === 'premium';
+    // Annual renews more than 90 days out; monthly always renews within ~31.
+    const annual = isPremium && !!renewsIso &&
+      new Date(renewsIso).getTime() - Date.now() > 90 * 86_400_000;
+
+    await sendEmail(supabase, {
+      templateKey: 'billing.plan_active',
+      recipientEmail: email,
+      recipientId: ownerId,
+      variables: {
+        owner_name: ownerName,
+        business_name: businessName,
+        plan_name: isPremium ? (annual ? 'Premium (yearly)' : 'Premium') : 'Pro',
+        plan_price: isPremium ? (annual ? '£290/year' : '£29/month') : '£12/month',
+        renews_on: renews,
+        plan_blurb: isPremium
+          ? 'You can now sell products and passes, take bookings with no per-booking fee, and appear in the featured spot on the OneShetland home screen — on top of everything Pro gives you.'
+          : 'You can now run offers, hand out loyalty stamps, take Local Wallet payments, see your own numbers, and take bookings at 95p each — capped at £16.15 a month, so Pro never costs more than Premium would have.',
+        manage_url: manageUrl,
+      },
+      metadata: { business_id: businessId, from, to },
+    });
+  } catch (e) {
+    console.error('[stripe-webhook] plan-change email failed:', e);
+  }
+}
+
 serve(async (req) => {
   const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
   const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? '';
@@ -283,7 +367,7 @@ serve(async (req) => {
         // (was paid, now lapsing) from routine update churn.
         const { data: bizBefore } = await supabase
           .from('local_businesses')
-          .select('owner_id, name, subscription_tier')
+          .select('id, owner_id, name, subscription_tier')
           .eq('stripe_customer_id', customerId)
           .maybeSingle();
 
@@ -315,6 +399,19 @@ serve(async (req) => {
           })
           .eq('stripe_customer_id', customerId);
 
+        // Email only when the tier genuinely moved. subscription.updated also
+        // fires when usage is reported against the metered bookings item, so
+        // emailing on every event would write to a business each time somebody
+        // booked them.
+        if (bizBefore?.owner_id && bizBefore.subscription_tier !== nextTier) {
+          await emailPlanChange(
+            supabase, bizBefore.owner_id, bizBefore.name,
+            (bizBefore as { id?: string }).id ?? '',
+            bizBefore.subscription_tier, nextTier, isActive ? periodEndIso : null,
+            !isActive ? 'lapsed' : null,
+          );
+        }
+
         // Silent-downgrade fix: if a paying business just lapsed (payment
         // failed / went inactive), tell the owner — losing the tier also hides
         // their bookable listings.
@@ -340,7 +437,7 @@ serve(async (req) => {
         // Standard tier subscription cancelled
         const { data: bizDel } = await supabase
           .from('local_businesses')
-          .select('owner_id, name, subscription_tier')
+          .select('id, owner_id, name, subscription_tier')
           .eq('stripe_subscription_id', subId)
           .maybeSingle();
 
@@ -355,6 +452,11 @@ serve(async (req) => {
 
         // Tell the owner their subscription has ended (bookable listings now hidden).
         if (bizDel?.owner_id && bizDel.subscription_tier !== 'free') {
+          await emailPlanChange(
+            supabase, bizDel.owner_id, bizDel.name,
+            (bizDel as { id?: string }).id ?? '',
+            bizDel.subscription_tier, 'free', null, 'ended',
+          );
           await sendUserPush(supabase, {
             userId:     bizDel.owner_id,
             module:     'business',
