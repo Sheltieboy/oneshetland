@@ -82,32 +82,30 @@ async function emailPlanChange(
     const NAME: Record<string, string> = { free: 'Free', pro: 'Pro', premium: isPremium && annual ? 'Premium (yearly)' : 'Premium' };
     const wentUp = ['free', 'pro', 'premium'].indexOf(to) > ['free', 'pro', 'premium'].indexOf(from);
 
-    // What actually left the account today. The webhook doesn't carry it, so
-    // read the customer's most recent invoice — but only trust it if it was
-    // raised in the last few minutes, otherwise we'd be quoting last month's
-    // renewal at somebody who just changed plan. If it's unclear, say nothing:
-    // a wrong number here is worse than an absent one.
-    let todayRow = '';
+    // What the NEXT bill will be. Plan changes use create_prorations, which puts
+    // the adjustment on the next invoice rather than charging on the day — so
+    // "charged today" was wrong, and looked for an invoice that never existed.
+    // The upcoming invoice already includes the proration, which is exactly the
+    // number somebody wants after switching.
+    let nextBillRow = '';
     try {
-      const customerId = stripeCustomerId;
-      if (customerId) {
+      if (stripeCustomerId) {
         const r = await fetch(
-          `https://api.stripe.com/v1/invoices?customer=${customerId}&limit=1`,
+          `https://api.stripe.com/v1/invoices/upcoming?customer=${stripeCustomerId}`,
           { headers: { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` } },
         );
-        const inv = (await r.json())?.data?.[0];
-        const createdMs = typeof inv?.created === 'number' ? inv.created * 1000 : 0;
-        const fresh = createdMs && Date.now() - createdMs < 10 * 60 * 1000;
-        const amount = typeof inv?.amount_paid === 'number' ? inv.amount_paid : null;
-        if (fresh && amount !== null && amount !== 0) {
-          const label = amount > 0 ? 'Charged today' : 'Credited today';
-          todayRow =
-            `<tr><td style="color:#6B7280;font-size:14px;border-top:1px solid #D9D2C7;padding-top:8px">${label}</td>` +
-            `<td style="color:#0F1C26;font-size:15px;font-weight:900;text-align:right;border-top:1px solid #D9D2C7;padding-top:8px">` +
-            `£${(Math.abs(amount) / 100).toFixed(2)}</td></tr>`;
+        if (r.ok) {
+          const up = await r.json();
+          const due = typeof up?.amount_due === 'number' ? up.amount_due : null;
+          if (due !== null) {
+            nextBillRow =
+              `<tr><td style="color:#6B7280;font-size:14px;border-top:1px solid #D9D2C7;padding-top:8px">Next bill, ${renews}</td>` +
+              `<td style="color:#0F1C26;font-size:15px;font-weight:900;text-align:right;border-top:1px solid #D9D2C7;padding-top:8px">` +
+              `£${(due / 100).toFixed(2)}</td></tr>`;
+          }
         }
       }
-    } catch (e) { console.error('[stripe-webhook] invoice lookup for plan email failed:', e); }
+    } catch (e) { console.error('[stripe-webhook] upcoming invoice lookup failed:', e); }
 
     await sendEmail(supabase, {
       templateKey: 'billing.plan_active',
@@ -119,13 +117,13 @@ async function emailPlanChange(
         change_summary: from === 'free'
           ? `now on ${NAME[to]}`
           : wentUp ? `moved up to ${NAME[to]}` : `moved to ${NAME[to]}`,
-        change_sentence: from === 'free'
+        change_sentence_html: from === 'free'
           ? `is now on <strong>${NAME[to]}</strong>.`
           : `has ${wentUp ? 'moved up' : 'moved'} from <strong>${NAME[from] ?? from}</strong> to <strong>${NAME[to]}</strong>.`,
         plan_name: NAME[to],
         plan_price: isPremium ? (annual ? '£290/year' : '£29/month') : '£12/month',
         renews_on: renews,
-        today_row_html: todayRow,
+        next_bill_row_html: nextBillRow,
         plan_blurb: isPremium
           ? 'You can now sell products and passes, take bookings with no per-booking fee, and appear in the featured spot on the OneShetland home screen — on top of everything Pro gives you.'
           : 'You can now run offers, hand out loyalty stamps, take Local Wallet payments, see your own numbers, and take bookings at 95p each — capped at £16.15 a month, so Pro never costs more than Premium would have.',
