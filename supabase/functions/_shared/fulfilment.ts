@@ -24,6 +24,7 @@
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush, sendUserPushBulk } from './send-push.ts';
+import { sendTicketReceipt } from './ticket-receipt.ts';
 import { sendEmail } from './send-email.ts';
 
 /** The subset of a Stripe PaymentIntent the webhook hands us. */
@@ -207,7 +208,7 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
   if (!orderId) return { granted: false, note: 'no order_id' };
 
   const { data: order } = await svc.from('event_ticket_orders')
-    .select('id, status, tickets_count, event_id, stripe_payment_intent_id')
+    .select('id, status, tickets_count, event_id, stripe_payment_intent_id, buyer_id')
     .eq('id', orderId).single();
   if (!order) return { granted: false, note: 'order not found' };
   if (order.status === 'paid') return already('paid');
@@ -225,9 +226,10 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
     await svc.rpc('increment_event_tickets_sold', { p_event_id: order.event_id, p_count: order.tickets_count });
   } catch { /* non-critical counter */ }
 
+  const buyerId = (pi.metadata.buyer_id as string | undefined) ?? order.buyer_id;
+
   try {
     const { data: event } = await svc.from('events').select('title, starts_at').eq('id', order.event_id).maybeSingle();
-    const buyerId = pi.metadata.buyer_id;
     if (event && buyerId) {
       const eventDate = new Date(event.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       await sendUserPush(svc, {
@@ -238,6 +240,11 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
       });
     }
   } catch (e) { console.error('[fulfil:tickets] notify failed', e); }
+
+  // The receipt. This is the path the webhook takes, and usually the one that
+  // wins the race with confirm-event-tickets — so omitting it here meant a buyer
+  // got nothing in writing.
+  if (buyerId) await sendTicketReceipt(svc, orderId, buyerId);
 
   return done('confirmed tickets');
 }

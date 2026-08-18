@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
-import { sendEmail } from '../_shared/send-email.ts';
+import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -115,70 +115,11 @@ serve(async (req) => {
         data:       { order_id },
       });
 
-      // ── Receipt by email ─────────────────────────────────────────────────
-      // Push reaches nobody today (unpublished app, empty push_tokens), and this
-      // is the moment a stranger most needs to see that their money did
-      // something. The codes are in the email so it works as the ticket itself
-      // for somebody who never opens the site again.
-      try {
-        const { data: u } = await supabase.auth.admin.getUserById(user.id);
-        const email = u?.user?.email;
-        if (email) {
-          const meta = u?.user?.user_metadata ?? {};
-          const buyerName =
-            (meta.first_name as string | undefined) ??
-            (meta.full_name as string | undefined)?.split(' ')[0] ?? 'there';
-
-          const { data: tix } = await supabase
-            .from('event_tickets').select('backup_code').eq('order_id', order_id);
-          const codes = (tix ?? [])
-            .map((t: { backup_code: string | null }) => t.backup_code)
-            .filter(Boolean) as string[];
-
-          let organiser = 'the organiser';
-          if (event.organiser_business_id) {
-            const { data: b } = await supabase.from('local_businesses').select('name').eq('id', event.organiser_business_id).maybeSingle();
-            if (b?.name) organiser = b.name;
-          } else if (event.organiser_hub_id) {
-            const { data: h } = await supabase.from('hubs').select('name').eq('id', event.organiser_hub_id).maybeSingle();
-            if (h?.name) organiser = h.name;
-          }
-
-          const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
-          const fee = order.platform_fee_pence ?? 0;
-          const total = order.total_pence ?? 0;
-
-          await sendEmail(supabase, {
-            templateKey: 'events.tickets_confirmed',
-            recipientEmail: email,
-            recipientId: user.id,
-            variables: {
-              buyer_name:   buyerName,
-              event_title:  event.title,
-              event_when:   new Date(event.starts_at).toLocaleString('en-GB', {
-                weekday: 'long', day: 'numeric', month: 'long',
-                hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London',
-              }),
-              event_where:  [event.venue, event.locality].filter(Boolean).join(', ') || 'See the event page',
-              ticket_count: `${order.tickets_count} ticket${order.tickets_count !== 1 ? 's' : ''}`,
-              ticket_codes: codes.length
-                ? codes.map(c => `<strong style="font-family:Menlo,Consolas,monospace;background:#F0F2F5;padding:8px 16px;border-radius:6px;font-size:18px;letter-spacing:2px;color:#032F4C;display:inline-block;margin:4px">${c}</strong>`).join('')
-                : '<span style="color:#6B7280">Open your account to see your tickets.</span>',
-              tickets_total: gbp(total - fee),
-              booking_fee:   gbp(fee),
-              total_paid:    gbp(total),
-              tickets_url:   'https://oneshetland.com/account/tickets',
-              organiser_name: organiser,
-            },
-            metadata: { order_id, event_id: order.event_id },
-          });
-        }
-      } catch (e) {
-        // A receipt failing must never fail the confirmation — the tickets are
-        // already valid and the money is already taken.
-        console.error('[confirm-event-tickets] receipt email failed:', e);
-      }
     }
+
+    // Outside the event guard: the receipt fetches what it needs itself, and a
+    // buyer should get one even if the event row read hiccups.
+    await sendTicketReceipt(supabase, order_id, user.id);
 
     return new Response(JSON.stringify({ ok: true, order_id, tickets_count: order.tickets_count }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
