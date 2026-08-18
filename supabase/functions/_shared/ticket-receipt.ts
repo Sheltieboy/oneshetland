@@ -93,7 +93,9 @@ export async function sendTicketReceipt(
         }),
         event_where:  [event.venue, event.locality].filter(Boolean).join(', ') || 'See the event page',
         ticket_count: `${order.tickets_count} ticket${order.tickets_count !== 1 ? 's' : ''}`,
-        ticket_codes: codes.length
+        // _html suffix: send-email inserts these raw. Everything else is escaped,
+        // which is why the first version printed the markup at the buyer.
+        ticket_codes_html: codes.length
           ? codes.map(c => `<strong style="font-family:Menlo,Consolas,monospace;background:#F0F2F5;padding:8px 16px;border-radius:6px;font-size:18px;letter-spacing:2px;color:#032F4C;display:inline-block;margin:4px">${c}</strong>`).join('')
           : '<span style="color:#6B7280">Open your account to see your tickets.</span>',
         tickets_total:  gbp(total - fee),
