@@ -225,9 +225,22 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
     return { granted: false, note: 'PI does not match order' };
   }
 
-  await svc.from('event_ticket_orders')
+  // Compare-and-swap, not a blind write. The status check above and this update
+  // are two separate round trips, and the webhook races confirm-event-tickets by
+  // design — both can read 'pending' before either writes. Constraining the
+  // update to rows STILL pending means exactly one path can win, and the row
+  // count says which one did. Without this both sides ran the side effects and
+  // events.tickets_sold counted the same order twice.
+  const { data: claimed } = await svc.from('event_ticket_orders')
     .update({ status: 'paid', paid_at: new Date().toISOString(), stripe_payment_intent_id: pi.id })
-    .eq('id', orderId);
+    .eq('id', orderId).eq('status', 'pending').select('id');
+  if (!claimed?.length) {
+    // Lost the race. The winner is doing the rest; just make sure the buyer has
+    // their receipt (sendTicketReceipt is idempotent) and get out.
+    const buyer = (pi.metadata.buyer_id as string | undefined) ?? order.buyer_id;
+    if (buyer) await sendTicketReceipt(svc, orderId, buyer);
+    return already('paid');
+  }
   await svc.from('event_tickets').update({ status: 'valid' }).eq('order_id', orderId);
   try {
     await svc.rpc('increment_event_tickets_sold', { p_event_id: order.event_id, p_count: order.tickets_count });

@@ -81,11 +81,21 @@ serve(async (req) => {
     }
 
     // Confirm order + tickets
-    await supabase.from('event_ticket_orders').update({
+    // Compare-and-swap — see the same guard in _shared/fulfilment.ts. The
+    // already-paid check above is a separate round trip from this write, and the
+    // Stripe webhook is racing us, so both sides could pass that check. Only the
+    // path that actually moves the row off 'pending' runs the side effects.
+    const { data: claimed } = await supabase.from('event_ticket_orders').update({
       status:                  'paid',
       paid_at:                 new Date().toISOString(),
       stripe_payment_intent_id: payment_intent_id,
-    }).eq('id', order_id);
+    }).eq('id', order_id).eq('status', 'pending').select('id');
+
+    if (!claimed?.length) {
+      // The webhook got there first and is sending the receipt and the push.
+      await sendTicketReceipt(supabase, order_id, user.id);
+      return new Response(JSON.stringify({ ok: true, order_id, tickets_count: order.tickets_count }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order_id);
 
