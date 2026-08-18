@@ -447,6 +447,12 @@ serve(async (req) => {
             subscription_tier:                 'free',
             subscription_until:                null,
             subscription_cancel_at_period_end: false,
+            // Clear the dead id. Leaving it set made the business unable to buy
+            // anything: the billing screen saw a subscription id, took the
+            // "change an existing plan" path, found the CANCELLED subscription
+            // still sitting on the Pro price, and answered "you're already on
+            // Pro" to a business that was on free.
+            stripe_subscription_id:            null,
           })
           .eq('stripe_subscription_id', subId);
 
