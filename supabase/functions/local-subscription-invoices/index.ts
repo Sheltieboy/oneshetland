@@ -17,6 +17,13 @@ const corsHeaders = {
  * worse thing to own than a live API call. The PDF link is Stripe's own hosted
  * URL — signed, expiring, and always matching what the card statement says.
  *
+ * Also returns which card is actually being charged. Brand and last four only —
+ * that is all Stripe will give without PCI scope, and all a business needs to
+ * answer "which card is this coming off?". The card itself is never near us.
+ *
+ * Both facts come back together because they belong to the same screen and a
+ * second round trip to Stripe for four digits isn't worth it.
+ *
  * Body: { business_id: string, limit?: number }
  */
 serve(async (req) => {
@@ -44,12 +51,50 @@ serve(async (req) => {
 
     const { data: business } = await svc
       .from('local_businesses')
-      .select('id, owner_id, stripe_customer_id')
+      .select('id, owner_id, stripe_customer_id, stripe_subscription_id')
       .eq('id', business_id)
       .single();
 
     if (!business || business.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
-    if (!business.stripe_customer_id) return json({ invoices: [] });
+    if (!business.stripe_customer_id) return json({ invoices: [], card: null });
+
+    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+    const sget = async (path: string) => {
+      const r = await fetch(`https://api.stripe.com/v1/${path}`, {
+        headers: { Authorization: `Bearer ${stripeKey}` },
+      });
+      return r.ok ? await r.json() : null;
+    };
+
+    // Which card pays for THIS subscription. Stripe falls back to the customer's
+    // default when the subscription doesn't name one, so mirror that order —
+    // otherwise we'd show "no card" for a subscription that bills perfectly well.
+    let card: { brand: string; last4: string; expMonth: number; expYear: number } | null = null;
+    try {
+      let pmId: string | null = null;
+      if (business.stripe_subscription_id) {
+        const sub = await sget(`subscriptions/${business.stripe_subscription_id}`);
+        pmId = (sub?.default_payment_method as string | null) ?? null;
+      }
+      if (!pmId) {
+        const cust = await sget(`customers/${business.stripe_customer_id}`);
+        pmId = (cust?.invoice_settings?.default_payment_method as string | null) ?? null;
+      }
+      if (pmId) {
+        const pm = await sget(`payment_methods/${pmId}`);
+        if (pm?.card) {
+          card = {
+            brand: String(pm.card.brand ?? 'card'),
+            last4: String(pm.card.last4 ?? '••••'),
+            expMonth: Number(pm.card.exp_month ?? 0),
+            expYear: Number(pm.card.exp_year ?? 0),
+          };
+        }
+      }
+    } catch (e) {
+      // Not knowing the card must not cost somebody their invoice list.
+      console.error('[local-subscription-invoices] card lookup failed:', e);
+    }
 
     const params = new URLSearchParams({
       customer: business.stripe_customer_id,
@@ -81,7 +126,7 @@ serve(async (req) => {
         hostedUrl:   i.hosted_invoice_url ?? null,
       }));
 
-    return json({ invoices });
+    return json({ invoices, card });
   } catch (err) {
     console.error('[local-subscription-invoices]', err);
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
