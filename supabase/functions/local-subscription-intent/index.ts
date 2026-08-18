@@ -63,17 +63,36 @@ serve(async (req) => {
 
     if (!business || business.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
-    // This endpoint creates a NEW subscription. If one already exists, a retry or
-    // mis-routed call here would create a SECOND active subscription that bills
-    // every month. Plan changes must go through local-subscription-change.
-    if (business.stripe_subscription_id) {
-      return json({ error: 'This business already has a subscription. Use change-plan to switch tiers.', code: 'ALREADY_SUBSCRIBED' }, 409);
-    }
-
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
       apiVersion: '2023-10-16',
       httpClient: Stripe.createFetchHttpClient(),
     });
+
+    // This endpoint creates a NEW subscription. If a LIVE one already exists, a
+    // retry or mis-routed call would create a second that bills every month, so
+    // plan changes must go through local-subscription-change.
+    //
+    // But an id on the row is not proof of a live subscription. A cancelled one
+    // left its id behind, and refusing on the id alone locked the business out
+    // of buying anything at all — it was told to "use change-plan", and
+    // change-plan looked at the same dead subscription and said it was already
+    // on that tier. So ask Stripe rather than trusting the column, and clear it
+    // when the answer is that nothing is running.
+    if (business.stripe_subscription_id) {
+      let live = false;
+      try {
+        const existing = await stripe.subscriptions.retrieve(business.stripe_subscription_id);
+        live = !['canceled', 'incomplete_expired'].includes(existing.status);
+      } catch {
+        live = false; // Stripe doesn't know it — treat as gone.
+      }
+      if (live) {
+        return json({ error: 'This business already has a subscription. Use change-plan to switch tiers.', code: 'ALREADY_SUBSCRIBED' }, 409);
+      }
+      await svc.from('local_businesses')
+        .update({ stripe_subscription_id: null })
+        .eq('id', business_id);
+    }
 
     // Price ID — admin_config first, env var fallback
     const { tierPrice: priceId, meterPrice, configKey, annual } = await subscriptionPricesFor(svc, tier, period);
