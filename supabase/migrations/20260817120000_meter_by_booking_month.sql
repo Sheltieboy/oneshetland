@@ -45,7 +45,12 @@ grant execute on function public.booking_meter_status(uuid, date) to authenticat
 -- forgiven bookings against February's allowance — billing the ones the cap had
 -- already excused and leaving February's to be billed later. The reporter
 -- iterates months and stamps within each.
-create or replace function public.bookings_due_metering(p_cap int default 17)
+-- The return type gains month_start, and Postgres won't let CREATE OR REPLACE
+-- change a function's OUT columns. Nothing but meter-bookings calls this, and it
+-- calls it by name with the service role, so dropping is safe.
+drop function if exists public.bookings_due_metering(int);
+
+create function public.bookings_due_metering(p_cap int default 17)
 returns table (
   business_id            uuid,
   stripe_subscription_id text,
