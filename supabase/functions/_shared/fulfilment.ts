@@ -211,7 +211,14 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
     .select('id, status, tickets_count, event_id, stripe_payment_intent_id, buyer_id')
     .eq('id', orderId).single();
   if (!order) return { granted: false, note: 'order not found' };
-  if (order.status === 'paid') return already('paid');
+  if (order.status === 'paid') {
+    // Another path got here first — commonly a saved card charged inline by
+    // create-event-ticket-intent. The order is fine, but the receipt may never
+    // have been sent, so try it here. sendTicketReceipt is idempotent.
+    const buyer = (pi.metadata.buyer_id as string | undefined) ?? order.buyer_id;
+    if (buyer) await sendTicketReceipt(svc, orderId, buyer);
+    return already('paid');
+  }
 
   // The order stored its own PI id at creation — never mark paid off a different PI.
   if (order.stripe_payment_intent_id && order.stripe_payment_intent_id !== pi.id) {

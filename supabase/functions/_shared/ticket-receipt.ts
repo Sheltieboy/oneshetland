@@ -1,14 +1,20 @@
 /**
  * ticket-receipt.ts — the ticket purchase receipt, in ONE place.
  *
- * Ticket fulfilment happens down two paths that mirror each other:
- *   • confirm-event-tickets — called by the client after payment
- *   • _shared/fulfilment.ts — called by stripe-webhook on payment_intent.succeeded
+ * FOUR different places mark a ticket order paid:
+ *   • create-event-ticket-intent — free orders
+ *   • create-event-ticket-intent — paid from wallet balance
+ *   • create-event-ticket-intent — saved card charged off-session
+ *   • confirm-event-tickets / _shared/fulfilment.ts — the interactive card flow
  *
- * Whichever runs first marks the order paid and the other no-ops, and the
- * webhook usually wins. The receipt was added to the client path only, so it
- * never sent — a purchase looked silent to the buyer while everything else about
- * it worked. Both paths now call this, so there is nothing to keep in step.
+ * Chasing "the" path is how this went unsent twice: whichever one gets there
+ * first marks the order paid, and every other path then short-circuits on
+ * `already paid` — including, as it turned out, the two I had added the receipt
+ * to. The webhook log said it plainly: "fulfil event_tickets: already paid".
+ *
+ * So this is IDEMPOTENT instead. Call it from anywhere, as often as you like;
+ * it checks whether a receipt for this order has already gone out and does
+ * nothing if so. That makes "call it everywhere" the correct, safe answer.
  */
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -23,6 +29,16 @@ export async function sendTicketReceipt(
   buyerId: string,
 ): Promise<void> {
   try {
+    // Already sent one for this order? Then stop. This is what makes it safe to
+    // call from every path that can mark an order paid.
+    const { data: prior } = await svc
+      .from('email_log')
+      .select('id')
+      .eq('template_key', 'events.tickets_confirmed')
+      .eq('metadata->>order_id', orderId)
+      .limit(1);
+    if (prior && prior.length) return;
+
     const { data: order } = await svc
       .from('event_ticket_orders')
       .select('id, event_id, tickets_count, total_pence, platform_fee_pence')

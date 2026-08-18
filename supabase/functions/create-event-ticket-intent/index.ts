@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -267,6 +268,7 @@ serve(async (req) => {
       // No Stripe needed — just confirm immediately
       await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now }).eq('id', order.id);
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
+      await sendTicketReceipt(supabase, order.id, user.id);
       // Use the atomic counter RPC — the previous `supabase.rpc('tickets_sold')`
       // wrote a query-builder object into the column, corrupting tickets_sold.
       try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
@@ -330,6 +332,7 @@ serve(async (req) => {
       }
       const walletRef = walletTransferId ? `wallet_${walletTransferId}` : `wallet_${crypto.randomUUID()}`;
       await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now, stripe_payment_intent_id: walletRef }).eq('id', order.id);
+      await sendTicketReceipt(supabase, order.id, user.id);
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
       try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
       await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: null, type: 'spend', amount_pence: -chargeTotalPence, stripe_transfer_id: walletTransferId, description: `Tickets — ${event.title}` });
@@ -373,6 +376,7 @@ serve(async (req) => {
         if (pi.status === 'succeeded') {
           await supabase.from('event_ticket_orders').update({ stripe_payment_intent_id: pi.id, status: 'paid', paid_at: new Date().toISOString() }).eq('id', order.id);
           await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
+          await sendTicketReceipt(supabase, order.id, user.id);
           // Use the atomic counter RPC — `event.tickets_sold` was never selected,
           // so `event.tickets_sold + totalTickets` was NaN and the raw update
           // failed AFTER the card was charged (500 → client retry → double charge).
