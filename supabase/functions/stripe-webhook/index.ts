@@ -4,7 +4,6 @@ import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
-import { splitInvoice } from '../_shared/invoice-lines.ts';
 
 /**
  * stripe-webhook
@@ -100,30 +99,14 @@ async function emailPlanChange(
       if (stripeCustomerId) {
         const auth = { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` };
         let due: number | null = null;
-        let baseP = 0;
-        let adjustP = 0;
 
-        // Split the preview into the plan's own price and the proration lines,
-        // so the email can show WHY the next bill isn't simply the plan price.
-        // "£37.97" against a £29 plan reads as a mistake until the £8.97 of
-        // catch-up is sitting underneath it.
-        let itemised = false;
-        // deno-lint-ignore no-explicit-any
-        const readLines = (inv: any) => {
-          const split = splitInvoice(inv);
-          baseP    = split.basePence;
-          adjustP  = split.adjustPence;
-          itemised = split.classified;
-          if (!itemised) {
-            console.warn('[stripe-webhook] no proration lines recognised on preview;',
-              'showing total only. line parents:',
-              // deno-lint-ignore no-explicit-any
-              JSON.stringify((inv?.lines?.data ?? []).map((l: any) => l?.parent?.type ?? 'none')));
-          }
-        };
-
-        // create_preview needs the SUBSCRIPTION as well as the customer —
-        // customer alone returns 400, which is what the log showed.
+        // Only ONE number is taken from Stripe: what the next invoice comes to.
+        // The breakdown is then pure arithmetic against the plan price we quote
+        // in the row above. Earlier versions classified Stripe's line items to
+        // split the bill, which failed three different ways — the flag moved to
+        // `parent`, then a partial classification (everything on one side of the
+        // split) beat the fallback and printed a flat row anyway. There is no
+        // information in those lines the email needs that subtraction can't give.
         const params = new URLSearchParams({ customer: stripeCustomerId });
         if (stripeSubscriptionId) params.set('subscription', stripeSubscriptionId);
         const preview = await fetch('https://api.stripe.com/v1/invoices/create_preview', {
@@ -133,49 +116,33 @@ async function emailPlanChange(
         });
 
         if (preview.ok) {
-          const up = await preview.json();
-          if (typeof up?.amount_due === 'number') due = up.amount_due;
-          readLines(up);
+          due = (await preview.json())?.amount_due ?? null;
         } else {
           const previewErr = (await preview.json())?.error?.message;
-          // /v1/invoices/upcoming is removed on newer API versions; keep it as a
-          // fallback for older accounts rather than assuming.
+          // /v1/invoices/upcoming is removed on newer API versions; kept as a
+          // fallback for accounts still on an older one.
           const legacy = await fetch(
             `https://api.stripe.com/v1/invoices/upcoming?customer=${stripeCustomerId}`, { headers: auth },
           );
-          if (legacy.ok) {
-            const up = await legacy.json();
-            if (typeof up?.amount_due === 'number') due = up.amount_due;
-            readLines(up);
-          } else {
-            console.error('[stripe-webhook] no upcoming invoice:',
-              'create_preview', preview.status, previewErr, '| upcoming', legacy.status);
-          }
+          if (legacy.ok) due = (await legacy.json())?.amount_due ?? null;
+          else console.error('[stripe-webhook] no upcoming invoice:',
+            'create_preview', preview.status, previewErr, '| upcoming', legacy.status);
         }
 
-        if (due !== null) {
+        if (typeof due === 'number') {
           const gbp = (n: number) => `£${(Math.abs(n) / 100).toFixed(2)}`;
           const row = (labelText: string, value: string, bold = false, top = false) => {
             const edge = top ? 'border-top:1px solid #D9D2C7;padding-top:8px' : 'padding-bottom:4px';
-            const ink  = bold ? '#0F1C26' : '#6B7280';
-            return `<tr><td style="color:${ink};font-size:14px;${edge}">${labelText}</td>` +
+            return `<tr><td style="color:${bold ? '#0F1C26' : '#6B7280'};font-size:14px;${edge}">${labelText}</td>` +
                    `<td style="color:#0F1C26;font-size:${bold ? 15 : 14}px;font-weight:${bold ? 900 : 700};` +
                    `text-align:right;${edge}">${value}</td></tr>`;
           };
 
-          // If Stripe's lines didn't classify, derive the split by arithmetic
-          // instead: the plan price is known, so anything the next bill carries
-          // ON TOP of it is the adjustment. This needs no knowledge of the line
-          // shape at all, which is the part that keeps moving underneath us.
-          if (!itemised && due !== planPence) {
-            baseP   = planPence;
-            adjustP = due - planPence;
-          }
-
-          // Itemise whenever there is an adjustment to explain. On a plain
-          // renewal the bill IS the plan price and a breakdown would be noise.
-          nextBillRow = (adjustP !== 0 && baseP !== 0)
-            ? row(`${NAME[to]} from ${renews}`, gbp(baseP), false, true) +
+          const adjustP = due - planPence;
+          // Itemise whenever the bill differs from the plan price. On a plain
+          // renewal the two match and a breakdown would be noise.
+          nextBillRow = adjustP !== 0
+            ? row(`${NAME[to]} from ${renews}`, gbp(planPence), false, true) +
               row(adjustP > 0 ? 'Catch-up for the rest of this month' : 'Credit for the plan you had',
                   `${adjustP > 0 ? '' : '−'}${gbp(adjustP)}`) +
               row(`Next bill, ${renews}`, gbp(due), true, true)
