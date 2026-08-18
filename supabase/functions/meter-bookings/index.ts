@@ -73,6 +73,34 @@ async function stripe(path: string, params?: Record<string, string>): Promise<an
   return json;
 }
 
+/**
+ * Is this caller the platform rather than a signed-in user?
+ *
+ * Two ways, because a project can hold both key generations at once. A straight
+ * string compare against SUPABASE_SERVICE_ROLE_KEY was the first version, and it
+ * locked out the legacy service_role JWT on a project that had migrated to the
+ * newer sb_secret_* keys — the env var holds one, the operator holds the other,
+ * and both are legitimately the service role.
+ *
+ * So: exact match on the injected key, OR a JWT whose role claim says
+ * service_role. Only Supabase can mint a signed key with that claim, and the
+ * gateway has already verified the signature before we see it — we are reading
+ * the claim, not trusting an unverified token.
+ */
+function isServiceRole(token: string, injectedKey: string): boolean {
+  if (!token) return false;
+  if (injectedKey && token === injectedKey) return true;
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return false;
+    const pad = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+    const json = JSON.parse(atob(pad.replace(/-/g, '+').replace(/_/g, '/')));
+    return json?.role === 'service_role';
+  } catch {
+    return false;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   const json = (b: unknown, s = 200) =>
@@ -84,8 +112,8 @@ serve(async (req) => {
     // customer could otherwise trigger a billing run at will. reminder-runner
     // invokes it with the service key, which is the only caller there should be.
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-    const auth = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    if (!serviceKey || auth !== serviceKey) {
+    const auth = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+    if (!isServiceRole(auth, serviceKey)) {
       return json({ error: 'Forbidden' }, 403);
     }
 
