@@ -82,6 +82,12 @@ async function emailPlanChange(
       new Date(renewsIso).getTime() - Date.now() > 90 * 86_400_000;
 
     const NAME: Record<string, string> = { free: 'Free', pro: 'Pro', premium: isPremium && annual ? 'Premium (yearly)' : 'Premium' };
+    // The plan's own recurring price, in pence. The email already quotes this as
+    // "Ongoing price", so it is a number we publish and stand behind — which
+    // makes it a safe basis for the breakdown when Stripe's line shape isn't
+    // one we recognise.
+    const planPence = isPremium ? (annual ? 29000 : 2900) : 1200;
+    const planPeriod = isPremium && annual ? '/year' : '/month';
     const wentUp = ['free', 'pro', 'premium'].indexOf(to) > ['free', 'pro', 'premium'].indexOf(from);
 
     // What the NEXT bill will be. Plan changes use create_prorations, which puts
@@ -157,10 +163,18 @@ async function emailPlanChange(
                    `text-align:right;${edge}">${value}</td></tr>`;
           };
 
-          // Only itemise when a proration was actually recognised AND it moves the
-          // number. Printing a breakdown built from unclassified lines would show
-          // rows that don't add up to the total underneath them.
-          nextBillRow = (itemised && adjustP !== 0 && baseP !== 0)
+          // If Stripe's lines didn't classify, derive the split by arithmetic
+          // instead: the plan price is known, so anything the next bill carries
+          // ON TOP of it is the adjustment. This needs no knowledge of the line
+          // shape at all, which is the part that keeps moving underneath us.
+          if (!itemised && due !== planPence) {
+            baseP   = planPence;
+            adjustP = due - planPence;
+          }
+
+          // Itemise whenever there is an adjustment to explain. On a plain
+          // renewal the bill IS the plan price and a breakdown would be noise.
+          nextBillRow = (adjustP !== 0 && baseP !== 0)
             ? row(`${NAME[to]} from ${renews}`, gbp(baseP), false, true) +
               row(adjustP > 0 ? 'Catch-up for the rest of this month' : 'Credit for the plan you had',
                   `${adjustP > 0 ? '' : '−'}${gbp(adjustP)}`) +
@@ -184,7 +198,7 @@ async function emailPlanChange(
           ? `is now on <strong>${NAME[to]}</strong>.`
           : `has ${wentUp ? 'moved up' : 'moved'} from <strong>${NAME[from] ?? from}</strong> to <strong>${NAME[to]}</strong>.`,
         plan_name: NAME[to],
-        plan_price: isPremium ? (annual ? '£290/year' : '£29/month') : '£12/month',
+        plan_price: `£${planPence / 100}${planPeriod}`,
         renews_on: renews,
         next_bill_row_html: nextBillRow,
         plan_blurb: isPremium
