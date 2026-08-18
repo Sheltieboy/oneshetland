@@ -38,6 +38,7 @@ async function emailPlanChange(
   renewsIso: string | null,
   reason: 'ended' | 'lapsed' | null,
   stripeCustomerId: string | null,
+  stripeSubscriptionId: string | null,
 ): Promise<void> {
   try {
     const { data: u } = await supabase.auth.admin.getUserById(ownerId);
@@ -98,10 +99,15 @@ async function emailPlanChange(
         const auth = { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` };
         let due: number | null = null;
 
+        // create_preview needs the SUBSCRIPTION as well as the customer —
+        // sending customer alone returns 400, which is what the log showed.
+        // local-subscription-change passes both; I didn't read it closely enough.
+        const params = new URLSearchParams({ customer: stripeCustomerId });
+        if (stripeSubscriptionId) params.set('subscription', stripeSubscriptionId);
         const preview = await fetch('https://api.stripe.com/v1/invoices/create_preview', {
           method: 'POST',
           headers: { ...auth, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ customer: stripeCustomerId }),
+          body: params,
         });
         if (preview.ok) {
           const up = await preview.json();
@@ -116,7 +122,8 @@ async function emailPlanChange(
           } else {
             // Log it. The silent version is why this shipped broken twice.
             console.error('[stripe-webhook] no upcoming invoice from either endpoint:',
-              preview.status, legacy.status, (await legacy.json())?.error?.message);
+              'create_preview', preview.status, (await preview.json())?.error?.message,
+              '| upcoming', legacy.status);
           }
         }
 
@@ -466,7 +473,7 @@ serve(async (req) => {
             supabase, bizBefore.owner_id, bizBefore.name,
             (bizBefore as { id?: string }).id ?? '',
             bizBefore.subscription_tier, nextTier, isActive ? periodEndIso : null,
-            !isActive ? 'lapsed' : null, customerId,
+            !isActive ? 'lapsed' : null, customerId, subId,
           );
         }
 
@@ -519,7 +526,7 @@ serve(async (req) => {
           await emailPlanChange(
             supabase, bizDel.owner_id, bizDel.name,
             (bizDel as { id?: string }).id ?? '',
-            bizDel.subscription_tier, 'free', null, 'ended', null,
+            bizDel.subscription_tier, 'free', null, 'ended', null, null,
           );
           await sendUserPush(supabase, {
             userId:     bizDel.owner_id,
