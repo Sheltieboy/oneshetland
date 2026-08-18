@@ -81,3 +81,63 @@ export async function subscriptionPricesFor(
   const meterPrice = tier === 'pro' ? await resolveBookingMeterPrice(svc) : null;
   return { tierPrice: priceId, meterPrice, configKey, annual };
 }
+
+/**
+ * What each plan is SUPPOSED to cost, in pence.
+ *
+ * Mirrors TIER_PRICE_PENCE in lib/listing-tiers.ts, which is what the site
+ * quotes. Kept here so the two can be compared — see assertPriceMatches.
+ */
+const EXPECTED_PENCE: Record<string, number> = {
+  'pro:monthly':     1200,
+  'premium:monthly': 2900,
+  'premium:annual':  29000,
+};
+
+/**
+ * Refuse to subscribe somebody to a Price that isn't the price we quoted.
+ *
+ * The prices shown on the site are constants in the code; the price actually
+ * charged is whatever Stripe Price the config points at. Nothing connected the
+ * two, so when the config keys were set to the old Price IDs the site advertised
+ * £29 a month and Stripe charged £49.99 — and everything "worked".
+ *
+ * Test mode made that a nuisance. Live it is quoting one number and taking
+ * another, which is the sort of thing that ends in a chargeback and a bad
+ * reputation in a place where everyone knows everyone.
+ *
+ * Returns null when fine, or a message to refuse with. Deliberately fails
+ * CLOSED: if we cannot read the Price we do not sell.
+ */
+export async function assertPriceMatches(
+  priceId: string,
+  tier: Tier,
+  period: BillingPeriod,
+  stripeKey: string,
+): Promise<string | null> {
+  const expected = EXPECTED_PENCE[`${tier}:${period}`];
+  if (expected == null) return null; // nothing to check against
+
+  try {
+    const res = await fetch(`https://api.stripe.com/v1/prices/${priceId}`, {
+      headers: { Authorization: `Bearer ${stripeKey}` },
+    });
+    const price = await res.json();
+    if (!res.ok) {
+      return `Could not verify the ${tier} price with Stripe: ${price.error?.message ?? res.status}.`;
+    }
+    if (price.unit_amount !== expected) {
+      const shown = (n: number) => `£${(n / 100).toFixed(2)}`;
+      console.error(
+        `[tier-price] MISMATCH: ${tier}/${period} is configured as ${priceId} at ` +
+        `${price.unit_amount}p, but the site quotes ${expected}p. Refusing to charge.`,
+      );
+      return `This plan is misconfigured — we quote ${shown(expected)} but the payment would be ` +
+             `${shown(price.unit_amount ?? 0)}. Nothing has been charged. Please contact us.`;
+    }
+    return null;
+  } catch (e) {
+    console.error('[tier-price] price verification failed:', e);
+    return 'Could not verify the plan price just now. Nothing has been charged — please try again.';
+  }
+}

@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { subscriptionPricesFor, resolveBookingMeterPrice, resolveTierPrice, missingPriceError } from '../_shared/tier-price.ts';
+import { subscriptionPricesFor, resolveBookingMeterPrice, resolveTierPrice, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -81,6 +81,12 @@ serve(async (req) => {
     // tier that shouldn't have it, so resolve it regardless of the target tier.
     const bookingMeterPrice = await resolveBookingMeterPrice(svc);
     if (!newPriceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
+
+    // Never charge a number the site didn't quote. Fails closed.
+    const priceProblem = await assertPriceMatches(
+      newPriceId, tier, annual ? 'annual' : 'monthly', Deno.env.get('STRIPE_SECRET_KEY') ?? '',
+    );
+    if (priceProblem) return json({ error: priceProblem }, 409);
 
     // Fetch the live subscription to get its item id + check current price
     const subscription = await stripe.subscriptions.retrieve(business.stripe_subscription_id);

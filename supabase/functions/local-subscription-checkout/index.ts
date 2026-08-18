@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { subscriptionPricesFor, missingPriceError } from '../_shared/tier-price.ts';
+import { subscriptionPricesFor, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -69,6 +69,12 @@ serve(async (req) => {
     // populates these without needing a redeploy.
     const { tierPrice: priceId, meterPrice, configKey, annual } = await subscriptionPricesFor(svc, tier, period);
     if (!priceId) return json({ error: missingPriceError(tier, configKey, annual) }, 500);
+
+    // Never charge a number the site didn't quote. Fails closed.
+    const priceProblem = await assertPriceMatches(
+      priceId, tier, annual ? 'annual' : 'monthly', Deno.env.get('STRIPE_SECRET_KEY') ?? '',
+    );
+    if (priceProblem) return json({ error: priceProblem }, 409);
 
     // Create or reuse customer
     let customerId = business.stripe_customer_id;
