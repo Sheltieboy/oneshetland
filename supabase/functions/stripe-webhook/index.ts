@@ -37,6 +37,7 @@ async function emailPlanChange(
   to: string,
   renewsIso: string | null,
   reason: 'ended' | 'lapsed' | null,
+  stripeCustomerId: string | null,
 ): Promise<void> {
   try {
     const { data: u } = await supabase.auth.admin.getUserById(ownerId);
@@ -78,6 +79,36 @@ async function emailPlanChange(
     const annual = isPremium && !!renewsIso &&
       new Date(renewsIso).getTime() - Date.now() > 90 * 86_400_000;
 
+    const NAME: Record<string, string> = { free: 'Free', pro: 'Pro', premium: isPremium && annual ? 'Premium (yearly)' : 'Premium' };
+    const wentUp = ['free', 'pro', 'premium'].indexOf(to) > ['free', 'pro', 'premium'].indexOf(from);
+
+    // What actually left the account today. The webhook doesn't carry it, so
+    // read the customer's most recent invoice — but only trust it if it was
+    // raised in the last few minutes, otherwise we'd be quoting last month's
+    // renewal at somebody who just changed plan. If it's unclear, say nothing:
+    // a wrong number here is worse than an absent one.
+    let todayRow = '';
+    try {
+      const customerId = stripeCustomerId;
+      if (customerId) {
+        const r = await fetch(
+          `https://api.stripe.com/v1/invoices?customer=${customerId}&limit=1`,
+          { headers: { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` } },
+        );
+        const inv = (await r.json())?.data?.[0];
+        const createdMs = typeof inv?.created === 'number' ? inv.created * 1000 : 0;
+        const fresh = createdMs && Date.now() - createdMs < 10 * 60 * 1000;
+        const amount = typeof inv?.amount_paid === 'number' ? inv.amount_paid : null;
+        if (fresh && amount !== null && amount !== 0) {
+          const label = amount > 0 ? 'Charged today' : 'Credited today';
+          todayRow =
+            `<tr><td style="color:#6B7280;font-size:14px;border-top:1px solid #D9D2C7;padding-top:8px">${label}</td>` +
+            `<td style="color:#0F1C26;font-size:15px;font-weight:900;text-align:right;border-top:1px solid #D9D2C7;padding-top:8px">` +
+            `£${(Math.abs(amount) / 100).toFixed(2)}</td></tr>`;
+        }
+      }
+    } catch (e) { console.error('[stripe-webhook] invoice lookup for plan email failed:', e); }
+
     await sendEmail(supabase, {
       templateKey: 'billing.plan_active',
       recipientEmail: email,
@@ -85,9 +116,16 @@ async function emailPlanChange(
       variables: {
         owner_name: ownerName,
         business_name: businessName,
-        plan_name: isPremium ? (annual ? 'Premium (yearly)' : 'Premium') : 'Pro',
+        change_summary: from === 'free'
+          ? `now on ${NAME[to]}`
+          : wentUp ? `moved up to ${NAME[to]}` : `moved to ${NAME[to]}`,
+        change_sentence: from === 'free'
+          ? `is now on <strong>${NAME[to]}</strong>.`
+          : `has ${wentUp ? 'moved up' : 'moved'} from <strong>${NAME[from] ?? from}</strong> to <strong>${NAME[to]}</strong>.`,
+        plan_name: NAME[to],
         plan_price: isPremium ? (annual ? '£290/year' : '£29/month') : '£12/month',
         renews_on: renews,
+        today_row_html: todayRow,
         plan_blurb: isPremium
           ? 'You can now sell products and passes, take bookings with no per-booking fee, and appear in the featured spot on the OneShetland home screen — on top of everything Pro gives you.'
           : 'You can now run offers, hand out loyalty stamps, take Local Wallet payments, see your own numbers, and take bookings at 95p each — capped at £16.15 a month, so Pro never costs more than Premium would have.',
@@ -408,7 +446,7 @@ serve(async (req) => {
             supabase, bizBefore.owner_id, bizBefore.name,
             (bizBefore as { id?: string }).id ?? '',
             bizBefore.subscription_tier, nextTier, isActive ? periodEndIso : null,
-            !isActive ? 'lapsed' : null,
+            !isActive ? 'lapsed' : null, customerId,
           );
         }
 
@@ -461,7 +499,7 @@ serve(async (req) => {
           await emailPlanChange(
             supabase, bizDel.owner_id, bizDel.name,
             (bizDel as { id?: string }).id ?? '',
-            bizDel.subscription_tier, 'free', null, 'ended',
+            bizDel.subscription_tier, 'free', null, 'ended', null,
           );
           await sendUserPush(supabase, {
             userId:     bizDel.owner_id,
