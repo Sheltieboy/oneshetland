@@ -56,13 +56,13 @@ from generate_series(1, 10);
 -- ── 1. First run ────────────────────────────────────────────────────────────
 insert into _r (scenario, result)
 select '1. cap limits the first run to 17',
-       case when billable_now = 17 then 'PASS' else 'FAIL — got ' || billable_now end
+       case when sum(billable_now) = 17 then 'PASS' else 'FAIL — got ' || sum(billable_now) end
 from public.bookings_due_metering(17)
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid;
 
 insert into _r (scenario, result)
 select '2. cancelled bookings excluded (25, not 28)',
-       case when unmetered_total = 25 then 'PASS' else 'FAIL — got ' || unmetered_total end
+       case when sum(unmetered_total) = 25 then 'PASS' else 'FAIL — got ' || sum(unmetered_total) end
 from public.bookings_due_metering(17)
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid;
 
@@ -74,7 +74,7 @@ where business_id = 'eeeeeeee-0000-0000-0000-000000000002'::uuid;
 
 insert into _r (scenario, result)
 select '4. subscription id carried through for Stripe',
-       case when stripe_subscription_id = 'sub_test_pro' then 'PASS' else 'FAIL' end
+       case when max(stripe_subscription_id) = 'sub_test_pro' then 'PASS' else 'FAIL' end
 from public.bookings_due_metering(17)
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid;
 
@@ -89,29 +89,31 @@ where id in (
 
 insert into _r (scenario, result)
 select '5. after billing 17, nothing more is billable this month',
-       case when coalesce(max(billable_now), 0) = 0 then 'PASS' else 'FAIL — got ' || max(billable_now) end
+       case when coalesce(sum(billable_now), 0) = 0 then 'PASS' else 'FAIL — got ' || sum(billable_now) end
 from public.bookings_due_metering(17)
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid;
 
 insert into _r (scenario, result)
 select '6. the remaining 8 are still visible as pending',
-       case when max(unmetered_total) = 8 then 'PASS' else 'FAIL — got ' || coalesce(max(unmetered_total)::text, 'no row') end
+       case when sum(unmetered_total) = 8 then 'PASS' else 'FAIL — got ' || coalesce(sum(unmetered_total)::text, 'no row') end
 from public.bookings_due_metering(17)
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid;
 
 insert into _r (scenario, result)
 select '7. a second identical run is a no-op (idempotent)',
-       case when coalesce(max(billable_now), 0) = 0 then 'PASS' else 'FAIL' end
+       case when coalesce(sum(billable_now), 0) = 0 then 'PASS' else 'FAIL' end
 from public.bookings_due_metering(17)
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid;
 
--- ── 3. Month boundary ───────────────────────────────────────────────────────
-update public.book_bookings set metered_at = now() - interval '40 days'
+-- ── 3. Month boundary — now keyed on WHEN THE BOOKING WAS TAKEN ─────────────
+-- Move the billed ones into last month by their created_at, which is what the
+-- cap keys on now. Their own month's cap is spent; this month's is untouched.
+update public.book_bookings set created_at = now() - interval '40 days'
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid and metered_at is not null;
 
 insert into _r (scenario, result)
 select '8. last month''s 17 do not eat this month''s cap',
-       case when max(billable_now) = 8 then 'PASS' else 'FAIL — got ' || coalesce(max(billable_now)::text, 'no row') end
+       case when sum(billable_now) = 8 then 'PASS' else 'FAIL — got ' || coalesce(sum(billable_now)::text, 'no row') end
 from public.bookings_due_metering(17)
 where business_id = 'eeeeeeee-0000-0000-0000-000000000001'::uuid;
 

@@ -111,10 +111,15 @@ serve(async (req) => {
     const { data: due, error: dueErr } = await svc.rpc('bookings_due_metering', { p_cap: MONTHLY_CAP_UNITS });
     if (dueErr) throw dueErr;
 
+    // One row per business per BOOKING month, so each month's cap is spent on
+    // that month's bookings and never on an older month's forgiven ones.
     for (const row of due ?? []) {
       const businessId = row.business_id as string;
       const billable   = row.billable_now as number;
       const subId      = row.stripe_subscription_id as string | null;
+      const monthStart = row.month_start as string;
+      const monthEnd   = new Date(new Date(monthStart).getTime());
+      monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
 
       // At the cap: stamp the rest so they aren't carried into next month and
       // billed later for something this month's cap already forgave.
@@ -123,6 +128,7 @@ serve(async (req) => {
           .from('book_bookings')
           .update({ metered_at: new Date().toISOString() })
           .eq('business_id', businessId).is('metered_at', null).neq('status', 'cancelled')
+          .gte('created_at', monthStart).lt('created_at', monthEnd.toISOString())
           .select('id');
         result.capped += (forgiven ?? []).length;
         continue;
@@ -156,7 +162,7 @@ serve(async (req) => {
             'payload[value]': String(billable),
             // Same business, same month, same count → same event. Stripe drops
             // the duplicate, so a retry can't bill twice.
-            identifier: `bk-${businessId}-${new Date().toISOString().slice(0, 7)}-${row.already_billed}`,
+            identifier: `bk-${businessId}-${monthStart.slice(0, 7)}-${row.already_billed}`,
           });
         } else {
           await stripe(`subscription_items/${item.id}/usage_records`, {
@@ -171,6 +177,7 @@ serve(async (req) => {
           .from('book_bookings')
           .select('id')
           .eq('business_id', businessId).is('metered_at', null).neq('status', 'cancelled')
+          .gte('created_at', monthStart).lt('created_at', monthEnd.toISOString())
           .order('created_at', { ascending: true })
           .limit(billable);
         const ids = (toStamp ?? []).map((b: { id: string }) => b.id);
