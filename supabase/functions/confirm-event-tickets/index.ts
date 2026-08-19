@@ -92,7 +92,31 @@ serve(async (req) => {
     }).eq('id', order_id).eq('status', 'pending').select('id');
 
     if (!claimed?.length) {
-      // The webhook got there first and is sending the receipt and the push.
+      // Lost the race — but to WHOM matters. Stale-order expiry can also move an
+      // order off 'pending', and an order it cancelled after this buyer paid must
+      // not be reported back as a success: Stripe has the money and the tickets
+      // are cancelled.
+      const { data: settled } = await supabase.from('event_ticket_orders')
+        .select('status').eq('id', order_id).maybeSingle();
+
+      if (settled?.status !== 'paid') {
+        console.error(`[confirm-event-tickets] order ${order_id} was ${settled?.status ?? 'missing'} when payment ${piToVerify} succeeded`);
+        try {
+          await supabase.from('failed_fulfilments').insert({
+            user_id: user.id,
+            purpose: 'event_tickets_paid_after_expiry',
+            amount_pence: order.total_pence ?? 0,
+            error: `order was ${settled?.status ?? 'missing'} when the payment succeeded — buyer charged, tickets cancelled`,
+            detail: { order_id, payment_intent_id: piToVerify, order_status: settled?.status ?? null },
+          });
+        } catch (e) { console.error('[confirm-event-tickets] failed_fulfilments insert failed:', e); }
+        return new Response(
+          JSON.stringify({ error: 'Your payment went through but this order had already been released. We have flagged it — please contact us and we will sort it out.' }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      // Genuinely the webhook — it is sending the receipt and the push.
       await sendTicketReceipt(supabase, order_id, user.id);
       return new Response(JSON.stringify({ ok: true, order_id, tickets_count: order.tickets_count }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

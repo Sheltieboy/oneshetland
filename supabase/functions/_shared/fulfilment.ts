@@ -233,9 +233,32 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
     .update({ status: 'paid', paid_at: new Date().toISOString(), stripe_payment_intent_id: pi.id })
     .eq('id', orderId).eq('status', 'pending').select('id');
   if (!claimed?.length) {
-    // Lost the race. The winner is doing the rest; just make sure the buyer has
-    // their receipt (sendTicketReceipt is idempotent) and get out.
+    // Lost the race — but to WHOM matters. Until stale-order expiry was
+    // scheduled the only other writer was the other fulfilment path, so "lost"
+    // always meant "somebody else marked it paid". Expiry can now also move an
+    // order off 'pending', and an order it cancelled after the buyer
+    // successfully paid must never be reported as fulfilled: Stripe has the
+    // money and the tickets are cancelled.
+    const { data: settled } = await svc.from('event_ticket_orders')
+      .select('status, total_pence').eq('id', orderId).maybeSingle();
     const buyer = (pi.metadata.buyer_id as string | undefined) ?? order.buyer_id;
+
+    if (settled?.status !== 'paid') {
+      console.error(`[fulfilment] order ${orderId} was ${settled?.status ?? 'missing'} when payment ${pi.id} succeeded`);
+      try {
+        await svc.from('failed_fulfilments').insert({
+          user_id: buyer ?? null,
+          purpose: 'event_tickets_paid_after_expiry',
+          amount_pence: settled?.total_pence ?? pi.amount ?? 0,
+          error: `order was ${settled?.status ?? 'missing'} when the payment succeeded — buyer charged, tickets cancelled`,
+          detail: { order_id: orderId, payment_intent_id: pi.id, order_status: settled?.status ?? null },
+        });
+      } catch (e) { console.error('[fulfilment] failed_fulfilments insert failed:', e); }
+      return { granted: false, note: `order ${settled?.status ?? 'missing'} — payment needs refunding or re-issuing` };
+    }
+
+    // Genuinely the other fulfilment path. Make sure the buyer has their receipt
+    // (sendTicketReceipt is idempotent) and get out.
     if (buyer) await sendTicketReceipt(svc, orderId, buyer);
     return already('paid');
   }
