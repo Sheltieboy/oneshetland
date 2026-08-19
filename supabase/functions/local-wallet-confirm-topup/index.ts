@@ -2,6 +2,8 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
 
+type WalletTopupResult = { balance_pence: number; already_credited: boolean };
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -70,39 +72,21 @@ serve(async (req) => {
     // Amount comes from Stripe (server-verified), never the client.
     const amount = intent.amount;
 
-    // Idempotency gate: claim this payment_intent_id by inserting the ledger
-    // row FIRST. A UNIQUE index on stripe_payment_intent_id makes this the
-    // single source of truth — a duplicate (double-tap / concurrent retry)
-    // hits a unique violation (Postgres code 23505), and we return the current
-    // balance WITHOUT crediting again. Only the first caller proceeds to
-    // wallet_credit, so the wallet can never be double-credited.
-    const { error: ledgerErr } = await svc
-      .from('local_wallet_transactions')
-      .insert({
-        user_id: user.id,
-        type: 'topup',
-        amount_pence: amount,
-        stripe_payment_intent_id: payment_intent_id,
-        description: 'Wallet top-up',
-      });
+    // Idempotency and credit in ONE transaction. These were two statements —
+    // claim the payment_intent_id in the ledger (a partial UNIQUE index makes
+    // that the single source of truth), then wallet_credit. If the second
+    // failed, the claim was already committed and every retry returned the
+    // uncredited balance as success. The customer had paid and the wallet never
+    // moved. The RPC does both or neither.
+    const { data: topup, error: topupErr } = await svc
+      .rpc('wallet_topup', { p_user: user.id, p_amount: amount, p_pi: payment_intent_id })
+      .maybeSingle<WalletTopupResult>();
+    if (topupErr) throw topupErr;
 
-    if (ledgerErr) {
-      // Already recorded — idempotent success, no second credit.
-      if (ledgerErr.code === '23505') {
-        const { data: bal } = await svc
-          .from('local_wallet_balances')
-          .select('balance_pence')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        return json({ balance_pence: bal?.balance_pence ?? 0 });
-      }
-      throw ledgerErr;
+    if (topup?.already_credited) {
+      return json({ balance_pence: topup.balance_pence ?? 0 });
     }
-
-    // First time for this PI — credit the wallet atomically.
-    const { data: newBalance, error: creditErr } = await svc
-      .rpc('wallet_credit', { p_user: user.id, p_amount: amount });
-    if (creditErr) throw creditErr;
+    const newBalance = topup?.balance_pence ?? 0;
 
     // Top-up receipt (best-effort).
     try {

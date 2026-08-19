@@ -27,6 +27,8 @@ import { sendUserPush, sendUserPushBulk } from './send-push.ts';
 import { sendTicketReceipt } from './ticket-receipt.ts';
 import { sendEmail } from './send-email.ts';
 
+type WalletTopupResult = { balance_pence: number; already_credited: boolean };
+
 /** The subset of a Stripe PaymentIntent the webhook hands us. */
 export interface FulfilPI {
   id:       string;
@@ -50,20 +52,16 @@ export async function fulfilWalletTopup(svc: SupabaseClient, pi: FulfilPI): Prom
   const userId = pi.metadata.user_id;
   if (!userId) return { granted: false, note: 'no user_id' };
 
-  const { error: ledgerErr } = await svc.from('local_wallet_transactions').insert({
-    user_id: userId,
-    type: 'topup',
-    amount_pence: pi.amount,
-    stripe_payment_intent_id: pi.id,
-    description: 'Wallet top-up',
-  });
-  if (ledgerErr) {
-    if (ledgerErr.code === '23505') return already('credited');
-    throw ledgerErr;
-  }
-
-  const { data: newBalance, error: creditErr } = await svc.rpc('wallet_credit', { p_user: userId, p_amount: pi.amount });
-  if (creditErr) throw creditErr;
+  // One RPC, one transaction. Claiming the payment in the ledger and crediting
+  // the balance used to be two statements — a failure between them left the PI
+  // claimed and the money uncredited, permanently, because every retry then hit
+  // the unique violation and reported success.
+  const { data: topup, error: topupErr } = await svc
+    .rpc('wallet_topup', { p_user: userId, p_amount: pi.amount, p_pi: pi.id })
+    .maybeSingle<WalletTopupResult>();
+  if (topupErr) throw topupErr;
+  if (topup?.already_credited) return already('credited');
+  const newBalance = topup?.balance_pence ?? 0;
 
   try {
     await sendUserPush(svc, {
