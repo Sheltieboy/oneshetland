@@ -27,7 +27,13 @@ const corsHeaders = {
  * released on acceptance, and a notification is exactly the kind of place that
  * rule gets quietly broken.
  *
- * Deploy: supabase functions deploy notify-trade-lead --no-verify-jwt
+ * Caller must be signed in AND be the brief's author. This ran unauthenticated
+ * with verify_jwt off, so anyone who could reach the URL with a brief_id could
+ * re-fire the push at every matched trade, as often as they liked — matches stay
+ * 'sent' until answered, so the same people were notified every time. The push
+ * carries no contact details, which limited it to pestering rather than leaking.
+ *
+ * Deploy: supabase functions deploy notify-trade-lead
  * Body: { brief_id: string }
  */
 serve(async (req) => {
@@ -40,6 +46,16 @@ serve(async (req) => {
     });
 
   try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return json({ error: 'Unauthorised' }, 401);
+    const anon = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } },
+    );
+    const { data: { user } } = await anon.auth.getUser();
+    if (!user) return json({ error: 'Unauthorised' }, 401);
+
     const { brief_id } = await req.json().catch(() => ({}));
     if (!brief_id) return json({ error: 'brief_id is required' }, 400);
 
@@ -50,10 +66,16 @@ serve(async (req) => {
 
     const { data: brief } = await svc
       .from('trade_briefs')
-      .select('id, title, trades, scale, urgency, location_text')
+      .select('id, title, trades, scale, urgency, location_text, author_id')
       .eq('id', brief_id)
       .single();
     if (!brief) return json({ ok: true, sent: 0 });
+
+    // Only the person who posted the brief may announce it. Both callers (app
+    // lib/trades-api.ts and web lib/trades-actions.ts) invoke this immediately
+    // after inserting the brief as that same signed-in user, so nothing
+    // legitimate is turned away.
+    if (brief.author_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
     // Only those who haven't already answered — re-running this must not
     // pester somebody who already said no.

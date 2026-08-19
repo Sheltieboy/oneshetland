@@ -45,6 +45,36 @@ serve(async (req) => {
 
     const cleanEmail = email.trim().toLowerCase();
 
+    /**
+     * Throttle. This endpoint is unauthenticated by necessity — you cannot be
+     * signed in to reset a password — and nothing limited how fast it could be
+     * called. Anyone could drive reset mail at any address as fast as they could
+     * post: an inbox full of them for the person on the receiving end, and spam
+     * complaints against the sending domain the rest of the product's email
+     * depends on.
+     *
+     * email_log already records every send, so it is the counter — no new table,
+     * and it counts what actually went out rather than what was attempted.
+     *
+     * Counted per address, which is the harm being prevented (bombing one
+     * person). Over the limit still returns ok: this endpoint must never reveal
+     * anything about an address, including whether it has been asked for
+     * recently.
+     */
+    const RESET_LIMIT = 3;
+    const RESET_WINDOW_MIN = 60;
+    const since = new Date(Date.now() - RESET_WINDOW_MIN * 60_000).toISOString();
+    const { count: recentSends } = await svc
+      .from('email_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_email', cleanEmail)
+      .eq('template_key', 'account.password_reset')
+      .gte('sent_at', since);
+    if ((recentSends ?? 0) >= RESET_LIMIT) {
+      console.warn(`[request-password-reset] throttled — ${recentSends} sends to this address in the last ${RESET_WINDOW_MIN}m`);
+      return ok();
+    }
+
     // Generate the recovery link without sending Supabase's own email.
     const { data, error } = await svc.auth.admin.generateLink({
       type: 'recovery',
