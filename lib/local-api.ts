@@ -1033,30 +1033,21 @@ export async function fetchActiveOffersForBusinesses(
 
 // ── NFC tile ──────────────────────────────────────────────────────────────────
 
-/** Business owner requests an NFC tile — generates token, sets status to 'requested' */
+/**
+ * Business owner requests an NFC tile.
+ *
+ * The token is minted and stored server-side by request_nfc_tile, which checks
+ * the caller owns the business. It used to be generated here and written
+ * straight to local_businesses.nfc_token — but that token is what identifies a
+ * business for payment in local-wallet-pay, so a client that could choose it
+ * could collide with somebody else's tile. nfc_token is now locked against
+ * direct client writes (migration 20260819180000).
+ */
 export async function requestNfcTile(businessId: string): Promise<{ token: string }> {
-  // Generate token via DB function
-  const { data: business } = await supabase
-    .from('local_businesses')
-    .select('name')
-    .eq('id', businessId)
-    .single();
-
-  if (!business) throw new Error('Business not found');
-
-  const { data: tokenRow, error: rpcErr } = await supabase
-    .rpc('generate_nfc_token', { business_name: business.name });
-  if (rpcErr) throw rpcErr;
-
-  const token = tokenRow as unknown as string;
-
-  const { error } = await supabase
-    .from('local_businesses')
-    .update({ nfc_token: token, nfc_status: 'requested' })
-    .eq('id', businessId);
+  const { data, error } = await supabase
+    .rpc('request_nfc_tile', { p_business_id: businessId });
   if (error) throw error;
-
-  return { token };
+  return { token: data as unknown as string };
 }
 
 /** Collect a stamp via NFC tap — requires user location */
