@@ -32,6 +32,40 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
+    /**
+     * ADMIN ONLY over HTTP.
+     *
+     * This endpoint takes a template key, a recipient and the template's
+     * variables straight from the body, and it had no caller check — so any
+     * signed-in user could put OneShetland-branded mail, with content they
+     * chose, into any inbox. Templates carry links, so that is a phishing
+     * primitive as well as a way to burn the sending domain's reputation.
+     *
+     * The only HTTP caller is the admin email-templates "send test" button.
+     * Every other sender (5 edge functions) imports _shared/send-email.ts
+     * directly and never comes through here, so nothing else is affected.
+     */
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorised' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const anon = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } },
+    );
+    const { data: { user } } = await anon.auth.getUser();
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorised' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const { data: me } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+    if (me?.role !== 'admin') {
+      return new Response(JSON.stringify({ error: 'Forbidden — admins only' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const body = await req.json();
     const { template_key, recipient_email, recipient_id, variables, metadata } = body;
 

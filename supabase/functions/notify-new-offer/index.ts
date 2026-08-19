@@ -18,6 +18,20 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    // The caller must own the business this announces. Without it any signed-in
+    // user could re-fire the fan-out at a business's entire customer base, as
+    // often as they liked — the content is legitimate, the repetition is the
+    // abuse. Both callers invoke this as the owner immediately after creating
+    // the row, so nothing legitimate is turned away.
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return json({ error: 'Unauthorised' }, 401);
+    const anon = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } },
+    );
+    const { data: { user } } = await anon.auth.getUser();
+    if (!user) return json({ error: 'Unauthorised' }, 401);
     const svc = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -32,6 +46,11 @@ serve(async (req) => {
       .eq('id', offer_id)
       .single();
     if (!offer) return json({ error: 'Offer not found' }, 404);
+    // Only the business owner may fire this fan-out.
+    const { data: ownerRow } = await svc
+      .from('local_businesses').select('owner_id').eq('id', offer.business_id).maybeSingle();
+    if (!ownerRow || ownerRow.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
+
 
     const { data: business } = await svc
       .from('local_businesses')
