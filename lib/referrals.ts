@@ -25,15 +25,16 @@ export interface MyReferrals {
   earned_pence: number;   // total credited so far
 }
 
-/** The caller's referral code, generated on first request. */
-export async function getMyReferralCode(userId: string): Promise<string> {
-  const { data, error } = await supabase.rpc('ensure_referral_code', { p_user: userId });
+/** The caller's referral code, generated on first request. Identity comes from
+ *  the session (auth.uid()), not from an argument. */
+export async function getMyReferralCode(): Promise<string> {
+  const { data, error } = await supabase.rpc('ensure_referral_code');
   if (error) throw error;
   return data as string;
 }
 
 export async function fetchMyReferrals(userId: string): Promise<MyReferrals> {
-  const code = await getMyReferralCode(userId);
+  const code = await getMyReferralCode();
   const { data, error } = await supabase
     .from('referrals')
     .select('id, status, referrer_reward_pence, created_at, referee:profiles!referrals_referee_id_fkey(display_name, full_name)')

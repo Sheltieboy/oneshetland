@@ -28,9 +28,14 @@ export interface TillLookup {
   offers: TillOffer[];
 }
 
-/** The signed-in member's permanent code (generated on first call). */
-export async function getMyMemberCode(userId: string): Promise<string> {
-  const { data, error } = await supabase.rpc('ensure_member_code', { p_user: userId });
+/**
+ * The signed-in member's permanent code (generated on first call).
+ *
+ * No user id: the RPC reads auth.uid() from the session, so there is no
+ * parameter that could ask for somebody else's code.
+ */
+export async function getMyMemberCode(): Promise<string> {
+  const { data, error } = await supabase.rpc('ensure_member_code');
   if (error) throw error;
   return data as string;
 }

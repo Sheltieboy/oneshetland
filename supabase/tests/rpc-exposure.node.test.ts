@@ -195,16 +195,16 @@ for (const { fn, body, why } of SERVER_ONLY) {
  *
  *   ensure_member_code / ensure_referral_code — called directly by both
  *                     clients (lib/member-card.ts, lib/referrals.ts and their
- *                     web counterparts). They take p_user as a parameter
- *                     instead of reading auth.uid(), so one user can obtain
- *                     another user's permanent member code — the identifier
- *                     loyalty-till and wallet-charge-request use to find a
- *                     customer. That is a design fix, not a grant fix.
+ *                     web counterparts), so they cannot be service-role only.
+ *                     Migration 20260819160000 pinned the uuid signatures to
+ *                     auth.uid() and added no-argument versions; anon is
+ *                     revoked from all four. Identity binding is covered by
+ *                     supabase/tests/identity-binding.node.test.ts.
  */
 const CLIENT_CALLABLE_BY_DESIGN = [
   'analytics_emit        — SECURITY INVOKER triggers call it; revoking breaks INSERTs',
-  'ensure_member_code    — both clients call it directly (weak p_user identity model)',
-  'ensure_referral_code  — both clients call it directly (weak p_user identity model)',
+  'ensure_member_code    — both clients call it; pinned to auth.uid() in 20260819160000',
+  'ensure_referral_code  — both clients call it; pinned to auth.uid() in 20260819160000',
 ];
 
 test('server-only list excludes the functions that need client execution', () => {

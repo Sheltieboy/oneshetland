@@ -48,7 +48,7 @@ export default function MyLoyaltyCodeScreen() {
 
   useEffect(() => {
     if (!profile) return;
-    getMyMemberCode(profile.id).then(setCode).catch(() => setCode(null)).finally(() => setLoading(false));
+    getMyMemberCode().then(setCode).catch(() => setCode(null)).finally(() => setLoading(false));
   }, [profile?.id]);
 
   return (

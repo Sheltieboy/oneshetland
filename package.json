@@ -7,7 +7,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "node --test supabase/functions/_shared/commission.node.test.ts supabase/tests/rpc-exposure.node.test.ts",
+    "test": "node --test supabase/functions/_shared/commission.node.test.ts supabase/tests/rpc-exposure.node.test.ts supabase/tests/identity-binding.node.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
