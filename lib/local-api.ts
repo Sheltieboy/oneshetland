@@ -806,10 +806,20 @@ export async function confirmWalletTopUp(paymentIntentId: string): Promise<{ bal
   return data;
 }
 
+/**
+ * A fresh id per payment ATTEMPT. The server claims it before debiting, so a
+ * double-tap or an automatic retry after a slow response cannot pay twice —
+ * while a genuine second payment, carrying a new id, still goes through.
+ */
+const paymentAttemptId = () =>
+  (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `pay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
 /** Pay a business from the wallet using their rotating code */
 export async function payWithWallet(code: string, amountPence: number): Promise<{ balance_pence: number; cashback_pence: number }> {
   const { data, error } = await supabase.functions.invoke('local-wallet-pay', {
-    body: { code, amount_pence: amountPence },
+    body: { code, amount_pence: amountPence, client_request_id: paymentAttemptId() },
   });
   if (error) throw await fnErr(error, 'Could not pay with wallet.');
   return data;
@@ -818,7 +828,7 @@ export async function payWithWallet(code: string, amountPence: number): Promise<
 /** Pay a business identified by a tapped NFC tile (no till code needed). */
 export async function payWithWalletViaTile(nfcToken: string, amountPence: number): Promise<{ balance_pence: number; cashback_pence: number }> {
   const { data, error } = await supabase.functions.invoke('local-wallet-pay', {
-    body: { nfc_token: nfcToken, amount_pence: amountPence },
+    body: { nfc_token: nfcToken, amount_pence: amountPence, client_request_id: paymentAttemptId() },
   });
   if (error) throw await fnErr(error, 'Could not pay with wallet.');
   return data;

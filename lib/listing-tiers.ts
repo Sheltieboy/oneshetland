@@ -138,6 +138,18 @@ export const TIER_LABEL: Record<ListingTier, string> = {
   premium: "Premium",
 };
 
+/** The same prices in pence, for anything that has to pass an amount to Stripe.
+ *  Kept beside TIER_PRICE so a price change can't update the label and miss the
+ *  number — they were duplicated inline in the billing checkout call. */
+export const TIER_PRICE_PENCE: Record<ListingTier, number> = {
+  free:    0,
+  pro:     1200,
+  premium: 2900,
+};
+
+/** Annual Premium in pence — twelve months for the price of ten. */
+export const PREMIUM_ANNUAL_PENCE = 29000;
+
 export const TIER_PRICE: Record<ListingTier, string> = {
   free:    "£0",
   pro:     "£12/mo",
