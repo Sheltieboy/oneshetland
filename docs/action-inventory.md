@@ -18,28 +18,99 @@ line by line. Treat a "has check" as unverified until it's been read.
 | Tables | 124 | RLS policies (all 124 now have RLS) |
 | Direct client writes | ~150 call sites | RLS only — there is no server code in the path |
 
-## What the scan already found
+## Findings — 18 Aug 2026
 
-**1. `notify-trade-lead` — unauthenticated, fans out notifications.**
-`verify_jwt = false`, no caller check in the code, and it runs on the service
-role. Anyone who can reach the URL with a `brief_id` can push notifications to
-every matched tradesperson. Not a data leak — a spam lever aimed at real users'
-phones.
+All fixed, deployed and verified against the downloaded live bundle unless
+marked otherwise.
 
-**2. `request-password-reset` — unauthenticated with no rate limit.**
-Open by necessity (you can't be signed in to reset a password), but nothing
-throttles it. Anyone can drive password-reset mail at any address as fast as
-they can post, which bombs the recipient and burns sending reputation on the
-domain the rest of the product's email depends on.
+### Security
 
-**3. `connect-redirect` — not a problem.** Flagged by the scan, read, dismissed:
-39 lines, no database access, just the HTTPS landing page Stripe requires before
-deep-linking back into the app.
+**Privilege escalation to admin — anyone signed in.** `is_admin()` reads
+`role = 'admin' OR is_platform_owner = true`. The trigger that exists to stop
+self-service escalation locked `role` and not the second column, and the profile
+update policy is row-level with no column restriction, so
+`update profiles set is_platform_owner = true where id = auth.uid()` stuck. That
+unlocked RLS on 8 tables — `"Admins can read all profiles"` among them — and 11
+RPCs including platform-wide revenue. Refunds were out of reach only because
+`refund-payment` happens to check `profiles.role` directly. Fixed: the trigger
+now locks `is_platform_owner` and the three `stripe_*` status flags, and the
+migration clears the flag from anyone holding it without `role = 'admin'`.
 
-Also worth a decision, not a fix: **77 functions have `verify_jwt = true` but no
-in-code check**, so any *signed-in* user can call them. For the 12 `notify-*`
-functions that means a user can likely trigger notifications about content that
-isn't theirs. Bounded, but worth a pass.
+**`send-email` — any signed-in user could mail anyone.** Took template key,
+recipient and variables from the body with no check. Templates carry links, so
+this was a phishing primitive as well as a way to burn the sending domain. Its
+only HTTP caller is the admin "send test" button; the five functions that
+actually send import the shared module directly. Now admins only.
+
+**`notify-trade-lead` — unauthenticated fan-out.** `verify_jwt` off and no
+caller check. Matches stay `sent` until answered, so every call re-notified the
+same tradespeople. Now requires a session, requires the caller to be the brief's
+author, and is deployed with JWT verification on.
+
+**`request-password-reset` — unthrottled.** Correctly unauthenticated, but
+nothing limited the rate, so anyone could drive reset mail at any address as
+fast as they could post. Three per address per hour, counted from `email_log`.
+Over the limit still returns ok — this endpoint must not reveal anything about
+an address.
+
+**`notify-business-alert`, `notify-new-offer` — unverified fan-out to a
+business's whole customer base.** Content legitimate, repetition the abuse. Both
+now require the caller to own the business.
+
+### Money
+
+**A top-up could take the money and never credit the wallet.** Both paths
+claimed the payment by inserting the ledger row, then credited the balance in a
+separate statement — two transactions. If the second failed, the claim was
+committed, the PI was claimed forever, and every retry hit the unique violation
+and reported success. Fixed with a `wallet_topup` function doing both in one
+transaction.
+
+**A double-tap at the till debited twice.** `executeWalletPayment` debits before
+it transfers, and `local-wallet-pay` had no row to claim and sent a random
+idempotency key. A Stripe key alone would not have helped — the debit is first,
+so a deduplicated transfer leaves the customer down twice. Fixed with
+`wallet_payment_claims`, keyed on a client-generated id per attempt so a genuine
+second payment still goes through.
+
+**Two paths could both claim a ticket order.** The webhook and
+`confirm-event-tickets` race by design; both check-then-acted, so both could run
+the side effects and `increment_event_tickets_sold` counted twice. Fixed with a
+compare-and-swap. Overselling was never at risk — `reserve_ticket_slots` takes a
+`FOR UPDATE` lock and is correct.
+
+### Verified correct — no change needed
+
+- **Capacity/overselling**: `reserve_ticket_slots`, row-locked and atomic.
+- **`refund-payment`**: admin gate, amount validated against the original,
+  idempotency key, `reverse_transfer` for Connect. The best-built function read.
+- **`wallet-charge-approve`**: ownership, expiry, a real CAS claim before the
+  debit, idempotency key, failure states. No notes.
+- **`local-wallet-confirm-topup`** rejects any PaymentIntent whose
+  `metadata.type` isn't a top-up — without it a donation or ticket PI could be
+  replayed to mint free wallet credit.
+- **Hub donation / membership / unit purchase / gift** fulfilment: all idempotent
+  via unique indexes on the payment intent plus `on conflict do nothing`.
+- **No payment amount is taken from the client** where it shouldn't be. The
+  functions reading `amount_pence` from the body are genuinely user-chosen.
+- **`connect-redirect`**: flagged by the scan, read, dismissed — 39 lines, no
+  database access.
+
+### Open — deliberately not changed unattended
+
+**Nine `notify-*` functions fan out on an entity id with no caller check**:
+`notify-booking`, `notify-business-claim`, `notify-claim`, `notify-engagement`,
+`notify-event-update`, `notify-hub`, `notify-hub-content`, `notify-job`,
+`notify-shift-status`. All require a signed-in user (`verify_jwt = true`), so the
+exposure is notification spam by a member rather than by the open internet. Each
+carries a different ownership model — event organiser, hub committee, employer,
+claimant — and guessing at nine of those in one pass is how a working
+notification quietly stops arriving. `notify-event-update` is the one to do
+first: it reaches ticket holders by email.
+
+Also open: `transcribe-audio` and `oneshetland-feed` have no caller check
+(signed-in only). `transcribe-audio` costs money per call, so it wants a rate
+limit on the same pattern as the password reset.
 
 ## Order to work through
 
