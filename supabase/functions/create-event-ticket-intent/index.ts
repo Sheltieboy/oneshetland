@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
+import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -77,6 +78,17 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'event_id and line_items required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // ── Quantity contract ────────────────────────────────────────────────────
+    // Runs BEFORE any reservation, order or ticket row exists, so a malformed
+    // request leaves no trace. Rules and reasoning in _shared/ticket-quantities.ts,
+    // where they are unit-tested; a validator that needs a Stripe key and a live
+    // event to exercise is one nobody re-checks.
+    const checked = checkLineItems(line_items);
+    if (!checked.ok) {
+      return new Response(JSON.stringify({ error: checked.error }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const items = checked.items;
+
     // Load event
     const { data: event } = await supabase
       .from('events')
@@ -89,7 +101,7 @@ serve(async (req) => {
     }
 
     // Load + validate ticket types
-    const typeIds = line_items.map((li: any) => li.ticket_type_id);
+    const typeIds = items.map((li) => li.ticket_type_id);
     const { data: types } = await supabase
       .from('event_ticket_types')
       .select('*')
@@ -103,21 +115,20 @@ serve(async (req) => {
 
     const now = new Date().toISOString();
     for (const type of types) {
-      const li = line_items.find((l: any) => l.ticket_type_id === type.id);
+      const li = items.find((l) => l.ticket_type_id === type.id);
       if (!li) continue;
       if (type.sale_starts_at && type.sale_starts_at > now) return new Response(JSON.stringify({ error: `Sales for ${type.name} haven't started yet` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       if (type.sale_ends_at && type.sale_ends_at < now) return new Response(JSON.stringify({ error: `Sales for ${type.name} have ended` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       if (li.quantity > type.per_order_max) return new Response(JSON.stringify({ error: `Max ${type.per_order_max} ${type.name} tickets per order` }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Calculate total
-    let totalPence = 0;
-    for (const li of line_items) {
-      const type = types.find((t: any) => t.id === li.ticket_type_id)!;
-      totalPence += type.price_pence * li.quantity;
+    // Total against DATABASE prices, and decide the free path from what the
+    // ticket types COST rather than from the sum landing on zero.
+    const totals = totalOrder(items, types as { id: string; price_pence: number }[]);
+    if (!totals.ok) {
+      return new Response(JSON.stringify({ error: totals.error }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-
-    const totalTickets = line_items.reduce((s: number, li: any) => s + li.quantity, 0);
+    const { totalPence, totalTickets, allFree: allTicketTypesAreFree } = totals;
 
     // Buyer-facing booking fee: 95p per ticket PLUS 1.5% of face value, added on
     // top. Free tickets carry no fee. This is the platform's cut.
@@ -143,7 +154,7 @@ serve(async (req) => {
     const chargeTotalPence = totalPence + platformFeePence;
 
     // Atomically reserve slots (prevents overselling)
-    for (const li of line_items) {
+    for (const li of items) {
       const { data: reserved } = await supabase.rpc('reserve_ticket_slots', {
         p_type_id: li.ticket_type_id,
         p_quantity: li.quantity,
@@ -223,7 +234,7 @@ serve(async (req) => {
     };
 
     const ticketRows: any[] = [];
-    for (const li of line_items) {
+    for (const li of items) {
       const type = types.find((t: any) => t.id === li.ticket_type_id)!;
       for (let i = 0; i < li.quantity; i++) {
         const rawToken = generateRawToken();
@@ -237,8 +248,8 @@ serve(async (req) => {
           validation_token_hash: tokenHash,
           backup_code:           bc,
           status:                'pending_payment',
-          attendee_name:         li.attendee_name ?? null,
-          attendee_email:        li.attendee_email ?? null,
+          attendee_name:         li.attendee_name,
+          attendee_email:        li.attendee_email,
           price_pence:           type.price_pence,
           event_snapshot:        eventSnapshot,
           _raw_token:            rawToken, // temp field — stripped before insert
@@ -264,7 +275,10 @@ serve(async (req) => {
     const ticketIdsByIndex = insertedTickets.map((t: { id: string }) => t.id);
 
     // ── Free order path ──────────────────────────────────────────────────────────
-    if (totalPence === 0) {
+    // Gated on every selected ticket type being configured free in the database,
+    // not on totalPence === 0. `totalPence === 0` follows from that anyway; the
+    // point is that the converse must never be enough.
+    if (allTicketTypesAreFree) {
       // No Stripe needed — just confirm immediately
       await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now }).eq('id', order.id);
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
