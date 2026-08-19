@@ -52,7 +52,9 @@ async function sha256hex(s: string): Promise<string> {
  * Returns: { clientSecret, order_id, tickets } | { charged: true, order_id, tickets }
  *
  * On success, creates a pending order + ticket rows (status='pending_payment').
- * Capacity is reserved atomically via reserve_ticket_slots().
+ * Capacity, the pending order and the ticket rows are created together by
+ * reserve_ticket_basket() — one database transaction, so a failed checkout
+ * can never leave seats held by an order that does not exist.
  * confirm-event-tickets must be called after payment to mark them 'valid'.
  */
 serve(async (req) => {
@@ -153,17 +155,6 @@ serve(async (req) => {
       : 0;
     const chargeTotalPence = totalPence + platformFeePence;
 
-    // Atomically reserve slots (prevents overselling)
-    for (const li of items) {
-      const { data: reserved } = await supabase.rpc('reserve_ticket_slots', {
-        p_type_id: li.ticket_type_id,
-        p_quantity: li.quantity,
-      });
-      if (!reserved) {
-        return new Response(JSON.stringify({ error: 'Some tickets are now sold out. Please refresh and try again.' }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-    }
-
     // Load buyer profile (for Stripe customer + push token)
     const { data: profile } = await supabase
       .from('profiles')
@@ -209,23 +200,23 @@ serve(async (req) => {
       }
     }
 
-    // Create pending order
-    const { data: order, error: orderErr } = await supabase
-      .from('event_ticket_orders')
-      .insert({
-        event_id,
-        buyer_id:        user.id,
-        status:          'pending',
-        total_pence:     chargeTotalPence,
-        platform_fee_pence: platformFeePence,
-        tickets_count:   totalTickets,
-      })
-      .select('id')
-      .single();
+    // ── Payout-readiness, BEFORE anything is reserved ────────────────────────
+    // This used to run after the order and tickets existed, so a checkout that
+    // was always going to be refused still took seats off the event first — and
+    // then deleted the order, destroying the only record that could give them
+    // back. Refusing here means there is nothing to unwind.
+    if (totalPence > 0 && !stripeAccountId && !isDemo) {
+      return new Response(
+        JSON.stringify({ error: 'This organiser isn\u2019t set up to take payments yet. Please check back soon.' }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
-    if (orderErr || !order) throw new Error('Failed to create order');
-
-    // Generate ticket rows (pending_payment)
+    // ── Reserve the basket, create the order and the tickets, atomically ─────
+    // One transaction in the database. Either every line is reserved and the
+    // order exists to justify it, or nothing changed at all. Capacity can no
+    // longer be held by an order that was never created, which is what made
+    // expire_stale_ticket_orders unable to see it.
     const eventSnapshot = {
       title:     event.title,
       starts_at: event.starts_at,
@@ -233,46 +224,53 @@ serve(async (req) => {
       formatted_address: event.formatted_address,
     };
 
-    const ticketRows: any[] = [];
+    // One entry per SEAT, in the order we want the ids back. The raw token
+    // never leaves this function except to the buyer; only its hash is stored.
+    const tokensByIndex: string[] = [];
+    const seatRows: Array<Record<string, string | null>> = [];
     for (const li of items) {
-      const type = types.find((t: any) => t.id === li.ticket_type_id)!;
       for (let i = 0; i < li.quantity; i++) {
         const rawToken = generateRawToken();
-        const tokenHash = await sha256hex(rawToken);
-        const { data: bc } = await supabase.rpc('generate_ticket_backup_code');
-        ticketRows.push({
-          order_id:              order.id,
-          event_id,
-          ticket_type_id:        li.ticket_type_id,
-          holder_id:             user.id,
-          validation_token_hash: tokenHash,
-          backup_code:           bc,
-          status:                'pending_payment',
-          attendee_name:         li.attendee_name,
-          attendee_email:        li.attendee_email,
-          price_pence:           type.price_pence,
-          event_snapshot:        eventSnapshot,
-          _raw_token:            rawToken, // temp field — stripped before insert
+        tokensByIndex.push(rawToken);
+        seatRows.push({
+          ticket_type_id: li.ticket_type_id,
+          token_hash:     await sha256hex(rawToken),
+          attendee_name:  li.attendee_name,
+          attendee_email: li.attendee_email,
         });
       }
     }
 
-    // Insert tickets (strip _raw_token) and get back their IDs so the client
-    // can persist raw tokens in SecureStore keyed by ticket ID.
-    const insertRows = ticketRows.map(({ _raw_token, ...rest }) => rest);
-    const { data: insertedTickets, error: ticketErr } = await supabase
-      .from('event_tickets')
-      .insert(insertRows)
-      .select('id');
-    if (ticketErr || !insertedTickets) {
-      // Roll back order on failure
-      await supabase.from('event_ticket_orders').delete().eq('id', order.id);
-      throw new Error('Failed to create ticket records');
+    const { data: basket, error: basketErr } = await supabase.rpc('reserve_ticket_basket', {
+      p_event_id:           event_id,
+      p_buyer_id:           user.id,
+      p_tickets:            seatRows,
+      p_total_pence:        chargeTotalPence,
+      p_platform_fee_pence: platformFeePence,
+      p_snapshot:           eventSnapshot,
+    });
+
+    if (basketErr || !basket?.order_id) {
+      // SOLD_OUT is the ordinary outcome when an event fills mid-checkout, and
+      // deserves a different sentence from a genuine fault.
+      const soldOut = (basketErr?.message ?? '').includes('SOLD_OUT');
+      console.error('[create-event-ticket-intent] basket reservation failed:', basketErr?.message);
+      return new Response(
+        JSON.stringify({ error: soldOut
+          ? 'Some tickets are now sold out. Please refresh and try again.'
+          : 'Those tickets are not available. Please refresh and try again.' }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    // Parallel arrays: tokens[i] belongs to insertedTickets[i].id
-    const tokensByIndex   = ticketRows.map(r => r._raw_token);
-    const ticketIdsByIndex = insertedTickets.map((t: { id: string }) => t.id);
+    const order = { id: basket.order_id as string };
+    const ticketIdsByIndex = (basket.ticket_ids ?? []) as string[];
+
+    /** Give the seats back when a checkout aborts after reservation. */
+    const releaseHeldSeats = async () => {
+      const { error } = await supabase.rpc('release_ticket_order', { p_order_id: order.id });
+      if (error) console.error('[create-event-ticket-intent] release failed for order', order.id, error.message);
+    };
 
     // ── Free order path ──────────────────────────────────────────────────────────
     // Gated on every selected ticket type being configured free in the database,
@@ -295,27 +293,12 @@ serve(async (req) => {
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // ── Payout-readiness guard ───────────────────────────────────────────────────
-    // Never take money for a paid ticket unless the organiser has a connected
-    // Stripe account to receive it — otherwise the funds would settle into the
-    // platform account with no automatic payout to the organiser.
-    if (!stripeAccountId && !isDemo) {
-      // Roll back the pending order + held tickets we just created.
-      await supabase.from('event_tickets').delete().eq('order_id', order.id);
-      await supabase.from('event_ticket_orders').delete().eq('id', order.id);
-      return new Response(
-        JSON.stringify({ error: 'This organiser isn’t set up to take payments yet. Please check back soon.' }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
     // ── Wallet path: debit the wallet + transfer face value to the organiser ─────
     if (pay_with_wallet) {
       const { data: bal, error: dErr } = await supabase.rpc('wallet_debit', { p_user: user.id, p_spend: chargeTotalPence, p_cashback: 0 });
       if (dErr) throw new Error(dErr.message);
       if (bal == null) {
-        await supabase.from('event_tickets').delete().eq('order_id', order.id);
-        await supabase.from('event_ticket_orders').delete().eq('id', order.id);
+        await releaseHeldSeats();
         return new Response(JSON.stringify({ error: 'Not enough in your wallet — top up or pay by card.' }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       // Demo organisers have no connected account → skip the transfer entirely
@@ -339,8 +322,7 @@ serve(async (req) => {
         } catch (e) {
           console.error('[create-event-ticket-intent] wallet transfer failed:', e);
           await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: chargeTotalPence });
-          await supabase.from('event_tickets').delete().eq('order_id', order.id);
-          await supabase.from('event_ticket_orders').delete().eq('id', order.id);
+          await releaseHeldSeats();
           return new Response(JSON.stringify({ error: 'Ticket payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
       }
