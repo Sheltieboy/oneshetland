@@ -36,6 +36,7 @@
         "npm:expo-audio@~55.0.14",
         "npm:expo-camera@~55.0.19",
         "npm:expo-constants@~55.0.16",
+        "npm:expo-crypto@~55.0.18",
         "npm:expo-dev-client@~55.0.35",
         "npm:expo-device@~55.0.17",
         "npm:expo-font@~55.0.8",
