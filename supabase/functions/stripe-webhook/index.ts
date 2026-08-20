@@ -207,9 +207,51 @@ serve(async (req) => {
   }
 
   const eventType = event.type as string;
+  const eventId   = event.id as string;
   const eventData = (event.data as Record<string, unknown>)?.object as Record<string, unknown>;
 
-  console.log(`[stripe-webhook] Received: ${eventType}`);
+  console.log(`[stripe-webhook] Received: ${eventType} (${eventId})`);
+
+  // ── Claim this event id before doing anything with it ────────────────────
+  //
+  // Stripe delivers at least once, and will happily deliver the same event
+  // twice at the same moment. The claim is decided by a primary key in the
+  // database, so exactly one delivery proceeds.
+  //
+  // A claim is NOT a promise that the work happened — only that this delivery
+  // is the one allowed to try. Nothing below treats the row's existence as
+  // proof of fulfilment; that is what the processed/failed marks are for.
+  let claim: string;
+  try {
+    const { data, error } = await supabase.rpc('claim_stripe_event', {
+      p_event_id:  eventId,
+      p_type:      eventType,
+      p_object_id: (eventData?.id as string | undefined) ?? null,
+    });
+    if (error) throw new Error(error.message);
+    claim = String(data);
+  } catch (claimErr) {
+    // If we cannot even reach the ledger we must not process blind — that is
+    // precisely the situation the ledger exists to prevent. Ask for a retry.
+    console.error(`[stripe-webhook] claim failed for ${eventId}:`, claimErr);
+    return new Response('Could not claim event', { status: 500 });
+  }
+
+  if (claim === 'already_processed') {
+    // The work is done. Acknowledge and touch nothing.
+    console.log(`[stripe-webhook] ${eventId} already processed — no-op`);
+    return new Response(JSON.stringify({ received: true, duplicate: true }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (claim === 'in_progress') {
+    // Another delivery of this same event is mid-flight. Returning non-2xx
+    // asks Stripe to try again shortly: if the other worker succeeds the retry
+    // sees already_processed, and if it dies the retry re-claims it.
+    console.log(`[stripe-webhook] ${eventId} already in flight — asking Stripe to retry`);
+    return new Response('Event already being processed', { status: 409 });
+  }
 
   try {
     switch (eventType) {
@@ -227,16 +269,38 @@ serve(async (req) => {
             .eq('payment_intent_id', eventData.id as string);
         }
 
-        // Local Boost — short-term Pro access
+        // ── Local Boost — short-term Pro access ────────────────────────────
+        //
+        // Extending is a read-modify-write, and it stacks on purpose so a
+        // customer can buy consecutive boosts. That made it the one benefit
+        // here that replay could hand out for free: delivering the same event
+        // three times granted six weeks for one two-week purchase.
+        //
+        // So claim the purchase row first. It carries a UNIQUE
+        // stripe_payment_intent_id, and this conditional update is what decides
+        // whether THIS delivery is the one that grants the boost. A second
+        // delivery matches nothing and extends nothing — true even if the event
+        // ledger above were bypassed entirely, which is the point of having it
+        // here as well.
         if (meta.type === 'local_boost' && meta.business_id) {
-          const weeks = parseInt(meta.weeks ?? '0', 10);
-          if (weeks > 0) {
-            // Fetch current subscription_until so we can extend it if there
-            // are still days left on an existing boost. Stacking is allowed.
+          const { data: claimedBoost, error: boostClaimErr } = await supabase
+            .from('local_boost_purchases')
+            .update({ status: 'succeeded' })
+            .eq('stripe_payment_intent_id', eventData.id as string)
+            .neq('status', 'succeeded')
+            .select('id, weeks, business_id')
+            .maybeSingle();
+          if (boostClaimErr) throw boostClaimErr;
+
+          // The business id comes from the purchase row, not from webhook
+          // metadata. The row was written by local-boost-checkout against the
+          // signed-in owner, so it is the authoritative link.
+          const weeks = claimedBoost?.weeks ?? 0;
+          if (claimedBoost && weeks > 0) {
             const { data: biz } = await supabase
               .from('local_businesses')
               .select('subscription_until')
-              .eq('id', meta.business_id)
+              .eq('id', claimedBoost.business_id)
               .single();
 
             const now = new Date();
@@ -254,16 +318,14 @@ serve(async (req) => {
                 // Important: leave stripe_subscription_id NULL — that's how we
                 // tell a boost apart from a monthly subscription downstream.
               })
-              .eq('id', meta.business_id);
+              .eq('id', claimedBoost.business_id);
 
-            // Mark the pending purchase row as succeeded + record expiry
             await supabase
               .from('local_boost_purchases')
-              .update({
-                status:     'succeeded',
-                expires_at: newExpiry.toISOString(),
-              })
-              .eq('stripe_payment_intent_id', eventData.id as string);
+              .update({ expires_at: newExpiry.toISOString() })
+              .eq('id', claimedBoost.id);
+          } else if (!claimedBoost) {
+            console.log(`[stripe-webhook] boost ${eventData.id}: already granted, or no pending purchase row`);
           }
         }
 
@@ -274,18 +336,23 @@ serve(async (req) => {
         // Idempotent on the PaymentIntent id, so it's a no-op when the client
         // already confirmed. Never let a fulfilment error 500 the webhook —
         // Stripe would retry the whole event and re-run the blocks above.
-        try {
-          const fulfilRes = await fulfilByType(supabase, {
-            id:       eventData.id as string,
-            amount:   (eventData.amount as number) ?? 0,
-            metadata: meta,
-            status:   eventData.status as string | undefined,
-          });
-          if (fulfilRes) {
-            console.log(`[stripe-webhook] fulfil ${meta.type} (${eventData.id}): ${fulfilRes.note}`);
-          }
-        } catch (fulfilErr) {
-          console.error(`[stripe-webhook] fulfil failed for ${meta.type} (${eventData.id}):`, fulfilErr);
+        // This used to swallow its own errors, because a 500 made Stripe retry
+        // the whole event and re-run the blocks above — which were not safe to
+        // repeat. The cost was that a genuinely failed fulfilment answered 200
+        // and Stripe never tried again: somebody paid and got nothing.
+        //
+        // Both blocks above are now idempotent (the delivery update writes a
+        // constant, the boost claims its row), and every fulfiller guards on a
+        // UNIQUE payment-intent column or a conditional update. Re-running is
+        // safe, so a failure can finally be reported honestly and retried.
+        const fulfilRes = await fulfilByType(supabase, {
+          id:       eventData.id as string,
+          amount:   (eventData.amount as number) ?? 0,
+          metadata: meta,
+          status:   eventData.status as string | undefined,
+        });
+        if (fulfilRes) {
+          console.log(`[stripe-webhook] fulfil ${meta.type} (${eventData.id}): ${fulfilRes.note}`);
         }
 
         break;
@@ -590,6 +657,36 @@ serve(async (req) => {
             .from('delivery_requests')
             .update({ payment_status: fullyRefunded ? 'refunded' : 'partially_refunded' })
             .eq('payment_intent_id', pi);
+
+          // ── Event tickets ────────────────────────────────────────────────
+          //
+          // This branch used to update delivery_requests and stop. A ticket
+          // payment intent matches no delivery row, so a fully refunded ticket
+          // order stayed 'paid', its tickets stayed 'valid', and the scanner
+          // admitted the holder — correctly, given the data it had.
+          //
+          // The RPC maps the payment intent to its order through the UNIQUE
+          // stripe_payment_intent_id column (never through webhook metadata),
+          // voids only tickets still valid, leaves used ones alone so
+          // attendance is not erased, and is a no-op on a second delivery.
+          const { data: refundRes, error: refundErr } = await supabase.rpc(
+            'refund_event_tickets_for_payment',
+            { p_payment_intent_id: pi, p_fully_refunded: fullyRefunded },
+          );
+          if (refundErr) throw refundErr;
+
+          const r = refundRes as Record<string, unknown> | null;
+          if (r?.matched) {
+            console.log(`[stripe-webhook] ticket refund ${pi}: ${JSON.stringify(r)}`);
+            if (r.action === 'partial_refund_not_mapped') {
+              // Deliberately loud. Nothing in the schema says which tickets a
+              // partial refund covers, so this needs a person, not a guess.
+              console.error(
+                `[stripe-webhook] PARTIAL REFUND on ticket order ${r.order_id} — ` +
+                'no ticket voided. Someone must decide which tickets this covers.',
+              );
+            }
+          }
           // Notify the customer a refund was issued.
           const meta = (eventData.metadata ?? {}) as Record<string, string>;
           const customerId = meta.customer_id || '';
@@ -612,8 +709,35 @@ serve(async (req) => {
         console.log(`[stripe-webhook] Unhandled event type: ${eventType}`);
     }
   } catch (err) {
-    console.error(`[stripe-webhook] Error handling ${eventType}:`, err);
+    // Release the claim so a later delivery can pick this up. Without this the
+    // ledger would turn a transient failure into permanent data loss — the row
+    // would sit in 'processing' and every retry would be told to go away.
+    console.error(`[stripe-webhook] Error handling ${eventType} (${eventId}):`, err);
+    try {
+      await supabase.rpc('mark_stripe_event_failed', {
+        p_event_id: eventId,
+        p_error:    err instanceof Error ? err.message : String(err),
+      });
+    } catch (markErr) {
+      // Nothing left to do but say so. The row stays in 'processing' and the
+      // staleness window in claim_stripe_event will release it.
+      console.error('[stripe-webhook] could not mark failed:', markErr);
+    }
+
     return new Response('Webhook handler error', { status: 500 });
+  }
+
+  // Only now, with the side effects actually done, is the event finished.
+  const { error: markErr } = await supabase.rpc('mark_stripe_event_processed', {
+    p_event_id: eventId,
+  });
+  if (markErr) {
+    // The work succeeded but we could not record that. Returning 500 makes
+    // Stripe redeliver, and the redelivery re-runs handlers that are all
+    // individually idempotent — which is the safe direction. Claiming success
+    // here would leave the event permanently stuck in 'processing'.
+    console.error(`[stripe-webhook] could not mark ${eventId} processed:`, markErr);
+    return new Response('Could not record completion', { status: 500 });
   }
 
   return new Response(JSON.stringify({ received: true }), {
@@ -663,7 +787,28 @@ async function verifyStripeSignature(
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-  if (expected !== signature) throw new Error('Signature mismatch');
+  if (!constantTimeEqual(expected, signature)) throw new Error('Signature mismatch');
 
   return JSON.parse(payload);
+}
+
+/**
+ * Compare two hex digests without leaking where they first differ.
+ *
+ * `a !== b` on strings returns as soon as it finds a mismatched character, so
+ * the time it takes reveals how many leading characters an attacker guessed
+ * correctly — enough, with sufficient samples, to build a valid signature one
+ * character at a time. This always walks the whole digest.
+ *
+ * Written out rather than pulled from a library on purpose: it is six lines,
+ * it is auditable at a glance, and adding a remote import to the one function
+ * that must never fail to load is a poor trade.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  // Length is not a secret — a Stripe v1 signature is always the same size —
+  // but bail before indexing so the loop below is well defined.
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
