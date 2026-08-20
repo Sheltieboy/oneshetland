@@ -23,7 +23,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import {
-  fetchMyBusinesses, updateBusiness,
+  fetchMyBusinesses, fetchBusinessPrivate, updateBusiness,
   fetchLoyaltyProgram, upsertLoyaltyProgram,
   fetchBusinessOffers, deactivateOffer,
   fetchBusinessCode, refreshBusinessCode,
@@ -124,7 +124,13 @@ export default function BusinessDashboardScreen() {
   const loadAll = useCallback(async (biz?: LocalBusiness) => {
     if (!profile) return;
     const bizList = await fetchMyBusinesses(profile.id);
-    setBusinesses(bizList);
+    // The NFC token, the Stripe status and the payment flags are no longer part
+    // of the row anyone can select. They come back per business from an RPC
+    // that checks ownership.
+    const withPrivate = await Promise.all(
+      bizList.map(async (b) => ({ ...b, ...(await fetchBusinessPrivate(b.id)) })),
+    );
+    setBusinesses(withPrivate);
     const target = biz ?? bizList[0];
     setActiveBusiness(target ?? null);
     if (!target) {

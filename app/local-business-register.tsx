@@ -35,6 +35,7 @@ import {
   EMPTY_PLANNER_CONTEXT, hasPlannerContext, type PlannerContext,
 } from '@/constants/planner-context';
 import { hasAnyHours, type OpeningHoursMap } from '@/lib/opening-hours';
+import { fetchBusinessPrivate } from '@/lib/local-api';
 
 const S = SECTIONS.local;
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
@@ -85,7 +86,7 @@ export default function BusinessRegisterScreen() {
 
   useEffect(() => {
     if (!id) return;
-    fetchBusiness(id).then(b => {
+    fetchBusiness(id).then(async b => {
       if (b) {
         setName(b.name);
         setCategory(b.category);
@@ -108,8 +109,11 @@ export default function BusinessRegisterScreen() {
           planner_booking:       (b as any).planner_booking ?? null,
           planner_note:          (b as any).planner_note ?? null,
         });
-        setUseBusinessPayment((b as any).use_business_payment ?? false);
-        setUseBusinessPayout((b as any).use_business_payout  ?? false);
+        // These two are owner-private and no longer arrive on the row, so they
+        // are fetched through the ownership-checked RPC.
+        const priv = await fetchBusinessPrivate(b.id);
+        setUseBusinessPayment(priv.use_business_payment ?? false);
+        setUseBusinessPayout(priv.use_business_payout ?? false);
       }
       setLoading(false);
     });

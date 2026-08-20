@@ -59,7 +59,7 @@ export type LoyaltyTxType = 'stamp' | 'points_earn' | 'redeem' | 'reward';
 export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness | null> {
   const { data, error } = await supabase
     .from('local_businesses')
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .eq('slug', slug)
     .eq('is_active', true)
     .maybeSingle();
@@ -67,11 +67,32 @@ export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness |
   return (data ?? null) as LocalBusiness | null;
 }
 
+/**
+ * The safe business columns.
+ *
+ * `select('*')` used to be fine because anon could read every column of
+ * local_businesses — including owner_id, the Stripe identifiers and the NFC
+ * token. Column-level grants now make `*` a permission error, which is the
+ * point: a caller has to name what it wants, so a sensitive column added later
+ * is private until somebody publishes it deliberately.
+ *
+ * Owner-private state (NFC token, payment flags, Stripe status) comes from the
+ * business_private_fields RPC, which checks that you own the business.
+ */
+export const BUSINESS_PUBLIC_COLS =
+  'id, owner_id, name, category, description, address, lat, lng, logo_url, cover_url, brand_color, tags, phone, website, email, slug, opening_hours, opening_hours_until, is_verified, is_active, is_claimed, claimed_at, verified_at, created_at, accepts_wallet, accepts_bookings, cashback_percent, payout_enabled, subscription_tier, subscription_until, can_publish_urgent, planner_visitor_ready, planner_dwell_minutes, planner_setting, planner_good_for, planner_booking, planner_note, planner_context_source, trade_categories, trade_availability, trade_availability_set_at, trade_min_job_pence, trade_credentials';
+
 export interface OpeningHours {
   mon?: string; tue?: string; wed?: string; thu?: string;
   fri?: string; sat?: string; sun?: string;
 }
 
+/**
+ * The private half is OPTIONAL because it is no longer part of the row a
+ * client can select. Column grants keep it out of every directory read; the
+ * owner's own screens fill it in from business_private_fields(), which checks
+ * that the caller owns the business.
+ */
 export interface LocalBusiness {
   id:                string;
   owner_id:          string;
@@ -95,22 +116,32 @@ export interface LocalBusiness {
   is_active:         boolean;
   accepts_wallet:    boolean;
   cashback_percent:  number;
-  stripe_account_id: string | null;
+  stripe_account_id?: string | null;
   payout_enabled:    boolean;
   subscription_tier:      SubscriptionTier;
   subscription_until:     string | null;
-  stripe_customer_id:     string | null;
-  stripe_subscription_id: string | null;
-  nfc_token:              string | null;
-  nfc_status:             'none' | 'requested' | 'dispatched' | 'active';
-  nfc_dispatched_at:      string | null;
-  nfc_activated_at:       string | null;
+  stripe_customer_id?:     string | null;
+  stripe_subscription_id?: string | null;
+  nfc_token?:              string | null;
+  /** Owner-private payment configuration, from business_private_fields(). */
+  use_business_payment?:                boolean;
+  has_business_payment_method?:         boolean;
+  use_business_payout?:                 boolean;
+  business_stripe_onboarding_complete?: boolean;
+  business_stripe_payouts_enabled?:     boolean;
+  /** Derived Stripe state — "Connected", never the account id. */
+  stripe_connected?:                    boolean;
+  business_stripe_connected?:           boolean;
+  subscription_connected?:              boolean;
+  nfc_status?:             'none' | 'requested' | 'dispatched' | 'active';
+  nfc_dispatched_at?:      string | null;
+  nfc_activated_at?:       string | null;
   accepts_bookings:       boolean;
   slug:                   string | null;
   subscription_cancel_at_period_end?: boolean;
   // Directory seeding + claim flow (migration 062)
-  source:            'owner' | 'csv' | 'google' | 'wordpress';
-  place_id:          string | null;
+  source?:            'owner' | 'csv' | 'google' | 'wordpress';
+  place_id?:          string | null;
   is_claimed:        boolean;
   claimed_at:        string | null;
   verified_at:       string | null;
@@ -290,7 +321,7 @@ export function distanceKm(lat1: number, lng1: number, lat2: number, lng2: numbe
 export async function fetchActiveBusinesses(category?: LocalCategory): Promise<LocalBusiness[]> {
   let q = supabase
     .from('local_businesses')
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .order('is_verified', { ascending: false })
     .order('created_at', { ascending: false });
@@ -304,7 +335,7 @@ export async function fetchActiveBusinesses(category?: LocalCategory): Promise<L
 export async function fetchBusiness(id: string): Promise<LocalBusiness | null> {
   const { data, error } = await supabase
     .from('local_businesses')
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
@@ -315,7 +346,7 @@ export async function fetchBusiness(id: string): Promise<LocalBusiness | null> {
 export async function fetchMyBusinesses(userId: string): Promise<LocalBusiness[]> {
   const { data, error } = await supabase
     .from('local_businesses')
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .eq('owner_id', userId)
     .order('created_at', { ascending: false });
   if (error) throw error;
@@ -356,7 +387,7 @@ export async function createBusiness(userId: string, input: BusinessUpsertInput)
   const { data, error } = await supabase
     .from('local_businesses')
     .insert({ owner_id: userId, ...input })
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .single();
   if (error) throw error;
   return data as LocalBusiness;
@@ -987,7 +1018,7 @@ export async function fetchFeaturedBusinesses(limit = 12): Promise<LocalBusiness
 
   const { data: subs } = await supabase
     .from('local_businesses')
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .in('subscription_tier', ['pro', 'premium'])
     .or(`subscription_until.is.null,subscription_until.gt.${now}`)
@@ -1002,7 +1033,7 @@ export async function fetchFeaturedBusinesses(limit = 12): Promise<LocalBusiness
   const have = new Set(featured.map(b => b.id));
   const { data: rest } = await supabase
     .from('local_businesses')
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .order('is_verified', { ascending: false })
     .order('created_at', { ascending: false })
@@ -1639,7 +1670,7 @@ export async function fetchLocalFeed(area?: string): Promise<{
 
   let bizQ = supabase
     .from('local_businesses')
-    .select('*')
+    .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .order('is_verified', { ascending: false })
     .order('created_at', { ascending: false })
@@ -1664,4 +1695,24 @@ export async function fetchLocalFeed(area?: string): Promise<{
     businesses: (bizRes.data ?? []) as LocalBusiness[],
     jobs:       (jobRes.data ?? []) as LocalFeedJob[],
   };
+}
+
+
+/**
+ * Owner-private business fields.
+ *
+ * These used to arrive with `select('*')`, which meant anyone with the public
+ * anon key could read them for any active business — including the NFC token
+ * and the Stripe identifiers. They now come from an RPC that refuses anyone who
+ * does not own the business, and it hands back booleans for Stripe state rather
+ * than the identifiers, because "Connected" is all the screen ever showed.
+ */
+export async function fetchBusinessPrivate(businessId: string): Promise<Partial<LocalBusiness>> {
+  const { data, error } = await supabase
+    .rpc('business_private_fields', { p_business_id: businessId })
+    .maybeSingle();
+  // A non-owner is refused, and that is not an error the UI needs to shout
+  // about — it simply has no private fields to show.
+  if (error || !data) return {};
+  return data as Partial<LocalBusiness>;
 }

@@ -14,6 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
 import { useAlert } from '@/components/BrandedAlert';
+import { fetchBusinessPrivate } from '@/lib/local-api';
 
 // ── Reusable components ───────────────────────────────────────────────────────
 
@@ -92,12 +93,20 @@ export default function MeTab() {
   const loadStats = useCallback(async () => {
     if (!profile?.id) return;
     try {
+      // The payment-setup flags are owner-private now, so the row gives the
+      // public half and business_private_fields() supplies the rest — for the
+      // businesses this person actually owns.
       const { data: biz } = await supabase
         .from('local_businesses')
-        .select('id, name, use_business_payment, has_business_payment_method, use_business_payout, business_stripe_onboarding_complete, business_stripe_payouts_enabled')
+        .select('id, name')
         .eq('owner_id', profile.id)
         .eq('is_active', true);
-      setMyBusinesses((biz ?? []) as MyBusiness[]);
+      const rows = (biz ?? []) as { id: string; name: string }[];
+      const withPrivate = await Promise.all(rows.map(async (b) => ({
+        ...b,
+        ...(await fetchBusinessPrivate(b.id)),
+      })));
+      setMyBusinesses(withPrivate as MyBusiness[]);
     } catch { /* silent */ }
   }, [profile?.id]);
 
