@@ -17,6 +17,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { fetchWalletBalance, payWithWallet, formatPence } from '@/lib/local-api';
+import { useAttemptId } from '@/hooks/useAttemptId';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
@@ -45,6 +46,7 @@ export default function PayScreen() {
   }, [profile?.id]);
 
   const amountPence = Math.round((parseFloat(amount) || 0) * 100);
+  const attemptId = useAttemptId(`${digits}|${amountPence}`);   // amount or code change = new payment
   const amountValid = amountPence >= 50 && amountPence <= balance;
 
   const proceedToCode = () => {
@@ -76,7 +78,7 @@ export default function PayScreen() {
     setStep('paying');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      const res = await payWithWallet(code, amountPence);
+      const res = await payWithWallet(code, amountPence, attemptId());
       setResult(res);
       setStep('done');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

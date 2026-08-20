@@ -21,6 +21,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { collectStampViaNfc, resolveNfcTile, payWithWalletViaTile, fetchWalletBalance, formatPence, type ResolvedTile } from '@/lib/local-api';
+import { useAttemptId } from '@/hooks/useAttemptId';
 
 const S = SECTIONS.local;
 
@@ -83,6 +84,7 @@ export default function NfcTapScreen() {
   }
 
   const amountPence = Math.round((parseFloat(amount) || 0) * 100);
+  const attemptId = useAttemptId(`${token}|${amountPence}`);   // amount or tile change = new payment
   const amountValid = amountPence >= 50 && amountPence <= balance;
 
   async function doPay() {
@@ -90,7 +92,7 @@ export default function NfcTapScreen() {
     successScale.setValue(0.7);
     setPhase('paying'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      const r = await payWithWalletViaTile(token, amountPence);
+      const r = await payWithWalletViaTile(token, amountPence, attemptId());
       setPayResult(r); setPhase('payDone'); pop();
     } catch (e) { setPhase('error'); setErrorMsg(e instanceof Error ? e.message : 'Payment failed.'); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); }
   }

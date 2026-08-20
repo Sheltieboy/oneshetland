@@ -728,8 +728,13 @@ export async function fetchMyRedeemedOfferIds(userId: string): Promise<string[]>
  * wallet-checkout edge function. Surfaces the server's error message. Returns
  * the function's JSON (incl. the new balance_pence) on success.
  */
-export async function walletCheckout(body: Record<string, unknown>): Promise<any> {
-  const { data, error } = await supabase.functions.invoke('wallet-checkout', { body });
+export async function walletCheckout(body: Record<string, unknown>, attemptId: string): Promise<any> {
+  // The attempt id is a PARAMETER, minted by the screen when the customer
+  // commits. Minting it here would give every retry a fresh one, which is
+  // exactly how a double tap became two purchases.
+  const { data, error } = await supabase.functions.invoke('wallet-checkout', {
+    body: { ...body, client_request_id: attemptId },
+  });
   if (error) {
     let msg = error.message;
     try {
@@ -811,24 +816,20 @@ export async function confirmWalletTopUp(paymentIntentId: string): Promise<{ bal
  * double-tap or an automatic retry after a slow response cannot pay twice —
  * while a genuine second payment, carrying a new id, still goes through.
  */
-const paymentAttemptId = () =>
-  (typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : `pay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 /** Pay a business from the wallet using their rotating code */
-export async function payWithWallet(code: string, amountPence: number): Promise<{ balance_pence: number; cashback_pence: number }> {
+export async function payWithWallet(code: string, amountPence: number, attemptId: string): Promise<{ balance_pence: number; cashback_pence: number }> {
   const { data, error } = await supabase.functions.invoke('local-wallet-pay', {
-    body: { code, amount_pence: amountPence, client_request_id: paymentAttemptId() },
+    body: { code, amount_pence: amountPence, client_request_id: attemptId },
   });
   if (error) throw await fnErr(error, 'Could not pay with wallet.');
   return data;
 }
 
 /** Pay a business identified by a tapped NFC tile (no till code needed). */
-export async function payWithWalletViaTile(nfcToken: string, amountPence: number): Promise<{ balance_pence: number; cashback_pence: number }> {
+export async function payWithWalletViaTile(nfcToken: string, amountPence: number, attemptId: string): Promise<{ balance_pence: number; cashback_pence: number }> {
   const { data, error } = await supabase.functions.invoke('local-wallet-pay', {
-    body: { nfc_token: nfcToken, amount_pence: amountPence, client_request_id: paymentAttemptId() },
+    body: { nfc_token: nfcToken, amount_pence: amountPence, client_request_id: attemptId },
   });
   if (error) throw await fnErr(error, 'Could not pay with wallet.');
   return data;

@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { executeWalletPayment } from '../_shared/wallet-pay.ts';
+import { claimAttempt, settleAttempt, attemptFingerprint, attemptBlockedResponse } from '../_shared/wallet-ledger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -71,58 +72,47 @@ serve(async (req) => {
 
     if (!business) return json({ error: 'Business not found' }, 404);
 
-    // Claim the attempt BEFORE any money moves. executeWalletPayment debits and
-    // then transfers, so a second tap that got past this point would debit again
-    // — a Stripe idempotency key alone would only dedupe the transfer, leaving
-    // the customer down twice and the business paid once.
+    // ── Claim the attempt BEFORE any money moves ─────────────────────────
     //
-    // Optional: an older client that sends no id behaves exactly as before,
-    // rather than being locked out by a server it hasn't caught up with.
-    if (client_request_id) {
-      const { error: claimErr } = await svc
-        .from('wallet_payment_claims')
-        .insert({ client_request_id: String(client_request_id).slice(0, 128), user_id: user.id });
-
-      if (claimErr) {
-        if (claimErr.code !== '23505') throw claimErr;
-        // Someone already claimed this attempt.
-        const { data: prior } = await svc
-          .from('wallet_payment_claims')
-          .select('result, completed_at, user_id')
-          .eq('client_request_id', String(client_request_id).slice(0, 128))
-          .maybeSingle();
-        // A claim belongs to whoever took it; never hand one person another's result.
-        if (prior?.user_id !== user.id) return json({ error: 'Payment reference already used' }, 409);
-        if (prior?.completed_at && prior.result) return json(prior.result);
-        return json({ error: "That payment is already going through — give it a moment." }, 409);
-      }
+    // Required. Both clients send one, so there is no legacy path left to keep
+    // open, and an optional reference on a payment endpoint is a reference
+    // nobody has to send.
+    //
+    // Bound to the resolved business and the amount, so this reference cannot
+    // be replayed against a different shop or a different sum.
+    if (typeof client_request_id !== 'string' || client_request_id.trim().length < 8 || client_request_id.length > 128) {
+      return json({ error: 'A valid payment reference is required.' }, 400);
     }
+    const rid = client_request_id;
+
+    const attempt = await claimAttempt(svc, rid, user.id,
+      await attemptFingerprint([user.id, 'till_pay', business.id, amount_pence]));
+    const blocked = attemptBlockedResponse(attempt);
+    if (blocked) return json(blocked.body, blocked.status);
 
     // Shared execution path (fee, cashback, atomic debit, transfer, refund-on-fail,
     // receipts) — identical to the scan-to-charge flow so the money logic can't drift.
     const result = await executeWalletPayment(svc, {
       userId: user.id, business, amountPence: amount_pence,
-      // Belt and braces: even inside one claim, a retried transfer returns the
-      // original rather than paying the business twice.
-      idempotencyKey: client_request_id ? `wallet-pay:${client_request_id}` : undefined,
+      idempotencyKey: `wallet-attempt:${rid}`,
     });
 
     if (!result.ok) {
-      // Release the claim so the customer can genuinely try again — a failed
-      // payment that can never be retried is worse than the double charge.
-      if (client_request_id) {
-        await svc.from('wallet_payment_claims').delete()
-          .eq('client_request_id', String(client_request_id).slice(0, 128));
-      }
+      // This used to DELETE the claim on every failure — including a Stripe
+      // timeout, where the money may well have moved. Releasing the reference
+      // then let the same payment start again alongside an unsettled transfer.
+      //
+      // An unresolved attempt is accounting state, not a cache entry. It keeps
+      // its reference and its transaction, so a retry resumes THAT transfer
+      // under the same Stripe key rather than starting a second payment.
+      await settleAttempt(svc, rid,
+        result.reason === 'unresolved' ? 'unresolved' : (result.reason === 'rejected' ? 'reversed' : 'failed'),
+        result.transactionId ?? null);
       return json({ error: result.error }, result.status);
     }
 
     const payload = { balance_pence: result.balance_pence, cashback_pence: result.cashback_pence };
-    if (client_request_id) {
-      await svc.from('wallet_payment_claims')
-        .update({ completed_at: new Date().toISOString(), result: payload })
-        .eq('client_request_id', String(client_request_id).slice(0, 128));
-    }
+    await settleAttempt(svc, rid, 'completed', result.transactionId ?? null, payload);
     return json(payload);
   } catch (err) {
     console.error('[local-wallet-pay]', err);

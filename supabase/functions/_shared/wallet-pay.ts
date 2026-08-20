@@ -28,8 +28,14 @@ export interface PayBusiness {
 }
 
 export type WalletPayResult =
-  | { ok: true; balance_pence: number; cashback_pence: number; transfer_id: string | null }
-  | { ok: false; status: number; error: string };
+  | { ok: true; balance_pence: number; cashback_pence: number; transfer_id: string | null; transactionId: string | null; alreadyApplied: boolean }
+  // `reason` and `transactionId` are surfaced because the caller has to tell an
+  // unresolved transfer (keep the attempt, resume it) apart from a rejection
+  // (terminal, already reversed) — and needs the transaction to point at.
+  // 'ineligible' is a pre-flight refusal — nothing was attempted, no wallet
+  // transaction exists, and the attempt is terminally failed rather than
+  // resumable.
+  | { ok: false; status: number; error: string; reason: 'ineligible' | 'insufficient' | 'rejected' | 'unresolved'; transactionId?: string };
 
 /**
  * Debit the customer's wallet and pay the business, atomically and idempotently.
@@ -43,10 +49,10 @@ export async function executeWalletPayment(
 ): Promise<WalletPayResult> {
   const { userId, business, amountPence } = args;
 
-  if (business.owner_id === userId) return { ok: false, status: 403, error: "Can't pay yourself" };
-  if (!business.accepts_wallet) return { ok: false, status: 400, error: "This business doesn't accept wallet payments yet" };
+  if (business.owner_id === userId) return { ok: false, status: 403, error: "Can't pay yourself", reason: 'ineligible' };
+  if (!business.accepts_wallet) return { ok: false, status: 400, error: "This business doesn't accept wallet payments yet", reason: 'ineligible' };
   if (!business.stripe_account_id || !business.payout_enabled) {
-    return { ok: false, status: 400, error: "Business hasn't finished Stripe onboarding" };
+    return { ok: false, status: 400, error: "Business hasn't finished Stripe onboarding", reason: 'ineligible' };
   }
 
   // Cashback is BUSINESS-FUNDED — comes out of the merchant's transfer.
@@ -55,7 +61,7 @@ export async function executeWalletPayment(
   const platformFee = calculateCommission(amountPence, walletCfg, 'wallet').fee_pence;
   const transferAmount = amountPence - platformFee - cashbackPence;
   if (transferAmount < 1) {
-    return { ok: false, status: 400, error: "This payment can't be processed — the business's cashback rate and platform fee together exceed the payment amount." };
+    return { ok: false, status: 400, error: "This payment can't be processed — the business's cashback rate and platform fee together exceed the payment amount.", reason: 'ineligible' };
   }
 
   // ── Debit, transfer, settle ────────────────────────────────────────────
@@ -90,7 +96,9 @@ export async function executeWalletPayment(
     },
   });
 
-  if (!result.ok) return { ok: false, status: result.status, error: result.error };
+  if (!result.ok) {
+    return { ok: false, status: result.status, error: result.error, reason: result.reason, transactionId: result.transactionId };
+  }
 
   const newBalance = result.balancePence;
   const transferId = result.transferId;
@@ -115,5 +123,8 @@ export async function executeWalletPayment(
     }
   } catch (e) { console.error('[wallet-pay] notify failed', e); }
 
-  return { ok: true, balance_pence: newBalance, cashback_pence: cashbackPence, transfer_id: transferId };
+  return {
+    ok: true, balance_pence: newBalance, cashback_pence: cashbackPence, transfer_id: transferId,
+    transactionId: result.transactionId, alreadyApplied: result.alreadyApplied,
+  };
 }

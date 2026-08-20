@@ -25,6 +25,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
+import { useAttemptId } from '@/hooks/useAttemptId';
 import { supabase } from '@/lib/supabase';
 import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
 import { formatPence, type BookUnitItem } from '@/lib/book-api';
@@ -45,6 +46,7 @@ export default function BuyUnitScreen() {
   const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const attemptId = useAttemptId(item?.id ?? null);   // one reference per item
 
   useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
@@ -168,7 +170,7 @@ export default function BuyUnitScreen() {
     if (!profile || !item) return;
     setSubmitting(true);
     try {
-      const res = await walletCheckout({ type: 'unit_purchase', unit_item_id: item.id });
+      const res = await walletCheckout({ type: 'unit_purchase', unit_item_id: item.id }, attemptId());
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDone(true);

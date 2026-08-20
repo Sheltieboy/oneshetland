@@ -22,6 +22,7 @@ import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
+import { useAttemptId } from '@/hooks/useAttemptId';
 import {
   fetchHub, fetchMyMembership, joinHub, leaveHub, fetchMemberCount, fetchHubNotices,
   fetchHubMembershipTypes, startHubMembershipPayment, confirmHubMembership,
@@ -72,6 +73,7 @@ export default function HubDetailScreen() {
   // alert (the app-root BrandedAlert) can't present over a modal — and we mustn't
   // introduce another Modal here — so success is shown as an in-page banner.
   const [joinSuccess, setJoinSuccess] = useState<{ title: string; message: string } | null>(null);
+  const attemptId = useAttemptId(payingType?.id ?? null);   // one reference per tier
 
   useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
 
@@ -142,7 +144,7 @@ export default function HubDetailScreen() {
     if (!hub || !profile) return;
     setActing(true);
     try {
-      const res = await walletCheckout({ type: 'hub_membership', membership_type_id: type.id });
+      const res = await walletCheckout({ type: 'hub_membership', membership_type_id: type.id }, attemptId());
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setJoinSuccess({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });

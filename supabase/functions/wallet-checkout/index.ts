@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { debitAndTransfer, walletReverse } from '../_shared/wallet-ledger.ts';
+import { debitAndTransfer, walletReverse, claimAttempt, settleAttempt,
+         attemptFingerprint, attemptBlockedResponse } from '../_shared/wallet-ledger.ts';
 
 const STRIPE_API_VERSION = '2023-10-16';
 const corsHeaders = {
@@ -37,11 +38,26 @@ serve(async (req) => {
     const body = await req.json();
     const type = body?.type as string;
 
+    // ── Attempt reference ────────────────────────────────────────────────
+    //
+    // REQUIRED. Without one, every flow below called the debit primitive with a
+    // null idempotency key, so a double tap was two purchases — reproduced
+    // against the production schema: two 1000p debits, two ledger rows, 2000p
+    // gone for one thing bought.
+    //
+    // Validated here, before anything is read, resolved or charged. Objects and
+    // arrays are rejected rather than stringified into a key that would differ
+    // between two identical taps.
+    const rid = body?.client_request_id;
+    if (typeof rid !== 'string' || rid.trim().length < 8 || rid.length > 128) {
+      return json({ error: 'A valid payment reference is required.' }, 400);
+    }
+
     switch (type) {
-      case 'hub_donation':   return await hubDonation(svc, user.id, body);
-      case 'hub_membership': return await hubMembership(svc, user.id, body);
-      case 'unit_purchase':  return await unitPurchase(svc, user.id, body);
-      case 'shift_boost':    return await shiftBoost(svc, user.id, body);
+      case 'hub_donation':   return await hubDonation(svc, user.id, body, rid);
+      case 'hub_membership': return await hubMembership(svc, user.id, body, rid);
+      case 'unit_purchase':  return await unitPurchase(svc, user.id, body, rid);
+      case 'shift_boost':    return await shiftBoost(svc, user.id, body, rid);
       default:
         return json({ error: `Wallet payment isn't available for "${type}" yet.` }, 400);
     }
@@ -52,7 +68,7 @@ serve(async (req) => {
 });
 
 // ── hub_donation ────────────────────────────────────────────────────────────
-async function hubDonation(svc: any, userId: string, body: any): Promise<Response> {
+async function hubDonation(svc: any, userId: string, body: any, rid: string): Promise<Response> {
   const campaignId = body.campaign_id as string;
   const amount = Math.round(Number(body.amount_pence));
   const message = body.message ? String(body.message).slice(0, 280) : null;
@@ -85,13 +101,21 @@ async function hubDonation(svc: any, userId: string, body: any): Promise<Respons
     ga = { ...giftAidIn, postcode: pc };
   }
 
+  // Claim the attempt, bound to what it is FOR. The fingerprint uses the
+  // resolved hub and the validated amount, so this reference cannot later be
+  // replayed against a different campaign or a different sum.
+  const attempt = await claimAttempt(svc, rid, userId,
+    await attemptFingerprint([userId, 'hub_donation', hub.id, campaignId, amount]));
+  const blocked = attemptBlockedResponse(attempt);
+  if (blocked) return json(blocked.body, blocked.status);
+
   // Debit + ledger in one transaction, then transfer keyed on that ledger row.
   // No platform fee on wallet donations — the money is already on the platform
   // from the top-up.
   const paid = await debitAndTransfer(svc, {
     userId, spendPence: amount,
     description: `Donation to ${hub.name}`,
-    idempotencyKey: body?.client_request_id ? `hub-donation:${body.client_request_id}` : null,
+    idempotencyKey: `wallet-attempt:${rid}`,
     transfer: {
       destination: hub.stripe_account_id,
       amountPence: amount,
@@ -99,7 +123,13 @@ async function hubDonation(svc: any, userId: string, body: any): Promise<Respons
       metadata: { type: 'hub_donation_wallet', user_id: userId, campaign_id: campaignId },
     },
   });
-  if (!paid.ok) return json({ error: paid.error }, paid.status);
+  if (!paid.ok) {
+    // 'unresolved' keeps the attempt alive and pointing at the transaction, so a
+    // retry resumes THAT transfer. It is never released — Stripe may have moved
+    // the money, and a released reference would start a second payment.
+    await settleAttempt(svc, rid, paid.reason === 'unresolved' ? 'unresolved' : 'failed', paid.transactionId ?? null);
+    return json({ error: paid.error }, paid.status);
+  }
   const newBalance = paid.balancePence;
   const transferId = paid.transferId;
 
@@ -115,19 +145,27 @@ async function hubDonation(svc: any, userId: string, body: any): Promise<Respons
     p_title: ga?.title ?? null, p_first: ga?.first_name ?? null, p_last: ga?.last_name ?? null,
     p_address: ga?.address ?? null, p_postcode: ga?.postcode ?? null,
   });
-  if (rpcErr) return await refundUnfulfilled(svc, {
-    userId, refundPence: amount, transferId, walletTransactionId: paid.transactionId, purpose: 'hub_donation',
-    recipientId: hub.id, detail: { campaign_id: campaignId }, cause: rpcErr,
-  });
+  if (rpcErr) {
+    // Money moved but the entitlement could not be granted. refundUnfulfilled
+    // appends a linked reversal; the attempt becomes terminal so a retry of the
+    // same reference returns that outcome instead of paying again.
+    await settleAttempt(svc, rid, 'reversed', paid.transactionId);
+    return await refundUnfulfilled(svc, {
+      userId, refundPence: amount, transferId, walletTransactionId: paid.transactionId, purpose: 'hub_donation',
+      recipientId: hub.id, detail: { campaign_id: campaignId }, cause: rpcErr,
+    });
+  }
 
   // No ledger insert here any more — debitAndTransfer already wrote it, in the
   // same transaction as the balance change. This insert used to be the last
   // step, unchecked, after two other awaits that could throw first.
-  return json({ ok: true, balance_pence: newBalance, gift_aid: !!ga });
+  const payload = { ok: true, balance_pence: newBalance, gift_aid: !!ga };
+  await settleAttempt(svc, rid, 'completed', paid.transactionId, payload);
+  return json(payload);
 }
 
 // ── hub_membership ──────────────────────────────────────────────────────────
-async function hubMembership(svc: any, userId: string, body: any): Promise<Response> {
+async function hubMembership(svc: any, userId: string, body: any, rid: string): Promise<Response> {
   const typeId = body.membership_type_id as string;
   if (!typeId) return json({ error: 'membership_type_id required' }, 400);
 
@@ -149,10 +187,15 @@ async function hubMembership(svc: any, userId: string, body: any): Promise<Respo
 
   // The customer is debited price + platform fee; only the price is transferred
   // to the hub. The fee stays on the platform, so the two amounts differ.
+  const attempt = await claimAttempt(svc, rid, userId,
+    await attemptFingerprint([userId, 'hub_membership', hub.id, t.id, debitTotal]));
+  const blocked = attemptBlockedResponse(attempt);
+  if (blocked) return json(blocked.body, blocked.status);
+
   const paid = await debitAndTransfer(svc, {
     userId, spendPence: debitTotal,
     description: `Membership · ${hub.name}`,
-    idempotencyKey: body?.client_request_id ? `hub-membership:${body.client_request_id}` : null,
+    idempotencyKey: `wallet-attempt:${rid}`,
     platformFeePence: flatFee,
     transfer: {
       destination: hub.stripe_account_id,
@@ -161,7 +204,10 @@ async function hubMembership(svc: any, userId: string, body: any): Promise<Respo
       metadata: { type: 'hub_membership_wallet', user_id: userId, hub_id: hub.id, membership_type_id: t.id },
     },
   });
-  if (!paid.ok) return json({ error: paid.error }, paid.status);
+  if (!paid.ok) {
+    await settleAttempt(svc, rid, paid.reason === 'unresolved' ? 'unresolved' : 'failed', paid.transactionId ?? null);
+    return json({ error: paid.error }, paid.status);
+  }
   const newBalance = paid.balancePence;
   const transferId = paid.transferId;
 
@@ -169,18 +215,23 @@ async function hubMembership(svc: any, userId: string, body: any): Promise<Respo
     p_hub: hub.id, p_user: userId, p_type: t.id, p_period: t.period,
     p_payment_pence: t.price_pence, p_pi: `wallet_${paid.transactionId}`,
   });
-  if (rpcErr) return await refundUnfulfilled(svc, {
-    userId, refundPence: debitTotal, transferId, walletTransactionId: paid.transactionId, purpose: 'hub_membership',
-    recipientId: hub.id, detail: { membership_type_id: t.id }, cause: rpcErr,
-  });
+  if (rpcErr) {
+    await settleAttempt(svc, rid, 'reversed', paid.transactionId);
+    return await refundUnfulfilled(svc, {
+      userId, refundPence: debitTotal, transferId, walletTransactionId: paid.transactionId, purpose: 'hub_membership',
+      recipientId: hub.id, detail: { membership_type_id: t.id }, cause: rpcErr,
+    });
+  }
 
   // Ledger row already written by debitAndTransfer, in the same transaction as
   // the balance change.
-  return json({ ok: true, balance_pence: newBalance, member_no: result?.member_no ?? null, paid_until: result?.paid_until ?? null });
+  const payload = { ok: true, balance_pence: newBalance, member_no: result?.member_no ?? null, paid_until: result?.paid_until ?? null };
+  await settleAttempt(svc, rid, 'completed', paid.transactionId, payload);
+  return json(payload);
 }
 
 // ── unit_purchase ───────────────────────────────────────────────────────────
-async function unitPurchase(svc: any, userId: string, body: any): Promise<Response> {
+async function unitPurchase(svc: any, userId: string, body: any, rid: string): Promise<Response> {
   const itemId = body.unit_item_id as string;
   if (!itemId) return json({ error: 'unit_item_id required' }, 400);
 
@@ -196,11 +247,16 @@ async function unitPurchase(svc: any, userId: string, body: any): Promise<Respon
   const fee = Math.round(item.price_pence * 0.05); // 5% platform fee, matching the card flow
   const toBusiness = item.price_pence - fee;
 
+  const attempt = await claimAttempt(svc, rid, userId,
+    await attemptFingerprint([userId, 'unit_purchase', biz.id, item.id, item.price_pence]));
+  const blocked = attemptBlockedResponse(attempt);
+  if (blocked) return json(blocked.body, blocked.status);
+
   const paid = await debitAndTransfer(svc, {
     userId, spendPence: item.price_pence,
     businessId: biz.id,
     description: `${item.name} · ${biz.name}`,
-    idempotencyKey: body?.client_request_id ? `unit-purchase:${body.client_request_id}` : null,
+    idempotencyKey: `wallet-attempt:${rid}`,
     platformFeePence: fee,
     transfer: {
       destination: biz.stripe_account_id,
@@ -209,7 +265,10 @@ async function unitPurchase(svc: any, userId: string, body: any): Promise<Respon
       metadata: { type: 'unit_purchase_wallet', user_id: userId, business_id: biz.id, unit_item_id: item.id, fee_pence: String(fee) },
     },
   });
-  if (!paid.ok) return json({ error: paid.error }, paid.status);
+  if (!paid.ok) {
+    await settleAttempt(svc, rid, paid.reason === 'unresolved' ? 'unresolved' : 'failed', paid.transactionId ?? null);
+    return json({ error: paid.error }, paid.status);
+  }
   const newBalance = paid.balancePence;
   const transferId = paid.transferId;
 
@@ -219,17 +278,22 @@ async function unitPurchase(svc: any, userId: string, body: any): Promise<Respon
     paid_amount_pence: item.price_pence, uses_remaining: item.uses_per_purchase,
     payment_intent_id: `wallet_${paid.transactionId}`, expires_at: expiresAt,
   }).select('id, uses_remaining, expires_at').single();
-  if (insErr) return await refundUnfulfilled(svc, {
-    userId, refundPence: item.price_pence, transferId, walletTransactionId: paid.transactionId, purpose: 'unit_purchase',
-    recipientId: item.business_id, detail: { unit_item_id: item.id }, cause: insErr,
-  });
+  if (insErr) {
+    await settleAttempt(svc, rid, 'reversed', paid.transactionId);
+    return await refundUnfulfilled(svc, {
+      userId, refundPence: item.price_pence, transferId, walletTransactionId: paid.transactionId, purpose: 'unit_purchase',
+      recipientId: item.business_id, detail: { unit_item_id: item.id }, cause: insErr,
+    });
+  }
 
   // Ledger row already written by debitAndTransfer.
-  return json({ ok: true, balance_pence: newBalance, purchase_id: purchase?.id ?? null, uses_remaining: purchase?.uses_remaining ?? null, expires_at: purchase?.expires_at ?? null });
+  const payload = { ok: true, balance_pence: newBalance, purchase_id: purchase?.id ?? null, uses_remaining: purchase?.uses_remaining ?? null, expires_at: purchase?.expires_at ?? null };
+  await settleAttempt(svc, rid, 'completed', paid.transactionId, payload);
+  return json(payload);
 }
 
 // ── shift_boost (platform revenue — no transfer) ────────────────────────────
-async function shiftBoost(svc: any, userId: string, body: any): Promise<Response> {
+async function shiftBoost(svc: any, userId: string, body: any, rid: string): Promise<Response> {
   const shiftId = body.shift_id as string;
   if (!shiftId) return json({ error: 'shift_id required' }, 400);
 
@@ -240,13 +304,21 @@ async function shiftBoost(svc: any, userId: string, body: any): Promise<Response
   const PRICE = 299;
   // The platform keeps the £2.99, so there is no connected-account transfer —
   // but the debit and its accounting entry are still one transaction.
+  const attempt = await claimAttempt(svc, rid, userId,
+    await attemptFingerprint([userId, 'shift_boost', shiftId, PRICE]));
+  const blocked = attemptBlockedResponse(attempt);
+  if (blocked) return json(blocked.body, blocked.status);
+
   const paid = await debitAndTransfer(svc, {
     userId, spendPence: PRICE,
     description: 'Shift boost (24h)',
-    idempotencyKey: `shift-boost:${shiftId}:${body?.client_request_id ?? ''}` ,
+    idempotencyKey: `wallet-attempt:${rid}`,
     platformFeePence: PRICE,
   });
-  if (!paid.ok) return json({ error: paid.error }, paid.status);
+  if (!paid.ok) {
+    await settleAttempt(svc, rid, paid.reason === 'unresolved' ? 'unresolved' : 'failed', paid.transactionId ?? null);
+    return json({ error: paid.error }, paid.status);
+  }
 
   const boostedUntil = new Date(Date.now() + 86_400_000).toISOString();
   const { error: updErr } = await svc.from('shifts').update({ boosted_until: boostedUntil }).eq('id', shiftId);
@@ -254,10 +326,13 @@ async function shiftBoost(svc: any, userId: string, body: any): Promise<Response
     // The entitlement could not be granted, so put the money back — as an
     // appended reversal linked to the debit, not by editing it away.
     await walletReverse(svc, paid.transactionId, 'Shift boost could not be applied');
+    await settleAttempt(svc, rid, 'reversed', paid.transactionId);
     return json({ error: 'Could not boost the shift — your wallet has been refunded.' }, 500);
   }
 
-  return json({ ok: true, balance_pence: paid.balancePence, boosted_until: boostedUntil });
+  const payload = { ok: true, balance_pence: paid.balancePence, boosted_until: boostedUntil };
+  await settleAttempt(svc, rid, 'completed', paid.transactionId, payload);
+  return json(payload);
 }
 
 // Reverse a Stripe Connect transfer in full (used when a purchase's money moved

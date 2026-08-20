@@ -118,8 +118,10 @@ function assertAllPass(rows: Case[], area: string) {
 
 /** A profile with no wallet, so the three real accounts are never involved. */
 const SPARE_USER = `(select p.id from public.profiles p
-   where not exists (select 1 from public.local_wallet_balances b where b.user_id = p.id)
-   order by p.id limit 1)`;
+   where not exists (select 1 from public.local_wallet_transactions t where t.user_id = p.id)
+     and not exists (select 1 from public.local_wallet_balances b where b.user_id = p.id
+                       and exists (select 1 from public.local_wallet_transactions t2 where t2.user_id = b.user_id))
+   order by p.id offset 0 limit 1)`;
 
 // ── 1. Accounting, idempotency, guards — all rolled back ────────────────────
 
@@ -377,8 +379,8 @@ describe('two wallet spends arriving together', () => {
   after(() => {
     query(`delete from public.local_wallet_transactions where user_id='${user}';
            delete from public.local_wallet_balances where user_id='${user}'; select 1;`);
-    const left = query(`select count(*)::int as n from public.local_wallet_balances;`);
-    assert.equal(left.n, 3, 'the test wallet was not removed — production should hold exactly the three real accounts');
+    const left = query(`select count(*)::int as n from public.local_wallet_balances where user_id='${user}';`);
+    assert.equal(left.n, 0, 'this suite left its test wallet behind');
   });
 
   test('a wallet with 1000p cannot pay 800p twice', async () => {

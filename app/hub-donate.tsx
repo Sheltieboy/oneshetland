@@ -26,6 +26,7 @@ import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { useAlert } from '@/components/BrandedAlert';
 import { formatPence, fetchWalletBalance, walletCheckout } from '@/lib/local-api';
+import { useAttemptId } from '@/hooks/useAttemptId';
 import {
   fetchCampaign, fetchHub, startHubDonation, confirmHubDonation,
   type HubCampaign, type Hub, type GiftAidDeclaration,
@@ -82,6 +83,7 @@ export default function HubDonateScreen() {
 
   const accent = tint(hub?.brand_color);
   const effectiveAmount = customText ? Math.round(parseFloat(customText) * 100) || 0 : amount;
+  const attemptId = useAttemptId(`${campaignId}|${effectiveAmount}`);   // a different sum is a different donation
   const coverPence = Math.round(effectiveAmount * 0.015) + 20; // ~Stripe fee
   const chargePence = effectiveAmount + (coverFees ? coverPence : 0);
   // Gift Aid is only offered when the hub is a charity AND has a charity number on file.
@@ -142,7 +144,7 @@ export default function HubDonateScreen() {
         message: message.trim() || undefined,
         anonymous,
         gift_aid: buildGiftAid(),
-      });
+      }, attemptId());
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Show success INLINE — this modal screen can't present the root alert over
