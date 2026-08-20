@@ -187,6 +187,25 @@ describe('both clients mint the attempt id at the checkout boundary', () => {
       'lib/events-client.ts mints the attempt id — every retry would get a new one and the protection is gone');
   });
 
+  test('the mobile attempt id comes from a CSPRNG, with no weak fallback', () => {
+    const helper = read(join(REPO_ROOT, 'lib', 'checkout-attempt.ts'));
+    assert.ok(helper, 'lib/checkout-attempt.ts is missing');
+    assert.ok(helper!.includes("from 'expo-crypto'"),
+      'the mobile attempt id no longer comes from expo-crypto — React Native has no crypto polyfill of its own');
+
+    // Comments may discuss the old Math.random fallback; executable code may not
+    // use it. Strip block-comment and line-comment content before checking.
+    const code = helper!
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(!/Math\.random/.test(code),
+      'Math.random is back in the checkout attempt id — a predictable identifier in a payment path');
+
+    const pkg = read(join(REPO_ROOT, 'package.json'));
+    assert.match(pkg ?? '', /"expo-crypto"\s*:/,
+      'expo-crypto is not a declared dependency, so the shipped app would fail to resolve it');
+  });
+
   test('the Stripe idempotency key is derived from the order, so it is stable across retries', () => {
     const fn = read(join(REPO_ROOT, 'supabase', 'functions', 'create-event-ticket-intent', 'index.ts'));
     assert.ok(fn?.includes('`evt-order-${order.id}`'),

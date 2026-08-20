@@ -4,8 +4,8 @@
  * WHY THIS EXISTS
  * Retrying a ticket checkout used to create a second order and a second
  * capacity reservation: nothing tied two requests together as the same attempt.
- * The server now keys on (buyer_id, client_request_id), so a retry resolves to
- * the order the first call created and reserves nothing.
+ * The server keys on (buyer_id, client_request_id), so a retry resolves to the
+ * order the first call created and reserves nothing.
  *
  * WHERE IT MUST BE CALLED FROM
  * The checkout SCREEN, once, when the buyer starts a purchase — and NOT from
@@ -14,60 +14,40 @@
  * the failure this is meant to prevent. The mirror of this file lives in
  * oneshetland-web/lib/checkout-attempt.ts.
  *
- * A NOTE ON THE RANDOM SOURCE
- * This app has no crypto polyfill: expo-crypto is not installed and nothing
- * provides crypto.getRandomValues (see the same admission in lib/analytics.ts).
- * So the detection chain below usually lands on the Math.random branch on
- * device, and it is worth being clear about why that is acceptable *here* and
- * would not be elsewhere.
+ * THE RANDOM SOURCE
+ * expo-crypto's randomUUID() — a v4 UUID from the platform CSPRNG (SecRandom on
+ * iOS, SecureRandom on Android). The first version of this file fell back to
+ * Math.random when no crypto provider was installed, with a note arguing that
+ * was tolerable because the id is buyer-scoped and grants nothing. The argument
+ * held, but a predictable identifier in a payment path is not worth carrying
+ * into launch on the strength of an argument, so expo-crypto was added.
  *
- * This id is not a secret and grants nothing. The uniqueness index is
- * (buyer_id, client_request_id) and buyer_id comes from the verified JWT, so
- * guessing somebody else's id reaches nothing of theirs — the only property
- * required is that one buyer's own checkouts do not collide with each other,
- * across a handful of purchases. 122 bits from a weak PRNG is far beyond that.
+ * There is deliberately no weak fallback. If secure randomness cannot
+ * initialise, this throws and the buyer sees a checkout that refused to start —
+ * which is recoverable. Silently minting a guessable attempt id would not be.
  *
- * If a stronger source is wanted, installing expo-crypto and using
- * Crypto.randomUUID() is the one-line change; the detection chain will pick it
- * up automatically because it prefers crypto.randomUUID when present.
+ * Unrelated non-security identifiers elsewhere (lib/analytics.ts's anon id) are
+ * left alone; they are documented as non-sensitive and are not in a money path.
  */
 
-type MaybeCrypto = {
-  randomUUID?: () => string;
-  getRandomValues?: <T extends ArrayBufferView>(a: T) => T;
-};
-
-const HEX = '0123456789abcdef';
-
-/** Format 16 random bytes as an RFC 4122 v4 UUID. */
-function uuidFromBytes(b: Uint8Array): string {
-  b[6] = (b[6] & 0x0f) | 0x40; // version 4
-  b[8] = (b[8] & 0x3f) | 0x80; // variant 10
-  let out = '';
-  for (let i = 0; i < 16; i++) {
-    if (i === 4 || i === 6 || i === 8 || i === 10) out += '-';
-    out += HEX[b[i] >> 4] + HEX[b[i] & 0x0f];
-  }
-  return out;
-}
+import * as Crypto from 'expo-crypto';
 
 /**
  * A new checkout attempt id. Call once per purchase the buyer starts — never
  * once per network request.
+ *
+ * @throws if the platform cannot provide cryptographically secure randomness.
  */
 export function newCheckoutAttemptId(): string {
-  const c: MaybeCrypto | undefined =
-    typeof globalThis !== 'undefined' ? (globalThis as { crypto?: MaybeCrypto }).crypto : undefined;
+  // Prefer the runtime's own Web Crypto when a build provides it; fall through
+  // to expo-crypto otherwise. Both are CSPRNG-backed — this is not a strength
+  // ladder, just two names for the same guarantee.
+  const webCrypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
 
-  if (typeof c?.randomUUID === 'function') return c.randomUUID();
-
-  if (typeof c?.getRandomValues === 'function') {
-    return uuidFromBytes(c.getRandomValues(new Uint8Array(16)));
+  const id = Crypto.randomUUID();
+  if (typeof id !== 'string' || id.length < 32) {
+    throw new Error('Could not start a secure checkout. Please restart the app and try again.');
   }
-
-  // No crypto on this runtime — see the note above for why this is sound for a
-  // buyer-scoped idempotency key, and unsuitable for anything secret.
-  const b = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) b[i] = (Math.random() * 256) | 0;
-  return uuidFromBytes(b);
+  return id;
 }
