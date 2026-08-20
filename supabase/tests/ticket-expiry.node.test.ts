@@ -81,13 +81,17 @@ create function pg_temp.seats(p_type uuid, p_n int) returns jsonb language sql a
   from generate_series(1,p_n) g $g$;
 
 -- abandoned checkout, created through the Step 3B basket model
+-- client_request_id is REQUIRED since 20260819280000; these are two distinct
+-- checkouts, so each gets its own.
 create temp table made as select (public.reserve_ticket_basket(
-  (select event_id from t),(select id from u),pg_temp.seats((select id from t),4),0,0,'{}'::jsonb)->>'order_id')::uuid oid;
+  (select event_id from t),(select id from u),pg_temp.seats((select id from t),4),0,0,'{}'::jsonb,
+  'expiry-abandoned-'||gen_random_uuid())->>'order_id')::uuid oid;
 create temp table b1 as select quantity_sold s from public.event_ticket_types where id=(select id from t);
 
 -- a PAID order of the same age, which must survive
 create temp table paid as select (public.reserve_ticket_basket(
-  (select event_id from t),(select id from u),pg_temp.seats((select id from t),2),0,0,'{}'::jsonb)->>'order_id')::uuid oid;
+  (select event_id from t),(select id from u),pg_temp.seats((select id from t),2),0,0,'{}'::jsonb,
+  'expiry-paid-'||gen_random_uuid())->>'order_id')::uuid oid;
 update public.event_ticket_orders set status='paid', paid_at=now() where id=(select oid from paid);
 update public.event_tickets set status='valid' where order_id=(select oid from paid);
 create temp table b2 as select quantity_sold s from public.event_ticket_types where id=(select id from t);

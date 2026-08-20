@@ -82,8 +82,10 @@ create function pg_temp.seats(p_type uuid, p_n int) returns jsonb language sql a
     'token_hash', encode(sha256((p_type::text||g||random()::text)::bytea),'hex'))),'[]'::jsonb)
   from generate_series(1, greatest(p_n,0)) g $g$;
 create function pg_temp.reserve(p_event uuid, p_json text) returns text language plpgsql as $h$
+-- Each call here is a genuinely different checkout, so each gets its own
+-- attempt id. client_request_id is REQUIRED since 20260819280000.
 begin return pg_temp.try('select public.reserve_ticket_basket('''||p_event||'''::uuid,'''||
-  (select id from u)||'''::uuid,'||p_json||',0,0,''{}''::jsonb)::text'); end $h$;
+  (select id from u)||'''::uuid,'||p_json||',0,0,''{}''::jsonb,''atomicity-''||gen_random_uuid())::text'); end $h$;
 
 -- (a) PARTIAL: A x2 fits, B x3 does not → nothing may change
 create temp table r_partial as select pg_temp.reserve((select event_id from ab limit 1),
@@ -180,7 +182,8 @@ create function pg_temp.seats(p_type uuid, p_n int) returns jsonb language sql a
     'token_hash', encode(sha256((p_type::text||g||random()::text)::bytea),'hex')))
   from generate_series(1,p_n) g $g$;
 create temp table made as select (public.reserve_ticket_basket(
-  (select event_id from t),(select id from u),pg_temp.seats((select id from t),3),0,0,'{}'::jsonb)->>'order_id')::uuid oid;
+  (select event_id from t),(select id from u),pg_temp.seats((select id from t),3),0,0,'{}'::jsonb,
+  'release-'||gen_random_uuid())->>'order_id')::uuid oid;
 create temp table b1 as select quantity_sold s from public.event_ticket_types where id=(select id from t);
 create temp table rel as select
   public.release_ticket_order((select oid from made)) r1,
@@ -224,7 +227,9 @@ describe('reservation RPCs are server-only', () => {
   before(() => { if (!cfg) throw new Error('Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY (or provide a .env).'); });
 
   const RPCS: Array<[string, Record<string, unknown>]> = [
-    ['reserve_ticket_basket', { p_event_id: NIL, p_buyer_id: NIL, p_tickets: [], p_total_pence: 0, p_platform_fee_pence: 0, p_snapshot: {} }],
+    // p_client_request_id is required since 20260819280000 — omitting it gives a
+    // 404 (no matching signature), which would hide the permission answer.
+    ['reserve_ticket_basket', { p_event_id: NIL, p_buyer_id: NIL, p_tickets: [], p_total_pence: 0, p_platform_fee_pence: 0, p_snapshot: {}, p_client_request_id: 'probe-attempt-id' }],
     ['release_ticket_order', { p_order_id: NIL }],
     ['reserve_ticket_slots', { p_type_id: NIL, p_quantity: 1 }],
     ['expire_stale_ticket_orders', { p_older_than_minutes: 999_999 }],

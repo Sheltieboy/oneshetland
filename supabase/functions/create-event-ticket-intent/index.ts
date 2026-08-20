@@ -83,15 +83,14 @@ serve(async (req) => {
     // today and Adult x2 tomorrow are two purchases, and any key made from
     // buyer + event + basket would refuse the second one.
     //
-    // Still optional while the live website catches up — a request without it
-    // behaves exactly as before rather than being turned away by a server the
-    // deployed bundle has not met yet. Both clients now send it; once the web
-    // deploy is confirmed live this should become mandatory.
-    if (client_request_id !== null && client_request_id !== undefined) {
-      if (typeof client_request_id !== 'string' ||
-          client_request_id.length < 8 || client_request_id.length > 100) {
-        return new Response(JSON.stringify({ error: 'Invalid checkout reference' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
+    // REQUIRED. It was optional through the rollout so a server the deployed
+    // website had not met yet could not turn it away; oneshetland.com now ships
+    // a build that sends it (verified by reading the live bundle, not the repo)
+    // and the app is unpublished, so no legitimate client needs the old path.
+    // Rejected here, before anything is read or reserved.
+    if (typeof client_request_id !== 'string' || client_request_id.trim().length === 0 ||
+        client_request_id.length < 8 || client_request_id.length > 100) {
+      return new Response(JSON.stringify({ error: 'Invalid checkout reference' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     if (!event_id || !Array.isArray(line_items) || line_items.length === 0) {
@@ -266,7 +265,7 @@ serve(async (req) => {
       p_total_pence:        chargeTotalPence,
       p_platform_fee_pence: platformFeePence,
       p_snapshot:           eventSnapshot,
-      p_client_request_id:  client_request_id ?? null,
+      p_client_request_id:  client_request_id,
     });
 
     if (basketErr || !basket?.order_id) {
