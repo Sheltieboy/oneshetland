@@ -18,6 +18,7 @@ import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
+import { newCheckoutAttemptId } from '@/lib/checkout-attempt';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchWalletBalance } from '@/lib/local-api';
@@ -113,6 +114,16 @@ export default function EventTicketCheckoutScreen() {
 
   // Paid tickets on a saved card charge silently off-session, so show a confirm
   // step first. Free tickets and the no-saved-card (PaymentSheet) path don't need it.
+  // ── Checkout attempt id ──────────────────────────────────────────────────
+  // Minted once for the purchase the buyer is making, and reused if they tap
+  // Buy again after a network failure — that is what stops a retry creating a
+  // second order and holding the seats twice. Cleared when the basket changes
+  // (a different basket is a different purchase, and reusing the id would be
+  // rejected as a conflict) and after a completed purchase.
+  const attemptRef = useRef<string | null>(null);
+  const attemptId = () => (attemptRef.current ??= newCheckoutAttemptId());
+  useEffect(() => { attemptRef.current = null; }, [quantities]);
+
   const onBuyPress = () => {
     if (!profile) { goToSignIn(`/event-ticket-checkout?id=${id}`); return; }
     if (!event || lineItems.length === 0) return;
@@ -127,6 +138,9 @@ export default function EventTicketCheckoutScreen() {
   // wallet) so the buyer is always told the tickets are booked + where to find
   // them, instead of being silently bounced back to the purchase sheet.
   const ticketSuccess = () => {
+    // This purchase is done — the next Buy is a genuinely new checkout and must
+    // mint a fresh attempt id, or it would be refused as a replay of this one.
+    attemptRef.current = null;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     // Show success INLINE (a screen state), not as an alert. This screen is
     // presented as a modal and the alert lives at the app root, so iOS can't
@@ -201,7 +215,7 @@ export default function EventTicketCheckoutScreen() {
     if (!profile || !event || lineItems.length === 0) return;
     setBuying(true);
     try {
-      const result = await purchaseTickets({ event_id: event.id, line_items: lineItems, pay_with_wallet: true });
+      const result = await purchaseTickets({ event_id: event.id, line_items: lineItems, pay_with_wallet: true, client_request_id: attemptId() });
       await persistTokens(result.ticket_ids ?? [], result.tokens ?? []);
       if (!result.charged) throw new Error('Wallet payment did not complete.');
       setConfirming(false);

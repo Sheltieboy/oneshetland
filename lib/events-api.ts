@@ -560,6 +560,13 @@ export async function purchaseTickets(params: {
   line_items:     LineItem[];
   use_saved_card?: boolean;
   pay_with_wallet?: boolean;
+  /**
+   * One id per logical checkout, minted by the SCREEN (see
+   * lib/checkout-attempt.ts) and reused across retries of that same checkout.
+   * Deliberately not generated in here: a fresh id per HTTP call would give
+   * every retry a new key and remove the protection entirely.
+   */
+  client_request_id?: string;
 }): Promise<{
   clientSecret?: string;
   order_id:       string;

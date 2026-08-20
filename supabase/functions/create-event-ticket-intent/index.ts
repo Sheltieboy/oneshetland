@@ -74,7 +74,25 @@ serve(async (req) => {
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    const { event_id, line_items, use_saved_card = false, pay_with_wallet = false } = await req.json();
+    const { event_id, line_items, use_saved_card = false, pay_with_wallet = false,
+            client_request_id = null } = await req.json();
+
+    // ── Checkout attempt id ──────────────────────────────────────────────────
+    // One id per logical checkout, minted by the client and reused only while
+    // retrying THAT checkout. It cannot be derived from the basket: Adult x2
+    // today and Adult x2 tomorrow are two purchases, and any key made from
+    // buyer + event + basket would refuse the second one.
+    //
+    // Still optional while the live website catches up — a request without it
+    // behaves exactly as before rather than being turned away by a server the
+    // deployed bundle has not met yet. Both clients now send it; once the web
+    // deploy is confirmed live this should become mandatory.
+    if (client_request_id !== null && client_request_id !== undefined) {
+      if (typeof client_request_id !== 'string' ||
+          client_request_id.length < 8 || client_request_id.length > 100) {
+        return new Response(JSON.stringify({ error: 'Invalid checkout reference' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     if (!event_id || !Array.isArray(line_items) || line_items.length === 0) {
       return new Response(JSON.stringify({ error: 'event_id and line_items required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -248,23 +266,62 @@ serve(async (req) => {
       p_total_pence:        chargeTotalPence,
       p_platform_fee_pence: platformFeePence,
       p_snapshot:           eventSnapshot,
+      p_client_request_id:  client_request_id ?? null,
     });
 
     if (basketErr || !basket?.order_id) {
       // SOLD_OUT is the ordinary outcome when an event fills mid-checkout, and
       // deserves a different sentence from a genuine fault.
-      const soldOut = (basketErr?.message ?? '').includes('SOLD_OUT');
-      console.error('[create-event-ticket-intent] basket reservation failed:', basketErr?.message);
-      return new Response(
-        JSON.stringify({ error: soldOut
-          ? 'Some tickets are now sold out. Please refresh and try again.'
-          : 'Those tickets are not available. Please refresh and try again.' }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      const msg = basketErr?.message ?? '';
+      console.error('[create-event-ticket-intent] basket reservation failed:', msg);
+      // Each of these is an ordinary outcome with its own sentence, not a fault.
+      const text =
+        msg.includes('SOLD_OUT')             ? 'Some tickets are now sold out. Please refresh and try again.'
+      : msg.includes('CHECKOUT_EXPIRED')     ? 'This checkout has expired. Please start again.'
+      : msg.includes('IDEMPOTENCY_CONFLICT') ? 'That checkout reference was already used for a different order. Please start again.'
+      :                                        'Those tickets are not available. Please refresh and try again.';
+      return new Response(JSON.stringify({ error: text }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const order = { id: basket.order_id as string };
     const ticketIdsByIndex = (basket.ticket_ids ?? []) as string[];
+    const isReplay = basket.already === true;
+
+    // ── Replay: resolve to the existing order, pay nothing again ─────────────
+    // The reservation already happened; every path below moves money or issues
+    // tickets, and none of them may run a second time for one checkout. The
+    // wallet path matters most — wallet_debit runs before any status changes,
+    // so short-circuiting here is what makes "at most one debit per attempt"
+    // true rather than merely likely.
+    if (isReplay) {
+      const status = basket.status as string;
+
+      if (status === 'paid') {
+        // Already settled. Tokens were NOT rotated for a paid order, so the
+        // buyer keeps whatever they already hold.
+        return new Response(JSON.stringify({
+          charged: true, order_id: order.id, ticket_ids: ticketIdsByIndex, replayed: true,
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // Still pending. If a PaymentIntent already exists, hand back ITS client
+      // secret rather than making another — fetched from Stripe, never stored
+      // in a column a client could read.
+      const existingPi = basket.stripe_payment_intent_id as string | null;
+      if (existingPi && !existingPi.startsWith('wallet_')) {
+        const piRes = await fetch(`https://api.stripe.com/v1/payment_intents/${existingPi}`, { headers: stripeHeaders() });
+        const piJson = await piRes.json();
+        if (piRes.ok && piJson?.client_secret) {
+          return new Response(JSON.stringify({
+            clientSecret: piJson.client_secret, order_id: order.id,
+            tokens: tokensByIndex, ticket_ids: ticketIdsByIndex, replayed: true,
+          }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        console.error('[create-event-ticket-intent] could not re-read PI', existingPi, piJson?.error?.message);
+      }
+      // Pending with no usable PaymentIntent: fall through and finish setting
+      // this same order up. Nothing below reserves capacity again.
+    }
 
     /** Give the seats back when a checkout aborts after reservation. */
     const releaseHeldSeats = async () => {
@@ -277,8 +334,17 @@ serve(async (req) => {
     // not on totalPence === 0. `totalPence === 0` follows from that anyway; the
     // point is that the converse must never be enough.
     if (allTicketTypesAreFree) {
-      // No Stripe needed — just confirm immediately
-      await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now }).eq('id', order.id);
+      // No Stripe here to provide an external idempotency layer, so the order's
+      // own status is the exactly-once gate: only the call that moves it off
+      // 'pending' runs the side effects.
+      const { data: claimedFree } = await supabase.from('event_ticket_orders')
+        .update({ status: 'paid', paid_at: now })
+        .eq('id', order.id).eq('status', 'pending').select('id');
+      if (!claimedFree?.length) {
+        return new Response(JSON.stringify({
+          free: true, order_id: order.id, ticket_ids: ticketIdsByIndex, replayed: true,
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
       await sendTicketReceipt(supabase, order.id, user.id);
       // Use the atomic counter RPC — the previous `supabase.rpc('tickets_sold')`
