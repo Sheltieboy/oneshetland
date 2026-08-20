@@ -16,6 +16,7 @@
  */
 
 import { WEB_BASE_URL } from '@/constants/peerie';
+import { peerieHeaders } from '@/lib/peerie-auth';
 
 export type Interest = 'food' | 'shops' | 'history' | 'outdoors' | 'music' | 'family';
 
@@ -83,7 +84,7 @@ export async function fetchDayPlan(req: PlanRequest): Promise<DayPlan> {
   try {
     const res = await fetch(`${WEB_BASE_URL}/api/ai/plan-day`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await peerieHeaders(),
       body: JSON.stringify({ ...req, allowPlain: true }),
       signal: controller.signal,
     });
@@ -124,6 +125,11 @@ function readableError(code: unknown, status: number): string {
     case 'date required':
       return 'Pick a day first.';
     default:
+      // Peerie Bot is a signed-in feature with a usage ceiling now, and both
+      // of those deserve a real sentence rather than "something went wrong".
+      if (status === 401) return 'Sign in to let Peerie Bot plan your day.';
+      if (status === 429) return "You've used Peerie Bot a lot in a short time. Give it a few minutes and try again.";
+      if (status === 413) return "That's a bit much for Peerie Bot to read — try a shorter day.";
       return status >= 500
         ? "We couldn't build a day just now. Have another go in a minute."
         : 'Something went wrong building your day.';

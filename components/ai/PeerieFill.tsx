@@ -19,6 +19,7 @@ import {
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import { PEERIE } from '@/constants/peerie';
 import { AiGlow } from '@/components/ai/AiGlow';
+import { peerieHeaders } from '@/lib/peerie-auth';
 
 export function PeerieFill({
   endpoint,
@@ -45,9 +46,11 @@ export function PeerieFill({
     if (!body) return;
     setError(null); setDone(false); setBusy(true); onBusyChange?.(true);
     try {
+      // The website's AI routes now require a signed-in user. The app has no
+      // cookies, so it carries the Supabase session as a Bearer token.
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await peerieHeaders(),
         body: JSON.stringify({ text: body }),
       });
       const data = await res.json().catch(() => ({}));
