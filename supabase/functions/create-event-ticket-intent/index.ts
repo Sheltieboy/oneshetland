@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
+import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -360,43 +361,45 @@ serve(async (req) => {
 
     // ── Wallet path: debit the wallet + transfer face value to the organiser ─────
     if (pay_with_wallet) {
-      const { data: bal, error: dErr } = await supabase.rpc('wallet_debit', { p_user: user.id, p_spend: chargeTotalPence, p_cashback: 0 });
-      if (dErr) throw new Error(dErr.message);
-      if (bal == null) {
+      // Debit and ledger in ONE transaction, keyed on the order id — which Step
+      // 3D already made one-per-checkout, so a retried checkout cannot debit
+      // twice. Demo organisers have no connected account, so the transfer is
+      // skipped entirely and the wallet debit alone funds the platform.
+      //
+      // This block used to write its ledger row LAST, after sendTicketReceipt().
+      // A throw there left the wallet down, the order paid, and no accounting
+      // entry — which is exactly the £8.95 ticket order sitting unledgered in
+      // production today.
+      const paid = await debitAndTransfer(supabase, {
+        userId:         user.id,
+        spendPence:     chargeTotalPence,
+        description:    `Tickets — ${event.title}`,
+        idempotencyKey: `event-tickets:${order.id}`,
+        transfer: stripeAccountId ? {
+          destination: stripeAccountId,
+          amountPence: totalPence,
+          description: `OneShetland wallet tickets — ${event.title}`,
+          metadata: { type: 'event_tickets_wallet', order_id: order.id, buyer_id: user.id },
+        } : undefined,
+      });
+
+      if (!paid.ok) {
         await releaseHeldSeats();
-        return new Response(JSON.stringify({ error: 'Not enough in your wallet — top up or pay by card.' }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const msg = paid.reason === 'insufficient'
+          ? 'Not enough in your wallet — top up or pay by card.'
+          : paid.error;
+        return new Response(JSON.stringify({ error: msg }), { status: paid.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      // Demo organisers have no connected account → skip the transfer entirely
-      // (the wallet debit alone funds the platform). Real organisers transfer.
-      let walletTransferId: string | null = null;
-      if (stripeAccountId) {
-        try {
-          const tb = new URLSearchParams({
-            amount: String(totalPence), currency: 'gbp', destination: stripeAccountId,
-            description: `OneShetland wallet tickets — ${event.title}`,
-            'metadata[type]': 'event_tickets_wallet', 'metadata[order_id]': order.id, 'metadata[buyer_id]': user.id,
-          });
-          const tr = await fetch('https://api.stripe.com/v1/transfers', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': STRIPE_API_VERSION, 'Idempotency-Key': crypto.randomUUID() },
-            body: tb,
-          });
-          const tj = await tr.json();
-          if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
-          walletTransferId = tj.id;
-        } catch (e) {
-          console.error('[create-event-ticket-intent] wallet transfer failed:', e);
-          await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: chargeTotalPence });
-          await releaseHeldSeats();
-          return new Response(JSON.stringify({ error: 'Ticket payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-      }
-      const walletRef = walletTransferId ? `wallet_${walletTransferId}` : `wallet_${crypto.randomUUID()}`;
+
+      // Our own wallet transaction id, not the Stripe transfer id: it exists
+      // whether or not a transfer happened, and is stable across retries.
+      const walletRef = `wallet_${paid.transactionId}`;
       await supabase.from('event_ticket_orders').update({ status: 'paid', paid_at: now, stripe_payment_intent_id: walletRef }).eq('id', order.id);
-      await sendTicketReceipt(supabase, order.id, user.id);
       await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
       try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
-      await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: null, type: 'spend', amount_pence: -chargeTotalPence, stripe_transfer_id: walletTransferId, description: `Tickets — ${event.title}` });
+      // Receipt last, and non-fatal: the tickets are already valid and already
+      // accounted for, so a mail failure must not fail the purchase.
+      try { await sendTicketReceipt(supabase, order.id, user.id); } catch (e) { console.error('[create-event-ticket-intent] receipt failed:', e); }
       return new Response(JSON.stringify({ charged: true, wallet: true, order_id: order.id, tokens: tokensByIndex, ticket_ids: ticketIdsByIndex }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 

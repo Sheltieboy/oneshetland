@@ -13,10 +13,9 @@
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from './commission.ts';
+import { debitAndTransfer } from './wallet-ledger.ts';
 import { getCommissionConfig } from './commission-config.ts';
 import { sendUserPush } from './send-push.ts';
-
-const STRIPE_API_VERSION = '2023-10-16';
 
 export interface PayBusiness {
   id: string;
@@ -59,68 +58,42 @@ export async function executeWalletPayment(
     return { ok: false, status: 400, error: "This payment can't be processed — the business's cashback rate and platform fee together exceed the payment amount." };
   }
 
-  // Atomic debit (spend + cashback in one guarded statement). NULL = insufficient.
-  const { data: newBalance, error: debitErr } = await svc
-    .rpc('wallet_debit', { p_user: userId, p_spend: amountPence, p_cashback: cashbackPence });
-  if (debitErr) throw debitErr;
-  if (newBalance == null) return { ok: false, status: 402, error: 'Insufficient balance — top up first' };
-
-  // Stripe Connect transfer — raw fetch (avoids the esm.sh Stripe Node-compat shim).
-  let transferId: string | null = null;
-  try {
-    const transferBody = new URLSearchParams({
-      amount:      String(transferAmount),
-      currency:    'gbp',
+  // ── Debit, transfer, settle ────────────────────────────────────────────
+  //
+  // This used to be three separate steps: an RPC that committed the balance, a
+  // Stripe call, then an unchecked ledger insert whose result nobody looked at.
+  // If that insert failed the customer was down with no record of why — which is
+  // exactly what production's £233.45 of unaccounted wallet movement looks like.
+  //
+  // Now the debit and its accounting entry are one transaction, the transfer is
+  // keyed on that transaction's id, and the row records where the transfer got
+  // to. Cashback is written as its own positive entry by the same call.
+  const result = await debitAndTransfer(svc, {
+    userId,
+    spendPence:       amountPence,
+    cashbackPence,
+    businessId:       business.id,
+    description:      args.label ?? `Payment at ${business.name}`,
+    idempotencyKey:   args.idempotencyKey ?? null,
+    platformFeePence: platformFee,
+    transfer: {
       destination: business.stripe_account_id!,
+      amountPence: transferAmount,
       description: `OneShetland Marketplace payment from ${userId.slice(0, 8)} (£${(platformFee / 100).toFixed(2)} platform fee${cashbackPence > 0 ? ` + £${(cashbackPence / 100).toFixed(2)} cashback to customer` : ''})`,
-      'metadata[user_id]':                    userId,
-      'metadata[business_id]':                business.id,
-      'metadata[application_fee_label]':      'OneShetland platform fee',
-      'metadata[application_fee_pence]':      String(platformFee),
-      'metadata[cashback_to_customer_pence]': String(cashbackPence),
-    });
-    const transferRes = await fetch('https://api.stripe.com/v1/transfers', {
-      method: 'POST',
-      headers: {
-        'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-        'Content-Type':   'application/x-www-form-urlencoded',
-        'Stripe-Version': STRIPE_API_VERSION,
-        // Idempotency: a caller-supplied stable key (e.g. the charge-request id)
-        // makes a retry return the same transfer instead of paying twice.
-        'Idempotency-Key': args.idempotencyKey ?? crypto.randomUUID(),
+      metadata: {
+        user_id:                    userId,
+        business_id:                business.id,
+        application_fee_label:      'OneShetland platform fee',
+        application_fee_pence:      String(platformFee),
+        cashback_to_customer_pence: String(cashbackPence),
       },
-      body: transferBody,
-    });
-    const transferJson = await transferRes.json();
-    if (!transferRes.ok) throw new Error(transferJson.error?.message ?? `Stripe transfer failed (HTTP ${transferRes.status})`);
-    transferId = transferJson.id;
-  } catch (stripeErr) {
-    console.error('[wallet-pay] Stripe transfer failed:', stripeErr);
-    // Refund the net change atomically (we debited spend, credited cashback).
-    await svc.rpc('wallet_credit', { p_user: userId, p_amount: amountPence - cashbackPence });
-    return { ok: false, status: 502, error: 'Payment to business failed — wallet refunded' };
-  }
-
-  // Record transactions.
-  await svc.from('local_wallet_transactions').insert([
-    {
-      user_id: userId,
-      business_id: business.id,
-      type: 'spend',
-      amount_pence: -amountPence,
-      platform_fee_pence: platformFee,
-      cashback_pence: cashbackPence,
-      stripe_transfer_id: transferId,
-      description: args.label ?? `Payment at ${business.name}`,
     },
-    ...(cashbackPence > 0 ? [{
-      user_id: userId,
-      business_id: business.id,
-      type: 'cashback',
-      amount_pence: cashbackPence,
-      description: `${business.cashback_percent}% cashback from ${business.name}`,
-    }] : []),
-  ]);
+  });
+
+  if (!result.ok) return { ok: false, status: result.status, error: result.error };
+
+  const newBalance = result.balancePence;
+  const transferId = result.transferId;
 
   // Receipts (best-effort): customer paid, owner received.
   try {

@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { debitAndTransfer, walletReverse } from '../_shared/wallet-ledger.ts';
 
 const STRIPE_API_VERSION = '2023-10-16';
 const corsHeaders = {
@@ -84,46 +85,29 @@ async function hubDonation(svc: any, userId: string, body: any): Promise<Respons
     ga = { ...giftAidIn, postcode: pc };
   }
 
-  // Debit the wallet (atomic; NULL = insufficient funds).
-  const { data: newBalance, error: debitErr } = await svc.rpc('wallet_debit', { p_user: userId, p_spend: amount, p_cashback: 0 });
-  if (debitErr) throw debitErr;
-  if (newBalance == null) return json({ error: 'Not enough in your wallet — top up or pay by card.' }, 402);
-
-  // Transfer the full donation to the hub's connected account (no platform fee on
-  // wallet donations — the money is already on the platform from the top-up).
-  let transferId: string | null = null;
-  try {
-    const tBody = new URLSearchParams({
-      amount: String(amount),
-      currency: 'gbp',
+  // Debit + ledger in one transaction, then transfer keyed on that ledger row.
+  // No platform fee on wallet donations — the money is already on the platform
+  // from the top-up.
+  const paid = await debitAndTransfer(svc, {
+    userId, spendPence: amount,
+    description: `Donation to ${hub.name}`,
+    idempotencyKey: body?.client_request_id ? `hub-donation:${body.client_request_id}` : null,
+    transfer: {
       destination: hub.stripe_account_id,
+      amountPence: amount,
       description: `OneShetland wallet donation to ${hub.name}`,
-      'metadata[type]': 'hub_donation_wallet',
-      'metadata[user_id]': userId,
-      'metadata[campaign_id]': campaignId,
-    });
-    const res = await fetch('https://api.stripe.com/v1/transfers', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Stripe-Version': STRIPE_API_VERSION,
-        'Idempotency-Key': crypto.randomUUID(),
-      },
-      body: tBody,
-    });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error?.message ?? `Stripe transfer failed (HTTP ${res.status})`);
-    transferId = j.id;
-  } catch (e) {
-    console.error('[wallet-checkout] donation transfer failed:', e);
-    await svc.rpc('wallet_credit', { p_user: userId, p_amount: amount }); // refund
-    return json({ error: 'Donation failed — your wallet has been refunded.' }, 502);
-  }
+      metadata: { type: 'hub_donation_wallet', user_id: userId, campaign_id: campaignId },
+    },
+  });
+  if (!paid.ok) return json({ error: paid.error }, paid.status);
+  const newBalance = paid.balancePence;
+  const transferId = paid.transferId;
 
-  // Record the donation (+ Gift Aid). A synthetic, unique reference stands in for
-  // the (absent) PaymentIntent so the unique constraint + idempotency still hold.
-  const ref = `wallet_${transferId}`;
+  // Record the donation (+ Gift Aid). The reference is OUR wallet transaction
+  // id, not the Stripe transfer id: it exists before the transfer is attempted
+  // and is stable across retries, so the donation's own unique constraint keys
+  // on something that cannot change underneath it.
+  const ref = `wallet_${paid.transactionId}`;
   const { error: rpcErr } = await svc.rpc('record_hub_donation', {
     p_campaign: campaignId, p_hub: hub.id, p_user: userId,
     p_amount: amount, p_fee: 0, p_message: message, p_anon: anonymous,
@@ -132,15 +116,13 @@ async function hubDonation(svc: any, userId: string, body: any): Promise<Respons
     p_address: ga?.address ?? null, p_postcode: ga?.postcode ?? null,
   });
   if (rpcErr) return await refundUnfulfilled(svc, {
-    userId, refundPence: amount, transferId, purpose: 'hub_donation',
+    userId, refundPence: amount, transferId, walletTransactionId: paid.transactionId, purpose: 'hub_donation',
     recipientId: hub.id, detail: { campaign_id: campaignId }, cause: rpcErr,
   });
 
-  await svc.from('local_wallet_transactions').insert({
-    user_id: userId, business_id: null, type: 'spend', amount_pence: -amount,
-    stripe_transfer_id: transferId, description: `Donation to ${hub.name}`,
-  });
-
+  // No ledger insert here any more — debitAndTransfer already wrote it, in the
+  // same transaction as the balance change. This insert used to be the last
+  // step, unchecked, after two other awaits that could throw first.
   return json({ ok: true, balance_pence: newBalance, gift_aid: !!ga });
 }
 
@@ -165,34 +147,35 @@ async function hubMembership(svc: any, userId: string, body: any): Promise<Respo
   const flatFee = Math.max(0, parseInt(feeRow?.value ?? '', 10) || 95);
   const debitTotal = t.price_pence + flatFee;
 
-  const { data: newBalance, error: debitErr } = await svc.rpc('wallet_debit', { p_user: userId, p_spend: debitTotal, p_cashback: 0 });
-  if (debitErr) throw debitErr;
-  if (newBalance == null) return json({ error: 'Not enough in your wallet — top up or pay by card.' }, 402);
-
-  let transferId: string;
-  try {
-    transferId = await stripeTransfer(hub.stripe_account_id, t.price_pence, `OneShetland wallet membership · ${hub.name}`,
-      { type: 'hub_membership_wallet', user_id: userId, hub_id: hub.id, membership_type_id: t.id });
-  } catch (e) {
-    console.error('[wallet-checkout] membership transfer failed:', e);
-    await svc.rpc('wallet_credit', { p_user: userId, p_amount: debitTotal });
-    return json({ error: 'Membership payment failed — your wallet has been refunded.' }, 502);
-  }
+  // The customer is debited price + platform fee; only the price is transferred
+  // to the hub. The fee stays on the platform, so the two amounts differ.
+  const paid = await debitAndTransfer(svc, {
+    userId, spendPence: debitTotal,
+    description: `Membership · ${hub.name}`,
+    idempotencyKey: body?.client_request_id ? `hub-membership:${body.client_request_id}` : null,
+    platformFeePence: flatFee,
+    transfer: {
+      destination: hub.stripe_account_id,
+      amountPence: t.price_pence,
+      description: `OneShetland wallet membership · ${hub.name}`,
+      metadata: { type: 'hub_membership_wallet', user_id: userId, hub_id: hub.id, membership_type_id: t.id },
+    },
+  });
+  if (!paid.ok) return json({ error: paid.error }, paid.status);
+  const newBalance = paid.balancePence;
+  const transferId = paid.transferId;
 
   const { data: result, error: rpcErr } = await svc.rpc('activate_hub_membership', {
     p_hub: hub.id, p_user: userId, p_type: t.id, p_period: t.period,
-    p_payment_pence: t.price_pence, p_pi: `wallet_${transferId}`,
+    p_payment_pence: t.price_pence, p_pi: `wallet_${paid.transactionId}`,
   });
   if (rpcErr) return await refundUnfulfilled(svc, {
-    userId, refundPence: debitTotal, transferId, purpose: 'hub_membership',
+    userId, refundPence: debitTotal, transferId, walletTransactionId: paid.transactionId, purpose: 'hub_membership',
     recipientId: hub.id, detail: { membership_type_id: t.id }, cause: rpcErr,
   });
 
-  await svc.from('local_wallet_transactions').insert({
-    user_id: userId, business_id: null, type: 'spend', amount_pence: -debitTotal,
-    stripe_transfer_id: transferId, description: `Membership · ${hub.name}`,
-  });
-
+  // Ledger row already written by debitAndTransfer, in the same transaction as
+  // the balance change.
   return json({ ok: true, balance_pence: newBalance, member_no: result?.member_no ?? null, paid_until: result?.paid_until ?? null });
 }
 
@@ -213,36 +196,35 @@ async function unitPurchase(svc: any, userId: string, body: any): Promise<Respon
   const fee = Math.round(item.price_pence * 0.05); // 5% platform fee, matching the card flow
   const toBusiness = item.price_pence - fee;
 
-  const { data: newBalance, error: debitErr } = await svc.rpc('wallet_debit', { p_user: userId, p_spend: item.price_pence, p_cashback: 0 });
-  if (debitErr) throw debitErr;
-  if (newBalance == null) return json({ error: 'Not enough in your wallet — top up or pay by card.' }, 402);
-
-  let transferId: string;
-  try {
-    transferId = await stripeTransfer(biz.stripe_account_id, toBusiness, `OneShetland wallet purchase · ${item.name}`,
-      { type: 'unit_purchase_wallet', user_id: userId, business_id: biz.id, unit_item_id: item.id, fee_pence: String(fee) });
-  } catch (e) {
-    console.error('[wallet-checkout] unit transfer failed:', e);
-    await svc.rpc('wallet_credit', { p_user: userId, p_amount: item.price_pence });
-    return json({ error: 'Purchase failed — your wallet has been refunded.' }, 502);
-  }
+  const paid = await debitAndTransfer(svc, {
+    userId, spendPence: item.price_pence,
+    businessId: biz.id,
+    description: `${item.name} · ${biz.name}`,
+    idempotencyKey: body?.client_request_id ? `unit-purchase:${body.client_request_id}` : null,
+    platformFeePence: fee,
+    transfer: {
+      destination: biz.stripe_account_id,
+      amountPence: toBusiness,
+      description: `OneShetland wallet purchase · ${item.name}`,
+      metadata: { type: 'unit_purchase_wallet', user_id: userId, business_id: biz.id, unit_item_id: item.id, fee_pence: String(fee) },
+    },
+  });
+  if (!paid.ok) return json({ error: paid.error }, paid.status);
+  const newBalance = paid.balancePence;
+  const transferId = paid.transferId;
 
   const expiresAt = item.valid_days ? new Date(Date.now() + item.valid_days * 86_400_000).toISOString() : null;
   const { data: purchase, error: insErr } = await svc.from('book_unit_purchases').insert({
     item_id: item.id, business_id: item.business_id, owner_id: userId,
     paid_amount_pence: item.price_pence, uses_remaining: item.uses_per_purchase,
-    payment_intent_id: `wallet_${transferId}`, expires_at: expiresAt,
+    payment_intent_id: `wallet_${paid.transactionId}`, expires_at: expiresAt,
   }).select('id, uses_remaining, expires_at').single();
   if (insErr) return await refundUnfulfilled(svc, {
-    userId, refundPence: item.price_pence, transferId, purpose: 'unit_purchase',
+    userId, refundPence: item.price_pence, transferId, walletTransactionId: paid.transactionId, purpose: 'unit_purchase',
     recipientId: item.business_id, detail: { unit_item_id: item.id }, cause: insErr,
   });
 
-  await svc.from('local_wallet_transactions').insert({
-    user_id: userId, business_id: biz.id, type: 'spend', amount_pence: -item.price_pence,
-    stripe_transfer_id: transferId, description: `${item.name} · ${biz.name}`,
-  });
-
+  // Ledger row already written by debitAndTransfer.
   return json({ ok: true, balance_pence: newBalance, purchase_id: purchase?.id ?? null, uses_remaining: purchase?.uses_remaining ?? null, expires_at: purchase?.expires_at ?? null });
 }
 
@@ -256,23 +238,26 @@ async function shiftBoost(svc: any, userId: string, body: any): Promise<Response
   if (shift.employer_id !== userId) return json({ error: 'You can only boost your own shifts.' }, 403);
 
   const PRICE = 299;
-  const { data: newBalance, error: debitErr } = await svc.rpc('wallet_debit', { p_user: userId, p_spend: PRICE, p_cashback: 0 });
-  if (debitErr) throw debitErr;
-  if (newBalance == null) return json({ error: 'Not enough in your wallet — top up or pay by card.' }, 402);
+  // The platform keeps the £2.99, so there is no connected-account transfer —
+  // but the debit and its accounting entry are still one transaction.
+  const paid = await debitAndTransfer(svc, {
+    userId, spendPence: PRICE,
+    description: 'Shift boost (24h)',
+    idempotencyKey: `shift-boost:${shiftId}:${body?.client_request_id ?? ''}` ,
+    platformFeePence: PRICE,
+  });
+  if (!paid.ok) return json({ error: paid.error }, paid.status);
 
-  // Platform keeps the £2.99 (no connected-account transfer needed).
   const boostedUntil = new Date(Date.now() + 86_400_000).toISOString();
   const { error: updErr } = await svc.from('shifts').update({ boosted_until: boostedUntil }).eq('id', shiftId);
   if (updErr) {
-    await svc.rpc('wallet_credit', { p_user: userId, p_amount: PRICE });
+    // The entitlement could not be granted, so put the money back — as an
+    // appended reversal linked to the debit, not by editing it away.
+    await walletReverse(svc, paid.transactionId, 'Shift boost could not be applied');
     return json({ error: 'Could not boost the shift — your wallet has been refunded.' }, 500);
   }
 
-  await svc.from('local_wallet_transactions').insert({
-    user_id: userId, business_id: null, type: 'spend', amount_pence: -PRICE, description: 'Shift boost (24h)',
-  });
-
-  return json({ ok: true, balance_pence: newBalance, boosted_until: boostedUntil });
+  return json({ ok: true, balance_pence: paid.balancePence, boosted_until: boostedUntil });
 }
 
 // Reverse a Stripe Connect transfer in full (used when a purchase's money moved
@@ -300,6 +285,8 @@ async function reverseTransfer(transferId: string): Promise<void> {
  */
 async function refundUnfulfilled(svc: any, o: {
   userId: string; refundPence: number; transferId: string | null;
+  /** The wallet ledger row this purchase debited, so the reversal can point at it. */
+  walletTransactionId: string;
   purpose: string; recipientId: string | null; detail: Record<string, unknown>; cause: unknown;
 }): Promise<Response> {
   let transferReversed = !o.transferId; // nothing to reverse counts as done
@@ -309,8 +296,10 @@ async function refundUnfulfilled(svc: any, o: {
     try { await reverseTransfer(o.transferId); transferReversed = true; }
     catch (e) { console.error(`[wallet-checkout] reverse transfer ${o.transferId} failed:`, e); }
   }
-  try { await svc.rpc('wallet_credit', { p_user: o.userId, p_amount: o.refundPence }); walletRefunded = true; }
-  catch (e) { console.error('[wallet-checkout] wallet refund failed:', e); }
+  // An appended, linked reversal rather than a bare credit — so the accounts
+  // show the debit AND the refund, and a second attempt cannot refund twice.
+  const back = await walletReverse(svc, o.walletTransactionId, `${o.purpose} could not be completed`);
+  walletRefunded = back !== null;
 
   const fullyReversed = transferReversed && walletRefunded;
   try {

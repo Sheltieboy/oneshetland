@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
+import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -213,36 +214,34 @@ serve(async (req) => {
 
     // ── Mode 0: pay from wallet (debit + transfer to the business, no card) ──
     if (pay_with_wallet) {
-      const { data: bal, error: dErr } = await supabase.rpc('wallet_debit', { p_user: user.id, p_spend: pricePence!, p_cashback: 0 });
-      if (dErr) throw new Error(dErr.message);
-      if (bal == null) {
+      // Debit and ledger in one transaction, keyed on the gift row that was just
+      // created. Demo businesses have no connected account, so the transfer is
+      // skipped and the wallet debit alone funds the platform.
+      const paid = await debitAndTransfer(supabase, {
+        userId:           user.id,
+        spendPence:       pricePence!,
+        businessId,
+        description:      `Gift — ${itemLabel}`,
+        idempotencyKey:   `gift:${gift.id}`,
+        platformFeePence: giftPlatformFee,
+        transfer: giftHasAccount ? {
+          destination: giftBiz.stripe_account_id,
+          amountPence: pricePence! - giftPlatformFee,
+          description: `OneShetland wallet gift — ${itemLabel}`,
+          metadata: { type: 'gift_purchase_wallet', gift_id: gift.id, buyer_id: user.id },
+        } : undefined,
+      });
+
+      if (!paid.ok) {
         await supabase.from('book_gifts').delete().eq('id', gift.id);
-        return new Response(JSON.stringify({ error: 'Not enough in your wallet — top up or pay by card.' }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const msg = paid.reason === 'insufficient'
+          ? 'Not enough in your wallet — top up or pay by card.'
+          : paid.error;
+        return new Response(JSON.stringify({ error: msg }), { status: paid.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      // Demo businesses have no connected account → skip the transfer entirely
-      // (the wallet debit alone funds the platform). Real businesses transfer.
-      let walletTransferId: string | null = null;
-      if (giftHasAccount) {
-        try {
-          const tb = new URLSearchParams({
-            amount: String(pricePence! - giftPlatformFee), currency: 'gbp', destination: giftBiz.stripe_account_id,
-            description: `OneShetland wallet gift — ${itemLabel}`,
-            'metadata[type]': 'gift_purchase_wallet', 'metadata[gift_id]': gift.id, 'metadata[buyer_id]': user.id,
-          });
-          const tr = await fetch('https://api.stripe.com/v1/transfers', { method: 'POST', headers: { ...stripePostHeaders(), 'Idempotency-Key': crypto.randomUUID() }, body: tb });
-          const tj = await tr.json();
-          if (!tr.ok) throw new Error(tj.error?.message ?? `Stripe transfer failed (HTTP ${tr.status})`);
-          walletTransferId = tj.id;
-        } catch (e) {
-          console.error('[create-gift-intent] wallet transfer failed:', e);
-          await supabase.rpc('wallet_credit', { p_user: user.id, p_amount: pricePence! });
-          await supabase.from('book_gifts').delete().eq('id', gift.id);
-          return new Response(JSON.stringify({ error: 'Gift payment failed — your wallet has been refunded.' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-      }
-      const ref = walletTransferId ? `wallet_${walletTransferId}` : `wallet_${crypto.randomUUID()}`;
+
+      const ref = `wallet_${paid.transactionId}`;
       await supabase.from('book_gifts').update({ payment_intent_id: ref }).eq('id', gift.id);
-      await supabase.from('local_wallet_transactions').insert({ user_id: user.id, business_id: businessId, type: 'spend', amount_pence: -pricePence!, stripe_transfer_id: walletTransferId, description: `Gift — ${itemLabel}` });
       return new Response(JSON.stringify({ charged: true, payment_intent_id: ref, gift_id: gift.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
