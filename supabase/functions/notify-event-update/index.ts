@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPushBulk } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
+import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * notify-event-update
@@ -52,6 +54,12 @@ serve(async (req) => {
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   try {
+    // The gateway's verify_jwt accepts the PUBLIC ANON KEY, so it is a shape
+    // check, not an authorisation check. This is the authorisation check.
+    const gate = await requireCaller(req, corsHeaders);
+    if ('denied' in gate) return gate.denied;
+    const caller = gate.caller;
+
     const { update_id } = await req.json();
     if (!update_id) return json({ error: 'update_id required' }, 400);
     const svc = createServiceClient();
@@ -62,9 +70,31 @@ serve(async (req) => {
 
     const { data: ev } = await svc
       .from('events')
-      .select('title, starts_at, venue, locality, organiser_business_id, organiser_hub_id')
+      .select('title, starts_at, venue, locality, organiser_user_id, organiser_business_id, organiser_hub_id')
       .eq('id', upd.event_id).maybeSingle();
     const eventTitle = (ev as { title?: string } | null)?.title ?? 'your event';
+
+    // Only the organiser may notify an event's ticket holders. Without this,
+    // any signed-in account could email every buyer of somebody else's event.
+    if (!caller.isServiceRole) {
+      const isOrganiser = ev?.organiser_user_id === caller.userId;
+      let mayNotify = isOrganiser;
+      if (!mayNotify && ev?.organiser_business_id) {
+        const { data: b } = await svc.from('local_businesses')
+          .select('owner_id').eq('id', ev.organiser_business_id).maybeSingle();
+        mayNotify = (b as { owner_id?: string } | null)?.owner_id === caller.userId;
+      }
+      if (!mayNotify && ev?.organiser_hub_id) {
+        const { data: h } = await svc.from('hubs')
+          .select('owner_id').eq('id', ev.organiser_hub_id).maybeSingle();
+        mayNotify = (h as { owner_id?: string } | null)?.owner_id === caller.userId;
+      }
+      if (!mayNotify) {
+        const { data: p } = await svc.from('profiles').select('role').eq('id', caller.userId).maybeSingle();
+        mayNotify = (p as { role?: string } | null)?.role === 'admin';
+      }
+      if (!mayNotify) return forbidden(corsHeaders);
+    }
 
     // Who to name as the organiser in the email. Falls back to OneShetland
     // rather than leaving a blank where a name should be.
@@ -146,6 +176,6 @@ serve(async (req) => {
     return json({ ok: true, notified: sent, emailed });
   } catch (err) {
     console.error('[notify-event-update]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('notify-event-update', err) }, 500);
   }
 });

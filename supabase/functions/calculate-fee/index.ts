@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -115,7 +116,7 @@ serve(async (req) => {
   } catch (err) {
     console.error('[calculate-fee]', err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
+      JSON.stringify({ error: safeError('calculate-fee', err) }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }

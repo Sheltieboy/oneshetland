@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush } from '../_shared/send-push.ts';
+import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * notify-claim
@@ -22,9 +24,28 @@ serve(async (req) => {
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   try {
+    // The gateway's verify_jwt accepts the PUBLIC ANON KEY, so it is a shape
+    // check, not an authorisation check. This is the authorisation check.
+    const gate = await requireCaller(req, corsHeaders);
+    if ('denied' in gate) return gate.denied;
+    const caller = gate.caller;
+
     const { claim_id, outcome } = await req.json();
     if (!claim_id || !outcome) return json({ error: 'claim_id and outcome required' }, 400);
     const svc = createServiceClient();
+
+    // Approving or rejecting a business claim is an admin action, so telling the
+
+    // claimant the outcome is one too.
+
+    if (!caller.isServiceRole) {
+
+      const { data: me } = await svc.from('profiles').select('role').eq('id', caller.userId).maybeSingle();
+
+      if ((me as { role?: string } | null)?.role !== 'admin') return forbidden(corsHeaders);
+
+    }
+
 
     const { data: claim } = await svc
       .from('business_claims').select('user_id, business_id').eq('id', claim_id).maybeSingle();
@@ -48,6 +69,6 @@ serve(async (req) => {
     return json({ ok: true, notified: 1 });
   } catch (err) {
     console.error('[notify-claim]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('notify-claim', err) }, 500);
   }
 });

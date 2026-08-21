@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
 import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -474,7 +475,7 @@ serve(async (req) => {
   } catch (err) {
     console.error('[create-event-ticket-intent]', err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
+      JSON.stringify({ error: safeError('create-event-ticket-intent', err) }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }

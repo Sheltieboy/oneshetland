@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -197,7 +198,7 @@ serve(async (req) => {
   } catch (err) {
     console.error('[capture-payment]', err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }),
+      JSON.stringify({ error: safeError('capture-payment', err) }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }

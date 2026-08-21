@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -165,6 +166,6 @@ serve(async (req) => {
     return json({ clientSecret: pi.client_secret, payment_intent_id: pi.id });
   } catch (err) {
     console.error('[create-hub-membership-intent]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('create-hub-membership-intent', err) }, 500);
   }
 });

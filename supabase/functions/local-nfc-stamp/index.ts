@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -175,7 +176,7 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error('[local-nfc-stamp]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('local-nfc-stamp', err) }, 500);
   }
 });
 

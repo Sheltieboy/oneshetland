@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getConfig } from '../_shared/admin-config.ts';
 import { classifyStripeResponse, buildUsageRequest, type Settlement } from '../_shared/stripe-usage.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * meter-bookings
@@ -293,6 +294,6 @@ serve(async (req) => {
     return json({ ok: true, fee_pence: BOOKING_FEE_PENCE, cap_units: MONTHLY_CAP_UNITS, ...result });
   } catch (err) {
     console.error('[meter-bookings]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('meter-bookings', err) }, 500);
   }
 });

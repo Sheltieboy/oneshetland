@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { executeWalletPayment } from '../_shared/wallet-pay.ts';
 import { claimAttempt, settleAttempt, attemptFingerprint, attemptBlockedResponse } from '../_shared/wallet-ledger.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -116,7 +117,7 @@ serve(async (req) => {
     return json(payload);
   } catch (err) {
     console.error('[local-wallet-pay]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('local-wallet-pay', err) }, 500);
   }
 });
 

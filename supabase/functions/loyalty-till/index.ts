@@ -2,6 +2,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * loyalty-till — the unified "one member card" till.
@@ -214,6 +215,6 @@ serve(async (req) => {
     return json({ error: 'Unknown action' }, 400);
   } catch (err) {
     console.error('[loyalty-till]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('loyalty-till', err) }, 500);
   }
 });

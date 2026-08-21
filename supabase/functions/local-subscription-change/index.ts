@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { subscriptionPricesFor, resolveBookingMeterPrice, resolveTierPrice, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
 import { splitInvoice } from '../_shared/invoice-lines.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -177,7 +178,7 @@ serve(async (req) => {
 
   } catch (err) {
     console.error('[local-subscription-change]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('local-subscription-change', err) }, 500);
   }
 });
 

@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -134,7 +135,7 @@ serve(async (req) => {
     return json({ id: row.id, code: row.code, token: row.token, kind, detail, expires_at: row.expires_at });
   } catch (err) {
     console.error('[local-redeem-start]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('local-redeem-start', err) }, 500);
   }
 });
 

@@ -32,6 +32,7 @@ export interface MemoryPin {
   reaction_count: number;
   child_count:    number;
   hero_url:       string | null;
+  hero_path:      string | null;
   hero_kind:      MediaKind | null;
   created_at:     string;
   author_id?:     string;
@@ -98,6 +99,7 @@ export interface MemorySearchResult {
   tags:         string[];
   matched_via:  'title' | 'body' | 'era' | 'tag' | 'photo_tag';
   hero_url:     string | null;
+  hero_path:    string | null;
   hero_kind:    MediaKind | null;
   created_at:   string;
 }
@@ -158,7 +160,7 @@ export async function fetchMemoryPins(
     result_limit: limit,
   });
   if (error) throw error;
-  return (data ?? []) as MemoryPin[];
+  return signHeroes((data ?? []) as MemoryPin[]);
 }
 
 /**
@@ -180,7 +182,7 @@ export async function fetchRecentMemories(limit = 12): Promise<MemoryPin[]> {
   return ((data ?? []) as any[])
     .filter(r => !blocked.has(r.author_id))
     .slice(0, limit)
-    .map(r => ({ ...r, hero_url: null, hero_kind: null }));
+    .map(r => ({ ...r, hero_url: null, hero_path: null, hero_kind: null }));
 }
 
 // ── Detail ──────────────────────────────────────────────────────────────────
@@ -371,6 +373,35 @@ export async function signMemoryMedia(media: MemoryMedia[]): Promise<MemoryMedia
     if (r.path && r.signedUrl) map[r.path] = r.signedUrl;
   }
   return media.map((m) => (m.storage_path && map[m.storage_path]) ? { ...m, url: map[m.storage_path] } : m);
+}
+
+/**
+ * Fills hero_url on a feed row by signing hero_path for THIS viewer.
+ *
+ * fetch_memory_pins and search_memories used to return memory_media.url — the
+ * legacy PUBLIC object URL. memories-media is a private bucket now, so every
+ * one of those URLs is a dead 400, and the map pins and cards that render
+ * hero_url directly had been showing broken thumbnails since the cutover.
+ * Migration 20260821270000 replaced that column with hero_path and returns
+ * hero_url null; the signing happens here, at display time, and the signed URL
+ * is never written back to the database.
+ *
+ * A path this viewer may not read comes back without a signedUrl and is simply
+ * left unset, exactly as signMemoryMedia treats it — no throw, no hero.
+ */
+async function signHeroes<T extends { hero_path: string | null; hero_url: string | null }>(
+  rows: T[],
+): Promise<T[]> {
+  const paths = [...new Set(rows.map((r) => r.hero_path).filter(Boolean))] as string[];
+  if (!paths.length) return rows;
+  const { data } = await supabase.storage
+    .from(MEMORIES_BUCKET)
+    .createSignedUrls(paths, MEDIA_TTL_SECONDS);
+  const map: Record<string, string> = {};
+  for (const r of data ?? []) {
+    if (r.path && r.signedUrl) map[r.path] = r.signedUrl;
+  }
+  return rows.map((r) => (r.hero_path && map[r.hero_path]) ? { ...r, hero_url: map[r.hero_path] } : r);
 }
 
 function newFilename(ext: string): string {
@@ -589,7 +620,7 @@ export async function searchMemories(
     result_limit: limit,
   });
   if (error) throw error;
-  return (data ?? []) as MemorySearchResult[];
+  return signHeroes((data ?? []) as MemorySearchResult[]);
 }
 
 // ── Comments ────────────────────────────────────────────────────────────────

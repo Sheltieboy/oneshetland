@@ -5,6 +5,7 @@ import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { executeWalletPayment, type PayBusiness } from '../_shared/wallet-pay.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { spawnFetchRequest } from '../_shared/fulfilment.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * create-product-order-intent — Shop Shetland checkout.
@@ -324,6 +325,6 @@ serve(async (req) => {
   } catch (err) {
     await releaseAll().catch(() => {});
     console.error('[create-product-order-intent]', err);
-    return json({ error: err instanceof Error ? err.message : 'Something went wrong' }, 500);
+    return json({ error: safeError('create-product-order-intent', err) }, 500);
   }
 });

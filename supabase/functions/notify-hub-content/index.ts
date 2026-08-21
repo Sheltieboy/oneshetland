@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPushBulk } from '../_shared/send-push.ts';
+import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * notify-hub-content
@@ -22,9 +24,44 @@ serve(async (req) => {
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   try {
+    // The gateway's verify_jwt accepts the PUBLIC ANON KEY, so it is a shape
+    // check, not an authorisation check. This is the authorisation check.
+    const gate = await requireCaller(req, corsHeaders);
+    if ('denied' in gate) return gate.denied;
+    const caller = gate.caller;
+
     const { event, hub_id, ref_id, title } = await req.json();
     if (!event || !hub_id) return json({ error: 'event and hub_id required' }, 400);
     const svc = createServiceClient();
+
+    // Only the hub's owner or admin may push to its whole membership.
+
+    if (!caller.isServiceRole) {
+
+      const { data: h } = await svc.from('hubs').select('owner_id').eq('id', hub_id).maybeSingle();
+
+      let may = (h as { owner_id?: string } | null)?.owner_id === caller.userId;
+
+      if (!may) {
+
+        const { data: isHubAdmin } = await svc.rpc('is_hub_admin', { p_hub: hub_id, p_user: caller.userId });
+
+        may = isHubAdmin === true;
+
+      }
+
+      if (!may) {
+
+        const { data: me } = await svc.from('profiles').select('role').eq('id', caller.userId).maybeSingle();
+
+        may = (me as { role?: string } | null)?.role === 'admin';
+
+      }
+
+      if (!may) return forbidden(corsHeaders);
+
+    }
+
 
     const { data: hub } = await svc.from('hubs').select('name').eq('id', hub_id).maybeSingle();
     const hubName = (hub as { name?: string } | null)?.name ?? 'your hub';
@@ -52,6 +89,6 @@ serve(async (req) => {
     return json({ ok: true, notified: sent });
   } catch (err) {
     console.error('[notify-hub-content]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('notify-hub-content', err) }, 500);
   }
 });

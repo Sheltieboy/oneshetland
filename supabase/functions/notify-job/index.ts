@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
+import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * notify-job
@@ -56,6 +58,12 @@ serve(async (req) => {
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   try {
+    // The gateway's verify_jwt accepts the PUBLIC ANON KEY, so it is a shape
+    // check, not an authorisation check. This is the authorisation check.
+    const gate = await requireCaller(req, corsHeaders);
+    if ('denied' in gate) return gate.denied;
+    const caller = gate.caller;
+
     const { event, application_id, job_id, status } = await req.json();
     if (!event) return json({ error: 'event required' }, 400);
     const svc = createServiceClient();
@@ -133,6 +141,6 @@ serve(async (req) => {
     return json({ error: 'unknown event' }, 400);
   } catch (err) {
     console.error('[notify-job]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('notify-job', err) }, 500);
   }
 });

@@ -1,6 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * google-wallet-pass — returns a "Save to Google Wallet" link for the caller's
@@ -123,7 +124,7 @@ serve(async (req) => {
     return json({ saveUrl: `https://pay.google.com/gp/v/save/${jwt}` });
   } catch (err) {
     console.error('[google-wallet-pass]', err);
-    const msg = err instanceof Error ? err.message : 'Unknown error';
+    const msg = safeError('google-wallet-pass', err);
     return json({ error: debug ? msg : 'Could not create pass' }, 500);
   }
 });

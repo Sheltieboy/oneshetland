@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush } from '../_shared/send-push.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * notify-booking
@@ -97,6 +98,6 @@ serve(async (req) => {
     return json({ error: 'unknown event' }, 400);
   } catch (err) {
     console.error('[notify-booking]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('notify-booking', err) }, 500);
   }
 });

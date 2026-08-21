@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 /**
  * reminder-runner
@@ -502,7 +503,7 @@ serve(async (req) => {
     return json({ ok: true, ran_at: nowIso, ...result });
   } catch (err) {
     console.error('[reminder-runner]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
+    return json({ error: safeError('reminder-runner', err) }, 500);
   }
 });
 
