@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
+import { requireCronSecret } from '../_shared/cron-auth.ts';
 
 /**
  * sync-council-jobs
@@ -14,7 +15,8 @@ import { createServiceClient } from '../_shared/send-push.ts';
  * FAIL-SAFE: if the fetch fails or the parse yields no jobs, we abort and leave
  * the existing rows untouched — a bad run never wipes good data.
  *
- * Auth: if CRON_SECRET is set, callers must send a matching `x-cron-secret`.
+ * Auth: callers must send an `x-cron-secret` matching CRON_SECRET. Fails
+ * closed — an unconfigured secret is a 503, never an open door.
  * Deploy with --no-verify-jwt (cron-invoked, no user JWT).
  *
  * Adding NHS Shetland (JobTrain) later = another SOURCES entry with its own
@@ -107,8 +109,10 @@ serve(async (req) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  const secret = Deno.env.get('CRON_SECRET');
-  if (secret && req.headers.get('x-cron-secret') !== secret) return json({ error: 'unauthorized' }, 401);
+  // Fails CLOSED: no server secret is a 503, a bad or absent header is a 401.
+  // Nothing privileged happens above this line.
+  const denied = requireCronSecret(req, corsHeaders);
+  if (denied) return denied;
 
   // ?dry=1 → parse + report only, never touch the DB.
   const dry = new URL(req.url).searchParams.get('dry') === '1';

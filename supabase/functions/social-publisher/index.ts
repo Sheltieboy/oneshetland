@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
+import { requireCronSecret } from '../_shared/cron-auth.ts';
 
 /**
  * social-publisher — posts due, human-approved social_posts to the OneShetland
@@ -17,8 +18,8 @@ import { createServiceClient } from '../_shared/send-push.ts';
  *   META_PAGE_TOKEN  — a long-lived Page access token
  * Until both are set the function is a safe no-op that reports what's due.
  *
- * Invoke every ~15 min (see DEPLOY-SOCIAL.md). Auth: matching `x-cron-secret`
- * when CRON_SECRET is set. Body (optional): { "post_id": "<uuid>" } publishes
+ * Invoke every ~15 min (see DEPLOY-SOCIAL.md). Auth: matching `x-cron-secret`;
+ * fails closed if CRON_SECRET is unset. Body (optional): { "post_id": "<uuid>" } publishes
  * that single post immediately, ignoring its schedule (admin "post now").
  */
 
@@ -65,10 +66,10 @@ serve(async (req) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  const secret = Deno.env.get('CRON_SECRET');
-  if (secret && req.headers.get('x-cron-secret') !== secret) {
-    return json({ error: 'forbidden' }, 403);
-  }
+  // Fails CLOSED: no server secret is a 503, a bad or absent header is a 401.
+  // Nothing privileged happens above this line.
+  const denied = requireCronSecret(req, corsHeaders);
+  if (denied) return denied;
 
   let onlyPostId: string | null = null;
   try { onlyPostId = (await req.json())?.post_id ?? null; } catch { /* no body */ }

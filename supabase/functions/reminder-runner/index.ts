@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
+import { requireCronSecret } from '../_shared/cron-auth.ts';
 
 /**
  * reminder-runner
@@ -21,8 +22,9 @@ import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/
  * Extension points (left as TODO): daily "wird o' da day", at-risk streak
  * nudges, cruise "arriving today".
  *
- * Auth: if CRON_SECRET is set, callers must send a matching `x-cron-secret`
- * header. (pg_cron / Scheduled Functions can attach it.)
+ * Auth: callers must send an `x-cron-secret` header matching CRON_SECRET.
+ * Fails closed — if CRON_SECRET is not configured the function refuses to run
+ * (503) rather than becoming public. See ../_shared/cron-auth.ts.
  */
 
 const corsHeaders = {
@@ -41,11 +43,10 @@ serve(async (req) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  // Optional shared-secret gate.
-  const secret = Deno.env.get('CRON_SECRET');
-  if (secret && req.headers.get('x-cron-secret') !== secret) {
-    return json({ error: 'forbidden' }, 403);
-  }
+  // Fails CLOSED: no server secret is a 503, a bad or absent header is a 401.
+  // Nothing privileged happens above this line.
+  const denied = requireCronSecret(req, corsHeaders);
+  if (denied) return denied;
 
   try {
     const svc = createServiceClient();

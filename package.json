@@ -7,7 +7,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "node --test --test-concurrency=1 supabase/functions/_shared/commission.node.test.ts supabase/tests/rpc-exposure.node.test.ts supabase/tests/identity-binding.node.test.ts supabase/tests/column-locks.node.test.ts supabase/tests/ticket-quantities.node.test.ts supabase/tests/ticket-basket-atomicity.node.test.ts supabase/tests/ticket-expiry.node.test.ts supabase/tests/ticket-checkout-idempotency.node.test.ts supabase/tests/ticket-redemption.node.test.ts supabase/tests/stripe-idempotency.node.test.ts supabase/tests/wallet-integrity.node.test.ts supabase/tests/wallet-attempts.node.test.ts supabase/tests/ai-route-security.node.test.ts supabase/tests/business-column-privacy.node.test.ts supabase/tests/truncate-privileges.node.test.ts supabase/tests/scheduled-jobs.node.test.ts",
+    "test": "node --test --test-concurrency=1 supabase/functions/_shared/commission.node.test.ts supabase/tests/rpc-exposure.node.test.ts supabase/tests/identity-binding.node.test.ts supabase/tests/column-locks.node.test.ts supabase/tests/ticket-quantities.node.test.ts supabase/tests/ticket-basket-atomicity.node.test.ts supabase/tests/ticket-expiry.node.test.ts supabase/tests/ticket-checkout-idempotency.node.test.ts supabase/tests/ticket-redemption.node.test.ts supabase/tests/stripe-idempotency.node.test.ts supabase/tests/wallet-integrity.node.test.ts supabase/tests/wallet-attempts.node.test.ts supabase/tests/ai-route-security.node.test.ts supabase/tests/business-column-privacy.node.test.ts supabase/tests/truncate-privileges.node.test.ts supabase/tests/scheduled-jobs.node.test.ts supabase/tests/cron-auth.node.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

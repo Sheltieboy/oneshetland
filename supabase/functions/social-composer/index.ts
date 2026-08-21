@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
+import { requireCronSecret } from '../_shared/cron-auth.ts';
 
 /**
  * social-composer — the "Peerie Press" recipe runner (Phase 1).
@@ -23,7 +24,8 @@ import { createServiceClient } from '../_shared/send-push.ts';
  * ANTHROPIC_API_KEY is set (falls back to the template on any AI failure).
  *
  * Invoke on a schedule (daily ~6am is plenty) — see DEPLOY-SOCIAL.md.
- * Auth: if CRON_SECRET is set, callers must send a matching `x-cron-secret`.
+ * Auth: callers must send an `x-cron-secret` matching CRON_SECRET. Fails
+ * closed — an unconfigured secret is a 503, never an open door.
  * Body (optional): { "force": true } bypasses day-of-week gates for testing.
  */
 
@@ -122,10 +124,10 @@ serve(async (req) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  const secret = Deno.env.get('CRON_SECRET');
-  if (secret && req.headers.get('x-cron-secret') !== secret) {
-    return json({ error: 'forbidden' }, 403);
-  }
+  // Fails CLOSED: no server secret is a 503, a bad or absent header is a 401.
+  // Nothing privileged happens above this line.
+  const denied = requireCronSecret(req, corsHeaders);
+  if (denied) return denied;
 
   let force = false;
   try { force = Boolean((await req.json())?.force); } catch { /* no body */ }
