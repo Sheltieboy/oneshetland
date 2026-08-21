@@ -265,6 +265,23 @@ describe('the protected endpoint inventory', () => {
       `these can cost money or reach people, with no ceiling and no recorded reason: ${unexplained.join(', ')}`);
   });
 
+  test('every policy in the table is actually claimed by something', () => {
+    // rate_limit_policies is the answer to "what is limited here". A row that
+    // no call site claims makes that answer overstate the protection. One was
+    // seeded in this very step (password_reset_email, superseded by the
+    // email_log throttle already inside request-password-reset) and removed.
+    const declared = runSql('select action from public.rate_limit_policies order by action;')
+      .map((r) => String(r.action));
+    const claimed = new Set<string>();
+    for (const name of readdirSync(FN_DIR)) {
+      const p = join(FN_DIR, name, 'index.ts');
+      if (name === '_shared' || !existsSync(p)) continue;
+      for (const m of readFileSync(p, 'utf8').matchAll(/'([a-z_]+)'/g)) claimed.add(m[1]);
+    }
+    const orphans = declared.filter((a) => !claimed.has(a));
+    assert.deepEqual(orphans, [], `policies nothing claims: ${orphans.join(', ')}`);
+  });
+
   test('the exemption list has not gone stale', () => {
     const present = new Set(costPatternFunctions().map((f) => f.name));
     const gone = Object.keys(EXEMPT).filter((n) => !present.has(n));
