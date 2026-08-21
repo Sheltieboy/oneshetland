@@ -1,0 +1,127 @@
+# ============================================================================
+# Edge Function authentication, in version control.
+#
+# WHY THIS FILE EXISTS
+#
+# There was no config.toml. Every one of the 87 deployed functions carried a
+# verify_jwt setting that existed only in Supabase's control plane, and nine of
+# them are deliberately PUBLIC. `supabase functions deploy` defaults verify_jwt
+# to TRUE, so a routine redeploy of any of those nine would have silently
+# switched authentication on and broken it — the scheduler would have started
+# getting 401s from every Edge Function it calls, and Stripe's webhook would
+# have stopped being able to deliver.
+#
+# Nothing here changes production. verify_jwt is applied at deploy time, and
+# every value below was read back from the deployed function list, not chosen:
+#
+#   npx supabase functions list --project-ref nkrtmakxygkvxuxriiil
+#
+# The point is that the next deploy reproduces what is running rather than
+# overwriting it.
+#
+# ONLY THE NINE PUBLIC ONES ARE LISTED, PLUS ONE.
+#
+# The other 78 functions are verify_jwt = true, which is also the CLI default,
+# so listing them would add 78 lines that assert the default and would rot the
+# moment a function is added. They are left implicit on purpose. The single
+# exception is meter-bookings — see its note.
+#
+# EVERY false BELOW IS JUSTIFIED INDIVIDUALLY. A function reachable without a
+# JWT must authenticate its own callers, and each note says how.
+# ============================================================================
+
+project_id = "oneshetland"
+
+
+# ── Scheduled by pg_cron ─────────────────────────────────────────────────────
+#
+# All four are invoked by pg_cron through pg_net, which sends no Authorization
+# header at all — only Content-Type and a shared `x-cron-secret`. They cannot
+# require a JWT because the scheduler has no user to be.
+#
+# Their own gate is the header:
+#
+#   const secret = Deno.env.get('CRON_SECRET');
+#   if (secret && req.headers.get('x-cron-secret') !== secret) return 403;
+#
+# CRON_SECRET is confirmed set on the project (it appears in
+# `supabase secrets list`), so the gate is live rather than skipped.
+#
+# NOTE THE FAIL-OPEN. That `secret &&` means if CRON_SECRET were ever unset or
+# cleared, the check would be skipped entirely and all four would become
+# publicly runnable by anyone who knows the URL — one of them sends
+# notifications, one posts publicly, one bills. It is safe today because the
+# secret is set. It is recorded here because the failure mode is silent and the
+# remedy (fail closed when the env var is missing) is a change to the functions
+# themselves, which is outside this step.
+
+[functions.reminder-runner]
+verify_jwt = false
+
+[functions.social-composer]
+verify_jwt = false
+
+[functions.social-publisher]
+verify_jwt = false
+
+[functions.sync-council-jobs]
+verify_jwt = false
+
+
+# ── Webhook ──────────────────────────────────────────────────────────────────
+#
+# Stripe signs its requests and has no Supabase JWT to present. The function
+# verifies the Stripe signature against STRIPE_WEBHOOK_SECRET, which is the
+# real authentication boundary; a JWT check here would simply reject Stripe.
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+
+# ── Public by nature ─────────────────────────────────────────────────────────
+#
+# connect-redirect is an HTTPS landing page for Stripe Connect's return and
+# refresh URLs. Stripe sends the user's BROWSER there, with no credentials of
+# any kind. It reads query parameters and issues a deep-link redirect — it
+# touches no data, so there is nothing behind it to protect.
+
+[functions.connect-redirect]
+verify_jwt = false
+
+# request-password-reset is used by people who cannot sign in, so requiring a
+# JWT would defeat it. It generates the recovery link with the service role and
+# rate-limits by identifier, and always returns ok so it cannot be used to
+# discover which addresses have accounts.
+
+[functions.request-password-reset]
+verify_jwt = false
+
+
+# ── Public gateway, but authenticated INSIDE the handler ─────────────────────
+#
+# These two run with verify_jwt disabled at the gateway and then do the check
+# themselves: no Authorization header is a 401, the token is resolved to a real
+# user, and notify-product-order additionally refuses anyone who is neither the
+# owning business nor an admin. The effective boundary is the same as a
+# gateway-verified function; it is enforced a layer further in.
+
+[functions.notify-drivers]
+verify_jwt = false
+
+[functions.notify-product-order]
+verify_jwt = false
+
+
+# ── Pinned deliberately, though it matches the default ───────────────────────
+#
+# meter-bookings is the only function here that bills money. It is NOT
+# scheduled: reminder-runner invokes it (index.ts:392) with the service key.
+# It requires a JWT at the gateway AND checks for the service role inside,
+# because gateway verification alone would admit every signed-in user — and any
+# customer could then trigger a billing run.
+#
+# Stated explicitly so that "this one must never become public" is written down
+# rather than inherited from a CLI default that could change.
+
+[functions.meter-bookings]
+verify_jwt = true
