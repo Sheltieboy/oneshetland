@@ -277,6 +277,33 @@ describe('nothing has quietly stopped', () => {
   });
 });
 
+// ── 4b. Metering is observable even though it is not a cron job ─────────────
+
+describe('booking metering cannot stop silently', () => {
+  test('the backlog check reports metering as running', () => {
+    // reminder-runner swallows a meter-bookings failure in a catch and still
+    // returns 200, so no amount of cron history can reveal a stopped meter.
+    // This asks the data instead: bookings that should have been metered and
+    // were not. Verified to go red when a stale unmetered booking is injected.
+    const r = query(`select unmetered_billable::text as backlog,
+                            unbillable_pro_bookings::text as unbillable,
+                            healthy::text as healthy, problem
+                       from public.metering_backlog_health();`);
+    assert.equal(r.healthy, 'true',
+      `booking metering appears to have stopped: ${r.problem}`);
+  });
+
+  test('the backlog check is not callable by client roles', () => {
+    const r = query(`select
+      has_function_privilege('anon', 'public.metering_backlog_health()', 'EXECUTE')::text          as anon_exec,
+      has_function_privilege('authenticated', 'public.metering_backlog_health()', 'EXECUTE')::text as auth_exec,
+      has_function_privilege('service_role', 'public.metering_backlog_health()', 'EXECUTE')::text  as svc_exec;`);
+    assert.equal(r.anon_exec, 'false', 'anon can read the metering backlog');
+    assert.equal(r.auth_exec, 'false', 'authenticated can read the metering backlog');
+    assert.equal(r.svc_exec, 'true', 'service_role lost access to the metering health check');
+  });
+});
+
 // ── 5. Nothing leaked into the repository ───────────────────────────────────
 
 describe('no credential reached version control', () => {
