@@ -51,6 +51,32 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEB_ROOT = join(REPO_ROOT, '..', 'oneshetland-web');
 
+/**
+ * Percent-encodes each path SEGMENT and keeps the separators.
+ * encodeURIComponent() would turn "a/b/c.jpg" into "a%2Fb%2Fc.jpg", which names
+ * a different (nonexistent) object — the sign call still succeeds and the
+ * fetch then 400s, which looks like a policy failure and is not one.
+ */
+const encodePath = (p: string) => p.split('/').map(encodeURIComponent).join('/');
+
+/** Public project config, for the tests that exercise the real Storage HTTP API. */
+function publicConfig(): { url: string; anonKey: string } | null {
+  let url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+  let anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+  if (!url || !anonKey) {
+    try {
+      for (const line of readFileSync(join(REPO_ROOT, '.env'), 'utf8').split('\n')) {
+        const m = line.match(/^\s*(EXPO_PUBLIC_SUPABASE_URL|EXPO_PUBLIC_SUPABASE_ANON_KEY)\s*=\s*(.+)\s*$/);
+        if (!m) continue;
+        const v = m[2].trim().replace(/^["']|["']$/g, '');
+        if (m[1].endsWith('URL')) url ||= v; else anonKey ||= v;
+      }
+    } catch { /* handled by the null return */ }
+  }
+  return url && anonKey ? { url, anonKey } : null;
+}
+const cfg = publicConfig();
+
 function rowsOf(out: string): Record<string, unknown>[] {
   const p = JSON.parse(out) as { rows?: Record<string, unknown>[]; _tag?: string; error?: unknown };
   if (p._tag === 'Error' || p.error) throw new Error(`db query error: ${JSON.stringify(p.error).slice(0, 300)}`);
@@ -234,34 +260,72 @@ describe('no client depends on a public memory-media URL', () => {
   });
 });
 
-// ── 3. The cutover ──────────────────────────────────────────────────────────
+// ── 3. The cutover, completed ───────────────────────────────────────────────
 
-describe('the private-bucket cutover', () => {
-  test('while the bucket is public, no non-public memory may exist', () => {
-    const r = one(`
-      select (select public::text from storage.buckets where id='memories-media')       as bucket_public,
-             (select count(*)::text from public.memories where visibility <> 'public')  as non_public;`);
-    if (r.bucket_public === 'false') return; // cutover done — nothing to guard
-    assert.equal(r.non_public, '0',
-      `${r.non_public} memory/memories are community or private while memories-media is STILL PUBLIC. ` +
-      `Their media is readable by anyone with the URL. Apply ` +
-      `supabase/pending/PHASE3_memories_media_private.sql once the website deploy is confirmed.`);
-  });
-
-  test('the held-back cutover file is still there while it is still needed', () => {
+describe('the private-bucket cutover is done', () => {
+  test('memories-media is private', () => {
     const r = one(`select public::text as p from storage.buckets where id='memories-media';`);
-    if (r.p === 'false') return; // already applied
-    assert.ok(existsSync(join(REPO_ROOT, 'supabase/pending/PHASE3_memories_media_private.sql')),
-      'the bucket is still public and the cutover file has been deleted — the final step would be lost');
+    assert.equal(r.p, 'false',
+      'memories-media is public again — its objects would be served regardless of memory visibility');
   });
 
-  test('the cutover is NOT sitting in migrations/ where it would auto-apply', () => {
-    // It must not run before the website is deployed, or the live memories page
-    // stops rendering.
-    const staged = execFileSync('git', ['ls-files', 'supabase/migrations'],
+  test('no held-back cutover file remains', () => {
+    // It was moved into migrations/ and applied. A leftover copy would be an
+    // executable duplicate of an already-applied change.
+    assert.ok(!existsSync(join(REPO_ROOT, 'supabase/pending/PHASE3_memories_media_private.sql')),
+      'the pending Phase-3 file is back — it has already been applied as a migration');
+  });
+
+  test('the cutover is recorded as a migration', () => {
+    const tracked = execFileSync('git', ['ls-files', 'supabase/migrations'],
       { cwd: REPO_ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
-    const rogue = staged.filter((f) => /memories_media_private/i.test(f));
-    assert.deepEqual(rogue, [],
-      `the bucket-private cutover is in migrations/ and would apply on the next db push: ${rogue.join(', ')}`);
+    assert.ok(tracked.some((f) => /memories_media_private/.test(f)),
+      'the bucket-private migration is missing — a restore would come up with a public bucket');
+  });
+
+  test('direct public delivery cannot bypass the policy', async () => {
+    // The actual vulnerability: possession of an /object/public/ URL used to
+    // return the bytes whatever the memory's visibility said.
+    if (!cfg) return;
+    const { url, anonKey } = cfg;
+    const r = one(`select storage_path from public.memory_media limit 1;`);
+    const path = String(r.storage_path ?? '');
+    assert.ok(path, 'no memory media to test with');
+    // Cache-busted: an edge-cached 200 from before the cutover is not evidence.
+    const res = await fetch(`${url}/storage/v1/object/public/memories-media/${encodePath(path)}?cb=${Date.now()}`,
+      { headers: { apikey: anonKey } });
+    assert.notEqual(res.status, 200,
+      'public object delivery still returns memory media — the bucket flag has been reverted');
+  });
+
+  test('a public memory can still be signed for and fetched anonymously', async () => {
+    if (!cfg) return;
+    const { url, anonKey } = cfg;
+    const r = one(`
+      select mm.storage_path from public.memory_media mm
+        join public.memories m on m.id = mm.memory_id
+       where m.visibility = 'public' limit 1;`);
+    const path = String(r.storage_path ?? '');
+    assert.ok(path, 'no public memory media to test with');
+    const signRes = await fetch(`${url}/storage/v1/object/sign/memories-media/${encodePath(path)}`, {
+      method: 'POST',
+      headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: 300 }),
+    });
+    const body = await signRes.json() as { signedURL?: string };
+    assert.ok(body.signedURL, 'an anonymous visitor can no longer view a PUBLIC memory\'s media');
+    const get = await fetch(`${url}/storage/v1${body.signedURL}`);
+    assert.equal(get.status, 200, 'the signed URL for a public memory does not resolve');
+  });
+
+  test('the orphan objects are unreachable but still stored', () => {
+    // 7 uploads whose composer session never created a memory_media row. They
+    // resolve to no memory, so nobody can read them — and they are not deleted.
+    const r = one(`
+      select (select count(*)::text from storage.objects where bucket_id='memories-media') as total,
+             (select count(*)::text from storage.objects o where o.bucket_id='memories-media'
+                and not exists (select 1 from public.memory_media mm where mm.storage_path = o.name)) as orphans;`);
+    assert.equal(r.total, '17', 'memory storage objects were added or removed');
+    assert.equal(r.orphans, '7', 'the orphan object count changed — they should be left alone for now');
   });
 });

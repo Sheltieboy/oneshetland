@@ -60,7 +60,9 @@ const EXPECTED = {
   'employer-logos':     { pub: true, mb:  5, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
   'event-media':        { pub: true, mb: 10, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
   'hub-media':          { pub: true, mb: 20, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
-  'memories-media':     { pub: true, mb: 25, mime: ['image/jpeg','image/jpg','image/png','image/webp',
+  // PRIVATE since the Step 13C cutover: its objects follow the memory's
+  // visibility, so they are signed for at read time rather than served openly.
+  'memories-media':     { pub: false, mb: 25, mime: ['image/jpeg','image/jpg','image/png','image/webp',
                                                     'audio/webm','audio/ogg','audio/mpeg','audio/mp4','audio/m4a','audio/wav'] },
   'site-media':         { pub: true, mb: 10, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
   'spik-audio':         { pub: true, mb: 10, mime: ['audio/webm','audio/ogg','audio/mpeg','audio/mp4'] },
