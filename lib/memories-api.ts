@@ -266,9 +266,13 @@ export async function fetchMemoryDetail(id: string, userId: string | null): Prom
     reactionsByKind[r.kind] = (reactionsByKind[r.kind] ?? 0) + 1;
   }
 
+  // Signed for THIS viewer. A path they may not see comes back unsigned, so the
+  // item arrives without a usable URL rather than leaking a private object.
+  const media = await signMemoryMedia((mediaRes.data ?? []) as MemoryMedia[]);
+
   return {
     ...(memRes.data as Memory),
-    media:    (mediaRes.data ?? []) as MemoryMedia[],
+    media,
     comments: (commentsRes.data ?? []) as MemoryComment[],
     children: (childrenRes.data ?? []) as Memory[],
     pins,
@@ -335,6 +339,39 @@ export async function deleteMemory(id: string): Promise<void> {
 // ── Media uploads ───────────────────────────────────────────────────────────
 
 const MEMORIES_BUCKET = 'memories-media';
+
+/**
+ * memories-media is a PRIVATE bucket: a memory's photos and audio are not
+ * served from a guessable /object/public/ URL. They are signed for at display
+ * time, and the signing is authorised by storage RLS:
+ *
+ *   viewer's session -> can_view_memory() -> public.memories RLS -> signed URL
+ *
+ * A public memory therefore signs for anybody, and a community or private one
+ * signs only for someone the memories policy already lets read the row. There
+ * is no second definition of "private" in the app — the database decides.
+ *
+ * One hour: long enough for a screen and its images to share a URL, short
+ * enough that switching a memory to private takes effect within the hour for
+ * URLs already issued. That hour IS the revocation delay; do not raise it for
+ * caching.
+ */
+const MEDIA_TTL_SECONDS = 3600;
+
+export async function signMemoryMedia(media: MemoryMedia[]): Promise<MemoryMedia[]> {
+  const paths = [...new Set(media.map((m) => m.storage_path).filter(Boolean))] as string[];
+  if (!paths.length) return media;
+  const { data } = await supabase.storage
+    .from(MEMORIES_BUCKET)
+    .createSignedUrls(paths, MEDIA_TTL_SECONDS);
+  const map: Record<string, string> = {};
+  for (const r of data ?? []) {
+    // Per-path failures are reported rather than thrown: a path this viewer may
+    // not see comes back without a signedUrl and simply does not appear here.
+    if (r.path && r.signedUrl) map[r.path] = r.signedUrl;
+  }
+  return media.map((m) => (m.storage_path && map[m.storage_path]) ? { ...m, url: map[m.storage_path] } : m);
+}
 
 function newFilename(ext: string): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
@@ -410,15 +447,16 @@ export async function uploadMemoryMedia(input: UploadMemoryMediaInput): Promise<
     throw new Error(`Storage upload failed (${uploadRes.status}): ${text.slice(0, 200)}`);
   }
 
-  const { data: pub } = supabase.storage.from(MEMORIES_BUCKET).getPublicUrl(path);
-
+  // memories-media is a PRIVATE bucket, so there is no public URL to persist.
+  // storage_path is the durable identity; readers sign for it at display time
+  // under their own permissions (see signMemoryMedia below).
   const { data, error } = await supabase
     .from('memory_media')
     .insert({
       memory_id:         input.memoryId,
       uploader_id:       input.uploaderId,
       kind:              input.kind,
-      url:               pub.publicUrl,
+      url:               '',
       storage_path:      path,
       caption:           input.caption ?? null,
       duration_seconds:  input.durationSeconds ?? null,
