@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -52,6 +53,11 @@ serve(async (req) => {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Abuse ceiling for this account. Limits live in rate_limit_policies,
+    // not here; a broken limiter refuses rather than waving traffic through.
+    const limited = await enforceRateLimit('notify-drivers', userSubject(user.id), ['notify_broadcast', 'notify_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const { request_id, event } = await req.json();
     if (!request_id) {

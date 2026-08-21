@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,6 +48,11 @@ serve(async (req) => {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Counted against notify_any as well as its own route: the aggregate only
+    // means anything if every notification path claims it.
+    const limited = await enforceRateLimit('notify-shift-application', userSubject(user.id), ['notify_direct', 'notify_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const { application_id } = await req.json();
     if (!application_id) {

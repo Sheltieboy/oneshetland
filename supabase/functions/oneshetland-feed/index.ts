@@ -1,4 +1,5 @@
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, GLOBAL_SUBJECT } from '../_shared/rate-limit.ts';
 /**
  * oneshetland-feed
  *
@@ -17,6 +18,19 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  // Public by design: anyone may read the feed, and every request makes this
+  // function fetch WordPress.
+  //
+  // Why a global ceiling and not a per-IP one: X-Forwarded-For is accepted from
+  // the caller at this boundary — a request carrying a made-up value reaches
+  // the function exactly like one without — so bucketing on it would let an
+  // abuser mint a fresh identity per request while looking like a control.
+  // (Cloudflare does refuse a client-supplied CF-Connecting-IP, answering 403,
+  // but its observed value could not be confirmed from here.) One ceiling for
+  // the whole endpoint is honest about what is actually known.
+  const limited = await enforceRateLimit('oneshetland-feed', GLOBAL_SUBJECT, ['public_feed_global'], corsHeaders);
+  if ('denied' in limited) return limited.denied;
 
   try {
     const res = await fetch(WP_FEED, {

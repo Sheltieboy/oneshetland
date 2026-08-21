@@ -6,6 +6,7 @@ import { executeWalletPayment, type PayBusiness } from '../_shared/wallet-pay.ts
 import { sendUserPush } from '../_shared/send-push.ts';
 import { spawnFetchRequest } from '../_shared/fulfilment.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 /**
  * create-product-order-intent — Shop Shetland checkout.
@@ -97,6 +98,11 @@ serve(async (req) => {
     });
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
+
+    // Abuse ceiling for this account. Limits live in rate_limit_policies,
+    // not here; a broken limiter refuses rather than waving traffic through.
+    const limited = await enforceRateLimit('create-product-order-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const body = await req.json();
     const businessId: string = body.business_id;

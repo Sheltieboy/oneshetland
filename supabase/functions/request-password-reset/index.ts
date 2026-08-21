@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendEmail } from '../_shared/send-email.ts';
+import { enforceRateLimit, GLOBAL_SUBJECT } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -61,6 +62,23 @@ serve(async (req) => {
      * anything about an address, including whether it has been asked for
      * recently.
      */
+    /**
+     * A whole-endpoint ceiling on top of the per-address one below.
+     *
+     * The per-address throttle stops one person being bombed. It does nothing
+     * about the other shape: spraying one request each at thousands of different
+     * addresses, which costs an attacker nothing and burns the sending domain's
+     * reputation that every other transactional email depends on.
+     *
+     * Over the ceiling this returns ok() like every other refusal here, so it
+     * still reveals nothing about any address, and it is logged loudly.
+     */
+    const globalLimit = await enforceRateLimit('request-password-reset', GLOBAL_SUBJECT, ['password_reset_global'], corsHeaders);
+    if ('denied' in globalLimit) {
+      console.warn('[request-password-reset] endpoint ceiling reached — reset mail suppressed this window');
+      return ok();
+    }
+
     const RESET_LIMIT = 3;
     const RESET_WINDOW_MIN = 60;
     const since = new Date(Date.now() - RESET_WINDOW_MIN * 60_000).toISOString();

@@ -63,6 +63,7 @@ const CANONICAL: Array<{ name: string; schedule: string; targets: string; kind: 
   { name: 'activate-scheduled-alerts',   schedule: '* * * * *',    targets: 'partner_alerts',              kind: 'sql'  },
   { name: 'expire-stale-ticket-orders',  schedule: '*/5 * * * *',  targets: 'expire_stale_ticket_orders',  kind: 'sql'  },
   { name: 'purge-old-job-applications',  schedule: '20 3 * * *',   targets: 'purge_old_job_applications',  kind: 'sql'  },
+  { name: 'purge-rate-limits',           schedule: '17 4 * * *',   targets: 'purge_rate_limits',           kind: 'sql'  },
   { name: 'reminder-runner',             schedule: '*/5 * * * *',  targets: 'functions/v1/reminder-runner',   kind: 'http' },
   { name: 'social-composer',             schedule: '40 5 * * *',   targets: 'functions/v1/social-composer',   kind: 'http' },
   { name: 'social-publisher',            schedule: '*/15 * * * *', targets: 'functions/v1/social-publisher',  kind: 'http' },

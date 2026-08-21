@@ -3,6 +3,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 /**
  * loyalty-till — the unified "one member card" till.
@@ -49,6 +50,11 @@ serve(async (req) => {
     const anon = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_ANON_KEY') ?? '', { global: { headers: { Authorization: authHeader } } });
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
+
+    // Counted against notify_any as well as its own route: the aggregate only
+    // means anything if every notification path claims it.
+    const limited = await enforceRateLimit('loyalty-till', userSubject(user.id), ['notify_direct', 'notify_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
     const { member_code, business_id, action, amount_pence, offer_id } = await req.json();

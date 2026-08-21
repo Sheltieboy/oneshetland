@@ -4,6 +4,7 @@ import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
 import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -73,6 +74,11 @@ serve(async (req) => {
     );
     const { data: { user }, error: userError } = await anonSupabase.auth.getUser();
     if (userError || !user) return new Response(JSON.stringify({ error: 'Unauthorised' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    // Abuse ceiling for this account. Limits live in rate_limit_policies,
+    // not here; a broken limiter refuses rather than waving traffic through.
+    const limited = await enforceRateLimit('create-event-ticket-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 

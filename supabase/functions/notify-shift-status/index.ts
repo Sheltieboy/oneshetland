@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 import { requireCaller, forbidden } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 /**
  * notify-shift-status
@@ -31,6 +32,14 @@ serve(async (req) => {
     const gate = await requireCaller(req, corsHeaders);
     if ('denied' in gate) return gate.denied;
     const caller = gate.caller;
+
+    // Owning a resource is permission to notify about it, not permission to
+    // do so without limit. A service-role caller is our own backend, not the
+    // internet, so it is not throttled.
+    if (!caller.isServiceRole) {
+      const limited = await enforceRateLimit('notify-shift-status', userSubject(caller.userId), ['notify_fanout', 'notify_any'], corsHeaders);
+      if ('denied' in limited) return limited.denied;
+    }
 
     const { event, shift_id, application_id } = await req.json();
     if (!event) return json({ error: 'event required' }, 400);

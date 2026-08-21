@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,6 +37,11 @@ serve(async (req) => {
     );
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
+
+    // Counted against notify_any as well as its own route: the aggregate only
+    // means anything if every notification path claims it.
+    const limited = await enforceRateLimit('local-nfc-stamp', userSubject(user.id), ['notify_direct', 'notify_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const svc = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',

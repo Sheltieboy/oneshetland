@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -66,6 +67,11 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } });
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
+
+    // Abuse ceiling for this account. Limits live in rate_limit_policies,
+    // not here; a broken limiter refuses rather than waving traffic through.
+    const limited = await enforceRateLimit('create-hub-donation-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 

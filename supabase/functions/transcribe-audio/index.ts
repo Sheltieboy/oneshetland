@@ -26,6 +26,8 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { requireCaller } from '../_shared/require-caller.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -42,6 +44,15 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  // This function had NO caller check at all. It ran with verify_jwt, which the
+  // public anon key satisfies, then used the service role to fetch whatever
+  // media_id the body named, download it from the private memories-media
+  // bucket, and pay OpenAI to transcribe it. Anyone could spend Whisper credit
+  // on anyone's audio. Gate first, then prove ownership, then count it.
+  const gate = await requireCaller(req, corsHeaders);
+  if ('denied' in gate) return gate.denied;
+  const caller = gate.caller;
 
   const supabaseUrl     = Deno.env.get('SUPABASE_URL')              ?? '';
   const serviceRoleKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -70,7 +81,7 @@ serve(async (req) => {
   // ── Look up the media row ─────────────────────────────────────────────────
   const { data: media, error: mErr } = await supabase
     .from('memory_media')
-    .select('id, kind, storage_path, transcript_status')
+    .select('id, kind, storage_path, transcript_status, memory_id')
     .eq('id', mediaId)
     .maybeSingle();
 
@@ -79,6 +90,26 @@ serve(async (req) => {
       status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+  // The audio must belong to a memory this caller wrote. Service-role callers
+  // are our own backend (the app transcribes on upload) and are trusted.
+  if (!caller.isServiceRole) {
+    const { data: memory } = await supabase
+      .from('memories')
+      .select('author_id')
+      .eq('id', media.memory_id)
+      .maybeSingle();
+    if (!memory || memory.author_id !== caller.userId) {
+      // Same answer as a missing row: whether someone else's media exists is
+      // not a question an unauthorised caller gets answered.
+      return new Response(JSON.stringify({ error: 'Media not found' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const limited = await enforceRateLimit('transcribe-audio', userSubject(caller.userId), ['transcribe', 'transcribe_day'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
+  }
+
   if (media.kind !== 'audio') {
     return new Response(JSON.stringify({ error: 'Not an audio media' }), {
       status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

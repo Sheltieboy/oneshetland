@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendPush } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -23,6 +25,20 @@ serve(async (req) => {
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   try {
+    // This function had no caller check. verify_jwt is satisfied by the public
+    // anon key, so anyone could send a business-claim notice to real people, in
+    // someone else's name, with no account. Same fix as the Step 14 fan-outs.
+    const gate = await requireCaller(req, corsHeaders);
+    if ('denied' in gate) return gate.denied;
+    const caller = gate.caller;
+
+    // Our own backend invokes this with the service key; that is not internet
+    // traffic and is not throttled.
+    if (!caller.isServiceRole) {
+      const limited = await enforceRateLimit('notify-business-claim', userSubject(caller.userId), ['notify_direct', 'notify_any'], corsHeaders);
+      if ('denied' in limited) return limited.denied;
+    }
+
     const { claim_id } = await req.json();
     if (!claim_id) return json({ error: 'claim_id required' }, 400);
 
