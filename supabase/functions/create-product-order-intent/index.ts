@@ -120,11 +120,26 @@ serve(async (req) => {
     // ── Business + shipping config ─────────────────────────────────────────
     const { data: biz } = await svc
       .from('local_businesses')
-      .select('id, name, owner_id, is_active, accepts_wallet, cashback_percent, business_stripe_account_id, business_stripe_payouts_enabled')
+      .select('id, name, owner_id, is_active, accepts_wallet, cashback_percent')
       .eq('id', businessId).maybeSingle();
     if (!biz?.is_active) return json({ error: 'Business not found' }, 404);
     if (biz.owner_id === user.id) return json({ error: "You can't buy from your own shop" }, 403);
-    if (!biz.business_stripe_account_id || !biz.business_stripe_payouts_enabled) {
+    // Where does this shop's money go?
+    //
+    // This used to demand business_stripe_account_id AND
+    // business_stripe_payouts_enabled — a column pair set on ZERO businesses,
+    // so every shop was refused, not just this one. It also had no fallback:
+    // the product model, already settled for event tickets, is that a business
+    // uses its owner's central bank unless it has explicitly been given its own.
+    // business_payout_destination is that one rule, shared with events.
+    const { data: payoutRows, error: payoutErr } = await svc.rpc('business_payout_destination', { p_business: businessId });
+    if (payoutErr) {
+      console.error('[create-product-order-intent] payout resolve failed:', payoutErr);
+      return json({ error: 'Could not check this shop’s payment setup. Please try again.' }, 503);
+    }
+    const payout = Array.isArray(payoutRows) ? payoutRows[0] : payoutRows;
+    const sellerAccountId: string | null = payout?.account_id ?? null;
+    if (!sellerAccountId) {
       return json({ error: "This shop isn't quite ready to take payments yet." }, 400);
     }
 
@@ -251,8 +266,8 @@ serve(async (req) => {
         id: biz.id, name: biz.name, owner_id: biz.owner_id,
         accepts_wallet: biz.accepts_wallet ?? false,
         cashback_percent: biz.cashback_percent,
-        stripe_account_id: biz.business_stripe_account_id,
-        payout_enabled: biz.business_stripe_payouts_enabled,
+        stripe_account_id: sellerAccountId,
+        payout_enabled: true,   // resolved above, or we would not be here
       };
       const res = await executeWalletPayment(svc, {
         userId: user.id, business: payBiz, amountPence: totalPence,
@@ -307,7 +322,7 @@ serve(async (req) => {
       'metadata[order_id]':    order.id,
       'metadata[buyer_id]':    user.id,
       'metadata[business_id]': businessId,
-      'transfer_data[destination]': biz.business_stripe_account_id,
+      'transfer_data[destination]': sellerAccountId,
       description: `OneShetland shop order at ${biz.name}`,
     };
     if (commissionPence > 0) params['application_fee_amount'] = String(commissionPence);
@@ -330,6 +345,13 @@ serve(async (req) => {
         return json({ status: 'processing', order_id: order.id, payment_intent_id: outcome.id }, 200);
       }
       if (outcome.kind !== 'succeeded') {
+        // A dead intent — declined or cancelled. Give the stock back: a one-off
+        // item held by a failed payment is unbuyable by anyone, including the
+        // buyer retrying, and nothing else releases it — unlike ticket orders,
+        // product reservations have no expiry job yet.
+        await releaseAll();
+        await svc.from('product_orders')
+          .update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', order.id);
         return json({ status: 'failed', error: failureMessage(outcome.status), order_id: order.id }, 402);
       }
       return json({ charged: true, status: 'succeeded', order_id: order.id, payment_intent_id: pi.id });
