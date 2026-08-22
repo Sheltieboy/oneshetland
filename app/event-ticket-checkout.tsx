@@ -22,6 +22,7 @@ import { newCheckoutAttemptId } from '@/lib/checkout-attempt';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchWalletBalance } from '@/lib/local-api';
+import { describeCheckoutError } from '@/lib/checkout-errors';
 import {
   fetchEvent,
   purchaseTickets, confirmTicketPurchase,
@@ -163,6 +164,11 @@ export default function EventTicketCheckoutScreen() {
         event_id:       event.id,
         line_items:     lineItems,
         use_saved_card: !!profile.has_payment_method,
+        // The card path omitted this while the wallet path sent it, so the server
+        // saw no checkout reference and refused before anything happened. The id is
+        // stable across retries of THIS basket — that is what stops a double tap
+        // becoming a second order.
+        client_request_id: attemptId(),
       });
 
       // Persist each raw token in SecureStore keyed by ticket ID.
@@ -203,7 +209,7 @@ export default function EventTicketCheckoutScreen() {
       ticketSuccess();
 
     } catch (e: any) {
-      alert({ title: 'Could not complete booking', message: e.message ?? 'Please try again' });
+      alert({ title: 'Could not complete booking', message: describeCheckoutError(e) });
     } finally {
       setBuying(false);
       setConfirming(false);
@@ -221,7 +227,7 @@ export default function EventTicketCheckoutScreen() {
       setConfirming(false);
       ticketSuccess();
     } catch (e: any) {
-      alert({ title: 'Could not complete booking', message: e.message ?? 'Please try again' });
+      alert({ title: 'Could not complete booking', message: describeCheckoutError(e) });
     } finally {
       setBuying(false);
       setConfirming(false);

@@ -6,6 +6,7 @@ import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent } from '../_shared/stripe-sca.ts';
+import { stripeError, checkoutFailure } from '../_shared/stripe-errors.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -30,7 +31,7 @@ async function createPaymentIntent(params: Record<string, string>, idempotencyKe
     method: 'POST', headers, body: new URLSearchParams(params),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json.error?.message ?? `Stripe PI failed (${res.status})`);
+  if (!res.ok) throw stripeError(res.status, json);
   return json;
 }
 
@@ -478,6 +479,15 @@ serve(async (req) => {
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
+    // A refusal from Stripe is a known outcome with a cause worth naming; an
+    // unexpected exception is a bug, and its text is not for a buyer.
+    const refused = checkoutFailure('create-event-ticket-intent', err);
+    if (refused) {
+      return new Response(
+        JSON.stringify(refused.body),
+        { status: refused.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
     console.error('[create-event-ticket-intent]', err);
     return new Response(
       JSON.stringify({ error: safeError('create-event-ticket-intent', err) }),
