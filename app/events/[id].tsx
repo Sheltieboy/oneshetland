@@ -30,6 +30,7 @@ import { fetchEventConditions, LERWICK_COORDS, type EventConditions } from '@/li
 import { detectEventArea, detectEventStop } from '@/lib/transit-data';
 import { ScarcityStrip, GoingCount, GettingTherePanel } from '@/components/events/EventInsights';
 import { TravelPlanner } from '@/components/events/TravelPlanner';
+import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.events;
 const SE = SECTIONS.local;
@@ -37,6 +38,7 @@ const SE = SECTIONS.local;
 export default function EventDetailScreen() {
   const { id }   = useLocalSearchParams<{ id: string }>();
   const router   = useRouter();
+  const { alert } = useAlert();
   const { profile } = useAuth();
   const { isTablet, screenWidth, screenHeight } = useAppLayout();
   const twoPane = isTablet && screenWidth > screenHeight;
@@ -139,6 +141,23 @@ export default function EventDetailScreen() {
   // business — so an organiser with a working central account had their
   // tickets hidden behind "Tickets coming soon".
   const payoutReady = event.payout_ready === true;
+
+  // Navigation runs in an event handler, and React error boundaries do NOT
+  // catch those — a throw here takes the whole app down with nothing on screen
+  // to say why. Catching it turns a silent crash into a readable message and a
+  // log line, which is the difference between 'it crashed' and a bug report.
+  const openTicketCheckout = () => {
+    try {
+      router.push({ pathname: '/event-ticket-checkout', params: { id: event.id } });
+    } catch (e) {
+      const err = e as Error;
+      console.error('[events/[id]] could not open ticket checkout:', err);
+      alert({
+        title: 'Could not open tickets',
+        message: err?.message ?? 'Something went wrong opening the ticket screen.',
+      });
+    }
+  };
 
   const urgentUpdate = updates.find(u => u.is_urgent);
 
@@ -418,7 +437,7 @@ export default function EventDetailScreen() {
             )}
             <TouchableOpacity
               style={[styles.ctaBtn, { backgroundColor: accent }]}
-              onPress={() => router.push({ pathname: '/event-ticket-checkout', params: { id: event.id } })}
+              onPress={openTicketCheckout}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="ticket-alt" size={13} color="#fff" solid />

@@ -21,6 +21,8 @@ import { colors, fontSize, spacing, radius, contentContainer } from '@/constants
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { haptic } from '@/lib/haptics';
 import { useAlert } from '@/components/BrandedAlert';
+import * as WebBrowser from 'expo-web-browser';
+import { fetchPaymentState, startPayoutOnboarding, NO_PAYMENT_STATE, type PaymentState } from '@/lib/payment-state';
 
 interface DriverProfile {
   driver_status: 'pending' | 'approved' | 'rejected';
@@ -85,6 +87,43 @@ export default function AccountScreen() {
   const [deleting, setDeleting] = useState(false);
 
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
+  // Central card + payout state, from the one helper the website also uses.
+  // Card and payouts are separate things and are shown separately: one is what
+  // you PAY with, the other is where you GET PAID.
+  const [payments, setPayments] = useState<PaymentState>(NO_PAYMENT_STATE);
+  const [connectingBank, setConnectingBank] = useState(false);
+
+  const loadPayments = useCallback(async () => {
+    if (!profile?.id) return;
+    try { setPayments(await fetchPaymentState(profile.id)); } catch { /* leave the last known state */ }
+  }, [profile?.id]);
+
+  useEffect(() => { loadPayments(); }, [loadPayments]);
+
+  const handleConnectBank = useCallback(async () => {
+    if (connectingBank) return;
+    setConnectingBank(true);
+    try {
+      const { url, alreadyComplete } = await startPayoutOnboarding();
+      if (alreadyComplete) {
+        // Stripe says payouts are already live — the local flags were stale.
+        await loadPayments();
+        alert({ title: 'Bank already connected', message: 'Your payouts are active.' });
+        return;
+      }
+      // Same in-app sheet the business dashboard uses for Connect onboarding.
+      await WebBrowser.openBrowserAsync(url!, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+        dismissButtonStyle: 'close',
+      });
+      // Stripe can take a moment to approve; re-read when the sheet closes.
+      await loadPayments();
+    } catch (e: any) {
+      alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
+    } finally {
+      setConnectingBank(false);
+    }
+  }, [connectingBank, loadPayments, alert]);
   const [driverNotes, setDriverNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
@@ -428,6 +467,50 @@ export default function AccountScreen() {
               )}
             </View>
 
+            {/* ── Payouts / bank account ─────────────────────────────────────
+                 Separate from the card above: this is where money you are OWED
+                 arrives — Fetch earnings, and ticket or booking revenue for any
+                 business you run that has not been given its own bank account. */}
+            <View style={[
+              styles.statusBanner,
+              payments.payouts_connected ? styles.statusBannerGreen : styles.statusBannerAmber,
+            ]}>
+              <Text style={styles.statusBannerIcon}>
+                {payments.payouts_connected ? '✓' : payments.payouts_pending ? '…' : '!'}
+              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[
+                  styles.statusBannerTitle,
+                  { color: payments.payouts_connected ? '#166534' : '#92400E' },
+                ]}>
+                  {payments.payouts_connected
+                    ? 'Bank connected — payouts active'
+                    : payments.payouts_pending ? 'Bank setup unfinished' : 'No bank account'}
+                </Text>
+                <Text style={[
+                  styles.statusBannerBody,
+                  { color: payments.payouts_connected ? '#4ADE80' : '#B45309' },
+                ]}>
+                  {payments.payouts_connected
+                    ? 'One bank account for everything you\u2019re paid'
+                    : payments.payouts_pending
+                      ? 'Stripe still needs a few details before you can be paid'
+                      : 'Connect a bank account to receive money you\u2019re owed'}
+                </Text>
+              </View>
+              {!payments.payouts_connected && (
+                <Pressable
+                  style={styles.statusBannerAction}
+                  onPress={() => { haptic.light(); handleConnectBank(); }}
+                  disabled={connectingBank}
+                >
+                  <Text style={styles.statusBannerActionText}>
+                    {connectingBank ? 'Opening…' : payments.payouts_pending ? 'Finish' : 'Connect'}
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
             <View style={styles.linkGroup}>
               <LinkRow
                 icon="💳"
@@ -441,6 +524,13 @@ export default function AccountScreen() {
                   onPress={() => { if (!removingCard) { haptic.light(); handleRemoveCard(); } }}
                 />
               )}
+              <LinkRow
+                icon="🏦"
+                label={payments.payouts_connected
+                  ? 'Manage bank account (Stripe)'
+                  : payments.payouts_pending ? 'Finish bank setup' : 'Connect bank account'}
+                onPress={() => { if (!connectingBank) { haptic.light(); handleConnectBank(); } }}
+              />
               <LinkRow
                 icon="📍"
                 label="Saved addresses"

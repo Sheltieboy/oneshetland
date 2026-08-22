@@ -312,6 +312,8 @@ function RootNavigator() {
           <Stack.Screen name="event-create" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="event-manage" />
           <Stack.Screen name="event-scanner" />
+          <Stack.Screen name="event-ticket-checkout" />
+          <Stack.Screen name="product-checkout" />
           <Stack.Screen
             name="event-ticket-checkout"
             options={{
