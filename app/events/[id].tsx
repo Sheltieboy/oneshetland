@@ -131,8 +131,14 @@ export default function EventDetailScreen() {
 
   const isCancelled = event.status === 'cancelled';
   const isPostponed = event.status === 'postponed';
-  // Organiser must have a connected, payout-ready Stripe account to sell tickets.
-  const payoutReady = !!(event.business as any)?.payout_enabled;
+  // Organiser must be able to receive the money before we offer a Buy button.
+  //
+  // This asks the backend's single resolver (event_payout_ready), NOT
+  // event.business.payout_enabled. A business inherits its owner's central
+  // bank unless explicitly given its own, and the old check saw only the
+  // business — so an organiser with a working central account had their
+  // tickets hidden behind "Tickets coming soon".
+  const payoutReady = event.payout_ready === true;
 
   const urgentUpdate = updates.find(u => u.is_urgent);
 

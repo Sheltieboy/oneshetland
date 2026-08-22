@@ -26,6 +26,8 @@ export const AGE_RESTRICTIONS = ['All ages', '12+', '16+', '18+', 'Under 18 only
 export type HubEventVisibility = 'members' | 'hub' | 'islands';
 
 export interface OsEvent {
+  /** Effective payout readiness for the organiser — resolved server-side in fetchEvent. */
+  payout_ready?: boolean;
   id:                  string;
   organiser_user_id:   string | null;
   organiser_business_id: string | null;
@@ -326,6 +328,23 @@ export async function fetchEvent(id: string): Promise<OsEvent | null> {
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
   }
+  // Can this organiser actually be paid?
+  //
+  // The screen used to answer that with `event.business.payout_enabled`, which
+  // asks only whether the BUSINESS has its own Stripe account. A business
+  // inherits its owner's central card and bank unless it is explicitly given
+  // its own, so an organiser who could perfectly well take money still saw
+  // "Tickets coming soon".
+  //
+  // It cannot be worked out here either: profiles RLS is own-row-only, so a
+  // BUYER cannot read the organiser's payout state at all. event_payout_ready
+  // is a SECURITY DEFINER function that can, and returns one boolean — no
+  // Stripe identifier reaches the client. It is the same resolver
+  // create-event-ticket-intent uses to choose the destination, so the button
+  // and the charge cannot disagree.
+  const { data: ready } = await supabase.rpc('event_payout_ready', { p_event_id: id });
+  ev.payout_ready = ready === true;
+
   return ev as OsEvent;
 }
 

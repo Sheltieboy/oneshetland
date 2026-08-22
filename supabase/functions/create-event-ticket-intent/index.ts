@@ -189,42 +189,20 @@ serve(async (req) => {
       .single();
 
     // Resolve the organiser's Connect account for the destination charge.
-    let stripeAccountId: string | null = null;
+    //
+    // ONE rule, in the database (event_payout_destination), shared with the
+    // client's Buy gate (event_payout_ready). They used to be separate: the
+    // server correctly fell back to the owner's central account when a business
+    // had none of its own, while the mobile gate looked only at the business and
+    // showed "Tickets coming soon" for an organiser who could perfectly well be
+    // paid. A single resolver means the button and the charge cannot disagree.
+    //
     // Demo organisers (slug 'demo-…') exist only for testing and have no real
-    // Stripe Connect account — in test mode we charge the platform directly
-    // (no destination transfer). Real organisers must be payout-ready.
-    let isDemo = false;
-    if (event.organiser_hub_id) {
-      // Hub-organised event → pay out to the hub's connected account.
-      const { data: hub } = await supabase
-        .from('hubs')
-        .select('stripe_account_id, payout_enabled, slug')
-        .eq('id', event.organiser_hub_id)
-        .single();
-      isDemo = (hub?.slug ?? '').startsWith('demo-');
-      if (hub?.payout_enabled && hub?.stripe_account_id) {
-        stripeAccountId = hub.stripe_account_id;
-      }
-    } else if (event.organiser_business_id) {
-      const { data: biz } = await supabase
-        .from('local_businesses')
-        .select('stripe_account_id, payout_enabled, use_business_payout, owner_id, slug')
-        .eq('id', event.organiser_business_id)
-        .single();
-      isDemo = (biz?.slug ?? '').startsWith('demo-');
-
-      if (biz?.payout_enabled && biz?.stripe_account_id) {
-        stripeAccountId = biz.stripe_account_id;
-      } else if (!stripeAccountId) {
-        // Fallback: owner's personal Connect account
-        const { data: owner } = await supabase
-          .from('profiles')
-          .select('stripe_account_id')
-          .eq('id', biz?.owner_id ?? '')
-          .single();
-        if (owner?.stripe_account_id) stripeAccountId = owner.stripe_account_id;
-      }
-    }
+    // Connect account — in test mode we charge the platform directly.
+    const { data: payoutRows } = await supabase.rpc('event_payout_destination', { p_event_id: event_id });
+    const payout = Array.isArray(payoutRows) ? payoutRows[0] : payoutRows;
+    const stripeAccountId: string | null = payout?.account_id ?? null;
+    const isDemo = !!payout?.is_demo;
 
     // ── Payout-readiness, BEFORE anything is reserved ────────────────────────
     // This used to run after the order and tickets existed, so a checkout that
