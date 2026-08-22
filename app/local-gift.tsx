@@ -29,6 +29,7 @@ import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { supabase } from '@/lib/supabase';
 import { fetchBusiness, fetchWalletBalance, type LocalBusiness } from '@/lib/local-api';
 import { formatPence, type BookUnitItem, type BookService } from '@/lib/book-api';
+import { settleSavedCardPayment, type PaymentStart } from '@/lib/stripe-sca';
 
 const S = SECTIONS.local;
 
@@ -148,7 +149,14 @@ export default function GiftScreen() {
 
       let paymentIntentId: string | undefined = intent.payment_intent_id;
 
-      if (!intent.charged) {
+
+      // A saved-card charge the issuer wants authenticated is PAUSED, not failed:
+      // finish that same PaymentIntent rather than starting a second one.
+      const settled = await settleSavedCardPayment(intent as PaymentStart);
+      if (settled.outcome === 'failed') throw new Error(settled.message);
+      const scaCharged = settled.outcome === 'succeeded';
+
+      if (!intent.charged && !scaCharged) {
         if (!intent.clientSecret) throw new Error('Unexpected response from payment service.');
         const { error: initErr } = await initPaymentSheet({
           paymentIntentClientSecret: intent.clientSecret,

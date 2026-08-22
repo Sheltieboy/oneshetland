@@ -5,6 +5,7 @@
 
 import { uploadAsync as fsUploadAsync } from 'expo-file-system/legacy';
 import { supabase, SUPABASE_URL } from './supabase';
+import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -591,6 +592,15 @@ export async function purchaseTickets(params: {
     }
     throw new Error(error.message);
   }
+
+  // A saved-card charge the issuer wants authenticated is PAUSED, not failed.
+  // Finish that same PaymentIntent here so every screen sees a settled result
+  // and no second intent is created. The PaymentSheet path has no `status`, so
+  // it returns straight through unchanged.
+  const settled = await settleSavedCardPayment(data as PaymentStart);
+  if (settled.outcome === 'cancelled') throw new Error('Payment cancelled — nothing was charged.');
+  if (settled.outcome === 'failed') throw new Error(settled.message);
+  if (settled.outcome === 'succeeded') return { ...data, charged: true };
   return data;
 }
 

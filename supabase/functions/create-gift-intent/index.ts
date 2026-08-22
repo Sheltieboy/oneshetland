@@ -5,6 +5,7 @@ import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -293,16 +294,22 @@ serve(async (req) => {
 
       const paymentIntent = await createPaymentIntent({
         ...baseParams,
-        customer:       customerId,
-        payment_method: pmId,
-        confirm:        'true',
-        off_session:    'true',
+        ...onSessionConfirm(customerId, pmId),
       }, `gift-${gift.id}`);
 
-      if (paymentIntent.status !== 'succeeded') {
-        return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${paymentIntent.status}).` }), {
-          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      const outcome = classifyIntent(paymentIntent);
+      if (outcome.kind === 'requires_action') {
+        // The issuer wants the cardholder to authenticate. That is the middle of a
+        // payment, not the end of one: hand back THIS intent's client secret so the
+        // SDK can finish it. No second PaymentIntent, and nothing is fulfilled yet.
+        return new Response(JSON.stringify({ status: 'requires_action', clientSecret: outcome.clientSecret, payment_intent_id: outcome.id, gift_id: gift.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (outcome.kind === 'processing') {
+        // Stripe has it and has not settled. The webhook fulfils when it resolves.
+        return new Response(JSON.stringify({ status: 'processing', payment_intent_id: outcome.id, gift_id: gift.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (outcome.kind !== 'succeeded') {
+        return new Response(JSON.stringify({ status: 'failed', error: failureMessage(outcome.status) }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       // Stash the PI on the gift now so confirm-gift can find it idempotently.

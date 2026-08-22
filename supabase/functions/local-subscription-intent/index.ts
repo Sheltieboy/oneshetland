@@ -159,14 +159,20 @@ serve(async (req) => {
     const latestInvoice = subscription.latest_invoice as any;
     const paymentIntent = latestInvoice?.payment_intent;
 
-    // 3. Saved card → confirm OFF-SESSION so it charges silently (the webhook
-    //    then flips the tier). Falls through to the card form only with no saved
-    //    card, or a card that needs 3DS / is declined.
+    // 3. Saved card → confirm ON-SESSION. This is the FIRST payment of a new
+    //    subscription and the owner is sitting there having just chosen a tier, so
+    //    Stripe is told the customer is present and decides whether the issuer must
+    //    challenge them. Later renewals are off-session and Stripe drives those
+    //    itself through the invoice — nothing here affects them.
+    //
+    //    A card needing authentication falls through to the card form below, which
+    //    returns THIS subscription's existing PaymentIntent client secret plus an
+    //    ephemeral key. The same intent is completed, never a second one.
     const alreadyPaid = ['active', 'trialing'].includes(subscription.status) || paymentIntent?.status === 'succeeded';
     if (alreadyPaid) return json({ activated: true, subscriptionId: subscription.id });
     if (paymentMethodId && paymentIntent?.id) {
       try {
-        const confirmed = await stripe.paymentIntents.confirm(paymentIntent.id, { payment_method: paymentMethodId, off_session: true });
+        const confirmed = await stripe.paymentIntents.confirm(paymentIntent.id, { payment_method: paymentMethodId, use_stripe_sdk: true });
         if (confirmed.status === 'succeeded') return json({ activated: true, subscriptionId: subscription.id });
       } catch (_e) { /* needs auth / declined → fall through to card form */ }
     }

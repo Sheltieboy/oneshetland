@@ -7,6 +7,7 @@ import { sendUserPush } from '../_shared/send-push.ts';
 import { spawnFetchRequest } from '../_shared/fulfilment.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 
 /**
  * create-product-order-intent — Shop Shetland checkout.
@@ -316,12 +317,22 @@ serve(async (req) => {
       if (!customerId) { await releaseAll(); return json({ error: 'No saved card on file' }, 400); }
       const pm = await listSavedCard(customerId);
       if (!pm) { await releaseAll(); return json({ error: 'No saved card on file' }, 400); }
-      params['payment_method'] = pm;
-      params['off_session'] = 'true';
-      params['confirm'] = 'true';
+      Object.assign(params, onSessionConfirm(customerId, pm));
       const pi = await createPaymentIntent(params, `product-order-${order.id}`);
       await svc.from('product_orders').update({ payment_intent_id: String(pi.id) }).eq('id', order.id);
-      return json({ charged: pi.status === 'succeeded', order_id: order.id, payment_intent_id: pi.id });
+      const outcome = classifyIntent(pi);
+      if (outcome.kind === 'requires_action') {
+        // Middle of a payment: the order stays pending and its reservation
+        // stands while the cardholder authenticates THIS intent.
+        return json({ status: 'requires_action', clientSecret: outcome.clientSecret, order_id: order.id, payment_intent_id: outcome.id }, 200);
+      }
+      if (outcome.kind === 'processing') {
+        return json({ status: 'processing', order_id: order.id, payment_intent_id: outcome.id }, 200);
+      }
+      if (outcome.kind !== 'succeeded') {
+        return json({ status: 'failed', error: failureMessage(outcome.status), order_id: order.id }, 402);
+      }
+      return json({ charged: true, status: 'succeeded', order_id: order.id, payment_intent_id: pi.id });
     }
 
     params['automatic_payment_methods[enabled]'] = 'true';

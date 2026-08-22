@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -148,13 +149,21 @@ serve(async (req) => {
       const pi = await createPaymentIntent({
         ...baseParams,
         'metadata[business_id]': business_id,
-        customer:       biz.business_stripe_customer_id,
-        payment_method: bizPm,
-        confirm:        'true',
-        off_session:    'true',
+        ...onSessionConfirm(biz.business_stripe_customer_id, bizPm),
       }, `boost-biz-${business_id}-${shift_id}`);
-      if (pi.status !== 'succeeded') {
-        return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${pi.status}). Please check the business card.` }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const outcome = classifyIntent(pi);
+      if (outcome.kind === 'requires_action') {
+        // The issuer wants the cardholder to authenticate. That is the middle of a
+        // payment, not the end of one: hand back THIS intent's client secret so the
+        // SDK can finish it. No second PaymentIntent, and nothing is fulfilled yet.
+        return new Response(JSON.stringify({ status: 'requires_action', clientSecret: outcome.clientSecret, payment_intent_id: outcome.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (outcome.kind === 'processing') {
+        // Stripe has it and has not settled. The webhook fulfils when it resolves.
+        return new Response(JSON.stringify({ status: 'processing', payment_intent_id: outcome.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (outcome.kind !== 'succeeded') {
+        return new Response(JSON.stringify({ status: 'failed', error: failureMessage(outcome.status) }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       return new Response(JSON.stringify({ charged: true, payment_intent_id: pi.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -182,19 +191,26 @@ serve(async (req) => {
         });
       }
 
-      // Confirm immediately — off_session means no 3DS prompt for small amounts
+      // The customer is present, so Stripe is told so and decides whether the
+      // issuer needs to challenge them.
       const paymentIntent = await createPaymentIntent({
         ...baseParams,
-        customer:       customerId,
-        payment_method: pmId,
-        confirm:        'true',
-        off_session:    'true',
+        ...onSessionConfirm(customerId, pmId),
       }, `boost-${user.id}-${shift_id}`);
 
-      if (paymentIntent.status !== 'succeeded') {
-        return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${paymentIntent.status}). Please check your card.` }), {
-          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      const outcome = classifyIntent(paymentIntent);
+      if (outcome.kind === 'requires_action') {
+        // The issuer wants the cardholder to authenticate. That is the middle of a
+        // payment, not the end of one: hand back THIS intent's client secret so the
+        // SDK can finish it. No second PaymentIntent, and nothing is fulfilled yet.
+        return new Response(JSON.stringify({ status: 'requires_action', clientSecret: outcome.clientSecret, payment_intent_id: outcome.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (outcome.kind === 'processing') {
+        // Stripe has it and has not settled. The webhook fulfils when it resolves.
+        return new Response(JSON.stringify({ status: 'processing', payment_intent_id: outcome.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (outcome.kind !== 'succeeded') {
+        return new Response(JSON.stringify({ status: 'failed', error: failureMessage(outcome.status) }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       return new Response(

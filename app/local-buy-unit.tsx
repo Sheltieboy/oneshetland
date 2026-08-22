@@ -29,6 +29,7 @@ import { useAttemptId } from '@/hooks/useAttemptId';
 import { supabase } from '@/lib/supabase';
 import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
 import { formatPence, type BookUnitItem } from '@/lib/book-api';
+import { settleSavedCardPayment, type PaymentStart } from '@/lib/stripe-sca';
 
 const S = SECTIONS.local;
 
@@ -114,10 +115,17 @@ export default function BuyUnitScreen() {
       }
       if (intent.error) throw new Error(intent.error);
 
+      // A saved-card charge the issuer wants authenticated is PAUSED, not failed:
+      // finish that same PaymentIntent rather than starting a second one.
+      const settled = await settleSavedCardPayment(intent as PaymentStart);
+      if (settled.outcome === 'cancelled') { setSubmitting(false); return; }
+      if (settled.outcome === 'failed') throw new Error(settled.message);
+      const scaCharged = settled.outcome === 'succeeded';
+
       let paymentIntentId: string | undefined = intent.payment_intent_id;
 
-      // 2a. Off-session charge succeeded — record straight away
-      if (intent.charged) {
+      // 2a. Saved-card charge settled (immediately, or after the bank's challenge)
+      if (intent.charged || scaCharged) {
         // already paid, payment_intent_id returned
       }
       // 2b. PaymentSheet path (no saved card / fallback)

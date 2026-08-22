@@ -6,6 +6,7 @@
  */
 
 import { supabase } from './supabase';
+import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -292,6 +293,15 @@ export async function startHubMembershipPayment(
     try { const body = await (error as any).context?.json(); if (body?.error) msg = body.error; } catch { /* */ }
     throw new Error(msg);
   }
+
+  // A saved-card charge the issuer wants authenticated is PAUSED, not failed.
+  // Finish that same PaymentIntent here so every screen sees a settled result
+  // and no second intent is created. The PaymentSheet path has no `status`, so
+  // it returns straight through unchanged.
+  const settled = await settleSavedCardPayment(data as PaymentStart);
+  if (settled.outcome === 'cancelled') throw new Error('Payment cancelled — nothing was charged.');
+  if (settled.outcome === 'failed') throw new Error(settled.message);
+  if (settled.outcome === 'succeeded') return { ...data, charged: true } as MembershipPaymentStart;
   return data as MembershipPaymentStart;
 }
 
@@ -587,6 +597,15 @@ export async function startHubDonation(
     try { const b = await (error as any).context?.json(); if (b?.error) msg = b.error; } catch { /* */ }
     throw new Error(msg);
   }
+
+  // A saved-card charge the issuer wants authenticated is PAUSED, not failed.
+  // Finish that same PaymentIntent here so every screen sees a settled result
+  // and no second intent is ever created. The PaymentSheet path is untouched:
+  // it has no `status`, so this returns straight through.
+  const settled = await settleSavedCardPayment(data as PaymentStart);
+  if (settled.outcome === 'cancelled') throw new Error('Payment cancelled — nothing was charged.');
+  if (settled.outcome === 'failed') throw new Error(settled.message);
+  if (settled.outcome === 'succeeded') return { ...data, charged: true } as DonationStart;
   return data as DonationStart;
 }
 

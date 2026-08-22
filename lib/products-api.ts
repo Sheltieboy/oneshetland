@@ -6,6 +6,7 @@
  */
 
 import { supabase } from './supabase';
+import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
 
 export type StockMode = 'tracked' | 'made_to_order' | 'one_off';
 
@@ -230,6 +231,15 @@ export async function createProductOrder(body: {
   const { data, error } = await supabase.functions.invoke('create-product-order-intent', { body });
   if (error) throw await fnErr(error, "Couldn't start the order");
   if (data?.error) throw new Error(data.error);
+
+  // A saved-card charge the issuer wants authenticated is PAUSED, not failed.
+  // Finish that same PaymentIntent here so every screen sees a settled result
+  // and no second intent is ever created. The PaymentSheet path is untouched:
+  // it has no `status`, so this returns straight through.
+  const settled = await settleSavedCardPayment(data as PaymentStart);
+  if (settled.outcome === 'cancelled') throw new Error('Payment cancelled — nothing was charged.');
+  if (settled.outcome === 'failed') throw new Error(settled.message);
+  if (settled.outcome === 'succeeded') return { ...data, charged: true } as ProductOrderResult;
   return data as ProductOrderResult;
 }
 

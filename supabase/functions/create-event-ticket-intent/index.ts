@@ -5,6 +5,7 @@ import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
 import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent } from '../_shared/stripe-sca.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -438,13 +439,33 @@ serve(async (req) => {
       if (pmId) {
         const pi = await createPaymentIntent({
           ...baseParams,
-          customer:       profile.stripe_customer_id,
-          payment_method: pmId,
-          confirm:        'true',
-          off_session:    'true',
+          ...onSessionConfirm(profile.stripe_customer_id, pmId),
         }, `evt-order-${order.id}`);
 
-        if (pi.status === 'succeeded') {
+        const outcome = classifyIntent(pi);
+
+        // A payment that is mid-flight must NOT fall through to the PaymentSheet
+        // branch below, because that branch creates a SECOND PaymentIntent. The
+        // first one is already confirmed and may be holding the customer's money,
+        // so falling through could authorise the same basket twice. Only a
+        // genuinely dead intent (declined, cancelled) may fall through and let
+        // the buyer try another card.
+        if (outcome.kind === 'requires_action' || outcome.kind === 'processing') {
+          // The webhook fulfils from metadata[order_id] once this same intent
+          // succeeds, so record it against the order first.
+          await supabase.from('event_ticket_orders')
+            .update({ stripe_payment_intent_id: pi.id }).eq('id', order.id);
+          return new Response(JSON.stringify({
+            status:            outcome.kind,
+            clientSecret:      outcome.kind === 'requires_action' ? outcome.clientSecret : undefined,
+            payment_intent_id: outcome.id,
+            order_id:          order.id,
+            tokens:            tokensByIndex,
+            ticket_ids:        ticketIdsByIndex,
+          }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        if (outcome.kind === 'succeeded') {
           await supabase.from('event_ticket_orders').update({ stripe_payment_intent_id: pi.id, status: 'paid', paid_at: new Date().toISOString() }).eq('id', order.id);
           await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
           await sendTicketReceipt(supabase, order.id, user.id);

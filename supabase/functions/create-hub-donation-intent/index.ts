@@ -4,6 +4,7 @@ import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -136,8 +137,21 @@ serve(async (req) => {
       if (!customerId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
       const pmId = await listSavedCard(customerId);
       if (!pmId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
-      const pi = await createPaymentIntent({ ...baseParams, customer: customerId, payment_method: pmId, confirm: 'true', off_session: 'true' }, `donation-${user.id}-${campaign.id}-${amount}`);
-      if (pi.status !== 'succeeded') return json({ error: `Payment did not complete (status: ${pi.status}).` }, 402);
+      const pi = await createPaymentIntent({ ...baseParams, ...onSessionConfirm(customerId, pmId) }, `donation-${user.id}-${campaign.id}-${amount}`);
+      const outcome = classifyIntent(pi);
+      if (outcome.kind === 'requires_action') {
+        // The issuer wants the cardholder to authenticate. That is the middle of a
+        // payment, not the end of one: hand back THIS intent's client secret so the
+        // SDK can finish it. No second PaymentIntent, and nothing is fulfilled yet.
+        return json({ status: 'requires_action', clientSecret: outcome.clientSecret, payment_intent_id: outcome.id }, 200);
+      }
+      if (outcome.kind === 'processing') {
+        // Stripe has it and has not settled. The webhook fulfils when it resolves.
+        return json({ status: 'processing', payment_intent_id: outcome.id }, 200);
+      }
+      if (outcome.kind !== 'succeeded') {
+        return json({ status: 'failed', error: failureMessage(outcome.status) }, 402);
+      }
       return json({ charged: true, payment_intent_id: pi.id });
     }
 

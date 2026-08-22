@@ -4,6 +4,7 @@ import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -153,15 +154,21 @@ serve(async (req) => {
 
       const pi = await createPaymentIntent({
         ...baseParams,
-        customer:       customerId,
-        payment_method: pmId,
-        confirm:        'true',
-        off_session:    'true',
+        ...onSessionConfirm(customerId, pmId),
       }, `member-${user.id}-${type.id}`);
-      if (pi.status !== 'succeeded') {
-        return json({ error: `Payment did not complete (status: ${pi.status}).` }, 402);
+      const outcome = classifyIntent(pi);
+      if (outcome.kind === 'requires_action') {
+        // Middle of a payment: the SDK completes THIS intent, and the webhook
+        // grants membership when it succeeds.
+        return json({ status: 'requires_action', clientSecret: outcome.clientSecret, payment_intent_id: outcome.id }, 200);
       }
-      return json({ charged: true, payment_intent_id: pi.id });
+      if (outcome.kind === 'processing') {
+        return json({ status: 'processing', payment_intent_id: outcome.id }, 200);
+      }
+      if (outcome.kind !== 'succeeded') {
+        return json({ status: 'failed', error: failureMessage(outcome.status) }, 402);
+      }
+      return json({ charged: true, status: 'succeeded', payment_intent_id: pi.id });
     }
 
     // ── PaymentSheet (no saved card) ─────────────────────────────────────────

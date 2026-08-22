@@ -5,6 +5,7 @@
  */
 
 import { supabase } from './supabase';
+import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
 
 /**
  * Decode the real error from a supabase.functions.invoke failure.
@@ -830,6 +831,15 @@ export async function startWalletTopUp(
     body: { amount_pence: amountPence, use_saved_card: useSavedCard },
   });
   if (error) throw await fnErr(error, 'Could not start top-up.');
+
+  // A saved-card charge the issuer wants authenticated is PAUSED, not failed.
+  // Finish that same PaymentIntent here so every screen sees a settled result
+  // and no second intent is created. The PaymentSheet path has no `status`, so
+  // it returns straight through unchanged.
+  const settled = await settleSavedCardPayment(data as PaymentStart);
+  if (settled.outcome === 'cancelled') throw new Error('Payment cancelled — nothing was charged.');
+  if (settled.outcome === 'failed') throw new Error(settled.message);
+  if (settled.outcome === 'succeeded') return { ...data, charged: true };
   return data;
 }
 

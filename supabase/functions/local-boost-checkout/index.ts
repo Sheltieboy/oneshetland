@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { getConfig } from '../_shared/admin-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { classifyIntent } from '../_shared/stripe-sca.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,10 +83,13 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    // Try to charge a SAVED card silently first: business card → personal card.
-    // (off_session + confirm is your proven one-off pattern.) Only if there's no
-    // saved card, or it needs 3DS / is declined, do we fall through to the card
-    // form below.
+    // Try the SAVED card first: business card → personal card.
+    //
+    // The customer is present, so this is confirmed on-session and Stripe decides
+    // whether the issuer needs to challenge them. A challenge is NOT a failure and
+    // must not fall through to the card form below, because that would create a
+    // SECOND PaymentIntent for the same boost while the first one is already
+    // confirmed. Only a genuinely dead intent falls through.
     const { data: prof } = await svc.from('profiles')
       .select('stripe_customer_id, has_payment_method').eq('id', user.id).maybeSingle();
     let cardCustomer: string | null = null;
@@ -102,7 +106,7 @@ serve(async (req) => {
       try {
         const pi = await stripe.paymentIntents.create({
           amount: amountPence, currency: 'gbp', customer: cardCustomer,
-          payment_method: cardPm, off_session: true, confirm: true,
+          payment_method: cardPm, confirm: true, use_stripe_sdk: true,
           description: `OneShetland Local · ${weeks}-week Pro boost · ${business.name}`,
           metadata: { type: 'local_boost', business_id, owner_id: user.id, weeks: String(weeks), amount_pence: String(amountPence) },
         });
@@ -111,9 +115,24 @@ serve(async (req) => {
             business_id, owner_id: user.id, weeks, amount_pence: amountPence,
             stripe_payment_intent_id: pi.id, status: 'pending',
           });
-          return json({ charged: true, payment_intent_id: pi.id, amountPence, weeks });
+          return json({ charged: true, status: 'succeeded', payment_intent_id: pi.id, amountPence, weeks });
         }
-      } catch (_e) { /* declined / needs auth → fall through to the card form */ }
+        const outcome = classifyIntent(pi as unknown as { id?: string; status?: string; client_secret?: string });
+        if (outcome.kind === 'requires_action' || outcome.kind === 'processing') {
+          // Record the pending purchase so the webhook can complete it against
+          // THIS intent once the cardholder finishes authenticating.
+          await svc.from('local_boost_purchases').insert({
+            business_id, owner_id: user.id, weeks, amount_pence: amountPence,
+            stripe_payment_intent_id: pi.id, status: 'pending',
+          });
+          return json({
+            status:            outcome.kind,
+            clientSecret:      outcome.kind === 'requires_action' ? outcome.clientSecret : undefined,
+            payment_intent_id: outcome.id,
+            amountPence, weeks,
+          });
+        }
+      } catch (_e) { /* declined → fall through to the card form */ }
     }
 
     // Create or reuse customer

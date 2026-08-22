@@ -4,6 +4,7 @@ import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -185,17 +186,20 @@ serve(async (req) => {
 
       const paymentIntent = await createPaymentIntent({
         ...baseParams,
-        customer:       customerId,
-        payment_method: pmId,
-        confirm:        'true',
-        off_session:    'true',
+        ...onSessionConfirm(customerId, pmId),
       }, `unit-${user.id}-${item.id}`);
 
-      if (paymentIntent.status !== 'succeeded') {
-        return new Response(JSON.stringify({ error: `Payment did not succeed (status: ${paymentIntent.status}). Please check your card.` }), {
-          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+        const outcome = classifyIntent(paymentIntent);
+        if (outcome.kind === 'requires_action') {
+          // Middle of a payment, not the end of one: the SDK finishes THIS intent.
+          return new Response(JSON.stringify({ status: 'requires_action', clientSecret: outcome.clientSecret, payment_intent_id: outcome.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        if (outcome.kind === 'processing') {
+          return new Response(JSON.stringify({ status: 'processing', payment_intent_id: outcome.id }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        if (outcome.kind !== 'succeeded') {
+          return new Response(JSON.stringify({ status: 'failed', error: failureMessage(outcome.status) }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
 
       return new Response(
         JSON.stringify({ charged: true, payment_intent_id: paymentIntent.id }),
