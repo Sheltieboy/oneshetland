@@ -55,6 +55,22 @@ export function onSessionConfirm(customerId: string, paymentMethodId: string): R
     // Ask Stripe for an SDK-completable challenge instead of a redirect, so the
     // same PaymentIntent can be finished inside the app or the page.
     use_stripe_sdk: 'true',
+    // And say so explicitly, because this account has dynamic payment methods
+    // switched on in the Dashboard — klarna, revolut_pay, amazon_pay. Without
+    // these two lines Stripe applies that Dashboard default to a server-side
+    // confirm, decides the customer might be redirected away, and refuses the
+    // whole call:
+    //
+    //   invalid_request_error — "Because some of these payment methods might
+    //   redirect your customer off of your page, you must provide a return_url."
+    //
+    // A saved-card charge is a card charge. allow_redirects:never keeps it to
+    // methods that finish in place, which is what makes the return_url
+    // unnecessary and what use_stripe_sdk is for. 3DS is unaffected: an issuer
+    // challenge still comes back as requires_action and is completed on THIS
+    // intent by handleNextAction.
+    'automatic_payment_methods[enabled]':         'true',
+    'automatic_payment_methods[allow_redirects]': 'never',
   };
 }
 

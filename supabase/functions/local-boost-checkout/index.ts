@@ -107,6 +107,11 @@ serve(async (req) => {
         const pi = await stripe.paymentIntents.create({
           amount: amountPence, currency: 'gbp', customer: cardCustomer,
           payment_method: cardPm, confirm: true, use_stripe_sdk: true,
+          // Same reason as _shared/stripe-sca.ts: this account has dynamic
+          // payment methods on in the Dashboard, so a server-side confirm that
+          // does not rule out redirect methods is refused for want of a
+          // return_url. A saved-card charge is a card charge.
+          automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
           description: `OneShetland Local · ${weeks}-week Pro boost · ${business.name}`,
           metadata: { type: 'local_boost', business_id, owner_id: user.id, weeks: String(weeks), amount_pence: String(amountPence) },
         });

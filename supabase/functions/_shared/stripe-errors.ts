@@ -25,6 +25,7 @@
 
 /** Thrown by a Stripe call so the handler can tell a refusal from a bug. */
 export class StripeCallError extends Error {
+  public param: string | null = null;
   constructor(
     public readonly code: string,
     public readonly declineCode: string | null,
@@ -38,13 +39,15 @@ export class StripeCallError extends Error {
 
 /** Builds a StripeCallError from a non-2xx Stripe response body. */
 export function stripeError(status: number, body: unknown): StripeCallError {
-  const e = (body as { error?: { code?: string; decline_code?: string; type?: string; message?: string } })?.error ?? {};
-  return new StripeCallError(
+  const e = (body as { error?: { code?: string; decline_code?: string; type?: string; message?: string; param?: string } })?.error ?? {};
+  const built = new StripeCallError(
     e.code ?? e.type ?? `http_${status}`,
     e.decline_code ?? null,
     status,
     e.message ?? `Stripe returned ${status}`,
   );
+  built.param = (e as { param?: string }).param ?? null;
+  return built;
 }
 
 /** Our own vocabulary — deliberately small, and nothing to do with Stripe's. */
@@ -94,7 +97,7 @@ export function checkoutFailure(
   if (!(err instanceof StripeCallError)) return null;
   const reason = classify(err.code, err.declineCode);
   // Stripe's own words stay here, where an operator can read them.
-  console.error(`[${scope}] stripe refused: code=${err.code} decline=${err.declineCode ?? '-'} http=${err.httpStatus} :: ${err.message}`);
+  console.error(`[${scope}] stripe refused: code=${err.code} decline=${err.declineCode ?? '-'} param=${err.param ?? '-'} http=${err.httpStatus} :: ${err.message}`);
   // The CODE goes back too. It is a documented Stripe identifier such as
   // `card_declined` — never an id, key, account reference or provider sentence —
   // and without it every support conversation starts from zero.
