@@ -67,7 +67,10 @@ describe('Get tickets opens a route that exists', () => {
   test('the route is registered in the Stack like every other payment screen', () => {
     const src = layout();
     for (const route of ['event-ticket-checkout', 'product-checkout', 'payment-setup', 'local-wallet']) {
-      assert.match(src, new RegExp(`<Stack\\.Screen name="${route}"`),
+      // \s+ so a route that carries options (and is therefore written across
+      // several lines) still counts as declared. The assertion is about the
+      // route being registered, not about where the line breaks fall.
+      assert.match(src, new RegExp(`<Stack\\.Screen\\s+name="${route}"`),
         `${route} is not declared alongside its siblings`);
     }
   });
