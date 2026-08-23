@@ -229,6 +229,71 @@ export default function MeTab() {
 
         <View style={styles.body}>
 
+          {/* ── Your purchases ──────────────────────────────────────────────────
+               Everything the user has BOUGHT or been given, in one place and
+               first on the screen. Paygate 2 testing showed a buyer who had
+               just paid £185 had nowhere to go and look at it: /my-orders had
+               existed all along but was only reachable from the checkout
+               success screen. These are all pre-existing routes — this section
+               links them, it does not implement them. */}
+          <SectionCard title="Your purchases" accentColor={SECTIONS.local.color}>
+            <MenuRow
+              icon="receipt"
+              iconColor={SECTIONS.local.color}
+              label="Shop orders"
+              sublabel="Things you've bought from Shetland shops"
+              onPress={() => { Haptics.selectionAsync(); router.push('/my-orders'); }}
+            />
+            <MenuRow
+              icon="ticket-alt"
+              iconColor={SECTIONS.local.color}
+              label="Event tickets"
+              sublabel="Tickets for what's on, ready to scan"
+              onPress={() => { Haptics.selectionAsync(); router.push('/my-event-tickets'); }}
+            />
+            <MenuRow
+              icon="id-card"
+              iconColor={SECTIONS.local.color}
+              label="Passes & vouchers"
+              sublabel="Day passes, class packs and vouchers you own"
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-my-passes'); }}
+            />
+            <MenuRow
+              icon="calendar-check"
+              iconColor={SECTIONS.local.color}
+              label="Bookings"
+              sublabel="Your upcoming and past appointments"
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-my-bookings'); }}
+            />
+            <MenuRow
+              icon="gift"
+              iconColor={SECTIONS.local.color}
+              label="Gifts received"
+              sublabel="Gifts waiting to be claimed or used"
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-my-gifts'); }}
+              last
+            />
+          </SectionCard>
+
+          {/* ── Wallet & loyalty ────────────────────────────────────────────── */}
+          <SectionCard title="Wallet & loyalty" accentColor={colors.accent}>
+            <MenuRow
+              icon="wallet"
+              iconColor={colors.accent}
+              label="Local Wallet"
+              sublabel="Your balance, top-ups and spending history"
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-wallet'); }}
+            />
+            <MenuRow
+              icon="stamp"
+              iconColor={colors.accent}
+              label="Loyalty cards"
+              sublabel="Your stamps and points at local businesses"
+              onPress={() => { Haptics.selectionAsync(); router.push('/local-my-cards'); }}
+              last
+            />
+          </SectionCard>
+
           {/* ── Jobs & Shifts ───────────────────────────────────────────────── */}
           <SectionCard title="Work" accentColor={colors.jobs}>
             <MenuRow
@@ -408,10 +473,27 @@ export default function MeTab() {
 
           </SectionCard>
 
-          {/* ── Your activity ───────────────────────────────────────────────── */}
-          <SectionCard title="Invite & earn" accentColor={SECTIONS.local.color}>
+          {/* ── Your OneShetland ────────────────────────────────────────────────
+               Was a one-row "Invite & earn" card. Referrals still lives here —
+               it has just stopped being a section of its own, alongside the two
+               other things you hold rather than buy. */}
+          <SectionCard title="Your OneShetland" accentColor={SECTIONS.community.color}>
             <MenuRow
-              icon="gift"
+              icon="users"
+              iconColor={SECTIONS.community.color}
+              label="Hub memberships"
+              sublabel="Your digital membership cards"
+              onPress={() => { Haptics.selectionAsync(); router.push('/hub-my-memberships'); }}
+            />
+            <MenuRow
+              icon="gamepad"
+              iconColor={SECTIONS.games.color}
+              label="Game stats"
+              sublabel="Your XP, streaks and leaderboard places"
+              onPress={() => { Haptics.selectionAsync(); router.push('/games/stats'); }}
+            />
+            <MenuRow
+              icon="user-plus"
               iconColor={SECTIONS.local.color}
               label="Invite friends"
               sublabel="Give £5, get £5 when a friend joins and spends"
@@ -420,6 +502,7 @@ export default function MeTab() {
             />
           </SectionCard>
 
+          {/* ── Your activity — the Fetch lane: places, past runs, driving ──── */}
           <SectionCard title="Your activity" accentColor={colors.accent}>
             <MenuRow
               icon="map-marker-alt"
