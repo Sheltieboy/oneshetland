@@ -9,7 +9,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
-import { fetchMyOrders, BUYER_STATUS_LABEL, type ProductOrder } from '@/lib/products-api';
+import { fetchMyOrders, BUYER_STATUS_LABEL, FULFILMENT_LABEL, orderRef, type BuyerOrder } from '@/lib/products-api';
 import { formatPence } from '@/lib/local-api';
 
 const S = SECTIONS.local;
@@ -21,7 +21,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function MyOrdersScreen() {
   const router = useRouter();
-  const [orders, setOrders] = useState<ProductOrder[]>([]);
+  const [orders, setOrders] = useState<BuyerOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   useFocusEffect(useCallback(() => {
@@ -66,8 +66,14 @@ export default function MyOrdersScreen() {
                 </Text>
                 <Text style={styles.total}>{formatPence(o.total_pence)}</Text>
               </View>
-              <Text style={styles.items} numberOfLines={2}>
+              <Text style={styles.items} numberOfLines={3}>
                 {(o.items ?? []).map((it) => `${it.qty} × ${it.title}${it.variant_name ? ` (${it.variant_name})` : ''}`).join(' · ')}
+              </Text>
+              {/* Who sold it, how it reaches you, and the reference to quote them. */}
+              <Text style={styles.meta}>
+                {o.business?.name ? `${o.business.name} · ` : ''}
+                {FULFILMENT_LABEL[o.fulfilment] ?? o.fulfilment}
+                {' · Ref '}{orderRef(o.id)}
               </Text>
               {o.status === 'posted' && !!o.tracking_ref && (
                 <Text style={styles.tracking}>Tracking: {o.tracking_ref}</Text>
@@ -104,5 +110,6 @@ const styles = StyleSheet.create({
   when: { fontSize: fontSize.xs, color: colors.textMuted },
   total: { marginLeft: 'auto', fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
   items: { fontSize: fontSize.sm, color: colors.textSecondary },
+  meta: { fontSize: fontSize.xs, color: colors.textMuted },
   tracking: { fontSize: fontSize.xs, color: colors.textMuted },
 });

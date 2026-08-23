@@ -541,6 +541,11 @@ export default function AccountScreen() {
                 label="Previous requests"
                 onPress={() => { haptic.light(); router.push('/(customer)/previous-requests'); }}
               />
+              <LinkRow
+                icon="🛍️"
+                label="Your shop orders"
+                onPress={() => { haptic.light(); router.push('/my-orders'); }}
+              />
               {isCustomer && (
                 <LinkRow
                   icon="🚗"

@@ -53,6 +53,22 @@ export type BusinessShipping = {
   fetch_enabled: boolean;
 };
 
+/** A buyer's own order. See BUYER_ORDER_COLUMNS for why this is not ProductOrder. */
+export type BuyerOrder = {
+  id: string;
+  business_id: string;
+  status: string;
+  fulfilment: 'collect' | 'post' | 'fetch';
+  items_pence: number;
+  shipping_pence: number;
+  total_pence: number;
+  tracking_ref: string | null;
+  created_at: string;
+  paid_at: string | null;
+  business: { id: string; name: string; slug: string | null } | null;
+  items?: { title: string; variant_name: string | null; qty: number; unit_pence: number }[];
+};
+
 export type ProductOrder = {
   id: string;
   business_id: string;
@@ -84,6 +100,18 @@ export const PRODUCT_CATEGORIES: { value: string; label: string }[] = [
   { value: 'books_music', label: 'Books & music' },
   { value: 'other', label: 'Other' },
 ];
+
+/** How the goods reach the buyer, in the buyer's words. */
+export const FULFILMENT_LABEL: Record<string, string> = {
+  collect: 'Collect from the shop',
+  post: 'By post',
+  fetch: 'Delivered by a local driver',
+};
+
+/** The short reference a buyer quotes to a shop. Never the full row id. */
+export function orderRef(id: string): string {
+  return id.slice(0, 8).toUpperCase();
+}
 
 export const BUYER_STATUS_LABEL: Record<string, string> = {
   paid: 'Order received',
@@ -243,14 +271,31 @@ export async function createProductOrder(body: {
   return data as ProductOrderResult;
 }
 
-export async function fetchMyOrders(): Promise<ProductOrder[]> {
+/* The buyer's own view of an order. Deliberately NARROWER than ProductOrder:
+   a buyer needs to know what they bought and where it is, and nothing else.
+   The column list below is a whitelist — `select *` would also ship
+   payment_intent_id and commission_pence to the device, and neither is any of
+   the buyer's business. Add a column here only if a buyer screen renders it. */
+const BUYER_ORDER_COLUMNS =
+  'id, business_id, status, fulfilment, items_pence, shipping_pence, total_pence, tracking_ref, created_at, paid_at';
+
+export async function fetchMyOrders(): Promise<BuyerOrder[]> {
   const { data, error } = await supabase
     .from('product_orders')
-    .select('*, items:product_order_items(title, variant_name, qty, unit_pence)')
+    .select(`${BUYER_ORDER_COLUMNS}, business:local_businesses(id, name, slug), items:product_order_items(title, variant_name, qty, unit_pence)`)
     .neq('status', 'pending').neq('status', 'expired')
     .order('created_at', { ascending: false }).limit(50);
   if (error) throw error;
-  return (data ?? []) as ProductOrder[];
+  // Which ROWS come back is decided by the "buyer reads own orders" RLS policy
+  // (buyer_id = auth.uid()), not by anything on this side of the wire.
+  return ((data ?? []) as unknown[]).map(normaliseBuyerOrder);
+}
+
+/** PostgREST returns an embedded to-one as an object or a 1-element array. */
+function normaliseBuyerOrder(row: unknown): BuyerOrder {
+  const r = row as Record<string, unknown>;
+  const b = Array.isArray(r.business) ? r.business[0] : r.business;
+  return { ...(r as object), business: (b ?? null) } as BuyerOrder;
 }
 
 export type FreshProduct = {
