@@ -312,8 +312,11 @@ function RootNavigator() {
           <Stack.Screen name="event-create" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="event-manage" />
           <Stack.Screen name="event-scanner" />
-          <Stack.Screen name="event-ticket-checkout" />
           <Stack.Screen name="product-checkout" />
+          {/* Declared once. 5dd6adf added this formSheet variant and left the
+              earlier bare declaration in place; expo-router throws
+              "Screen names must be unique" and the root navigator never
+              mounts, so the app could not boot from source at all. */}
           <Stack.Screen
             name="event-ticket-checkout"
             options={{
