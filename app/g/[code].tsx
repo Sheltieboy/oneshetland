@@ -34,18 +34,21 @@ import { track } from '@/lib/analytics';
 
 const S = SECTIONS.local;
 
+/**
+ * What the signed-out preview shows. Narrower than the book_gifts row on
+ * purpose: no id, no business_id, no service_id, no purchaser identity, no
+ * payment field. claim_gift() returns the ids the claim flow needs, so the
+ * anonymous preview never has to carry them.
+ */
 interface GiftPreview {
-  id:               string;
   code:             string;
   kind:             'unit' | 'booking';
   status:           string;
-  business_id:      string;
   business_name:    string;
   item_name:        string;
   purchaser_name:   string | null;
   message:          string | null;
-  unit_item_id:     string | null;
-  service_id:       string | null;
+  expires_at:       string | null;
 }
 
 export default function ClaimGiftScreen() {
@@ -66,42 +69,20 @@ export default function ClaimGiftScreen() {
     (async () => {
       if (!code) { setErrorMsg('No gift code in the link.'); setLoading(false); return; }
       try {
+        // get_public_gift_preview, not a table read: book_gifts has no public
+        // SELECT policy and must not get one. Possession of the 14-character
+        // code is the access rule, and only this RPC may act on it.
         const { data, error } = await supabase
-          .from('book_gifts')
-          .select(`
-            id, code, kind, status, business_id, unit_item_id, service_id,
-            purchaser_name, message,
-            business:local_businesses ( name ),
-            unit_item:book_unit_items ( name ),
-            service:book_services ( name )
-          `)
-          .eq('code', code)
-          .maybeSingle();
+          .rpc('get_public_gift_preview', { p_code: code });
 
-        if (error || !data) {
+        const row = (data as GiftPreview[] | null)?.[0];
+        if (error || !row) {
+          if (error) console.error('[gift-preview] lookup failed:', error.message);
           setErrorMsg('We couldn\'t find that gift. Check the code or ask the sender to resend.');
           return;
         }
 
-        const businessName = (data.business as any)?.name ?? 'OneShetland';
-        const itemName =
-          data.kind === 'unit'
-            ? ((data.unit_item as any)?.name ?? 'a unit')
-            : ((data.service  as any)?.name ?? 'a booking');
-
-        setGift({
-          id:             data.id,
-          code:           data.code,
-          kind:           data.kind,
-          status:         data.status,
-          business_id:    data.business_id,
-          business_name:  businessName,
-          item_name:      itemName,
-          purchaser_name: data.purchaser_name,
-          message:        data.message,
-          unit_item_id:   data.unit_item_id,
-          service_id:     data.service_id,
-        });
+        setGift({ ...row, code });
       } finally {
         setLoading(false);
       }
@@ -120,7 +101,7 @@ export default function ClaimGiftScreen() {
       if (error) throw error;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      const result = data as { kind: string; service_id: string | null; business_id: string };
+      const result = data as { kind: string; service_id: string | null; business_id: string; gift_id: string };
       track('gift_claimed', { businessId: result.business_id, props: { kind: result.kind } });
 
       if (result.kind === 'booking' && result.service_id) {
@@ -130,7 +111,7 @@ export default function ClaimGiftScreen() {
           params: {
             businessId: result.business_id,
             serviceId:  result.service_id,
-            giftId:     gift.id,
+            giftId:     result.gift_id,
           },
         });
       } else {
