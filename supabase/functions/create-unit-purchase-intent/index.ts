@@ -102,9 +102,25 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { unit_item_id, use_saved_card = false } = await req.json();
+    const { unit_item_id, use_saved_card = false, client_request_id = null } = await req.json();
     if (!unit_item_id) {
       return new Response(JSON.stringify({ error: 'unit_item_id required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // One deliberate checkout = one attempt id, and it goes into the Stripe
+    // idempotency key. Without it the key was `unit-<user>-<item>`, which Stripe
+    // honours for 24 hours — so a customer buying the same coffee card twice in
+    // a day got the FIRST PaymentIntent back, fulfilment deduped on it, and they
+    // received no second pass while the UI said it had worked.
+    //
+    // Same shape and same validation as create-event-ticket-intent. It is an
+    // idempotency token ONLY: the amount, the buyer and the item are still read
+    // from the database and the auth token, never from this.
+    if (typeof client_request_id !== 'string' || client_request_id.trim().length === 0 ||
+        client_request_id.length < 8 || client_request_id.length > 100) {
+      return new Response(JSON.stringify({ error: 'client_request_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -187,7 +203,7 @@ serve(async (req) => {
       const paymentIntent = await createPaymentIntent({
         ...baseParams,
         ...onSessionConfirm(customerId, pmId),
-      }, `unit-${user.id}-${item.id}`);
+      }, `unit-${user.id}-${item.id}-${client_request_id}`);
 
         const outcome = classifyIntent(paymentIntent);
         if (outcome.kind === 'requires_action') {
@@ -211,7 +227,7 @@ serve(async (req) => {
     const paymentIntent = await createPaymentIntent({
       ...baseParams,
       'automatic_payment_methods[enabled]': 'true',
-    });
+    }, `unit-${user.id}-${item.id}-${client_request_id}`);
 
     return new Response(
       JSON.stringify({ clientSecret: paymentIntent.client_secret, payment_intent_id: paymentIntent.id }),

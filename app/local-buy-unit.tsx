@@ -101,7 +101,13 @@ export default function BuyUnitScreen() {
       const { data: intent, error: intentErr } = await supabase.functions.invoke(
         'create-unit-purchase-intent',
         {
-          body:    { unit_item_id: item.id, use_saved_card: true },
+          // Same attempt reference the wallet path beside this one already uses:
+          // one per deliberate checkout, so a retry or an SCA resume reuses the
+          // PaymentIntent while a genuinely new purchase creates a new one.
+          // Without it the Stripe key was unit-<user>-<item>, which Stripe
+          // honours for 24h — a second purchase of the same pass got the first
+          // PaymentIntent back and produced no second pass.
+          body:    { unit_item_id: item.id, use_saved_card: true, client_request_id: attemptId() },
           headers: { Authorization: `Bearer ${session.access_token}` },
         },
       );

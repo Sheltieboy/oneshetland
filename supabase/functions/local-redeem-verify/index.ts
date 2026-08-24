@@ -91,10 +91,46 @@ serve(async (req) => {
       await svc.from('local_loyalty_cards').update({ points_balance: (card.points_balance ?? 0) - spend, total_redeemed: (card.total_redeemed ?? 0) + 1 }).eq('id', card.id);
       await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: card.user_id, business_id: card.business_id, type: 'redeem', amount: spend });
     } else if (red.kind === 'pass') {
-      const { data: pass } = await svc.from('book_unit_purchases').select('*').eq('id', red.ref_id).single();
-      if (!pass || (pass.uses_remaining ?? 0) <= 0) return json({ error: 'No uses left' }, 409);
-      const left = pass.uses_remaining - 1;
-      await svc.from('book_unit_purchases').update({ uses_remaining: left, fully_used_at: left === 0 ? new Date().toISOString() : null }).eq('id', pass.id);
+      // One transaction, holding the redemption row FOR UPDATE, so concurrent
+      // presentations of the same code serialise and only the first spends a
+      // use. The read-then-write this replaces let six concurrent verifies
+      // succeed against three credits — reproduced on production fixtures.
+      //
+      // It returns early: redeem_pass_atomic also flips the redemption to
+      // consumed, so the shared flip below must not run for this kind.
+      const { data: spend, error: spendErr } = await svc.rpc('redeem_pass_atomic', {
+        p_verifier: user.id,
+        p_code:     token ? null : String(code).toUpperCase().trim(),
+        p_token:    token ?? null,
+      });
+      if (spendErr) {
+        console.error('[local-redeem-verify] redeem_pass_atomic failed', spendErr);
+        return json({ error: 'Could not redeem that pass.' }, 500);
+      }
+      const outcome = spend as { ok: boolean; error?: string; uses_remaining?: number };
+      if (!outcome?.ok) {
+        const map: Record<string, [string, number]> = {
+          not_found:         ['Code not found, already used, or expired', 404],
+          wrong_kind:        ['Code not found, already used, or expired', 404],
+          already_used:      ['Already redeemed', 409],
+          expired:           ['Code not found, already used, or expired', 404],
+          not_your_business: ['That code is not for your business', 403],
+          wrong_business:    ['That code is not for your business', 403],
+          pass_not_found:    ['Pass not found', 404],
+          pass_expired:      ['This pass has expired', 410],
+          no_uses_left:      ['No uses left', 409],
+        };
+        const [msg, status] = map[outcome?.error ?? ''] ?? ['Could not redeem that pass.', 409];
+        return json({ error: msg }, status);
+      }
+      return json({
+        ok: true,
+        kind: 'pass',
+        detail: {
+          title: red.detail?.title ?? 'Pass',
+          subtitle: `${outcome.uses_remaining} use${outcome.uses_remaining === 1 ? '' : 's'} left`,
+        },
+      });
     } else {
       return json({ error: 'Unknown redemption kind' }, 400);
     }
