@@ -1668,6 +1668,53 @@ export async function fetchMyGiftsReceived(userId: string): Promise<MyGiftReceiv
   return rows;
 }
 
+/* ── Recipient-email verification ─────────────────────────────────────────────
+   A gift addressed to john.work@gmail.com must be claimable by John's existing
+   account at john@hotmail.com, without a second account. The email proves
+   control of the DESTINATION; the signed-in account decides OWNERSHIP.
+
+   Nothing here reveals whether an address already has a OneShetland account —
+   the claimant does not need to know, and answering would be enumeration.    */
+
+export type GiftEligibility = {
+  /** sign_in_required | can_claim | verification_required | already_yours |
+   *  gift_already_claimed | gift_cancelled | gift_expired | gift_not_found */
+  state: string;
+  /** e.g. "j••••••••@gmail.com" — never the full address. */
+  masked_email: string | null;
+};
+
+export async function fetchGiftEligibility(code: string): Promise<GiftEligibility> {
+  const { data, error } = await supabase.rpc('gift_claim_eligibility', { p_code: code });
+  if (error) {
+    console.error('[gift-eligibility] lookup failed:', error.message);
+    return { state: 'gift_not_found', masked_email: null };
+  }
+  return data as GiftEligibility;
+}
+
+/** Emails a one-time code to the address the gift was sent to. The code never
+ *  comes back through this call — only where it went. */
+export async function sendGiftRecipientCode(code: string): Promise<{ masked_email: string }> {
+  const { data, error } = await supabase.functions.invoke('verify-gift-recipient', { body: { code } });
+  if (error) throw await fnErr(error, "Couldn't send the verification email");
+  const d = data as { ok?: boolean; error?: string; masked_email?: string };
+  if (!d?.ok) throw new Error(d?.error ?? "Couldn't send the verification email");
+  return { masked_email: d.masked_email ?? '' };
+}
+
+export type GiftVerifyResult = { ok: boolean; error?: string; attempts_left?: number };
+
+/** Consumes the emailed code. The proof binds to this gift and this account
+ *  only — it is not a general claim on the address. */
+export async function confirmGiftRecipientCode(code: string, token: string): Promise<GiftVerifyResult> {
+  const { data, error } = await supabase.rpc('confirm_gift_recipient_verification', {
+    p_code: code, p_token: token,
+  });
+  if (error) throw new Error(error.message);
+  return data as GiftVerifyResult;
+}
+
 /* ── Gifts I have SENT ────────────────────────────────────────────────────────
    book_gifts where purchaser_id = me. The "Purchasers see their gifts" policy
    has always permitted this read; there was simply no screen asking for it.

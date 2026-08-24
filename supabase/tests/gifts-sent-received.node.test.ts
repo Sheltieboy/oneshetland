@@ -105,10 +105,24 @@ describe('received and sent are different questions about the same table', () =>
     assert.match(baseline, /CREATE POLICY "Claimers see gifts they've claimed" ON public\.book_gifts FOR SELECT USING \(\(claimed_by_user_id = auth\.uid\(\)\)\)/);
   });
 
-  test('this change ships no migration at all', () => {
-    const migrations = readdirSync(join(REPO_ROOT, 'supabase/migrations'))
-      .filter((f) => f.startsWith('202608240') || f.startsWith('20260824'));
-    assert.deepEqual(migrations, [], `unexpected migration(s): ${migrations.join(', ')}`);
+  test('the sent/received split is client-side — no migration defines it', () => {
+    // Originally "no migration dated today", which stopped meaning anything
+    // once recipient verification landed on the same day. The durable property
+    // is that NOTHING in the schema encodes this classification: it is two
+    // queries against policies that already existed.
+    const dir = join(REPO_ROOT, 'supabase/migrations');
+    // The baseline is where the original three policies come from — those are
+    // the ones this feature RELIES on. The property is that nothing since has
+    // needed to add a fourth.
+    const since = readdirSync(dir)
+      .filter((n) => n.endsWith('.sql') && !n.startsWith('20260623000000_baseline'));
+    for (const f of since) {
+      const sql = readFileSync(join(dir, f), 'utf8').replace(/^\s*--.*$/gm, '');
+      assert.ok(
+        !/create policy[^;]*on public\.book_gifts/i.test(sql),
+        `${f} adds a book_gifts policy — the split must not need one`,
+      );
+    }
   });
 });
 

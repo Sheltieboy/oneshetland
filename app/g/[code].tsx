@@ -18,7 +18,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -28,6 +28,9 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAlert } from '@/components/BrandedAlert';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import {
+  fetchGiftEligibility, sendGiftRecipientCode, confirmGiftRecipientCode,
+} from '@/lib/local-api';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
 import { track } from '@/lib/analytics';
@@ -63,6 +66,14 @@ export default function ClaimGiftScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
 
+  // Recipient identity: decides whether this account may claim, or must first
+  // prove control of the address the gift was sent to.
+  const [eligibility, setEligibility] = useState<{ state: string; masked_email: string | null } | null>(null);
+  const [verifyStep, setVerifyStep] = useState<'idle' | 'sending' | 'code'>('idle');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
   // Public preview — runs even when not signed in, so the user can see what
   // they're about to claim before being asked to log in.
   useEffect(() => {
@@ -83,11 +94,54 @@ export default function ClaimGiftScreen() {
         }
 
         setGift({ ...row, code });
+        setEligibility(await fetchGiftEligibility(code));
       } finally {
         setLoading(false);
       }
     })();
   }, [code]);
+
+  const refreshEligibility = useCallback(async () => {
+    setEligibility(await fetchGiftEligibility(code));
+  }, [code]);
+
+  const startVerify = useCallback(async () => {
+    setVerifyError(null);
+    setVerifyStep('sending');
+    try {
+      await sendGiftRecipientCode(code);
+      setVerifyStep('code');
+    } catch (e: any) {
+      setVerifyStep('idle');
+      setVerifyError(e?.message ?? "Couldn't send the code.");
+    }
+  }, [code]);
+
+  const submitVerify = useCallback(async () => {
+    setVerifyBusy(true);
+    setVerifyError(null);
+    try {
+      const r = await confirmGiftRecipientCode(code, verifyCode);
+      if (r.ok) {
+        await refreshEligibility();
+        setVerifyStep('idle');
+        setVerifyCode('');
+      } else if (r.error === 'verification_locked') {
+        setVerifyError('Too many wrong codes. Send a new one to try again.');
+      } else if (r.error === 'verification_expired') {
+        setVerifyError('That code has expired. Send a new one.');
+      } else if (r.error === 'verification_not_found') {
+        setVerifyError('Send a code first, then enter it here.');
+      } else {
+        const left = r.attempts_left;
+        setVerifyError(`That code isn't right.${typeof left === 'number' ? ` ${left} ${left === 1 ? 'try' : 'tries'} left.` : ''}`);
+      }
+    } catch (e: any) {
+      setVerifyError(e?.message ?? "Couldn't check that code.");
+    } finally {
+      setVerifyBusy(false);
+    }
+  }, [code, verifyCode, refreshEligibility]);
 
   const claim = useCallback(async () => {
     if (!gift) return;
@@ -206,6 +260,70 @@ export default function ClaimGiftScreen() {
               <Text style={styles.primaryBtnText}>Sign in to claim</Text>
             </TouchableOpacity>
           </>
+        ) : eligibility?.state === 'gift_already_claimed' ? (
+          <View style={styles.usedBanner}>
+            <FontAwesome5 name="check-circle" size={14} color={S.color} solid />
+            <Text style={styles.usedText}>This gift has already been claimed.</Text>
+          </View>
+        ) : eligibility?.state === 'verification_required' ? (
+          /* Signed in under a different address. We never say whether that
+             address has an account — only that it isn't this one. */
+          <View style={styles.verifyBox}>
+            <Text style={styles.verifyLead}>
+              This gift was sent to <Text style={styles.verifyEmail}>{eligibility.masked_email ?? 'another email address'}</Text>.
+              You&rsquo;re signed in with a different email.
+            </Text>
+            <Text style={styles.verifyBody}>
+              If it&rsquo;s for you, verify that address and we&rsquo;ll add the gift to the account
+              you&rsquo;re using now. You won&rsquo;t need a second account.
+            </Text>
+
+            {verifyStep !== 'code' ? (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: S.color }, verifyStep === 'sending' && { opacity: 0.7 }]}
+                onPress={startVerify}
+                disabled={verifyStep === 'sending'}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.primaryBtnText}>
+                  {verifyStep === 'sending' ? 'Sending…' : 'Verify recipient email'}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <TextInput
+                  value={verifyCode}
+                  onChangeText={(t) => setVerifyCode(t.toUpperCase())}
+                  maxLength={8}
+                  autoCapitalize="characters"
+                  autoComplete="one-time-code"
+                  textContentType="oneTimeCode"
+                  placeholder="ABCD2345"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.codeInput}
+                  accessibilityLabel="Code from the gift email"
+                />
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: S.color },
+                          (verifyBusy || verifyCode.trim().length < 8) && { opacity: 0.7 }]}
+                  onPress={submitVerify}
+                  disabled={verifyBusy || verifyCode.trim().length < 8}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.primaryBtnText}>{verifyBusy ? 'Checking…' : 'Confirm code'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={startVerify} activeOpacity={0.7}>
+                  <Text style={styles.verifyLink}>Send a new code</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {!!verifyError && <Text style={styles.verifyError}>{verifyError}</Text>}
+
+            <TouchableOpacity onPress={() => goToSignIn()} activeOpacity={0.7}>
+              <Text style={styles.verifyLink}>Or switch account</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: S.color }, claiming && { opacity: 0.7 }]}
@@ -235,6 +353,18 @@ export default function ClaimGiftScreen() {
 }
 
 const styles = StyleSheet.create({
+  verifyBox:   { backgroundColor: colors.screenBackground, borderRadius: radius.lg, padding: spacing.md, gap: 10, width: '100%' },
+  verifyLead:  { fontSize: fontSize.sm, color: colors.textPrimary, lineHeight: 20 },
+  verifyEmail: { fontWeight: '800' },
+  verifyBody:  { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 18 },
+  verifyLink:  { fontSize: fontSize.xs, color: colors.textSecondary, textDecorationLine: 'underline', textAlign: 'center', paddingVertical: 6 },
+  verifyError: { fontSize: fontSize.xs, color: '#E11D48', textAlign: 'center' },
+  codeInput:   {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
+    backgroundColor: '#fff', paddingVertical: 12, textAlign: 'center',
+    fontSize: fontSize.lg, letterSpacing: 6, fontWeight: '800', color: colors.textPrimary,
+  },
+
   safe:    { flex: 1, backgroundColor: colors.navy },
   content: { flex: 1, alignItems: 'center', padding: spacing.lg, paddingTop: spacing.xl, gap: 12 },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg, gap: 14 },
