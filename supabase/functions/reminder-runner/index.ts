@@ -38,6 +38,21 @@ const londonTime = (iso: string) =>
 const londonDay = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' });
 
+/**
+ * A FunctionsHttpError hides the real reason in its response body — the message
+ * alone is only "Edge Function returned a non-2xx status code", which is what
+ * made this failure so hard to see.
+ */
+async function describeInvokeError(err: unknown): Promise<string> {
+  const e = err as { message?: string; name?: string; context?: Response };
+  let body = '';
+  try {
+    if (e?.context && typeof e.context.text === 'function') body = (await e.context.text()).slice(0, 300);
+  } catch { /* body already consumed or not a Response */ }
+  const status = e?.context?.status ? ` status=${e.context.status}` : '';
+  return `${e?.name ?? 'Error'}: ${e?.message ?? 'unknown'}${status}${body ? ` body=${body}` : ''}`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -55,7 +70,9 @@ serve(async (req) => {
     const plus = (mins: number) => new Date(now.getTime() + mins * 60_000).toISOString();
     const nowIso = now.toISOString();
 
-    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, cruise_today: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0, bookings_metered: 0 };
+    const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, cruise_today: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0, bookings_metered: 0,
+      // Metering is the one step whose failure used to be invisible.
+      premium_marked: 0, metering_error: null as string | null };
 
     // ── Shop orders: expire unpaid checkouts + release their reserved stock ──
     // A pending product_order holds stock (reserved) so nobody else can buy
@@ -390,10 +407,41 @@ serve(async (req) => {
     // Reports 95p-per-booking usage to Stripe, capped at 17 a month. Delegated
     // to its own function rather than inlined: it talks to Stripe subscription
     // items and wants to be runnable on its own when reconciling a bad month.
+    //
+    // The error was previously DROPPED here — `functions.invoke` resolves with
+    // { data, error } rather than throwing, so the catch never fired and a
+    // failing meter looked identical to a quiet one: bookings_metered = 0,
+    // ok: true, HTTP 200. Metering could stop dead and every signal stayed
+    // green. metering_backlog_health() was built because of that; this makes
+    // the failure visible at the source as well.
     try {
-      const { data: metered } = await svc.functions.invoke('meter-bookings', { body: {} });
-      result.bookings_metered = (metered as { units?: number } | null)?.units ?? 0;
-    } catch (e) { console.error('[reminder-runner] booking meter failed', e); }
+      // The Authorization header is set EXPLICITLY. createServiceClient() is
+      // built with the service key and every database call it makes is
+      // correctly service-role, but functions.invoke did not carry that key
+      // through to the gateway — meter-bookings' own isServiceRole() check
+      // refused it with 403 Forbidden on every pass. Proven by surfacing the
+      // error above: "FunctionsHttpError … status=403 body={"error":"Forbidden"}".
+      // Stating the header here does not rely on how the client derives it.
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      const { data: metered, error: meterErr } = await svc.functions.invoke('meter-bookings', {
+        body: {},
+        headers: { Authorization: `Bearer ${serviceKey}` },
+      });
+      if (meterErr) {
+        const detail = await describeInvokeError(meterErr);
+        console.error('[reminder-runner] booking meter failed:', detail);
+        result.metering_error = detail;
+      } else {
+        const m = metered as { units?: number; premium_marked?: number; errors?: string[] } | null;
+        result.bookings_metered = m?.units ?? 0;
+        result.premium_marked = m?.premium_marked ?? 0;
+        if (m?.errors?.length) result.metering_error = m.errors.slice(0, 3).join('; ');
+      }
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      console.error('[reminder-runner] booking meter threw:', detail);
+      result.metering_error = detail;
+    }
 
     // ── Loyalty: "just one more stamp" ───────────────────────────────────────
     // Cards that are exactly one stamp short and haven't been nudged for this
