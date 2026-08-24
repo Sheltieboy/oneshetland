@@ -37,8 +37,36 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { code, token } = await req.json();
+    const { code, token, preview } = await req.json();
     if (!code && !token) return json({ error: 'code or token required' }, 400);
+
+    // ── Look, don't spend ────────────────────────────────────────────────────
+    // Counter mode calls this first so staff can see what they are about to
+    // redeem. It writes nothing; the RPC is STABLE. Everything below this point
+    // consumes, and only runs when staff explicitly confirm.
+    if (preview === true) {
+      const { data: seen, error: seenErr } = await svc.rpc('preview_redemption', {
+        p_verifier: user.id,
+        p_code:     token ? null : String(code).toUpperCase().trim(),
+        p_token:    token ?? null,
+      });
+      if (seenErr) {
+        console.error('[local-redeem-verify] preview failed', seenErr);
+        return json({ error: 'Could not look that code up.' }, 500);
+      }
+      const p = seen as { ok: boolean; error?: string; kind?: string; title?: string; subtitle?: string; uses_remaining?: number };
+      if (!p?.ok) {
+        const map: Record<string, [string, number]> = {
+          not_found:    ['Code not found, already used, or expired', 404],
+          already_used: ['Already redeemed', 409],
+          expired:      ['Code not found, already used, or expired', 404],
+          no_uses_left: ['No uses left', 409],
+        };
+        const [msg, status] = map[p?.error ?? ''] ?? ['Code not found, already used, or expired', 404];
+        return json({ error: msg }, status);
+      }
+      return json({ ok: true, preview: true, kind: p.kind, detail: { title: p.title, subtitle: p.subtitle }, uses_remaining: p.uses_remaining });
+    }
 
     // Businesses this staff/owner controls.
     const { data: biz } = await svc.from('local_businesses').select('id').eq('owner_id', user.id);
