@@ -1608,6 +1608,16 @@ export interface MyGiftReceived {
   message:            string | null;
   claimed_at:         string;
   expires_at:         string | null;
+  /**
+   * Booking gifts only: the recipient has already picked their slot.
+   *
+   * Derived from book_bookings, NOT from book_gifts.status. claim_gift() sets
+   * status='claimed' and only a UNIT gift ever reaches 'used'; the write meant
+   * to mark a booked service gift used silently affects no rows, because
+   * book_gifts has SELECT policies only and no UPDATE policy. Status alone
+   * leaves a booked gift offering "Pick a slot" forever.
+   */
+  booked:             boolean;
 }
 
 export async function fetchMyGiftsReceived(userId: string): Promise<MyGiftReceived[]> {
@@ -1625,7 +1635,7 @@ export async function fetchMyGiftsReceived(userId: string): Promise<MyGiftReceiv
     .order('claimed_at', { ascending: false });
   if (error) throw error;
 
-  return (data ?? []).map((r: any) => ({
+  const rows: MyGiftReceived[] = (data ?? []).map((r: any) => ({
     id:             r.id,
     code:           r.code,
     kind:           r.kind,
@@ -1640,6 +1650,74 @@ export async function fetchMyGiftsReceived(userId: string): Promise<MyGiftReceiv
     message:        r.message,
     claimed_at:     r.claimed_at,
     expires_at:     r.expires_at,
+    booked:         false,
+  }));
+
+  // Which booking gifts already have a slot? One extra query, not one per gift.
+  const bookingGiftIds = rows.filter((g) => g.kind === 'booking').map((g) => g.id);
+  if (bookingGiftIds.length > 0) {
+    const { data: booked } = await supabase
+      .from('book_bookings')
+      .select('gift_id')
+      .in('gift_id', bookingGiftIds)
+      .neq('status', 'cancelled');
+    const bookedIds = new Set((booked ?? []).map((b: any) => b.gift_id));
+    for (const g of rows) if (bookedIds.has(g.id)) g.booked = true;
+  }
+
+  return rows;
+}
+
+/* ── Gifts I have SENT ────────────────────────────────────────────────────────
+   book_gifts where purchaser_id = me. The "Purchasers see their gifts" policy
+   has always permitted this read; there was simply no screen asking for it.
+
+   Deliberately NOT selected: claimed_by_user_id (beyond the self-gift check),
+   recipient_email, payment_intent_id, code. The sender sees what they bought,
+   who they sent it to by the name THEY typed, and how far it has got.        */
+
+export interface MyGiftSent {
+  id:                 string;
+  kind:               'unit' | 'booking';
+  status:             'sent' | 'claimed' | 'used' | 'cancelled';
+  business_name:      string | null;
+  item_name:          string | null;
+  recipient_name:     string | null;
+  message:            string | null;
+  price_paid_pence:   number;
+  created_at:         string;
+  claimed_at:         string | null;
+  /** True when the purchaser claimed their own gift. */
+  claimed_by_me:      boolean;
+}
+
+export async function fetchMyGiftsSent(userId: string): Promise<MyGiftSent[]> {
+  const { data, error } = await supabase
+    .from('book_gifts')
+    .select(`
+      id, kind, status, price_paid_pence, recipient_name, message,
+      created_at, claimed_at, claimed_by_user_id,
+      business:local_businesses ( name ),
+      service:book_services ( name ),
+      unit_item:book_unit_items ( name )
+    `)
+    .eq('purchaser_id', userId)
+    .neq('status', 'pending_payment')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((r: any) => ({
+    id:               r.id,
+    kind:             r.kind,
+    status:           r.status,
+    business_name:    r.business?.name ?? null,
+    item_name:        r.kind === 'unit' ? (r.unit_item?.name ?? null) : (r.service?.name ?? null),
+    recipient_name:   r.recipient_name ?? null,
+    message:          r.message ?? null,
+    price_paid_pence: r.price_paid_pence ?? 0,
+    created_at:       r.created_at,
+    claimed_at:       r.claimed_at ?? null,
+    claimed_by_me:    r.claimed_by_user_id === userId,
   }));
 }
 

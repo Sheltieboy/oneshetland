@@ -85,7 +85,9 @@ describe('the things you have bought are on the account hub', () => {
     ['Event tickets', '/my-event-tickets'],
     ['Passes & vouchers', '/local-my-passes'],
     ['Bookings', '/local-my-bookings'],
-    ['Gifts received', '/local-my-gifts'],
+    // Renamed from "Gifts received" when the screen gained a Gifts sent
+    // section — the row now covers both directions.
+    ['Gifts', '/local-my-gifts'],
   ];
 
   for (const [label, route] of TRANSACTIONAL) {

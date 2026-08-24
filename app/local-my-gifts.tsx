@@ -26,7 +26,11 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
-import { fetchMyGiftsReceived, type MyGiftReceived } from '@/lib/local-api';
+import {
+  fetchMyGiftsReceived, fetchMyGiftsSent,
+  type MyGiftReceived, type MyGiftSent,
+} from '@/lib/local-api';
+import { formatPence } from '@/lib/local-api';
 
 const S = SECTIONS.local;
 
@@ -36,16 +40,24 @@ export default function MyGiftsScreen() {
   const { screenWidth } = useAppLayout();
 
   const [gifts, setGifts]         = useState<MyGiftReceived[]>([]);
+  const [sent, setSent]           = useState<MyGiftSent[]>([]);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!profile?.id) { setLoading(false); return; }
     try {
-      const rows = await fetchMyGiftsReceived(profile.id);
+      // Received and sent are two relationships to the same table —
+      // claimed_by_user_id vs purchaser_id — both already permitted by policy.
+      const [rows, sentRows] = await Promise.all([
+        fetchMyGiftsReceived(profile.id),
+        fetchMyGiftsSent(profile.id).catch(() => [] as MyGiftSent[]),
+      ]);
       setGifts(rows);
+      setSent(sentRows);
     } catch {
       setGifts([]);
+      setSent([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -54,17 +66,19 @@ export default function MyGiftsScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Only "to claim" goes to the top; "used" goes below if any
-  const toClaim = gifts.filter(g => g.status === 'claimed');
+  // A booked gift has nothing left to pick — see MyGiftReceived.booked.
+  const toClaim = gifts.filter(g => g.status === 'claimed' && !g.booked);
+  const booked  = gifts.filter(g => g.status === 'claimed' && g.booked);
   const used    = gifts.filter(g => g.status === 'used');
+  const nothing = gifts.length === 0 && sent.length === 0;
 
   return (
     <ScreenScaffold
-      header={<ScreenHeader title="Gifts received" accent={S.color} onBack={() => router.back()} />}
+      header={<ScreenHeader title="Gifts" accent={S.color} onBack={() => router.back()} />}
     >
       {loading ? (
         <LoadingState accent={S.color} />
-      ) : gifts.length === 0 ? (
+      ) : nothing ? (
         <EmptyState
           icon="gift"
           title="No gifts yet"
@@ -84,18 +98,34 @@ export default function MyGiftsScreen() {
             />
           }
         >
+          <Text style={styles.groupLabel}>Gifts received</Text>
+          {gifts.length === 0 && (
+            <Text style={styles.groupEmpty}>Nothing sent your way yet.</Text>
+          )}
           {toClaim.length > 0 && (
             <>
               <Text style={styles.sectionLabel}>To claim</Text>
               {toClaim.map(g => <GiftCard key={g.id} gift={g} onPickSlot={pickSlot} />)}
             </>
           )}
-
+          {booked.length > 0 && (
+            <>
+              <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Booked</Text>
+              {booked.map(g => <GiftCard key={g.id} gift={g} onPickSlot={pickSlot} />)}
+            </>
+          )}
           {used.length > 0 && (
             <>
               <Text style={[styles.sectionLabel, { marginTop: 12 }]}>Already used</Text>
               {used.map(g => <GiftCard key={g.id} gift={g} onPickSlot={pickSlot} />)}
             </>
+          )}
+
+          <Text style={[styles.groupLabel, { marginTop: 20 }]}>Gifts sent</Text>
+          {sent.length === 0 ? (
+            <Text style={styles.groupEmpty}>You haven&rsquo;t sent a gift yet.</Text>
+          ) : (
+            sent.map(g => <SentGiftCard key={g.id} gift={g} />)
           )}
 
           <View style={{ height: 24 }} />
@@ -118,7 +148,7 @@ export default function MyGiftsScreen() {
 }
 
 function GiftCard({ gift, onPickSlot }: { gift: MyGiftReceived; onPickSlot: (g: MyGiftReceived) => void }) {
-  const isBookingPending = gift.kind === 'booking' && gift.status === 'claimed';
+  const isBookingPending = gift.kind === 'booking' && gift.status === 'claimed' && !gift.booked;
   const title = gift.kind === 'unit'
     ? (gift.unit_item_name ?? 'Gift')
     : (gift.service_name ?? 'Booking');
@@ -135,12 +165,17 @@ function GiftCard({ gift, onPickSlot }: { gift: MyGiftReceived; onPickSlot: (g: 
             <Text style={styles.cardBiz} numberOfLines={1}>{gift.business_name}</Text>
           )}
         </View>
-        {gift.status === 'used' && (
+        {gift.status === 'used' ? (
           <View style={styles.usedPill}>
             <FontAwesome5 name="check" size={9} color="#fff" solid />
             <Text style={styles.usedPillText}>Used</Text>
           </View>
-        )}
+        ) : gift.booked ? (
+          <View style={styles.usedPill}>
+            <FontAwesome5 name="calendar-check" size={9} color="#fff" solid />
+            <Text style={styles.usedPillText}>Booked</Text>
+          </View>
+        ) : null}
       </View>
 
       {gift.purchaser_name && (
@@ -166,10 +201,61 @@ function GiftCard({ gift, onPickSlot }: { gift: MyGiftReceived; onPickSlot: (g: 
   );
 }
 
+/* ── A gift I sent ───────────────────────────────────────────────────────────
+   Purchase history, not an entitlement. Deliberately carries NO recipient
+   action — no claim, no "Pick a slot" — because buying a gift does not make
+   you its recipient. Every status is a real book_gifts status.               */
+
+const SENT_STATUS: Record<MyGiftSent['status'], { label: string; bg: string }> = {
+  sent:      { label: 'Waiting to be claimed', bg: '#D97706' },
+  claimed:   { label: 'Claimed by recipient',  bg: '#0284C7' },
+  used:      { label: 'Used',                  bg: '#10B981' },
+  cancelled: { label: 'Cancelled',             bg: '#E11D48' },
+};
+
+function SentGiftCard({ gift }: { gift: MyGiftSent }) {
+  const cfg = SENT_STATUS[gift.status] ?? { label: gift.status, bg: colors.textMuted };
+  // Self-gift: both facts are true, so it shows in both lists. Saying so beats
+  // silently hiding half of somebody's own history.
+  const label = gift.claimed_by_me && gift.status !== 'sent' ? 'Claimed by you' : cfg.label;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+          <FontAwesome5 name="gift" size={14} color={S.color} solid />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{gift.item_name ?? 'Gift'}</Text>
+          {gift.business_name && (
+            <Text style={styles.cardBiz} numberOfLines={1}>{gift.business_name}</Text>
+          )}
+        </View>
+        <View style={[styles.usedPill, { backgroundColor: cfg.bg }]}>
+          <Text style={styles.usedPillText}>{label}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.from}>
+        {gift.recipient_name ? <>To <Text style={styles.fromName}>{gift.recipient_name}</Text> · </> : null}
+        sent {new Date(gift.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+        {gift.price_paid_pence > 0 ? ` · ${formatPence(gift.price_paid_pence)}` : ''}
+      </Text>
+      {gift.message && (
+        <View style={styles.messageWrap}>
+          <Text style={styles.message} numberOfLines={3}>&ldquo;{gift.message}&rdquo;</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 12 },
 
+  groupLabel: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, paddingHorizontal: spacing.xs },
+  groupEmpty: { fontSize: fontSize.sm, color: colors.textMuted, paddingHorizontal: spacing.xs, marginTop: -4 },
   sectionLabel: { fontSize: 11, fontWeight: '900', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', paddingHorizontal: spacing.xs, marginBottom: -4 },
 
   card: {

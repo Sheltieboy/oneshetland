@@ -268,8 +268,8 @@ export default function MeTab() {
             <MenuRow
               icon="gift"
               iconColor={SECTIONS.local.color}
-              label="Gifts received"
-              sublabel="Gifts waiting to be claimed or used"
+              label="Gifts"
+              sublabel="Gifts sent to you, and ones you've sent"
               onPress={() => { Haptics.selectionAsync(); router.push('/local-my-gifts'); }}
               last
             />
