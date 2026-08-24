@@ -135,13 +135,22 @@ export default function MyGiftsScreen() {
   );
 
   function pickSlot(g: MyGiftReceived) {
-    // For booking gifts: send the recipient into the service-selection flow
-    // for the gifted business. We pass gift_id along so the booking confirm
-    // step can attach it (createBooking already accepts giftId).
+    // Straight into the booking screen with the gifted service preselected and
+    // the gift attached, so the recipient picks a time rather than starting the
+    // hunt again.
+    //
+    // These names are load-bearing: local-book-business reads
+    // { businessId, serviceId, giftId }. It used to be sent
+    // { id, gift_id, gift_service_id } — every one wrong, so the screen opened
+    // with no business at all.
     if (g.kind === 'booking' && g.business_id) {
       router.push({
         pathname: '/local-book-business',
-        params:   { id: g.business_id, gift_id: g.id, gift_service_id: g.service_id ?? '' },
+        params: {
+          businessId: g.business_id,
+          ...(g.service_id ? { serviceId: g.service_id } : {}),
+          giftId: g.id,
+        },
       });
     }
   }
