@@ -1537,7 +1537,23 @@ export async function fetchActiveDiscount(businessId: string): Promise<DiscountG
 //
 // "Passes & vouchers" — unit purchases the user owns. Joins to the source
 // book_unit_items for name + business_id, and to local_businesses for the
-// business name. Filters to active passes (uses_remaining > 0, not expired).
+// business name. Returns EVERY purchase — spent and expired ones are the
+// customer's receipts. classifyPass() below decides what is still spendable.
+
+/**
+ * A purchase is an entitlement while it lasts and a receipt for ever after.
+ *
+ * The query used to ask only the first question — .gt('uses_remaining', 0) plus
+ * an unexpired filter — so a pass vanished from the customer's account the
+ * moment they finished using it.
+ */
+export type PassStatus = 'active' | 'used' | 'expired';
+
+export function classifyPass(usesRemaining: number, expiresAt: string | null): PassStatus {
+  if (usesRemaining <= 0) return 'used';
+  if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) return 'expired';
+  return 'active';
+}
 
 export interface MyPass {
   id:                string;
@@ -1551,21 +1567,23 @@ export interface MyPass {
   business_name:     string | null;
   /** True if this purchase was acquired by claiming a gift. */
   from_gift:         boolean;
+  fully_used_at:     string | null;
+  status:            PassStatus;
 }
 
 export async function fetchMyPasses(userId: string): Promise<MyPass[]> {
-  const nowIso = new Date().toISOString();
+  // Everything this person has ever bought. Owner-scoped by the same owner_id
+  // filter and the same RLS as before — the two filters removed here were about
+  // USABILITY, not access, and they belong in the rendering.
   const { data, error } = await supabase
     .from('book_unit_purchases')
     .select(`
       id, item_id, business_id, uses_remaining, paid_amount_pence,
-      expires_at, created_at, gift_id,
+      expires_at, created_at, gift_id, fully_used_at,
       item:book_unit_items ( name ),
       business:local_businesses ( name )
     `)
     .eq('owner_id', userId)
-    .gt('uses_remaining', 0)
-    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order('created_at', { ascending: false });
   if (error) throw error;
 
@@ -1580,6 +1598,8 @@ export async function fetchMyPasses(userId: string): Promise<MyPass[]> {
     item_name:         r.item?.name ?? null,
     business_name:     r.business?.name ?? null,
     from_gift:         !!r.gift_id,
+    fully_used_at:     r.fully_used_at ?? null,
+    status:            classifyPass(r.uses_remaining, r.expires_at ?? null),
   }));
 }
 

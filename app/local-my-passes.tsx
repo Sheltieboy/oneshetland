@@ -19,7 +19,7 @@ import { colors, fontSize, spacing, radius, contentContainer } from '@/constants
 import { SECTIONS } from '@/constants/sections';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
-import { fetchMyPasses, formatPence, type MyPass } from '@/lib/local-api';
+import { fetchMyPasses, formatPence, type MyPass, type PassStatus } from '@/lib/local-api';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -51,6 +51,11 @@ export default function MyPassesScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  // "Nothing yet" now means exactly that: never bought one. Somebody who has
+  // used theirs up sees their history instead of being told it never happened.
+  const active   = passes.filter(p => p.status === 'active');
+  const previous = passes.filter(p => p.status !== 'active');
+
   return (
     <ScreenScaffold header={<ScreenHeader title="Passes & vouchers" accent={S.color} />}>
       {loading ? (
@@ -77,13 +82,29 @@ export default function MyPassesScreen() {
             />
           }
         >
-          {passes.map(p => <PassCard key={p.id} pass={p} />)}
+          <Text style={styles.groupLabel}>Active</Text>
+          {active.length > 0
+            ? active.map(p => <PassCard key={p.id} pass={p} />)
+            : <Text style={styles.groupEmpty}>Nothing to use right now.</Text>}
+
+          {previous.length > 0 && (
+            <>
+              <Text style={[styles.groupLabel, { marginTop: 18 }]}>Previous passes</Text>
+              {previous.map(p => <PassCard key={p.id} pass={p} />)}
+            </>
+          )}
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
     </ScreenScaffold>
   );
 }
+
+const STATUS_LABEL: Record<PassStatus, string> = {
+  active:  'Active',
+  used:    'Fully used',
+  expired: 'Expired',
+};
 
 function PassCard({ pass }: { pass: MyPass }) {
   const expiresLabel = pass.expires_at
@@ -92,7 +113,7 @@ function PassCard({ pass }: { pass: MyPass }) {
   const daysToExpiry = pass.expires_at
     ? Math.ceil((new Date(pass.expires_at).getTime() - Date.now()) / 86_400_000)
     : null;
-  const expiringSoon = daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= 7 && pass.uses_remaining > 0;
+  const expiringSoon = pass.status === 'active' && daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= 7;
 
   return (
     <View style={styles.card}>
@@ -122,18 +143,31 @@ function PassCard({ pass }: { pass: MyPass }) {
 
       <View style={styles.cardBottom}>
         <View style={styles.metric}>
-          <Text style={styles.metricValue}>{pass.uses_remaining}</Text>
-          <Text style={styles.metricLabel}>
-            {pass.uses_remaining === 1 ? 'use left' : 'uses left'}
-          </Text>
+          {pass.status === 'active' ? (
+            <>
+              <Text style={styles.metricValue}>{pass.uses_remaining}</Text>
+              <Text style={styles.metricLabel}>
+                {pass.uses_remaining === 1 ? 'use left' : 'uses left'}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.metricValueSmall}>{STATUS_LABEL[pass.status]}</Text>
+              <Text style={styles.metricLabel}>
+                Bought {formatDate(pass.created_at)}
+                {pass.fully_used_at ? ` \u00B7 used up ${formatDate(pass.fully_used_at)}` : ''}
+              </Text>
+            </>
+          )}
         </View>
         <View style={styles.metricSep} />
         <View style={styles.metric}>
-          <Text style={styles.metricValueSmall}>{expiresLabel}</Text>
+          <Text style={styles.metricValueSmall}>{pass.status === 'active' ? expiresLabel : ' '}</Text>
           <Text style={styles.metricLabel}>{formatPence(pass.paid_amount_pence)} paid</Text>
         </View>
       </View>
-      {pass.uses_remaining > 0 && (
+      {/* Only an ACTIVE pass can be spent. A used or expired one is a receipt. */}
+      {pass.status === 'active' && pass.uses_remaining > 0 && (
         <TouchableOpacity
           style={[styles.useBtn, { backgroundColor: S.color }]}
           onPress={() => router.push({ pathname: '/local-redeem', params: { kind: 'pass', ref_id: pass.id } })}
@@ -154,6 +188,9 @@ function formatDate(iso: string): string {
 const styles = StyleSheet.create({
   scroll:  { flex: 1, backgroundColor: colors.screenBackground },
   content:{ padding: spacing.md, gap: 12 },
+
+  groupLabel: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, paddingHorizontal: spacing.xs },
+  groupEmpty: { fontSize: fontSize.sm, color: colors.textMuted, paddingHorizontal: spacing.xs, marginTop: -4 },
 
   card: {
     backgroundColor: '#fff', borderRadius: radius.lg,
