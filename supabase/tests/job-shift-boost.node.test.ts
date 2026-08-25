@@ -221,12 +221,32 @@ describe('the locks are installed the way they must be', () => {
   });
 
   test('no production listing carries paid state that was never paid for', () => {
-    // 25 scraped myjobscotland listings, no employer-owned rows, nothing
-    // boosted — recorded here so a surprise shows up as a test failure.
+    // This used to assert both counts were zero, which was true only because
+    // nobody had bought a boost yet. The first real £2.99 purchase made it fail
+    // — correctly: it is a tripwire, and a shift had genuinely changed. What it
+    // should assert is not "none", but "none without a payment behind it".
+    //
+    // Jobs stay at zero: no code path sells jobs.is_featured or
+    // jobs.boosted_until at all, so any value there would be a bypass.
+    //
+    // Shifts must each trace back to a payment — a card boost claimed in
+    // consumed_payment_intents, or a wallet debit described by wallet-checkout.
     const r = one(`
       select (select count(*)::text from public.jobs where is_featured or boosted_until is not null) as paid_jobs,
-             (select count(*)::text from public.shifts where boosted_until is not null)              as paid_shifts;`);
+             (select count(*)::text from public.shifts where boosted_until is not null)              as boosted_shifts,
+             (select count(*)::text
+                from public.shifts s
+               where s.boosted_until is not null
+                 and not exists (
+                   select 1 from public.consumed_payment_intents c
+                    where c.purpose = 'shift_boost' and c.user_id = s.employer_id)
+                 and not exists (
+                   select 1 from public.local_wallet_transactions w
+                    where w.user_id = s.employer_id
+                      and w.description = 'Shift boost (24h)')
+             ) as unpaid_shifts;`);
     assert.equal(r.paid_jobs, '0');
-    assert.equal(r.paid_shifts, '0');
+    assert.equal(r.unpaid_shifts, '0',
+      `${r.unpaid_shifts} of ${r.boosted_shifts} boosted shifts have no payment behind them`);
   });
 });

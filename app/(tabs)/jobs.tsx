@@ -33,6 +33,7 @@ import { fetchMyBusinesses, type LocalBusiness } from '@/lib/local-api';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { track } from '@/lib/analytics';
+import { supabase } from '@/lib/supabase';
 
 type Tier = 'jobs' | 'shifts';
 const JOBS = SECTIONS.jobs;
@@ -118,6 +119,24 @@ export default function WorkHubScreen() {
     fetchMyBusinesses(profile.id).then(setMyBiz).catch(() => setMyBiz([]));
   }, [hireOpen, profile?.id]);
 
+  // The Work tab is for browsing and applying; everything for the person who
+  // POSTED the work lives under Me → My work. Same split as the website, and
+  // the same problem: an employer looking for the shift they just boosted had
+  // no way through from here. A shortcut, shown only to people who have posted.
+  const [myPosted, setMyPosted] = useState<{ shifts: number; jobs: number }>({ shifts: 0, jobs: 0 });
+  useEffect(() => {
+    if (!profile?.id) { setMyPosted({ shifts: 0, jobs: 0 }); return; }
+    let live = true;
+    (async () => {
+      const [sh, jb] = await Promise.all([
+        supabase.from('shifts').select('id', { count: 'exact', head: true }).eq('employer_id', profile.id),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('employer_id', profile.id),
+      ]);
+      if (live) setMyPosted({ shifts: sh.count ?? 0, jobs: jb.count ?? 0 });
+    })().catch(() => {});
+    return () => { live = false; };
+  }, [profile?.id]);
+
   const pickBusiness = async (b: LocalBusiness) => {
     setHireOpen(false);
     router.push(`/job-post?businessId=${b.id}`);
@@ -198,6 +217,23 @@ export default function WorkHubScreen() {
                 ))}
               </View>
             )
+          )}
+
+          {/* Poster's own work — only for somebody who has actually posted. */}
+          {(tier === 'jobs' ? myPosted.jobs : myPosted.shifts) > 0 && (
+            <TouchableOpacity
+              style={[styles.hireCta, { borderColor: accent + '40', backgroundColor: accent + '14' }]}
+              onPress={() => router.push(tier === 'jobs' ? '/my-posted-jobs' : '/my-posted-shifts')}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name="briefcase" size={14} color={accent} solid />
+              <Text style={[styles.hireCtaText, { color: accent }]}>
+                {tier === 'jobs'
+                  ? `My posted jobs · ${myPosted.jobs}`
+                  : `My posted shifts · ${myPosted.shifts}`}
+              </Text>
+              <FontAwesome5 name="chevron-right" size={12} color={accent} />
+            </TouchableOpacity>
           )}
 
           {/* Employer CTA */}
