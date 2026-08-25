@@ -486,6 +486,13 @@ export default function MeTab() {
               onPress={() => { Haptics.selectionAsync(); router.push('/hub-my-memberships'); }}
             />
             <MenuRow
+              icon="hand-holding-heart"
+              iconColor={SECTIONS.community.color}
+              label="My donations"
+              sublabel="What you've given to Shetland hubs"
+              onPress={() => { Haptics.selectionAsync(); router.push('/my-donations'); }}
+            />
+            <MenuRow
               icon="gamepad"
               iconColor={SECTIONS.games.color}
               label="Game stats"

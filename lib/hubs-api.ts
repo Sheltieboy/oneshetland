@@ -813,3 +813,34 @@ export async function fetchPublicNotices(limit = 10): Promise<HubNotice[]> {
   if (error) throw error;
   return (data ?? []) as HubNotice[];
 }
+
+/* ── My donations ─────────────────────────────────────────────────────────────
+   What this person has given, after they have left the campaign screen. Reads
+   the snapshotted hub and campaign names rather than joining, so an edited
+   campaign title does not rewrite an old receipt.
+
+   Deliberately NOT selected: stripe_payment_intent_id, fee_pence, and every
+   ga_* declarant field. Read-only — donating happens on the campaign screen.  */
+
+export interface MyDonation {
+  id:             string;
+  hub_id:         string | null;
+  hub_name:       string | null;
+  campaign_title: string | null;
+  amount_pence:   number;
+  is_anonymous:   boolean;
+  message:        string | null;
+  gift_aid:       boolean;
+  payment_method: 'card' | 'wallet' | null;
+  created_at:     string;
+}
+
+export async function fetchMyDonations(): Promise<MyDonation[]> {
+  // RLS scopes this to the donor.
+  const { data, error } = await supabase
+    .from('hub_donations')
+    .select('id, hub_id, hub_name, campaign_title, amount_pence, is_anonymous, message, gift_aid, payment_method, created_at')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as MyDonation[];
+}
