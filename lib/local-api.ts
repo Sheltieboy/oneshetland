@@ -823,12 +823,20 @@ export interface WalletTopUpResponse {
   payment_intent_id: string;
   clientSecret?:     string;
 }
+/**
+ * `attemptId` is the reference for ONE deliberate top-up. The Edge Function
+ * supported it all along and neither client ever sent it, so the Stripe key
+ * fell back to `topup-<user>-<amount>` — and topping up £10 twice in a day
+ * returned the FIRST PaymentIntent while telling the customer their money had
+ * arrived.
+ */
 export async function startWalletTopUp(
   amountPence: number,
+  attemptId: string,
   useSavedCard = true,
 ): Promise<WalletTopUpResponse> {
   const { data, error } = await supabase.functions.invoke('local-wallet-topup-intent', {
-    body: { amount_pence: amountPence, use_saved_card: useSavedCard },
+    body: { amount_pence: amountPence, use_saved_card: useSavedCard, client_request_id: attemptId },
   });
   if (error) throw await fnErr(error, 'Could not start top-up.');
 

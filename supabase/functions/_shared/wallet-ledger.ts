@@ -36,7 +36,11 @@ const STRIPE_API_VERSION = '2023-10-16';
 
 export type WalletDebit =
   | { ok: true; balancePence: number; transactionId: string; alreadyApplied: boolean }
-  | { ok: false; reason: 'insufficient'; balancePence: number };
+  | { ok: false; reason: 'insufficient'; balancePence: number }
+  // A wallet under refund/chargeback recovery does not spend. Refused by the
+  // debit primitive itself, before anything is claimed, so the attempt leaves
+  // nothing behind and can simply be made again once it is cleared.
+  | { ok: false; reason: 'blocked'; blockReason: string; balancePence: number };
 
 /**
  * Take money out of a wallet and record why, atomically.
@@ -72,11 +76,15 @@ export async function walletDebit(
   }).maybeSingle<{
     balance_pence: number; transaction_id: string | null;
     already_applied: boolean; insufficient: boolean;
+    blocked?: boolean; block_reason?: string | null;
   }>();
 
   if (error) throw error;
   if (!data) throw new Error('wallet_debit_with_ledger returned nothing');
 
+  if (data.blocked) {
+    return { ok: false, reason: 'blocked', blockReason: data.block_reason ?? 'blocked', balancePence: data.balance_pence };
+  }
   if (data.insufficient) {
     return { ok: false, reason: 'insufficient', balancePence: data.balance_pence };
   }
@@ -248,7 +256,7 @@ export async function debitAndTransfer(
   },
 ): Promise<
   | { ok: true; balancePence: number; transactionId: string; transferId: string | null; alreadyApplied: boolean }
-  | { ok: false; status: number; error: string; reason: 'insufficient' | 'rejected' | 'unresolved'; transactionId?: string }
+  | { ok: false; status: number; error: string; reason: 'insufficient' | 'blocked' | 'rejected' | 'unresolved'; transactionId?: string }
 > {
   const debit = await walletDebit(svc, {
     userId:           args.userId,
@@ -262,6 +270,14 @@ export async function debitAndTransfer(
   });
 
   if (!debit.ok) {
+    if (debit.reason === 'blocked') {
+      return {
+        ok: false, status: 409, reason: 'blocked',
+        error: debit.blockReason === 'dispute'
+          ? 'Your wallet is on hold while a card dispute is looked into. Nothing has been spent.'
+          : 'Your wallet is on hold until a refunded top-up has been paid back. Top up to clear it.',
+      };
+    }
     return { ok: false, status: 402, error: 'Insufficient balance — top up first', reason: 'insufficient' };
   }
 

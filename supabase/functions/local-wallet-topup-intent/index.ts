@@ -26,7 +26,10 @@ const STRIPE_API_VERSION = '2023-10-16';
  *                            Used when the user has no saved card yet (first-ever
  *                            top-up) or chose to add a new card.
  *
- * Body: { amount_pence: number, use_saved_card?: boolean }
+ * Body: { amount_pence: number, use_saved_card?: boolean, client_request_id: string }
+ *
+ * client_request_id is REQUIRED and is idempotency only — the amount is
+ * validated here and the CREDIT is always taken from Stripe's own pi.amount.
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -56,19 +59,36 @@ serve(async (req) => {
     // Default to saved-card mode so older app builds (which don't pass this
     // flag yet) still get the centralised-payment UX. Falls back to
     // PaymentSheet automatically if the customer has no saved card.
-    const { amount_pence, use_saved_card = true, idempotency_key } = await req.json();
-    if (!amount_pence || amount_pence < 500 || amount_pence > 50_000) {
+    const { amount_pence, use_saved_card = true, client_request_id = null } = await req.json();
+
+    // ── The amount must be a genuine integer number of pence ──────────────
+    //
+    // This used to be `!amount_pence || amount_pence < 500 || amount_pence > 50_000`,
+    // which leans on JavaScript coercion: the STRING "1000" passed it and
+    // created a real £10 PaymentIntent, while "abc", {} and 1000.7 sailed
+    // through to Stripe and failed there instead of here. Nothing was
+    // exploitable — the credit always comes from Stripe's own pi.amount — but a
+    // money field should not be guarded by accident.
+    if (typeof amount_pence !== 'number' || !Number.isFinite(amount_pence) ||
+        !Number.isInteger(amount_pence) || amount_pence < 500 || amount_pence > 50_000) {
       return json({ error: 'Amount must be £5–£500' }, 400);
     }
 
-    // Idempotency-Key on the off-session charge below: a retry (lost response /
-    // double-tap) returns the ORIGINAL PaymentIntent instead of charging the
-    // saved card a second time. Prefer a per-attempt key the client sends so
-    // genuine repeat top-ups of the same amount aren't blocked; fall back to a
-    // deterministic key (Stripe keys live 24h) for older builds.
-    const topupIdemKey = typeof idempotency_key === 'string' && idempotency_key
-      ? `topup-${user.id}-${idempotency_key}`
-      : `topup-${user.id}-${amount_pence}`;
+    // ── One deliberate top-up = one attempt reference ─────────────────────
+    //
+    // The key used to fall back to `topup-<user>-<amount>`, and neither client
+    // ever sent an override, so that fallback WAS the key. Stripe honours it for
+    // ~24 hours: a customer topping up £10 twice in a day got the first
+    // PaymentIntent back, the ledger claim deduplicated on it, and they were
+    // told their money had arrived when it had not. A declined card could not be
+    // retried at the same amount either.
+    //
+    // Required now, validated before Stripe, and the fallback is gone.
+    if (typeof client_request_id !== 'string' || client_request_id.trim().length === 0 ||
+        client_request_id.length < 8 || client_request_id.length > 100) {
+      return json({ error: 'client_request_id required' }, 400);
+    }
+    const topupIdemKey = `topup-${user.id}-${client_request_id}`;
 
     const baseParams: Record<string, string> = {
       amount:   String(amount_pence),
@@ -146,9 +166,12 @@ serve(async (req) => {
     const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
       method: 'POST',
       headers: {
-        'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-        'Content-Type':   'application/x-www-form-urlencoded',
-        'Stripe-Version': STRIPE_API_VERSION,
+        'Authorization':   `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+        'Content-Type':    'application/x-www-form-urlencoded',
+        'Stripe-Version':  STRIPE_API_VERSION,
+        // This route carried no key at all, so a double submit minted two
+        // PaymentIntents — two real charges, two real credits.
+        'Idempotency-Key': `topup-form-${user.id}-${client_request_id}`,
       },
       body: new URLSearchParams({
         ...baseParams,

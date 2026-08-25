@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
@@ -177,6 +177,39 @@ async function emailPlanChange(
     });
   } catch (e) {
     console.error('[stripe-webhook] plan-change email failed:', e);
+  }
+}
+
+type WalletRecovery = {
+  recovered_now_pence: number; taken_pence: number;
+  deficit_pence: number; balance_pence: number;
+  already: boolean; reason: string;
+};
+
+/**
+ * Tell somebody their wallet changed underneath them. Best-effort by design —
+ * a push that fails must never undo a recovery that succeeded, so this is
+ * called after the money has already moved and its errors are swallowed here
+ * rather than thrown.
+ */
+async function notifyWalletRecovery(
+  svc: SupabaseClient, pi: string, rec: WalletRecovery, kind: 'refund' | 'dispute',
+): Promise<void> {
+  try {
+    const { data: row } = await svc.from('local_wallet_topup_recovery')
+      .select('user_id').eq('payment_intent_id', pi).maybeSingle();
+    const userId = (row as { user_id?: string } | null)?.user_id;
+    if (!userId) return;
+    const took = `£${(rec.taken_pence / 100).toFixed(2)}`;
+    const owed = rec.deficit_pence > 0 ? ` £${(rec.deficit_pence / 100).toFixed(2)} is still to come back.` : '';
+    await sendUserPush(svc, {
+      userId, module: 'wallet', categoryId: 'wallet.topup',
+      title: kind === 'refund' ? 'Wallet top-up refunded' : 'Wallet top-up charged back',
+      body: `${took} has been taken back out of your wallet.${owed}`,
+      data: { screen: 'local-wallet' },
+    });
+  } catch (e) {
+    console.error('[stripe-webhook] wallet recovery notify failed', e);
   }
 }
 
@@ -649,10 +682,86 @@ serve(async (req) => {
       // ── Charge refunded (in-app refund OR Stripe Dashboard refund) ───
       // Mark the originating record refunded so app state matches Stripe even
       // when a refund is issued straight from the Dashboard.
+      // ── Card disputes on wallet top-ups ────────────────────────────────
+      //
+      // A dispute is not yet a loss, so opening one reverses nothing — but the
+      // wallet stops spending, because every pound spent while a chargeback is
+      // in flight is a pound the platform may fund twice. Winning clears the
+      // lock and leaves no debt. Losing recovers the money through the same
+      // path a refund uses, which is what stops a lost dispute and its related
+      // refund accounting taking the same £100 twice.
+      case 'charge.dispute.created':
+      case 'charge.dispute.updated':
+      case 'charge.dispute.closed': {
+        const disputePi = (eventData.payment_intent as string | null) ?? null;
+        const disputeId = eventData.id as string;
+        const status = String(eventData.status ?? '');
+        if (!disputePi) {
+          console.log(`[stripe-webhook] dispute ${disputeId}: no payment_intent, ignored`);
+          break;
+        }
+
+        // Stripe's terminal statuses. 'warning_*' are pre-dispute signals and
+        // 'needs_response'/'under_review' mean it is still live.
+        const lost = status === 'lost';
+        const won  = status === 'won' || status === 'warning_closed';
+
+        if (lost) {
+          const { data: rec, error: recErr } = await supabase
+            .rpc('wallet_recover_topup', {
+              p_pi: disputePi, p_kind: 'dispute_lost',
+              p_cumulative: (eventData.amount as number) ?? 0, p_dispute_id: disputeId,
+            })
+            .maybeSingle<WalletRecovery>();
+          if (recErr) throw recErr;
+          if (rec && rec.reason !== 'not_a_topup') {
+            console.log(`[stripe-webhook] wallet dispute LOST ${disputePi}: ${JSON.stringify(rec)}`);
+            if (!rec.already) await notifyWalletRecovery(supabase, disputePi, rec, 'dispute');
+          }
+        } else {
+          const { error: stateErr } = await supabase.rpc('wallet_set_dispute_state', {
+            p_pi: disputePi, p_dispute_id: disputeId, p_state: won ? 'won' : 'open',
+          });
+          if (stateErr) throw stateErr;
+          console.log(`[stripe-webhook] wallet dispute ${disputePi} -> ${won ? 'won' : 'open'} (${status})`);
+        }
+        break;
+      }
+
       case 'charge.refunded': {
         const pi = eventData.payment_intent as string | null;
         const fullyRefunded = eventData.refunded === true; // false for partials
         if (pi) {
+          // ── Wallet top-up ────────────────────────────────────────────────
+          //
+          // Stored value that came back out of the card has to come back out of
+          // the wallet. This branch used to end at delivery requests and event
+          // tickets, so a refunded top-up left the money spendable and the
+          // platform absorbed it.
+          //
+          // amount_refunded is Stripe's RUNNING TOTAL, not this refund's slice.
+          // Handing it over as the cumulative figure is what makes a redelivered
+          // event, and a partial refund followed by a larger one, settle to
+          // exactly one economic recovery. A charge that was not a top-up
+          // resolves to 'not_a_topup' and nothing happens.
+          try {
+            const refundedSoFar = (eventData.amount_refunded as number) ?? 0;
+            if (refundedSoFar > 0) {
+              const { data: rec, error: recErr } = await supabase
+                .rpc('wallet_recover_topup', { p_pi: pi, p_kind: 'refund', p_cumulative: refundedSoFar })
+                .maybeSingle<WalletRecovery>();
+              if (recErr) throw recErr;
+              if (rec && rec.reason !== 'not_a_topup') {
+                console.log(`[stripe-webhook] wallet refund ${pi}: ${JSON.stringify(rec)}`);
+                if (!rec.already) await notifyWalletRecovery(supabase, pi, rec, 'refund');
+              }
+            }
+          } catch (e) {
+            // Reported, not swallowed: an unrecovered wallet must be retryable.
+            console.error('[stripe-webhook] wallet refund recovery failed', e);
+            throw e;
+          }
+
           await supabase
             .from('delivery_requests')
             .update({ payment_status: fullyRefunded ? 'refunded' : 'partially_refunded' })

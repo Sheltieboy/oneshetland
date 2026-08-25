@@ -18,6 +18,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { useAlert } from '@/components/BrandedAlert';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAppLayout } from '@/hooks/useAppLayout';
+import { useAttemptId } from '@/hooks/useAttemptId';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchMyHubMemberships, type HubMember } from '@/lib/hubs-api';
@@ -62,6 +63,12 @@ export default function WalletScreen() {
   const [toppingUp, setToppingUp] = useState<number | null>(null);
   const [confirmAmount, setConfirmAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
+  // One reference per deliberate top-up: it survives a retry and an SCA
+  // challenge, and a different amount starts a new one. Keyed on the amount
+  // recorded by requestTopUp, because BOTH entry paths go through it — the
+  // confirm sheet and the no-card path that goes straight to Stripe.
+  const [attemptAmount, setAttemptAmount] = useState(0);
+  const topUpAttempt = useAttemptId(`${attemptAmount}`);
   const [customError, setCustomError] = useState<string | null>(null);
 
   // Parse the custom-amount field (pounds) into pence, validating bounds.
@@ -92,6 +99,7 @@ export default function WalletScreen() {
   // no Stripe UI, so show our confirm step first. With no card on file, fall
   // through to handleTopUp which prompts to add one (or opens the Payment Sheet).
   const requestTopUp = (amountPence: number) => {
+    setAttemptAmount(amountPence);
     if (profile?.has_payment_method) setConfirmAmount(amountPence);
     else handleTopUp(amountPence);
   };
@@ -168,7 +176,7 @@ export default function WalletScreen() {
       // Try the off-session saved-card path first (the user has a card on
       // file because the pre-flight above passed). The server falls back to
       // PaymentSheet if it can't find a saved card on the Stripe Customer.
-      const startRes = await startWalletTopUp(amountPence, true);
+      const startRes = await startWalletTopUp(amountPence, topUpAttempt(), true);
 
       let piId: string;
 
