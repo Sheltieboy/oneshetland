@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
+import { calculateCommission } from '../_shared/commission.ts';
+import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { debitAndTransfer, walletReverse, claimAttempt, settleAttempt,
          attemptFingerprint, attemptBlockedResponse, selfPaymentBlock } from '../_shared/wallet-ledger.ts';
 
@@ -214,10 +216,16 @@ async function hubMembership(svc: any, userId: string, body: any, rid: string): 
   if (!hub) return json({ error: 'Hub not found.' }, 404);
   if (!hub.stripe_account_id || !hub.payout_enabled) return json({ error: 'This hub has not finished setting up payouts yet.' }, 400);
 
-  // Flat platform fee added on top (hub receives the full membership price), to
-  // match the card flow. Wallet covers price + fee; hub gets price.
-  const { data: feeRow } = await svc.from('admin_config').select('value').eq('key', 'fees.hub_membership.flat_pence').maybeSingle();
-  const flatFee = Math.max(0, parseInt(feeRow?.value ?? '', 10) || 95);
+  // The SAME fee the card path uses, from the same rail. This used to read
+  // fees.hub_membership.flat_pence — a key only this route knew about, set to
+  // 50 — so the identical £10 membership cost £10.95 by card and £10.50 by
+  // wallet, and nobody had decided that. One source now: change
+  // fees.membership.fixed_pence and both routes move together.
+  //
+  // Added on top, so the hub still receives the full membership price and the
+  // customer covers the fee — exactly as on card.
+  const membershipCfg = await getCommissionConfig(svc, 'membership');
+  const flatFee = calculateCommission(t.price_pence, membershipCfg, 'membership').fee_pence;
   const debitTotal = t.price_pence + flatFee;
 
   // The customer is debited price + platform fee; only the price is transferred

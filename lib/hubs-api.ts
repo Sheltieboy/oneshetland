@@ -267,12 +267,35 @@ export async function joinHub(hubId: string, userId: string, membershipTypeId?: 
 
 // ── Paid membership (slice 2c) ────────────────────────────────────────────────
 
+export interface MembershipQuote {
+  membership_type_id: string;
+  tier_name:          string;
+  hub_id:             string;
+  hub_name:           string;
+  period:             string;
+  face_pence:         number;
+  fee_pence:          number;
+  total_pence:        number;
+}
+
 /**
- * Flat platform fee per paid membership, for DISPLAY only. The server is the
- * source of truth (admin_config 'fees.hub_membership.flat_pence'); keep this in
- * sync if you change that value.
+ * What a membership will actually cost, from the server.
+ *
+ * This replaces a mirrored constant (HUB_MEMBERSHIP_FEE_PENCE = 50) that had
+ * gone stale: the confirm sheet was showing a 50p "Booking fee" and a £10.50
+ * total while the card charge was £10.95. The quote reads the same tier row and
+ * the same fees.membership.* rail both payment paths use, so the figure on the
+ * Pay button is the figure that leaves the customer's account.
+ *
+ * Returns null for an unknown, inactive or free tier.
  */
-export const HUB_MEMBERSHIP_FEE_PENCE = 50;
+export async function fetchMembershipQuote(membershipTypeId: string): Promise<MembershipQuote | null> {
+  const { data, error } = await supabase
+    .rpc('membership_quote', { p_type: membershipTypeId })
+    .maybeSingle<MembershipQuote>();
+  if (error) throw error;
+  return data ?? null;
+}
 
 export interface MembershipPaymentStart {
   charged?:          boolean;

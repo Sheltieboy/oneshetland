@@ -53,6 +53,9 @@ const ledger = read('supabase/functions/_shared/wallet-ledger.ts');
 const checkout = read('supabase/functions/wallet-checkout/index.ts');
 const webClient = web('lib/hubs-client.ts');
 const panel = web('components/hubs/HubMembershipPanel.tsx');
+// The attempt lifecycle moved out of the panel and into the checkout when the
+// summary step was added — the panel can no longer take a payment at all.
+const memberCheckout = web('components/hubs/MembershipCheckout.tsx');
 const appApi = read('lib/hubs-api.ts');
 const appHub = read('app/hubs/[id].tsx');
 
@@ -179,8 +182,10 @@ describe('A — one deliberate membership checkout, one PaymentIntent', () => {
 
   test('web sends it, on the card route as well as the wallet route', () => {
     assert.match(webClient, /client_request_id: attemptId/);
-    assert.equal((panel.match(/startMembershipPayment\(tier\.id, attemptId\(\)\)/g) ?? []).length, 2);
-    assert.match(panel, /walletCheckout\(\{ type: "hub_membership", membership_type_id: tier\.id \}, attemptId\(\)\)/);
+    // Both routes now live in the checkout, behind the summary, and share one
+    // reference because they are alternatives within one purchase.
+    assert.match(memberCheckout, /startMembershipPayment\(tier\.id, attemptId\(\), method === "saved"\)/);
+    assert.match(memberCheckout, /walletCheckout\(\{ type: "hub_membership", membership_type_id: tier\.id \}, attemptId\(\)\)/);
   });
 
   test('the app sends it too', () => {
@@ -190,14 +195,15 @@ describe('A — one deliberate membership checkout, one PaymentIntent', () => {
 
   test('the reference is keyed on a checkout session, not the tier', () => {
     // Tier alone would make a RENEWAL reuse the original join's reference.
-    assert.match(panel, /const attemptId = useAttemptId\(checkoutSession\)/);
+    assert.match(memberCheckout, /const attemptId = useAttemptId\(session\)/);
     assert.match(appHub, /const memberAttempt = useAttemptId\(memberSession\)/);
   });
 
   test('and a finished checkout starts a new one — including after a decline', () => {
-    assert.match(panel, /const endCheckout = \(\) => setCheckoutSession\(\(n\) => n \+ 1\)/);
-    // Every purchase path ends its checkout: join, renew and wallet.
-    assert.equal((panel.match(/endCheckout\(\);/g) ?? []).length, 3);
+    // Opening the checkout bumps the session, so a second deliberate purchase
+    // of the same tier — a renewal — is a new attempt.
+    assert.match(memberCheckout, /setSession\(\(n\) => n \+ 1\)/);
+    assert.match(memberCheckout, /\}, \[open, tier\.id, hasSavedCard\]\)/);
     const appFn = appHub.slice(appHub.indexOf('const runMembershipPayment'));
     assert.match(appFn, /\} catch \(e: any\) \{[\s\S]*?Payment failed[\s\S]*?\} finally \{[\s\S]*?setMemberSession\(n => n \+ 1\)/);
   });

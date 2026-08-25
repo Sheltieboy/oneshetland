@@ -27,7 +27,7 @@ import {
   fetchHub, fetchMyMembership, joinHub, leaveHub, fetchMemberCount, fetchHubNotices,
   fetchHubMembershipTypes, startHubMembershipPayment, confirmHubMembership,
   fetchHubDocuments, fetchActiveCampaign,
-  formatMembershipPrice, HUB_MEMBERSHIP_FEE_PENCE,
+  formatMembershipPrice, fetchMembershipQuote, type MembershipQuote,
   HUB_TYPE_LABELS, HUB_TYPE_ICONS,
   type Hub, type HubMember, type HubNotice, type HubMembershipType, type HubDocument, type HubCampaign, campaignAcceptsDonations } from '@/lib/hubs-api';
 import { fetchHubEvents, type OsEvent } from '@/lib/events-api';
@@ -65,12 +65,23 @@ export default function HubDetailScreen() {
   const [events, setEvents] = useState<OsEvent[]>([]);
   const [types, setTypes] = useState<HubMembershipType[]>([]);
   const [payingType, setPayingType] = useState<HubMembershipType | null>(null);
+  useEffect(() => {
+    if (!payingType) { setQuote(null); return; }
+    let live = true;
+    fetchMembershipQuote(payingType.id)
+      .then(q => { if (live) setQuote(q); })
+      .catch(() => { if (live) setQuote(null); });
+    return () => { live = false; };
+  }, [payingType]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   // One reference per deliberate membership checkout. Keyed on a session rather
   // than the tier, because RENEWING is buying the same tier again and would
   // otherwise reuse the original join's reference — and its PaymentIntent.
   // Bumped when a checkout finishes, after any SCA, and on failure too.
+  // The real cost, from the server. The sheet used to show a mirrored
+  // HUB_MEMBERSHIP_FEE_PENCE = 50 — a £10.50 total against a £10.95 charge.
+  const [quote, setQuote] = useState<MembershipQuote | null>(null);
   const [memberSession, setMemberSession] = useState(0);
   const memberAttempt = useAttemptId(memberSession);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -243,7 +254,7 @@ export default function HubDetailScreen() {
             {membership?.member_no && membership?.paid_until ? '  ·  ' : ''}
             {membership?.paid_until
               ? (new Date(membership.paid_until) > new Date()
-                  ? `Renews ${fmtDate(membership.paid_until)}`
+                  ? `Valid until ${fmtDate(membership.paid_until)}`
                   : `Expired ${fmtDate(membership.paid_until)}`)
               : ''}
           </Text>
@@ -568,13 +579,15 @@ export default function HubDetailScreen() {
         visible={payingType != null}
         title="Confirm membership"
         itemName={payingType ? `${hub.name} — ${payingType.name}` : ''}
-        lineItems={payingType ? [
-          { label: `${payingType.name} membership`, amountPence: payingType.price_pence },
-          { label: 'Booking fee', amountPence: HUB_MEMBERSHIP_FEE_PENCE, muted: true },
+        lineItems={quote ? [
+          { label: `${quote.tier_name} membership`, amountPence: quote.face_pence },
+          ...(quote.fee_pence > 0
+            ? [{ label: 'OneShetland fee', amountPence: quote.fee_pence, muted: true }]
+            : []),
         ] : []}
-        totalPence={payingType ? payingType.price_pence + HUB_MEMBERSHIP_FEE_PENCE : 0}
+        totalPence={quote?.total_pence ?? 0}
         payingWith="your saved card"
-        policy={{ text: `Membership ${payingType?.period === 'once' ? 'is a one-off payment' : `renews ${payingType?.period === 'month' ? 'monthly' : 'yearly'}`}. Paid memberships are non-refundable.` }}
+        policy={{ text: `Membership ${payingType?.period === 'once' ? 'is a one-off payment' : `lasts ${payingType?.period === 'month' ? 'a month' : 'a year'} and does not renew automatically`}. Paid memberships are non-refundable.` }}
         loading={acting}
         onConfirm={() => { const t = payingType; setPayingType(null); if (t) runMembershipPayment(t); }}
         onCancel={() => setPayingType(null)}

@@ -116,7 +116,8 @@ export default function MyMembershipsScreen() {
                     <Text style={styles.footValue}>{m.member_no ? `#${m.member_no}` : '—'}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.footLabel}>{m.paid_until ? (valid ? 'Renews' : 'Expired') : 'Valid'}</Text>
+                    {/* Membership does not auto-renew, so it is not 'Renews'. */}
+                    <Text style={styles.footLabel}>{m.paid_until ? (valid ? 'Valid until' : 'Expired') : 'Valid'}</Text>
                     <Text style={styles.footValue}>{m.paid_until ? fmtDate(m.paid_until) : 'No expiry'}</Text>
                   </View>
                 </View>
