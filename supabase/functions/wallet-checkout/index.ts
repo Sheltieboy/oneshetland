@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { debitAndTransfer, walletReverse, claimAttempt, settleAttempt,
-         attemptFingerprint, attemptBlockedResponse } from '../_shared/wallet-ledger.ts';
+         attemptFingerprint, attemptBlockedResponse, selfPaymentBlock } from '../_shared/wallet-ledger.ts';
 
 const STRIPE_API_VERSION = '2023-10-16';
 const corsHeaders = {
@@ -128,6 +128,14 @@ async function hubDonation(svc: any, userId: string, body: any, rid: string): Pr
     ga = { ...giftAidIn, postcode: pc };
   }
 
+
+  // Money must not go back to the person paying. Checked on the DESTINATION
+  // ACCOUNT — a connected account can belong to more than one resource — and
+  // BEFORE the attempt is claimed, so a refusal costs nothing and the same
+  // reference works for a legitimate recipient.
+  const selfPayDon = await selfPaymentBlock(svc, userId, hub.stripe_account_id);
+  if (selfPayDon) return json(selfPayDon.body, selfPayDon.status);
+
   // Claim the attempt, bound to what it is FOR. The fingerprint uses the
   // resolved hub and the validated amount, so this reference cannot later be
   // replayed against a different campaign or a different sum.
@@ -214,6 +222,14 @@ async function hubMembership(svc: any, userId: string, body: any, rid: string): 
 
   // The customer is debited price + platform fee; only the price is transferred
   // to the hub. The fee stays on the platform, so the two amounts differ.
+
+  // Money must not go back to the person paying. Checked on the DESTINATION
+  // ACCOUNT — a connected account can belong to more than one resource — and
+  // BEFORE the attempt is claimed, so a refusal costs nothing and the same
+  // reference works for a legitimate recipient.
+  const selfPayMem = await selfPaymentBlock(svc, userId, hub.stripe_account_id);
+  if (selfPayMem) return json(selfPayMem.body, selfPayMem.status);
+
   const attempt = await claimAttempt(svc, rid, userId,
     await attemptFingerprint([userId, 'hub_membership', hub.id, t.id, debitTotal]));
   const blocked = attemptBlockedResponse(attempt);
@@ -273,6 +289,14 @@ async function unitPurchase(svc: any, userId: string, body: any, rid: string): P
 
   const fee = Math.round(item.price_pence * 0.05); // 5% platform fee, matching the card flow
   const toBusiness = item.price_pence - fee;
+
+
+  // Money must not go back to the person paying. Checked on the DESTINATION
+  // ACCOUNT — a connected account can belong to more than one resource — and
+  // BEFORE the attempt is claimed, so a refusal costs nothing and the same
+  // reference works for a legitimate recipient.
+  const selfPayUnit = await selfPaymentBlock(svc, userId, biz.stripe_account_id);
+  if (selfPayUnit) return json(selfPayUnit.body, selfPayUnit.status);
 
   const attempt = await claimAttempt(svc, rid, userId,
     await attemptFingerprint([userId, 'unit_purchase', biz.id, item.id, item.price_pence]));

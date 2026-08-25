@@ -13,7 +13,7 @@
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from './commission.ts';
-import { debitAndTransfer } from './wallet-ledger.ts';
+import { debitAndTransfer, selfPaymentBlock } from './wallet-ledger.ts';
 import { getCommissionConfig } from './commission-config.ts';
 import { sendUserPush } from './send-push.ts';
 
@@ -35,7 +35,9 @@ export type WalletPayResult =
   // 'ineligible' is a pre-flight refusal — nothing was attempted, no wallet
   // transaction exists, and the attempt is terminally failed rather than
   // resumable.
-  | { ok: false; status: number; error: string; reason: 'ineligible' | 'insufficient' | 'rejected' | 'unresolved'; transactionId?: string };
+  // 'blocked' is a wallet under refund or chargeback recovery — the debit
+  // primitive refuses before anything is claimed.
+  | { ok: false; status: number; error: string; reason: 'ineligible' | 'insufficient' | 'blocked' | 'rejected' | 'unresolved'; transactionId?: string };
 
 /**
  * Debit the customer's wallet and pay the business, atomically and idempotently.
@@ -50,6 +52,13 @@ export async function executeWalletPayment(
   const { userId, business, amountPence } = args;
 
   if (business.owner_id === userId) return { ok: false, status: 403, error: "Can't pay yourself", reason: 'ineligible' };
+
+  // The same question the wallet-checkout routes ask, and a broader one than
+  // the line above: a connected account can be attached to more than one
+  // resource, so owning THIS business is not the only way to end up with the
+  // money. One definition, asked of the destination account.
+  const selfPay = await selfPaymentBlock(svc, userId, business.stripe_account_id);
+  if (selfPay) return { ok: false, status: 403, error: selfPay.body.error, reason: 'ineligible' };
   if (!business.accepts_wallet) return { ok: false, status: 400, error: "This business doesn't accept wallet payments yet", reason: 'ineligible' };
   if (!business.stripe_account_id || !business.payout_enabled) {
     return { ok: false, status: 400, error: "Business hasn't finished Stripe onboarding", reason: 'ineligible' };
