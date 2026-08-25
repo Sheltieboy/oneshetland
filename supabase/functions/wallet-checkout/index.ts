@@ -265,6 +265,7 @@ async function hubMembership(svc: any, userId: string, body: any, rid: string): 
   const { data: result, error: rpcErr } = await svc.rpc('activate_hub_membership', {
     p_hub: hub.id, p_user: userId, p_type: t.id, p_period: t.period,
     p_payment_pence: t.price_pence, p_pi: `wallet_${paid.transactionId}`,
+    p_fee_pence: flatFee,
   });
   if (rpcErr) {
     await settleAttempt(svc, rid, 'reversed', paid.transactionId);

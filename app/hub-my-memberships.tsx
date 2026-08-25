@@ -21,9 +21,10 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useAuth } from '@/context/AuthContext';
 import {
-  fetchMyHubMemberships, isMembershipActive, formatMembershipPrice,
+  fetchMyHubMemberships, fetchMyEndedMemberships, fetchMyMembershipPurchases,
+  isMembershipActive, retainsPaidTime, formatMembershipPrice,
   HUB_TYPE_ICONS,
-  type HubMember,
+  type HubMember, type MembershipPurchase,
 } from '@/lib/hubs-api';
 
 const S = SECTIONS.community;
@@ -39,14 +40,23 @@ export default function MyMembershipsScreen() {
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
   const [memberships, setMemberships] = useState<HubMember[]>([]);
+  const [ended, setEnded] = useState<HubMember[]>([]);
+  const [purchases, setPurchases] = useState<MembershipPurchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!profile?.id) { setLoading(false); return; }
-    try { setMemberships(await fetchMyHubMemberships(profile.id)); setLoadError(false); }
-    catch { setMemberships([]); setLoadError(true); }
+    try {
+      const [mine, gone, paid] = await Promise.all([
+        fetchMyHubMemberships(profile.id),
+        fetchMyEndedMemberships(profile.id),
+        fetchMyMembershipPurchases(profile.id),
+      ]);
+      setMemberships(mine); setEnded(gone); setPurchases(paid); setLoadError(false);
+    }
+    catch { setMemberships([]); setEnded([]); setPurchases([]); setLoadError(true); }
     finally { setLoading(false); }
   }, [profile?.id]);
 
@@ -125,14 +135,79 @@ export default function MyMembershipsScreen() {
             </TouchableOpacity>
           );
         })}
+        {ended.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Memberships you have left</Text>
+            {ended.map((m) => {
+              const restorable = retainsPaidTime(m);
+              return (
+                <TouchableOpacity key={m.id} activeOpacity={0.85} style={styles.row}
+                  onPress={() => m.hub_id && router.push(`/hubs/${m.hub_id}`)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>{m.hub?.name ?? 'Hub'}</Text>
+                    <Text style={styles.rowMeta}>
+                      {m.membership_type?.name ? `${m.membership_type.name}  ·  ` : ''}
+                      {m.status === 'removed' ? 'Removed by the hub' : 'You left'}
+                      {m.ended_at ? ` ${fmtDate(m.ended_at)}` : ''}
+                    </Text>
+                    {restorable ? (
+                      <Text style={styles.rowGood}>
+                        Still paid up{m.paid_until ? ` until ${fmtDate(m.paid_until)}` : ' for life'} — rejoining is free
+                      </Text>
+                    ) : null}
+                  </View>
+                  {restorable ? <FontAwesome5 name="undo" size={13} color={S.color} solid /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {purchases.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Membership payments</Text>
+            {/* A financial record, not a list of current memberships: these
+                stay whether or not the membership is still held. */}
+            {purchases.map((p) => (
+              <View key={p.id} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{p.hub_name}</Text>
+                  <Text style={styles.rowMeta}>
+                    {p.tier_name}  ·  {fmtDate(p.occurred_at)}  ·  {p.payment_method === 'wallet' ? 'Wallet' : 'Card'}
+                  </Text>
+                  <Text style={styles.rowMeta}>
+                    {p.paid_until_after ? `Covered until ${fmtDate(p.paid_until_after)}` : 'Lifetime membership'}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.rowAmount}>{gbp(p.total_pence ?? p.face_pence)}</Text>
+                  <Text style={styles.rowMeta}>
+                    {p.fee_pence !== null ? `${gbp(p.face_pence)} + ${gbp(p.fee_pence)} fee` : `Membership ${gbp(p.face_pence)}`}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </ScreenScaffold>
   );
 }
 
+const gbp = (pence: number) => `£${(pence / 100).toFixed(2).replace(/\.00$/, '')}`;
+
 const styles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.md },
+
+  section: { gap: spacing.sm, marginTop: spacing.md },
+  sectionTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.cardBackground, borderRadius: radius.lg, padding: spacing.md },
+  rowTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
+  rowMeta: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  rowGood: { fontSize: fontSize.xs, fontWeight: '700', color: '#047857', marginTop: 3 },
+  rowAmount: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
 
   cardShadow: { borderRadius: radius.xl, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
   card: { borderRadius: radius.xl, padding: spacing.lg, gap: spacing.md },

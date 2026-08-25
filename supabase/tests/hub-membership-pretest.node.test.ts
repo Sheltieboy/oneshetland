@@ -137,8 +137,8 @@ begin
 
   -- ── grants ────────────────────────────────────────────────────────────
   insert into r select 'activate_client_exec',
-    case when has_function_privilege('anon','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text)','execute')
-           or has_function_privilege('authenticated','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text)','execute')
+    case when has_function_privilege('anon','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer)','execute')
+           or has_function_privilege('authenticated','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer)','execute')
          then 'CALLABLE' else 'none' end;
   insert into r select 'destination_fn_client_exec',
     case when has_function_privilege('anon','public.wallet_destination_self_controlled(uuid,text)','execute')

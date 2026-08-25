@@ -125,3 +125,27 @@ verify_jwt = false
 
 [functions.meter-bookings]
 verify_jwt = true
+
+# These five take money or grant an entitlement on behalf of the signed-in user
+# and each re-derives that user from the Authorization header. Gateway
+# verification is the outer layer, not the only one — but it must stay on.
+#
+# Pinned explicitly after a deploy run that passed --no-verify-jwt to all of
+# them at once and silently made them publicly reachable. Redeploying without
+# the flag did NOT put it back: the CLI keeps whatever is already set unless
+# config.toml says otherwise, so the intent has to be written down here.
+
+[functions.confirm-hub-membership]
+verify_jwt = true
+
+[functions.wallet-checkout]
+verify_jwt = true
+
+[functions.confirm-boost]
+verify_jwt = true
+
+[functions.create-product-order-intent]
+verify_jwt = true
+
+[functions.confirm-event-tickets]
+verify_jwt = true

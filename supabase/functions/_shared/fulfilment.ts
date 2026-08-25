@@ -360,6 +360,7 @@ export async function fulfilHubMembership(svc: SupabaseClient, pi: FulfilPI): Pr
     p_period:        pi.metadata.period,
     p_payment_pence: parseInt(pi.metadata.face_pence ?? '0', 10) || 0,
     p_pi:            pi.id,
+    p_fee_pence:     parseInt(pi.metadata.fee_pence ?? '', 10) || null,
   });
   if (rpcErr) {
     if ((rpcErr as { code?: string }).code === '23505') return already('activated');

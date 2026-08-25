@@ -73,6 +73,9 @@ serve(async (req) => {
       p_period:        pi.metadata.period,
       p_payment_pence: parseInt(pi.metadata.face_pence ?? '0', 10) || 0,
       p_pi:            payment_intent_id,
+      // The fee actually charged, from the intent itself — so the receipt
+      // records what this customer paid, not what the fee happens to be today.
+      p_fee_pence:     parseInt(pi.metadata.fee_pence ?? '', 10) || null,
     });
     if (rpcErr) throw rpcErr;
 

@@ -15,7 +15,7 @@ export type HubType =
   | 'society' | 'volunteer' | 'arts' | 'community' | 'other';
 
 export type HubRole   = 'member' | 'committee' | 'owner';
-export type HubStatus = 'pending' | 'active' | 'rejected' | 'left';
+export type HubStatus = 'pending' | 'active' | 'rejected' | 'left' | 'removed';
 export type JoinMode  = 'open' | 'approval';
 export type NoticeVisibility = 'public' | 'members' | 'committee';
 
@@ -105,6 +105,7 @@ export interface HubMember {
   paid_until?:               string | null;   // null = free / no expiry
   last_payment_pence?:       number | null;
   stripe_payment_intent_id?: string | null;
+  ended_at?:                 string | null;   // when a left/removed membership ended
   // joined
   profile?:         { full_name: string | null; avatar_url: string | null } | null;
   membership_type?: Pick<HubMembershipType, 'id' | 'name' | 'price_pence' | 'period'> | null;
@@ -250,12 +251,25 @@ export async function fetchMyMembership(hubId: string, userId: string): Promise<
  * Paid tiers go through startHubMembershipPayment instead.
  */
 export async function joinHub(hubId: string, userId: string, membershipTypeId?: string | null): Promise<HubMember> {
+  // Someone who has been here before still has their row — it now says 'left'
+  // rather than being deleted, because it is also their receipt. The server
+  // decides what restoring it costs.
+  const existing = await fetchMyMembership(hubId, userId);
+  if (existing) {
+    const res = await rejoinHub(hubId, membershipTypeId ?? null);
+    if (!res.rejoined && res.reason === 'payment_required') {
+      throw new Error('Your membership has run out — please choose a tier to renew.');
+    }
+    const back = await fetchMyMembership(hubId, userId);
+    if (back) {
+      if (back.status === 'pending') notifyHub('join_request', hubId, userId);
+      return back;
+    }
+  }
+
   const { data, error } = await supabase
     .from('hub_members')
-    .upsert(
-      { hub_id: hubId, user_id: userId, role: 'member', membership_type_id: membershipTypeId ?? null },
-      { onConflict: 'hub_id,user_id' },
-    )
+    .insert({ hub_id: hubId, user_id: userId, role: 'member', membership_type_id: membershipTypeId ?? null })
     .select('*')
     .single();
   if (error) throw error;
@@ -351,13 +365,31 @@ export async function confirmHubMembership(
   return data;
 }
 
-export async function leaveHub(hubId: string, userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('hub_members')
-    .delete()
-    .eq('hub_id', hubId)
-    .eq('user_id', userId);
+/**
+ * Leave a hub. The membership ends but is not erased: what was paid, until
+ * when, and the payment it came from all stay on the row, so the receipt
+ * survives and coming back inside the paid period costs nothing.
+ */
+export async function leaveHub(hubId: string, _userId: string): Promise<void> {
+  const { error } = await supabase.rpc('hub_leave', { p_hub: hubId });
   if (error) throw error;
+}
+
+export interface RejoinResult {
+  rejoined: boolean;
+  reason?: string;
+  charged?: boolean;
+  paid_until?: string | null;
+}
+
+/**
+ * Come back to a hub you left. Paid time already bought is honoured to its
+ * original expiry — no new payment intent, no wallet debit, no extension.
+ */
+export async function rejoinHub(hubId: string, membershipTypeId?: string | null): Promise<RejoinResult> {
+  const { data, error } = await supabase.rpc('hub_rejoin', { p_hub: hubId, p_type: membershipTypeId ?? null });
+  if (error) throw error;
+  return (data ?? { rejoined: false }) as RejoinResult;
 }
 
 /** A user's own hub memberships (for the digital member-card list in My Wallet). */
@@ -417,6 +449,61 @@ export async function rejectMember(memberId: string): Promise<void> {
 export async function setMemberRole(memberId: string, role: HubRole): Promise<void> {
   const { error } = await supabase.from('hub_members').update({ role }).eq('id', memberId);
   if (error) throw error;
+}
+
+export interface MembershipPurchase {
+  id:                 string;
+  hub_id:             string | null;
+  hub_name:           string;
+  tier_name:          string;
+  period:             string;
+  face_pence:         number;
+  fee_pence:          number | null;
+  total_pence:        number | null;
+  payment_method:     'card' | 'wallet' | 'unknown';
+  paid_until_after:   string | null;
+  source:             'live' | 'backfill';
+  occurred_at:        string;
+}
+
+const PURCHASE_COLUMNS =
+  'id, hub_id, hub_name, tier_name, period, face_pence, fee_pence, total_pence, payment_method, paid_until_after, source, occurred_at';
+
+/**
+ * Every membership this user has paid for, newest first.
+ *
+ * A financial record, not a list of current memberships: it survives leaving,
+ * renewing and the tier being deleted. Rows marked 'backfill' are real payments
+ * reconstructed from the membership row that held them, so the fee charged at
+ * the time is not known and is not invented.
+ */
+export async function fetchMyMembershipPurchases(userId: string): Promise<MembershipPurchase[]> {
+  const { data, error } = await supabase
+    .from('hub_membership_purchases')
+    .select(PURCHASE_COLUMNS)
+    .eq('user_id', userId)
+    .order('occurred_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as MembershipPurchase[];
+}
+
+/** Memberships this user no longer holds — some still have paid time on them. */
+export async function fetchMyEndedMemberships(userId: string): Promise<HubMember[]> {
+  const { data, error } = await supabase
+    .from('hub_members')
+    .select('*, hub:hubs ( id, name, brand_color, logo_url, type ), membership_type:hub_membership_types ( id, name, price_pence, period )')
+    .eq('user_id', userId)
+    .in('status', ['left', 'removed'])
+    .order('ended_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as HubMember[];
+}
+
+/** True when a left membership still has paid time and can be restored free. */
+export function retainsPaidTime(m: Pick<HubMember, 'status' | 'paid_until' | 'last_payment_pence'>): boolean {
+  if (m.status !== 'left') return false;
+  if (m.paid_until) return new Date(m.paid_until) > new Date();
+  return (m.last_payment_pence ?? 0) > 0;
 }
 
 // ── Notices ──────────────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
 import {
-  fetchHub, fetchMyMembership, joinHub, leaveHub, fetchMemberCount, fetchHubNotices,
+  fetchHub, fetchMyMembership, joinHub, leaveHub, rejoinHub, fetchMemberCount, fetchHubNotices,
   fetchHubMembershipTypes, startHubMembershipPayment, confirmHubMembership,
   fetchHubDocuments, fetchActiveCampaign,
   formatMembershipPrice, fetchMembershipQuote, type MembershipQuote,
@@ -121,6 +121,13 @@ export default function HubDetailScreen() {
   const isExpired = !isAdmin && membership?.status === 'active' && !!membership?.paid_until && new Date(membership.paid_until) <= new Date();
   const isMember  = membership?.status === 'active' && !isExpired;
   const isPending = membership?.status === 'pending';
+  // Left, but the period they paid for is still running. Coming back is theirs
+  // already: no checkout, no charge, and the same expiry as before.
+  const retainsPaid = membership?.status === 'left' && (
+    membership.paid_until
+      ? new Date(membership.paid_until) > new Date()
+      : (membership.last_payment_pence ?? 0) > 0
+  );
   const myType = membership?.membership_type_id ? types.find(t => t.id === membership.membership_type_id) ?? null : null;
 
   // Free join — optionally records the chosen free tier.
@@ -202,18 +209,33 @@ export default function HubDetailScreen() {
     }
   };
 
+  const onRejoin = async () => {
+    if (!hub || !profile) return;
+    setActing(true);
+    try {
+      const res = await rejoinHub(hub.id);
+      if (!res.rejoined) throw new Error('That membership can no longer be restored.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      load();
+    } catch (e) {
+      alert({ title: 'Could not rejoin', message: e instanceof Error ? e.message : 'Please try again.' });
+    } finally { setActing(false); }
+  };
+
   const onLeave = () => {
     if (!hub || !profile) return;
     alert({
       title: 'Leave hub?',
-      message: `Leave ${hub.name}? You can re-join any time.`,
+      message: retainsPaid || isMember
+        ? `Leave ${hub.name}? Anything you have paid for stays yours — you can come back inside the period you bought without paying again.`
+        : `Leave ${hub.name}? You can re-join any time.`,
       actions: [
         { label: 'Cancel', style: 'cancel' },
         {
           label: 'Leave', style: 'destructive',
           onPress: async () => {
             setActing(true);
-            try { await leaveHub(hub.id, profile.id); setMembership(null); load(); }
+            try { await leaveHub(hub.id, profile.id); load(); }
             finally { setActing(false); }
           },
         },
@@ -289,6 +311,29 @@ export default function HubDetailScreen() {
       <TouchableOpacity onPress={onLeave} hitSlop={8} style={{ marginTop: 12, alignSelf: 'flex-start' }}>
         <Text style={styles.leaveText}>Leave hub</Text>
       </TouchableOpacity>
+    </View>
+  ) : retainsPaid ? (
+    <View>
+      <View style={[styles.statePill, { backgroundColor: accent + '18', alignSelf: 'flex-start' }]}>
+        <FontAwesome5 name="undo" size={11} color={accent} solid />
+        <Text style={[styles.statePillText, { color: accent }]}>You left this hub</Text>
+      </View>
+      <Text style={[styles.memberMeta, { marginTop: 8 }]}>
+        {myType ? `${myType.name} membership ` : 'Membership '}
+        {membership?.paid_until ? `still paid up until ${fmtDate(membership.paid_until)}` : 'paid for life'}
+      </Text>
+      <TouchableOpacity style={[styles.joinBtn, { backgroundColor: accent, marginTop: spacing.md }]}
+        onPress={onRejoin} disabled={acting} activeOpacity={0.85}>
+        {acting ? <ActivityIndicator color="#fff" /> : (
+          <>
+            <FontAwesome5 name="undo" size={12} color="#fff" solid />
+            <Text style={styles.joinBtnText}>Rejoin — nothing to pay</Text>
+          </>
+        )}
+      </TouchableOpacity>
+      <Text style={[styles.memberMeta, { marginTop: 8 }]}>
+        Rejoining does not extend your membership or start a new period.
+      </Text>
     </View>
   ) : isPending ? (
     <View style={[styles.statePill, { backgroundColor: '#FEF3C7' }]}>
