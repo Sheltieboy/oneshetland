@@ -67,6 +67,12 @@ export default function HubDetailScreen() {
   const [payingType, setPayingType] = useState<HubMembershipType | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  // One reference per deliberate membership checkout. Keyed on a session rather
+  // than the tier, because RENEWING is buying the same tier again and would
+  // otherwise reuse the original join's reference — and its PaymentIntent.
+  // Bumped when a checkout finishes, after any SCA, and on failure too.
+  const [memberSession, setMemberSession] = useState(0);
+  const memberAttempt = useAttemptId(memberSession);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   // In-page success state. This screen isn't a dedicated modal, and a Modal-based
   // alert (the app-root BrandedAlert) can't present over a modal — and we mustn't
@@ -158,7 +164,7 @@ export default function HubDetailScreen() {
     setActing(true);
     try {
       const useSaved = !!profile.has_payment_method;
-      const start = await startHubMembershipPayment(type.id, useSaved);
+      const start = await startHubMembershipPayment(type.id, memberAttempt(), useSaved);
       if (!start.charged) {
         if (!start.clientSecret) throw new Error('Could not start payment.');
         const initRes = await initPaymentSheet({
@@ -179,7 +185,10 @@ export default function HubDetailScreen() {
       load();
     } catch (e: any) {
       alert({ title: 'Payment failed', message: e?.message ?? 'Please try again.' });
-    } finally { setActing(false); }
+    } finally {
+      setActing(false);
+      setMemberSession(n => n + 1);
+    }
   };
 
   const onLeave = () => {

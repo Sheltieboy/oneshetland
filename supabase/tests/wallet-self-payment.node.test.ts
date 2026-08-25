@@ -55,6 +55,11 @@ const read = (p: string) => readFileSync(join(REPO_ROOT, p), 'utf8');
 
 const checkout = read('supabase/functions/wallet-checkout/index.ts');
 const ledgerHelper = read('supabase/functions/_shared/wallet-ledger.ts');
+// The guard was lifted out of wallet-ledger so the CARD membership charge could
+// use the same rule without importing the wallet ledger. wallet-ledger
+// re-exports it, so every wallet caller is unchanged and there is still exactly
+// one definition — asserted below.
+const selfPayModule = read('supabase/functions/_shared/self-payment.ts');
 const payAtTill = read('supabase/functions/_shared/wallet-pay.ts');
 const migration = read('supabase/migrations/20260826200000_wallet_self_payment_guard.sql');
 
@@ -188,7 +193,7 @@ describe('the guard asks who ends up with the money', () => {
   test('a checkout with no destination is never treated as self-payment', () => {
     assert.equal(s().no_destination, 'allowed');
     assert.equal(s().empty_destination, 'allowed');
-    assert.match(ledgerHelper, /if \(!destinationAccount\) return null;/);
+    assert.match(selfPayModule, /if \(!destinationAccount\) return null;/);
   });
 
   test('the function is service-role only, with search_path pinned', () => {
@@ -263,9 +268,12 @@ describe('pay at till keeps its guard and gains the broader one', () => {
   });
 
   test('one definition, not two', () => {
-    // Both routes call the same helper, which calls the same SQL function.
-    assert.match(ledgerHelper, /\.rpc\('wallet_destination_self_controlled'/);
-    assert.equal((ledgerHelper.match(/wallet_destination_self_controlled/g) ?? []).length, 1);
+    // One implementation, in _shared/self-payment.ts; wallet-ledger only
+    // re-exports it so its existing callers did not have to change.
+    assert.match(selfPayModule, /\.rpc\('wallet_destination_self_controlled'/);
+    assert.equal((selfPayModule.match(/wallet_destination_self_controlled/g) ?? []).length, 1);
+    assert.match(ledgerHelper, /export \{ selfPaymentBlock \} from '\.\/self-payment\.ts';/);
+    assert.ok(!/async function selfPaymentBlock/.test(ledgerHelper));
   });
 });
 
@@ -273,16 +281,16 @@ describe('pay at till keeps its guard and gains the broader one', () => {
 
 describe('a refusal is understandable and free', () => {
   test('the message says what happened without naming fraud or Stripe', () => {
-    assert.match(ledgerHelper, /You can't use your OneShetland wallet to pay a business or hub you control\./);
-    const helper = ledgerHelper.slice(ledgerHelper.indexOf('export async function selfPaymentBlock'));
+    assert.match(selfPayModule, /You can't use your OneShetland wallet to pay a business or hub you control\./);
+    const helper = selfPayModule.slice(selfPayModule.indexOf('export async function selfPaymentBlock'));
     for (const leak of ['acct_', 'stripe_account_id', 'fraud', 'chargeback']) {
       assert.ok(!code(helper).includes(leak), `the refusal exposes ${leak}`);
     }
   });
 
   test('it is a 403 with a machine-readable reason', () => {
-    assert.match(ledgerHelper, /status: 403/);
-    assert.match(ledgerHelper, /reason: 'self_payment'/);
+    assert.match(selfPayModule, /status: 403/);
+    assert.match(selfPayModule, /reason: 'self_payment'/);
   });
 
   test('no Stripe account id is ever sent to a client', () => {

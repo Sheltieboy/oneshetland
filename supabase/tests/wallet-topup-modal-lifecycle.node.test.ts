@@ -250,7 +250,10 @@ describe('the payment architecture is untouched', () => {
   test('refund, dispute and self-payment guards are all still in place', () => {
     const ledger = read('supabase/functions/_shared/wallet-ledger.ts');
     assert.match(ledger, /reason: 'blocked'/);
-    assert.match(ledger, /\.rpc\('wallet_destination_self_controlled'/);
+    // Re-exported from _shared/self-payment.ts, where the one definition lives
+    // so the card membership charge can use it without the wallet ledger.
+    assert.match(ledger, /export \{ selfPaymentBlock \} from '\.\/self-payment\.ts';/);
+    assert.match(read('supabase/functions/_shared/self-payment.ts'), /\.rpc\('wallet_destination_self_controlled'/);
     assert.match(read('supabase/functions/wallet-checkout/index.ts'), /selfPaymentBlock\(svc, userId, hub\.stripe_account_id\)/);
   });
 

@@ -5,6 +5,7 @@ import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -55,7 +56,10 @@ async function createPaymentIntent(params: Record<string, string>, idempotencyKe
  *   use_saved_card = true  → off-session charge → { charged, payment_intent_id }
  *   use_saved_card = false → { clientSecret, payment_intent_id } for PaymentSheet
  *
- * Body: { membership_type_id: string, use_saved_card?: boolean }
+ * Body: { membership_type_id: string, use_saved_card?: boolean, client_request_id: string }
+ *
+ * client_request_id is REQUIRED and is idempotency only. A hub owner cannot buy
+ * membership of a hub whose payout account they control.
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -85,8 +89,23 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { membership_type_id, use_saved_card = false } = await req.json();
+    const { membership_type_id, use_saved_card = false, client_request_id = null } = await req.json();
     if (!membership_type_id) return json({ error: 'membership_type_id required' }, 400);
+
+    // One deliberate membership checkout = one attempt id, and it goes into the
+    // Stripe idempotency key. Without it the key was `member-<user>-<tier>`,
+    // which Stripe honours for ~24 hours — and renewing a membership is buying
+    // the SAME tier again, so a renewal inside that window came back as the
+    // original PaymentIntent, activation deduplicated on it, and the member was
+    // shown their old expiry as if it had worked. A declined card could not be
+    // retried on that tier for a day either.
+    //
+    // It is an idempotency token ONLY: the price, the tier, the hub, the fee and
+    // the destination are all resolved server-side below.
+    if (typeof client_request_id !== 'string' || client_request_id.trim().length === 0 ||
+        client_request_id.length < 8 || client_request_id.length > 100) {
+      return json({ error: 'client_request_id required' }, 400);
+    }
 
     // Membership type + its hub
     const { data: type } = await svc
@@ -112,6 +131,25 @@ serve(async (req) => {
     // Payout-readiness guard: never sell a membership the hub can't be paid for.
     if (!isDemoHub && !hubHasAccount) {
       return json({ error: 'This hub has not finished setting up payouts yet.' }, 409);
+    }
+
+    // ── Money must not go back to the person paying ──────────────────────
+    //
+    // The wallet route has refused this since Paygate 7; the card route never
+    // did, so a hub owner could buy membership of their own hub and take the
+    // destination charge into their own connected account. Same rule, same
+    // function: asked of the DESTINATION ACCOUNT, because a connected account
+    // can be attached to more than one resource — production already has two
+    // hubs sharing one — so "do they own this hub?" would miss a payment routed
+    // through a sibling.
+    //
+    // Before the fee is computed and before any PaymentIntent exists.
+    const selfPay = await selfPaymentBlock(svc, user.id, hub.stripe_account_id);
+    if (selfPay) {
+      return json({
+        error: "You can't buy membership from a hub whose payout account you control.",
+        reason: 'self_payment',
+      }, 403);
     }
 
     // Flat platform fee (added on top — hub receives the full membership price).
@@ -155,7 +193,7 @@ serve(async (req) => {
       const pi = await createPaymentIntent({
         ...baseParams,
         ...onSessionConfirm(customerId, pmId),
-      }, `member-${user.id}-${type.id}`);
+      }, `member-${user.id}-${type.id}-${client_request_id}`);
       const outcome = classifyIntent(pi);
       if (outcome.kind === 'requires_action') {
         // Middle of a payment: the SDK completes THIS intent, and the webhook
@@ -175,7 +213,7 @@ serve(async (req) => {
     const pi = await createPaymentIntent({
       ...baseParams,
       'automatic_payment_methods[enabled]': 'true',
-    });
+    }, `member-form-${user.id}-${type.id}-${client_request_id}`);
     return json({ clientSecret: pi.client_secret, payment_intent_id: pi.id });
   } catch (err) {
     console.error('[create-hub-membership-intent]', err);

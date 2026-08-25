@@ -281,12 +281,20 @@ export interface MembershipPaymentStart {
 }
 
 /** Start payment for a paid membership tier (off-session if useSavedCard). */
+/**
+ * `attemptId` is the reference for ONE deliberate membership checkout. The
+ * Stripe key used to fall back to `member-<user>-<tier>`, and RENEWING is
+ * buying the same tier again — so a renewal inside Stripe's window came back as
+ * the original PaymentIntent and the member was shown their old expiry as if it
+ * had worked.
+ */
 export async function startHubMembershipPayment(
   membershipTypeId: string,
+  attemptId: string,
   useSavedCard = true,
 ): Promise<MembershipPaymentStart> {
   const { data, error } = await supabase.functions.invoke('create-hub-membership-intent', {
-    body: { membership_type_id: membershipTypeId, use_saved_card: useSavedCard },
+    body: { membership_type_id: membershipTypeId, client_request_id: attemptId, use_saved_card: useSavedCard },
   });
   if (error) {
     let msg = error.message;
