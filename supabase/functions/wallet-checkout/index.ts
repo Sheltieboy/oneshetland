@@ -68,6 +68,17 @@ serve(async (req) => {
   }
 });
 
+/** Why a shift cannot be boosted — same words the card path uses. */
+const BOOST_INELIGIBLE: Record<string, string> = {
+  cancelled:       'This shift has been cancelled, so it cannot be boosted.',
+  completed:       'This shift is complete, so it cannot be boosted.',
+  filled:          'Every position on this shift is filled, so there is nothing to promote.',
+  draft:           'Post this shift before boosting it.',
+  not_open:        'This shift is not open, so it cannot be boosted.',
+  ended:           'This shift has already finished, so boosting it would promote nothing.',
+  already_boosted: 'This shift is already boosted. You can boost it again once that runs out.',
+};
+
 // ── hub_donation ────────────────────────────────────────────────────────────
 async function hubDonation(svc: any, userId: string, body: any, rid: string): Promise<Response> {
   const campaignId = body.campaign_id as string;
@@ -298,9 +309,16 @@ async function shiftBoost(svc: any, userId: string, body: any, rid: string): Pro
   const shiftId = body.shift_id as string;
   if (!shiftId) return json({ error: 'shift_id required' }, 400);
 
-  const { data: shift } = await svc.from('shifts').select('id, employer_id').eq('id', shiftId).maybeSingle();
-  if (!shift) return json({ error: 'Shift not found.' }, 404);
+  // The SAME rule the card path uses, from the same SQL function, judged
+  // against the same database clock. Wallet and card cannot drift apart,
+  // because there is only one definition to drift from.
+  const { data: eligRows, error: eligErr } = await svc.rpc('shift_boost_eligibility', { p_shift: shiftId });
+  if (eligErr) throw eligErr;
+  const shift = Array.isArray(eligRows) ? eligRows[0] : eligRows;
+
+  if (!shift || shift.reason === 'shift_not_found') return json({ error: 'Shift not found.' }, 404);
   if (shift.employer_id !== userId) return json({ error: 'You can only boost your own shifts.' }, 403);
+  if (!shift.eligible) return json({ error: BOOST_INELIGIBLE[shift.reason] ?? 'This shift cannot be boosted.', reason: shift.reason }, 409);
 
   const PRICE = 299;
   // The platform keeps the £2.99, so there is no connected-account transfer —

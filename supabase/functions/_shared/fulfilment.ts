@@ -514,6 +514,94 @@ export async function fulfilProductOrder(svc: SupabaseClient, pi: FulfilPI): Pro
   return { granted: true, note: `order ${orderId} paid + stock committed` };
 }
 
+// ── Shift boost ──────────────────────────────────────────────────────────────
+//
+// The one place a paid shift boost is granted. confirm-boost calls it for the
+// immediate answer the employer is waiting on; the webhook calls it when the
+// browser never came back. Whichever arrives first does the work, the other
+// finds it done — the RPC claims the PaymentIntent and writes boosted_until in
+// a single transaction, so there is no window where one has happened and the
+// other has not.
+//
+// This used to live only in confirm-boost, which made a card-paid boost the
+// one paygate with no recovery: Stripe took £2.99, the tab closed before the
+// confirm call, and the shift was never boosted by anything.
+type ShiftBoostFulfilment = {
+  granted: boolean; already: boolean;
+  boosted_until: string | null; eligible: boolean; reason: string;
+};
+
+export async function fulfilShiftBoost(svc: SupabaseClient, pi: FulfilPI): Promise<FulfilResult> {
+  const shiftId    = pi.metadata.shift_id;
+  const employerId = pi.metadata.employer_id;
+  if (!shiftId || !employerId) return { granted: false, note: 'no shift_id/employer_id' };
+
+  const { data, error } = await svc
+    .rpc('fulfil_shift_boost', { p_pi: pi.id, p_shift: shiftId, p_employer: employerId })
+    .maybeSingle<ShiftBoostFulfilment>();
+  if (error) throw error;
+
+  if (!data || (!data.granted && !data.already)) {
+    // shift_not_found / not_owner. Never a retry-forever loop: nothing was
+    // claimed, and neither condition heals on its own.
+    return { granted: false, note: data?.reason ?? 'boost refused' };
+  }
+  if (data.already) return already('boosted');
+
+  // Workers hear about it once, from whichever path granted it. Notification
+  // failure must not undo a paid boost, so it is caught here rather than thrown.
+  let notified = 0;
+  try {
+    notified = await notifyMatchingWorkers(svc, shiftId, employerId);
+  } catch (e) {
+    console.error('[fulfil:shift_boost] notify failed', e);
+  }
+
+  return done(data.reason === 'boosted_ineligible'
+    ? `boosted (shift no longer eligible), notified ${notified}`
+    : `boosted, notified ${notified}`);
+}
+
+/**
+ * Push the boosted shift to every worker whose shift_alerts match it. Same
+ * matching rules as notify-matching-workers, and the employer never gets their
+ * own blast. Returns how many were actually sent.
+ */
+export async function notifyMatchingWorkers(
+  svc: SupabaseClient, shiftId: string, employerId: string,
+): Promise<number> {
+  const { data: shift } = await svc
+    .from('shifts')
+    .select('id, title, category, urgency, pay_type, pay_amount, location_text')
+    .eq('id', shiftId)
+    .maybeSingle();
+  if (!shift) return 0;
+
+  const { data: alerts } = await svc
+    .from('shift_alerts')
+    .select('user_id, categories, urgency, min_pay')
+    .eq('is_active', true)
+    .neq('user_id', employerId);
+  if (!alerts?.length) return 0;
+
+  const matching = alerts
+    .filter((a: Record<string, any>) =>
+      (a.categories.length === 0 || a.categories.includes(shift.category)) &&
+      (a.urgency.length === 0    || a.urgency.includes(shift.urgency)) &&
+      (!a.min_pay || shift.pay_type !== 'hourly' || (shift.pay_amount ?? 0) >= a.min_pay))
+    .map((a: Record<string, any>) => a.user_id as string);
+  if (!matching.length) return 0;
+
+  const { sent } = await sendUserPushBulk(svc, matching, {
+    module:     'shifts',
+    categoryId: 'shifts.new_match',
+    title:      '⚡ Featured shift for you',
+    body:       `"${shift.title}" — ${shift.location_text}`,
+    data:       { screen: 'shifts', shift_id: shiftId },
+  });
+  return sent;
+}
+
 export async function fulfilByType(svc: SupabaseClient, pi: FulfilPI): Promise<FulfilResult | null> {
   switch (pi.metadata.type) {
     case 'local_wallet_topup': return fulfilWalletTopup(svc, pi);
@@ -523,6 +611,7 @@ export async function fulfilByType(svc: SupabaseClient, pi: FulfilPI): Promise<F
     case 'hub_donation':       return fulfilHubDonation(svc, pi);
     case 'hub_membership':     return fulfilHubMembership(svc, pi);
     case 'product_order':      return fulfilProductOrder(svc, pi);
+    case 'shift_boost':        return fulfilShiftBoost(svc, pi);
     default:                   return null;
   }
 }

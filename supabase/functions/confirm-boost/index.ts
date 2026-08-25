@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendUserPushBulk } from '../_shared/send-push.ts';
+import { fulfilShiftBoost } from '../_shared/fulfilment.ts';
 import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
@@ -11,12 +11,13 @@ const corsHeaders = {
 /**
  * confirm-boost
  *
- * Called immediately after a successful Stripe payment for a shift boost.
- * Sets boosted_until = NOW() + 24 hours, then fires push notifications to
- * all workers whose shift_alerts preferences match this shift.
+ * The fast answer for an employer watching the screen after a successful
+ * Stripe payment. Verifies the PaymentIntent, then hands off to the SHARED
+ * fulfiller the webhook also uses, so both paths converge on one idempotent
+ * operation and a boost lands even if this call never happens.
  *
- * Body: { shift_id: string }
- * Returns: { ok: true, boosted_until: string, notified: number }
+ * Body: { shift_id: string, payment_intent_id: string }
+ * Returns: { ok: true, boosted_until: string | null, already: boolean }
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -60,20 +61,18 @@ serve(async (req) => {
       });
     }
 
-    // Fetch shift details
-    const { data: shift } = await supabase
-      .from('shifts')
-      .select('id, title, category, urgency, pay_type, pay_amount, employer_id, location_text')
-      .eq('id', shift_id)
-      .single();
-
-    if (!shift) {
+    // Cheap existence + ownership answer before spending a Stripe round trip on
+    // a shift that is not this employer's. The authoritative ownership check is
+    // the PaymentIntent metadata below and fulfil_shift_boost's own row check;
+    // this is the one that gives an honest 404/403 instead of a Stripe error.
+    const { data: owned } = await supabase
+      .from('shifts').select('id, employer_id').eq('id', shift_id).maybeSingle();
+    if (!owned) {
       return new Response(JSON.stringify({ error: 'Shift not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    if (shift.employer_id !== user.id) {
+    if (owned.employer_id !== user.id) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -96,71 +95,39 @@ serve(async (req) => {
       });
     }
 
-    // Idempotency: claim this PaymentIntent exactly once. A UNIQUE primary key on
-    // consumed_payment_intents means a replay (double-tap, or re-using the same
-    // payment after the 24h window expires) hits 23505 and is refused here — so a
-    // single £2.99 payment can never yield more than one boost or notification blast.
-    const { error: claimErr } = await supabase
-      .from('consumed_payment_intents')
-      .insert({ payment_intent_id, purpose: 'shift_boost', user_id: user.id });
-    if (claimErr) {
-      if (claimErr.code === '23505') {
-        return new Response(JSON.stringify({ ok: true, notified: 0, already: true }), {
-          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      throw claimErr;
-    }
-
-    // Set boosted_until to 24 hours from now
-    const boostedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await supabase
-      .from('shifts')
-      .update({ boosted_until: boostedUntil })
-      .eq('id', shift_id);
-
-    // Fetch all active shift alerts (excluding the employer)
-    const { data: alerts } = await supabase
-      .from('shift_alerts')
-      .select('user_id, categories, urgency, min_pay')
-      .eq('is_active', true)
-      .neq('user_id', shift.employer_id);
-
-    if (!alerts || alerts.length === 0) {
-      return new Response(JSON.stringify({ ok: true, boosted_until: boostedUntil, notified: 0 }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // JS-side matching (same logic as notify-matching-workers)
-    const matchingUserIds: string[] = [];
-    for (const alert of alerts) {
-      const categoryMatch = alert.categories.length === 0 || alert.categories.includes(shift.category);
-      const urgencyMatch  = alert.urgency.length === 0    || alert.urgency.includes(shift.urgency);
-      const payMatch      = !alert.min_pay || shift.pay_type !== 'hourly' || (shift.pay_amount ?? 0) >= alert.min_pay;
-      if (categoryMatch && urgencyMatch && payMatch) {
-        matchingUserIds.push(alert.user_id);
-      }
-    }
-
-    if (matchingUserIds.length === 0) {
-      return new Response(JSON.stringify({ ok: true, boosted_until: boostedUntil, notified: 0 }), {
-        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Notify matching workers (preference-aware: honours each worker's
-    // shifts toggle + quiet hours, and logs to their inbox).
-    const { sent: notified } = await sendUserPushBulk(supabase, matchingUserIds, {
-      module:     'shifts',
-      categoryId: 'shifts.new_match',
-      title:      '⚡ Featured shift for you',
-      body:       `"${shift.title}" — ${shift.location_text}`,
-      data:       { screen: 'shifts', shift_id },
+    // From here the webhook and this call do exactly the same thing, because
+    // they are the same code. fulfil_shift_boost claims the PaymentIntent and
+    // writes boosted_until in ONE transaction: whichever path arrives first
+    // grants the boost, the second finds `already` and extends nothing, and a
+    // failure rolls the claim back so the other path can still recover it.
+    //
+    // This function is now only the fast answer for the employer who is
+    // watching the screen. It is no longer the only way a paid boost lands.
+    const result = await fulfilShiftBoost(supabase, {
+      id:       payment_intent_id,
+      amount:   (pi.amount as number) ?? 299,
+      metadata: m,
+      status:   pi.status as string,
     });
 
+    if (!result.granted && !result.note.startsWith('already')) {
+      return new Response(JSON.stringify({ error: 'This boost could not be applied.', reason: result.note }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // The employer's screen wants the authoritative expiry, so read it back
+    // rather than recomputing a time the database already decided.
+    const { data: boosted } = await supabase
+      .from('shifts').select('boosted_until').eq('id', shift_id).maybeSingle();
+
     return new Response(
-      JSON.stringify({ ok: true, boosted_until: boostedUntil, notified }),
+      JSON.stringify({
+        ok: true,
+        boosted_until: boosted?.boosted_until ?? null,
+        already: !result.granted,
+        note: result.note,
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
 

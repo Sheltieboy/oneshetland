@@ -11,6 +11,17 @@ const corsHeaders = {
 
 const STRIPE_API_VERSION = '2023-10-16';
 
+/** Why a shift cannot be boosted, said the way an employer would say it. */
+const BOOST_INELIGIBLE: Record<string, string> = {
+  cancelled:       'This shift has been cancelled, so it cannot be boosted.',
+  completed:       'This shift is complete, so it cannot be boosted.',
+  filled:          'Every position on this shift is filled, so there is nothing to promote.',
+  draft:           'Post this shift before boosting it.',
+  not_open:        'This shift is not open, so it cannot be boosted.',
+  ended:           'This shift has already finished, so boosting it would promote nothing.',
+  already_boosted: 'This shift is already boosted. You can boost it again once that runs out.',
+};
+
 function stripePostHeaders(): HeadersInit {
   return {
     'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
@@ -92,21 +103,40 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { shift_id, use_saved_card = false, use_business_card = false, business_id } = await req.json();
+    const { shift_id, use_saved_card = false, use_business_card = false, business_id,
+            client_request_id = null } = await req.json();
     if (!shift_id) {
       return new Response(JSON.stringify({ error: 'shift_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Confirm the caller is the employer for this shift
-    const { data: shift } = await supabase
-      .from('shifts')
-      .select('id, title, employer_id')
-      .eq('id', shift_id)
-      .single();
+    // One deliberate checkout = one attempt id, and it goes into the Stripe
+    // idempotency key. Without it the key was `boost-<user>-<shift>`, which
+    // Stripe honours for ~24 hours — so a declined card was REPLAYED as a
+    // decline for a day, and trying a different card could not even reach the
+    // issuer. A later re-boost of the same shift could come back as the first,
+    // already-succeeded PaymentIntent, which fulfilment then deduped away while
+    // the page said "Shift boosted!".
+    //
+    // Same shape and same validation as create-unit-purchase-intent. It is an
+    // idempotency token ONLY: the buyer, the shift, the £2.99 and the 24 hours
+    // are all read from the auth token and the database, never from this.
+    if (typeof client_request_id !== 'string' || client_request_id.trim().length === 0 ||
+        client_request_id.length < 8 || client_request_id.length > 100) {
+      return new Response(JSON.stringify({ error: 'client_request_id required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    if (!shift) {
+    // Ownership AND eligibility, from the one definition both card and wallet
+    // use. Nothing is charged for a shift no consumer query can return.
+    const { data: eligRows, error: eligErr } = await supabase
+      .rpc('shift_boost_eligibility', { p_shift: shift_id });
+    if (eligErr) throw eligErr;
+    const shift = Array.isArray(eligRows) ? eligRows[0] : eligRows;
+
+    if (!shift || shift.reason === 'shift_not_found') {
       return new Response(JSON.stringify({ error: 'Shift not found' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -114,6 +144,11 @@ serve(async (req) => {
     if (shift.employer_id !== user.id) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!shift.eligible) {
+      return new Response(JSON.stringify({ error: BOOST_INELIGIBLE[shift.reason] ?? 'This shift cannot be boosted.', reason: shift.reason }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -150,7 +185,7 @@ serve(async (req) => {
         ...baseParams,
         'metadata[business_id]': business_id,
         ...onSessionConfirm(biz.business_stripe_customer_id, bizPm),
-      }, `boost-biz-${business_id}-${shift_id}`);
+      }, `boost-biz-${business_id}-${shift_id}-${client_request_id}`);
       const outcome = classifyIntent(pi);
       if (outcome.kind === 'requires_action') {
         // The issuer wants the cardholder to authenticate. That is the middle of a
@@ -196,7 +231,7 @@ serve(async (req) => {
       const paymentIntent = await createPaymentIntent({
         ...baseParams,
         ...onSessionConfirm(customerId, pmId),
-      }, `boost-${user.id}-${shift_id}`);
+      }, `boost-${user.id}-${shift_id}-${client_request_id}`);
 
       const outcome = classifyIntent(paymentIntent);
       if (outcome.kind === 'requires_action') {
@@ -223,7 +258,7 @@ serve(async (req) => {
     const paymentIntent = await createPaymentIntent({
       ...baseParams,
       'automatic_payment_methods[enabled]': 'true',
-    });
+    }, `boost-form-${user.id}-${shift_id}-${client_request_id}`);
 
     return new Response(
       JSON.stringify({ clientSecret: paymentIntent.client_secret }),
