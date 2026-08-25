@@ -584,13 +584,42 @@ export async function fetchHubDonations(hubId: string, giftAidOnly = false): Pro
 export interface DonationStart { charged?: boolean; payment_intent_id: string; clientSecret?: string; }
 
 /** Start a donation payment (off-session if useSavedCard). */
+/**
+ * `attemptId` is the reference for ONE deliberate donation — it goes into the
+ * Stripe idempotency key, so a retry reaches the same PaymentIntent and a second
+ * donation reaches a new one.
+ *
+ * The donor's anonymity, message and Gift Aid go with the INTENT, not the later
+ * confirmation. They used to travel only in the confirm call, so a Stripe
+ * webhook that arrived first recorded the donation without them.
+ */
+/**
+ * Can this campaign still take a donation? Mirrors the server rule in
+ * campaign_donation_eligibility — active, and not past its end date. The
+ * backend is authoritative; this only decides whether to offer the button, so
+ * a finished campaign stops inviting money it will then refuse.
+ */
+export function campaignAcceptsDonations(
+  c: { status?: string | null; ends_at?: string | null } | null | undefined,
+): boolean {
+  if (!c || c.status !== 'active') return false;
+  return !c.ends_at || new Date(c.ends_at).getTime() > Date.now();
+}
+
 export async function startHubDonation(
   campaignId: string,
   amountPence: number,
+  attemptId: string,
   opts: { useSavedCard?: boolean; coverFees?: boolean; message?: string; anonymous?: boolean; giftAid?: GiftAidDeclaration | null } = {},
 ): Promise<DonationStart> {
   const { data, error } = await supabase.functions.invoke('create-hub-donation-intent', {
-    body: { campaign_id: campaignId, amount_pence: amountPence, use_saved_card: opts.useSavedCard ?? true, cover_fees: opts.coverFees ?? false },
+    body: {
+      campaign_id: campaignId, amount_pence: amountPence,
+      client_request_id: attemptId,
+      use_saved_card: opts.useSavedCard ?? true, cover_fees: opts.coverFees ?? false,
+      message: opts.message ?? null, anonymous: opts.anonymous ?? false,
+      gift_aid: opts.giftAid ?? null,
+    },
   });
   if (error) {
     let msg = error.message;
@@ -610,17 +639,14 @@ export async function startHubDonation(
 }
 
 /** Confirm a donation after payment — records it + the Gift Aid declaration. */
-export async function confirmHubDonation(
-  paymentIntentId: string,
-  opts: { message?: string; anonymous?: boolean; giftAid?: GiftAidDeclaration | null } = {},
-): Promise<{ ok: boolean }> {
+/**
+ * The fast answer for a donor watching the screen. It no longer carries their
+ * choices — the server already holds them against the attempt, which is what
+ * lets the webhook fulfil correctly without this call happening at all.
+ */
+export async function confirmHubDonation(paymentIntentId: string): Promise<{ ok: boolean; already?: boolean }> {
   const { data, error } = await supabase.functions.invoke('confirm-hub-donation', {
-    body: {
-      payment_intent_id: paymentIntentId,
-      message: opts.message ?? null,
-      anonymous: opts.anonymous ?? false,
-      gift_aid: opts.giftAid ?? null,
-    },
+    body: { payment_intent_id: paymentIntentId },
   });
   if (error) {
     let msg = error.message;

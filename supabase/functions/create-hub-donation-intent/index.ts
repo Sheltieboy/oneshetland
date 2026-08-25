@@ -5,6 +5,7 @@ import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { normaliseUkPostcode } from '../_shared/uk-postcode.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -13,6 +14,13 @@ const corsHeaders = {
 const STRIPE_API_VERSION = '2023-10-16';
 const MIN_PENCE = 100;       // £1 minimum
 const MAX_PENCE = 1_000_000; // £10,000 cap per donation
+
+/** Why a campaign cannot take a donation, said the way a donor would say it. */
+const CAMPAIGN_INELIGIBLE: Record<string, string> = {
+  closed:     'This campaign has closed, so it is no longer accepting donations.',
+  not_active: 'This campaign is not accepting donations.',
+  ended:      'This campaign has ended, so it is no longer accepting donations.',
+};
 
 function stripeHeaders(): HeadersInit {
   return {
@@ -76,16 +84,41 @@ serve(async (req) => {
 
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    const { campaign_id, amount_pence, use_saved_card = false, cover_fees = false } = await req.json();
+    const {
+      campaign_id, amount_pence, use_saved_card = false, cover_fees = false,
+      client_request_id = null, message = null, anonymous = false, gift_aid = null,
+    } = await req.json();
     if (!campaign_id) return json({ error: 'campaign_id required' }, 400);
+
+    // One deliberate donation = one attempt id, and it goes into the Stripe
+    // idempotency key. Without it the key was `donation-<user>-<campaign>-<amount>`,
+    // which Stripe honours for ~24 hours — so a donor giving £10 twice to the
+    // same campaign in a day got the FIRST PaymentIntent back, fulfilment
+    // deduplicated on it, and the page thanked them for a donation that never
+    // happened. A declined card could not be retried at the same amount either.
+    //
+    // It is an idempotency token ONLY. The donor, the campaign, the hub, the
+    // amount, the destination and the fee are all resolved server-side below.
+    if (typeof client_request_id !== 'string' || client_request_id.trim().length === 0 ||
+        client_request_id.length < 8 || client_request_id.length > 100) {
+      return json({ error: 'client_request_id required' }, 400);
+    }
+
     const amount = Math.round(Number(amount_pence));
     if (!Number.isFinite(amount) || amount < MIN_PENCE || amount > MAX_PENCE) {
       return json({ error: 'Donation must be between £1 and £10,000.' }, 400);
     }
 
-    const { data: campaign } = await svc.from('hub_campaigns')
-      .select('id, hub_id, title, status').eq('id', campaign_id).single();
-    if (!campaign || campaign.status !== 'active') return json({ error: 'Campaign not available' }, 404);
+    // Active AND not past its end date, on the database clock — the same
+    // function the wallet path calls.
+    const { data: eligRows, error: eligErr } = await svc.rpc('campaign_donation_eligibility', { p_campaign: campaign_id });
+    if (eligErr) throw eligErr;
+    const elig = Array.isArray(eligRows) ? eligRows[0] : eligRows;
+    if (!elig || elig.reason === 'campaign_not_found') return json({ error: 'Campaign not available' }, 404);
+    if (!elig.eligible) {
+      return json({ error: CAMPAIGN_INELIGIBLE[elig.reason] ?? 'This campaign is not accepting donations.', reason: elig.reason }, 409);
+    }
+    const campaign = { id: elig.campaign_id, hub_id: elig.hub_id, title: elig.title };
 
     const { data: hub } = await svc.from('hubs')
       .select('id, name, stripe_account_id, payout_enabled, is_active, slug').eq('id', campaign.hub_id).single();
@@ -112,6 +145,65 @@ serve(async (req) => {
     const coverPence = cover_fees ? feeEstimate : 0;
     const totalPence = amount + coverPence;
 
+    // ── Gift Aid, validated HERE rather than at confirm time ─────────────
+    //
+    // It used to be checked when the browser came back, which is also where the
+    // donor's anonymity and message lived — and the webhook, racing that call,
+    // knew none of it. Validating and storing it now means the choices are
+    // authoritative BEFORE the payment exists, and the webhook can honour them.
+    const { data: hubCharity } = await svc.from('hubs')
+      .select('is_charity, charity_number').eq('id', hub.id).maybeSingle();
+    const charityEligible = !!hubCharity?.is_charity && !!hubCharity?.charity_number;
+    const declared = charityEligible && gift_aid && gift_aid.first_name && gift_aid.last_name
+                     && gift_aid.address && gift_aid.postcode;
+    let ga: Record<string, string> | null = null;
+    if (declared) {
+      const normalised = normaliseUkPostcode(String(gift_aid.postcode));
+      if (!normalised) {
+        return json({ error: "That doesn't look like a valid UK postcode — please check it so your Gift Aid can be claimed." }, 400);
+      }
+      ga = { ...gift_aid, postcode: normalised };
+    }
+
+    // The platform only retains an application fee when there is a destination
+    // to take it from. A demo hub is charged on the platform, so nothing is
+    // retained from a transfer that never happens.
+    const retainedFee = hubHasAccount ? feeEstimate : 0;
+
+    // ── The authoritative attempt ────────────────────────────────────────
+    //
+    // Written before the PaymentIntent, so a webhook that arrives while the
+    // browser is gone still records the donation the donor actually made.
+    // Re-running the same reference resolves to the SAME attempt rather than
+    // starting a second one — and refuses if that reference was already used
+    // for a different campaign or a different sum.
+    const attemptRow = {
+      client_request_id: client_request_id,
+      donor_user_id:     user.id,          // auth.uid(), never the request body
+      campaign_id:       campaign.id,
+      hub_id:            hub.id,
+      face_pence:        amount,
+      cover_pence:       coverPence,
+      fee_pence:         retainedFee,
+      is_anonymous:      !!anonymous,
+      message:           message ? String(message).slice(0, 280) : null,
+      gift_aid:          !!ga,
+      ga_title:          ga?.title ?? null,
+      ga_first_name:     ga?.first_name ?? null,
+      ga_last_name:      ga?.last_name ?? null,
+      ga_address:        ga?.address ?? null,
+      ga_postcode:       ga?.postcode ?? null,
+      method:            'card',
+    };
+    await svc.from('hub_donation_attempts').insert(attemptRow).select('id').maybeSingle();
+    const { data: attempt } = await svc.from('hub_donation_attempts')
+      .select('id, campaign_id, face_pence, cover_pence, payment_intent_id, status')
+      .eq('donor_user_id', user.id).eq('client_request_id', client_request_id).maybeSingle();
+    if (!attempt) return json({ error: 'Could not start the donation.' }, 500);
+    if (attempt.campaign_id !== campaign.id || attempt.face_pence !== amount || attempt.cover_pence !== coverPence) {
+      return json({ error: 'That payment reference belongs to a different donation.' }, 409);
+    }
+
     const baseParams: Record<string, string> = {
       amount:      String(totalPence),
       currency:    'gbp',
@@ -121,8 +213,14 @@ serve(async (req) => {
       'metadata[hub_id]':      hub.id,
       'metadata[user_id]':     user.id,
       'metadata[face_pence]':  String(amount),
-      'metadata[fee_pence]':   '0',
+      // The fee actually retained, not a hardcoded zero. Every card donation
+      // recorded fee_pence = 0 while the platform kept 1.5% + 20p, so the hub's
+      // own record understated what came off it.
+      'metadata[fee_pence]':   String(retainedFee),
       'metadata[cover_pence]': String(coverPence),
+      // An opaque reference to the attempt. Nothing about the donor travels
+      // through Stripe: no name, no address, no postcode, no message.
+      'metadata[attempt_id]':  attempt.id,
     };
     // Route to the hub's Connect account only when it has one (a real,
     // payout-ready hub). Demo hubs have none → charge the platform.
@@ -137,7 +235,11 @@ serve(async (req) => {
       if (!customerId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
       const pmId = await listSavedCard(customerId);
       if (!pmId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
-      const pi = await createPaymentIntent({ ...baseParams, ...onSessionConfirm(customerId, pmId) }, `donation-${user.id}-${campaign.id}-${amount}`);
+      const pi = await createPaymentIntent({ ...baseParams, ...onSessionConfirm(customerId, pmId) }, `donation-${user.id}-${campaign.id}-${amount}-${client_request_id}`);
+      // Bind the intent to its attempt BEFORE any branch returns — including
+      // requires_action, where the webhook may fulfil while the donor is still
+      // authenticating with their bank.
+      await svc.from('hub_donation_attempts').update({ payment_intent_id: pi.id }).eq('id', attempt.id);
       const outcome = classifyIntent(pi);
       if (outcome.kind === 'requires_action') {
         // The issuer wants the cardholder to authenticate. That is the middle of a
@@ -155,7 +257,9 @@ serve(async (req) => {
       return json({ charged: true, payment_intent_id: pi.id });
     }
 
-    const pi = await createPaymentIntent({ ...baseParams, 'automatic_payment_methods[enabled]': 'true' });
+    const pi = await createPaymentIntent({ ...baseParams, 'automatic_payment_methods[enabled]': 'true' },
+      `donation-form-${user.id}-${campaign.id}-${amount}-${client_request_id}`);
+    await svc.from('hub_donation_attempts').update({ payment_intent_id: pi.id }).eq('id', attempt.id);
     return json({ clientSecret: pi.client_secret, payment_intent_id: pi.id });
   } catch (err) {
     console.error('[create-hub-donation-intent]', err);

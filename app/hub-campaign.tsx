@@ -20,8 +20,7 @@ import { ContentActions } from '@/components/ContentActions';
 import { formatPence } from '@/lib/local-api';
 import {
   fetchCampaign, fetchHub, fetchCampaignDonors,
-  type HubCampaign, type Hub, type DonorWallEntry,
-} from '@/lib/hubs-api';
+  type HubCampaign, type Hub, type DonorWallEntry, campaignAcceptsDonations } from '@/lib/hubs-api';
 
 const S = SECTIONS.community;
 function tint(hex?: string | null): string {
@@ -136,7 +135,7 @@ export default function HubCampaignScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {!closed ? (
+      {campaignAcceptsDonations(campaign) ? (
         <View style={styles.footer}>
           <TouchableOpacity style={[styles.donateBtn, { backgroundColor: accent }]} onPress={() => router.push(`/hub-donate?campaign=${campaign.id}`)} activeOpacity={0.85}>
             <FontAwesome5 name="heart" size={15} color="#fff" solid />

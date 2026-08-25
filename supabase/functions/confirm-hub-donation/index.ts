@@ -12,11 +12,16 @@ const STRIPE_API_VERSION = '2023-10-16';
 /**
  * confirm-hub-donation
  *
- * Verifies the donation PaymentIntent, then records the donation + (if the hub
- * is a charity and the donor opted in) the Gift Aid declaration, via the atomic
- * record_hub_donation RPC. Idempotent on the PaymentIntent.
+ * The fast answer for a donor watching the screen. Verifies the PaymentIntent,
+ * then hands off to the SAME attempt-driven fulfilment the Stripe webhook uses,
+ * so the donation lands once with the donor's real choices whichever arrives
+ * first — and lands at all if this call never happens.
  *
- * Body: { payment_intent_id, message?, anonymous?, gift_aid? {first_name,last_name,address,postcode,title?} }
+ * The donor's anonymity, message and Gift Aid are NOT taken from this request.
+ * They were validated and stored when the donation attempt was created, before
+ * the payment existed.
+ *
+ * Body: { payment_intent_id }
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -33,58 +38,49 @@ serve(async (req) => {
 
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    const { payment_intent_id, message = null, anonymous = false, gift_aid = null } = await req.json();
+    const { payment_intent_id } = await req.json();
     if (!payment_intent_id) return json({ error: 'payment_intent_id required' }, 400);
 
     // Already recorded?
     const { data: existing } = await svc.from('hub_donations').select('id')
       .eq('stripe_payment_intent_id', payment_intent_id).maybeSingle();
-    if (existing) return json({ ok: true });
+    if (existing) return json({ ok: true, already: true });
 
     const piRes = await fetch(`https://api.stripe.com/v1/payment_intents/${payment_intent_id}`,
       { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } });
     const pi = await piRes.json();
-    if (!piRes.ok) throw new Error(pi.error?.message ?? `Stripe retrieve failed (HTTP ${piRes.status})`);
+    if (!piRes.ok) {
+      // A payment intent that does not exist is a bad request, not a server
+      // fault. It used to throw and answer 500.
+      if (piRes.status === 404) return json({ error: 'Payment not found' }, 404);
+      throw new Error(pi.error?.message ?? `Stripe retrieve failed (HTTP ${piRes.status})`);
+    }
 
     if (pi.metadata?.type !== 'hub_donation') return json({ error: 'Not a donation payment' }, 400);
     if (pi.metadata?.user_id !== user.id)      return json({ error: 'Forbidden' }, 403);
     if (pi.status !== 'succeeded')             return json({ error: 'Payment not completed' }, 402);
 
-    // Gift Aid only counts at charity hubs that have a charity number on file,
-    // and when a complete declaration is given.
-    const { data: hub } = await svc.from('hubs').select('is_charity, charity_number, name').eq('id', pi.metadata.hub_id).maybeSingle();
-    const charityEligible = !!hub?.is_charity && !!hub?.charity_number;
-    const declared = charityEligible && gift_aid && gift_aid.first_name && gift_aid.last_name && gift_aid.address && gift_aid.postcode;
-
-    // HMRC requires a valid home address + postcode for a Gift Aid claim, so
-    // validate the UK postcode rather than storing whatever was typed. We reject
-    // (not silently drop) so the donor knows their Gift Aid didn't apply.
-    let ga = null;
-    if (declared) {
-      const normalised = normaliseUkPostcode(String(gift_aid.postcode));
-      if (!normalised) {
-        return json({ error: "That doesn't look like a valid UK postcode — please check it so your Gift Aid can be claimed." }, 400);
-      }
-      ga = { ...gift_aid, postcode: normalised };
-    }
-
-    const { error: rpcErr } = await svc.rpc('record_hub_donation', {
-      p_campaign: pi.metadata.campaign_id,
-      p_hub:      pi.metadata.hub_id,
-      p_user:     user.id,
-      p_amount:   parseInt(pi.metadata.face_pence ?? '0', 10) || 0,
-      p_fee:      parseInt(pi.metadata.fee_pence ?? '0', 10) || 0,
-      p_message:  message ? String(message).slice(0, 280) : null,
-      p_anon:     !!anonymous,
-      p_pi:       payment_intent_id,
-      p_gift_aid: !!ga,
-      p_title:    ga?.title ?? null,
-      p_first:    ga?.first_name ?? null,
-      p_last:     ga?.last_name ?? null,
-      p_address:  ga?.address ?? null,
-      p_postcode: ga?.postcode ?? null,
-    });
+    // The donor's choices come from the attempt written before the payment, not
+    // from this request — so the webhook and this call record the SAME donation
+    // and neither can lose the donor's anonymity by winning the race.
+    const { data: res, error: rpcErr } = await svc
+      .rpc('fulfil_hub_donation', {
+        p_pi: payment_intent_id,
+        p_attempt: pi.metadata.attempt_id ?? null,
+        p_user: user.id,
+      })
+      .maybeSingle();
     if (rpcErr) throw rpcErr;
+    const out = res as { recorded: boolean; already: boolean; reason: string } | null;
+    if (!out?.recorded && !out?.already) {
+      return json({ error: 'This donation could not be recorded.', reason: out?.reason ?? 'unknown' }, 409);
+    }
+    if (out.already) return json({ ok: true, already: true });
+
+    const { data: hub } = await svc.from('hubs').select('name').eq('id', pi.metadata.hub_id).maybeSingle();
+    const { data: recorded } = await svc.from('hub_donations')
+      .select('is_anonymous').eq('stripe_payment_intent_id', payment_intent_id).maybeSingle();
+    const anonymous = !!recorded?.is_anonymous;
 
     // ── Notifications (best-effort — never fail the recorded donation) ───────
     try {
@@ -121,23 +117,9 @@ serve(async (req) => {
       console.error('[confirm-hub-donation] notify failed (non-fatal):', notifyErr);
     }
 
-    return json({ ok: true, gift_aid: !!ga });
+    return json({ ok: true, already: false });
   } catch (err) {
     console.error('[confirm-hub-donation]', err);
     return json({ error: safeError('confirm-hub-donation', err) }, 500);
   }
 });
-
-/**
- * Validate + normalise a UK postcode. Returns the canonical "OUTWARD INWARD"
- * form (e.g. "ZE1 0AA") or null if it isn't a valid UK postcode.
- */
-function normaliseUkPostcode(raw: string): string | null {
-  const compact = raw.toUpperCase().replace(/\s+/g, '');
-  // Outward (2–4 chars) + inward (digit + 2 letters). Excludes letters that
-  // never appear in those positions, per the official UK pattern.
-  const re = /^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/;
-  const m = compact.match(re);
-  if (!m) return null;
-  return `${m[1]} ${m[2]}`;
-}

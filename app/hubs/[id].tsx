@@ -29,8 +29,7 @@ import {
   fetchHubDocuments, fetchActiveCampaign,
   formatMembershipPrice, HUB_MEMBERSHIP_FEE_PENCE,
   HUB_TYPE_LABELS, HUB_TYPE_ICONS,
-  type Hub, type HubMember, type HubNotice, type HubMembershipType, type HubDocument, type HubCampaign,
-} from '@/lib/hubs-api';
+  type Hub, type HubMember, type HubNotice, type HubMembershipType, type HubDocument, type HubCampaign, campaignAcceptsDonations } from '@/lib/hubs-api';
 import { fetchHubEvents, type OsEvent } from '@/lib/events-api';
 import { FundraisingProgress } from '@/components/FundraisingProgress';
 import { ContentActions } from '@/components/ContentActions';
@@ -325,10 +324,12 @@ export default function HubDetailScreen() {
       </View>
       <FundraisingProgress raisedPence={campaign.raised_pence} goalPence={campaign.goal_pence}
         donorCount={campaign.donor_count} endsAt={campaign.ends_at} accent={accent} compact />
-      <TouchableOpacity style={[styles.donateMini, { backgroundColor: accent }]} onPress={() => router.push(`/hub-donate?campaign=${campaign.id}`)} activeOpacity={0.85}>
-        <FontAwesome5 name="heart" size={12} color="#fff" solid />
-        <Text style={styles.donateMiniText}>Donate</Text>
-      </TouchableOpacity>
+      {campaignAcceptsDonations(campaign) ? (
+        <TouchableOpacity style={[styles.donateMini, { backgroundColor: accent }]} onPress={() => router.push(`/hub-donate?campaign=${campaign.id}`)} activeOpacity={0.85}>
+          <FontAwesome5 name="heart" size={12} color="#fff" solid />
+          <Text style={styles.donateMiniText}>Donate</Text>
+        </TouchableOpacity>
+      ) : null}
     </TouchableOpacity>
   ) : null;
 

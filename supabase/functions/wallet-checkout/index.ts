@@ -68,6 +68,13 @@ serve(async (req) => {
   }
 });
 
+/** Why a campaign cannot take a donation — same words the card path uses. */
+const CAMPAIGN_INELIGIBLE: Record<string, string> = {
+  closed:     'This campaign has closed, so it is no longer accepting donations.',
+  not_active: 'This campaign is not accepting donations.',
+  ended:      'This campaign has ended, so it is no longer accepting donations.',
+};
+
 /** Why a shift cannot be boosted — same words the card path uses. */
 const BOOST_INELIGIBLE: Record<string, string> = {
   cancelled:       'This shift has been cancelled, so it cannot be boosted.',
@@ -92,9 +99,17 @@ async function hubDonation(svc: any, userId: string, body: any, rid: string): Pr
     return json({ error: 'Amount must be between £1 and £10,000.' }, 400);
   }
 
-  // Campaign must be active; hub must be payout-ready.
-  const { data: campaign } = await svc.from('hub_campaigns').select('id, hub_id, status').eq('id', campaignId).maybeSingle();
-  if (!campaign || campaign.status !== 'active') return json({ error: 'This campaign is not accepting donations.' }, 400);
+  // The SAME eligibility rule the card path uses, from the same SQL function
+  // and the same database clock: active AND not past its end date. Checked
+  // BEFORE the wallet is debited, so an ended campaign costs nobody anything.
+  const { data: eligRows, error: eligErr } = await svc.rpc('campaign_donation_eligibility', { p_campaign: campaignId });
+  if (eligErr) throw eligErr;
+  const elig = Array.isArray(eligRows) ? eligRows[0] : eligRows;
+  if (!elig || elig.reason === 'campaign_not_found') return json({ error: 'This campaign is not accepting donations.' }, 400);
+  if (!elig.eligible) {
+    return json({ error: CAMPAIGN_INELIGIBLE[elig.reason] ?? 'This campaign is not accepting donations.', reason: elig.reason }, 409);
+  }
+  const campaign = { id: elig.campaign_id, hub_id: elig.hub_id };
 
   const { data: hub } = await svc.from('hubs')
     .select('id, name, stripe_account_id, payout_enabled, is_charity, charity_number')

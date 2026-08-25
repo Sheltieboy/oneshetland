@@ -83,7 +83,7 @@ export default function HubDonateScreen() {
 
   const accent = tint(hub?.brand_color);
   const effectiveAmount = customText ? Math.round(parseFloat(customText) * 100) || 0 : amount;
-  const attemptId = useAttemptId(`${campaignId}|${effectiveAmount}`);   // a different sum is a different donation
+  const attemptId = useAttemptId(`${campaignId}|${effectiveAmount}|${coverFees}|${anonymous}|${message}|${giftAidOn}`);   // any change of mind is a different donation
   const coverPence = Math.round(effectiveAmount * 0.015) + 20; // ~Stripe fee
   const chargePence = effectiveAmount + (coverFees ? coverPence : 0);
   // Gift Aid is only offered when the hub is a charity AND has a charity number on file.
@@ -166,7 +166,12 @@ export default function HubDonateScreen() {
     setPaying(true);
     try {
       const useSaved = !!profile.has_payment_method;
-      const start = await startHubDonation(campaign.id, effectiveAmount, { useSavedCard: useSaved, coverFees });
+      // Choices go with the intent, so a webhook that beats this screen still
+      // records the donor's anonymity, message and Gift Aid.
+      const start = await startHubDonation(campaign.id, effectiveAmount, attemptId(), {
+        useSavedCard: useSaved, coverFees,
+        message: message.trim() || undefined, anonymous, giftAid: buildGiftAid(),
+      });
       if (!start.charged) {
         if (!start.clientSecret) throw new Error('Could not start payment.');
         const initRes = await initPaymentSheet({ merchantDisplayName: 'OneShetland', paymentIntentClientSecret: start.clientSecret, applePay: { merchantCountryCode: 'GB' } });
@@ -174,7 +179,7 @@ export default function HubDonateScreen() {
         const sheetRes = await presentPaymentSheet();
         if (sheetRes.error) { if (sheetRes.error.code !== 'Canceled') throw new Error(sheetRes.error.message); return; }
       }
-      await confirmHubDonation(start.payment_intent_id, { message: message.trim() || undefined, anonymous, giftAid: buildGiftAid() });
+      await confirmHubDonation(start.payment_intent_id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Show success INLINE — this modal screen can't present the root alert over
       // itself on iOS (it gets swallowed).

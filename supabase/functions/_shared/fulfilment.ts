@@ -297,30 +297,16 @@ export async function fulfilHubDonation(svc: SupabaseClient, pi: FulfilPI): Prom
   const userId = pi.metadata.user_id;
   if (!userId) return { granted: false, note: 'no user_id' };
 
-  const { data: existing } = await svc.from('hub_donations')
-    .select('id').eq('stripe_payment_intent_id', pi.id).maybeSingle();
-  if (existing) return already('recorded');
-
-  const { error: rpcErr } = await svc.rpc('record_hub_donation', {
-    p_campaign: pi.metadata.campaign_id,
-    p_hub:      pi.metadata.hub_id,
-    p_user:     userId,
-    p_amount:   parseInt(pi.metadata.face_pence ?? '0', 10) || 0,
-    p_fee:      parseInt(pi.metadata.fee_pence ?? '0', 10) || 0,
-    p_message:  null,
-    p_anon:     false,
-    p_pi:       pi.id,
-    p_gift_aid: false,
-    p_title:    null,
-    p_first:    null,
-    p_last:     null,
-    p_address:  null,
-    p_postcode: null,
-  });
-  if (rpcErr) {
-    if ((rpcErr as { code?: string }).code === '23505') return already('recorded');
-    throw rpcErr;
-  }
+  // The donor's anonymity, message and Gift Aid live in the pending attempt,
+  // written before the PaymentIntent existed. This fulfiller used to record
+  // p_anon=false and p_message=null because it had no way of knowing them —
+  // so a webhook that beat the browser published an anonymous donor's name.
+  const { data, error } = await svc
+    .rpc('fulfil_hub_donation', { p_pi: pi.id, p_attempt: pi.metadata.attempt_id ?? null })
+    .maybeSingle<{ recorded: boolean; already: boolean; reason: string }>();
+  if (error) throw error;
+  if (data?.already) return already('recorded');
+  if (!data?.recorded) return { granted: false, note: `donation not recorded: ${data?.reason ?? 'unknown'}` };
 
   try {
     const { data: hub } = await svc.from('hubs').select('name').eq('id', pi.metadata.hub_id).maybeSingle();
@@ -332,8 +318,16 @@ export async function fulfilHubDonation(svc: SupabaseClient, pi: FulfilPI): Prom
       body: `Your ${amount} donation to ${hubName} has gone through.`,
       data: { hub_id: pi.metadata.hub_id },
     });
-    const { data: donor } = await svc.from('profiles').select('full_name').eq('id', userId).maybeSingle();
-    const donorName = (donor as { full_name?: string } | null)?.full_name ?? 'A supporter';
+
+    // Name the donor only if they did not ask to be anonymous — read back from
+    // what was actually recorded, not from a default.
+    const { data: rec } = await svc.from('hub_donations')
+      .select('is_anonymous').eq('stripe_payment_intent_id', pi.id).maybeSingle();
+    let donorName = 'An anonymous supporter';
+    if (!rec?.is_anonymous) {
+      const { data: donor } = await svc.from('profiles').select('full_name').eq('id', userId).maybeSingle();
+      donorName = (donor as { full_name?: string } | null)?.full_name ?? 'A supporter';
+    }
     const { data: admins } = await svc.from('hub_members').select('user_id')
       .eq('hub_id', pi.metadata.hub_id).in('role', ['owner', 'committee']).eq('status', 'active');
     const adminIds = [...new Set((admins ?? []).map((a) => a.user_id).filter(Boolean) as string[])];
@@ -347,6 +341,7 @@ export async function fulfilHubDonation(svc: SupabaseClient, pi: FulfilPI): Prom
 
   return done('recorded donation');
 }
+
 
 // ── Hub membership ───────────────────────────────────────────────────────────
 // Mirrors confirm-hub-membership.
