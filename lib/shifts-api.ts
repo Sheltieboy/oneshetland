@@ -648,3 +648,36 @@ export async function updateApplicationStatus(
     body: { application_id: applicationId, status },
   }).catch(() => {});
 }
+
+/* ── Boost purchase history ───────────────────────────────────────────────────
+   What the employer has PAID to promote, as opposed to what is promoted right
+   now. A boost answers the second question for 24 hours and the first one for
+   ever, so the receipt is read from its own snapshot rather than from the
+   shift — the shift may have been edited, cancelled or deleted since.
+
+   Read-only. Buying a boost stays on the website for store compliance; showing
+   somebody what they already bought is not a purchase mechanism.               */
+
+export interface BoostPurchase {
+  id:             string;
+  shift_id:       string | null;
+  shift_title:    string;
+  business_name:  string | null;
+  amount_pence:   number;
+  duration_hours: number;
+  method:         'card' | 'wallet';
+  status:         string;
+  boosted_until:  string;
+  purchased_at:   string;
+}
+
+export async function fetchMyBoostPurchases(): Promise<BoostPurchase[]> {
+  // RLS scopes this to the purchaser. payment_intent_id is on the row and is
+  // deliberately not selected — it is an idempotency key, not a receipt field.
+  const { data, error } = await supabase
+    .from('shift_boost_purchases')
+    .select('id, shift_id, shift_title, business_name, amount_pence, duration_hours, method, status, boosted_until, purchased_at')
+    .order('purchased_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as BoostPurchase[];
+}

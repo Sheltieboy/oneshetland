@@ -320,6 +320,19 @@ export default function MyPostedShiftsScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />
           }
+          ListHeaderComponent={
+            /* What has been PAID for, as opposed to what is boosted right now.
+               Read-only — boosts are bought on the website. */
+            <TouchableOpacity
+              style={styles.historyLink}
+              onPress={() => router.push('/shift-boost-history')}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name="bolt" size={13} color={S.color} solid />
+              <Text style={styles.historyLinkText}>  Boost history</Text>
+              <FontAwesome5 name="chevron-right" size={11} color={colors.textMuted} />
+            </TouchableOpacity>
+          }
           ListEmptyComponent={
             <EmptyState
               icon="briefcase"
@@ -387,6 +400,14 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontSize: fontSize.sm, fontWeight: '700', color: '#DC2626' },
   completeBtn:     { borderWidth: 1.5, borderColor: colors.jobsLight, backgroundColor: colors.jobsLight },
   completeBtnText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.jobs },
+  historyLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1,
+    borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: 12,
+    marginBottom: 12,
+  },
+  historyLinkText: { flex: 1, fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+
   boostBtn:        { borderWidth: 1.5, borderColor: '#FDE68A', backgroundColor: '#FFFBEB' },
   boostBtnText:    { fontSize: fontSize.sm, fontWeight: '700', color: colors.shifts },
 });

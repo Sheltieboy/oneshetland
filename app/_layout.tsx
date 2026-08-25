@@ -249,6 +249,7 @@ function RootNavigator() {
           <Stack.Screen name="shift-post" options={{ ...MODAL_PRESENT }} />
           <Stack.Screen name="employer-profile" />
           <Stack.Screen name="my-posted-shifts" />
+          <Stack.Screen name="shift-boost-history" />
           <Stack.Screen name="my-shift-applications" />
           <Stack.Screen name="my-work" />
           <Stack.Screen name="edit-profile" />

@@ -339,9 +339,17 @@ async function shiftBoost(svc: any, userId: string, body: any, rid: string): Pro
     return json({ error: paid.error }, paid.status);
   }
 
-  const boostedUntil = new Date(Date.now() + 86_400_000).toISOString();
-  const { error: updErr } = await svc.from('shifts').update({ boosted_until: boostedUntil }).eq('id', shiftId);
-  if (updErr) {
+  // Entitlement and receipt in one transaction, keyed on this attempt — so a
+  // retry resolves to the receipt it already wrote instead of buying a second
+  // 24 hours, and a failure leaves neither behind for the reversal below to
+  // contradict. The debit and the reversal are unchanged.
+  const { data: granted, error: updErr } = await svc
+    .rpc('grant_wallet_shift_boost', {
+      p_shift: shiftId, p_employer: userId, p_rid: rid, p_amount: PRICE,
+    })
+    .maybeSingle();
+  const boostedUntil = (granted as { boosted_until?: string } | null)?.boosted_until ?? null;
+  if (updErr || !boostedUntil) {
     // The entitlement could not be granted, so put the money back — as an
     // appended reversal linked to the debit, not by editing it away.
     await walletReverse(svc, paid.transactionId, 'Shift boost could not be applied');
