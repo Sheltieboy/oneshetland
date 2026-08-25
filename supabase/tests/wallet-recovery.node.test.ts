@@ -222,10 +222,13 @@ describe('A — one deliberate top-up, one PaymentIntent', () => {
     assert.match(intentFn, /'Idempotency-Key': `topup-form-\$\{user\.id\}-\$\{client_request_id\}`/);
   });
 
-  test('both clients mint one and reset it when the amount changes', () => {
-    assert.match(webModal, /const attemptId = useAttemptId\(`\$\{amount\}\|\$\{customAmount\}`\)/);
+  test('both clients mint one per deliberate top-up', () => {
+    // The reset key gained a session after the first real top-up showed that
+    // the amount alone is not enough: closing and topping up £5 again is a
+    // SECOND deliberate top-up and must not reuse the first reference.
+    assert.match(webModal, /const attemptId = useAttemptId\(`\$\{session\}\|\$\{amount\}\|\$\{customAmount\}`\)/);
     assert.match(webModal, /startWalletTopUp\(amount, attemptId\(\), true\)/);
-    assert.match(appWallet, /const topUpAttempt = useAttemptId\(`\$\{attemptAmount\}`\)/);
+    assert.match(appWallet, /const topUpAttempt = useAttemptId\(`\$\{topUpSession\}\|\$\{attemptAmount\}`\)/);
     assert.match(appWallet, /startWalletTopUp\(amountPence, topUpAttempt\(\), true\)/);
   });
 

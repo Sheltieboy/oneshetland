@@ -68,7 +68,16 @@ export default function WalletScreen() {
   // recorded by requestTopUp, because BOTH entry paths go through it — the
   // confirm sheet and the no-card path that goes straight to Stripe.
   const [attemptAmount, setAttemptAmount] = useState(0);
-  const topUpAttempt = useAttemptId(`${attemptAmount}`);
+  // `topUpSession` is bumped when a checkout finishes, so the NEXT deliberate
+  // top-up gets a fresh reference. The amount alone is not enough: topping up
+  // £5 and then £5 again is two deliberate top-ups, and they would otherwise
+  // share a reference and therefore share a PaymentIntent — the same defect the
+  // web modal had, without the sticky screen to make it visible.
+  //
+  // Bumped in the finally of handleTopUp, which is AFTER any SCA challenge, so
+  // one 3DS flow never becomes two intents.
+  const [topUpSession, setTopUpSession] = useState(0);
+  const topUpAttempt = useAttemptId(`${topUpSession}|${attemptAmount}`);
   const [customError, setCustomError] = useState<string | null>(null);
 
   // Parse the custom-amount field (pounds) into pence, validating bounds.
@@ -214,6 +223,9 @@ export default function WalletScreen() {
       alert({ title: 'Top-up failed', message: e.message ?? 'Try again' });
     } finally {
       setToppingUp(null);
+      // This checkout is over, whatever the outcome. A decline must not poison
+      // the next deliberate attempt either.
+      setTopUpSession(n => n + 1);
     }
   };
 
