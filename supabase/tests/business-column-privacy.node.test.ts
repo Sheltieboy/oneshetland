@@ -185,7 +185,15 @@ create temp table who as select
   (select owner_id from public.local_businesses where owner_id is not null order by id limit 1) owner,
   (select p.id from public.profiles p
      where p.id <> (select owner_id from public.local_businesses where owner_id is not null order by id limit 1)
-       and coalesce(p.role,'') <> 'admin' order by p.id limit 1) stranger;
+       and coalesce(p.role,'') <> 'admin' order by p.id limit 1) stranger,
+  -- The derived-Stripe-state case needs a business that IS connected, chosen on
+  -- that fact rather than on whichever UUID happens to sort first. Pinning
+  -- 'true' to the lowest id passed only until a new unconnected business was
+  -- created, then failed while nothing about the code had changed.
+  (select id from public.local_businesses
+     where owner_id is not null and stripe_account_id is not null order by id limit 1) conn_biz,
+  (select owner_id from public.local_businesses
+     where owner_id is not null and stripe_account_id is not null order by id limit 1) conn_owner;
 create temp table res (n int generated always as identity, area text, case_name text, expected text, actual text);
 
 create or replace function pg_temp.as_anon(q text) returns text language plpgsql as $f$
@@ -250,7 +258,7 @@ exception when others then reset role; return 'ERROR'; end $f$;
 
 insert into res(area,case_name,expected,actual)
 select 'owner','gets derived Stripe state','true',
-  pg_temp.owner_derived((select owner from who),(select biz from who));
+  pg_temp.owner_derived((select conn_owner from who),(select conn_biz from who));
 insert into res(area,case_name,expected,actual)
 select 'owner','the RPC returns no raw Stripe identifier','0',
   (select count(*)::text from information_schema.columns
