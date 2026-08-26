@@ -203,7 +203,10 @@ describe('A — one deliberate membership checkout, one PaymentIntent', () => {
     // Opening the checkout bumps the session, so a second deliberate purchase
     // of the same tier — a renewal — is a new attempt.
     assert.match(memberCheckout, /setSession\(\(n\) => n \+ 1\)/);
-    assert.match(memberCheckout, /\}, \[open, tier\.id, hasSavedCard\]\)/);
+    // `completed` joined the deps when the post-success lifecycle was fixed: the
+    // effect must re-evaluate when a purchase finishes, so that a remounted
+    // checkout comes back finished rather than back at a Pay button.
+    assert.match(memberCheckout, /\}, \[open, tier\.id, hasSavedCard, completed\]\)/);
     const appFn = appHub.slice(appHub.indexOf('const runMembershipPayment'));
     assert.match(appFn, /\} catch \(e: any\) \{[\s\S]*?Payment failed[\s\S]*?\} finally \{[\s\S]*?setMemberSession\(n => n \+ 1\)/);
   });

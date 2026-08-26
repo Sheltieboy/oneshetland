@@ -343,14 +343,15 @@ describe('payment safety is untouched', () => {
     assert.equal(r.i, 'present');
   });
 
-  // Pinned at 2 when this was written. It is 1 now, and that is the defect the
-  // membership-history work exists to stop: the second paid membership row was
-  // destroyed by Leave hub, which hard-deleted the only record of the payment.
-  // The payment itself is real and still in Stripe; nothing here invents it.
+  // A moving number, and each move was a real event rather than a test being
+  // loosened: 2 when written, 1 after Leave hub hard-deleted a paid membership
+  // (the defect the history work exists to stop), and 2 again after a genuine
+  // Junior purchase on 26 August 2026. It is pinned so that a CHANGE has to be
+  // explained, not so that the value never changes.
   test('the real membership was not touched', () => {
     const r = runSql(`select count(*)::text c, coalesce(max(member_no),'-') n
                         from public.hub_members where stripe_payment_intent_id is not null;`)[0];
-    assert.equal(r.c, '1', 'the number of paid memberships changed');
+    assert.equal(r.c, '2', 'the number of paid memberships changed');
   });
 
   test('other paygates unchanged', () => {
