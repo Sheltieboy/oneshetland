@@ -330,8 +330,8 @@ describe('payment safety is untouched', () => {
     assert.match(read('supabase/functions/_shared/fulfilment.ts'), /case 'hub_membership':/);
     assert.match(read('supabase/functions/_shared/fulfilment.ts'), /\.rpc\('activate_hub_membership'/);
     const r = runSql(`select
-      case when has_function_privilege('anon','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer)','execute')
-             or has_function_privilege('authenticated','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer)','execute')
+      case when has_function_privilege('anon','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer,text)','execute')
+             or has_function_privilege('authenticated','public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer,text)','execute')
            then 'CALLABLE' else 'none' end as g,
       case when exists (select 1 from pg_indexes where tablename='hub_members'
                          and indexdef ilike '%unique%stripe_payment_intent_id%') then 'present' else 'MISSING' end as i;`)[0];

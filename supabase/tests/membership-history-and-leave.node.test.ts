@@ -160,7 +160,14 @@ begin
   insert into r values ('intent_locked', m.stripe_payment_intent_id);
 
   -- ── once the paid time runs out, they pay again ─────────────────────────
+  -- Age the PURCHASE, not just the membership row. Entitlement is replayed
+  -- from the ledger now, so a membership expires because the year it bought
+  -- has elapsed — forcing paid_until alone would be a state production can no
+  -- longer reach, since only the replay writes that column.
   perform pg_temp.as_server();
+  update public.hub_membership_purchases
+     set occurred_at = now() - interval '2 years', paid_until_after = now() - interval '1 year'
+   where hub_id = h_appr and user_id = mem;
   update public.hub_members set paid_until = now() - interval '1 day', status = 'left', ended_at = now()
    where hub_id = h_appr and user_id = mem;
   perform pg_temp.as_user(mem);
@@ -217,7 +224,15 @@ begin
   select status into m.status from public.hub_members where hub_id = h_open and user_id = mem;
   insert into r values ('open_hub_status', m.status);
 
+  -- A free rejoin means no paid entitlement at all: clear the ledger too, or
+  -- the replay quite rightly says they are still paid up.
   perform pg_temp.as_server();
+  -- pi_hist_1 is left in place: a later check proves its tier name outlives the
+  -- tier being deleted, and it is fully refunded by then so it grants nothing.
+  delete from public.hub_membership_purchases
+   where hub_id = h_appr and user_id = mem and payment_intent_id <> 'pi_hist_1';
+  update public.hub_membership_purchases set refund_state = 'full'
+   where payment_intent_id = 'pi_hist_1';
   update public.hub_members set status = 'left', paid_until = null, last_payment_pence = null,
          stripe_payment_intent_id = null, membership_type_id = t_free
    where hub_id = h_appr and user_id = mem;
@@ -271,8 +286,8 @@ insert into r select 'purchases_pi_unique',
   case when exists (select 1 from pg_indexes where tablename = 'hub_membership_purchases'
                      and indexdef ilike '%unique%payment_intent_id%') then 'present' else 'MISSING' end;
 insert into r select 'activate_client_exec',
-  case when has_function_privilege('anon', 'public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer)', 'execute')
-         or has_function_privilege('authenticated', 'public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer)', 'execute')
+  case when has_function_privilege('anon', 'public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer,text)', 'execute')
+         or has_function_privilege('authenticated', 'public.activate_hub_membership(uuid,uuid,uuid,text,integer,text,integer,text)', 'execute')
        then 'CALLABLE' else 'none' end;
 insert into r select 'leave_client_exec',
   case when has_function_privilege('authenticated', 'public.hub_leave(uuid)', 'execute') then 'yes' else 'NO' end;

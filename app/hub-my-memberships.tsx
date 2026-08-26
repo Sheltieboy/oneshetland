@@ -60,6 +60,11 @@ export default function MyMembershipsScreen() {
     finally { setLoading(false); }
   }, [profile?.id]);
 
+  // Which hubs ended because the money came back, rather than because they left.
+  const refundedHubs = new Set(
+    purchases.filter(p => p.refund_state === 'full' && p.hub_id).map(p => p.hub_id as string),
+  );
+
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = useCallback(async () => { setRefreshing(true); await load(); setRefreshing(false); }, [load]);
 
@@ -147,7 +152,8 @@ export default function MyMembershipsScreen() {
                     <Text style={styles.rowTitle} numberOfLines={1}>{m.hub?.name ?? 'Hub'}</Text>
                     <Text style={styles.rowMeta}>
                       {m.membership_type?.name ? `${m.membership_type.name}  ·  ` : ''}
-                      {m.status === 'removed' ? 'Removed by the hub' : 'You left'}
+                      {m.status === 'removed' && refundedHubs.has(m.hub_id) ? 'Membership refunded'
+                        : m.status === 'removed' ? 'Removed by the hub' : 'You left'}
                       {m.ended_at ? ` ${fmtDate(m.ended_at)}` : ''}
                     </Text>
                     {restorable ? (
@@ -180,10 +186,19 @@ export default function MyMembershipsScreen() {
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.rowAmount}>{gbp(p.total_pence ?? p.face_pence)}</Text>
+                  <Text style={[styles.rowAmount, p.refund_state === 'full' && styles.rowAmountVoid]}>
+                    {gbp(p.total_pence ?? p.face_pence)}
+                  </Text>
                   <Text style={styles.rowMeta}>
                     {p.fee_pence !== null ? `${gbp(p.face_pence)} + ${gbp(p.fee_pence)} fee` : `Membership ${gbp(p.face_pence)}`}
                   </Text>
+                  {p.refund_state !== 'none' ? (
+                    <Text style={styles.rowRefund}>
+                      {p.refund_state === 'full'
+                        ? 'Refunded in full'
+                        : `Partly refunded · ${gbp(p.refunded_pence)}`}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             ))}
@@ -208,6 +223,8 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
   rowGood: { fontSize: fontSize.xs, fontWeight: '700', color: '#047857', marginTop: 3 },
   rowAmount: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
+  rowAmountVoid: { color: colors.textMuted, textDecorationLine: 'line-through' },
+  rowRefund: { fontSize: fontSize.xs, fontWeight: '700', color: '#B45309', marginTop: 2 },
 
   cardShadow: { borderRadius: radius.xl, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
   card: { borderRadius: radius.xl, padding: spacing.lg, gap: spacing.md },

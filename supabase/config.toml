@@ -149,3 +149,8 @@ verify_jwt = true
 
 [functions.confirm-event-tickets]
 verify_jwt = true
+
+# Admin-only: issues Stripe refunds and reverses Connect transfers. Behind the
+# gateway as well as its own profiles admin check.
+[functions.refund-payment]
+verify_jwt = true

@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Card } from '@/components/ui/Card';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { MembershipRefunds } from '@/components/admin/MembershipRefunds';
 
 interface PaymentRow {
   id: string;
@@ -54,6 +55,10 @@ export default function AdminPaymentsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<PaymentFilter>('all');
   const [refundingId, setRefundingId] = useState<string | null>(null);
+  // Two payment rails live here now. Deliveries were the only one this screen
+  // could see, which is why a membership could not be refunded without pasting
+  // a Stripe id by hand.
+  const [rail, setRail] = useState<'deliveries' | 'memberships'>('deliveries');
 
   const fetchPayments = useCallback(async () => {
     let query = supabase
@@ -151,9 +156,31 @@ export default function AdminPaymentsScreen() {
             <Text style={styles.backLinkText}>‹ Back</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Payments</Text>
-          <Text style={styles.subtitle}>Delivery fees and Stripe transaction status.</Text>
+          <Text style={styles.subtitle}>
+            {rail === 'deliveries'
+              ? 'Delivery fees and Stripe transaction status.'
+              : 'Hub membership payments and refunds.'}
+          </Text>
         </View>
 
+        <View style={styles.railRow}>
+          {(['deliveries', 'memberships'] as const).map((r) => (
+            <TouchableOpacity
+              key={r}
+              onPress={() => setRail(r)}
+              style={[styles.railBtn, rail === r && styles.railBtnOn]}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.railText, rail === r && styles.railTextOn]}>
+                {r === 'deliveries' ? 'Deliveries' : 'Memberships'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {rail === 'memberships' ? <MembershipRefunds /> : null}
+
+        {rail === 'deliveries' ? <>
         {/* Summary */}
         <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, styles.summaryCardBorder]}>
@@ -265,12 +292,18 @@ export default function AdminPaymentsScreen() {
             </>
           )}
         </View>
+        </> : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  railRow: { flexDirection: 'row', gap: 8, marginBottom: spacing.md },
+  railBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.border },
+  railBtnOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  railText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textSecondary },
+  railTextOn: { color: '#fff' },
   safe: { flex: 1, backgroundColor: colors.navy },
   content: { backgroundColor: colors.screenBackground, paddingBottom: spacing.xxl, flexGrow: 1 },
 

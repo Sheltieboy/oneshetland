@@ -454,6 +454,7 @@ export async function setMemberRole(memberId: string, role: HubRole): Promise<vo
 export interface MembershipPurchase {
   id:                 string;
   hub_id:             string | null;
+  user_id:            string | null;
   hub_name:           string;
   tier_name:          string;
   period:             string;
@@ -464,10 +465,14 @@ export interface MembershipPurchase {
   paid_until_after:   string | null;
   source:             'live' | 'backfill';
   occurred_at:        string;
+  refunded_pence:     number;
+  refund_state:       'none' | 'partial' | 'full';
+  refunded_at:        string | null;
 }
 
+// stripe_transfer_id is deliberately absent: a payout reference belongs on no screen.
 const PURCHASE_COLUMNS =
-  'id, hub_id, hub_name, tier_name, period, face_pence, fee_pence, total_pence, payment_method, paid_until_after, source, occurred_at';
+  'id, hub_id, user_id, hub_name, tier_name, period, face_pence, fee_pence, total_pence, payment_method, paid_until_after, source, occurred_at, refunded_pence, refund_state, refunded_at';
 
 /**
  * Every membership this user has paid for, newest first.

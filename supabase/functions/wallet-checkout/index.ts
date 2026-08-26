@@ -266,6 +266,10 @@ async function hubMembership(svc: any, userId: string, body: any, rid: string): 
     p_hub: hub.id, p_user: userId, p_type: t.id, p_period: t.period,
     p_payment_pence: t.price_pence, p_pi: `wallet_${paid.transactionId}`,
     p_fee_pence: flatFee,
+    // A wallet membership has no Stripe charge, so a later refund cannot find
+    // the hub's payout from the charge the way a card refund does. Recording
+    // the transfer here is the only thing that makes it reversible.
+    p_transfer_id: transferId,
   });
   if (rpcErr) {
     await settleAttempt(svc, rid, 'reversed', paid.transactionId);

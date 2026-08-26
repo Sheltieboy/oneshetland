@@ -192,6 +192,34 @@ type WalletRecovery = {
  * called after the money has already moved and its errors are swallowed here
  * rather than thrown.
  */
+/**
+ * Tell the buyer their membership payment came back. Membership facts only —
+ * no payment intent, no refund id, nothing they would have to decode.
+ */
+async function notifyMembershipRefund(
+  svc: SupabaseClient, mem: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const userId = mem.user_id as string | null;
+    if (!userId) return;
+    const tier  = String(mem.tier_name ?? 'membership');
+    const full  = mem.refund_state === 'full';
+    const money = `£${(((mem.refunded_pence as number) ?? 0) / 100).toFixed(2)}`;
+    await sendUserPush(svc, {
+      userId,
+      module:     'hubs',
+      categoryId: 'hubs.membership_refunded',
+      title:      full ? 'Membership refunded' : 'Partial refund issued',
+      body: full
+        ? `Your ${tier} membership payment of ${money} has been refunded.`
+        : `${money} of your ${tier} membership payment has been refunded. Your membership is unchanged.`,
+      data: { kind: 'membership_refund', hub_id: mem.hub_id ?? null },
+    });
+  } catch (e) {
+    console.error('[stripe-webhook] membership refund push:', e);
+  }
+}
+
 async function notifyWalletRecovery(
   svc: SupabaseClient, pi: string, rec: WalletRecovery, kind: 'refund' | 'dispute',
 ): Promise<void> {
@@ -760,6 +788,33 @@ serve(async (req) => {
             // Reported, not swallowed: an unrecovered wallet must be retryable.
             console.error('[stripe-webhook] wallet refund recovery failed', e);
             throw e;
+          }
+
+          // ── Hub membership ───────────────────────────────────────────────
+          //
+          // This branch previously knew about top-ups, deliveries and tickets,
+          // so a refunded membership kept its card, its access and its free
+          // rejoin while the money went back. The RPC maps the payment intent
+          // to its purchase through the UNIQUE payment_intent_id column, never
+          // through webhook metadata, and resolves to 'not_a_membership' for
+          // every other rail.
+          //
+          // amount_refunded is Stripe's RUNNING TOTAL. Handing it over as the
+          // cumulative figure is what makes a redelivered event, and a partial
+          // followed by a larger one, settle to one outcome. Only a FULL
+          // cumulative refund revokes: a partial is recorded and shown, and
+          // changes no entitlement.
+          const memberRefunded = (eventData.amount_refunded as number) ?? 0;
+          if (memberRefunded > 0) {
+            const { data: memRes, error: memErr } = await supabase.rpc(
+              'record_membership_refund', { p_pi: pi, p_cumulative: memberRefunded },
+            );
+            if (memErr) throw memErr;
+            const mem = memRes as Record<string, unknown> | null;
+            if (mem?.matched) {
+              console.log(`[stripe-webhook] membership refund ${pi}: ${JSON.stringify(mem)}`);
+              if (mem.changed) await notifyMembershipRefund(supabase, mem);
+            }
           }
 
           await supabase
