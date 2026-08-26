@@ -271,27 +271,25 @@ serve(async (req) => {
     }
 
     // ── Mode 1: saved card, off-session ──────────────────────────────────────
+    // Asking for the saved card is a PREFERENCE, not an assertion that one
+    // exists. A first-time buyer has no card on file, and turning that into
+    // "No saved card found" made a first purchase impossible — the client had
+    // no way to ask for the card form instead. Having no card is not an error;
+    // it means the card form is the right screen. A saved card that FAILS
+    // still errors further down, because that is a different thing.
+    let customerId: string | null = null;
+    let pmId: string | null = null;
     if (use_saved_card) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('stripe_customer_id')
         .eq('id', user.id)
         .single();
+      customerId = profile?.stripe_customer_id ?? null;
+      pmId = customerId ? await listSavedCard(customerId) : null;
+    }
 
-      const customerId = profile?.stripe_customer_id;
-      if (!customerId) {
-        return new Response(JSON.stringify({ error: 'No saved card found. Please add a payment card in your account.' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      const pmId = await listSavedCard(customerId);
-      if (!pmId) {
-        return new Response(JSON.stringify({ error: 'No saved card found. Please update your payment card in account settings.' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
+    if (customerId && pmId) {
       const paymentIntent = await createPaymentIntent({
         ...baseParams,
         ...onSessionConfirm(customerId, pmId),

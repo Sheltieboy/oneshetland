@@ -229,12 +229,22 @@ serve(async (req) => {
       baseParams['application_fee_amount']      = String(feeEstimate);
     }
 
+    // Asking for the saved card is a PREFERENCE, not an assertion that one
+    // exists. Someone donating for the first time has no card on file, and
+    // turning that into "No saved card found" made a first donation impossible
+    // — the client had no way to ask for the card form instead. Having no card
+    // is not an error; it just means the card form is the right screen. A
+    // saved card that FAILS still errors, further down, because that is a
+    // different thing entirely.
+    let customerId: string | null = null;
+    let pmId: string | null = null;
     if (use_saved_card) {
       const { data: profile } = await svc.from('profiles').select('stripe_customer_id').eq('id', user.id).single();
-      const customerId = profile?.stripe_customer_id;
-      if (!customerId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
-      const pmId = await listSavedCard(customerId);
-      if (!pmId) return json({ error: 'No saved card found. Add a payment card in your account.' }, 400);
+      customerId = profile?.stripe_customer_id ?? null;
+      pmId = customerId ? await listSavedCard(customerId) : null;
+    }
+
+    if (customerId && pmId) {
       const pi = await createPaymentIntent({ ...baseParams, ...onSessionConfirm(customerId, pmId) }, `donation-${user.id}-${campaign.id}-${amount}-${client_request_id}`);
       // Bind the intent to its attempt BEFORE any branch returns — including
       // requires_action, where the webhook may fulfil while the donor is still
