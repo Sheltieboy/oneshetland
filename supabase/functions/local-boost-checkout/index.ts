@@ -46,14 +46,34 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { business_id, weeks } = await req.json();
-    if (!business_id || ![1, 2, 3].includes(weeks)) {
+    const {
+      business_id,
+      weeks,
+      client_request_id,
+      use_saved_card = true,
+      preview = false,
+    } = await req.json();
+    if (!business_id) return json({ error: 'business_id required' }, 400);
+    if (!preview && ![1, 2, 3].includes(weeks)) {
       return json({ error: 'business_id + weeks (1|2|3) required' }, 400);
+    }
+
+    // One deliberate checkout, one reference. Without it a double-click or a
+    // retried request minted a SECOND PaymentIntent for the same boost, and
+    // nothing downstream could tell the two apart. Validated before Stripe is
+    // touched, so a malformed attempt costs nothing.
+    if (!preview) {
+      if (typeof client_request_id !== 'string') {
+        return json({ error: 'client_request_id required' }, 400);
+      }
+      if (client_request_id.length < 8 || client_request_id.length > 100) {
+        return json({ error: 'client_request_id must be 8-100 characters' }, 400);
+      }
     }
 
     const { data: business } = await svc
       .from('local_businesses')
-      .select('id, owner_id, name, email, stripe_customer_id, business_stripe_customer_id, has_business_payment_method, stripe_subscription_id, subscription_tier')
+      .select('id, owner_id, name, email, stripe_customer_id, business_stripe_customer_id, has_business_payment_method, stripe_subscription_id, subscription_tier, subscription_until')
       .eq('id', business_id)
       .single();
 
@@ -65,6 +85,36 @@ serve(async (req) => {
       return json({
         error: 'You\'re already on a monthly plan. Cancel it first if you want to switch to boosts.',
       }, 400);
+    }
+
+    /**
+     * Where a boost of N weeks would land. The same rule the webhook grants
+     * with — start from the later of now and the current expiry — so what the
+     * buyer is shown and what they get cannot disagree.
+     */
+    const expiryAfter = (w: number): string => {
+      const now = new Date();
+      const until = business.subscription_until ? new Date(business.subscription_until) : null;
+      const startFrom = until && until > now ? until : now;
+      return new Date(startFrom.getTime() + w * 7 * 24 * 60 * 60 * 1000).toISOString();
+    };
+
+    // ── Preview: what the options cost and what they'd give ─────────────────
+    // No Stripe, no PaymentIntent, no charge. The prices live in admin_config,
+    // which only an admin may read, so the buyer's own screen cannot look them
+    // up — it has to be told, and this is the one place that knows.
+    if (preview) {
+      const options = [];
+      for (const w of [1, 2, 3]) {
+        const p = await getConfig(svc, `boost.price.${w}_week_pence`, null);
+        const pence = p ? parseInt(p, 10) : 0;
+        if (pence > 0) options.push({ weeks: w, amountPence: pence, newExpiry: expiryAfter(w) });
+      }
+      return json({
+        options,
+        currentUntil: business.subscription_until ?? null,
+        hasSavedCard: await hasAnyCard(svc, user.id, business),
+      });
     }
 
     // Resolve price for the chosen duration
@@ -94,11 +144,11 @@ serve(async (req) => {
       .select('stripe_customer_id, has_payment_method').eq('id', user.id).maybeSingle();
     let cardCustomer: string | null = null;
     let cardPm: string | null = null;
-    if (business.has_business_payment_method && business.business_stripe_customer_id) {
+    if (use_saved_card && business.has_business_payment_method && business.business_stripe_customer_id) {
       const pm = await firstCard(stripe, business.business_stripe_customer_id as string);
       if (pm) { cardCustomer = business.business_stripe_customer_id as string; cardPm = pm; }
     }
-    if (!cardCustomer && prof?.has_payment_method && prof.stripe_customer_id) {
+    if (use_saved_card && !cardCustomer && prof?.has_payment_method && prof.stripe_customer_id) {
       const pm = await firstCard(stripe, prof.stripe_customer_id as string);
       if (pm) { cardCustomer = prof.stripe_customer_id as string; cardPm = pm; }
     }
@@ -114,6 +164,12 @@ serve(async (req) => {
           automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
           description: `OneShetland Local · ${weeks}-week Pro boost · ${business.name}`,
           metadata: { type: 'local_boost', business_id, owner_id: user.id, weeks: String(weeks), amount_pence: String(amountPence) },
+        }, {
+          // One deliberate checkout reaches ONE PaymentIntent, however many
+          // times it is retried. Buying the same boost again later carries a
+          // different attempt, so a genuine extension is never deduplicated
+          // against the first purchase.
+          idempotencyKey: `local-boost-${user.id}-${business_id}-${weeks}-${client_request_id}`,
         });
         if (pi.status === 'succeeded') {
           await svc.from('local_boost_purchases').insert({
@@ -137,7 +193,22 @@ serve(async (req) => {
             amountPence, weeks,
           });
         }
-      } catch (_e) { /* declined → fall through to the card form */ }
+      } catch (err) {
+        // A saved card that declines — or a request whose outcome we simply do
+        // not know — must NOT quietly become a second PaymentIntent on the card
+        // form. Stripe may have created and charged the first one and lost the
+        // reply; falling through would charge twice. It is also not ours to
+        // decide that a declined card means "use a different one" — that is the
+        // buyer's choice, made deliberately with "Use another card".
+        //
+        // Retrying THIS attempt is safe: the idempotency key above returns the
+        // same intent rather than making a new one.
+        console.error('[local-boost-checkout] saved-card confirm failed', err);
+        return json({
+          error: 'That card could not complete the payment. Try again, or choose another card.',
+          saved_card_failed: true,
+        }, 402);
+      }
     }
 
     // Create or reuse customer
@@ -169,6 +240,11 @@ serve(async (req) => {
         weeks:        String(weeks),
         amount_pence: String(amountPence),
       },
+    }, {
+      // Separate namespace from the saved-card key: choosing to type a card is
+      // a different route through the same deliberate checkout, and must not
+      // collide with an intent already confirmed on a saved card.
+      idempotencyKey: `local-boost-form-${user.id}-${business_id}-${weeks}-${client_request_id}`,
     });
 
     // Ephemeral key for the Payment Sheet (saved payment methods access)
@@ -201,6 +277,19 @@ serve(async (req) => {
     return json({ error: safeError('local-boost-checkout', err) }, 500);
   }
 });
+
+/** Does this buyer have any card we could charge — business first, then personal? */
+async function hasAnyCard(
+  // deno-lint-ignore no-explicit-any
+  svc: any,
+  userId: string,
+  business: { has_business_payment_method?: boolean | null; business_stripe_customer_id?: string | null },
+): Promise<boolean> {
+  if (business.has_business_payment_method && business.business_stripe_customer_id) return true;
+  const { data: prof } = await svc.from('profiles')
+    .select('has_payment_method, stripe_customer_id').eq('id', userId).maybeSingle();
+  return !!(prof?.has_payment_method && prof.stripe_customer_id);
+}
 
 // Returns a customer's default card payment method (or its first attached card).
 // Null if the customer has no card.
