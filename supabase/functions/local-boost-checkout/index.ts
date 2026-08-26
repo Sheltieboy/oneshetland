@@ -26,6 +26,56 @@ const corsHeaders = {
  *
  * Body: { business_id: string, weeks: 1 | 2 | 3 }
  */
+/**
+ * May this business be sold a temporary Pro boost?
+ *
+ * The boost fulfils by writing `subscription_tier = 'pro'` and
+ * `subscription_until = <calculated>`. That is a GRANT for a business with
+ * nothing, and a REDUCTION for one that already has more — so eligibility is
+ * not "can we take the money", it is "does this leave them better off".
+ *
+ *   no Stripe subscription        — otherwise they already pay monthly for it
+ *   AND effectively free          — nothing to lose
+ *       or an expired entitlement — it has already ended
+ *       or a running boost        — a second one extends the first
+ *
+ * Refused for a current Premium entitlement (paid or seeded), because 'pro'
+ * is less than what they hold, and for an INDEFINITE Pro entitlement, because
+ * writing an expiry onto access that had none takes it away in three weeks.
+ *
+ * The one place this is decided. The preview and the payment both call it, so
+ * a screen cannot offer what the server would refuse, and refusing here is
+ * what actually protects the business — not hiding the button.
+ */
+function boostEligibility(b: {
+  subscription_tier?: string | null;
+  subscription_until?: string | null;
+  stripe_subscription_id?: string | null;
+}): { eligible: boolean; reason: string } {
+  if (b.stripe_subscription_id) return { eligible: false, reason: 'active_subscription' };
+
+  const tier = b.subscription_tier ?? 'free';
+  const until = b.subscription_until ? new Date(b.subscription_until) : null;
+  const expired = !!until && until <= new Date();
+
+  if (tier === 'free') return { eligible: true, reason: 'free' };
+  if (expired) return { eligible: true, reason: 'expired_entitlement' };
+
+  // Still entitled to something, with no subscription behind it.
+  if (tier === 'premium') return { eligible: false, reason: 'higher_entitlement' };
+  if (tier === 'pro' && !until) return { eligible: false, reason: 'indefinite_entitlement' };
+  if (tier === 'pro') return { eligible: true, reason: 'extending_boost' };
+
+  // An unknown tier that is still running is not ours to reduce.
+  return { eligible: false, reason: 'higher_entitlement' };
+}
+
+const INELIGIBLE_MESSAGE: Record<string, string> = {
+  active_subscription:     "You're already on a monthly plan. Cancel it first if you want to switch to boosts.",
+  higher_entitlement:      'This business already has Premium. A Pro boost would give it less, so there is nothing to buy.',
+  indefinite_entitlement:  'This business already has Pro with no end date. A boost would replace that with a few weeks.',
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -79,11 +129,15 @@ serve(async (req) => {
 
     if (!business || business.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
-    // Block boosts on businesses that already have an active monthly subscription
-    // — no point paying for a boost when you're already paying monthly.
-    if (business.stripe_subscription_id) {
+    // One rule, decided once. A business that may not be sold a boost is
+    // refused HERE — before any price is read and before Stripe is touched —
+    // so a screen that offered it wrongly still cannot take the money.
+    const eligibility = boostEligibility(business);
+    if (!preview && !eligibility.eligible) {
       return json({
-        error: 'You\'re already on a monthly plan. Cancel it first if you want to switch to boosts.',
+        error: INELIGIBLE_MESSAGE[eligibility.reason] ?? 'This business cannot buy a boost just now.',
+        reason: eligibility.reason,
+        boost_eligible: false,
       }, 400);
     }
 
@@ -104,6 +158,15 @@ serve(async (req) => {
     // which only an admin may read, so the buyer's own screen cannot look them
     // up — it has to be told, and this is the one place that knows.
     if (preview) {
+      if (!eligibility.eligible) {
+        return json({
+          boost_eligible: false,
+          reason: eligibility.reason,
+          options: [],
+          currentUntil: business.subscription_until ?? null,
+          hasSavedCard: false,
+        });
+      }
       const options = [];
       for (const w of [1, 2, 3]) {
         const p = await getConfig(svc, `boost.price.${w}_week_pence`, null);
@@ -111,6 +174,8 @@ serve(async (req) => {
         if (pence > 0) options.push({ weeks: w, amountPence: pence, newExpiry: expiryAfter(w) });
       }
       return json({
+        boost_eligible: true,
+        reason: eligibility.reason,
         options,
         currentUntil: business.subscription_until ?? null,
         hasSavedCard: await hasAnyCard(svc, user.id, business),

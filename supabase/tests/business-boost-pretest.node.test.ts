@@ -203,7 +203,9 @@ describe('the strong parts are untouched', () => {
 
   test('only the owner may buy, and only without a live subscription', () => {
     assert.match(boostFn, /business\.owner_id !== user\.id\) return json\(\{ error: 'Forbidden' \}, 403\)/);
-    assert.match(boostFn, /if \(business\.stripe_subscription_id\)/);
+    // The subscription check moved into boostEligibility when the one rule was
+    // unified; it is still the first thing that predicate asks.
+    assert.match(boostFn, /if \(b\.stripe_subscription_id\) return \{ eligible: false, reason: 'active_subscription' \}/);
   });
 
   test('the webhook is still the authority, claiming before it grants', () => {
@@ -241,5 +243,111 @@ describe('the strong parts are untouched', () => {
   test('the boost checkout is the only place the web starts one', () => {
     assert.ok(existsSync(join(WEB_ROOT, 'components/business/BoostCheckout.tsx')));
     assert.doesNotMatch(billing, /createBoostIntent\(/);
+  });
+});
+
+/* ── E. one eligibility rule, decided by the server ───────────────────────── */
+
+/**
+ * A boost writes subscription_tier='pro' and a calculated expiry. That is a
+ * GRANT for a business with nothing and a REDUCTION for one that already has
+ * more, so eligibility is not "may we take the money" but "does this leave
+ * them better off".
+ *
+ * The two sides disagreed. The web gated on `tier === 'free'`, which hid the
+ * panel from a business already on a boost — the one case the webhook's
+ * stacking arithmetic exists for. The server gated only on a live Stripe
+ * subscription, so it would have sold a Premium business a downgrade to Pro.
+ */
+describe('who may be sold a boost is decided in one place', () => {
+  test('the predicate lives in the function, not in a screen', () => {
+    assert.match(boostFn, /function boostEligibility\(/);
+    assert.match(boostFn, /reason: 'active_subscription'/);
+    assert.match(boostFn, /reason: 'higher_entitlement'/);
+    assert.match(boostFn, /reason: 'indefinite_entitlement'/);
+    assert.match(boostFn, /reason: 'extending_boost'/);
+  });
+
+  test('the purchase refuses an ineligible business before Stripe', () => {
+    assert.match(boostFn, /const eligibility = boostEligibility\(business\)/);
+    assert.match(boostFn, /if \(!preview && !eligibility\.eligible\)/);
+    // Refused before the price is read and long before an intent is created.
+    assert.ok(boostFn.indexOf('boostEligibility(business)') < boostFn.indexOf('const priceKey'));
+    assert.ok(boostFn.indexOf('if (!preview && !eligibility.eligible)') < boostFn.indexOf('new Stripe('));
+  });
+
+  test('the preview answers with the same predicate, not its own', () => {
+    // One call, one verdict — a screen cannot offer what the payment refuses.
+    assert.equal((boostFn.match(/boostEligibility\(/g) ?? []).length, 2); // definition + single call
+    assert.match(boostFn, /boost_eligible: false,\s*reason: eligibility\.reason/);
+    assert.match(boostFn, /boost_eligible: true,\s*reason: eligibility\.reason/);
+  });
+
+  test('a current Premium entitlement is refused however it arose', () => {
+    // Paid or seeded: 'pro' is less than what they hold.
+    assert.match(boostFn, /if \(tier === 'premium'\) return \{ eligible: false, reason: 'higher_entitlement' \}/);
+  });
+
+  test('indefinite Pro is refused rather than given an expiry', () => {
+    assert.match(boostFn, /if \(tier === 'pro' && !until\) return \{ eligible: false, reason: 'indefinite_entitlement' \}/);
+  });
+
+  test('an expired entitlement, and a running boost, are both eligible', () => {
+    assert.match(boostFn, /if \(expired\) return \{ eligible: true, reason: 'expired_entitlement' \}/);
+    assert.match(boostFn, /if \(tier === 'pro'\) return \{ eligible: true, reason: 'extending_boost' \}/);
+  });
+
+  test('an unknown tier that is still running is not reduced', () => {
+    const tail = boostFn.slice(boostFn.indexOf("reason: 'extending_boost'"));
+    assert.match(tail, /return \{ eligible: false, reason: 'higher_entitlement' \}/);
+  });
+
+  test('no Stripe identifier leaks in a refusal', () => {
+    const msgs = boostFn.slice(boostFn.indexOf('INELIGIBLE_MESSAGE'), boostFn.indexOf('serve(async'));
+    assert.doesNotMatch(msgs, /sub_|cus_|pi_|acct_/);
+  });
+});
+
+describe('the billing screen asks rather than guesses', () => {
+  test('the boost panel no longer rides on the free-tier gate', () => {
+    assert.match(billing, /\{boostPreview\?\.boost_eligible && \(/);
+    const freeBlock = billing.slice(billing.indexOf('{tier === "free" && ('));
+    assert.doesNotMatch(freeBlock.slice(0, freeBlock.indexOf('</>')), /try Pro for a short time/,
+      'the boost panel is still inside the free-tier gate');
+  });
+
+  test('it is not merely widened to pro, which would expose indefinite Pro', () => {
+    assert.doesNotMatch(billing, /tier === "free" \|\| tier === "pro"/);
+  });
+
+  test('a business already on a boost is shown what it extends to', () => {
+    assert.match(checkout, /const extending = !!currentUntil && new Date\(currentUntil\) > new Date\(\)/);
+    assert.match(checkout, /Pro access until \{fmt\(currentUntil!\)\}/);
+    assert.match(checkout, /Extends to \{fmt\(option\.newExpiry\)\}/);
+  });
+
+  test('the extension still uses the server duration rule', () => {
+    assert.match(boostFn, /const startFrom = until && until > now \? until : now/);
+    assert.match(webhook, /const startFrom = biz\?\.subscription_until && new Date\(biz\.subscription_until\) > now/);
+  });
+});
+
+describe('a Premium business cannot be downgraded by buying a boost', () => {
+  test('the refusal is in the payment path, not just the UI', () => {
+    // Hiding the button protects nobody who calls the function directly.
+    const gate = boostFn.slice(boostFn.indexOf('const eligibility'), boostFn.indexOf('const priceKey'));
+    assert.match(gate, /return json\(/);
+    assert.match(gate, /boost_eligible: false/);
+  });
+
+  test('the production business that prompted this stays ineligible', () => {
+    // DEMO — Shetland Makkers: premium tier, no expiry, no subscription.
+    const r = runSql(`select subscription_tier, coalesce(subscription_until::text,'null') until,
+                             coalesce(stripe_subscription_id,'null') sub
+                        from public.local_businesses where slug = 'demo-shetland-makkers';`)[0];
+    assert.equal(r.subscription_tier, 'premium');
+    assert.equal(r.until, 'null');
+    assert.equal(r.sub, 'null');
+    // premium + no expiry + no subscription -> higher_entitlement -> refused.
   });
 });
