@@ -454,11 +454,14 @@ describe('wallet refunds go back through the ledger, not around it', () => {
 
 /* ── 5. who may do it ─────────────────────────────────────────────────────── */
 
-describe('only a OneShetland admin can refund', () => {
-  test('the function checks the platform admin rule, not hub membership', () => {
+describe('refunds are still not open to just anyone', () => {
+  // Authority widened after this was written: a hub OWNER may now refund a
+  // membership their own hub sold, resolved from the purchase. Everyone else
+  // is still refused, and the detail lives in hub-owner-refunds.node.test.ts.
+  test('the platform admin rule survives, and hub roles still grant nothing', () => {
     assert.match(refundFn, /is_platform_owner/);
-    assert.match(refundFn, /Forbidden — admins only/);
-    assert.doesNotMatch(refundFn, /is_hub_admin|from\('hub_members'\)|role === 'owner'|committee/);
+    assert.match(refundFn, /Forbidden — you cannot refund this payment\./);
+    assert.doesNotMatch(refundFn, /is_hub_admin|from\('hub_members'\)|committee/);
   });
 
   test('no client role can record a refund or recompute entitlement', () => {

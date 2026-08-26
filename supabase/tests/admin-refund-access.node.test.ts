@@ -142,7 +142,10 @@ describe('no refund logic was reimplemented on the web', () => {
     assert.match(refundFn, /form\.set\('reverse_transfer', 'true'\)/);
     assert.match(refundFn, /form\.set\('refund_application_fee', 'true'\)/);
     assert.match(refundFn, /record_membership_refund/);
-    assert.match(refundFn, /Forbidden — admins only/);
+    // The gate widened: a hub owner may now refund their own hub's memberships,
+    // so the refusal is no longer worded as admins-only. Everyone else is still
+    // refused — see hub-owner-refunds.node.test.ts.
+    assert.match(refundFn, /Forbidden — you cannot refund this payment\./);
   });
 
   test('the amount is still decided by the server, not sent by the page', () => {
@@ -198,20 +201,23 @@ describe('the native screen is correct but only reaches a published build', () =
 /* ── 6. nothing was spent proving any of this ─────────────────────────────── */
 
 describe('the TEST purchase is untouched', () => {
-  test('one live £10.95 Junior purchase, unrefunded', () => {
+  // Written while the £10.95 Junior purchase was unrefunded. It has since been
+  // refunded in full as the deliberate TEST proof, so these now pin the
+  // POST-refund truth: the purchase is kept and marked, not deleted.
+  test('one live £10.95 Junior purchase, now refunded in full', () => {
     const r = runSql(`select count(*)::text c,
                              coalesce(max(total_pence) filter (where source = 'live'),0)::text total,
-                             coalesce(string_agg(distinct refund_state, ','),'-') as states
+                             coalesce(max(refund_state) filter (where source = 'live'),'-') as state
                         from public.hub_membership_purchases;`)[0];
     assert.equal(r.c, '2');
     assert.equal(r.total, '1095');
-    assert.equal(r.states, 'none', 'a refund has been issued');
+    assert.equal(r.state, 'full');
   });
 
-  test('the membership it bought still runs to 2027', () => {
+  test('the June Adult membership is untouched by any of it', () => {
     const r = runSql(`select count(*)::text c from public.hub_members
                        where stripe_payment_intent_id is not null
                          and paid_until > now() and status = 'active';`)[0];
-    assert.equal(r.c, '2');
+    assert.equal(r.c, '1');
   });
 });

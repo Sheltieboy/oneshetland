@@ -160,14 +160,6 @@ serve(async (req) => {
 
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    // Admin gate. Matches public.is_admin(), which is what every other admin
-    // surface uses — a platform owner is an admin everywhere else, and a refund
-    // should not be the one place that disagrees.
-    const { data: me } = await svc.from('profiles')
-      .select('role, is_platform_owner').eq('id', user.id).maybeSingle();
-    const isAdmin = me?.role === 'admin' || me?.is_platform_owner === true;
-    if (!isAdmin) return json({ error: 'Forbidden — admins only' }, 403);
-
     const { payment_intent_id, amount_pence = null, reason = 'requested_by_customer' } = await req.json();
     if (!payment_intent_id || typeof payment_intent_id !== 'string') {
       return json({ error: 'payment_intent_id required' }, 400);
@@ -182,6 +174,37 @@ serve(async (req) => {
               'payment_method, payment_intent_id, refunded_pence, refund_state, stripe_transfer_id')
       .eq('payment_intent_id', payment_intent_id).maybeSingle();
     const membership = purchaseRow as MembershipPurchase | null;
+
+    // ── Who may refund THIS payment ────────────────────────────────────────
+    //
+    // A platform admin may refund anything. A hub owner may refund a
+    // membership sold by their own hub, and nothing else — the money came out
+    // of their connected account, so putting it back is theirs to decide.
+    //
+    // Ownership is resolved from the PURCHASE, never from the request: the
+    // caller supplies a payment reference and the server works out which hub
+    // that belongs to. A hub id, an owner id or a destination account sent by
+    // a client is not read at all, so none of them can be substituted.
+    //
+    // Committee members are deliberately excluded. They run parts of a hub,
+    // but only the owner controls the Stripe Connect relationship the money
+    // moves through, and refunds follow that boundary rather than the
+    // hub-management one.
+    const { data: me } = await svc.from('profiles')
+      .select('role, is_platform_owner').eq('id', user.id).maybeSingle();
+    const isAdmin = me?.role === 'admin' || me?.is_platform_owner === true;
+
+    let ownsThisHub = false;
+    if (!isAdmin && membership?.hub_id) {
+      const { data: hub } = await svc.from('hubs')
+        .select('owner_id').eq('id', membership.hub_id).maybeSingle();
+      ownsThisHub = (hub as { owner_id?: string } | null)?.owner_id === user.id;
+    }
+    if (!isAdmin && !ownsThisHub) {
+      // Deliveries, tickets and every other rail stay platform-admin only:
+      // there is no hub whose owner could claim them.
+      return json({ error: 'Forbidden — you cannot refund this payment.' }, 403);
+    }
 
     if (membership) {
       const total     = membership.total_pence ?? (membership.face_pence + (membership.fee_pence ?? 0));

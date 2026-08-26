@@ -235,13 +235,15 @@ describe('the rest of Paygate 8 is untouched', () => {
     assert.match(refundFn, /reverse_transfer/);
   });
 
-  test('the real purchase just made is exactly one, and unrefunded', () => {
+  // That purchase has since been refunded in full, deliberately, to prove the
+  // refund economics. The row survives — which is the point of it.
+  test('the real purchase just made is exactly one, and survives its refund', () => {
     const r = runSql(`select count(*)::text c,
                              coalesce(sum(case when refund_state <> 'none' then 1 else 0 end),0)::text refunded,
                              coalesce(max(total_pence) filter (where source = 'live'),0)::text live_total
                         from public.hub_membership_purchases;`)[0];
     assert.equal(r.c, '2', 'the number of membership purchases changed');
-    assert.equal(r.refunded, '0', 'something has been refunded');
+    assert.equal(r.refunded, '1', 'the refunded count changed');
     assert.equal(r.live_total, '1095');
   });
 
