@@ -184,7 +184,7 @@ describe('A — one deliberate membership checkout, one PaymentIntent', () => {
     assert.match(webClient, /client_request_id: attemptId/);
     // Both routes now live in the checkout, behind the summary, and share one
     // reference because they are alternatives within one purchase.
-    assert.match(memberCheckout, /startMembershipPayment\(tier\.id, attemptId\(\), method === "saved"\)/);
+    assert.match(memberCheckout, /startMembershipPayment\(tier\.id, attemptId\(\), usingSavedCard\)/);
     assert.match(memberCheckout, /walletCheckout\(\{ type: "hub_membership", membership_type_id: tier\.id \}, attemptId\(\)\)/);
   });
 

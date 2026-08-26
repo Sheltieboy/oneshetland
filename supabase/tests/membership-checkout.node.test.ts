@@ -250,7 +250,11 @@ describe('payment methods live inside the checkout', () => {
 
   test('another card remains available', () => {
     assert.match(checkout, /Use another card/);
-    assert.match(checkout, /method === "saved"\)/);
+    // The chosen method still decides the route — it is now named rather than
+    // inlined, because the saved-card branch must also refuse to fall through
+    // to the card form.
+    assert.match(checkout, /const usingSavedCard = method === "saved"/);
+    assert.match(checkout, /startMembershipPayment\(tier\.id, attemptId\(\), usingSavedCard\)/);
   });
 
   test('the wallet shows its balance and refuses when short', () => {
