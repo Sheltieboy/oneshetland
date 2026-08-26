@@ -136,17 +136,62 @@ describe('notification fan-outs are not reachable with the anon key', () => {
     }
   });
 
+  /**
+   * Statuses that are the platform failing to produce an answer at all — a
+   * cold container that did not boot in time, or the gateway shedding while it
+   * starts one. They are not the function's reply, so they are not evidence
+   * about authorisation either way, and they are the ONLY HTTP statuses this
+   * test will ask again about.
+   *
+   * Nothing else is retried. In particular a 2xx is failed immediately and can
+   * never be retried away: "first response 200, second response 401" is a
+   * security failure, not a flake, so the 2xx check comes before any retry.
+   */
+  const NO_ANSWER_YET = new Set([502, 503, 504, 546]);
+  const ATTEMPTS = 3;
+
   test('each fan-out rejects a request bearing only the anon key', { skip: !cfg }, async () => {
     for (const f of FAN_OUTS) {
-      const res = await fetch(`${cfg!.url}/functions/v1/${f}`, {
-        method: 'POST',
-        headers: { apikey: cfg!.anonKey, Authorization: `Bearer ${cfg!.anonKey}`, 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      // 401/403 only. A 404 or 400 would mean the body was processed, which is
-      // exactly how this was found: notify-event-update answered "update not
-      // found", proving it had already reached the database.
-      assert.ok([401, 403].includes(res.status), `${f} answered ${res.status} to the anon key`);
+      let settled = false;
+      for (let attempt = 1; attempt <= ATTEMPTS && !settled; attempt++) {
+        let res: Response;
+        try {
+          res = await fetch(`${cfg!.url}/functions/v1/${f}`, {
+            method: 'POST',
+            headers: { apikey: cfg!.anonKey, Authorization: `Bearer ${cfg!.anonKey}`, 'Content-Type': 'application/json' },
+            body: '{}',
+          });
+        } catch (e) {
+          // No HTTP response was received, so there is nothing to assert on.
+          // Only this case — and the no-answer statuses below — may be retried.
+          const why = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+          assert.ok(attempt < ATTEMPTS, `${f} never answered over ${ATTEMPTS} attempts (${why})`);
+          console.error(`  [fan-out probe] ${f} transport failure on attempt ${attempt}: ${why}`);
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+
+        // Checked FIRST, before any retry decision, so an accepted
+        // unauthenticated request can never be papered over by a later 401.
+        assert.ok(res.status < 200 || res.status >= 300,
+          `${f} ACCEPTED the anon key with ${res.status} — the anon key ships in the website bundle`);
+
+        if (NO_ANSWER_YET.has(res.status) && attempt < ATTEMPTS) {
+          console.error(`  [fan-out probe] ${f} answered ${res.status} on attempt ${attempt} (no answer yet, asking again)`);
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+
+        // The contract is exactly 401. A 400 or 404 would mean the body was
+        // processed, which is exactly how this was found: notify-event-update
+        // answered "update not found", proving it had already reached the
+        // database. A 429 would mean a limiter answered instead of the
+        // authorisation check, which is not the guarantee being made here.
+        const body = await res.text().catch(() => '<unreadable>');
+        assert.equal(res.status, 401,
+          `${f} answered ${res.status} to the anon key (expected 401): ${body.slice(0, 200)}`);
+        settled = true;
+      }
     }
   });
 });
