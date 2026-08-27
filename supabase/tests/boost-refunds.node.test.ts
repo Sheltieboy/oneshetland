@@ -64,16 +64,31 @@ create or replace function pg_temp.mkbiz(p_owner uuid) returns uuid language plp
 declare v uuid := gen_random_uuid();
 begin insert into public.local_businesses (id,name,category,address,owner_id,subscription_tier)
       values (v,'ZZ Fixture','other','Lerwick',p_owner,'free'); return v; end $f$;
-create or replace function pg_temp.buy(p_biz uuid,p_owner uuid,p_when timestamptz,p_weeks int,p_pence int,p_pi text)
+create or replace function pg_temp.buy(p_biz uuid,p_owner uuid,p_when timestamptz,p_weeks int,p_pence int,p_pi text,p_skew interval default interval '0')
 returns timestamptz language plpgsql as $f$
 declare v_cur timestamptz; v_exp timestamptz;
 begin
+  -- p_skew is the gap between checkout (created_at) and the webhook that
+  -- computes the expiry. The real £7 boost had 1.335321 seconds of it, and a
+  -- ceiling recomputed from created_at fell short by exactly that much.
   select subscription_until into v_cur from public.local_businesses where id=p_biz;
-  v_exp := greatest(p_when, coalesce(v_cur,p_when)) + (p_weeks * interval '7 days');
+  v_exp := greatest(p_when + p_skew, coalesce(v_cur,p_when + p_skew)) + (p_weeks * interval '7 days');
   insert into public.local_boost_purchases (business_id,owner_id,weeks,amount_pence,stripe_payment_intent_id,status,expires_at,created_at)
   values (p_biz,p_owner,p_weeks,p_pence,p_pi,'succeeded',v_exp,p_when);
   update public.local_businesses set subscription_tier='pro',subscription_until=v_exp where id=p_biz;
   return v_exp; end $f$;
+create or replace function pg_temp.preview(p_purchase uuid) returns text language plpgsql as $f$
+declare v_admin uuid; r jsonb; begin
+  select id into v_admin from public.profiles where role='admin' limit 1;
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub',v_admin::text,'role','authenticated')::text, true);
+  r := public.boost_refund_consequence(p_purchase);
+  reset role;
+  return coalesce(r->>'outcome','?') ||
+         case when r ? 'pro_until' then '@'||to_char((r->>'pro_until')::timestamptz,'YYYY-MM-DD') else '' end;
+exception when others then reset role; return 'ERROR:'||sqlerrm; end $f$;
+create or replace function pg_temp.pid(p_pi text) returns uuid language sql as
+$f$ select id from public.local_boost_purchases where stripe_payment_intent_id=p_pi $f$;
 create or replace function pg_temp.st(p_biz uuid) returns text language sql as
 $f$ select coalesce(to_char(subscription_until,'YYYY-MM-DD'),'NULL')||'/'||subscription_tier
      from public.local_businesses where id=p_biz $f$;
@@ -267,7 +282,7 @@ ${rec('expired_repeat', 'coalesce(r->\'entitlement\'->>\'reason\',\'NO CALL\')')
 
   test('a stronger entitlement granted afterwards is not overwritten', () => {
     assert.equal(r.manual_state, '2027-06-01/premium');
-    assert.equal(r.manual_reason, 'entitlement_not_boost_derived');
+    assert.equal(r.manual_reason, 'not_boost_derived');
   });
 
   test('an already-expired boost records the money and loses nothing', () => {
@@ -446,7 +461,7 @@ describe('history tells the truth after a refund', () => {
 
   test('the admin modal states the entitlement consequence before confirming', () => {
     assert.match(adminBoost, /boost_refund_consequence/, 'the consequence is not asked for');
-    assert.match(adminBoost, /Pro will end now and this business will return to Free/);
+    assert.match(adminBoost, /Pro will end and this business will return to Free/);
     assert.match(adminBoost, /Pro will fall back to/);
     assert.match(adminBoost, /this business now has an active subscription/);
     assert.match(adminBoost, /already expired/);
@@ -458,5 +473,133 @@ describe('history tells the truth after a refund', () => {
       assert.ok(!/payment_intent_id|stripe_payment_intent_id|\bpi_[a-zA-Z0-9]/.test(src),
         `a Stripe payment reference is rendered on the ${name} screen`);
     }
+  });
+});
+
+/* ── 8. the one-second bug, and preview/write parity ──────────────────────── */
+
+describe('the preview and the refund cannot disagree', () => {
+  /**
+   * The real £7 boost was bought at 19:41:54.174679 and granted Pro until
+   * 19:41:55.51 — the webhook computed the expiry 1.335321 seconds after
+   * checkout wrote created_at. Both the preview and the WRITER decided
+   * provenance by recomputing created_at + weeks × 7 days, which lands short of
+   * that, so both concluded the entitlement was not boost-derived. The admin
+   * screen said "not set by this boost", and a real refund would have returned
+   * the money and left Pro running.
+   *
+   * Every fixture here carries fulfilment skew for that reason.
+   */
+  const r = scenario(`
+  b := pg_temp.mkbiz(o);
+  perform pg_temp.buy(b,o,'2026-08-26 19:41:54.174679+00',1,700,'pi_r1', interval '1.335321 seconds');
+${rec('real_shape_preview', "pg_temp.preview(pg_temp.pid('pi_r1'))")}
+  r := public.record_boost_refund('pi_r1',700);
+${rec('real_shape_write', 'pg_temp.st(b)')}${rec('real_shape_revoked', "(r->>'revoked')")}
+
+  b := pg_temp.mkbiz(o);
+  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r2a', interval '2.5 seconds');
+  perform pg_temp.buy(b,o,'2026-08-27 10:00+00',1,700,'pi_r2b', interval '900 milliseconds');
+${rec('stack_latest_preview', "pg_temp.preview(pg_temp.pid('pi_r2b'))")}
+  perform public.record_boost_refund('pi_r2b',700);
+${rec('stack_latest_write', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o);
+  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r3a', interval '2.5 seconds');
+  perform pg_temp.buy(b,o,'2026-08-27 10:00+00',1,700,'pi_r3b', interval '900 milliseconds');
+${rec('stack_earlier_preview', "pg_temp.preview(pg_temp.pid('pi_r3a'))")}
+  perform public.record_boost_refund('pi_r3a',700);
+${rec('stack_earlier_write', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o);
+  perform pg_temp.buy(b,o,now() - interval '30 days',1,700,'pi_r4', interval '3 seconds');
+${rec('expired_preview', "pg_temp.preview(pg_temp.pid('pi_r4'))")}
+  perform public.record_boost_refund('pi_r4',700);
+${rec('expired_write', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o);
+  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r5', interval '1.2 seconds');
+  update public.local_businesses set stripe_subscription_id='sub_zz', subscription_tier='premium', subscription_until='2027-01-01' where id=b;
+${rec('subscriber_preview', "pg_temp.preview(pg_temp.pid('pi_r5'))")}
+  r := public.record_boost_refund('pi_r5',700);
+${rec('subscriber_write', 'pg_temp.st(b)')}${rec('subscriber_reason', "(r->'entitlement'->>'reason')")}
+
+  b := pg_temp.mkbiz(o);
+  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r6', interval '1.2 seconds');
+  update public.local_businesses set subscription_tier='premium', subscription_until='2027-06-01' where id=b;
+${rec('manual_preview', "pg_temp.preview(pg_temp.pid('pi_r6'))")}
+  r := public.record_boost_refund('pi_r6',700);
+${rec('manual_write', 'pg_temp.st(b)')}${rec('manual_reason', "(r->'entitlement'->>'reason')")}
+
+  b := pg_temp.mkbiz(o);
+  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r7', interval '1.4 seconds');
+  perform public.record_boost_refund('pi_r7',300);
+${rec('partial_state', 'pg_temp.st(b)')}${rec('partial_preview_after', "pg_temp.preview(pg_temp.pid('pi_r7'))")}`);
+
+  test('THE BUG: a boost fulfilled a second after checkout is still its own entitlement', () => {
+    // Against the old recomputed ceiling this returned not_boost_derived.
+    assert.equal(r.real_shape_preview, 'returns_to_free',
+      'the real production shape is misclassified — this is the reported bug');
+  });
+
+  test('and the writer agrees, so the refund actually revokes', () => {
+    assert.equal(r.real_shape_revoked, 'true');
+    assert.equal(r.real_shape_write, 'NULL/free');
+  });
+
+  test('preview and write agree on the latest stacked boost', () => {
+    assert.equal(r.stack_latest_preview, 'falls_back@2026-09-02');
+    assert.equal(r.stack_latest_write, '2026-09-02/pro');
+  });
+
+  test('preview and write agree on the earlier stacked boost', () => {
+    assert.equal(r.stack_earlier_preview, 'falls_back@2026-09-03');
+    assert.equal(r.stack_earlier_write, '2026-09-03/pro');
+  });
+
+  test('preview and write agree on an expired boost', () => {
+    assert.equal(r.expired_preview, 'returns_to_free');
+    assert.equal(r.expired_write, 'NULL/free');
+  });
+
+  test('preview and write agree that a subscriber is untouched', () => {
+    assert.equal(r.subscriber_preview, 'subscription');
+    assert.equal(r.subscriber_write, '2027-01-01/premium');
+    assert.equal(r.subscriber_reason, 'live_subscription');
+  });
+
+  test('preview and write agree that a stronger manual grant is untouched', () => {
+    assert.equal(r.manual_preview, 'not_boost_derived');
+    assert.equal(r.manual_write, '2027-06-01/premium');
+    assert.equal(r.manual_reason, 'not_boost_derived');
+  });
+
+  test('a partial refund changes nothing and still previews a full refund honestly', () => {
+    assert.equal(r.partial_state, '2026-09-02/pro');
+    assert.equal(r.partial_preview_after, 'returns_to_free');
+  });
+
+  test('provenance is asked in ONE place, by both paths', () => {
+    // The drift existed because the rule was written out twice. If either
+    // function stops calling the shared one, they can diverge again.
+    const src = runSql(`select proname, prosrc from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                         where n.nspname='public'
+                           and proname in ('apply_boost_entitlement','boost_refund_consequence');`);
+    assert.equal(src.length, 2);
+    for (const f of src) {
+      assert.match(String(f.prosrc), /boost_entitlement_provenance/,
+        `${f.proname} decides provenance for itself instead of asking the shared rule`);
+      assert.ok(!/max\(expires_at\)|weeks \* interval/.test(String(f.prosrc)),
+        `${f.proname} recomputes the ceiling instead of asking the shared rule`);
+    }
+  });
+
+  test('the shared rule reads the recorded expiry, never a recomputed one', () => {
+    const src = runSql(`select prosrc from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                         where n.nspname='public' and proname='boost_entitlement_provenance';`)[0];
+    assert.match(String(src.prosrc), /max\(expires_at\)/,
+      'the ceiling must come from what the webhook actually wrote');
+    assert.ok(!/weeks \* interval/.test(String(src.prosrc)),
+      'recomputing the ceiling from created_at is the bug that lost 1.3 seconds');
   });
 });
