@@ -548,8 +548,13 @@ ${rec('E_state', 'pg_temp.st(b)')}`);
     assert.match(webhook, /p_force:\s*true/);
     // Anything but a clean answer throws, so the handler 500s and Stripe retries.
     const fn = webhook.slice(webhook.indexOf('async function reconcileSubscription'));
-    assert.match(fn, /throw new Error\(`could not reconcile subscription/);
-    assert.match(fn, /resource_missing/, 'a subscription Stripe no longer knows is canceled, not a guess');
+    // Parsing moved into _shared/subscription-reconcile.ts, which throws on
+    // every unclean outcome — including 404, since Stripe serves cancelled
+    // subscriptions and a missing object is therefore unexplained, not gone.
+    assert.match(fn, /parseReconciledSubscription\(res\.ok, res\.status, body, subId\)/);
+    assert.match(fn, /throw new ReconcileFailed\(subId/);
+    assert.ok(!/resource_missing/.test(webhook),
+      'the 404-is-cancelled assumption is back');
   });
 
   test('no status-priority table was introduced', () => {

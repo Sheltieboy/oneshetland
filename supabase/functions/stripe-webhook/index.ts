@@ -4,6 +4,7 @@ import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
+import { parseReconciledSubscription, ReconcileFailed, type ReconciledSubscription } from '../_shared/subscription-reconcile.ts';
 
 /**
  * stripe-webhook
@@ -695,6 +696,8 @@ serve(async (req) => {
         let retired = retireRes as Record<string, unknown> | null;
 
         if (retired?.reason === 'needs_reconcile') {
+          // Throws on anything unclean, so a deletion is only applied when
+          // Stripe itself confirms the subscription is finished.
           const fresh = await reconcileSubscription(stripeKey, subId);
           if (['canceled', 'incomplete_expired'].includes(fresh.status)) {
             const { data: reRes, error: reErr } = await supabase.rpc('retire_subscription', {
@@ -998,38 +1001,24 @@ serve(async (req) => {
  * What the subscription IS, according to Stripe, right now.
  *
  * Used only to settle an equal-timestamp conflict, so the normal path costs no
- * extra call. FAILS CLOSED: anything other than a clean answer throws, the
- * handler returns 500, and Stripe retries — because acknowledging an event we
- * could not reconcile would silently keep whichever state happened to be there.
- *
- * A subscription Stripe no longer knows at all (404) is treated as canceled:
- * that is not a guess, it is the only state a missing subscription can be in.
+ * extra call. FAILS CLOSED on every unclean outcome — including 404 — because
+ * Stripe retains canceled subscriptions and serves them with status='canceled',
+ * so a missing object is an unexplained answer, not a cancellation. See
+ * _shared/subscription-reconcile.ts.
  */
-async function reconcileSubscription(stripeKey: string, subId: string): Promise<{
-  status: string; priceId: string | null; periodEndIso: string | null;
-  cancelAtPeriodEnd: boolean; customer: string | null;
-}> {
-  const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
-    headers: { Authorization: `Bearer ${stripeKey}` },
-  });
-  const body = await res.json();
-  if (!res.ok) {
-    if (res.status === 404 || body?.error?.code === 'resource_missing') {
-      return { status: 'canceled', priceId: null, periodEndIso: null, cancelAtPeriodEnd: false, customer: null };
-    }
-    throw new Error(`could not reconcile subscription ${subId}: ${body?.error?.message ?? res.status}`);
+async function reconcileSubscription(stripeKey: string, subId: string): Promise<ReconciledSubscription> {
+  let res: Response;
+  let body: unknown;
+  try {
+    res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
+      headers: { Authorization: `Bearer ${stripeKey}` },
+    });
+    body = await res.json().catch(() => ({}));
+  } catch (e) {
+    // Network failure is not information about the subscription.
+    throw new ReconcileFailed(subId, e instanceof Error ? e.message : String(e));
   }
-  const items = (body.items?.data ?? []) as Array<{ price?: { id?: string }; current_period_end?: number }>;
-  const endSec =
-    items.find((i) => typeof i.current_period_end === 'number')?.current_period_end ??
-    (body.current_period_end as number | undefined);
-  return {
-    status:            String(body.status ?? ''),
-    priceId:           items[0]?.price?.id ?? null,
-    periodEndIso:      typeof endSec === 'number' ? new Date(endSec * 1000).toISOString() : null,
-    cancelAtPeriodEnd: Boolean(body.cancel_at_period_end),
-    customer:          typeof body.customer === 'string' ? body.customer : null,
-  };
+  return parseReconciledSubscription(res.ok, res.status, body, subId);
 }
 
 // ── Stripe signature verification ──────────────────────────────────────────
