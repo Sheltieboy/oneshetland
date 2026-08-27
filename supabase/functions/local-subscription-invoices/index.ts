@@ -97,8 +97,12 @@ serve(async (req) => {
       console.error('[local-subscription-invoices] card lookup failed:', e);
     }
 
+    // Scoped to THIS business's subscription. Listing by customer showed one
+    // owner every invoice for every business they pay for with the same card.
+    // A business with no subscription of its own has no invoices to show.
+    if (!business.stripe_subscription_id) return json({ invoices: [], card });
     const params = new URLSearchParams({
-      customer: business.stripe_customer_id,
+      subscription: business.stripe_subscription_id,
       limit: String(Math.min(Number(limit) || 12, 50)),
     });
     const res = await fetch(`https://api.stripe.com/v1/invoices?${params}`, {

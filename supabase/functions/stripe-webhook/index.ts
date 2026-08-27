@@ -578,11 +578,12 @@ serve(async (req) => {
 
         // Read the current state first so we can tell a genuine downgrade
         // (was paid, now lapsing) from routine update churn.
-        const { data: bizBefore } = await supabase
-          .from('local_businesses')
-          .select('id, owner_id, name, subscription_tier')
-          .eq('stripe_customer_id', customerId)
-          .maybeSingle();
+        // Deliberately NOT looked up by customer: one owner may pay for
+        // several businesses with one card, and asking the customer who to
+        // entitle gave a subscription bought for B to A. The business is
+        // resolved from the subscription itself, inside the RPC, and read back
+        // afterwards for the notification.
+        const metaBusiness = typeof meta.business_id === 'string' ? meta.business_id : null;
 
         // An ACTIVE subscription on a price we don't recognise must not be read
         // as "not paying". Previously an unmatched price fell through to 'free',
@@ -594,7 +595,7 @@ serve(async (req) => {
         if (isActive && tier === null) {
           console.error(
             `[stripe-webhook] ACTIVE subscription ${subId} on unrecognised price ${priceId ?? '(none)'} — ` +
-            `tier left unchanged at "${bizBefore?.subscription_tier ?? 'unknown'}". ` +
+            'the business keeps whatever tier it already had. ' +
             `Set the matching stripe.price.* key in admin_config.`,
           );
         }
@@ -617,6 +618,7 @@ serve(async (req) => {
           p_period_end:           isActive ? periodEndIso : null,
           p_cancel_at_period_end: cancelAtPeriodEnd,
           p_event_created:        eventCreated,
+          p_meta_business:        metaBusiness,
         });
         if (applyErr) throw applyErr;
         let applied = applyRes as Record<string, unknown> | null;
@@ -638,6 +640,7 @@ serve(async (req) => {
             p_cancel_at_period_end: fresh.cancelAtPeriodEnd,
             p_event_created:        eventCreated,
             p_force:                true,
+            p_meta_business:        metaBusiness,
           });
           if (reErr) throw reErr;
           applied = reRes as Record<string, unknown> | null;
@@ -654,10 +657,15 @@ serve(async (req) => {
         // fires when usage is reported against the metered bookings item, so
         // emailing on every event would write to a business each time somebody
         // booked them.
-        const tierBefore = String(applied.tier_before ?? bizBefore?.subscription_tier ?? 'free');
+        const { data: bizBefore } = await supabase
+          .from('local_businesses')
+          .select('id, owner_id, name')
+          .eq('id', String(applied.business_id ?? ''))
+          .maybeSingle();
+        const tierBefore = String(applied.tier_before ?? 'free');
         if (bizBefore?.owner_id && tierBefore !== nextTier) {
           await emailPlanChange(
-            supabase, bizBefore.owner_id, bizBefore.name,
+            supabase, bizBefore.owner_id, bizBefore.name ?? '',
             (bizBefore as { id?: string }).id ?? '',
             tierBefore, nextTier, isActive ? periodEndIso : null,
             !isActive ? 'lapsed' : null, customerId, subId,
@@ -673,7 +681,7 @@ serve(async (req) => {
             module:     'business',
             categoryId: 'business.subscription_lapsed',
             title:      'Subscription payment problem',
-            body:       `We couldn't take payment for ${bizBefore.name}'s OneShetland subscription, so it's paused. Tap to update your card and stay listed.`,
+            body:       `We couldn't take payment for ${bizBefore.name ?? 'your business'}'s OneShetland subscription, so it's paused. Tap to update your card and stay listed.`,
             data:       { screen: 'local-business-dashboard' },
           });
         }

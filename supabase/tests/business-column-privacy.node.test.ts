@@ -309,11 +309,19 @@ describe('identifier determinism', () => {
       'local_businesses_stripe_account_uniq',
       'local_businesses_biz_stripe_account_uniq',
       'local_businesses_stripe_subscription_uniq',
-      'local_businesses_stripe_customer_uniq',
       'local_businesses_nfc_token_key',
     ]) {
       assert.ok(names.includes(expected), `${expected} is missing — that lookup can match two businesses`);
     }
+
+    // stripe_customer_id is DELIBERATELY not on that list. It identifies the
+    // PAYER, and one owner may pay for several businesses with one saved card.
+    // While it was unique, subscribing a second business collided, the error
+    // was ignored, and the webhook — which found the business by customer —
+    // gave the new subscription to the first business. Uniqueness there was
+    // never a lookup guarantee; it was the bug.
+    assert.ok(!names.includes('local_businesses_stripe_customer_uniq'),
+      'a Stripe Customer is the payer, not a business identity');
   });
 
   test('and no duplicates exist in the live data', () => {

@@ -58,6 +58,16 @@ begin
   values (v,'ZZ Own Fixture','other','Lerwick',p_owner,p_tier,p_until,p_cus);
   return v;
 end $f$;
+-- The server-authored binding the checkout writes before Stripe is ever
+-- called. These fixtures used to rely on the customer to find the business,
+-- which is exactly the mechanism that gave one business another's subscription.
+create or replace function pg_temp.bind(p_sub text, p_biz uuid, p_owner uuid) returns void language plpgsql as $f$
+begin
+  insert into public.local_subscription_attempts
+    (client_request_id,user_id,business_id,tier,period,payload_fingerprint,stripe_subscription_id,status)
+  values (p_sub||'-attempt',p_owner,p_biz,'premium','monthly','fp',p_sub,'in_flight')
+  on conflict (client_request_id) do nothing;
+end $f$;
 create or replace function pg_temp.st(p_biz uuid) returns text language sql as
 $f$ select coalesce(to_char(subscription_until,'YYYY-MM-DD'),'NULL')||'/'||subscription_tier||'/'
         ||coalesce(stripe_subscription_id,'NOSUB')
@@ -96,6 +106,7 @@ const rec = (name: string, expr: string) => `  insert into res(scen,got) values 
 describe('a boost is not destroyed by an unpaid subscription', () => {
   const r = scenario(`
   b := pg_temp.mkbiz(o, 'pro', '2026-09-02 10:00+00', 'cus_own_1');
+  perform pg_temp.bind('sub_own_1', b, o);
 ${rec('A_before', 'pg_temp.st(b)')}
 ${rec('A_incomplete_reason', "pg_temp.ev('sub_own_1','cus_own_1','incomplete',null,null)")}
 ${rec('A_after_incomplete', 'pg_temp.st(b)')}
@@ -137,6 +148,7 @@ ${rec('D_boost_provenance_after_active', "public.boost_entitlement_provenance(b)
 describe('an admin-granted plan is not destroyed either', () => {
   const r = scenario(`
   b := pg_temp.mkbiz(o, 'premium', '2027-06-01 00:00+00', 'cus_own_2');
+  perform pg_temp.bind('sub_own_2', b, o);
 ${rec('before', 'pg_temp.st(b)')}
 ${rec('incomplete', "pg_temp.ev('sub_own_2','cus_own_2','incomplete',null,null)")}
 ${rec('after_incomplete', 'pg_temp.st(b)')}
@@ -167,6 +179,7 @@ ${rec('after_active', 'pg_temp.st(b)')}`);
 describe('a free business buying its first subscription', () => {
   const r = scenario(`
   b := pg_temp.mkbiz(o, 'free', null, 'cus_own_3');
+  perform pg_temp.bind('sub_own_3', b, o);
 ${rec('created_incomplete', "pg_temp.ev('sub_own_3','cus_own_3','incomplete',null,null)")}
 ${rec('still_free', 'pg_temp.st(b)')}
 ${rec('became_active', "pg_temp.ev('sub_own_3','cus_own_3','active','pro','2026-09-27 10:00+00')")}
@@ -188,6 +201,7 @@ ${rec('now_pro', 'pg_temp.st(b)')}`);
 describe('a subscription that DID pay still governs what it granted', () => {
   const r = scenario(`
   b := pg_temp.mkbiz(o, 'free', null, 'cus_own_4');
+  perform pg_temp.bind('sub_own_4', b, o);
   perform pg_temp.ev('sub_own_4','cus_own_4','active','premium','2026-09-27 10:00+00');
 ${rec('active', 'pg_temp.st(b)')}
 ${rec('past_due_reason', "pg_temp.ev('sub_own_4','cus_own_4','past_due',null,null)")}${rec('past_due_state', 'pg_temp.st(b)')}
@@ -226,12 +240,15 @@ ${rec('unknown_customer_active', "pg_temp.ev('sub_nobody','cus_does_not_exist','
 ${rec('still_untouched', 'pg_temp.st(b)')}`);
 
   test('a pending subscription on another business leaves the boost alone', () => {
-    assert.equal(r.foreign_incomplete, 'not_owned');
+    // Now a stronger refusal than 'not_owned': with no server-authored binding
+    // the subscription resolves to no business at all, so the customer it
+    // happens to share cannot be used to find one.
+    assert.equal(r.foreign_incomplete, 'unknown_subscription');
     assert.equal(r.boosted_untouched, '2026-09-02/pro/NOSUB');
   });
 
   test('an active subscription for a customer we do not hold changes nothing', () => {
-    assert.equal(r.unknown_customer_active, 'no_business');
+    assert.equal(r.unknown_customer_active, 'unknown_subscription');
     assert.equal(r.still_untouched, '2026-09-02/pro/NOSUB');
   });
 });
@@ -241,22 +258,27 @@ ${rec('still_untouched', 'pg_temp.st(b)')}`);
 describe('however the events arrive, one correct entitlement', () => {
   const r = scenario(`
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_1');
+  perform pg_temp.bind('sub_ord_1', b, o);
   perform pg_temp.ev('sub_ord_1','cus_ord_1','incomplete',null,null);
   perform pg_temp.ev('sub_ord_1','cus_ord_1','active','pro','2026-09-27 10:00+00');
 ${rec('created_then_active', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_2');
+  perform pg_temp.bind('sub_ord_2', b, o);
   perform pg_temp.ev('sub_ord_2','cus_ord_2','active','pro','2026-09-27 10:00+00');
   perform pg_temp.ev('sub_ord_2','cus_ord_2','incomplete',null,null);
 ${rec('active_then_late_created', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_3');
+  perform pg_temp.bind('sub_ord_3', b, o);
   perform pg_temp.ev('sub_ord_3','cus_ord_3','active','pro','2026-09-27 10:00+00');
   perform pg_temp.ev('sub_ord_3','cus_ord_3','active','pro','2026-09-27 10:00+00');
   perform pg_temp.ev('sub_ord_3','cus_ord_3','active','pro','2026-09-27 10:00+00');
 ${rec('duplicates', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_4');
+  perform pg_temp.bind('sub_ord_4', b, o);
+  perform pg_temp.bind('sub_ord_5', b, o);
   update public.local_businesses set stripe_subscription_id='sub_ord_4' where id=b;
 ${rec('invoice_before_active', "(select coalesce(to_char(subscription_until,'YYYY-MM-DD'),'NULL') from public.local_businesses where id=b)")}
 ${rec('unrecognised_reason', "pg_temp.ev('sub_ord_5','cus_ord_4','active',null,'2026-09-27 10:00+00')")}${rec('unrecognised_state', 'pg_temp.st(b)')}`);
@@ -337,22 +359,26 @@ describe('an older event cannot overwrite newer state', () => {
 
   const r = scenario(`
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_a');
+  perform pg_temp.bind('sub_ord_a', b, o);
   perform pg_temp.evt('sub_ord_a','cus_ord_a','incomplete',null,null, ${T1});
   perform pg_temp.evt('sub_ord_a','cus_ord_a','active','premium','2026-09-27 10:00+00', ${T2});
 ${rec('normal_order', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_b');
+  perform pg_temp.bind('sub_ord_b', b, o);
   perform pg_temp.evt('sub_ord_b','cus_ord_b','active','premium','2026-09-27 10:00+00', ${T2});
 ${rec('reverse_after_active', 'pg_temp.st(b)')}
 ${rec('reverse_stale_reason', `pg_temp.evt('sub_ord_b','cus_ord_b','incomplete',null,null, ${T1})`)}
 ${rec('reverse_final', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_c');
+  perform pg_temp.bind('sub_ord_c', b, o);
   perform pg_temp.evt('sub_ord_c','cus_ord_c','active','premium','2026-09-27 10:00+00', ${T2});
 ${rec('same_second_regression', `pg_temp.evt('sub_ord_c','cus_ord_c','incomplete',null,null, ${T2})`)}
 ${rec('same_second_state', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_d');
+  perform pg_temp.bind('sub_ord_d', b, o);
   perform pg_temp.evt('sub_ord_d','cus_ord_d','active','pro','2026-09-27 10:00+00', ${T2});
   perform pg_temp.evt('sub_ord_d','cus_ord_d','past_due',null,null, ${T2 + 10});
 ${rec('lapsed', 'pg_temp.st(b)')}
@@ -364,6 +390,7 @@ ${rec('late_unpaid_reason', `pg_temp.evt('sub_ord_d','cus_ord_d','unpaid',null,n
 ${rec('still_recovered', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_e');
+  perform pg_temp.bind('sub_ord_e', b, o);
   perform pg_temp.evt('sub_ord_e','cus_ord_e','active','premium','2026-09-27 10:00+00', ${T2});
 ${rec('deleted', `pg_temp.del('sub_ord_e', ${T2 + 30})`)}
 ${rec('after_delete', 'pg_temp.st(b)')}
@@ -373,6 +400,7 @@ ${rec('stale_invoice_after_delete', "public.extend_subscription_period('sub_ord_
 ${rec('still_free_after_invoice', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_f');
+  perform pg_temp.bind('sub_ord_f', b, o);
   perform pg_temp.evt('sub_ord_f','cus_ord_f','active','pro','2026-10-27 10:00+00', ${T2});
 ${rec('invoice_extends', "public.extend_subscription_period('sub_ord_f','2026-11-27')::text")}
 ${rec('extended', 'pg_temp.st(b)')}
@@ -380,6 +408,7 @@ ${rec('stale_invoice_shortens', "public.extend_subscription_period('sub_ord_f','
 ${rec('not_shortened', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_g');
+  perform pg_temp.bind('sub_ord_g', b, o);
   perform pg_temp.evt('sub_ord_g','cus_ord_g','active','pro','2026-09-27 10:00+00', ${T2});
   perform pg_temp.evt('sub_ord_g','cus_ord_g','active','pro','2026-09-27 10:00+00', ${T2});
 ${rec('duplicate_same_event', 'pg_temp.st(b)')}`);
@@ -479,6 +508,7 @@ describe('an equal timestamp is an ambiguity, not a chronology', () => {
   const T = 1793100000;
   const r = scenario(`
   b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_a');
+  perform pg_temp.bind('sub_tie_a', b, o);
   perform pg_temp.evt('sub_tie_a','cus_tie_a','active','pro','2026-09-27 10:00+00', ${T});
 ${rec('A_reason', `pg_temp.evt('sub_tie_a','cus_tie_a','past_due',null,null, ${T})`)}
 ${rec('A_untouched', 'pg_temp.st(b)')}
@@ -486,12 +516,14 @@ ${rec('A_reconciled', `(public.apply_subscription_state('sub_tie_a','cus_tie_a',
 ${rec('A_final', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_b');
+  perform pg_temp.bind('sub_tie_b', b, o);
   perform pg_temp.evt('sub_tie_b','cus_tie_b','active','pro','2026-09-27 10:00+00', ${T});
 ${rec('B_reason', `pg_temp.evt('sub_tie_b','cus_tie_b','unpaid',null,null, ${T})`)}
   perform public.apply_subscription_state('sub_tie_b','cus_tie_b','unpaid',null,null,false, ${T}, true);
 ${rec('B_final', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_c');
+  perform pg_temp.bind('sub_tie_c', b, o);
   perform pg_temp.evt('sub_tie_c','cus_tie_c','active','pro','2026-09-27 10:00+00', ${T});
 ${rec('C_reason', `pg_temp.del('sub_tie_c', ${T})`)}
 ${rec('C_untouched', 'pg_temp.st(b)')}
@@ -499,6 +531,7 @@ ${rec('C_reconciled', `(public.retire_subscription('sub_tie_c', ${T}, true))->>'
 ${rec('C_final', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_d');
+  perform pg_temp.bind('sub_tie_d', b, o);
   perform pg_temp.evt('sub_tie_d','cus_tie_d','active','pro','2026-09-27 10:00+00', ${T});
   perform public.retire_subscription('sub_tie_d', ${T}, true);
 ${rec('D_after_terminal', 'pg_temp.st(b)')}
@@ -506,6 +539,7 @@ ${rec('D_stale_active_reason', `pg_temp.evt('sub_tie_d','cus_tie_d','active','pr
 ${rec('D_not_resurrected', 'pg_temp.st(b)')}
 
   b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_e');
+  perform pg_temp.bind('sub_tie_e', b, o);
   perform pg_temp.evt('sub_tie_e','cus_tie_e','active','premium','2026-09-27 10:00+00', ${T});
 ${rec('E_duplicate_reason', `pg_temp.evt('sub_tie_e','cus_tie_e','active','premium','2026-09-27 10:00+00', ${T})`)}
 ${rec('E_state', 'pg_temp.st(b)')}`);

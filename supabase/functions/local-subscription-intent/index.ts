@@ -201,7 +201,19 @@ serve(async (req) => {
       customerId = customer.id;
     }
     if (customerId !== business.stripe_customer_id) {
-      await svc.from('local_businesses').update({ stripe_customer_id: customerId }).eq('id', business_id);
+      // Records who pays for this business. Sharing one Customer across the
+      // businesses one person owns is legitimate, so this no longer collides —
+      // but the error is read, because a business that could not record its
+      // payer must not go on to be charged.
+      const { error: bindErr } = await svc.from('local_businesses')
+        .update({ stripe_customer_id: customerId }).eq('id', business_id);
+      if (bindErr) {
+        console.error('[local-subscription-intent] could not record the payer', bindErr);
+        await svc.rpc('settle_subscription_attempt', {
+          p_request_id: client_request_id, p_status: 'failed', p_result: { reason: 'customer_bind_failed' },
+        });
+        return json({ error: 'Could not start the subscription. Nothing has been charged.' }, 500);
+      }
     }
 
     // 2. Create an *incomplete* subscription so we get a PaymentIntent to inspect.
