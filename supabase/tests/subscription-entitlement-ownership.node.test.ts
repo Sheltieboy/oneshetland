@@ -68,6 +68,19 @@ declare r jsonb; begin
   r := public.apply_subscription_state(p_sub, p_cus, p_status, p_tier, p_end, p_cancel);
   return coalesce(r->>'reason','?');
 end $f$;
+-- With an explicit Stripe event.created, so a test can deliver events in an
+-- order that differs from the order Stripe generated them.
+create or replace function pg_temp.evt(p_sub text, p_cus text, p_status text, p_tier text, p_end timestamptz, p_created bigint, p_cancel boolean default false)
+returns text language plpgsql as $f$
+declare r jsonb; begin
+  r := public.apply_subscription_state(p_sub, p_cus, p_status, p_tier, p_end, p_cancel, p_created);
+  return coalesce(r->>'reason','?');
+end $f$;
+create or replace function pg_temp.del(p_sub text, p_created bigint) returns text language plpgsql as $f$
+declare r jsonb; begin
+  r := public.retire_subscription(p_sub, p_created);
+  return coalesce(r->>'reason','?');
+end $f$;
 `;
 
 function scenario(body: string): Record<string, string> {
@@ -301,5 +314,143 @@ describe('the webhook delegates the decision', () => {
     assert.equal(r.u, 'false');
     assert.equal(r.s, 'true');
     assert.match(String(r.cfg), /search_path=/);
+  });
+});
+
+/* ── 8. delivery order is not generation order ────────────────────────────── */
+
+describe('an older event cannot overwrite newer state', () => {
+  /**
+   * Stripe generates customer.subscription.created carrying an 'incomplete'
+   * snapshot, then customer.subscription.updated carrying 'active'. Delivery of
+   * the two is NOT ordered. If active lands first the business is correctly
+   * Premium — and then the older created event arrives, still saying
+   * incomplete, and by then that subscription owns the row.
+   *
+   * I previously argued this was safe because Stripe never transitions
+   * active → incomplete. That confused how an event is GENERATED with how it is
+   * DELIVERED. Reproduced before the fix: Premium until 27 September became
+   * free with no expiry.
+   */
+  const T1 = 1793000000;   // created  (incomplete) — generated first
+  const T2 = 1793000005;   // updated  (active)     — generated five seconds later
+
+  const r = scenario(`
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_a');
+  perform pg_temp.evt('sub_ord_a','cus_ord_a','incomplete',null,null, ${T1});
+  perform pg_temp.evt('sub_ord_a','cus_ord_a','active','premium','2026-09-27 10:00+00', ${T2});
+${rec('normal_order', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_b');
+  perform pg_temp.evt('sub_ord_b','cus_ord_b','active','premium','2026-09-27 10:00+00', ${T2});
+${rec('reverse_after_active', 'pg_temp.st(b)')}
+${rec('reverse_stale_reason', `pg_temp.evt('sub_ord_b','cus_ord_b','incomplete',null,null, ${T1})`)}
+${rec('reverse_final', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_c');
+  perform pg_temp.evt('sub_ord_c','cus_ord_c','active','premium','2026-09-27 10:00+00', ${T2});
+${rec('same_second_regression', `pg_temp.evt('sub_ord_c','cus_ord_c','incomplete',null,null, ${T2})`)}
+${rec('same_second_state', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_d');
+  perform pg_temp.evt('sub_ord_d','cus_ord_d','active','pro','2026-09-27 10:00+00', ${T2});
+  perform pg_temp.evt('sub_ord_d','cus_ord_d','past_due',null,null, ${T2 + 10});
+${rec('lapsed', 'pg_temp.st(b)')}
+  perform pg_temp.evt('sub_ord_d','cus_ord_d','active','pro','2026-10-27 10:00+00', ${T2 + 20});
+${rec('recovered', 'pg_temp.st(b)')}
+${rec('late_past_due_reason', `pg_temp.evt('sub_ord_d','cus_ord_d','past_due',null,null, ${T2 + 10})`)}
+${rec('recovered_survives', 'pg_temp.st(b)')}
+${rec('late_unpaid_reason', `pg_temp.evt('sub_ord_d','cus_ord_d','unpaid',null,null, ${T2 + 5})`)}
+${rec('still_recovered', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_e');
+  perform pg_temp.evt('sub_ord_e','cus_ord_e','active','premium','2026-09-27 10:00+00', ${T2});
+${rec('deleted', `pg_temp.del('sub_ord_e', ${T2 + 30})`)}
+${rec('after_delete', 'pg_temp.st(b)')}
+${rec('stale_active_after_delete', `pg_temp.evt('sub_ord_e','cus_ord_e','active','premium','2026-09-27 10:00+00', ${T2})`)}
+${rec('not_resurrected', 'pg_temp.st(b)')}
+${rec('stale_invoice_after_delete', "public.extend_subscription_period('sub_ord_e','2027-01-01')::text")}
+${rec('still_free_after_invoice', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_f');
+  perform pg_temp.evt('sub_ord_f','cus_ord_f','active','pro','2026-10-27 10:00+00', ${T2});
+${rec('invoice_extends', "public.extend_subscription_period('sub_ord_f','2026-11-27')::text")}
+${rec('extended', 'pg_temp.st(b)')}
+${rec('stale_invoice_shortens', "public.extend_subscription_period('sub_ord_f','2026-09-01')::text")}
+${rec('not_shortened', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_ord_g');
+  perform pg_temp.evt('sub_ord_g','cus_ord_g','active','pro','2026-09-27 10:00+00', ${T2});
+  perform pg_temp.evt('sub_ord_g','cus_ord_g','active','pro','2026-09-27 10:00+00', ${T2});
+${rec('duplicate_same_event', 'pg_temp.st(b)')}`);
+
+  test('1 — normal delivery order gives the paid plan', () =>
+    assert.equal(r.normal_order, '2026-09-27/premium/sub_ord_a'));
+
+  test('2 — REVERSE ORDER: a stale incomplete cannot lapse a live subscription', () => {
+    assert.equal(r.reverse_after_active, '2026-09-27/premium/sub_ord_b');
+    assert.equal(r.reverse_stale_reason, 'stale_event');
+    assert.equal(r.reverse_final, '2026-09-27/premium/sub_ord_b',
+      'an older snapshot destroyed a paid subscription');
+  });
+
+  test('a tie on the same second settles towards the live state', () => {
+    // Stripe stamps event.created in whole seconds, so a timestamp alone is not
+    // a total order. The tie may only ever settle towards active.
+    assert.equal(r.same_second_regression, 'stale_event');
+    assert.equal(r.same_second_state, '2026-09-27/premium/sub_ord_c');
+  });
+
+  test('3 — a late past_due or unpaid cannot undo a recovery', () => {
+    assert.equal(r.lapsed, 'NULL/free/sub_ord_d');
+    assert.equal(r.recovered, '2026-10-27/pro/sub_ord_d');
+    assert.equal(r.late_past_due_reason, 'stale_event');
+    assert.equal(r.recovered_survives, '2026-10-27/pro/sub_ord_d');
+    assert.equal(r.late_unpaid_reason, 'stale_event');
+    assert.equal(r.still_recovered, '2026-10-27/pro/sub_ord_d');
+  });
+
+  test('4 — a stale active cannot resurrect a deleted subscription', () => {
+    assert.equal(r.deleted, 'retired');
+    assert.equal(r.after_delete, 'NULL/free/NOSUB');
+    assert.equal(r.stale_active_after_delete, 'stale_event');
+    assert.equal(r.not_resurrected, 'NULL/free/NOSUB',
+      'an older event put a cancelled subscription back');
+  });
+
+  test('7 — an obsolete invoice cannot revive a retired subscription', () => {
+    // Retirement clears the id, so the invoice matches no business at all.
+    assert.equal(r.stale_invoice_after_delete, 'false');
+    assert.equal(r.still_free_after_invoice, 'NULL/free/NOSUB');
+  });
+
+  test('a renewal invoice extends, and a stale one never shortens', () => {
+    assert.equal(r.invoice_extends, 'true');
+    assert.equal(r.extended, '2026-11-27/pro/sub_ord_f');
+    assert.equal(r.stale_invoice_shortens, 'false');
+    assert.equal(r.not_shortened, '2026-11-27/pro/sub_ord_f',
+      'a stale invoice pulled the expiry backwards');
+  });
+
+  test('5 — a duplicate of the same event changes nothing', () =>
+    assert.equal(r.duplicate_same_event, '2026-09-27/pro/sub_ord_g'));
+
+  test('the watermark is server-only', () => {
+    const g = runSql(`select grantee from information_schema.role_table_grants
+                       where table_schema='public' and table_name='stripe_subscription_watermarks'
+                         and grantee in ('anon','authenticated');`);
+    assert.equal(g.length, 0, 'a client role can reach the event watermark');
+    const rls = runSql(`select relrowsecurity::text on_ from pg_class
+                         where oid='public.stripe_subscription_watermarks'::regclass;`)[0];
+    assert.equal(rls.on_, 'true');
+  });
+
+  test('the webhook passes Stripe\'s generation time, not its own clock', () => {
+    assert.match(webhook, /const eventCreated = typeof event\.created === 'number'/);
+    assert.match(webhook, /p_event_created:\s*eventCreated/);
+    assert.match(webhook, /retire_subscription/);
+    assert.match(webhook, /extend_subscription_period/);
+    assert.ok(!/p_event_created:\s*(Date\.now|new Date)/.test(webhook),
+      'local receive time is not ordering — a late delivery may carry an older snapshot');
   });
 });

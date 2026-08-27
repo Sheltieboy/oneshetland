@@ -269,6 +269,10 @@ serve(async (req) => {
 
   const eventType = event.type as string;
   const eventId   = event.id as string;
+  // Stripe stamps this when the event was GENERATED, which is the only ordering
+  // we can trust: delivery order is not guaranteed, so a webhook arriving now
+  // may carry an older snapshot than one already applied.
+  const eventCreated = typeof event.created === 'number' ? event.created : null;
   const eventData = (event.data as Record<string, unknown>)?.object as Record<string, unknown>;
 
   console.log(`[stripe-webhook] Received: ${eventType} (${eventId})`);
@@ -611,6 +615,7 @@ serve(async (req) => {
           p_tier:                 tier,
           p_period_end:           isActive ? periodEndIso : null,
           p_cancel_at_period_end: cancelAtPeriodEnd,
+          p_event_created:        eventCreated,
         });
         if (applyErr) throw applyErr;
         const applied = applyRes as Record<string, unknown> | null;
@@ -656,27 +661,22 @@ serve(async (req) => {
         const subId      = eventData.id as string;
         const deleteMeta = (eventData.metadata ?? {}) as Record<string, string>;
 
-        // Standard tier subscription cancelled
-        const { data: bizDel } = await supabase
-          .from('local_businesses')
-          .select('id, owner_id, name, subscription_tier')
-          .eq('stripe_subscription_id', subId)
-          .maybeSingle();
-
-        await supabase
-          .from('local_businesses')
-          .update({
-            subscription_tier:                 'free',
-            subscription_until:                null,
-            subscription_cancel_at_period_end: false,
-            // Clear the dead id. Leaving it set made the business unable to buy
-            // anything: the billing screen saw a subscription id, took the
-            // "change an existing plan" path, found the CANCELLED subscription
-            // still sitting on the Pro price, and answered "you're already on
-            // Pro" to a business that was on free.
-            stripe_subscription_id:            null,
-          })
-          .eq('stripe_subscription_id', subId);
+        // Through the same watermark as the other subscription events, so an
+        // older 'active' delivered after this cannot put the plan back on a
+        // subscription Stripe has ended.
+        const { data: retireRes, error: retireErr } = await supabase.rpc('retire_subscription', {
+          p_sub_id: subId, p_event_created: eventCreated,
+        });
+        if (retireErr) throw retireErr;
+        const retired = retireRes as Record<string, unknown> | null;
+        console.log(`[stripe-webhook] subscription ${subId} deleted: ${JSON.stringify(retired)}`);
+        if (!retired?.applied) break;
+        const bizDel = {
+          id:                String(retired.business_id ?? ''),
+          owner_id:          String(retired.owner_id ?? ''),
+          name:              String(retired.name ?? ''),
+          subscription_tier: String(retired.tier_before ?? 'free'),
+        };
 
         // Tell the owner their subscription has ended (bookable listings now hidden).
         if (bizDel?.owner_id && bizDel.subscription_tier !== 'free') {
@@ -707,10 +707,14 @@ serve(async (req) => {
           (eventData.period_end as number | undefined) ??
           lines?.data?.[0]?.period?.end;
         if (subId && periodEndSec) {
-          await supabase
-            .from('local_businesses')
-            .update({ subscription_until: new Date(periodEndSec * 1000).toISOString() })
-            .eq('stripe_subscription_id', subId);
+          // Extends, never shortens. A stale invoice arriving after a newer one
+          // would otherwise pull the expiry backwards; and a subscription that
+          // has been retired holds no id, so an obsolete invoice matches
+          // nothing and cannot revive it.
+          const { error: extErr } = await supabase.rpc('extend_subscription_period', {
+            p_sub_id: subId, p_period_end: new Date(periodEndSec * 1000).toISOString(),
+          });
+          if (extErr) throw extErr;
         }
         break;
       }
