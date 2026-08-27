@@ -117,7 +117,7 @@ serve(async (req) => {
     }
     // Already reached Stripe. Hand back THAT subscription — never make another.
     if ((claim?.outcome === 'resume' || claim?.outcome === 'replay') && claim.stripe_subscription_id) {
-      return await resumeExisting(stripe, claim.stripe_subscription_id);
+      return await resumeExisting(stripe, claim.stripe_subscription_id, svc, client_request_id);
     }
 
     // This endpoint creates a NEW subscription. If a LIVE one already exists, a
@@ -289,14 +289,38 @@ serve(async (req) => {
  * PaymentIntent — including its live status. Storing the client secret would
  * have risked serving a stale one; Stripe stays the single source.
  */
-async function resumeExisting(stripe: Stripe, subscriptionId: string): Promise<Response> {
+async function resumeExisting(
+  stripe: Stripe,
+  subscriptionId: string,
+  // deno-lint-ignore no-explicit-any
+  svc: any,
+  requestId: string,
+): Promise<Response> {
   try {
     const sub = await stripe.subscriptions.retrieve(subscriptionId, {
       expand: ['latest_invoice.payment_intent'],
     });
     // deno-lint-ignore no-explicit-any
     const pi = (sub.latest_invoice as any)?.payment_intent;
-    if (['active', 'trialing'].includes(sub.status) || pi?.status === 'succeeded') {
+
+    // A subscription that has been cancelled or that Stripe expired is spent.
+    // Resuming it would hand back a dead checkout for ever, and — because its
+    // last invoice may well have been paid before it was cancelled — reading
+    // that old succeeded PaymentIntent as "activated" would tell somebody with
+    // no subscription that they had one. Retire the attempt so a fresh,
+    // deliberate purchase can be made.
+    if (['canceled', 'incomplete_expired'].includes(sub.status)) {
+      await svc.rpc('settle_subscription_attempt', {
+        p_request_id: requestId, p_status: 'failed', p_result: { reason: sub.status },
+      });
+      return json({
+        error: 'That checkout has expired. Please choose your plan again.',
+        code:  'ATTEMPT_TERMINAL',
+      }, 409);
+    }
+
+    // Live only. The subscription's own status decides, not an old invoice.
+    if (['active', 'trialing'].includes(sub.status)) {
       return json({ activated: true, subscriptionId: sub.id });
     }
     if (!pi?.client_secret) {

@@ -281,3 +281,86 @@ describe('nothing client-side can forge an attempt', () => {
     assert.equal(r.kept, 'sub_keep_me', 'a later settle erased the id a retry needs to find');
   });
 });
+
+/* ── 6. a spent attempt does not trap the next deliberate purchase ────────── */
+
+describe('a NEW deliberate purchase of the same plan gets its own reference', () => {
+  /**
+   * The retry rule and the fresh-purchase rule pull in opposite directions.
+   * Holding the reference is what stops a double-click buying twice; holding it
+   * FOR EVER is what stopped somebody who subscribed, cancelled and came back
+   * from buying again — every later click resumed the same spent checkout.
+   *
+   * So the reference is released only when the server has said the attempt is
+   * definitively over, never because a response failed.
+   */
+  test('the id is released on activation and on a terminal refusal only', () => {
+    assert.match(billing, /function endSubAttempt\(\) \{ subAttempt\.current = null; \}/);
+    assert.match(billing, /if \(intent\.activated\) \{ endSubAttempt\(\);/,
+      'a completed purchase must not hold its reference into the next one');
+    assert.match(billing, /code === 'ATTEMPT_TERMINAL' \|\| code === 'ATTEMPT_CONFLICT'/,
+      'a spent attempt must be released so a fresh purchase can be made');
+    assert.match(billing, /onPaid=\{\(\) => \{ endSubAttempt\(\);/,
+      'paying through the card form also ends the attempt');
+  });
+
+  test('it is NOT released merely because a request failed', () => {
+    // The whole protection is that a dropped response keeps the same reference.
+    // Anchored on the guard itself: there are other one-line catches in this
+    // file, and slicing from the first of them tested nothing.
+    const guard = billing.indexOf("if (code === 'ATTEMPT_TERMINAL'");
+    assert.ok(guard > 0, 'the terminal-code guard is missing');
+    const block = billing.slice(billing.lastIndexOf('} catch (e) {', guard), guard);
+    assert.match(block, /const code = \(e as \{ code\?: string \}\)\?\.code;/,
+      'the code must be read before anything is released');
+    assert.ok(!/endSubAttempt\(\)/.test(block),
+      'the reference must not be released before the code has been checked');
+  });
+
+  test('the refusal code survives the client helper', () =>
+    // Without this every failure looks identical and the client cannot tell a
+    // spent checkout from one worth retrying.
+    assert.match(client, /throw Object\.assign\(new Error\(msg\), code \? \{ code \} : \{\}\)/));
+
+  test('a cancelled or expired subscription is retired, not resumed', () => {
+    assert.match(fn, /\['canceled', 'incomplete_expired'\]\.includes\(sub\.status\)/);
+    assert.match(fn, /ATTEMPT_TERMINAL/);
+    const terminalAt = fn.indexOf("['canceled', 'incomplete_expired']");
+    const activeAt = fn.indexOf("if (['active', 'trialing'].includes(sub.status)) {");
+    assert.ok(terminalAt < activeAt, 'the dead-subscription check must come first');
+  });
+
+  test('a spent subscription can never be reported as activated', () => {
+    // Its last invoice may well have been paid before it was cancelled, so
+    // reading that PaymentIntent would tell somebody with no subscription that
+    // they had one.
+    const resume = fn.slice(fn.indexOf('async function resumeExisting'));
+    const activatedLine = resume.slice(resume.indexOf('activated: true') - 200, resume.indexOf('activated: true'));
+    assert.ok(!/pi\?\.status === 'succeeded'/.test(activatedLine),
+      'an old succeeded invoice must not stand in for a live subscription');
+  });
+
+  test('the server retires the attempt so the fresh one is a NEW claim', () => {
+    const resume = fn.slice(fn.indexOf('async function resumeExisting'));
+    assert.match(resume, /settle_subscription_attempt[\s\S]{0,160}p_status: 'failed'/);
+  });
+
+  test('a terminal attempt is replayed, never silently re-run', () => {
+    // Server side: the same id after a terminal outcome still resolves to the
+    // same row, which is why the CLIENT has to mint a new one.
+    const r = scenario(`
+  b := pg_temp.mkbiz(o);
+${rec('claimed', "pg_temp.claim('spent-attempt-01', o, b, 'pro', 'monthly')")}
+  perform public.settle_subscription_attempt('spent-attempt-01','in_flight','sub_spent');
+  perform public.settle_subscription_attempt('spent-attempt-01','failed',null,'{"reason":"canceled"}'::jsonb);
+${rec('same_id_again', "pg_temp.claim('spent-attempt-01', o, b, 'pro', 'monthly')")}
+${rec('fresh_id_same_plan', "pg_temp.claim('spent-attempt-02', o, b, 'pro', 'monthly')")}
+${rec('rows', "(select count(*)::text from public.local_subscription_attempts where business_id = b)")}`);
+    assert.equal(r.claimed, 'claimed/-');
+    assert.equal(r.same_id_again, 'replay/sub_spent',
+      'reusing a spent reference must resolve to the same attempt, not start a new one');
+    assert.equal(r.fresh_id_same_plan, 'claimed/-',
+      'a NEW reference for the same plan must be free to proceed');
+    assert.equal(r.rows, '2', 'two deliberate attempts, two rows');
+  });
+});
