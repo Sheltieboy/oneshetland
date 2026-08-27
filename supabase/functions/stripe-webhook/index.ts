@@ -618,7 +618,31 @@ serve(async (req) => {
           p_event_created:        eventCreated,
         });
         if (applyErr) throw applyErr;
-        const applied = applyRes as Record<string, unknown> | null;
+        let applied = applyRes as Record<string, unknown> | null;
+
+        // Two snapshots, one second, disagreeing. Which came first is not
+        // knowable from the events, and guessing is how the previous rule kept
+        // a lapsed subscription alive. Ask Stripe what the subscription IS.
+        if (applied?.reason === 'needs_reconcile') {
+          const fresh = await reconcileSubscription(stripeKey, subId);
+          const freshTier =
+            fresh.priceId === premiumPrice || fresh.priceId === premiumAnnualPrice ? 'premium'
+            : fresh.priceId === proPrice ? 'pro' : null;
+          const { data: reRes, error: reErr } = await supabase.rpc('apply_subscription_state', {
+            p_sub_id:               subId,
+            p_customer:             fresh.customer ?? customerId,
+            p_status:               fresh.status,
+            p_tier:                 freshTier,
+            p_period_end:           fresh.periodEndIso,
+            p_cancel_at_period_end: fresh.cancelAtPeriodEnd,
+            p_event_created:        eventCreated,
+            p_force:                true,
+          });
+          if (reErr) throw reErr;
+          applied = reRes as Record<string, unknown> | null;
+          console.log(`[stripe-webhook] subscription ${subId} reconciled from Stripe as ${fresh.status}`);
+        }
+
         console.log(`[stripe-webhook] subscription ${subId} (${status}): ${JSON.stringify(applied)}`);
 
         // Nothing changed hands — no notification is owed either.
@@ -668,7 +692,23 @@ serve(async (req) => {
           p_sub_id: subId, p_event_created: eventCreated,
         });
         if (retireErr) throw retireErr;
-        const retired = retireRes as Record<string, unknown> | null;
+        let retired = retireRes as Record<string, unknown> | null;
+
+        if (retired?.reason === 'needs_reconcile') {
+          const fresh = await reconcileSubscription(stripeKey, subId);
+          if (['canceled', 'incomplete_expired'].includes(fresh.status)) {
+            const { data: reRes, error: reErr } = await supabase.rpc('retire_subscription', {
+              p_sub_id: subId, p_event_created: eventCreated, p_force: true,
+            });
+            if (reErr) throw reErr;
+            retired = reRes as Record<string, unknown> | null;
+          } else {
+            // Stripe says it is still running, so the deletion snapshot is not
+            // the current truth. Leave the plan alone.
+            console.log(`[stripe-webhook] deletion of ${subId} contradicted by Stripe (${fresh.status}) — ignored`);
+            break;
+          }
+        }
         console.log(`[stripe-webhook] subscription ${subId} deleted: ${JSON.stringify(retired)}`);
         if (!retired?.applied) break;
         const bizDel = {
@@ -953,6 +993,44 @@ serve(async (req) => {
     headers: { 'Content-Type': 'application/json' },
   });
 });
+
+/**
+ * What the subscription IS, according to Stripe, right now.
+ *
+ * Used only to settle an equal-timestamp conflict, so the normal path costs no
+ * extra call. FAILS CLOSED: anything other than a clean answer throws, the
+ * handler returns 500, and Stripe retries — because acknowledging an event we
+ * could not reconcile would silently keep whichever state happened to be there.
+ *
+ * A subscription Stripe no longer knows at all (404) is treated as canceled:
+ * that is not a guess, it is the only state a missing subscription can be in.
+ */
+async function reconcileSubscription(stripeKey: string, subId: string): Promise<{
+  status: string; priceId: string | null; periodEndIso: string | null;
+  cancelAtPeriodEnd: boolean; customer: string | null;
+}> {
+  const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
+    headers: { Authorization: `Bearer ${stripeKey}` },
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    if (res.status === 404 || body?.error?.code === 'resource_missing') {
+      return { status: 'canceled', priceId: null, periodEndIso: null, cancelAtPeriodEnd: false, customer: null };
+    }
+    throw new Error(`could not reconcile subscription ${subId}: ${body?.error?.message ?? res.status}`);
+  }
+  const items = (body.items?.data ?? []) as Array<{ price?: { id?: string }; current_period_end?: number }>;
+  const endSec =
+    items.find((i) => typeof i.current_period_end === 'number')?.current_period_end ??
+    (body.current_period_end as number | undefined);
+  return {
+    status:            String(body.status ?? ''),
+    priceId:           items[0]?.price?.id ?? null,
+    periodEndIso:      typeof endSec === 'number' ? new Date(endSec * 1000).toISOString() : null,
+    cancelAtPeriodEnd: Boolean(body.cancel_at_period_end),
+    customer:          typeof body.customer === 'string' ? body.customer : null,
+  };
+}
 
 // ── Stripe signature verification ──────────────────────────────────────────
 async function verifyStripeSignature(

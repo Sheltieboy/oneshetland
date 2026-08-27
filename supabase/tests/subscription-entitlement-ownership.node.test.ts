@@ -394,11 +394,14 @@ ${rec('duplicate_same_event', 'pg_temp.st(b)')}`);
       'an older snapshot destroyed a paid subscription');
   });
 
-  test('a tie on the same second settles towards the live state', () => {
-    // Stripe stamps event.created in whole seconds, so a timestamp alone is not
-    // a total order. The tie may only ever settle towards active.
-    assert.equal(r.same_second_regression, 'stale_event');
-    assert.equal(r.same_second_state, '2026-09-27/premium/sub_ord_c');
+  test('a tie on the same second is not guessed at — it is reconciled', () => {
+    // This used to prefer the active state. That is safe for an old incomplete
+    // and WRONG for a genuinely later past_due, unpaid or cancellation, which
+    // share a second whenever a subscription activates and immediately fails.
+    // A static status preference cannot represent chronology.
+    assert.equal(r.same_second_regression, 'needs_reconcile');
+    assert.equal(r.same_second_state, '2026-09-27/premium/sub_ord_c',
+      'nothing may change until Stripe has been asked');
   });
 
   test('3 — a late past_due or unpaid cannot undo a recovery', () => {
@@ -452,5 +455,111 @@ ${rec('duplicate_same_event', 'pg_temp.st(b)')}`);
     assert.match(webhook, /extend_subscription_period/);
     assert.ok(!/p_event_created:\s*(Date\.now|new Date)/.test(webhook),
       'local receive time is not ordering — a late delivery may carry an older snapshot');
+  });
+});
+
+/* ── 9. one second, two snapshots, no guessing ────────────────────────────── */
+
+describe('an equal timestamp is an ambiguity, not a chronology', () => {
+  /**
+   * Stripe stamps event.created in whole seconds. A subscription that activates
+   * and immediately fails its first renewal — or is cancelled in the same second
+   * — produces two events sharing a timestamp where the LATER one is the
+   * non-active one.
+   *
+   * The previous rule preferred active, so all three of these left a business
+   * holding a paid tier it had stopped paying for:
+   *   active → later past_due  stayed 2026-09-27/pro
+   *   active → later unpaid    stayed 2026-09-27/pro
+   *   active → later deleted   stayed 2026-09-27/pro
+   *
+   * Now the database refuses to guess and says so; the webhook asks Stripe what
+   * the subscription actually is and applies THAT.
+   */
+  const T = 1793100000;
+  const r = scenario(`
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_a');
+  perform pg_temp.evt('sub_tie_a','cus_tie_a','active','pro','2026-09-27 10:00+00', ${T});
+${rec('A_reason', `pg_temp.evt('sub_tie_a','cus_tie_a','past_due',null,null, ${T})`)}
+${rec('A_untouched', 'pg_temp.st(b)')}
+${rec('A_reconciled', `(public.apply_subscription_state('sub_tie_a','cus_tie_a','past_due',null,null,false, ${T}, true))->>'reason'`)}
+${rec('A_final', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_b');
+  perform pg_temp.evt('sub_tie_b','cus_tie_b','active','pro','2026-09-27 10:00+00', ${T});
+${rec('B_reason', `pg_temp.evt('sub_tie_b','cus_tie_b','unpaid',null,null, ${T})`)}
+  perform public.apply_subscription_state('sub_tie_b','cus_tie_b','unpaid',null,null,false, ${T}, true);
+${rec('B_final', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_c');
+  perform pg_temp.evt('sub_tie_c','cus_tie_c','active','pro','2026-09-27 10:00+00', ${T});
+${rec('C_reason', `pg_temp.del('sub_tie_c', ${T})`)}
+${rec('C_untouched', 'pg_temp.st(b)')}
+${rec('C_reconciled', `(public.retire_subscription('sub_tie_c', ${T}, true))->>'reason'`)}
+${rec('C_final', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_d');
+  perform pg_temp.evt('sub_tie_d','cus_tie_d','active','pro','2026-09-27 10:00+00', ${T});
+  perform public.retire_subscription('sub_tie_d', ${T}, true);
+${rec('D_after_terminal', 'pg_temp.st(b)')}
+${rec('D_stale_active_reason', `pg_temp.evt('sub_tie_d','cus_tie_d','active','pro','2026-09-27 10:00+00', ${T - 5})`)}
+${rec('D_not_resurrected', 'pg_temp.st(b)')}
+
+  b := pg_temp.mkbiz(o, 'free', null, 'cus_tie_e');
+  perform pg_temp.evt('sub_tie_e','cus_tie_e','active','premium','2026-09-27 10:00+00', ${T});
+${rec('E_duplicate_reason', `pg_temp.evt('sub_tie_e','cus_tie_e','active','premium','2026-09-27 10:00+00', ${T})`)}
+${rec('E_state', 'pg_temp.st(b)')}`);
+
+  test('1 — active then genuinely later past_due, same second', () => {
+    assert.equal(r.A_reason, 'needs_reconcile', 'the tie must not be guessed');
+    assert.equal(r.A_untouched, '2026-09-27/pro/sub_tie_a', 'nothing may change before Stripe is asked');
+    assert.equal(r.A_reconciled, 'owner_lapsed');
+    assert.equal(r.A_final, 'NULL/free/sub_tie_a', 'a lapsed subscription kept its paid tier');
+  });
+
+  test('2 — active then genuinely later unpaid, same second', () => {
+    assert.equal(r.B_reason, 'needs_reconcile');
+    assert.equal(r.B_final, 'NULL/free/sub_tie_b');
+  });
+
+  test('3 — active then genuinely later deletion, same second', () => {
+    assert.equal(r.C_reason, 'needs_reconcile');
+    assert.equal(r.C_untouched, '2026-09-27/pro/sub_tie_c');
+    assert.equal(r.C_reconciled, 'retired');
+    assert.equal(r.C_final, 'NULL/free/NOSUB', 'a cancellation did not take effect');
+  });
+
+  test('4 — after a terminal state, an OLDER active cannot resurrect', () => {
+    assert.equal(r.D_after_terminal, 'NULL/free/NOSUB');
+    assert.equal(r.D_stale_active_reason, 'stale_event');
+    assert.equal(r.D_not_resurrected, 'NULL/free/NOSUB');
+  });
+
+  test('5 — a duplicate at the same second is not a conflict', () => {
+    // Same second AND same status is just a redelivery; it must not cost a
+    // Stripe call, and it must be idempotent.
+    assert.equal(r.E_duplicate_reason, 'active');
+    assert.equal(r.E_state, '2026-09-27/premium/sub_tie_e');
+  });
+
+  test('the webhook reconciles from Stripe and fails closed', () => {
+    assert.match(webhook, /reason === 'needs_reconcile'/);
+    assert.match(webhook, /reconcileSubscription/);
+    assert.match(webhook, /p_force:\s*true/);
+    // Anything but a clean answer throws, so the handler 500s and Stripe retries.
+    const fn = webhook.slice(webhook.indexOf('async function reconcileSubscription'));
+    assert.match(fn, /throw new Error\(`could not reconcile subscription/);
+    assert.match(fn, /resource_missing/, 'a subscription Stripe no longer knows is canceled, not a guess');
+  });
+
+  test('no status-priority table was introduced', () => {
+    // active → past_due → active is legitimate, so no permanent ranking of
+    // statuses can be correct. Only chronology, or Stripe itself, decides.
+    const src = runSql(`select prosrc from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+                         where n.nspname='public' and p.proname='claim_subscription_event';`)[0];
+    assert.ok(!/last_status in \('active', 'trialing'\)/.test(String(src.prosrc)),
+      'the preferred-status tie rule is back');
+    assert.match(String(src.prosrc), /is distinct from w\.last_status/);
+    assert.match(String(src.prosrc), /conflict/);
   });
 });
