@@ -594,28 +594,42 @@ serve(async (req) => {
           );
         }
 
-        const nextTier = isActive ? (tier ?? bizBefore?.subscription_tier ?? 'free') : 'free';
+        // A subscription may change only the entitlement it OWNS.
+        //
+        // customer.subscription.created fires the moment the subscription is
+        // made, and the checkout creates it 'incomplete' — nobody has paid.
+        // This used to write free/null against every business on the customer,
+        // so a business holding boost Pro or an admin-granted Premium lost it
+        // by clicking Upgrade and closing the tab. The rule now lives in one
+        // database function, which also declines to stamp a pending id onto
+        // the business: an unpaid subscription must not inherit the authority
+        // that a stripe_subscription_id confers elsewhere.
+        const { data: applyRes, error: applyErr } = await supabase.rpc('apply_subscription_state', {
+          p_sub_id:               subId,
+          p_customer:             customerId,
+          p_status:               status,
+          p_tier:                 tier,
+          p_period_end:           isActive ? periodEndIso : null,
+          p_cancel_at_period_end: cancelAtPeriodEnd,
+        });
+        if (applyErr) throw applyErr;
+        const applied = applyRes as Record<string, unknown> | null;
+        console.log(`[stripe-webhook] subscription ${subId} (${status}): ${JSON.stringify(applied)}`);
 
-        await supabase
-          .from('local_businesses')
-          .update({
-            subscription_tier:                 nextTier,
-            subscription_until:                isActive ? periodEndIso : null,
-            subscription_cancel_at_period_end: isActive ? cancelAtPeriodEnd : false,
-            stripe_subscription_id:            subId,
-            stripe_customer_id:                customerId,
-          })
-          .eq('stripe_customer_id', customerId);
+        // Nothing changed hands — no notification is owed either.
+        if (!applied?.applied) break;
+        const nextTier = String(applied.tier_after ?? 'free');
 
         // Email only when the tier genuinely moved. subscription.updated also
         // fires when usage is reported against the metered bookings item, so
         // emailing on every event would write to a business each time somebody
         // booked them.
-        if (bizBefore?.owner_id && bizBefore.subscription_tier !== nextTier) {
+        const tierBefore = String(applied.tier_before ?? bizBefore?.subscription_tier ?? 'free');
+        if (bizBefore?.owner_id && tierBefore !== nextTier) {
           await emailPlanChange(
             supabase, bizBefore.owner_id, bizBefore.name,
             (bizBefore as { id?: string }).id ?? '',
-            bizBefore.subscription_tier, nextTier, isActive ? periodEndIso : null,
+            tierBefore, nextTier, isActive ? periodEndIso : null,
             !isActive ? 'lapsed' : null, customerId, subId,
           );
         }
@@ -623,7 +637,7 @@ serve(async (req) => {
         // Silent-downgrade fix: if a paying business just lapsed (payment
         // failed / went inactive), tell the owner — losing the tier also hides
         // their bookable listings.
-        if (!isActive && bizBefore?.owner_id && bizBefore.subscription_tier !== 'free') {
+        if (!isActive && bizBefore?.owner_id && tierBefore !== 'free') {
           await sendUserPush(supabase, {
             userId:     bizBefore.owner_id,
             module:     'business',
