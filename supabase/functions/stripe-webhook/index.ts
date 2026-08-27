@@ -817,6 +817,32 @@ serve(async (req) => {
             }
           }
 
+          // ── Business boost ───────────────────────────────────────────────
+          //
+          // This branch previously knew about top-ups, memberships, deliveries
+          // and tickets, so a refunded boost went back to the card and the
+          // business kept its Pro access for the whole period it had stopped
+          // paying for. The RPC maps the payment intent to its purchase through
+          // the UNIQUE stripe_payment_intent_id column, never through webhook
+          // metadata, and resolves to 'not_a_boost' for every other rail.
+          //
+          // amount_refunded is Stripe's RUNNING TOTAL. Handing it over as the
+          // cumulative figure is what makes a redelivered event, and a partial
+          // followed by a larger one, settle to one outcome. Only a FULL
+          // cumulative refund stops the boost counting towards Pro; a partial
+          // is recorded and shown and shortens nothing.
+          const boostRefunded = (eventData.amount_refunded as number) ?? 0;
+          if (boostRefunded > 0) {
+            const { data: boostRes, error: boostErr } = await supabase.rpc(
+              'record_boost_refund', { p_pi: pi, p_cumulative: boostRefunded },
+            );
+            if (boostErr) throw boostErr;
+            const bst = boostRes as Record<string, unknown> | null;
+            if (bst?.matched) {
+              console.log(`[stripe-webhook] boost refund ${pi}: ${JSON.stringify(bst)}`);
+            }
+          }
+
           await supabase
             .from('delivery_requests')
             .update({ payment_status: fullyRefunded ? 'refunded' : 'partially_refunded' })

@@ -39,6 +39,19 @@ type MembershipPurchase = {
   stripe_transfer_id: string | null;
 };
 
+type BoostPurchase = {
+  id: string;
+  business_id: string;
+  owner_id: string;
+  weeks: number;
+  amount_pence: number;
+  refunded_pence: number;
+  refund_state: 'none' | 'partial' | 'full';
+  status: string;
+  expires_at: string | null;
+  stripe_payment_intent_id: string | null;
+};
+
 const jsonResponse = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -160,7 +173,40 @@ serve(async (req) => {
 
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
-    const { payment_intent_id, amount_pence = null, reason = 'requested_by_customer' } = await req.json();
+    const body = await req.json();
+    const { amount_pence = null, reason = 'requested_by_customer', boost_purchase_id = null } = body;
+    let payment_intent_id: string = body.payment_intent_id;
+
+    // ── Business boost ─────────────────────────────────────────────────────
+    //
+    // Addressed by the purchase's own id, so no Stripe identifier has to
+    // travel to the admin screen or back. The payment reference is looked up
+    // HERE from the purchase row; a caller cannot supply one, and cannot
+    // therefore point a boost refund at somebody else's payment.
+    //
+    // Platform admin only, deliberately narrower than memberships. A boost is
+    // OneShetland platform revenue: no Connect transfer, no application fee,
+    // no business payout. There is no connected account whose owner could
+    // claim standing to reverse it, and the purchaser is the beneficiary — a
+    // business that could refund its own boost could take three weeks of Pro
+    // and hand itself the money back.
+    let boost: BoostPurchase | null = null;
+    if (boost_purchase_id) {
+      if (typeof boost_purchase_id !== 'string') {
+        return json({ error: 'boost_purchase_id must be an id' }, 400);
+      }
+      const { data: boostRow } = await svc.from('local_boost_purchases')
+        .select('id, business_id, owner_id, weeks, amount_pence, refunded_pence, refund_state, ' +
+                'status, expires_at, stripe_payment_intent_id')
+        .eq('id', boost_purchase_id).maybeSingle();
+      boost = boostRow as BoostPurchase | null;
+      if (!boost) return json({ error: 'That boost purchase could not be found.' }, 404);
+      if (boost.status !== 'succeeded' || !boost.stripe_payment_intent_id) {
+        return json({ error: 'That boost was never paid for, so there is nothing to refund.' }, 400);
+      }
+      payment_intent_id = boost.stripe_payment_intent_id;
+    }
+
     if (!payment_intent_id || typeof payment_intent_id !== 'string') {
       return json({ error: 'payment_intent_id required' }, 400);
     }
@@ -200,10 +246,27 @@ serve(async (req) => {
         .select('owner_id').eq('id', membership.hub_id).maybeSingle();
       ownsThisHub = (hub as { owner_id?: string } | null)?.owner_id === user.id;
     }
+    // A hub owner's authority covers memberships their own hub sold, and
+    // nothing else. It is NOT extended to boosts: this is checked before the
+    // shared refusal below so the boost rail can never inherit it.
+    if (boost && !isAdmin) {
+      return json({ error: 'Forbidden — only OneShetland can refund a business boost.' }, 403);
+    }
     if (!isAdmin && !ownsThisHub) {
       // Deliveries, tickets and every other rail stay platform-admin only:
       // there is no hub whose owner could claim them.
       return json({ error: 'Forbidden — you cannot refund this payment.' }, 403);
+    }
+
+    if (boost) {
+      const already   = boost.refunded_pence ?? 0;
+      const remaining = boost.amount_pence - already;
+      if (boost.refund_state === 'full' || remaining <= 0) {
+        return json({ error: 'This boost is already fully refunded.' }, 400);
+      }
+      if (amount_pence != null && (typeof amount_pence !== 'number' || amount_pence <= 0 || amount_pence > remaining)) {
+        return json({ error: `The most that can still be returned on this boost is £${(remaining / 100).toFixed(2)}.` }, 400);
+      }
     }
 
     if (membership) {
@@ -293,6 +356,17 @@ serve(async (req) => {
       const { error: recErr } = await svc.rpc('record_membership_refund',
         { p_pi: payment_intent_id, p_cumulative: cumulative });
       if (recErr) console.error('[refund-payment] membership record failed', recErr);
+    }
+
+    // Record it against the boost straight away rather than waiting for
+    // charge.refunded. Both call the same RPC and it takes the cumulative
+    // high-water mark, so whichever arrives first the answer is the same.
+    if (boost) {
+      const cumulative = await chargeAmountRefunded(headers, payment_intent_id)
+        ?? ((boost.refunded_pence ?? 0) + (refund.amount as number));
+      const { error: bErr } = await svc.rpc('record_boost_refund',
+        { p_pi: payment_intent_id, p_cumulative: cumulative });
+      if (bErr) console.error('[refund-payment] boost record failed', bErr);
     }
 
     const meta = (pi.metadata ?? {}) as Record<string, string>;

@@ -92,8 +92,19 @@ describe('refund authority follows the money', () => {
 /* ── 2. the purchase decides the hub ──────────────────────────────────────── */
 
 describe('nothing the caller sends can widen their authority', () => {
-  test('only a payment reference is read from the body', () => {
-    assert.match(refundFn, /const \{ payment_intent_id, amount_pence = null, reason = 'requested_by_customer' \} = await req\.json\(\)/);
+  test('only a reference and an amount are read from the body', () => {
+    // Paygate 9 added boost_purchase_id, which is a reference to OUR OWN row —
+    // the payment it resolves to is read from that row, never from the caller.
+    // What matters is unchanged: the body carries no authority, only a pointer.
+    const destructure = refundFn.slice(refundFn.indexOf('await req.json()') - 400,
+                                       refundFn.indexOf('await req.json()') + 200);
+    assert.match(destructure, /amount_pence = null/);
+    assert.match(destructure, /reason = 'requested_by_customer'/);
+    for (const field of ['hub_id', 'owner_id', 'destination', 'business_id',
+                         'weeks', 'total_pence', 'subscription_until']) {
+      assert.ok(!new RegExp(`\\b${field}\\b`).test(destructure),
+        `${field} is read from the request body, which would be authority the caller supplied`);
+    }
   });
 
   test('hub, owner and destination are never taken from the request', () => {

@@ -114,9 +114,15 @@ describe('a business can see what it paid for', () => {
 
   test('a purchase is judged Active by its OWN expiry, not the business tier', () => {
     // Reading the current tier would mark an old, spent boost "Active" whenever
-    // a newer one happened to be running.
-    assert.match(billing, /const active = !!p\.expires_at && new Date\(p\.expires_at\) > new Date\(\)/);
-    assert.match(billing, /active \? "Active" : "Expired"/);
+    // a newer one happened to be running. Refunds added a second reason a
+    // purchase can stop being active, so the expiry test now sits behind one —
+    // but it is still the purchase's OWN expiry that decides, never the
+    // business's tier.
+    assert.match(billing, /new Date\(p\.expires_at\) > new Date\(\)/);
+    assert.ok(!/active = .*subscription_(tier|until)/.test(billing),
+      'the pill must not read the business tier');
+    assert.match(billing, /label: "Active"/);
+    assert.match(billing, /label: "Expired"/);
   });
 
   test('it sits inside the plan screen, not a new dashboard', () => {
@@ -145,8 +151,13 @@ describe('OneShetland can see boosts for support', () => {
     }
   });
 
-  test('it offers no refund control, because refunding does not yet revoke', () => {
-    assert.doesNotMatch(adminBoost, /Refund/);
+  test('the refund control is the admin\'s alone', () => {
+    // This test used to assert NO refund control existed anywhere, which was
+    // right while a refund could not revoke anything. Paygate 9 made a refund
+    // replay entitlement, so the control now exists — for the platform admin
+    // only. The half that still matters is that the OWNER never gets one.
+    assert.match(adminBoost, /Refund…/, 'the admin lost the refund control');
+    assert.ok(!/Refund…/.test(billing), 'a refund control appeared on the owner screen');
   });
 
   test('no Stripe identifier reaches the admin screen either', () => {
