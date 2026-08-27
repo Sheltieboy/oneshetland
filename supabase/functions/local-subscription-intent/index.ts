@@ -51,9 +51,18 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { business_id, tier, period = 'monthly' } = await req.json();
+    const { business_id, tier, period = 'monthly', client_request_id } = await req.json();
     if (!business_id || !['pro', 'premium'].includes(tier)) {
       return json({ error: 'business_id + tier (pro|premium) required' }, 400);
+    }
+    // Validated before anything is created, so a malformed attempt costs
+    // nothing. Shape only — the reference is a de-duplication key, never
+    // authority for who may buy what.
+    if (typeof client_request_id !== 'string') {
+      return json({ error: 'client_request_id required' }, 400);
+    }
+    if (client_request_id.length < 8 || client_request_id.length > 100) {
+      return json({ error: 'client_request_id must be 8-100 characters' }, 400);
     }
 
     const { data: business } = await svc
@@ -68,6 +77,48 @@ serve(async (req) => {
       apiVersion: '2023-10-16',
       httpClient: Stripe.createFetchHttpClient(),
     });
+
+    // ── One deliberate checkout, one subscription ─────────────────────────
+    //
+    // Claimed AFTER ownership is proven and BEFORE Stripe is touched. The
+    // primary key inside decides concurrent duplicates, so twenty simultaneous
+    // identical requests produce exactly one 'claimed'.
+    //
+    // The fingerprint binds the reference to this person, this business, this
+    // tier and this period. Reused for anything else it conflicts rather than
+    // handing back another checkout's subscription.
+    const period_norm = period === 'annual' ? 'annual' : 'monthly';
+    const fingerprint = `${user.id}:${business_id}:${tier}:${period_norm}`;
+    const { data: claimRows, error: claimErr } = await svc.rpc('claim_subscription_attempt', {
+      p_request_id:  client_request_id,
+      p_user:        user.id,
+      p_business:    business_id,
+      p_tier:        tier,
+      p_period:      period_norm,
+      p_fingerprint: fingerprint,
+    });
+    if (claimErr) {
+      console.error('[local-subscription-intent] claim failed', claimErr);
+      return json({ error: 'Could not start the subscription. Nothing has been charged.' }, 500);
+    }
+    const claim = (Array.isArray(claimRows) ? claimRows[0] : claimRows) as
+      { outcome: string; status: string; stripe_subscription_id: string | null; result: unknown } | null;
+
+    if (claim?.outcome === 'conflict') {
+      return json({
+        error: 'That checkout reference belongs to a different purchase. Please start again.',
+        code:  'ATTEMPT_CONFLICT',
+      }, 409);
+    }
+    if (claim?.outcome === 'in_flight') {
+      // A duplicate that has not reached Stripe yet. Ask for a retry rather
+      // than racing it — the other request is about to create the subscription.
+      return json({ error: 'This subscription is already being set up. Please try again in a moment.', code: 'IN_FLIGHT' }, 409);
+    }
+    // Already reached Stripe. Hand back THAT subscription — never make another.
+    if ((claim?.outcome === 'resume' || claim?.outcome === 'replay') && claim.stripe_subscription_id) {
+      return await resumeExisting(stripe, claim.stripe_subscription_id);
+    }
 
     // This endpoint creates a NEW subscription. If a LIVE one already exists, a
     // retry or mis-routed call would create a second that bills every month, so
@@ -88,6 +139,12 @@ serve(async (req) => {
         live = false; // Stripe doesn't know it — treat as gone.
       }
       if (live) {
+        // Release the claim. Otherwise this attempt sits in_flight for ever and
+        // a retry is told "already being set up" instead of the real reason.
+        await svc.rpc('settle_subscription_attempt', {
+          p_request_id: client_request_id, p_status: 'failed',
+          p_result: { reason: 'already_subscribed' },
+        });
         return json({ error: 'This business already has a subscription. Use change-plan to switch tiers.', code: 'ALREADY_SUBSCRIBED' }, 409);
       }
       await svc.from('local_businesses')
@@ -103,7 +160,12 @@ serve(async (req) => {
     const priceProblem = await assertPriceMatches(
       priceId, tier, annual ? 'annual' : 'monthly', Deno.env.get('STRIPE_SECRET_KEY') ?? '',
     );
-    if (priceProblem) return json({ error: priceProblem }, 409);
+    if (priceProblem) {
+      await svc.rpc('settle_subscription_attempt', {
+        p_request_id: client_request_id, p_status: 'failed', p_result: { reason: 'price_mismatch' },
+      });
+      return json({ error: priceProblem }, 409);
+    }
 
     // 1. Pick the card: BUSINESS card → PERSONAL card → the sub-customer's own
     //    saved card. The subscription is created on whichever customer holds the
@@ -153,6 +215,18 @@ serve(async (req) => {
       payment_settings: { save_default_payment_method: 'on_subscription' },
       expand:           ['latest_invoice.payment_intent'],
       metadata:         { business_id, owner_id: user.id, tier, period: annual ? 'annual' : 'monthly', type: 'local_subscription' },
+    }, {
+      // Deterministic, derived from the authoritative identities plus the
+      // attempt reference. The belt to the registry's braces: if this request
+      // is retried at the HTTP layer after Stripe already created the
+      // subscription, Stripe returns the SAME one rather than a second.
+      idempotencyKey: `local-sub-${user.id}-${business_id}-${tier}-${period_norm}-${client_request_id}`,
+    });
+
+    // Recorded BEFORE the first payment is confirmed. If this request dies
+    // mid-confirm, the retry finds the subscription here and resumes it.
+    await svc.rpc('settle_subscription_attempt', {
+      p_request_id: client_request_id, p_status: 'in_flight', p_sub_id: subscription.id,
     });
 
     // deno-lint-ignore no-explicit-any
@@ -168,12 +242,19 @@ serve(async (req) => {
     //    A card needing authentication falls through to the card form below, which
     //    returns THIS subscription's existing PaymentIntent client secret plus an
     //    ephemeral key. The same intent is completed, never a second one.
+    const settleDone = async () => {
+      await svc.rpc('settle_subscription_attempt', {
+        p_request_id: client_request_id, p_status: 'completed', p_sub_id: subscription.id,
+        p_result: { activated: true },
+      });
+    };
+
     const alreadyPaid = ['active', 'trialing'].includes(subscription.status) || paymentIntent?.status === 'succeeded';
-    if (alreadyPaid) return json({ activated: true, subscriptionId: subscription.id });
+    if (alreadyPaid) { await settleDone(); return json({ activated: true, subscriptionId: subscription.id }); }
     if (paymentMethodId && paymentIntent?.id) {
       try {
         const confirmed = await stripe.paymentIntents.confirm(paymentIntent.id, { payment_method: paymentMethodId, use_stripe_sdk: true });
-        if (confirmed.status === 'succeeded') return json({ activated: true, subscriptionId: subscription.id });
+        if (confirmed.status === 'succeeded') { await settleDone(); return json({ activated: true, subscriptionId: subscription.id }); }
       } catch (_e) { /* needs auth / declined → fall through to card form */ }
     }
 
@@ -199,6 +280,43 @@ serve(async (req) => {
     return json({ error: safeError('local-subscription-intent', err) }, 500);
   }
 });
+
+/**
+ * Hand back a subscription this attempt already created.
+ *
+ * Re-read from Stripe rather than from anything stored here, so the customer
+ * gets the SAME subscription, the SAME first invoice and the SAME
+ * PaymentIntent — including its live status. Storing the client secret would
+ * have risked serving a stale one; Stripe stays the single source.
+ */
+async function resumeExisting(stripe: Stripe, subscriptionId: string): Promise<Response> {
+  try {
+    const sub = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['latest_invoice.payment_intent'],
+    });
+    // deno-lint-ignore no-explicit-any
+    const pi = (sub.latest_invoice as any)?.payment_intent;
+    if (['active', 'trialing'].includes(sub.status) || pi?.status === 'succeeded') {
+      return json({ activated: true, subscriptionId: sub.id });
+    }
+    if (!pi?.client_secret) {
+      return json({ error: 'This subscription is still being set up. Please try again in a moment.', code: 'IN_FLIGHT' }, 409);
+    }
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: sub.customer as string }, { apiVersion: '2023-10-16' },
+    );
+    return json({
+      paymentIntent:  pi.client_secret,
+      ephemeralKey:   ephemeralKey.secret,
+      customer:       sub.customer as string,
+      subscriptionId: sub.id,
+      resumed:        true,
+    });
+  } catch (e) {
+    console.error('[local-subscription-intent] resume failed', e);
+    return json({ error: 'Could not resume the subscription. Nothing further has been charged.' }, 502);
+  }
+}
 
 // Returns a customer's default card payment method (or its first attached card),
 // setting it as default for future renewals. Null if the customer has no card.
