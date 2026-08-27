@@ -4,6 +4,7 @@ import Stripe from 'npm:stripe@17';
 import { getConfig } from '../_shared/admin-config.ts';
 import { subscriptionPricesFor, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { classifySavedCardConfirm } from '../_shared/saved-card-outcome.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -51,7 +52,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { business_id, tier, period = 'monthly', client_request_id } = await req.json();
+    const { business_id, tier, period = 'monthly', client_request_id, use_saved_card = true } = await req.json();
     if (!business_id || !['pro', 'premium'].includes(tier)) {
       return json({ error: 'business_id + tier (pro|premium) required' }, 400);
     }
@@ -117,7 +118,7 @@ serve(async (req) => {
     }
     // Already reached Stripe. Hand back THAT subscription — never make another.
     if ((claim?.outcome === 'resume' || claim?.outcome === 'replay') && claim.stripe_subscription_id) {
-      return await resumeExisting(stripe, claim.stripe_subscription_id, svc, client_request_id);
+      return await resumeExisting(stripe, claim.stripe_subscription_id, svc, client_request_id, use_saved_card);
     }
 
     // This endpoint creates a NEW subscription. If a LIVE one already exists, a
@@ -263,11 +264,31 @@ serve(async (req) => {
 
     const alreadyPaid = ['active', 'trialing'].includes(subscription.status) || paymentIntent?.status === 'succeeded';
     if (alreadyPaid) { await settleDone(); return json({ activated: true, subscriptionId: subscription.id }); }
-    if (paymentMethodId && paymentIntent?.id) {
-      try {
-        const confirmed = await stripe.paymentIntents.confirm(paymentIntent.id, { payment_method: paymentMethodId, use_stripe_sdk: true });
-        if (confirmed.status === 'succeeded') { await settleDone(); return json({ activated: true, subscriptionId: subscription.id }); }
-      } catch (_e) { /* needs auth / declined → fall through to card form */ }
+    if (use_saved_card && paymentMethodId && paymentIntent?.id) {
+      const outcome = await confirmSavedCard(stripe, paymentIntent.id, paymentMethodId);
+      if (outcome.kind === 'activated') {
+        await settleDone();
+        return json({ activated: true, subscriptionId: subscription.id });
+      }
+      if (outcome.kind === 'declined') {
+        // The card said no. Say so, and leave the subscription and its first
+        // invoice exactly where they are: choosing another card is the owner's
+        // decision, and it completes THIS payment, not a new one. The attempt
+        // stays alive so that choice reuses the same subscription.
+        return json({
+          declined:       true,
+          code:           'CARD_DECLINED',
+          error:          outcome.message,
+          subscriptionId: subscription.id,
+        }, 200);
+      }
+      if (outcome.kind === 'infrastructure') {
+        // Not the card. Fail loudly rather than implying a decline; the attempt
+        // survives, so a retry resumes this same subscription.
+        console.error('[local-subscription-intent] confirm failed', outcome.detail);
+        return json({ error: 'We could not take the payment just now. Please try again.' }, 502);
+      }
+      // 'sca' falls through: the card form completes THIS PaymentIntent.
     }
 
     if (!paymentIntent?.client_secret) {
@@ -307,6 +328,7 @@ async function resumeExisting(
   // deno-lint-ignore no-explicit-any
   svc: any,
   requestId: string,
+  useSavedCard = true,
 ): Promise<Response> {
   try {
     const sub = await stripe.subscriptions.retrieve(subscriptionId, {
@@ -338,6 +360,31 @@ async function resumeExisting(
     if (!pi?.client_secret) {
       return json({ error: 'This subscription is still being set up. Please try again in a moment.', code: 'IN_FLIGHT' }, 409);
     }
+
+    // Retrying the SAME attempt with the saved card must go through the card
+    // again, not quietly become a card form. Only a deliberate "use another
+    // card" reaches the Payment Element.
+    if (useSavedCard) {
+      const pmId = (sub.default_payment_method as string | null)
+        ?? ((sub.customer && typeof sub.customer === 'string')
+              ? await firstCard(stripe, sub.customer) : null);
+      if (pmId) {
+        const outcome = await confirmSavedCard(stripe, pi.id as string, pmId);
+        if (outcome.kind === 'activated') {
+          await svc.rpc('settle_subscription_attempt', {
+            p_request_id: requestId, p_status: 'completed', p_sub_id: sub.id, p_result: { activated: true },
+          });
+          return json({ activated: true, subscriptionId: sub.id });
+        }
+        if (outcome.kind === 'declined') {
+          return json({ declined: true, code: 'CARD_DECLINED', error: outcome.message, subscriptionId: sub.id }, 200);
+        }
+        if (outcome.kind === 'infrastructure') {
+          console.error('[local-subscription-intent] resume confirm failed', outcome.detail);
+          return json({ error: 'We could not take the payment just now. Please try again.' }, 502);
+        }
+      }
+    }
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: sub.customer as string }, { apiVersion: '2023-10-16' },
     );
@@ -351,6 +398,24 @@ async function resumeExisting(
   } catch (e) {
     console.error('[local-subscription-intent] resume failed', e);
     return json({ error: 'Could not resume the subscription. Nothing further has been charged.' }, 502);
+  }
+}
+
+/**
+ * Confirm the first invoice against a saved card, and say what happened.
+ *
+ * The classification lives in _shared/saved-card-outcome.ts so that a decline,
+ * a 3DS challenge and a Stripe outage are three different answers rather than
+ * one silent catch.
+ */
+async function confirmSavedCard(stripe: Stripe, piId: string, paymentMethodId: string) {
+  try {
+    const confirmed = await stripe.paymentIntents.confirm(piId, {
+      payment_method: paymentMethodId, use_stripe_sdk: true,
+    });
+    return classifySavedCardConfirm(confirmed.status ?? null, null);
+  } catch (e) {
+    return classifySavedCardConfirm(null, e);
   }
 }
 
