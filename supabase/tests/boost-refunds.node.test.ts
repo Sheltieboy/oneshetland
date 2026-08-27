@@ -137,13 +137,28 @@ describe('the purchase can say what came back', () => {
     const r = runSql(`select pg_get_constraintdef(oid) def from pg_constraint
                        where conname = 'local_boost_purchases_status_check';`);
     assert.match(String(r[0].def), /succeeded/);
-    const real = runSql(`select status, refunded_pence::text rp, refund_state, (refunded_at is null)::text ra
+    // The real £7 has since been refunded in full through the admin screen.
+    // The point of this test is unchanged and is now actually exercised by
+    // production data: a refund is recorded ALONGSIDE the purchase, never as a
+    // correction of it. status still says the payment succeeded, the amount and
+    // the duration bought are untouched, and the row is still there.
+    const real = runSql(`select status, amount_pence::text amt, weeks::text wk,
+                                (expires_at is not null)::text kept,
+                                refunded_pence::text rp, refund_state,
+                                (refunded_at is not null)::text stamped
                            from public.local_boost_purchases;`);
     for (const row of real) {
       assert.equal(row.status, 'succeeded', 'the real purchase must still read as paid');
-      assert.equal(row.rp, '0', 'nothing has been refunded — this test must never move money');
-      assert.equal(row.refund_state, 'none');
-      assert.equal(row.ra, 'true');
+      assert.equal(row.amt, '700', 'the original price was rewritten');
+      assert.equal(row.wk, '1', 'the duration bought was rewritten');
+      assert.equal(row.kept, 'true', 'the granted expiry was erased');
+      // Refund state must be internally consistent, whatever it is.
+      const refunded = Number(row.rp);
+      if (row.refund_state === 'none')    assert.equal(refunded, 0);
+      if (row.refund_state === 'full')    assert.equal(refunded, Number(row.amt));
+      if (row.refund_state === 'partial') assert.ok(refunded > 0 && refunded < Number(row.amt));
+      assert.equal(row.stamped, refunded > 0 ? 'true' : 'false',
+        'refunded_at must be set exactly when money has come back');
     }
   });
 });

@@ -77,17 +77,33 @@ describe('the £7 boost bought on 26 August is exactly one of everything', () =>
   });
 
   test('exactly one seven-day grant, and the business agrees with the receipt', () => {
-    const r = runSql(`select p.expires_at = b.subscription_until as matches,
-                             b.subscription_tier,
+    // The £7 boost has since been refunded in full for real, so the business
+    // is Free with no expiry. That is the CORRECT state, not drift: what the
+    // business holds must agree with what the ledger says still stands.
+    // Pinning subscription_until = expires_at was only ever right while the
+    // purchase stood.
+    const r = runSql(`select p.refund_state,
                              (p.expires_at between p.created_at + interval '6 days 23 hours'
                                               and p.created_at + interval '7 days 1 hour') as one_week,
-                             (b.stripe_subscription_id is null) as no_subscription
+                             (b.stripe_subscription_id is null) as no_subscription,
+                             b.subscription_tier,
+                             coalesce(b.subscription_until::text,'NULL') as until,
+                             coalesce(p.expires_at::text,'NULL') as receipt
                         from public.local_boost_purchases p
                         join public.local_businesses b on b.id = p.business_id;`)[0];
-    assert.equal(String(r.matches), 'true', 'the granted expiry differs from the receipt');
-    assert.equal(r.subscription_tier, 'pro');
+
     assert.equal(String(r.one_week), 'true', 'the grant was not one week');
     assert.equal(String(r.no_subscription), 'true', 'a recurring subscription was created');
+    // The receipt is durable either way: a refund never rewrites what was bought.
+    assert.notEqual(r.receipt, 'NULL', 'the granted expiry was erased from the purchase');
+
+    if (r.refund_state === 'full') {
+      assert.equal(r.subscription_tier, 'free', 'a fully refunded boost still grants Pro');
+      assert.equal(r.until, 'NULL', 'a fully refunded boost left an expiry behind');
+    } else {
+      assert.equal(r.subscription_tier, 'pro');
+      assert.equal(r.until, r.receipt, 'the granted expiry differs from the receipt');
+    }
   });
 });
 
