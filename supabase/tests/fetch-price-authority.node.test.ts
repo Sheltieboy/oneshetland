@@ -232,7 +232,12 @@ describe('authorise and capture use authoritative amounts only', () => {
   });
 
   test('the Stripe amount is the authoritative base plus the configured service fee', () => {
-    assert.match(authorise, /amount: String\(baseFeePence \+ serviceFeePence\)/);
+    // The hold gained the waiting-fee headroom in Fix 4: the waiting fee is
+    // measured after the driver arrives, so holding only base + service meant
+    // capture could be asked for more than was ever authorised. What this test
+    // guards is unchanged — every term is server-derived.
+    assert.match(authorise, /amount: String\(baseFeePence \+ serviceFeePence \+ waitingHeadroom\)/);
+    assert.match(authorise, /wait_max_pence/);
     assert.match(authorise, /calculateCommission\(baseFeePence, fetchCfg, 'fetch'\)/);
     assert.ok(!/body\.amount|body\.base_fee|amount: String\(body/.test(authorise), 'the request body can name an amount');
   });
@@ -244,7 +249,10 @@ describe('authorise and capture use authoritative amounts only', () => {
   });
 
   test('the captured amount is server-derived, never client-supplied', () => {
-    assert.match(capture, /amount_to_capture: String\(totalPence\)/);
+    // Fix 4 clamps this to what Stripe actually holds, so a capture can never
+    // exceed the authorisation. Still server-derived; still not the caller's.
+    assert.match(capture, /amount_to_capture: String\(captureAmount\)/);
+    assert.match(capture, /const captureAmount = Math\.min\(totalPence, capturable\)/);
     assert.ok(!/amount_to_capture: String\(body|body\.amount/.test(capture), 'the caller can name the capture amount');
   });
 
