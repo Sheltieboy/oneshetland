@@ -276,7 +276,12 @@ describe('the capture cannot exceed what is held', () => {
     // capture takes only what is owed.
     assert.match(authorise, /amount: String\(baseFeePence \+ serviceFeePence \+ waitingHeadroom\)/);
     assert.match(authorise, /wait_max_pence/);
-    assert.match(capture, /const totalPence = \(request\.base_fee_pence \?\? 0\) \+ serviceFeePence \+ Number\(waitingPence \?\? 0\)/);
+    // The total is now computed under the terms FROZEN at authorisation
+    // rather than recomputed from live configuration — the price-lock
+    // acceptance found that a fee rise mid-delivery enlarged an agreed charge.
+    // The live-config arithmetic survives only as the legacy fallback.
+    assert.match(capture, /rpc\('fetch_capture_total_pence', \{ p_request: request_id \}\)/);
+    assert.match(capture, /totalPence = \(request\.base_fee_pence \?\? 0\) \+ serviceFeePence \+ Number\(waitingPence \?\? 0\)/);
   });
 
   test('and capture is still clamped, so it can never exceed the hold', { skip: !cfg }, async () => {
@@ -287,7 +292,10 @@ describe('the capture cannot exceed what is held', () => {
     // bite — but an older intent authorised before this change would still be
     // short, and capturing above a hold must remain impossible either way.
     assert.match(capture, /const captureAmount = Math\.min\(totalPence, capturable\)/);
-    assert.match(capture, /does not fit inside the authorisation/);
+    // The message became an explicit, persisted mismatch: a shortfall that is
+    // only logged is invisible lost revenue for the driver.
+    assert.match(capture, /authorisation shortfall/);
+    assert.match(capture, /expected \$\{totalPence\}p but only \$\{capturable\}p was authorised/);
   });
 
   test('and never over-captures', () => {
