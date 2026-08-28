@@ -50,7 +50,7 @@ serve(async (req) => {
     // ceiling is on the caller, before anything is read, so an account cannot
     // sit on this endpoint and spend the platform's money.
     const limited = await enforceRateLimit('fetch-quote', userSubject(user.id), ['fetch_quote', 'fetch_quote_day'], corsHeaders);
-    if (limited) return limited;
+    if ('denied' in limited) return limited.denied;
 
     const svc = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',

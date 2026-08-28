@@ -191,6 +191,15 @@ describe('the price is computed from server configuration', () => {
     assert.match(quote, /components.*country:GB/);
   });
 
+  test('the rate-limit result is tested for a refusal, not for truthiness', () => {
+    // enforceRateLimit answers { ok: true } on success — an object, and so
+    // truthy. `if (limited) return limited` therefore returned a plain object
+    // where a Response was expected, and every single quote 502'd. Caught by
+    // calling the deployed function, not by reading it.
+    assert.match(quote, /if \('denied' in limited\) return limited\.denied;/);
+    assert.ok(!/if \(limited\) return limited;/.test(quote), 'the success shape is being returned as a Response');
+  });
+
   test('an unmeasurable distance falls to the minimum, loudly, rather than to a guess', () => {
     assert.match(quote, /return null;/);
     assert.match(quote, /console\.error\('\[fetch-quote\] GOOGLE_GEOCODING_API_KEY is not set/);
