@@ -310,7 +310,11 @@ describe('who may be sold a boost is decided in one place', () => {
 
 describe('the billing screen asks rather than guesses', () => {
   test('the boost panel no longer rides on the free-tier gate', () => {
-    assert.match(billing, /\{boostPreview\?\.boost_eligible && \(/);
+    // Still the server's answer, now with one suppression in front of it: a
+    // business with a live subscription is not offered a boost it would be
+    // refused. `!connected && eligible` is a strict narrowing of `eligible`,
+    // so this remains a gate the screen cannot widen.
+    assert.match(billing, /\{!b\.subscription_connected && boostPreview\?\.boost_eligible && \(/);
     const freeBlock = billing.slice(billing.indexOf('{tier === "free" && ('));
     assert.doesNotMatch(freeBlock.slice(0, freeBlock.indexOf('</>')), /try Pro for a short time/,
       'the boost panel is still inside the free-tier gate');

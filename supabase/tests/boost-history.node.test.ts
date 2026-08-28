@@ -34,6 +34,7 @@ const code = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*(\/\/|--|\*|\{\/\*).*$/gm, '');
 
 const billing   = code(web('components/business/BillingManager.tsx'));
+const bizData = code(readFileSync(join(WEB_ROOT, 'lib/business-data.ts'), 'utf8'));
 const bizClient = code(web('lib/business-client.ts'));
 const adminBoost = code(web('components/admin/BoostPurchases.tsx'));
 const adminData = code(web('lib/admin-data.server.ts'));
@@ -227,7 +228,16 @@ describe('the boost payment path is unchanged', () => {
   });
 
   test('an active boost can still be extended from the screen', () => {
-    assert.match(billing, /\{boostPreview\?\.boost_eligible && \(/);
+    // The gate gained a suppression when a subscriber was left looking at
+    // £7/£12/£15 boost buttons underneath a live £12/mo plan. It keys on
+    // `subscription_connected`, which a boosted business does NOT have — a
+    // boost is Pro access with no subscription behind it — so the offer this
+    // test exists for is untouched, and the server still says 'extending_boost'.
+    assert.match(billing, /\{!b\.subscription_connected && boostPreview\?\.boost_eligible && \(/);
     assert.match(boostFn, /reason: 'extending_boost'/);
+    // And that is only true because a boost is DEFINED as Pro without a
+    // subscription. If isOnBoost ever stopped saying so, the suppression
+    // above would start hiding the offer from the businesses it is for.
+    assert.match(bizData, /return !b\.subscription_connected && b\.subscription_tier === "pro"/);
   });
 });

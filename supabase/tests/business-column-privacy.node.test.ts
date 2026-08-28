@@ -325,13 +325,33 @@ describe('identifier determinism', () => {
   });
 
   test('and no duplicates exist in the live data', () => {
+    // stripe_customer_id is deliberately NOT here. It was, and the two tests
+    // then contradicted each other: the one above requires the uniqueness
+    // index to be GONE, while this one required the data that index enforced.
+    // The contradiction only became visible when somebody first paid for a
+    // second business on a card they already had on file. A Stripe Customer
+    // is the payer; one person paying for two of their own businesses is the
+    // ordinary case, not a collision. Sharing is asserted separately below.
     const r = query(`select
       (select count(*) from (select stripe_account_id from public.local_businesses where stripe_account_id is not null group by 1 having count(*)>1) a)::int          as dup_acct,
       (select count(*) from (select business_stripe_account_id from public.local_businesses where business_stripe_account_id is not null group by 1 having count(*)>1) b)::int as dup_bacct,
       (select count(*) from (select stripe_subscription_id from public.local_businesses where stripe_subscription_id is not null group by 1 having count(*)>1) c)::int as dup_sub,
-      (select count(*) from (select stripe_customer_id from public.local_businesses where stripe_customer_id is not null group by 1 having count(*)>1) d)::int        as dup_cust,
       (select count(*) from (select nfc_token from public.local_businesses where nfc_token is not null group by 1 having count(*)>1) e)::int                          as dup_nfc;`);
     for (const [k, v] of Object.entries(r)) assert.equal(v, 0, `${k}: duplicate identifiers found`);
+  });
+
+  test('a shared payer is shared by ONE person, and never a shared subscription', () => {
+    // What replaces the dropped uniqueness. Two businesses on one Customer is
+    // fine; two businesses on one SUBSCRIPTION is entitlement leaking between
+    // them, and a Customer spanning two different owners means we have bound
+    // somebody else's card to a business.
+    const r = query(`select
+      (select count(*) from (select stripe_subscription_id from public.local_businesses
+         where stripe_subscription_id is not null group by 1 having count(*)>1) a)::int as shared_sub,
+      (select count(*) from (select stripe_customer_id from public.local_businesses
+         where stripe_customer_id is not null group by 1 having count(distinct owner_id)>1) b)::int as cross_owner_customer;`);
+    assert.equal(r.shared_sub, 0, 'two businesses are bound to one Stripe Subscription');
+    assert.equal(r.cross_owner_customer, 0, 'one Stripe Customer spans two different owners');
   });
 });
 
