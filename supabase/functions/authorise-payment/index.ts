@@ -150,9 +150,25 @@ serve(async (req) => {
     const fetchCfg = await getCommissionConfig(supabase, 'fetch');
     const serviceFeePence = calculateCommission(baseFeePence, fetchCfg, 'fetch').fee_pence;
 
+    // ── Hold enough to cover the waiting fee that does not exist yet ──────
+    //
+    // The waiting fee is MEASURED after the driver arrives, which is long
+    // after this hold is placed. Holding only base + service meant capture
+    // could be asked for up to the configured cap MORE than was ever
+    // authorised — and a confirmed card intent cannot be captured above its
+    // authorisation, so the driver simply lost the difference.
+    //
+    // So the hold includes the worst case, and capture takes only what is
+    // actually owed. Capturing BELOW an authorisation is ordinary and always
+    // permitted; the rest is released. The customer briefly sees a larger
+    // pending amount, which is why the screens say "hold" and name the figure.
+    const { data: waitCap } = await supabase
+      .from('delivery_pricing_config').select('wait_max_pence').maybeSingle();
+    const waitingHeadroom = Number(waitCap?.wait_max_pence ?? 0);
+
     // Pre-authorise the customer for delivery fee + service fee (manual capture).
     const piBody: Record<string, string> = {
-      amount: String(baseFeePence + serviceFeePence),
+      amount: String(baseFeePence + serviceFeePence + waitingHeadroom),
       currency: 'gbp',
       customer: customerProfile.stripe_customer_id,
       capture_method: 'manual',        // pre-auth only — captured on delivery
@@ -197,7 +213,7 @@ serve(async (req) => {
       p_request:  request_id,
       p_customer: request.customer_id,
       p_driver:   run.driver_id,
-      p_amount:   baseFeePence + serviceFeePence,
+      p_amount:   baseFeePence + serviceFeePence + waitingHeadroom,
     });
     if (claimErr) {
       console.error('[authorise-payment] claim failed', claimErr);
@@ -302,8 +318,8 @@ serve(async (req) => {
           categoryId: 'fetch.driver_matched',
           title:      'Driver found — one thing to do 💳',
           body:       outcome.kind === 'requires_action'
-            ? `Open your delivery to confirm the £${((baseFeePence + serviceFeePence) / 100).toFixed(2)} hold with your bank. Nothing has been charged yet.`
-            : `Open your delivery to add a card for the £${((baseFeePence + serviceFeePence) / 100).toFixed(2)} hold. Nothing has been charged yet.`,
+            ? `Open your delivery to confirm the hold with your bank — up to £${((baseFeePence + serviceFeePence + waitingHeadroom) / 100).toFixed(2)}, and you are only charged what the delivery costs. Nothing has been charged yet.`
+            : `Open your delivery to add a card. We hold up to £${((baseFeePence + serviceFeePence + waitingHeadroom) / 100).toFixed(2)} and only charge what the delivery costs. Nothing has been charged yet.`,
           data:       { request_id },
         });
       }
