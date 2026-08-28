@@ -5,6 +5,7 @@ import { classifyAuthorisation, paymentStatusFor } from '../_shared/fetch-author
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { classifyHold, readHold } from '../_shared/fetch-hold.ts';
 import { defaultCardFor } from '../_shared/saved-card.ts';
+import { canonicalStripeCustomer } from '../_shared/stripe-customer.ts';
 
 const STRIPE = 'https://api.stripe.com/v1';
 const corsHeaders = {
@@ -297,14 +298,29 @@ async function reauthorise(svc: any, stripeKey: string, request: any, userId: st
     return json({ error: 'We could not work out what to hold for this delivery.', code: 'NOT_PRICED' }, 409);
   }
 
+  // The SAME canonical Customer as generation 1. A replacement hold is a new
+  // PaymentIntent, never a new Customer: one per authorisation generation would
+  // scatter this person's cards across accounts and break the saved-card path
+  // for every rail, not just this one.
   const { data: customerProfile } = await svc
-    .from('profiles').select('stripe_customer_id').eq('id', request.customer_id).maybeSingle();
-  if (!customerProfile?.stripe_customer_id) {
+    .from('profiles').select('full_name').eq('id', request.customer_id).maybeSingle();
+  const { data: customerUser } = await svc.auth.admin.getUserById(request.customer_id);
+  const customer = await canonicalStripeCustomer({
+    supabase: svc, stripeKey,
+    userId: request.customer_id,
+    email:  customerUser?.user?.email ?? null,
+    name:   customerProfile?.full_name ?? null,
+  });
+  if (customer.kind === 'pending') {
+    return json({ error: 'Your payment profile is being set up. Try again in a moment.', code: 'CUSTOMER_IN_FLIGHT' }, 409);
+  }
+  if (customer.kind === 'error') {
     await svc.rpc('settle_fetch_authorisation', {
       p_request: request.id, p_status: 'awaiting_customer', p_error: 'no Stripe customer',
     });
-    return json({ error: 'We could not find your payment details. Please add a card and try again.' }, 409);
+    return json({ error: customer.message, code: 'CUSTOMER_UNAVAILABLE' }, 502);
   }
+  const stripeCustomerId = customer.customerId;
 
   const { data: run } = await svc.from('runs').select('driver_id').eq('id', request.run_id).maybeSingle();
   const { data: driverProfile } = run?.driver_id
@@ -314,12 +330,12 @@ async function reauthorise(svc: any, stripeKey: string, request: any, userId: st
   // Same Fix 2 architecture: the customer's DEFAULT card, confirmed here when
   // there is one; otherwise the intent waits unconfirmed and the customer
   // completes it with the Payment Element — including any 3DS — on THIS intent.
-  const paymentMethodId = await defaultCardFor(stripeKey, customerProfile.stripe_customer_id);
+  const paymentMethodId = await defaultCardFor(stripeKey, stripeCustomerId);
 
   const piBody: Record<string, string> = {
     amount: String(amountPence),
     currency: 'gbp',
-    customer: customerProfile.stripe_customer_id,
+    customer: stripeCustomerId,
     capture_method: 'manual',
     'automatic_payment_methods[enabled]': 'true',
     'automatic_payment_methods[allow_redirects]': 'never',

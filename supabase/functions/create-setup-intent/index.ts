@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { canonicalStripeCustomer } from '../_shared/stripe-customer.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -108,32 +109,36 @@ serve(async (req) => {
       }
     } else {
       // Central (personal) card on the profile.
+      //
+      // This block used to read the profile, find null, POST /v1/customers and
+      // write the id back — a read, a decision and a write with nothing holding
+      // the gap. Two concurrent calls both read null, both created, and one
+      // Customer was orphaned for ever. It was also the ONLY place in the
+      // product that made a Customer at all, which is why Fetch had none to use.
+      //
+      // Both problems have one answer, and it lives in _shared/stripe-customer.
+      // Consolidated here rather than copied: a second customer model is how
+      // the two would drift apart.
       const { data: profile } = await supabase
         .from('profiles')
-        .select('stripe_customer_id, full_name')
+        .select('full_name')
         .eq('id', user.id)
         .single();
 
-      stripeCustomerId = profile?.stripe_customer_id ?? '';
-      if (!stripeCustomerId) {
-        const customerRes = await fetch('https://api.stripe.com/v1/customers', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${stripeSecretKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': '2023-10-16' },
-          body: new URLSearchParams({
-            email: user.email ?? '',
-            name: profile?.full_name ?? '',
-            'metadata[supabase_user_id]': user.id,
-          }),
-        });
-        const customer = await customerRes.json();
-        if (!customerRes.ok) throw new Error(`Stripe customer creation failed: ${customer.error?.message}`);
-        stripeCustomerId = customer.id;
-
-        await supabase
-          .from('profiles')
-          .update({ stripe_customer_id: stripeCustomerId })
-          .eq('id', user.id);
+      const customer = await canonicalStripeCustomer({
+        supabase, stripeKey: stripeSecretKey,
+        userId: user.id,
+        email:  user.email ?? null,
+        name:   profile?.full_name ?? null,
+      });
+      if (customer.kind === 'pending') {
+        return new Response(
+          JSON.stringify({ error: 'Your payment profile is being set up. Try again in a moment.', code: 'CUSTOMER_IN_FLIGHT' }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
       }
+      if (customer.kind === 'error') throw new Error(customer.message);
+      stripeCustomerId = customer.customerId;
     }
 
     // Create a SetupIntent — this lets the app save a payment method without charging

@@ -7,6 +7,7 @@ import { safeError } from '../_shared/safe-error.ts';
 import { classifyAuthorisation, paymentStatusFor } from '../_shared/fetch-authorisation.ts';
 import { classifyHold } from '../_shared/fetch-hold.ts';
 import { defaultCardFor } from '../_shared/saved-card.ts';
+import { canonicalStripeCustomer } from '../_shared/stripe-customer.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -100,18 +101,13 @@ serve(async (req) => {
       );
     }
 
-    // Get the customer's Stripe customer ID and push token
+    // Read for the push token and the name on the Stripe Customer. The
+    // customer id itself is NOT taken from here any more — see below.
     const { data: customerProfile } = await supabase
       .from('profiles')
-      .select('stripe_customer_id, push_token')
+      .select('stripe_customer_id, push_token, full_name')
       .eq('id', request.customer_id)
       .single();
-
-    if (!customerProfile?.stripe_customer_id) {
-      return new Response(JSON.stringify({ error: 'Customer has no payment method on file' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     // Get the driver's Stripe Connect account ID (via the run)
     const { data: run } = await supabase
@@ -135,10 +131,44 @@ serve(async (req) => {
       .eq('id', run?.driver_id)
       .single();
 
+    // ── The customer's Stripe Customer, created if they have never had one ──
+    //
+    // This used to be a 400: "Customer has no payment method on file", answered
+    // to the DRIVER, after they had accepted, with no PaymentIntent created —
+    // so there was nothing for Fix 2's cardless recovery to continue and the
+    // delivery was stranded. On this database 179 of 186 profiles have no
+    // Stripe Customer, so it was the ordinary case.
+    //
+    // Established only AFTER the driver has been proven, and always for
+    // request.customer_id — the person whose card it is. The caller does not
+    // choose whose Customer this is, and cannot name one.
+    const { data: customerUser } = await supabase.auth.admin.getUserById(request.customer_id);
+    const customer = await canonicalStripeCustomer({
+      supabase, stripeKey,
+      userId: request.customer_id,
+      email:  customerUser?.user?.email ?? null,
+      name:   customerProfile?.full_name ?? null,
+    });
+    if (customer.kind === 'pending') {
+      return new Response(
+        JSON.stringify({ error: 'This customer\'s payment profile is being set up. Try again in a moment.', code: 'CUSTOMER_IN_FLIGHT' }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+    if (customer.kind === 'error') {
+      return new Response(
+        JSON.stringify({ error: customer.message, code: 'CUSTOMER_UNAVAILABLE' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+    const stripeCustomerId = customer.customerId;
+
     // The card the customer thinks of as theirs — the Customer's DEFAULT,
     // promoting the first card when none is set. `?limit=1` alone returned
     // whatever Stripe listed first, which can differ between two calls.
-    const paymentMethodId = await defaultCardFor(stripeKey, customerProfile.stripe_customer_id);
+    // A brand-new Customer simply has none, which is now a recoverable state
+    // rather than a refusal.
+    const paymentMethodId = await defaultCardFor(stripeKey, stripeCustomerId);
 
     // No card is NOT a dead end any more. It used to answer the DRIVER with
     // "No payment method found for customer", after they had already accepted,
@@ -173,7 +203,7 @@ serve(async (req) => {
     const piBody: Record<string, string> = {
       amount: String(baseFeePence + serviceFeePence + waitingHeadroom),
       currency: 'gbp',
-      customer: customerProfile.stripe_customer_id,
+      customer: stripeCustomerId,
       capture_method: 'manual',        // pre-auth only — captured on delivery
       'automatic_payment_methods[enabled]': 'true',
       'automatic_payment_methods[allow_redirects]': 'never',
