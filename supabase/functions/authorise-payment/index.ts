@@ -162,9 +162,11 @@ serve(async (req) => {
     // actually owed. Capturing BELOW an authorisation is ordinary and always
     // permitted; the rest is released. The customer briefly sees a larger
     // pending amount, which is why the screens say "hold" and name the figure.
-    const { data: waitCap } = await supabase
-      .from('delivery_pricing_config').select('wait_max_pence').maybeSingle();
-    const waitingHeadroom = Number(waitCap?.wait_max_pence ?? 0);
+    const { data: waitCfg } = await supabase
+      .from('delivery_pricing_config')
+      .select('wait_grace_secs, wait_period_secs, wait_period_pence, wait_max_pence')
+      .maybeSingle();
+    const waitingHeadroom = Number(waitCfg?.wait_max_pence ?? 0);
 
     // Pre-authorise the customer for delivery fee + service fee (manual capture).
     const piBody: Record<string, string> = {
@@ -214,6 +216,16 @@ serve(async (req) => {
       p_customer: request.customer_id,
       p_driver:   run.driver_id,
       p_amount:   baseFeePence + serviceFeePence + waitingHeadroom,
+      // The commercial terms, frozen. The waiting MINUTES are discovered
+      // later, as they must be; the rules that turn minutes into money are
+      // the ones this customer authorised. A fee change applies to the next
+      // Fetch, never to one already held.
+      p_base:     baseFeePence,
+      p_service:  serviceFeePence,
+      p_grace:    Number(waitCfg?.wait_grace_secs ?? 300),
+      p_period:   Number(waitCfg?.wait_period_secs ?? 300),
+      p_rate:     Number(waitCfg?.wait_period_pence ?? 150),
+      p_cap:      waitingHeadroom,
     });
     if (claimErr) {
       console.error('[authorise-payment] claim failed', claimErr);

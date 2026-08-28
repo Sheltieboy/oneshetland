@@ -107,12 +107,28 @@ serve(async (req) => {
     // fetch-quote, the service fee from admin_config, and the waiting fee
     // MEASURED from the waiting_events timestamps. Nothing here comes from a
     // request body.
-    const fetchCfg = await getCommissionConfig(supabase, 'fetch');
-    const serviceFeePence = calculateCommission(request.base_fee_pence ?? 0, fetchCfg, 'fetch').fee_pence;
-    const { data: waitingPence, error: waitErr } = await supabase
-      .rpc('fetch_waiting_fee_pence', { p_request: request_id });
-    if (waitErr) throw waitErr;
-    const totalPence = (request.base_fee_pence ?? 0) + serviceFeePence + Number(waitingPence ?? 0);
+    // Priced under the terms frozen when the hold was placed — not under
+    // whatever the configuration says today. Re-reading them here meant a fee
+    // rise mid-delivery enlarged a charge the customer had already agreed to.
+    const { data: totalRows, error: totalErr } = await supabase
+      .rpc('fetch_capture_total_pence', { p_request: request_id });
+    if (totalErr) throw totalErr;
+    const totals = (Array.isArray(totalRows) ? totalRows[0] : totalRows) as
+      { total_pence: number; authorised_pence: number | null; terms_frozen: boolean } | null;
+
+    let totalPence: number;
+    if (totals?.terms_frozen) {
+      totalPence = Number(totals.total_pence);
+    } else {
+      // Authorised before the terms were frozen. Current configuration is all
+      // there is, and the clamp below is what protects the customer.
+      const fetchCfg = await getCommissionConfig(supabase, 'fetch');
+      const serviceFeePence = calculateCommission(request.base_fee_pence ?? 0, fetchCfg, 'fetch').fee_pence;
+      const { data: waitingPence, error: waitErr } = await supabase
+        .rpc('fetch_waiting_fee_pence', { p_request: request_id });
+      if (waitErr) throw waitErr;
+      totalPence = (request.base_fee_pence ?? 0) + serviceFeePence + Number(waitingPence ?? 0);
+    }
 
     // ── One delivery, one capture ────────────────────────────────────────
     //
@@ -195,13 +211,21 @@ serve(async (req) => {
     // hold was placed, so it can exceed it — see the report accompanying this
     // change. Capturing the capturable amount is the only safe reading until
     // that policy is decided; the shortfall is recorded, not silently dropped.
+    // A safety belt, not business logic. For anything authorised with frozen
+    // terms the total cannot exceed the hold by construction — base and
+    // service are the same numbers, and the waiting fee is capped at the
+    // headroom that was held. If it happens anyway, something is wrong that
+    // operations must see: silently taking less is invisible lost revenue for
+    // the driver, so it is recorded as a mismatch and said out loud.
     const capturable = before.amountCapturable ?? totalPence;
     const captureAmount = Math.min(totalPence, capturable);
     if (captureAmount < totalPence) {
-      console.error(
-        `[capture-payment] ${request_id}: wanted ${totalPence}p but only ${capturable}p is held — ` +
-        `capturing ${captureAmount}p. The waiting fee does not fit inside the authorisation.`,
-      );
+      const detail = `expected ${totalPence}p but only ${capturable}p was authorised`;
+      console.error(`[capture-payment] ${request_id}: ${detail}` +
+        (totals?.terms_frozen ? ' — frozen terms should have made this impossible' : ' — legacy pre-freeze authorisation'));
+      await supabase.rpc('settle_fetch_capture', {
+        p_request: request_id, p_state: 'in_flight', p_error: `authorisation shortfall: ${detail}`,
+      });
     }
 
     let captureRes: Response;
