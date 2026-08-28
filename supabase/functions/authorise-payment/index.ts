@@ -82,6 +82,10 @@ serve(async (req) => {
       });
     }
 
+    // NOTE: the claim itself is below, after the driver has been proven. It
+    // must not be taken on behalf of somebody who turns out not to own this
+    // run, and it must not be taken before we know the amount.
+
     // The authoritative fee, written by fetch-quote from a server-measured
     // distance. It is deliberately NOT defaulted: this column used to be set by
     // the customer's browser, and falling back to a minimum would quietly price
@@ -179,20 +183,83 @@ serve(async (req) => {
       }
     }
 
+    // ── One delivery, one hold ───────────────────────────────────────────
+    //
+    // The decision used to be "is payment_intent_id null?", read then written
+    // with nothing holding the gap: two concurrent accepts both read null,
+    // both created an intent, and the customer got TWO holds — the second id
+    // overwriting the first, leaving the first orphaned for ever.
+    //
+    // The database decides now. The claim is keyed on the delivery request
+    // itself, because a delivery has exactly one authorisation for its whole
+    // life and a browser-generated id cannot express that.
+    const { data: claimRows, error: claimErr } = await supabase.rpc('claim_fetch_authorisation', {
+      p_request:  request_id,
+      p_customer: request.customer_id,
+      p_driver:   run.driver_id,
+      p_amount:   baseFeePence + serviceFeePence,
+    });
+    if (claimErr) {
+      console.error('[authorise-payment] claim failed', claimErr);
+      return new Response(JSON.stringify({ error: 'Could not start the authorisation. Nothing has been held.' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const claim = (Array.isArray(claimRows) ? claimRows[0] : claimRows) as
+      { outcome: string; status: string; stripe_payment_intent_id: string | null; result: unknown } | null;
+
+    if (claim?.outcome === 'conflict') {
+      return new Response(JSON.stringify({ error: 'This delivery belongs to a different customer.', code: 'ATTEMPT_CONFLICT' }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (claim?.outcome === 'terminal') {
+      return new Response(JSON.stringify({ error: 'This delivery\'s payment is finished and cannot be restarted.', code: 'ATTEMPT_TERMINAL' }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (claim?.outcome === 'in_flight') {
+      // Another call is inside Stripe right now. Asking it to wait is the whole
+      // point: racing it is what made two holds.
+      return new Response(JSON.stringify({ error: 'This authorisation is already being set up. Try again in a moment.', code: 'IN_FLIGHT' }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // Already reached Stripe. Read THAT intent back and report where it stands
+    // — never create another.
+    if (claim?.outcome === 'resume' && claim.stripe_payment_intent_id) {
+      return await resumeExisting(supabase, stripeKey, request_id, claim.stripe_payment_intent_id, corsHeaders);
+    }
+
     const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${stripeKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
         'Stripe-Version': '2023-10-16',
+        // Deterministic, from the delivery itself. If this request is retried
+        // at the HTTP layer after Stripe already made the intent, Stripe hands
+        // back the SAME one rather than a second hold. Nothing random or
+        // time-based may appear here, or the recovery it exists for is lost.
+        'Idempotency-Key': `fetch-auth-${request_id}`,
       },
       body: new URLSearchParams(piBody),
     });
 
     const pi = await piRes.json();
     if (!piRes.ok) {
+      await supabase.rpc('settle_fetch_authorisation', {
+        p_request: request_id, p_status: 'unresolved', p_error: pi.error?.message ?? 'create failed',
+      });
       throw new Error(`PaymentIntent creation failed: ${pi.error?.message}`);
     }
+
+    // Recorded BEFORE anything that can fail or need the customer. A function
+    // that dies after this point retries into 'resume' and finds the same
+    // intent; one that died before it is covered by the idempotency key above.
+    await supabase.rpc('settle_fetch_authorisation', {
+      p_request: request_id, p_status: 'in_flight', p_pi: pi.id,
+    });
 
     // ── What Stripe actually said ────────────────────────────────────────
     //
@@ -203,6 +270,16 @@ serve(async (req) => {
     // `requires_capture` is a hold. Anything unrecognised fails closed.
     const outcome = classifyAuthorisation(pi.status);
     const paymentStatus = paymentStatusFor(outcome);
+
+    await supabase.rpc('settle_fetch_authorisation', {
+      p_request: request_id, p_pi: pi.id,
+      p_status: outcome.kind === 'authorised' ? 'authorised'
+              : outcome.kind === 'succeeded'  ? 'captured'
+              : outcome.kind === 'canceled'   ? 'terminal'
+              : outcome.kind === 'processing' || outcome.kind === 'unknown' ? 'unresolved'
+              : 'awaiting_customer',
+      p_result: { payment_status: paymentStatus },
+    });
 
     // The intent id is recorded whatever the outcome: it is what the customer
     // continues, and losing it would strand a live intent nothing points at.
@@ -267,3 +344,56 @@ serve(async (req) => {
     );
   }
 });
+
+/**
+ * Hand back the authorisation this delivery already has.
+ *
+ * Re-read from Stripe rather than from anything stored here, so a driver
+ * retrying gets the CURRENT state of the same intent — including one the
+ * customer has since completed. Creates nothing.
+ */
+async function resumeExisting(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  stripeKey: string,
+  requestId: string,
+  paymentIntentId: string,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
+  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${paymentIntentId}`, {
+    headers: { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' },
+  });
+  const pi = await res.json();
+  if (!res.ok) {
+    return new Response(JSON.stringify({ error: 'Could not check that authorisation just now.' }), {
+      status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const outcome = classifyAuthorisation(pi.status);
+  const paymentStatus = paymentStatusFor(outcome);
+
+  await supabase.from('delivery_requests')
+    .update({ payment_status: paymentStatus, payment_intent_id: paymentIntentId })
+    .eq('id', requestId);
+  await supabase.rpc('settle_fetch_authorisation', {
+    p_request: requestId, p_pi: paymentIntentId,
+    p_status: outcome.kind === 'authorised' ? 'authorised'
+            : outcome.kind === 'succeeded'  ? 'captured'
+            : outcome.kind === 'canceled'   ? 'terminal'
+            : outcome.kind === 'processing' || outcome.kind === 'unknown' ? 'unresolved'
+            : 'awaiting_customer',
+    p_result: { payment_status: paymentStatus, resumed: true },
+  });
+
+  return new Response(
+    JSON.stringify({
+      resumed: true,
+      authorised: outcome.kind === 'authorised',
+      payment_status: paymentStatus,
+      requires_customer_action: outcome.kind === 'requires_action' || outcome.kind === 'requires_payment_method',
+      payment_intent_id: paymentIntentId,
+    }),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
+}

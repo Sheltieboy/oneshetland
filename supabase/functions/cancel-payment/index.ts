@@ -102,6 +102,19 @@ serve(async (req) => {
       .update({ status: 'cancelled', payment_status: voided ? 'unpaid' : request.payment_status })
       .eq('id', request_id);
 
+    // The authorisation is over. Marking it terminal is what stops a later
+    // accept from resurrecting the released hold or minting a second one
+    // against a delivery nobody is doing any more. Non-fatal: a cancelled
+    // request with a released hold is already safe, and failing here must not
+    // undo a cancellation the customer asked for.
+    const { error: settleErr } = await svc.rpc('settle_fetch_authorisation', {
+      p_request: request_id, p_status: 'terminal',
+      p_result: { cancelled: true, voided },
+    });
+    if (settleErr && settleErr.code !== '22023') {   // 22023 = there was never an attempt
+      console.error('[cancel-payment] could not retire the attempt', settleErr);
+    }
+
     return json({ ok: true, voided, status: 'cancelled' });
   } catch (err) {
     console.error('[cancel-payment]', err);
