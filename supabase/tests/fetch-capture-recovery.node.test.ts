@@ -157,9 +157,15 @@ describe('the stored word "authorised" is not evidence', () => {
     assert.ok(!/\/capture`/.test(block), 'a succeeded intent is captured a second time');
   });
 
-  test('a canceled intent is terminal, with no capture call', () => {
+  test('a canceled or lapsed intent ends the attempt, with no capture call', () => {
+    // Fix 5 renamed this outcome from TERMINAL to EXPIRED and added the
+    // deadline case beside it: a canceled hold and one that ran out of time are
+    // the same fact for capture (there is no money) and different facts for
+    // operations, so the code says which. Neither may reach /capture.
     const block = capture.slice(capture.indexOf("if (before.status === 'canceled')"), capture.indexOf("if (before.status !== 'requires_capture')"));
-    assert.match(block, /TERMINAL/);
+    assert.match(block, /EXPIRED/);
+    assert.match(block, /record_fetch_hold_state/, 'the local record stops saying authorised');
+    assert.match(block, /before\.captureBefore/, 'a hold past its deadline is caught here too');
     assert.ok(!/\/capture`/.test(block));
   });
 

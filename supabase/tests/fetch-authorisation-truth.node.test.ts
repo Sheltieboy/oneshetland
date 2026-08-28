@@ -229,9 +229,35 @@ describe('no saved card is recoverable, not a dead end', () => {
 
 /* ── 5. continuation never makes a second intent ──────────────────────────── */
 describe('the continuation endpoint only ever continues', () => {
-  test('it creates no PaymentIntent at all', () => {
-    assert.ok(!/payment_intents['"`]?,\s*\{[\s\S]{0,40}method: 'POST'/.test(continueFn), 'it can create an intent');
-    assert.ok(!/method: 'POST'[\s\S]{0,200}payment_intents/.test(continueFn), 'it POSTs to payment_intents');
+  test('the ordinary continuation creates no PaymentIntent', () => {
+    // Fix 5 introduced ONE exception, and this pin now measures its edges
+    // rather than asserting an absolute that is no longer true. Stripe cannot
+    // revive a canceled intent, so a hold that lapsed can only be replaced —
+    // and that replacement lives entirely inside reauthorise(), which is
+    // reachable only by the customer, only after Stripe itself has confirmed
+    // the old hold is gone. The continuation path proper still creates nothing.
+    const serveBody = continueFn.slice(0, continueFn.indexOf('async function reauthorise'));
+    assert.ok(serveBody.length > 500, 'the continuation body was located');
+    assert.ok(!/method: 'POST'[\s\S]{0,200}payment_intents/.test(serveBody),
+      'the continuation path POSTs to payment_intents');
+    assert.ok(!/payment_intents['"`]?,\s*\{[\s\S]{0,40}method: 'POST'/.test(serveBody),
+      'the continuation path can create an intent');
+  });
+
+  test('the one exception is gated on Stripe, on the customer, and on a generation', () => {
+    const reauth = continueFn.slice(continueFn.indexOf('async function reauthorise'));
+    assert.ok(reauth.length > 500, 'the re-authorisation body was located');
+    // Stripe decides it expired; the database hands out exactly one generation;
+    // only then is anything created.
+    assert.ok(reauth.indexOf('readHold(') < reauth.indexOf("reauthorise_fetch_delivery"),
+      'Stripe is asked before a replacement is claimed');
+    assert.ok(reauth.indexOf("reauthorise_fetch_delivery") < reauth.indexOf('${STRIPE}/payment_intents`'),
+      'the generation is claimed before anything is created');
+    assert.match(reauth, /hold\.state !== 'expired'/);
+    // And it is reached only through an explicit, customer-owned request.
+    assert.match(continueFn, /body\?\.reauthorise === true/);
+    assert.ok(continueFn.indexOf("request.customer_id !== user.id") < continueFn.indexOf('body?.reauthorise === true'),
+      'ownership is proven before re-authorisation is even considered');
   });
 
   test('the intent comes from our row, never from the request body', () => {
