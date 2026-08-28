@@ -112,7 +112,16 @@ serve(async (req) => {
     // the delivery fee + waiting fee; OneShetland keeps the flat service fee.
     const fetchCfg = await getCommissionConfig(supabase, 'fetch');
     const serviceFeePence = calculateCommission(request.base_fee_pence ?? 0, fetchCfg, 'fetch').fee_pence;
-    const totalPence = (request.base_fee_pence ?? 0) + serviceFeePence + (request.waiting_fee_pence ?? 0);
+
+    // Waiting time is MEASURED, from the waiting_events timestamps, and priced
+    // from delivery_pricing_config. It used to be read off the request row —
+    // a column the driver's own browser wrote, so a driver could put any
+    // number they liked into the customer's capture.
+    const { data: waitingPence, error: waitErr } = await supabase
+      .rpc('fetch_waiting_fee_pence', { p_request: request_id });
+    if (waitErr) throw waitErr;
+
+    const totalPence = (request.base_fee_pence ?? 0) + serviceFeePence + Number(waitingPence ?? 0);
 
     // If there's a waiting fee, update the PaymentIntent amount before capturing.
     // Recompute the platform fee on the new total so it tracks the final
@@ -122,7 +131,7 @@ serve(async (req) => {
     // authorised with one — i.e. against a connected driver account. PIs
     // without a transfer_data destination cannot carry an application fee, so
     // we GET the PI to find out reliably rather than guessing from local state.
-    if ((request.waiting_fee_pence ?? 0) > 0) {
+    if (Number(waitingPence ?? 0) > 0) {
       const updateBody: Record<string, string> = { amount: String(totalPence) };
 
       const piGetRes = await fetch(

@@ -141,6 +141,11 @@ verify_jwt = true
 [functions.wallet-checkout]
 verify_jwt = true
 
+# Prices a Fetch delivery. Customer-authenticated: it reads the caller's own
+# request and writes the authoritative fee with the service role.
+[functions.fetch-quote]
+verify_jwt = true
+
 [functions.confirm-boost]
 verify_jwt = true
 

@@ -80,15 +80,17 @@ serve(async (req) => {
       });
     }
 
-    // Use the distance-based fee calculated at submission time.
-    // Fall back to pricing config minimum if not set (e.g. legacy requests).
-    let baseFeePence = request.base_fee_pence;
-    if (!baseFeePence) {
-      const { data: config } = await supabase
-        .from('delivery_pricing_config')
-        .select('min_fee_pence')
-        .single();
-      baseFeePence = config?.min_fee_pence ?? 400;
+    // The authoritative fee, written by fetch-quote from a server-measured
+    // distance. It is deliberately NOT defaulted: this column used to be set by
+    // the customer's browser, and falling back to a minimum would quietly price
+    // a delivery nobody had costed. A request that was never priced cannot be
+    // authorised — the customer re-opens it and gets a real quote.
+    const baseFeePence = request.base_fee_pence;
+    if (!baseFeePence || baseFeePence <= 0) {
+      return new Response(
+        JSON.stringify({ error: 'This delivery has not been priced yet.', code: 'NOT_PRICED' }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     // Get the customer's Stripe customer ID and push token
