@@ -5,6 +5,7 @@ import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { classifyAuthorisation, paymentStatusFor } from '../_shared/fetch-authorisation.ts';
+import { classifyHold } from '../_shared/fetch-hold.ts';
 import { defaultCardFor } from '../_shared/saved-card.ts';
 
 const corsHeaders = {
@@ -181,6 +182,12 @@ serve(async (req) => {
       'metadata[base_fee_pence]': String(baseFeePence),
       'metadata[application_fee_label]': 'OneShetland service fee',
       'metadata[application_fee_pence]': String(serviceFeePence),
+      // The capture deadline lives on the CHARGE, not the intent. Expanding it
+      // here is how we learn when this hold dies without ever guessing at a
+      // number of days — Stripe's window differs by card brand and by whether
+      // the network judged the transaction merchant-initiated, which a hold
+      // confirmed by the driver very well may be.
+      'expand[0]': 'latest_charge',
       description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'} (£${(baseFeePence / 100).toFixed(2)} to driver + £${(serviceFeePence / 100).toFixed(2)} service fee)`,
     };
 
@@ -309,6 +316,18 @@ serve(async (req) => {
       p_result: { payment_status: paymentStatus },
     });
 
+    // When Stripe gave a deadline, keep it. Nothing here invents one: an
+    // authorisation with no recorded deadline is reconciled by status instead,
+    // which is the authority in either case.
+    const hold = classifyHold(pi, Date.now());
+    await supabase.rpc('record_fetch_hold_state', {
+      p_request: request_id, p_state: hold.state, p_detail: hold.detail,
+      p_expires_at: hold.expiresAt,
+      // The request row is written directly below; recording it twice would
+      // let the two disagree.
+      p_payment_status: null,
+    });
+
     // The intent id is recorded whatever the outcome: it is what the customer
     // continues, and losing it would strand a live intent nothing points at.
     await supabase
@@ -388,7 +407,7 @@ async function resumeExisting(
   paymentIntentId: string,
   corsHeaders: Record<string, string>,
 ): Promise<Response> {
-  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${paymentIntentId}`, {
+  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${paymentIntentId}?expand[]=latest_charge`, {
     headers: { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' },
   });
   const pi = await res.json();
@@ -398,17 +417,25 @@ async function resumeExisting(
     });
   }
 
+  // A resumed authorisation is the oldest one in the system, so it is the most
+  // likely to have lapsed. The hold reading decides, not the raw status: a
+  // requires_capture intent whose deadline has passed is not money.
+  const hold = classifyHold(pi, Date.now());
   const outcome = classifyAuthorisation(pi.status);
-  const paymentStatus = paymentStatusFor(outcome);
+  const paymentStatus = hold.state === 'expired' ? 'expired' : paymentStatusFor(outcome);
 
   await supabase.from('delivery_requests')
     .update({ payment_status: paymentStatus, payment_intent_id: paymentIntentId })
     .eq('id', requestId);
+  await supabase.rpc('record_fetch_hold_state', {
+    p_request: requestId, p_state: hold.state, p_detail: hold.detail,
+    p_expires_at: hold.expiresAt, p_payment_status: null,
+  });
   await supabase.rpc('settle_fetch_authorisation', {
     p_request: requestId, p_pi: paymentIntentId,
-    p_status: outcome.kind === 'authorised' ? 'authorised'
+    p_status: hold.state === 'expired'  ? 'expired'
+            : outcome.kind === 'authorised' ? 'authorised'
             : outcome.kind === 'succeeded'  ? 'captured'
-            : outcome.kind === 'canceled'   ? 'terminal'
             : outcome.kind === 'processing' || outcome.kind === 'unknown' ? 'unresolved'
             : 'awaiting_customer',
     p_result: { payment_status: paymentStatus, resumed: true },
@@ -417,7 +444,9 @@ async function resumeExisting(
   return new Response(
     JSON.stringify({
       resumed: true,
-      authorised: outcome.kind === 'authorised',
+      authorised: hold.state === 'valid' || hold.state === 'expiring_soon',
+      hold_state: hold.state,
+      expires_at: hold.expiresAt,
       payment_status: paymentStatus,
       requires_customer_action: outcome.kind === 'requires_action' || outcome.kind === 'requires_payment_method',
       payment_intent_id: paymentIntentId,

@@ -4,6 +4,7 @@ import { sendUserPush } from '../_shared/send-push.ts';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { captureDeadline } from '../_shared/fetch-hold.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -194,8 +195,30 @@ serve(async (req) => {
       return json({ captured: true, recovered: true, total_fee_pence: before.amountReceived ?? totalPence }, 200);
     }
     if (before.status === 'canceled') {
+      // The hold is gone. Whether it lapsed or somebody released it, there is
+      // nothing to capture — and the local record must stop saying otherwise,
+      // or the next screen to load will offer the driver a button again.
       await supabase.rpc('settle_fetch_capture', { p_request: request_id, p_state: 'failed', p_error: 'intent canceled' });
-      return json({ error: 'That payment was cancelled and cannot be completed.', code: 'TERMINAL' }, 409);
+      await supabase.rpc('record_fetch_hold_state', {
+        p_request: request_id, p_state: 'expired',
+        p_detail: 'the PaymentIntent was canceled before capture',
+        p_payment_status: 'expired',
+      });
+      return json({ error: 'The hold on this payment is no longer there, so it cannot be completed. The customer needs to authorise it again.', code: 'EXPIRED' }, 409);
+    }
+    if (before.status === 'requires_capture'
+        && before.captureBefore !== undefined && before.captureBefore <= Date.now()) {
+      // Past Stripe's own deadline. The funds are released at the network well
+      // before the object is tidied up, so capturing here would fail anyway —
+      // and calling it a capture failure would hide what actually happened.
+      await supabase.rpc('settle_fetch_capture', {
+        p_request: request_id, p_state: 'failed', p_error: 'authorisation expired before capture',
+      });
+      await supabase.rpc('record_fetch_hold_state', {
+        p_request: request_id, p_state: 'expired', p_detail: 'the capture deadline has passed',
+        p_payment_status: 'expired',
+      });
+      return json({ error: 'The hold on this payment has expired, so it cannot be completed. The customer needs to authorise it again.', code: 'EXPIRED' }, 409);
     }
     if (before.status !== 'requires_capture') {
       // requires_action, requires_payment_method, processing, anything new:
@@ -311,19 +334,28 @@ serve(async (req) => {
   }
 });
 
-/** Read a PaymentIntent. Never throws — an unreadable intent is a state. */
+/**
+ * Read a PaymentIntent. Never throws — an unreadable intent is a state.
+ *
+ * The charge is expanded because Stripe's capture deadline lives there, at
+ * payment_method_details.card.capture_before, and an authorisation past its
+ * deadline is not money however the intent's status still reads.
+ */
 async function readIntent(headers: Record<string, string>, id: string): Promise<{
-  ok: boolean; status?: string; amountCapturable?: number; amountReceived?: number; error?: string;
+  ok: boolean; status?: string; amountCapturable?: number; amountReceived?: number;
+  captureBefore?: number; error?: string;
 }> {
   try {
-    const res = await fetch(`https://api.stripe.com/v1/payment_intents/${id}`, { headers });
+    const res = await fetch(`https://api.stripe.com/v1/payment_intents/${id}?expand[]=latest_charge`, { headers });
     const pi = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, error: pi?.error?.message ?? `HTTP ${res.status}` };
+    const deadline = captureDeadline(pi);
     return {
       ok: true,
       status: pi.status,
       amountCapturable: typeof pi.amount_capturable === 'number' ? pi.amount_capturable : undefined,
       amountReceived:   typeof pi.amount_received   === 'number' ? pi.amount_received   : undefined,
+      captureBefore:    deadline ?? undefined,
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'unreachable' };

@@ -345,6 +345,54 @@ serve(async (req) => {
         break;
       }
 
+      // ── A Fetch hold stopped existing ──────────────────────────────────
+      //
+      // Stripe's own signal that an uncaptured authorisation is over. It is
+      // what fires when a hold reaches its capture deadline and the funds are
+      // released — the case nothing here could previously observe, so the row
+      // went on saying 'authorised' and the driver's screen went on offering
+      // "Mark as collected" against money that had gone days earlier.
+      //
+      // Belt AND braces with fetch-hold-check: this is the fast path, and the
+      // on-demand reconciliation on the driver's own screen is the one that
+      // cannot be missed. Both write the same value.
+      case 'payment_intent.canceled': {
+        const meta = (eventData.metadata ?? {}) as Record<string, string>;
+        if (!meta.request_id) break;
+
+        const { data: dr } = await supabase
+          .from('delivery_requests')
+          .select('id, status, payment_status, customer_id')
+          .eq('payment_intent_id', eventData.id as string)
+          .maybeSingle();
+
+        // A captured payment is not undone by a later cancellation event, and
+        // a delivery the customer already cancelled has been settled by
+        // cancel-payment — which released this very hold on purpose.
+        if (!dr || dr.payment_status === 'captured' || dr.status === 'cancelled') break;
+
+        const reason = (eventData.cancellation_reason as string | null) ?? null;
+        await supabase.rpc('record_fetch_hold_state', {
+          p_request: dr.id as string,
+          p_state:   'expired',
+          p_detail:  `payment_intent.canceled: ${reason ?? 'no reason given'}`,
+          p_payment_status: 'expired',
+        });
+
+        // The customer is the only person who can put this right, and they
+        // will not be looking at the app when it happens.
+        await sendUserPush(supabase, {
+          userId:     dr.customer_id as string,
+          module:     'fetch',
+          categoryId: 'fetch.payment_failed',
+          title:      'Delivery payment hold expired',
+          body:       'The hold on your card has ended before your delivery could be completed. Open your delivery to authorise it again — nothing has been charged.',
+          data:       { request_id: dr.id as string, kind: 'fetch_hold_expired' },
+          urgent:     true,
+        }).catch((e) => console.error('[stripe-webhook] hold expiry push:', e));
+        break;
+      }
+
       case 'payment_intent.succeeded': {
         const meta = (eventData.metadata ?? {}) as Record<string, string>;
 

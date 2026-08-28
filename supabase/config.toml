@@ -152,6 +152,12 @@ verify_jwt = true
 [functions.fetch-authorise]
 verify_jwt = true
 
+# Re-reads a Fetch hold from Stripe before anybody acts on it. Answers the
+# customer and the assigned driver only, and returns a verdict — never a client
+# secret. Authenticated because it costs a Stripe call per request.
+[functions.fetch-hold-check]
+verify_jwt = true
+
 [functions.confirm-boost]
 verify_jwt = true
 
