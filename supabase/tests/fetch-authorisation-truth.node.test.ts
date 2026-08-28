@@ -206,7 +206,14 @@ describe('the card is the customer’s default, not whichever came back first', 
   });
 
   test('authorise-payment uses it instead of its own lookup', () => {
-    assert.match(authorise, /await defaultCardFor\(stripeKey, customerProfile\.stripe_customer_id\)/);
+    // Fix 6 moved the customer id off the profile read and onto the canonical
+    // registry — a customer who has never paid has no profile binding yet, and
+    // reading one was the 400 that stranded the delivery. The card lookup is
+    // unchanged; only where the Customer comes from is.
+    assert.match(authorise, /await defaultCardFor\(stripeKey, stripeCustomerId\)/);
+    assert.match(authorise, /const stripeCustomerId = customer\.customerId;/);
+    assert.ok(!/defaultCardFor\(stripeKey, customerProfile/.test(authorise),
+      'the card lookup must not depend on a profile binding that may not exist yet');
     assert.ok(!/payment_methods\?type=card&limit=1/.test(authorise), 'the old first-card lookup is still there');
   });
 });
