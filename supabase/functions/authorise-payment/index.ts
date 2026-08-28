@@ -4,6 +4,8 @@ import { sendUserPush } from '../_shared/send-push.ts';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { classifyAuthorisation, paymentStatusFor } from '../_shared/fetch-authorisation.ts';
+import { defaultCardFor } from '../_shared/saved-card.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -128,19 +130,16 @@ serve(async (req) => {
       .eq('id', run?.driver_id)
       .single();
 
-    // Get the customer's default payment method from Stripe
-    const pmRes = await fetch(
-      `https://api.stripe.com/v1/customers/${customerProfile.stripe_customer_id}/payment_methods?type=card&limit=1`,
-      { headers: { 'Authorization': `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' } },
-    );
-    const pmData = await pmRes.json();
-    const paymentMethodId = pmData.data?.[0]?.id;
+    // The card the customer thinks of as theirs — the Customer's DEFAULT,
+    // promoting the first card when none is set. `?limit=1` alone returned
+    // whatever Stripe listed first, which can differ between two calls.
+    const paymentMethodId = await defaultCardFor(stripeKey, customerProfile.stripe_customer_id);
 
-    if (!paymentMethodId) {
-      return new Response(JSON.stringify({ error: 'No payment method found for customer' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // No card is NOT a dead end any more. It used to answer the DRIVER with
+    // "No payment method found for customer", after they had already accepted,
+    // and there was no way for the customer to put that right without starting
+    // again. The intent is created without a payment method instead, and the
+    // customer completes it themselves through fetch-authorise.
 
     // Service fee — added ON TOP of the delivery fee so the DRIVER receives the
     // full delivery fee and OneShetland's fee is separate (not skimmed from it).
@@ -152,9 +151,7 @@ serve(async (req) => {
       amount: String(baseFeePence + serviceFeePence),
       currency: 'gbp',
       customer: customerProfile.stripe_customer_id,
-      payment_method: paymentMethodId,
       capture_method: 'manual',        // pre-auth only — captured on delivery
-      confirm: 'true',
       'automatic_payment_methods[enabled]': 'true',
       'automatic_payment_methods[allow_redirects]': 'never',
       'metadata[request_id]': request_id,
@@ -164,6 +161,13 @@ serve(async (req) => {
       'metadata[application_fee_pence]': String(serviceFeePence),
       description: `OneShetland Fetch — ${request.category_slug ?? 'delivery'} (£${(baseFeePence / 100).toFixed(2)} to driver + £${(serviceFeePence / 100).toFixed(2)} service fee)`,
     };
+
+    // Confirm here only when there is a card to confirm against. Without one
+    // the intent is created unconfirmed and waits for the customer.
+    if (paymentMethodId) {
+      piBody.payment_method = paymentMethodId;
+      piBody.confirm = 'true';
+    }
 
     // Destination charge to the driver's Connect account. amount includes the
     // service fee; application_fee_amount = service fee, so the driver receives
@@ -190,15 +194,55 @@ serve(async (req) => {
       throw new Error(`PaymentIntent creation failed: ${pi.error?.message}`);
     }
 
-    // Save the PaymentIntent ID and base fee to the request
+    // ── What Stripe actually said ────────────────────────────────────────
+    //
+    // This used to write 'authorised' on the strength of `piRes.ok`. A 200
+    // means Stripe accepted the request, not that a hold exists — a card
+    // needing 3DS returns 200 with `requires_action`, and one that failed at
+    // confirm returns 200 with `requires_payment_method`. Only
+    // `requires_capture` is a hold. Anything unrecognised fails closed.
+    const outcome = classifyAuthorisation(pi.status);
+    const paymentStatus = paymentStatusFor(outcome);
+
+    // The intent id is recorded whatever the outcome: it is what the customer
+    // continues, and losing it would strand a live intent nothing points at.
     await supabase
       .from('delivery_requests')
       .update({
         payment_intent_id: pi.id,
         base_fee_pence: baseFeePence,
-        payment_status: 'authorised',
+        payment_status: paymentStatus,
       })
       .eq('id', request_id);
+
+    if (outcome.kind !== 'authorised') {
+      // The customer has something to do, and the driver must not be released.
+      const needsCustomer = outcome.kind === 'requires_action' || outcome.kind === 'requires_payment_method';
+      if (needsCustomer) {
+        await sendUserPush(supabase, {
+          userId:     request.customer_id,
+          module:     'fetch',
+          categoryId: 'fetch.driver_matched',
+          title:      'Driver found — one thing to do 💳',
+          body:       outcome.kind === 'requires_action'
+            ? `Open your delivery to confirm the £${((baseFeePence + serviceFeePence) / 100).toFixed(2)} hold with your bank. Nothing has been charged yet.`
+            : `Open your delivery to add a card for the £${((baseFeePence + serviceFeePence) / 100).toFixed(2)} hold. Nothing has been charged yet.`,
+          data:       { request_id },
+        });
+      }
+      if (outcome.kind === 'unknown') {
+        console.error(`[authorise-payment] unrecognised PaymentIntent status for ${request_id}: ${outcome.detail}`);
+      }
+      return new Response(
+        JSON.stringify({
+          authorised: false,
+          payment_status: paymentStatus,
+          requires_customer_action: needsCustomer,
+          payment_intent_id: pi.id,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // Notify the customer their driver has been matched (preference-aware).
     await sendUserPush(supabase, {
@@ -211,7 +255,7 @@ serve(async (req) => {
     });
 
     return new Response(
-      JSON.stringify({ payment_intent_id: pi.id, base_fee_pence: baseFeePence }),
+      JSON.stringify({ authorised: true, payment_status: 'authorised', payment_intent_id: pi.id, base_fee_pence: baseFeePence }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
 

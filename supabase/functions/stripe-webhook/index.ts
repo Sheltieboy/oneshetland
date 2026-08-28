@@ -323,6 +323,28 @@ serve(async (req) => {
     switch (eventType) {
 
       // ── Payment confirmed ────────────────────────────────────────────
+      // ── A Fetch hold genuinely landed ──────────────────────────────────
+      //
+      // Stripe's own signal that a manual-capture intent now has money held
+      // against it. It is the same truth fetch-authorise reads back from the
+      // API, arriving the other way round — so a customer who finishes 3DS and
+      // closes the tab before the browser can tell us still ends up authorised.
+      //
+      // Deliberately belt AND braces: the API read completes the immediate
+      // flow, this catches the ones that never come back. Both write the same
+      // value, so whichever arrives second changes nothing.
+      case 'payment_intent.amount_capturable_updated': {
+        const meta = (eventData.metadata ?? {}) as Record<string, string>;
+        if (meta.request_id && typeof eventData.amount_capturable === 'number' && eventData.amount_capturable > 0) {
+          await supabase
+            .from('delivery_requests')
+            .update({ payment_status: 'authorised' })
+            .eq('payment_intent_id', eventData.id as string)
+            .neq('payment_status', 'captured');   // never walk a capture backwards
+        }
+        break;
+      }
+
       case 'payment_intent.succeeded': {
         const meta = (eventData.metadata ?? {}) as Record<string, string>;
 

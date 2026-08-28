@@ -146,6 +146,12 @@ verify_jwt = true
 [functions.fetch-quote]
 verify_jwt = true
 
+# Lets the CUSTOMER finish a Fetch hold their driver could not — 3DS, or a
+# card they had not saved. Never creates an intent; only continues the one
+# already stored on their own request.
+[functions.fetch-authorise]
+verify_jwt = true
+
 [functions.confirm-boost]
 verify_jwt = true
 
