@@ -35,6 +35,16 @@ export type ComplianceEventType =
   | 'password.changed'
   | 'email.changed';
 
+/**
+ * The "Businesses & selling on OneShetland" section of the Terms.
+ *
+ * Display only — the database stamps the version onto the acceptance record via
+ * a SECURITY DEFINER writer that takes no version argument. This exists so a
+ * screen can show the right document, and a test pins it to the database value
+ * and to the website's copy so the three cannot drift apart.
+ */
+export const COMMERCIAL_TERMS_VERSION = '1.0';
+
 export const COMPLIANCE_EVENT_LABELS: Record<ComplianceEventType, string> = {
   'email.verified':        'Email verified',
   'terms.accepted':        'Terms of service accepted',
