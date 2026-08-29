@@ -194,11 +194,21 @@ describe('authorise-payment believes Stripe, not the HTTP code', () => {
 
 /* ── 3. the saved card is chosen deterministically ────────────────────────── */
 describe('the card is the customer’s default, not whichever came back first', () => {
-  test('the default is asked for before any listing', () => {
+  test('the default is honoured only when the card is still attached', () => {
+    // Paygate 13 Fix 1 inverted this deliberately. Reading the Customer's
+    // default FIRST was the defect: a detached PaymentMethod is permanently
+    // unusable, Stripe does not document clearing the default on detach, and
+    // returning it blind handed a dead card to every saved-card rail — which
+    // adding a new card would not have fixed, because the stale default kept
+    // winning. The attached list is the authority now; the stored default is a
+    // preference within it.
     assert.match(savedCard, /invoice_settings\?\.default_payment_method/);
-    const def = savedCard.indexOf('default_payment_method');
-    const list = savedCard.indexOf('payment_methods?type=card');
-    assert.ok(def < list, 'the list is consulted before the default');
+    const fn = savedCard.slice(savedCard.indexOf('export async function defaultCardFor'));
+    assert.ok(fn.length > 200, 'defaultCardFor was located');
+    const list = fn.indexOf('listAttachedCards');
+    const use  = fn.indexOf('attached.some((c) => c.id === current)');
+    assert.ok(list > 0 && use > list, 'the default must be checked against the attached list');
+    assert.ok(fn.indexOf('return null') < use, 'an empty attached list short-circuits first');
   });
 
   test('the first card is promoted so the next call agrees with this one', () => {
