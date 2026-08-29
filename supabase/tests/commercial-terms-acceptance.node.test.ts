@@ -311,21 +311,21 @@ rollback;`);
 
 describe('reading the answer, without gating anything yet', () => {
   test('it answers true only after acceptance, for that business', () => {
+    // Asked through the client-facing wrapper. W3G.1 made the two-argument
+    // helper internal, because it takes the user as an argument and a client
+    // holding it could read somebody else's acceptance state.
     const [row] = sql(FIXTURE + asOwner + `
   create temp table q on commit drop as select
-    public.has_accepted_commercial_terms('${BIZ_A}'::uuid) as before_accept;
+    public.my_commercial_terms_status('${BIZ_A}'::uuid) as v;
   select public.record_commercial_terms_acceptance('${BIZ_A}'::uuid);
   create temp table q2 on commit drop as select
-    public.has_accepted_commercial_terms('${BIZ_A}'::uuid) as after_accept,
-    public.has_accepted_commercial_terms('${BIZ_B}'::uuid) as other_business;
+    public.my_commercial_terms_status('${BIZ_A}'::uuid) as v;
   reset role;
-  select (select before_accept from q) as before_accept,
-         (select after_accept from q2) as after_accept,
-         (select other_business from q2) as other_business;
+  select (select v->>'accepted' from q) as before_accept,
+         (select v->>'accepted' from q2) as after_accept;
 rollback;`);
-    assert.equal(row.before_accept, false);
-    assert.equal(row.after_accept, true);
-    assert.equal(row.other_business, false);
+    assert.equal(row.before_accept, 'false');
+    assert.equal(row.after_accept, 'true');
   });
 
   test('NO commercial-write policy has been changed — the gate is not live', () => {
@@ -410,5 +410,119 @@ describe('the terms say what is being accepted', () => {
 
   test('the solicitor-review warning is still there', () => {
     assert.match(readWeb('components/site/LegalLayout.tsx'), /reviewed by a solicitor before launch/);
+  });
+});
+
+/* ── 8. Who may ask the acceptance question ─────────────────────────────── */
+
+describe('the acceptance question is only ever asked about yourself', () => {
+  test('the two-argument helper is internal — no client grant', () => {
+    const [row] = sql(`
+      select coalesce(has_function_privilege('authenticated', p.oid, 'execute'), false) as authed,
+             coalesce(has_function_privilege('anon',          p.oid, 'execute'), false) as anon,
+             coalesce(has_function_privilege('service_role',  p.oid, 'execute'), false) as svc
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname='public' and p.proname='has_accepted_commercial_terms';`);
+    assert.equal(row.authed, false,
+      'a client holding this could read somebody else\'s acceptance — it takes the user as an argument');
+    assert.equal(row.anon, false);
+    assert.equal(row.svc, true, 'server-side callers keep it');
+  });
+
+  test('THE DEFECT: one user can no longer read another user\'s acceptance', () => {
+    const [row] = sql(`
+begin;
+  insert into auth.users (id, email) values
+    ('a0000001-1111-1111-1111-111111111111','probe-a@probe.invalid'),
+    ('b0000002-2222-2222-2222-222222222222','probe-b@probe.invalid');
+  insert into public.local_businesses (id, owner_id, name, category, address, is_active) values
+    ('a0000003-3333-3333-3333-333333333333','a0000001-1111-1111-1111-111111111111','PROBE A','other','PROBE',true),
+    ('b0000004-4444-4444-4444-444444444444','b0000002-2222-2222-2222-222222222222','PROBE B','other','PROBE',true);
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"b0000002-2222-2222-2222-222222222222","role":"authenticated"}';
+  create temp table _a on commit drop as
+    select public.record_commercial_terms_acceptance('b0000004-4444-4444-4444-444444444444') as v;
+  reset role;
+  create temp table r(label text, outcome text) on commit drop;
+  grant insert, select on r to authenticated, anon;
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"a0000001-1111-1111-1111-111111111111","role":"authenticated"}';
+  do $p$ begin
+    insert into r values ('peek','LEAKED '||public.has_accepted_commercial_terms(
+      'b0000004-4444-4444-4444-444444444444','b0000002-2222-2222-2222-222222222222')::text);
+  exception when others then insert into r values ('peek','refused'); end $p$;
+  do $p$ begin
+    insert into r values ('other_biz','LEAKED '||(public.my_commercial_terms_status(
+      'b0000004-4444-4444-4444-444444444444')->>'accepted'));
+  exception when others then insert into r values ('other_biz','refused'); end $p$;
+  reset role;
+  select (select outcome from r where label='peek') as peek,
+         (select outcome from r where label='other_biz') as other_biz;
+rollback;`);
+    assert.equal(row.peek, 'refused', 'the two-argument helper must not be reachable by a client');
+    assert.equal(row.other_biz, 'refused', 'nor may the wrapper answer for a business you do not own');
+  });
+
+  test('anonymous cannot inspect acceptance by either route', () => {
+    const [row] = sql(`
+begin;
+  create temp table r(label text, outcome text) on commit drop;
+  grant insert, select on r to anon;
+  set local role anon;
+  do $p$ begin
+    insert into r values ('two_arg','EXECUTED '||public.has_accepted_commercial_terms(
+      gen_random_uuid(), gen_random_uuid())::text);
+  exception when others then insert into r values ('two_arg','refused'); end $p$;
+  do $p$ declare v jsonb; begin
+    v := public.my_commercial_terms_status(gen_random_uuid());
+    insert into r values ('wrapper','EXECUTED '||coalesce(v::text,'null'));
+  exception when others then insert into r values ('wrapper','refused'); end $p$;
+  reset role;
+  select (select outcome from r where label='two_arg') as two_arg,
+         (select outcome from r where label='wrapper') as wrapper;
+rollback;`);
+    assert.equal(row.two_arg, 'refused');
+    assert.equal(row.wrapper, 'refused');
+  });
+
+  test('an owner gets the self-status the acceptance screen will need', () => {
+    const [row] = sql(FIXTURE + asOwner + `
+  create temp table q1 on commit drop as
+    select public.my_commercial_terms_status('${BIZ_A}'::uuid) as v;
+  select public.record_commercial_terms_acceptance('${BIZ_A}'::uuid);
+  create temp table q2 on commit drop as
+    select public.my_commercial_terms_status('${BIZ_A}'::uuid) as v;
+  reset role;
+  select (select v->>'accepted' from q1) as before_accept,
+         (select v->>'accepted' from q2) as after_accept,
+         (select v->>'version'  from q2) as version;
+rollback;`);
+    assert.equal(row.before_accept, 'false');
+    assert.equal(row.after_accept, 'true');
+    assert.equal(row.version, '1.0');
+  });
+
+  test('the wrapper takes one business id and derives the user itself', () => {
+    const [row] = sql(`
+      select pg_get_function_identity_arguments(p.oid) as args, p.prosecdef as definer
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+       where n.nspname='public' and p.proname='my_commercial_terms_status';`);
+    assert.equal(row.args, 'p_business_id uuid', 'no user parameter exists to be abused');
+    assert.equal(row.definer, true);
+  });
+
+  test('the W3G writer, policy and index are untouched by this correction', () => {
+    const [row] = sql(`
+      select (select pg_get_function_identity_arguments(p.oid) from pg_proc p
+                join pg_namespace n on n.oid=p.pronamespace
+               where n.nspname='public' and p.proname='record_commercial_terms_acceptance') as writer_args,
+             (select count(*)::int from pg_policy p join pg_class c on c.oid=p.polrelid
+               where c.relname='compliance_log' and p.polcmd='a'
+                 and pg_get_expr(p.polwithcheck,p.polrelid) ilike '%business.commercial_terms_accepted%') as policy_guard,
+             (select count(*)::int from pg_indexes
+               where indexname='compliance_log_commercial_terms_once') as idx;`);
+    assert.equal(row.writer_args, 'p_business_id uuid');
+    assert.equal(row.policy_guard, 1);
+    assert.equal(row.idx, 1);
   });
 });
