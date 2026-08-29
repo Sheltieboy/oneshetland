@@ -127,7 +127,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // Marketing consent is captured here so it survives email confirmation
         // (there's no session immediately after sign-up). Terms/privacy/age are
         // implied by the on-screen agreement and logged best-effort below.
-        data: { full_name: fullName, marketing_opt_in: marketingOptIn },
+        // signup_platform tells the confirmation email template which link to
+        // send: the app needs its deep link, the web needs a token_hash URL
+        // that works even when the email is opened on another device.
+        data: { full_name: fullName, marketing_opt_in: marketingOptIn, signup_platform: 'app' },
         // Deep link back into the app after email confirmation
         // Requires "oneshetland-fetch://**" in Supabase → Auth → URL Configuration
         emailRedirectTo,
