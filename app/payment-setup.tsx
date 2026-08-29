@@ -89,7 +89,14 @@ export default function PaymentSetupScreen() {
         'confirm-card-setup',
         {
           headers: { Authorization: `Bearer ${session?.access_token}` },
-          ...(isBusiness ? { body: { business_id: businessId } } : {}),
+          body: {
+            ...(isBusiness ? { business_id: businessId } : {}),
+            // The SetupIntent id is the part of its client secret before
+            // `_secret_`. Sending it lets the server make THAT card the
+            // default from Stripe's own record of what was just confirmed,
+            // rather than guessing at whichever card is listed first.
+            setup_intent_id: String(data.client_secret).split('_secret_')[0],
+          },
         },
       );
       if (confirmErr || !confirmData?.ok || confirmData?.has_card === false) {

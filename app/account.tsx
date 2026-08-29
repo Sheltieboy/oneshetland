@@ -133,6 +133,22 @@ export default function AccountScreen() {
   const [vehicleSaved, setVehicleSaved] = useState(false);
   const [removingCard, setRemovingCard] = useState(false);
 
+  // Does an active subscription renew on this card? A bare boolean from the
+  // server — which Stripe Customer funds a subscription is decided by columns
+  // a client may not read. Defaults to false, so a failed lookup shows the
+  // ordinary wording rather than an alarming one nobody can act on.
+  const [fundsSubscription, setFundsSubscription] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const { data } = await supabase.rpc('has_card_funded_subscription');
+        if (live) setFundsSubscription(data === true);
+      } catch { /* the ordinary wording is the safe default */ }
+    })();
+    return () => { live = false; };
+  }, [session?.user.id]);
+
   // Sync form fields when profile first loads
   useEffect(() => {
     setFullName(profile?.full_name ?? '');
@@ -304,7 +320,12 @@ export default function AccountScreen() {
   function handleRemoveCard() {
     alert({
       title: 'Remove payment method?',
-      message: 'Your saved card will be removed from your account. You can add one again any time.',
+      // Removal is never blocked — but "add one again any time" is not the
+      // whole truth for somebody whose subscription renews on this card, so
+      // they are told what actually happens before they confirm.
+      message: fundsSubscription
+        ? "You have an active subscription that renews on this card. You can remove it, but you'll need to add another card before the next renewal."
+        : 'Your saved card will be removed from your account. You can add one again any time.',
       icon: 'credit-card',
       accent: colors.error,
       actions: [
