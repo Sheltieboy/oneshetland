@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -29,7 +30,7 @@ import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.local;
 
-export default function BookUnitsScreen() {
+function BookUnitsBody() {
   const router = useRouter();
   const { alert } = useAlert();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
@@ -478,3 +479,18 @@ const modalStyles = StyleSheet.create({
   saveBtn:    { flex: 2, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center' },
   saveText:   { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
 });
+
+/**
+ * Commercial screen: the business must have accepted the business & selling
+ * terms first. One acceptance covers every commercial screen for that business;
+ * Directory management is never gated. Same RPCs, event type and version as the
+ * website — see lib/commercial-terms.ts.
+ */
+export default function BookUnitsScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Passes and packs">
+      <BookUnitsBody />
+    </CommercialTermsGate>
+  );
+}

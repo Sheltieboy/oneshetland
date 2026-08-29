@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -30,7 +31,7 @@ import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.local;
 
-export default function BookScheduleScreen() {
+function BookScheduleBody() {
   const router = useRouter();
   const { alert } = useAlert();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
@@ -682,3 +683,18 @@ const timeStyles = StyleSheet.create({
   num: { fontSize: 22, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   sep: { fontSize: 22, fontWeight: '900', color: colors.textMuted },
 });
+
+/**
+ * Commercial screen: the business must have accepted the business & selling
+ * terms first. One acceptance covers every commercial screen for that business;
+ * Directory management is never gated. Same RPCs, event type and version as the
+ * website — see lib/commercial-terms.ts.
+ */
+export default function BookScheduleScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Bookings">
+      <BookScheduleBody />
+    </CommercialTermsGate>
+  );
+}

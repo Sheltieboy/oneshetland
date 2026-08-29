@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
@@ -41,7 +42,7 @@ const S = SECTIONS.events;
 
 const CATEGORY_OPTIONS = ['', ...EVENT_CATEGORIES];
 
-export default function EventCreateScreen() {
+function EventCreateBody() {
   const { businessId, hubId, eventId } = useLocalSearchParams<{ businessId?: string; hubId?: string; eventId?: string }>();
   const router  = useRouter();
   const { profile } = useAuth();
@@ -871,3 +872,20 @@ const styles = StyleSheet.create({
   placeAddr:     { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
   placeClear:    { fontSize: fontSize.xs, color: colors.error, fontWeight: '700', marginTop: 2 },
 });
+
+/**
+ * Commercial screen — but only on the business route. A community hub arranging
+ * an event is not a business selling tickets, so the gate applies when this is
+ * opened for a businessId and stands aside when it isn't. One acceptance covers
+ * every commercial screen for that business; Directory management is never
+ * gated. See lib/commercial-terms.ts.
+ */
+export default function EventCreateScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  if (!businessId) return <EventCreateBody />;
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Events">
+      <EventCreateBody />
+    </CommercialTermsGate>
+  );
+}

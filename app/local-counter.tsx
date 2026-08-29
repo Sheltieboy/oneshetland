@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as SecureStore from 'expo-secure-store';
@@ -39,7 +40,7 @@ const PIN_KEY = (businessId: string) => `counter_pin_${businessId}`;
 /** The code is valid 90s; refresh comfortably inside that. */
 const CODE_REFRESH_MS = 60_000;
 
-export default function LocalCounterScreen() {
+function LocalCounterBody() {
   const { businessId: paramId } = useLocalSearchParams<{ businessId?: string }>();
   const { profile } = useAuth();
   const { alert } = useAlert();
@@ -294,3 +295,18 @@ const styles = StyleSheet.create({
   modalOk:     { flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: radius.full, backgroundColor: ACCENT },
   modalOkText: { fontWeight: '800', color: '#fff', fontSize: fontSize.sm },
 });
+
+/**
+ * Commercial screen: the business must have accepted the business & selling
+ * terms first. One acceptance covers every commercial screen for that business;
+ * Directory management is never gated. Same RPCs, event type and version as the
+ * website — see lib/commercial-terms.ts.
+ */
+export default function LocalCounterScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Counter mode">
+      <LocalCounterBody />
+    </CommercialTermsGate>
+  );
+}

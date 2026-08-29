@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { FontAwesome5 } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
@@ -32,7 +33,7 @@ const DISCOUNT_TYPES: { id: DiscountType; label: string; icon: string }[] = [
   { id: 'other',    label: 'Other',      icon: 'star' },
 ];
 
-export default function NewOfferScreen() {
+function NewOfferBody() {
   const router = useRouter();
   const { screenWidth } = useAppLayout();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
@@ -279,3 +280,18 @@ const styles = StyleSheet.create({
   successBtnText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
   successDone: { color: colors.textMuted, fontSize: fontSize.sm, fontWeight: '700' },
 });
+
+/**
+ * Commercial screen: the business must have accepted the business & selling
+ * terms first. One acceptance covers every commercial screen for that business;
+ * Directory management is never gated. Same RPCs, event type and version as the
+ * website — see lib/commercial-terms.ts.
+ */
+export default function NewOfferScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Offers">
+      <NewOfferBody />
+    </CommercialTermsGate>
+  );
+}

@@ -365,16 +365,36 @@ describe('the version has one source of truth', () => {
 /* ── 7. The Terms themselves ────────────────────────────────────────────── */
 
 describe('the terms say what is being accepted', () => {
+  /**
+   * Sections carry attributes now — §11 has an `id` so the acceptance screen can
+   * link straight to it. Find them by heading rather than by exact tag text, and
+   * refuse to return an empty string: a slice that silently found nothing would
+   * pass every "does it say X" assertion below by saying nothing at all.
+   */
+  const heading = (n: number) => new RegExp(`<L[^>]*\\sh="${n}\\.`);
+  function section(n: number): string {
+    const from = terms.search(heading(n));
+    const to = terms.search(heading(n + 1));
+    assert.ok(from >= 0, `section ${n} not found`);
+    assert.ok(to > from, `section ${n + 1} not found after ${n}`);
+    return terms.slice(from, to);
+  }
+
   test('the commercial section exists at 11, and later sections renumbered', () => {
-    assert.match(terms, /<L h="11\. Businesses &amp; selling on OneShetland">/);
+    assert.match(terms, /<L[^>]*\sh="11\. Businesses &amp; selling on OneShetland">/);
     for (const [n, t] of [[12, 'AI features'], [15, 'Liability'], [18, 'Contact']] as const) {
-      assert.ok(terms.includes(`<L h="${n}. ${t}">`), `section ${n} ${t}`);
+      assert.match(terms, new RegExp(`<L[^>]*\\sh="${n}\\. ${t}">`), `section ${n} ${t}`);
     }
-    assert.equal((terms.match(/<L h=/g) ?? []).length, 18, 'seventeen sections became eighteen');
+    assert.equal((terms.match(/<L[^>]*\sh=/g) ?? []).length, 18, 'seventeen sections became eighteen');
+  });
+
+  test('the acceptance screens can link straight to it', () => {
+    // The anchor the two acceptance surfaces point at must exist on the page.
+    assert.match(terms, /<L id="commercial"[^>]*\sh="11\./);
   });
 
   test('it covers what W3C found missing', () => {
-    const sec = terms.slice(terms.indexOf('<L h="11.'), terms.indexOf('<L h="12.'));
+    const sec = section(11);
     for (const [label, re] of [
       ['authority',    /authorised to act for the business/i],
       ['accuracy',     /descriptions, prices, availability/i],
@@ -389,13 +409,13 @@ describe('the terms say what is being accepted', () => {
   });
 
   test('it does not turn a Directory-only owner into a seller', () => {
-    const sec = terms.slice(terms.indexOf('<L h="11.'), terms.indexOf('<L h="12.'));
+    const sec = section(11);
     assert.match(sec, /does not apply to simply having a Directory listing/i);
     assert.match(terms, /Having a listing doesn&rsquo;t oblige you to sell anything/);
   });
 
   test('it invents none of the things it was told not to', () => {
-    const sec = terms.slice(terms.indexOf('<L h="11.'), terms.indexOf('<L h="12.'));
+    const sec = section(11);
     for (const banned of [/within \d+ days/i, /\d+ hours/i, /insurance/i, /VAT[- ]registered/i,
                           /chargeback fee/i, /reserve/i, /payout hold/i]) {
       assert.ok(!banned.test(sec), `invented an obligation: ${banned}`);

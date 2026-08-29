@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
@@ -30,7 +31,7 @@ const CAMERA_AVAILABLE = _CameraView !== View;
 
 const ACCENT = '#7C3AED';
 
-export default function LocalTillScreen() {
+function LocalTillBody() {
   const { businessId } = useLocalSearchParams<{ businessId?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [manual, setManual] = useState('');
@@ -257,3 +258,18 @@ const styles = StyleSheet.create({
   chargeResult: { fontSize: fontSize.md, fontWeight: '900', textAlign: 'center' },
   chargeCancel: { fontSize: 12, color: colors.textMuted, fontWeight: '800', marginTop: 2 },
 });
+
+/**
+ * Commercial screen: the business must have accepted the business & selling
+ * terms first. One acceptance covers every commercial screen for that business;
+ * Directory management is never gated. Same RPCs, event type and version as the
+ * website — see lib/commercial-terms.ts.
+ */
+export default function LocalTillScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Local Wallet">
+      <LocalTillBody />
+    </CommercialTermsGate>
+  );
+}

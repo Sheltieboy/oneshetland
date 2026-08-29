@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -38,7 +39,7 @@ const toPence = (s: string): number | null => {
 
 type VariantRow = { id?: string; name: string; delta: string; stock: string };
 
-export default function BusinessProductsScreen() {
+function BusinessProductsBody() {
   const router = useRouter();
   const { alert } = useAlert();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
@@ -420,3 +421,18 @@ const styles = StyleSheet.create({
   chipText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textSecondary },
   groupLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.xs },
 });
+
+/**
+ * Commercial screen: the business must have accepted the business & selling
+ * terms first. One acceptance covers every commercial screen for that business;
+ * Directory management is never gated. Same RPCs, event type and version as the
+ * website — see lib/commercial-terms.ts.
+ */
+export default function BusinessProductsScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Products">
+      <BusinessProductsBody />
+    </CommercialTermsGate>
+  );
+}
