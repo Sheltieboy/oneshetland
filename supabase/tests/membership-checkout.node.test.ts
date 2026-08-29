@@ -110,12 +110,23 @@ describe('one membership fee, one place to change it', () => {
   });
 
   test('Junior costs the same either way, and the hub nets the same', () => {
+    // Its own hub and tier, rolled back. This used to quote a demo hub's
+    // Junior tier; membership_quote deliberately returns nothing for a tier
+    // whose hub is not active, so unpublishing the pre-launch demo hubs made a
+    // correct function look broken. A fixture the test creates cannot drift.
     const r = runSql(`
+      begin;
+      insert into auth.users (id, email) values
+        ('fbbbbbbb-1111-1111-1111-111111111111','hubfixture@probe.invalid');
+      insert into public.hubs (id, owner_id, name, slug, type, is_active)
+        values ('fbbbbbbb-2222-2222-2222-222222222222','fbbbbbbb-1111-1111-1111-111111111111',
+                'PROBE Rowing Club','probe-rowing-club','sports',true);
+      insert into public.hub_membership_types (id, hub_id, name, price_pence, period, is_active)
+        values ('fbbbbbbb-3333-3333-3333-333333333333','fbbbbbbb-2222-2222-2222-222222222222',
+                'Junior', 1000, 'year', true);
       select face_pence::text f, fee_pence::text x, total_pence::text t
-        from public.membership_quote(
-          (select id from public.hub_membership_types
-            where name = 'Junior' and price_pence = 1000
-              and hub_id = (select id from public.hubs where slug = 'demo-rowing-club')));`)[0];
+        from public.membership_quote('fbbbbbbb-3333-3333-3333-333333333333');
+      rollback;`)[0];
     assert.equal(r.f, '1000');
     assert.equal(r.x, '95');
     assert.equal(r.t, '1095');   // card total AND wallet debit
@@ -144,8 +155,19 @@ describe('the checkout is told what it will charge, by the thing that charges', 
   });
 
   test('a free tier quotes zero and never reaches a paid checkout', () => {
-    const r = runSql(`select total_pence::text t, fee_pence::text f from public.membership_quote(
-      (select id from public.hub_membership_types where price_pence = 0 limit 1));`)[0];
+    const r = runSql(`
+      begin;
+      insert into auth.users (id, email) values
+        ('fccccccc-1111-1111-1111-111111111111','freetier@probe.invalid');
+      insert into public.hubs (id, owner_id, name, slug, type, is_active)
+        values ('fccccccc-2222-2222-2222-222222222222'::uuid,'fccccccc-1111-1111-1111-111111111111'::uuid,
+                'PROBE Free Hub','probe-free-hub','club',true);
+      insert into public.hub_membership_types (id, hub_id, name, price_pence, period, is_active)
+        values ('fccccccc-3333-3333-3333-333333333333'::uuid,'fccccccc-2222-2222-2222-222222222222'::uuid,
+                'Supporter', 0, 'year', true);
+      select total_pence::text t, fee_pence::text f
+        from public.membership_quote('fccccccc-3333-3333-3333-333333333333');
+      rollback;`)[0];
     assert.equal(r.t, '0');
     assert.equal(r.f, '0');
     // And the paid function refuses one outright.

@@ -64,6 +64,21 @@ describe('a signed-out visitor can see the shop', () => {
     // and never says why — lib/shop-data.ts returns [] on any error.
     const r = one(`
       begin;
+      -- Its own catalogue, rolled back. This used to count whatever production
+      -- happened to be publishing, so hiding the pre-launch demo shop made a
+      -- passing RLS test fail — the test could not tell "anon is blocked" from
+      -- "there is nothing to see". A fixture it created itself can.
+      insert into auth.users (id, email) values
+        ('faaaaaaa-1111-1111-1111-111111111111','shopfixture@probe.invalid');
+      insert into public.local_businesses (id, owner_id, name, category, address, is_active)
+        values ('faaaaaaa-2222-2222-2222-222222222222','faaaaaaa-1111-1111-1111-111111111111',
+                'PROBE Shop','retail','PROBE',true);
+      insert into public.products (id, business_id, title, price_pence, is_active)
+        values ('faaaaaaa-3333-3333-3333-333333333333','faaaaaaa-2222-2222-2222-222222222222',
+                'PROBE gansey', 8500, true);
+      insert into public.product_variants (product_id, name, is_active)
+        values ('faaaaaaa-3333-3333-3333-333333333333','M', true);
+
       create temp table c(who text, n int);
       do $$
       declare n int;
@@ -132,12 +147,15 @@ describe('a signed-out visitor can see the shop', () => {
 
   test('the existing older gansey record works without being recreated', () => {
     const r = one(`
-      select p.title, p.price_pence::text as price, p.is_active::text as active,
+      select p.title, p.price_pence::text as price,
              (select count(*)::text from public.product_variants v where v.product_id=p.id and v.is_active) as variants,
              public.business_payout_ready(p.business_id)::text as seller_ready
         from public.products p where p.title ilike 'Fair Isle gansey' limit 1;`);
+    // Deliberately no assertion on is_active. This test is about the RECORD
+    // still working without being recreated — its price, its variants and its
+    // seller resolving. Whether it is currently PUBLISHED is a product
+    // decision, and the pre-launch demo shop is unpublished on purpose.
     assert.equal(r.price, '8500', 'the £85 product must still price at £85');
-    assert.equal(r.active, 'true');
     assert.ok(Number(r.variants) >= 1);
     assert.equal(r.seller_ready, 'true', 'its seller must be payable through the inherited central account');
   });
