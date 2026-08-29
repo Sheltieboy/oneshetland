@@ -227,9 +227,14 @@ describe('no payment or access change', () => {
     }
   });
 
-  test('the only thing this page wants from the Stripe module is a currency formatter', () => {
-    const imports = webUi.match(/import \{([^}]*)\} from "@\/lib\/stripe"/)?.[1] ?? '';
-    assert.equal(imports.trim(), 'gbp');
+  test('this page wants nothing from the Stripe module at all', () => {
+    // It only ever needed a currency formatter. That formatter used to live in
+    // lib/stripe.ts, and importing it loaded Stripe.js — which put Stripe's
+    // fraud cookies on pages with no payment on them. It now comes from
+    // lib/currency.ts, which imports nothing, so the assertion gets stronger:
+    // not "only gbp from Stripe" but "no Stripe import whatsoever".
+    assert.ok(!/from "@\/lib\/stripe"/.test(webUi), 'a history page must not load Stripe.js');
+    assert.match(webUi, /import \{ gbp \} from "@\/lib\/currency";/);
     assert.ok(!/confirmPayment|createPaymentIntent|stripe\./.test(code(webUi)));
   });
 
