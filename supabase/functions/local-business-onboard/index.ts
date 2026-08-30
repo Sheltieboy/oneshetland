@@ -73,6 +73,21 @@ serve(async (req) => {
 
     if (!business || business.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
+    // Owning the business is not the same as having agreed to sell through it.
+    // RLS cannot reach this path — no commercial row is written here, the
+    // side effect is at Stripe — so the check is made here, BEFORE the first
+    // Stripe call, using the same protected truth the policies use. A missing
+    // or unreadable answer refuses; it is not permission.
+    const { data: mayTransact, error: termsErr } = await svc.rpc('business_may_transact', {
+      p_business_id: business_id,
+      p_user_id:     user.id,
+    });
+    if (termsErr || mayTransact !== true) {
+      return json({
+        error: 'Accept the business & selling terms for this business before connecting a bank account.',
+      }, 403);
+    }
+
     let accountId = business.stripe_account_id;
     if (!accountId) {
       const accountParams: Record<string, string> = {
