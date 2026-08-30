@@ -67,10 +67,26 @@ describe('a Directory listing does not make you a seller', () => {
   });
 
   test('and the app leaves Directory screens open too', () => {
-    for (const f of ['local-business-register', 'local-business-dashboard', 'local-business-analytics',
+    for (const f of ['local-business-register', 'local-business-analytics',
                      'business-jobs', 'business-leads', 'business-orders', 'local-business-transactions']) {
       assert.ok(!/CommercialTermsGate/.test(read(`app/${f}.tsx`)), f);
     }
+  });
+
+  /**
+   * The dashboard used to be on that list, on the strength of never mentioning
+   * the gate at all. It mentions it now — over two money controls embedded in
+   * it, shown in a Modal — so the absence of a string stopped being the rule.
+   * The rule was always that the SCREEN is not gated, and that is what is
+   * checked here and in "the dashboard stays open; its money controls do not".
+   */
+  test('the dashboard screen is open even though two controls on it are not', () => {
+    const src = read('app/local-business-dashboard.tsx');
+    assert.ok(!/return \(\s*<CommercialTermsGate/.test(src), 'the screen must not be wrapped');
+    const gateAt = src.indexOf('<CommercialTermsGate');
+    assert.ok(gateAt > src.indexOf('<Modal'), 'the gate appears only over the screen');
+    // The dashboard renders without asking anything: the guard runs on tap.
+    assert.match(src, /const requireCommercialTerms = useCallback\(async/);
   });
 });
 
@@ -231,6 +247,108 @@ describe('business money setup is commerce; personal money setup is not', () => 
     // The gate wrapper touches params and children only — no Stripe calls in it.
     const wrapper = src.slice(src.indexOf('export default function PaymentSetupScreen'));
     assert.ok(!/supabase|stripe|Stripe/.test(wrapper), 'the wrapper does no payment work');
+  });
+});
+
+/* ── 2c. Commercial controls inside an ungated screen ───────────────────── */
+
+describe('the dashboard stays open; its money controls do not', () => {
+  const dash = () => read('app/local-business-dashboard.tsx');
+
+  test('the dashboard itself is not gated', () => {
+    const src = dash();
+    assert.ok(!/<CommercialTermsGate businessId=\{businessId\}>/.test(src));
+    // It must not be wrapped: the gate appears only inside a Modal.
+    const gateAt = src.indexOf('<CommercialTermsGate');
+    const modalAt = src.indexOf('<Modal');
+    assert.ok(gateAt > modalAt && modalAt > 0, 'the gate is shown over the screen, not instead of it');
+    assert.ok(!/export default function BusinessDashboardScreen\(\)[^]*?return \(\s*<CommercialTermsGate/.test(src),
+      'the screen is not wrapped by the gate');
+  });
+
+  test('ordinary Directory management is not behind the guard', () => {
+    // Everything a business that never sells anything still needs.
+    const src = dash();
+    for (const fn of ['toggleAcceptWallet', 'saveProfile', 'refreshCode', 'requestNfcTile',
+                      'upsertLoyaltyProgram', 'requestAlertAccess']) {
+      if (!src.includes(fn)) continue;
+      const at = src.indexOf(`const ${fn}`);
+      if (at < 0) continue;
+      const body = src.slice(at, src.indexOf('\n  };', at));
+      assert.ok(!/requireCommercialTerms/.test(body), `${fn} must not require commercial acceptance`);
+    }
+  });
+
+  test('the Connect action asks before the account link exists', () => {
+    const src = dash();
+    const fn = src.slice(src.indexOf('const handleConnectStripe'));
+    const body = fn.slice(0, fn.indexOf('\n  };'));
+    const guard = body.indexOf('requireCommercialTerms');
+    const call = body.indexOf('createBusinessOnboardingLink');
+    assert.ok(guard > 0, 'the Connect action is not gated');
+    assert.ok(call > guard, 'createBusinessOnboardingLink must not be reachable before acceptance');
+    assert.match(body, /if \(!\(await requireCommercialTerms\([^)]*\)\)\) return;/,
+      'refusal must stop the action, not merely warn');
+  });
+
+  test('the payout toggle asks before the write', () => {
+    const src = dash();
+    const fn = src.slice(src.indexOf('const toggleBusinessPayout'));
+    const body = fn.slice(0, fn.indexOf('\n  };'));
+    const guard = body.indexOf('requireCommercialTerms');
+    const write = body.indexOf('updateBusiness');
+    assert.ok(guard > 0, 'the payout toggle is not gated');
+    assert.ok(write > guard, 'use_business_payout must not be written before acceptance');
+    assert.ok(body.indexOf('setActiveBusiness') > guard, 'nor may the local state flip first');
+  });
+
+  test('the guard fails closed and reads the server, not a local flag', () => {
+    const src = dash();
+    const fn = src.slice(src.indexOf('const requireCommercialTerms'));
+    const body = fn.slice(0, fn.indexOf('\n  }, ['));
+    assert.match(body, /fetchCommercialTermsStatus\(activeBusiness\.id\)/, 'it must ask the server');
+    assert.match(body, /if \(status\.known && status\.accepted\) return true;/,
+      'only a known, accepted status may proceed');
+    assert.match(body, /return false;/);
+    // No local shortcut that could stand in for the server's answer.
+    assert.ok(!/activeBusiness\.(terms|accepted)/.test(body), 'no client-side acceptance flag');
+  });
+
+  test('rendering the dashboard or the gate calls nothing at Stripe', () => {
+    const src = dash();
+    // The only createBusinessOnboardingLink call site is inside the guarded action.
+    const calls = [...src.matchAll(/createBusinessOnboardingLink\(/g)].map((m) => m.index!);
+    assert.equal(calls.length, 1, 'exactly one call site, inside the gated action');
+    const guardAt = src.indexOf("requireCommercialTerms('Business bank account')");
+    assert.ok(guardAt > 0 && calls[0] > guardAt);
+    // And it sits inside the tap handler, not in an effect or at render.
+    const fnStart = src.indexOf('const handleConnectStripe');
+    const fnEnd = src.indexOf('\n  };', fnStart);
+    assert.ok(fnStart > 0 && calls[0] > fnStart && calls[0] < fnEnd,
+      'onboarding must only be reachable from the guarded tap handler');
+  });
+
+  test('it reuses the one acceptance experience — no second one was made', () => {
+    const src = dash();
+    assert.match(src, /import \{ CommercialTermsGate \} from '@\/components\/CommercialTermsGate';/);
+    assert.match(src, /import \{ fetchCommercialTermsStatus \} from '@\/lib\/commercial-terms';/);
+    // The confirmation panel accepts nothing.
+    const notice = src.slice(src.indexOf('function CommercialTermsAccepted'));
+    const body = notice.slice(0, notice.indexOf('\n}'));
+    for (const forbidden of ['record_commercial_terms_acceptance', 'checkbox', 'accessibilityRole="checkbox"',
+                             'COMMERCIAL_TERMS_VERSION', 'compliance_log']) {
+      assert.ok(!body.includes(forbidden), `the confirmation panel must not ${forbidden}`);
+    }
+    // Still exactly one acceptance component per platform.
+    assert.equal([...src.matchAll(/type="checkbox"|accessibilityRole="checkbox"/g)].length, 0);
+  });
+
+  test('the business payment toggle is noted, and reaches a gated destination', () => {
+    // Choosing to use a business card is a preference; SETTING UP that card is
+    // the commercial act, and payment-setup?businessId is gated (W3H.1).
+    const src = dash();
+    assert.match(src, /pathname: '\/payment-setup', params: \{ businessId/);
+    assert.match(read('app/payment-setup.tsx'), /<CommercialTermsGate businessId=/);
   });
 });
 

@@ -27,11 +27,19 @@ export function CommercialTermsGate({
   businessId,
   businessName,
   feature,
+  onDismiss,
   children,
 }: {
   businessId: string | undefined;
   businessName?: string;
   feature: string;
+  /**
+   * Supplied when the gate is shown over a screen rather than instead of one —
+   * a commercial control embedded in an otherwise ungated dashboard. Dismissing
+   * closes the gate and leaves the screen behind it exactly where it was, which
+   * is not what popping the navigation stack would do.
+   */
+  onDismiss?: () => void;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -126,7 +134,11 @@ export function CommercialTermsGate({
         )}
         {error && <Text style={s.error}>{error}</Text>}
 
-        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}>
+        <TouchableOpacity
+          onPress={() =>
+            onDismiss ? onDismiss() : router.canGoBack() ? router.back() : router.replace('/(tabs)')
+          }
+        >
           <Text style={s.back}>Your Directory listing is unaffected — go back</Text>
         </TouchableOpacity>
       </ScrollView>

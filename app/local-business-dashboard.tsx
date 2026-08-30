@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Switch, Linking, RefreshControl, Alert,
+  ActivityIndicator, Switch, Linking, RefreshControl, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -16,6 +16,8 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { useAlert } from '@/components/BrandedAlert';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
+import { fetchCommercialTermsStatus } from '@/lib/commercial-terms';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
@@ -267,8 +269,36 @@ export default function BusinessDashboardScreen() {
     }
   };
 
+  /**
+   * ── The commercial controls inside an otherwise open dashboard ───────────
+   *
+   * This screen is deliberately NOT gated: names, hours, photos, analytics,
+   * alerts, jobs and the rest are ordinary Directory management, and a business
+   * that never sells anything is entitled to all of it.
+   *
+   * Two controls on it are not that. Choosing where money is paid, and opening
+   * Stripe onboarding to arrange it, are the business acting as a business — so
+   * the gate is on those ACTIONS rather than on the screen.
+   *
+   * Fails closed: the action proceeds only on a known, accepted status read
+   * from the server. A status we could not read is not permission, and the
+   * acceptance surface is shown instead. Merely rendering the dashboard, or the
+   * gate, calls nothing at Stripe.
+   */
+  const [termsGateFor, setTermsGateFor] = useState<string | null>(null);
+
+  const requireCommercialTerms = useCallback(async (feature: string): Promise<boolean> => {
+    if (!activeBusiness) return false;
+    const status = await fetchCommercialTermsStatus(activeBusiness.id);
+    if (status.known && status.accepted) return true;
+    setTermsGateFor(feature);
+    return false;
+  }, [activeBusiness]);
+
   const handleConnectStripe = async () => {
     if (!activeBusiness) return;
+    // Before the account link exists, not after.
+    if (!(await requireCommercialTerms('Business bank account'))) return;
     try {
       const { url } = await createBusinessOnboardingLink(activeBusiness.id);
       // Present Stripe Connect onboarding as an in-app SFSafariViewController
@@ -355,6 +385,9 @@ export default function BusinessDashboardScreen() {
 
   const toggleBusinessPayout = async (value: boolean) => {
     if (!activeBusiness) return;
+    // Before the write. The Switch is driven by the stored value, so refusing
+    // here leaves it showing what the server actually holds.
+    if (!(await requireCommercialTerms('Payout bank account'))) return;
     setSavingPayoutToggle(true);
     try {
       await updateBusiness(activeBusiness.id, { use_business_payout: value } as any);
@@ -1338,6 +1371,63 @@ export default function BusinessDashboardScreen() {
         onClose={() => setShowLoyaltyModal(false)}
         onSaved={() => { setShowLoyaltyModal(false); loadAll(activeBusiness); }}
       />
+
+      {/*
+        The same acceptance experience the commercial screens use, shown over
+        the dashboard instead of instead of it. No second checkbox, no second
+        record, no second version — CommercialTermsGate and its two RPCs.
+
+        Its children render only once the gate has RE-READ the status from the
+        server and been told yes, so this notice is the server's answer rather
+        than the client's assumption. The action itself is not replayed: the
+        user closes this and taps the control again, which asks once more.
+      */}
+      <Modal
+        visible={termsGateFor !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setTermsGateFor(null)}
+      >
+        {termsGateFor !== null && (
+          <CommercialTermsGate
+            businessId={activeBusiness.id}
+            businessName={activeBusiness.name}
+            feature={termsGateFor}
+            onDismiss={() => setTermsGateFor(null)}
+          >
+            <CommercialTermsAccepted feature={termsGateFor} onDone={() => setTermsGateFor(null)} />
+          </CommercialTermsGate>
+        )}
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+/**
+ * Shown after the gate has confirmed acceptance with the server. It accepts
+ * nothing itself — no checkbox, no RPC, no record — it only says the control is
+ * now open and hands the dashboard back.
+ */
+function CommercialTermsAccepted({ feature, onDone }: { feature: string; onDone: () => void }) {
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.screenBackground }} edges={['top']}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg, gap: spacing.md }}>
+        <FontAwesome5 name="check-circle" size={44} color={colors.navy} solid />
+        <Text style={{ fontSize: fontSize.xl, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' }}>
+          Terms accepted
+        </Text>
+        <Text style={{ fontSize: fontSize.md, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 }}>
+          {feature} is now open for this business, along with every other commercial
+          feature. You won&apos;t be asked again unless the terms change.
+        </Text>
+        <TouchableOpacity
+          onPress={onDone}
+          style={{ backgroundColor: colors.navy, borderRadius: radius.full, paddingVertical: spacing.md,
+                   paddingHorizontal: spacing.xl, marginTop: spacing.sm }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '800', fontSize: fontSize.md }}>Back to the dashboard</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
