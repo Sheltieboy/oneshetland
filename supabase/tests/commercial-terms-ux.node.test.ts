@@ -109,7 +109,7 @@ describe('one shared gate, in front of every commercial screen', () => {
   test('the app wraps its commercial screens with the same gate', () => {
     for (const f of ['business-products', 'local-offer-new', 'local-book-services',
                      'local-book-units', 'local-book-schedule', 'local-till', 'local-counter',
-                     'event-create']) {
+                     'event-create', 'payment-setup']) {
       assert.match(read(`app/${f}.tsx`), /<CommercialTermsGate businessId=/, f);
     }
   });
@@ -136,7 +136,6 @@ describe('one shared gate, in front of every commercial screen', () => {
       'local-book-bookings':          'reading bookings already taken',
       'local-business-analytics':     'Directory statistics',
       'local-business-transactions':  'reading a payment history',
-      'payment-setup':                'Stripe Connect onboarding — out of scope for W3H',
     };
     const screens = execFileSync('grep',
       ['-l', 'useLocalSearchParams<{ businessId', '-r', join(REPO_ROOT, 'app')],
@@ -149,6 +148,89 @@ describe('one shared gate, in front of every commercial screen', () => {
           `${name} takes a businessId but is neither gated nor a recorded exclusion`);
       }
     }
+  });
+});
+
+/* ── 2b. Paying as a business, versus paying as yourself ────────────────── */
+
+describe('business money setup is commerce; personal money setup is not', () => {
+  test('the app gates payment setup only when it is for a business', () => {
+    const src = read('app/payment-setup.tsx');
+    assert.match(src, /if \(!businessId\) return <PaymentSetupBody \/>;/,
+      'setting up your own card must not ask for selling terms');
+    const personal = src.indexOf('if (!businessId) return');
+    const gate = src.indexOf('<CommercialTermsGate businessId=');
+    assert.ok(personal > 0 && gate > personal, 'the business path still goes through the gate');
+  });
+
+  test('the personal payment screens are untouched on both platforms', () => {
+    // Your own card and your own payout account are account management. The
+    // web pages carry no businessId at all, which is the reason.
+    for (const f of ['app/account/payments/page.tsx', 'components/payments/CardSetup.tsx',
+                     'components/payments/ConnectPayoutsButton.tsx', 'components/welcome/JoinWizard.tsx']) {
+      assert.ok(!/commercialTermsGate|CommercialTermsAccept/.test(readWeb(f)), f);
+    }
+    assert.ok(!/businessId|business_id/.test(readWeb('components/payments/ConnectPayoutsButton.tsx')),
+      'the payouts button is personal — it takes no business');
+    for (const f of ['app/account.tsx', 'app/(tabs)/me.tsx']) {
+      assert.ok(!/CommercialTermsGate/.test(read(f)), f);
+    }
+  });
+
+  test("a business's bank and card setup sits behind the gate on the web", () => {
+    // Business Stripe Connect onboarding and the business card both live in
+    // BillingManager, which only the gated billing route renders.
+    const billing = readWeb('components/business/BillingManager.tsx');
+    assert.match(billing, /Business bank \(Stripe Connect\)/, 'BillingManager owns business Connect');
+    assert.match(billing, /use_business_payout/);
+    const pages = execFileSync('grep',
+      ['-rl', 'BillingManager', join(WEB, 'app')], { encoding: 'utf8' }).trim().split('\n');
+    for (const page of pages) {
+      const src = readFileSync(page, 'utf8');
+      assert.match(src, /commercialTermsGate\(business, "/, `${page} renders BillingManager ungated`);
+    }
+  });
+
+  test('every consumer route into payment setup stays personal', () => {
+    // Adding a card to buy a gift, top up the wallet or pay for a Fetch must
+    // never meet selling terms. Only the business dashboard passes a
+    // businessId, and that is the one path that is gated.
+    const routes = execFileSync('grep',
+      ['-rn', "payment-setup'", join(REPO_ROOT, 'app')], { encoding: 'utf8' })
+      .trim().split('\n').filter((l) => /router\.push/.test(l));
+    assert.ok(routes.length >= 8, 'expected the consumer add-card routes to be found');
+    const withBusiness = routes.filter((l) => /businessId/.test(l));
+    assert.equal(withBusiness.length, 1, 'exactly one route sets up a business card');
+    assert.match(withBusiness[0], /local-business-dashboard/);
+  });
+
+  test('the existing acceptance opens payment setup — there is no second one', () => {
+    // The gate asks about a BUSINESS, never about a feature. `feature` reaches
+    // the wording and nothing else, so an acceptance recorded on Products is
+    // the same acceptance payment setup reads. Nothing per-feature exists to
+    // accept a second time.
+    for (const [name, src] of [['web gate', gateServer], ['app lib', libApp]] as const) {
+      // The call, not the comment that mentions it.
+      const at = src.search(/rpc\(\s*['"]my_commercial_terms_status['"]/);
+      assert.ok(at > 0, `${name}: no status call found`);
+      const args = src.slice(at, src.indexOf('}', at) + 1);
+      assert.match(args, /p_business_id/, name);
+      assert.ok(!/feature/i.test(args), `${name} narrows the status by feature`);
+    }
+    assert.ok(!/feature/.test(acceptWeb.slice(acceptWeb.indexOf('record_commercial_terms_acceptance'),
+                                              acceptWeb.indexOf('if (rpcErr)'))),
+      'the writer records a business, not a feature');
+  });
+
+  test('no Stripe or Connect implementation was changed to achieve this', () => {
+    // The gate is presentation. The money code is not part of it.
+    const src = read('app/payment-setup.tsx');
+    assert.match(src, /create-setup-intent/, 'the setup call is still the same one');
+    assert.ok(!/account_link|createBusinessOnboardingLink/.test(src),
+      'this route does not do Connect onboarding and must not start');
+    // The gate wrapper touches params and children only — no Stripe calls in it.
+    const wrapper = src.slice(src.indexOf('export default function PaymentSetupScreen'));
+    assert.ok(!/supabase|stripe|Stripe/.test(wrapper), 'the wrapper does no payment work');
   });
 });
 

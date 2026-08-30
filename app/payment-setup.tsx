@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { logCompliance } from '@/lib/compliance';
 import { useStripe } from '@stripe/stripe-react-native';
 import { FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
@@ -16,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 
-export default function PaymentSetupScreen() {
+function PaymentSetupBody() {
   const router = useRouter();
   const { businessId } = useLocalSearchParams<{ businessId?: string }>();
   const isBusiness = !!businessId;
@@ -282,3 +283,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+
+/**
+ * One screen, two jobs — and only one of them is commerce.
+ *
+ * Without a businessId this sets up the PERSON's own card, which is ordinary
+ * account management and is never gated. With one, it sets up a payment method
+ * for the business (local_businesses.business_stripe_customer_id), which is the
+ * business acting as a business — so it goes through the same acceptance the
+ * other commercial screens use. One acceptance covers them all.
+ *
+ * Note this route saves a card the business PAYS with. Connecting the bank
+ * account it gets PAID into is a separate action on the business dashboard.
+ */
+export default function PaymentSetupScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  if (!businessId) return <PaymentSetupBody />;
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Business payment setup">
+      <PaymentSetupBody />
+    </CommercialTermsGate>
+  );
+}
