@@ -45,6 +45,7 @@ const B = {
   proX:     'b1b10005-5555-5555-5555-555555555555',
   premNull: 'b1b10006-6666-6666-6666-666666666666',
   lapsing:  'b1b10007-7777-7777-7777-777777777777',
+  free2:    'b1b1000e-eeee-eeee-eeee-eeeeeeeeeeee',   // Pro, never accepts
 };
 const SVC_FREE = 'b1b1000a-0000-0000-0000-00000000000a';
 const SVC_PAID = 'b1b1000b-0000-0000-0000-00000000000b';
@@ -59,13 +60,15 @@ begin;
     ('${B.premium}','${OWNER}','BK PREM','other','P',true),
     ('${B.proX}','${OWNER}','BK PRO EXPIRED','other','P',true),
     ('${B.premNull}','${OWNER}','BK PREM NULL','other','P',true),
-    ('${B.lapsing}','${OWNER}','BK LAPSING','other','P',true);
+    ('${B.lapsing}','${OWNER}','BK LAPSING','other','P',true),
+    ('${B.free2}','${OWNER}','BK PRO UNACCEPTED','other','P',true);
   update public.local_businesses set subscription_tier='pro',     subscription_until=now()+interval '10 days' where id='${B.pro}';
   update public.local_businesses set subscription_tier='premium', subscription_until=now()+interval '10 days' where id='${B.premium}';
   update public.local_businesses set subscription_tier='pro',     subscription_until=now()-interval '1 day'   where id='${B.proX}';
   update public.local_businesses set subscription_tier='premium', subscription_until=null                     where id='${B.premNull}';
   update public.local_businesses set subscription_tier='pro', subscription_until=now()+interval '1 day',
          accepts_bookings=true where id='${B.lapsing}';
+  update public.local_businesses set subscription_tier='pro', subscription_until=now()+interval '10 days' where id='${B.free2}';
   insert into public.book_services (id,business_id,name,duration_minutes,price_pence,is_active) values
     ('${SVC_FREE}','${B.free}','Free cut',30,0,true),
     ('${SVC_PAID}','${B.lapsing}','Cut',30,2000,true);
@@ -119,6 +122,101 @@ describe('turning bookings on needs current Pro', () => {
 
   test('a paid tier with no end date cannot', () => {
     assert.equal(outcome(rows, 'premium with no end date'), 'refused');
+  });
+});
+
+/* ── 1b. Going live needs the terms too ─────────────────────────────────── */
+
+/**
+ * The plan is not the only question at activation. The first cut checked the
+ * subscription and reasoned that a business cannot create a service without
+ * accepting, so by the time it has anything to book it has accepted. True of a
+ * business set up today; not an invariant — and it fails exactly where the
+ * version-pinned model matters, at the next terms change:
+ *
+ *   accepted v1.0 · services exist · bookings off
+ *   → terms move to v1.1 · owner has not accepted
+ *   → owner switches bookings back on, subscription fine, waved through
+ */
+describe('turning bookings on needs current terms as well as the plan', () => {
+  const rows = sql(FIXTURE + asUser(OWNER) +
+    `select public.record_commercial_terms_acceptance('${B.pro}'::uuid);
+     select public.record_commercial_terms_acceptance('${B.premium}'::uuid);` +
+    attempt('pro + accepted',      `update public.local_businesses set accepts_bookings=true where id='${B.pro}'`) +
+    attempt('premium + accepted',  `update public.local_businesses set accepts_bookings=true where id='${B.premium}'`) +
+    attempt('pro, never accepted', `update public.local_businesses set accepts_bookings=true where id='${B.free2}'`) +
+    END);
+
+  test('pro with current acceptance can go live', () => {
+    assert.equal(outcome(rows, 'pro + accepted'), 'ALLOWED');
+  });
+
+  test('premium with current acceptance can go live', () => {
+    assert.equal(outcome(rows, 'premium + accepted'), 'ALLOWED');
+  });
+
+  test('an entitled owner who has not accepted cannot', () => {
+    assert.equal(outcome(rows, 'pro, never accepted'), 'refused',
+      'the plan alone is not permission to put a business in front of customers');
+  });
+
+  test('accepting for one business does not open another', () => {
+    // B.free2 is Pro and unaccepted; acceptance above was for two other businesses.
+    assert.equal(outcome(rows, 'pro, never accepted'), 'refused');
+  });
+
+  test('THE DEFECT: an old acceptance does not survive a version change', () => {
+    // The version moves inside the transaction; production stays on its own.
+    const v = sql(FIXTURE + asUser(OWNER) +
+      `select public.record_commercial_terms_acceptance('${B.pro}'::uuid);` +
+      asOwnerRole +
+      `create or replace function public.commercial_terms_version() returns text
+         language sql immutable set search_path=public as $v$ select '99.0'::text $v$;` +
+      asUser(OWNER) +
+      attempt('activate on a stale acceptance', `update public.local_businesses set accepts_bookings=true where id='${B.pro}'`) +
+      `select public.record_commercial_terms_acceptance('${B.pro}'::uuid);` +
+      attempt('activate after accepting the new version', `update public.local_businesses set accepts_bookings=true where id='${B.pro}'`) +
+      `insert into r select 'services survive the bump', count(*)::text from public.book_services where business_id='${B.lapsing}';` +
+      END);
+    assert.equal(outcome(v, 'activate on a stale acceptance'), 'refused');
+    assert.equal(outcome(v, 'activate after accepting the new version'), 'ALLOWED');
+    assert.equal(outcome(v, 'services survive the bump'), '1', 'a version bump destroys no configuration');
+  });
+
+  test('a stranger cannot activate somebody else\'s business', () => {
+    const rows2 = sql(FIXTURE + asUser(CUST) +
+      attempt('stranger activates', `update public.local_businesses set accepts_bookings=true where id='${B.pro}'`) +
+      asOwnerRole +
+      `insert into r select 'flag after stranger', accepts_bookings::text from public.local_businesses where id='${B.pro}';` +
+      END);
+    // RLS filters the row before the trigger sees it, so the write is a no-op
+    // rather than an error — measured by outcome, not by absence of an error.
+    assert.equal(outcome(rows2, 'flag after stranger'), 'false');
+  });
+
+  test('activation asks the one acceptance truth, not its own copy', () => {
+    const [row] = sql(`select pg_get_functiondef('public.local_businesses_bookings_tier_guard'::regproc) as d;`);
+    const def = String(row.d);
+    assert.match(def, /business_may_transact\(new\.id, v_uid\)/, 'reuse the protected helper');
+    assert.match(def, /business_meets_tier\(new\.id, 'pro'\)/);
+    for (const forbidden of ['compliance_log', 'commercial_terms_version', 'has_accepted_commercial_terms',
+                             'document_version', 'business.commercial_terms_accepted']) {
+      assert.ok(!def.includes(forbidden), `the terms lookup must not be reimplemented here: ${forbidden}`);
+    }
+    assert.ok(!/auth\.uid\(\)\s*\)/.test(def.slice(def.indexOf('business_may_transact'))),
+      'the identity comes from v_uid, captured once, not from a caller-supplied value');
+  });
+
+  test('no second acceptance event, version or writer was created', () => {
+    const [row] = sql(`
+      select (select count(*)::int from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+               where n.nspname='public' and p.proname like '%commercial_terms%') as terms_functions,
+             public.commercial_terms_version() as version,
+             (select count(distinct event_type)::int from public.compliance_log
+               where event_type like 'business.%') as business_event_types;`);
+    assert.equal(row.version, '1.0');
+    assert.equal(row.business_event_types, 1, 'still exactly one business terms event type');
+    assert.ok((row.terms_functions as number) >= 3);
   });
 });
 
