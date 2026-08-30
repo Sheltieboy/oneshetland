@@ -124,6 +124,22 @@ serve(async (req) => {
       .eq('id', businessId).maybeSingle();
     if (!biz?.is_active) return json({ error: 'Business not found' }, 404);
     if (biz.owner_id === user.id) return json({ error: "You can't buy from your own shop" }, 403);
+
+    // Selling is Premium, and an active product row is not proof of that by
+    // the time somebody clicks buy — a business can lapse with its shop still
+    // sitting there. The read policy hides those products, but a basket built
+    // ten minutes earlier, or a direct call to this function, would not care.
+    // Asked here, before the order row and before Stripe is touched at all.
+    //
+    // Deliberately the same words the basket already uses for a withdrawn
+    // item: a customer has no business learning a shop's billing state.
+    const { data: maySell, error: tierErr } = await svc.rpc('business_meets_tier', {
+      p_business_id: businessId,
+      p_required_tier: 'premium',
+    });
+    if (tierErr || maySell !== true) {
+      return json({ error: 'An item in your basket is no longer available' }, 409);
+    }
     // Where does this shop's money go?
     //
     // This used to demand business_stripe_account_id AND
