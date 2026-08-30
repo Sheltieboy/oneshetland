@@ -253,17 +253,32 @@ describe('deployed shape', () => {
     assert.equal(row.svc, true);
   });
 
-  test('it has ZERO consumers — this task is the primitive, not the enforcement', () => {
-    const [row] = sql(`
-      select
-        (select count(*)::int from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-          where n.nspname='public' and p.proname <> 'business_meets_tier'
-            and position('business_meets_tier' in pg_get_functiondef(p.oid)) > 0) as functions,
-        (select count(*)::int from pg_policy p
-          where position('business_meets_tier' in
-            coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0) as policies;`);
-    assert.equal(row.functions, 0, 'no function may consume it yet');
-    assert.equal(row.policies, 0, 'no policy may consume it yet');
+  /**
+   * This began life as "it has ZERO consumers", which was the whole point of
+   * the foundation slice — the predicate landed inert so the expiry decision
+   * could be made once, in the open, before anything depended on it.
+   *
+   * Bookings is now that first dependant, by approval. The assertion moves
+   * rather than being deleted: it still names every consumer, so a capability
+   * that quietly starts enforcing tier fails here. Add to this list only when
+   * that enforcement is the approved work of a slice.
+   */
+  test('its consumers are exactly the ones that were approved', () => {
+    const rows = sql(`
+      select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+       where n.nspname='public' and p.proname <> 'business_meets_tier'
+         and position('business_meets_tier' in pg_get_functiondef(p.oid)) > 0
+       order by p.proname;`);
+    assert.deepEqual(rows.map((r) => r.proname), [
+      'book_bookings_tier_guard',                 // Bookings transaction backstop
+      'local_businesses_bookings_tier_guard',     // Bookings activation
+    ], 'Products, Passes, Wallet, Offers and Loyalty must not have gained tier enforcement');
+
+    const [pol] = sql(`
+      select count(*)::int as n from pg_policy p
+       where position('business_meets_tier' in
+         coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0;`);
+    assert.equal(pol.n, 0, 'enforcement lives in triggers, not policies — RLS stays about ownership');
   });
 
   test('nothing that was already enforced changed', () => {
