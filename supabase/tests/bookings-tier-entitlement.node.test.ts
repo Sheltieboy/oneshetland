@@ -99,7 +99,16 @@ const booking = (biz: string, svc: string, days: number) =>
 /* ── 1. Going live is the paid moment ───────────────────────────────────── */
 
 describe('turning bookings on needs current Pro', () => {
+  // Terms are accepted for every business here so that what this block
+  // measures is the TIER ladder and nothing else. Activation needs both — the
+  // terms half is the subject of the block above, and these tests used to pass
+  // only because that half was missing.
   const rows = sql(FIXTURE + asUser(OWNER) +
+    `select public.record_commercial_terms_acceptance('${B.free}'::uuid);
+     select public.record_commercial_terms_acceptance('${B.pro}'::uuid);
+     select public.record_commercial_terms_acceptance('${B.premium}'::uuid);
+     select public.record_commercial_terms_acceptance('${B.proX}'::uuid);
+     select public.record_commercial_terms_acceptance('${B.premNull}'::uuid);` +
     attempt('free',        `update public.local_businesses set accepts_bookings=true where id='${B.free}'`) +
     attempt('pro',         `update public.local_businesses set accepts_bookings=true where id='${B.pro}'`) +
     attempt('premium',     `update public.local_businesses set accepts_bookings=true where id='${B.premium}'`) +
