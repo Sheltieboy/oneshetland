@@ -71,7 +71,7 @@ const asOwner = `
 `;
 const commercialRows = `
   (select count(*)::int from public.compliance_log
-    where event_type = 'business.commercial_terms_accepted')`;
+    where event_type = 'business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid'))`;
 
 /* ── 1. Ordinary logging is untouched ───────────────────────────────────── */
 
@@ -133,16 +133,18 @@ rollback;`);
   select public.record_commercial_terms_acceptance('${BIZ_A}'::uuid);
   do $p$ begin
     update public.compliance_log set document_version = '9.9'
-     where event_type = 'business.commercial_terms_accepted';
+     where event_type = 'business.commercial_terms_accepted'
+       and metadata->>'business_id' = '${BIZ_A}';
     insert into r values ('update', 'ACCEPTED — HOLE');
   exception when others then insert into r values ('update', 'refused'); end $p$;
   do $p$ begin
-    delete from public.compliance_log where event_type = 'business.commercial_terms_accepted';
+    delete from public.compliance_log where event_type = 'business.commercial_terms_accepted'
+       and metadata->>'business_id' = '${BIZ_A}';
     insert into r values ('delete', 'ACCEPTED — HOLE');
   exception when others then insert into r values ('delete', 'refused'); end $p$;
   reset role;
   select (select count(*)::int from public.compliance_log
-           where event_type='business.commercial_terms_accepted' and document_version='1.0') as still_v1,
+           where event_type='business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid') and document_version='1.0') as still_v1,
          ${commercialRows} as rows;
 rollback;`);
     // No UPDATE or DELETE policy exists, so both are no-ops rather than errors —
@@ -241,9 +243,9 @@ begin;
           jsonb_build_object('business_id', '${BIZ_A}'));
   select ${commercialRows} as rows,
          (select count(distinct metadata->>'business_id')::int from public.compliance_log
-           where event_type='business.commercial_terms_accepted') as businesses,
+           where event_type='business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid')) as businesses,
          (select count(distinct document_version)::int from public.compliance_log
-           where event_type='business.commercial_terms_accepted') as versions;
+           where event_type='business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid')) as versions;
 rollback;`);
     assert.equal(row.rows, 3);
     assert.equal(row.businesses, 2);
@@ -257,7 +259,7 @@ rollback;`);
   select user_id::text as user_id, metadata->>'business_id' as business_id,
          document_version as version, (created_at is not null) as has_timestamp,
          user_email, description
-    from public.compliance_log where event_type='business.commercial_terms_accepted';
+    from public.compliance_log where event_type='business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid');
 rollback;`);
     assert.equal(row.user_id, OWNER);
     assert.equal(row.business_id, BIZ_A);

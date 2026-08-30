@@ -452,7 +452,7 @@ describe('the acceptance record itself is as it was', () => {
       reset role;
       select (select first::text from s) as first, (select second::text from s) as second,
              (select count(*)::int from public.compliance_log
-               where event_type='business.commercial_terms_accepted') as rows;
+               where event_type='business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid')) as rows;
       rollback;`);
     assert.match(String(row.second), /"already": ?true/);
     assert.equal(row.rows, 1);

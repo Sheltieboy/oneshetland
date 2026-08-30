@@ -474,7 +474,7 @@ describe('one acceptance, one business, one version', () => {
   select (select before from s) as before, (select after from s2) as after,
          (select other_business from s2) as other_business,
          (select count(*)::int from public.compliance_log
-           where event_type='business.commercial_terms_accepted') as records;
+           where event_type='business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid')) as records;
 rollback;`);
     assert.equal(row.before, 'false');
     assert.equal(row.after, 'true', 'one acceptance covers every commercial feature');
@@ -504,7 +504,7 @@ rollback;`);
   select (select stale_only from s) as stale_only, (select asks_for from s) as asks_for,
          (select after_current from s2) as after_current,
          (select count(*)::int from public.compliance_log
-           where event_type='business.commercial_terms_accepted') as records;
+           where event_type='business.commercial_terms_accepted' and user_id in (select id from auth.users where email like '%@probe.invalid')) as records;
 rollback;`);
     assert.equal(row.stale_only, 'false', 'a 0.9 acceptance must not satisfy the current version');
     assert.equal(row.asks_for, '1.0', 'the status names the version being asked for');
@@ -519,11 +519,13 @@ rollback;`);
   create temp table r(label text, outcome text) on commit drop;
   do $p$ begin
     update public.compliance_log set document_version = '9.9'
-     where event_type = 'business.commercial_terms_accepted';
+     where event_type = 'business.commercial_terms_accepted'
+       and metadata->>'business_id' = '${BIZ_A}';
     insert into r values ('update','REWRITTEN — HOLE');
   exception when others then insert into r values ('update','refused'); end $p$;
   do $p$ begin
-    delete from public.compliance_log where event_type = 'business.commercial_terms_accepted';
+    delete from public.compliance_log where event_type = 'business.commercial_terms_accepted'
+       and metadata->>'business_id' = '${BIZ_A}';
     insert into r values ('delete','ERASED — HOLE');
   exception when others then insert into r values ('delete','refused'); end $p$;
   select (select outcome from r where label='update') as upd,
