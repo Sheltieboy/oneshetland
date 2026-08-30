@@ -243,12 +243,20 @@ describe('deployed shape', () => {
     assert.match(String(row.config), /search_path=public/);
   });
 
-  test('grants are exactly authenticated and service_role', () => {
+  /**
+   * anon was deliberately withheld when this landed — nothing signed out had a
+   * reason to ask. The Products slice gave it one: the public read policy on
+   * products is evaluated for signed-out readers, so without the grant every
+   * shop page would 42501 rather than filter. It discloses nothing new, since
+   * whether a business meets Premium is exactly what the visibility of its
+   * products already tells you.
+   */
+  test('grants are exactly anon, authenticated and service_role', () => {
     const [row] = sql(`
       select has_function_privilege('anon','public.business_meets_tier(uuid,text)','execute') as anon,
              has_function_privilege('authenticated','public.business_meets_tier(uuid,text)','execute') as auth,
              has_function_privilege('service_role','public.business_meets_tier(uuid,text)','execute') as svc;`);
-    assert.equal(row.anon, false, 'nothing signed out has a reason to ask');
+    assert.equal(row.anon, true, 'the public products read policy is evaluated as anon');
     assert.equal(row.auth, true, 'policies and BEFORE triggers run as the caller and need EXECUTE');
     assert.equal(row.svc, true);
   });
@@ -272,13 +280,22 @@ describe('deployed shape', () => {
     assert.deepEqual(rows.map((r) => r.proname), [
       'book_bookings_tier_guard',                 // Bookings transaction backstop
       'local_businesses_bookings_tier_guard',     // Bookings activation
-    ], 'Products, Passes, Wallet, Offers and Loyalty must not have gained tier enforcement');
+      'products_tier_guard',                      // Products activation
+    ], 'Passes, Wallet, Offers and Loyalty must not have gained tier enforcement');
 
     const [pol] = sql(`
       select count(*)::int as n from pg_policy p
        where position('business_meets_tier' in
          coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0;`);
-    assert.equal(pol.n, 0, 'enforcement lives in triggers, not policies — RLS stays about ownership');
+    // Products is the exception, and deliberately: its EXPOSURE boundary is a
+    // read policy, because six loaders on the website read products and
+    // filtering in each would be six places to forget.
+    assert.equal(pol.n, 1, 'only the products public-read policy consults tier');
+    const [which] = sql(`
+      select c.relname || ':' || p.polname as p from pg_policy p join pg_class c on c.oid=p.polrelid
+       where position('business_meets_tier' in
+         coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0;`);
+    assert.equal(which.p, 'products:public reads live products');
   });
 
   test('nothing that was already enforced changed', () => {

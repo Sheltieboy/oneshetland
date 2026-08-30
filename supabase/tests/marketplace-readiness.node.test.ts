@@ -73,6 +73,12 @@ describe('a signed-out visitor can see the shop', () => {
       insert into public.local_businesses (id, owner_id, name, category, address, is_active)
         values ('faaaaaaa-2222-2222-2222-222222222222','faaaaaaa-1111-1111-1111-111111111111',
                 'PROBE Shop','retail','PROBE',true);
+      -- Selling is Premium, so a fixture shop has to be one. Without this the
+      -- product is correctly invisible to anon and the test reads as "RLS
+      -- blocks anon" when what it really shows is "a free business has no shop".
+      update public.local_businesses set subscription_tier='premium',
+             subscription_until = now() + interval '30 days'
+       where id='faaaaaaa-2222-2222-2222-222222222222';
       insert into public.products (id, business_id, title, price_pence, is_active)
         values ('faaaaaaa-3333-3333-3333-333333333333','faaaaaaa-2222-2222-2222-222222222222',
                 'PROBE gansey', 8500, true);
@@ -121,6 +127,9 @@ describe('a signed-out visitor can see the shop', () => {
         b := gen_random_uuid();
         insert into public.local_businesses (id,name,category,address,slug,owner_id,is_active)
         values (b,'M Biz','other','Lerwick','m-biz-'||left(b::text,8),u,true);
+        -- A shop that sells has a plan; selling is Premium.
+        update public.local_businesses set subscription_tier='premium',
+               subscription_until = now() + interval '30 days' where id = b;
         p_live := gen_random_uuid(); p_off := gen_random_uuid(); p_sold := gen_random_uuid();
         insert into public.products (id,business_id,title,price_pence,is_active,sold_at)
         values (p_live,b,'M live',1000,true,null),

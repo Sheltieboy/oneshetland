@@ -45,6 +45,13 @@ begin;
   insert into public.local_businesses (id, owner_id, name, category, address, is_active) values
     ('${BIZ_A}', '${OWNER}', 'PROBE A', 'other', 'PROBE', true),
     ('${BIZ_B}', '${OWNER}', 'PROBE B', 'other', 'PROBE', true);
+  -- These suites are about commercial TERMS. Selling and taking bookings are
+  -- also tier-gated now, so the fixture businesses are given the plans their
+  -- writes require — otherwise a refusal here could be either boundary and the
+  -- test would no longer be measuring the one it is named after.
+  update public.local_businesses set subscription_tier='premium',
+         subscription_until = now() + interval '30 days'
+   where id in ('${BIZ_A}', '${BIZ_B}');
   create temp table r(step text, outcome text) on commit drop;
   grant insert, select on r to authenticated, anon;
 `;
