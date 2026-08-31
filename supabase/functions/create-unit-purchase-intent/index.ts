@@ -136,6 +136,25 @@ serve(async (req) => {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    // Selling passes is Premium, and an active row is not proof of that by the
+    // time somebody clicks buy. Asked here, before the PaymentIntent — and
+    // deliberately NOT in confirm-unit-purchase, which runs after Stripe has
+    // taken the money: refusing there would charge somebody and withhold the
+    // pass. If a business lapses between the two, the customer paid and is
+    // owed what they bought.
+    //
+    // Same words the item-missing branch already uses. A customer has no
+    // business learning a shop's billing state.
+    const { data: maySell, error: tierErr } = await supabase.rpc('business_meets_tier', {
+      p_business_id: item.business_id,
+      p_required_tier: 'premium',
+    });
+    if (tierErr || maySell !== true) {
+      return new Response(JSON.stringify({ error: 'Item not available' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (item.stock !== null && item.stock <= 0) {
       return new Response(JSON.stringify({ error: 'stock_exhausted' }), {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
