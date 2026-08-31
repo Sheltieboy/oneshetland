@@ -409,9 +409,10 @@ describe('deployed shape and composition', () => {
        where not t.tgisinternal
          and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
        order by c.relname;`);
-    // Products was the approved slice after this one; Passes, Wallet, Offers
-    // and Loyalty still are not.
-    assert.deepEqual(rows.map((r) => r.tbl).sort(), ['book_bookings', 'local_businesses', 'products'],
-      'Passes, Wallet, Offers and Loyalty are not enforced yet');
+    // Products and Passes were the approved slices after this one; Wallet,
+    // Offers and Loyalty still are not.
+    assert.deepEqual(rows.map((r) => r.tbl).sort(),
+      ['book_bookings', 'book_unit_items', 'local_businesses', 'products'],
+      'Wallet, Offers and Loyalty are not enforced yet');
   });
 });

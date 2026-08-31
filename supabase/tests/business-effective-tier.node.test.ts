@@ -279,23 +279,29 @@ describe('deployed shape', () => {
        order by p.proname;`);
     assert.deepEqual(rows.map((r) => r.proname), [
       'book_bookings_tier_guard',                 // Bookings transaction backstop
+      'book_unit_items_tier_guard',               // Passes activation
       'local_businesses_bookings_tier_guard',     // Bookings activation
       'products_tier_guard',                      // Products activation
-    ], 'Passes, Wallet, Offers and Loyalty must not have gained tier enforcement');
+    ], 'Wallet, Offers and Loyalty must not have gained tier enforcement');
 
     const [pol] = sql(`
       select count(*)::int as n from pg_policy p
        where position('business_meets_tier' in
          coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0;`);
-    // Products is the exception, and deliberately: its EXPOSURE boundary is a
-    // read policy, because six loaders on the website read products and
-    // filtering in each would be six places to forget.
-    assert.equal(pol.n, 1, 'only the products public-read policy consults tier');
-    const [which] = sql(`
+    // The two sales surfaces whose EXPOSURE boundary is a read policy rather
+    // than a trigger, deliberately: many loaders read products and passes, and
+    // filtering in each would be a place to forget every time one is added.
+    // Named rather than counted, so a third appearing is a decision.
+    assert.equal(pol.n, 2);
+    const which = sql(`
       select c.relname || ':' || p.polname as p from pg_policy p join pg_class c on c.oid=p.polrelid
        where position('business_meets_tier' in
-         coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0;`);
-    assert.equal(which.p, 'products:public reads live products');
+         coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0
+       order by 1;`);
+    assert.deepEqual(which.map((r) => r.p), [
+      'book_unit_items:Anyone can read active unit items',
+      'products:public reads live products',
+    ]);
   });
 
   test('nothing that was already enforced changed', () => {

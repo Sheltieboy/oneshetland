@@ -304,15 +304,16 @@ describe('no way round, and nothing else disturbed', () => {
       ['book_bookings_tier_guard', 'local_businesses_bookings_tier_guard']);
   });
 
-  test('Passes, Wallet, Offers and Loyalty gained nothing in this slice', () => {
+  test('Wallet, Offers and Loyalty have gained nothing', () => {
     const rows = sql(`
       select c.relname as tbl from pg_trigger t join pg_class c on c.oid=t.tgrelid
        where not t.tgisinternal
          and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
        order by c.relname;`);
+    // Passes were the approved slice after this one.
     assert.deepEqual(rows.map((r) => r.tbl).sort(),
-      ['book_bookings', 'local_businesses', 'products'],
-      'book_unit_items, local_offers and local_loyalty_programs must not appear');
+      ['book_bookings', 'book_unit_items', 'local_businesses', 'products'],
+      'local_offers and local_loyalty_programs must not appear');
   });
 
   test('the existing Premium navigation gates are untouched', () => {
