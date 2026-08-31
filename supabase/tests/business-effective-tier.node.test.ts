@@ -282,9 +282,15 @@ describe('deployed shape', () => {
       'book_unit_items_tier_guard',               // Passes activation
       'local_businesses_bookings_tier_guard',     // Bookings activation
       'local_businesses_wallet_tier_guard',       // Wallet activation
+      'local_loyalty_cards_tier_guard',           // Loyalty: minting customer value
+      'local_loyalty_programs_tier_guard',        // Loyalty activation
+      'local_loyalty_transactions_tier_guard',    // Loyalty ledger backstop
+      'local_offers_tier_guard',                  // Offers activation
       'products_tier_guard',                      // Products activation
+      'resolve_nfc_tile',                         // Loyalty on the NFC tile
+      'tg_loyalty_earn_points',                   // Loyalty award on a wallet spend
       'wallet_live',                              // Wallet customer-facing answer
-    ], 'Offers and Loyalty must not have gained tier enforcement');
+    ], 'nothing beyond the six approved capabilities may enforce tier');
 
     const [pol] = sql(`
       select count(*)::int as n from pg_policy p
@@ -294,7 +300,7 @@ describe('deployed shape', () => {
     // than a trigger, deliberately: many loaders read products and passes, and
     // filtering in each would be a place to forget every time one is added.
     // Named rather than counted, so a third appearing is a decision.
-    assert.equal(pol.n, 2);
+    assert.equal(pol.n, 4);
     const which = sql(`
       select c.relname || ':' || p.polname as p from pg_policy p join pg_class c on c.oid=p.polrelid
        where position('business_meets_tier' in
@@ -302,6 +308,8 @@ describe('deployed shape', () => {
        order by 1;`);
     assert.deepEqual(which.map((r) => r.p), [
       'book_unit_items:Anyone can read active unit items',
+      'local_loyalty_programs:Anyone can read active loyalty programs',
+      'local_offers:Anyone can read active offers',
       'products:public reads live products',
     ]);
   });

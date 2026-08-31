@@ -402,7 +402,7 @@ describe('deployed shape and composition', () => {
     assert.match(page, /if \(!tierUnlocks\(business\.subscription_tier, "bookings"\)\) redirect/);
   });
 
-  test('nothing else gained tier enforcement in this slice', () => {
+  test('the enforced set is exactly the six approved capabilities', () => {
     const rows = sql(`
       -- distinct: local_businesses carries more than one guard (Bookings and
       -- Wallet), and this asks which TABLES are enforced, not how many guards.
@@ -414,7 +414,9 @@ describe('deployed shape and composition', () => {
     // Products, Passes and Wallet were the approved slices after this one;
     // Offers and Loyalty still are not.
     assert.deepEqual(rows.map((r) => r.tbl).sort(),
-      ['book_bookings', 'book_unit_items', 'local_businesses', 'products'],
-      'Offers and Loyalty are not enforced yet');
+      ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
+       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
+       'local_wallet_transactions', 'products'],
+      'this is the complete set of tier-enforced tables');
   });
 });

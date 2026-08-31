@@ -304,7 +304,7 @@ describe('no way round, and nothing else disturbed', () => {
       ['book_bookings_tier_guard', 'local_businesses_bookings_tier_guard']);
   });
 
-  test('Offers and Loyalty have gained nothing', () => {
+  test('the enforced set is exactly the six approved capabilities', () => {
     const rows = sql(`
       -- distinct: local_businesses carries more than one guard (Bookings and
       -- Wallet), and this asks which TABLES are enforced, not how many guards.
@@ -315,8 +315,10 @@ describe('no way round, and nothing else disturbed', () => {
     // Passes and Wallet were the approved slices after this one; Wallet's
     // guard sits on local_businesses, which is already in the list.
     assert.deepEqual(rows.map((r) => r.tbl).sort(),
-      ['book_bookings', 'book_unit_items', 'local_businesses', 'products'],
-      'local_offers and local_loyalty_programs must not appear');
+      ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
+       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
+       'local_wallet_transactions', 'products'],
+      'this is the complete set of tier-enforced tables');
   });
 
   test('the existing Premium navigation gates are untouched', () => {

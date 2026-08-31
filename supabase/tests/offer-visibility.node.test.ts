@@ -68,6 +68,11 @@ begin;
   insert into public.local_businesses (id, owner_id, name, category, address, is_active) values
     ('${LIVE}',   '${OWNER}', 'PROBE Live Shop',   'retail', 'PROBE', true),
     ('${HIDDEN}', '${OWNER}', 'PROBE Hidden Shop', 'retail', 'PROBE', false);
+  -- Offers became a Pro capability, and the public read policy now asks
+  -- business_meets_tier. This suite is about is_active, not about tier, so both
+  -- shops get a real plan and the question under test stays the question.
+  update public.local_businesses set subscription_tier='pro', subscription_until=now()+interval '30 days'
+   where id in ('${LIVE}','${HIDDEN}');
   insert into public.local_offers
     (business_id, title, discount_type, discount_value, is_active, valid_from, valid_until) values
     ('${LIVE}',   'PROBE live offer',       'percent', 10, true,  now() - interval '1 day', now() + interval '7 days'),
@@ -130,6 +135,8 @@ begin;
   insert into auth.users (id, email) values ('${OWNER}', 'offerprobe@probe.invalid');
   insert into public.local_businesses (id, owner_id, name, category, address, is_active)
     values ('${HIDDEN}', '${OWNER}', 'PROBE Hidden Shop', 'retail', 'PROBE', false);
+  update public.local_businesses set subscription_tier='pro', subscription_until=now()+interval '30 days'
+   where id='${HIDDEN}';
   insert into public.local_offers (business_id, title, discount_type, discount_value, is_active, valid_from, valid_until)
     values ('${HIDDEN}', 'PROBE owner sees this', 'percent', 10, true, now() - interval '1 day', now() + interval '7 days');
   set local role authenticated;

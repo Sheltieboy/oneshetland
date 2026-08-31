@@ -229,8 +229,23 @@ describe("a customer's wallet is not the seller's to gate", () => {
           where c.relname in ('local_wallet_balances','local_wallet_transactions')
             and position('business_meets_tier' in
               coalesce(pg_get_expr(p.polqual,p.polrelid),'')||coalesce(pg_get_expr(p.polwithcheck,p.polrelid),'')) > 0) as policies;`);
-    assert.equal(row.triggers, 0, 'a business plan must never be a condition on customer money');
     assert.equal(row.policies, 0);
+    // Was 0 triggers. Loyalty later hung its award path off a wallet spend, so
+    // a tier check does now appear on local_wallet_transactions — but the
+    // invariant is unchanged and is now stated exactly: a plan may decide
+    // whether LOYALTY value is minted, and may never refuse the payment.
+    const named = sql(`
+      select t.tgname || ':' || p.proname as fn
+        from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_proc p on p.oid=t.tgfoid
+       where not t.tgisinternal and c.relname in
+         ('local_wallet_balances','local_wallet_transactions','local_wallet_topup_recovery','wallet_payment_claims')
+         and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
+       order by 1;`);
+    assert.deepEqual(named.map((r) => r.fn), ['loyalty_earn_points:tg_loyalty_earn_points'],
+      'nothing else may make a business plan a condition on customer money');
+    const [def] = sql(`select pg_get_functiondef('public.tg_loyalty_earn_points'::regproc) as d;`);
+    assert.doesNotMatch(String(def.d), /raise\s+exception/i,
+      'this trigger fires inside the payment insert — a raise here would roll the payment back');
   });
 
   test('refunds and reversals gained no tier check', () => {
@@ -352,13 +367,17 @@ describe('no way round, nothing else disturbed', () => {
     ]);
   });
 
-  test('Offers and Loyalty gained nothing', () => {
+  test('Wallet activation is still enforced in exactly one place', () => {
+    // Offers and Loyalty were the approved slice after this one, so they now
+    // appear too. What must stay true is that Wallet's own boundary did not
+    // move or multiply.
     const rows = sql(`
-      select c.relname as tbl from pg_trigger t join pg_class c on c.oid=t.tgrelid
-       where not t.tgisinternal and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
-       order by c.relname;`);
-    assert.ok(!rows.some((r) => r.tbl === 'local_offers'), 'local_offers must not appear');
-    assert.ok(!rows.some((r) => r.tbl === 'local_loyalty_programs'), 'local_loyalty_programs must not appear');
+      select c.relname as tbl, t.tgname from pg_trigger t join pg_class c on c.oid=t.tgrelid
+       where not t.tgisinternal and c.relname='local_businesses'
+         and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
+       order by t.tgname;`);
+    assert.deepEqual(rows.map((r) => r.tgname),
+      ['local_businesses_bookings_tier_guard', 'local_businesses_wallet_tier_guard']);
   });
 
   test('the ordinary Pro management gates are unchanged', () => {
