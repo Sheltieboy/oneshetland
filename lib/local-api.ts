@@ -81,7 +81,7 @@ export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness |
  * business_private_fields RPC, which checks that you own the business.
  */
 export const BUSINESS_PUBLIC_COLS =
-  'id, owner_id, name, category, description, address, lat, lng, logo_url, cover_url, brand_color, tags, phone, website, email, slug, opening_hours, opening_hours_until, is_verified, is_active, is_claimed, claimed_at, verified_at, created_at, accepts_wallet, accepts_bookings, cashback_percent, payout_enabled, subscription_tier, subscription_until, can_publish_urgent, planner_visitor_ready, planner_dwell_minutes, planner_setting, planner_good_for, planner_booking, planner_note, planner_context_source, trade_categories, trade_availability, trade_availability_set_at, trade_min_job_pence, trade_credentials';
+  'id, owner_id, name, category, description, address, lat, lng, logo_url, cover_url, brand_color, tags, phone, website, email, slug, opening_hours, opening_hours_until, is_verified, is_active, is_claimed, claimed_at, verified_at, created_at, accepts_wallet, wallet_live, accepts_bookings, cashback_percent, payout_enabled, subscription_tier, subscription_until, can_publish_urgent, planner_visitor_ready, planner_dwell_minutes, planner_setting, planner_good_for, planner_booking, planner_note, planner_context_source, trade_categories, trade_availability, trade_availability_set_at, trade_min_job_pence, trade_credentials';
 
 export interface OpeningHours {
   mon?: string; tue?: string; wed?: string; thu?: string;
@@ -116,6 +116,8 @@ export interface LocalBusiness {
   is_verified:       boolean;
   is_active:         boolean;
   accepts_wallet:    boolean;
+  /** Server-computed: flag AND current Pro. The flag alone outlives a plan. */
+  wallet_live?:      boolean;
   cashback_percent:  number;
   stripe_account_id?: string | null;
   payout_enabled:    boolean;

@@ -806,7 +806,7 @@ export default function BusinessDetailScreen() {
                 />
               </>
             )}
-            {shows('wallet') && business.accepts_wallet && (
+            {shows('wallet') && business.wallet_live === true && (
               <>
                 <View style={styles.infoDivider} />
                 <InfoRow

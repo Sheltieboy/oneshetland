@@ -64,6 +64,26 @@ export async function executeWalletPayment(
     return { ok: false, status: 400, error: "Business hasn't finished Stripe onboarding", reason: 'ineligible' };
   }
 
+  // Taking Wallet payments is Pro, and the stored flag above is not proof of
+  // that: it is deliberately left as the owner configured it when a plan
+  // lapses, so it can outlive the entitlement. Asked here, in the one executor
+  // both routes converge on — the tap and the scan-to-charge — and before
+  // anything financial: no debit, no cashback, no transfer.
+  //
+  // Read from the server predicate rather than re-derived, so this cannot drift
+  // from what the activation guard and the customer-facing surfaces use. An
+  // unreadable answer fails closed; money must not move on a maybe.
+  //
+  // Same shape of message as the flag-off branch above. A customer does not
+  // need to know why a shop cannot take Wallet today.
+  const { data: mayTakeWallet, error: tierErr } = await svc.rpc('business_meets_tier', {
+    p_business_id: business.id,
+    p_required_tier: 'pro',
+  });
+  if (tierErr || mayTakeWallet !== true) {
+    return { ok: false, status: 400, error: "This business isn't currently accepting Wallet payments", reason: 'ineligible' };
+  }
+
   // Cashback is BUSINESS-FUNDED — comes out of the merchant's transfer.
   const cashbackPence = Math.floor(amountPence * (business.cashback_percent ?? 0) / 100);
   const walletCfg = await getCommissionConfig(svc, 'wallet');

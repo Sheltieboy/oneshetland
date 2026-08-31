@@ -352,7 +352,7 @@ function BadgePills({ business, catColor }: { business: LocalBusiness; catColor:
           <Text style={[styles.miniBadgeText, { color: '#D97706' }]}>{business.cashback_percent}% back</Text>
         </View>
       )}
-      {business.accepts_wallet && (
+      {business.wallet_live === true && (
         <View style={[styles.miniBadge, { backgroundColor: catColor + '18' }]}>
           <Text style={[styles.miniBadgeText, { color: catColor }]}>👛 Wallet</Text>
         </View>
