@@ -385,3 +385,109 @@ describe('no way round, nothing else disturbed', () => {
       /tierUnlocks\(business\.subscription_tier, "wallet"\)/);
   });
 });
+
+/* ── 8. The NFC tile ──────────────────────────────────────────────────────── */
+
+describe('a tapped tile offers Wallet only when Wallet is actually available', () => {
+  // resolve_nfc_tile is SECURITY DEFINER, so it answers past RLS and past the
+  // wallet_live computed column that carries Wallet presentation everywhere
+  // else. It used to return the stored flag raw, which let a tile advertise
+  // Wallet for a business whose Pro had expired. The payment was always refused,
+  // so this was presentation only — but the tile was making an offer the
+  // platform would not honour.
+  const U = 'f5f50001-1111-1111-1111-111111111111';
+  const tile = (n: number) => `f5f500${n}0-2222-2222-2222-222222222222`;
+  const CASES: [string, string, string, boolean, boolean][] = [
+    // label, tier, expiry SQL, stored accepts_wallet, business is_active
+    ['off + Pro',        'pro',     `now()+interval '30 days'`, false, true],
+    ['on + Pro',         'pro',     `now()+interval '30 days'`, true,  true],
+    ['on + expired Pro', 'pro',     `now()-interval '1 day'`,   true,  true],
+    ['on + stale Prem',  'premium', `now()-interval '1 day'`,   true,  true],
+    ['on + NULL expiry', 'premium', `null`,                     true,  true],
+    ['on + Premium',     'premium', `now()+interval '30 days'`, true,  true],
+    ['on + inactive',    'pro',     `now()+interval '30 days'`, true,  false],
+  ];
+
+  const rows = sql(`
+begin;
+  insert into auth.users (id,email) values ('${U}','nfc@probe.invalid');
+  ${CASES.map(([label, tier, until, wallet, active], i) => `
+  insert into public.local_businesses (id,owner_id,name,category,address,is_active,nfc_token,accepts_wallet)
+    values ('${tile(i)}','${U}','NFC ${label}','other','P',${active},'probe-tok-${i}',${wallet});
+  update public.local_businesses set subscription_tier='${tier}', subscription_until=${until}
+   where id='${tile(i)}';`).join('\n')}
+  -- A running programme on the Pro tile and on the expired one. The expired one
+  -- is the control: it really does have an active programme.
+  insert into public.local_loyalty_programs (business_id,type,stamps_required,stamp_reward,is_active)
+    values ('${tile(1)}','stamps',5,'coffee',true),
+           ('${tile(2)}','stamps',5,'coffee',true);
+  select v.label,
+         (select accepts_wallet from public.resolve_nfc_tile(v.tok))::text as wallet,
+         (select has_loyalty    from public.resolve_nfc_tile(v.tok))::text as loyalty
+    from (values ${CASES.map(([label], i) => `('${label}','probe-tok-${i}')`).join(',')}) v(label,tok)
+   order by v.label;
+rollback;`);
+
+  const wallet = (label: string) => String(rows.find((r) => r.label === label)?.wallet);
+  const loyalty = (label: string) => String(rows.find((r) => r.label === label)?.loyalty);
+
+  test('1 & 3. effective Pro with the flag on is available', () =>
+    assert.equal(wallet('on + Pro'), 'true'));
+  test('5. the stored flag is still required', () =>
+    assert.equal(wallet('off + Pro'), 'false'));
+  test('2. an expired plan with the flag left on is unavailable', () =>
+    assert.equal(wallet('on + expired Pro'), 'false'));
+  test('a stale Premium whose date has passed is unavailable', () =>
+    assert.equal(wallet('on + stale Prem'), 'false'));
+  test('6. a paid tier with no end date is unavailable', () =>
+    assert.equal(wallet('on + NULL expiry'), 'false'));
+  test('4. Premium satisfies Pro', () =>
+    assert.equal(wallet('on + Premium'), 'true'));
+  test('an inactive business is unavailable, as wallet_live already says', () =>
+    assert.equal(wallet('on + inactive'), 'false'));
+
+  test('7. the Loyalty entitlement from the previous slice still holds', () => {
+    assert.equal(loyalty('on + Pro'), 'true', 'the control must show it');
+    assert.equal(loyalty('on + expired Pro'), 'false',
+      'that shop genuinely has an active programme — tier is why it is hidden');
+  });
+
+  test('12. it reuses the deployed truth rather than restating it', () => {
+    const [row] = sql(`select pg_get_functiondef('public.resolve_nfc_tile'::regproc) as d;`);
+    const def = String(row.d);
+    assert.match(def, /wallet_live\(b\)/, 'the tile must read the same answer as every other surface');
+    assert.doesNotMatch(def, /subscription_until/, 'no expiry arithmetic of its own');
+    assert.doesNotMatch(def, /subscription_tier/, 'the configured tier is not the effective tier');
+    // The Wallet answer must not be the bare column any more.
+    assert.doesNotMatch(def, /coalesce\(b\.accepts_wallet/);
+  });
+
+  test('5. the tile still says nothing about a plan', () => {
+    const [row] = sql(`select pg_get_functiondef('public.resolve_nfc_tile'::regproc) as d;`);
+    const cols = sql(`
+      select string_agg(p.proargnames[i], ',') as names
+        from pg_proc p, generate_subscripts(p.proargnames,1) i
+       where p.proname='resolve_nfc_tile';`);
+    const names = String(cols[0]?.names ?? '');
+    assert.doesNotMatch(names, /\b(tier|subscription|plan|expiry|billing)\b/i,
+      'the response shape must not carry billing state');
+    assert.ok(String(row.d).includes('accepts_wallet'), 'the column keeps its name, so callers are unchanged');
+  });
+
+  test('8, 9 & 10. the executor, the activation guard and balances are untouched', () => {
+    assert.match(PAY, /business_meets_tier/, 'the payment executor still checks Pro');
+    const [g] = sql(`select pg_get_functiondef('public.local_businesses_wallet_tier_guard'::regproc) as d;`);
+    assert.match(String(g.d), /business_meets_tier\(new\.id, 'pro'\)/);
+    const [w] = sql(`select pg_get_functiondef('public.wallet_live'::regproc) as d;`);
+    assert.match(String(w.d), /b\.accepts_wallet\s*\n?\s*and b\.is_active/,
+      'wallet_live itself must not have moved');
+  });
+
+  test('11. the Offers and Loyalty guards are unchanged by this cleanup', () => {
+    for (const fn of ['local_offers_tier_guard', 'local_loyalty_programs_tier_guard',
+                      'local_loyalty_cards_tier_guard', 'local_loyalty_transactions_tier_guard']) {
+      const [row] = sql(`select pg_get_functiondef('public.${fn}'::regproc) as d;`);
+      assert.match(String(row.d), /business_meets_tier/);
+    }
+  });
+});
