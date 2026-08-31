@@ -404,15 +404,17 @@ describe('deployed shape and composition', () => {
 
   test('nothing else gained tier enforcement in this slice', () => {
     const rows = sql(`
-      select c.relname as tbl, t.tgname
+      -- distinct: local_businesses carries more than one guard (Bookings and
+      -- Wallet), and this asks which TABLES are enforced, not how many guards.
+      select distinct c.relname as tbl
         from pg_trigger t join pg_class c on c.oid=t.tgrelid
        where not t.tgisinternal
          and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
        order by c.relname;`);
-    // Products and Passes were the approved slices after this one; Wallet,
+    // Products, Passes and Wallet were the approved slices after this one;
     // Offers and Loyalty still are not.
     assert.deepEqual(rows.map((r) => r.tbl).sort(),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'products'],
-      'Wallet, Offers and Loyalty are not enforced yet');
+      'Offers and Loyalty are not enforced yet');
   });
 });

@@ -304,13 +304,16 @@ describe('no way round, and nothing else disturbed', () => {
       ['book_bookings_tier_guard', 'local_businesses_bookings_tier_guard']);
   });
 
-  test('Wallet, Offers and Loyalty have gained nothing', () => {
+  test('Offers and Loyalty have gained nothing', () => {
     const rows = sql(`
-      select c.relname as tbl from pg_trigger t join pg_class c on c.oid=t.tgrelid
+      -- distinct: local_businesses carries more than one guard (Bookings and
+      -- Wallet), and this asks which TABLES are enforced, not how many guards.
+      select distinct c.relname as tbl from pg_trigger t join pg_class c on c.oid=t.tgrelid
        where not t.tgisinternal
          and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
        order by c.relname;`);
-    // Passes were the approved slice after this one.
+    // Passes and Wallet were the approved slices after this one; Wallet's
+    // guard sits on local_businesses, which is already in the list.
     assert.deepEqual(rows.map((r) => r.tbl).sort(),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'products'],
       'local_offers and local_loyalty_programs must not appear');

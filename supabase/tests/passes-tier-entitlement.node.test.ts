@@ -263,9 +263,12 @@ describe('a purchase is refused before any money moves', () => {
   test('the check sits after the item loads and before the PaymentIntent', () => {
     const item = INTENT.indexOf("if (!item || !item.is_active)");
     const check = INTENT.indexOf("p_required_tier: 'premium'");
-    const pi = INTENT.indexOf('await createPaymentIntent(');
     assert.ok(check > item, 'the item must be loaded first');
-    assert.ok(pi > check, 'no Stripe call before the check');
+    // EVERY Stripe call site, not just the first — this function has two, and
+    // a check that only precedes one of them is not a backstop.
+    const calls = [...INTENT.matchAll(/await createPaymentIntent\(/g)].map((m) => m.index!);
+    assert.ok(calls.length >= 2, 'expected both charge paths');
+    for (const at of calls) assert.ok(at > check, 'no Stripe call may precede the check');
   });
 
   test('it asks the shared predicate', () => {
@@ -346,9 +349,11 @@ describe('no way round, and nothing else disturbed', () => {
       ['book_bookings_tier_guard', 'local_businesses_bookings_tier_guard', 'products_tier_guard']);
   });
 
-  test('Wallet, Offers and Loyalty gained nothing', () => {
+  test('Offers and Loyalty gained nothing', () => {
     const rows = sql(`
-      select c.relname as tbl from pg_trigger t join pg_class c on c.oid=t.tgrelid
+      -- distinct: local_businesses carries more than one guard (Bookings and
+      -- Wallet), and this asks which TABLES are enforced, not how many guards.
+      select distinct c.relname as tbl from pg_trigger t join pg_class c on c.oid=t.tgrelid
        where not t.tgisinternal and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
        order by c.relname;`);
     assert.deepEqual(rows.map((r) => r.tbl).sort(),

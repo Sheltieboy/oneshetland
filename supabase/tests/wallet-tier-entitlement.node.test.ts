@@ -153,10 +153,14 @@ describe('cashback configuration is deliberately NOT tier-gated', () => {
     assert.equal(outcome(rows, 'lapsed reduces cashback'), 'ALLOWED');
   });
 
-  test('the guard never looks at cashback_percent', () => {
+  test('the guard never branches on cashback_percent', () => {
+    // The word appears once, in a comment saying exactly this. What must not
+    // exist is a READ of the column: a tier check there would break
+    // setup-before-upgrade.
     const [row] = sql(`select pg_get_functiondef('public.local_businesses_wallet_tier_guard'::regproc) as d;`);
-    assert.ok(!String(row.d).includes('cashback'),
-      'a tier check on cashback would break setup-before-upgrade');
+    const def = String(row.d);
+    assert.ok(!/(new|old)\.cashback_percent/.test(def), 'the guard must not read cashback_percent');
+    assert.ok(!/cashback[^\n]*business_meets_tier|business_meets_tier[^\n]*cashback/.test(def));
   });
 
   test('so no cashback can be earned anyway — it lives inside the payment', () => {

@@ -281,8 +281,10 @@ describe('deployed shape', () => {
       'book_bookings_tier_guard',                 // Bookings transaction backstop
       'book_unit_items_tier_guard',               // Passes activation
       'local_businesses_bookings_tier_guard',     // Bookings activation
+      'local_businesses_wallet_tier_guard',       // Wallet activation
       'products_tier_guard',                      // Products activation
-    ], 'Wallet, Offers and Loyalty must not have gained tier enforcement');
+      'wallet_live',                              // Wallet customer-facing answer
+    ], 'Offers and Loyalty must not have gained tier enforcement');
 
     const [pol] = sql(`
       select count(*)::int as n from pg_policy p
