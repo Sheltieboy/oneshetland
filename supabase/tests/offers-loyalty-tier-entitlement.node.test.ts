@@ -175,8 +175,12 @@ describe('an Offer that outlives the plan', () => {
     refused(rows, 'put it back up');
     assert.equal(outcome(rows, 'is it back up'), 'false');
   });
-  test('tidying up something already taken down is nobody’s business', () =>
-    allowed(rows, 'edit while withdrawn'));
+  // Corrected. This originally read "tidying up something already taken down is
+  // nobody's business" and asserted ALLOWED — which was the defect: it let an
+  // under-tier owner rewrite a stopped Offer in full and switch it back on the
+  // day their plan returned. Withdrawal is free; preparing a relaunch is not.
+  test('an already-withdrawn Offer still cannot be commercially rewritten', () =>
+    refused(rows, 'edit while withdrawn'));
   test('11. DELETE semantics are unchanged', () => {
     allowed(rows, 'delete it');
     assert.equal(outcome(rows, 'is it gone'), 'true');
@@ -582,5 +586,93 @@ describe('the rest of the platform is where it was', () => {
     assert.ok(fetchOffers.includes('local_offers'), 'the slice must be the offer fetch');
     assert.doesNotMatch(fetchOffers, /subscription_until|subscription_tier/,
       "the offer fetch must read the server's answer, not date arithmetic");
+  });
+});
+
+/* ── 11. Withdrawal is a reduction, not an opening ────────────────────────── */
+
+describe('withdrawal is reduction-only', () => {
+  // The whole truth table for an under-tier owner, in one transaction. Only two
+  // updates are free of tier: a genuine withdrawal with nothing riding along,
+  // and a statement that moves no commercial field and does not touch is_active.
+  const rows = sql(FIXTURE + asServer +
+    newOffer(B.lapsing, OFFER) + ';' +
+    newProgram(B.lapsing, PROG) + ';' +
+    `update public.local_offers set is_active=false where id='${OFFER}';` +
+    `update public.local_loyalty_programs set is_active=false where id='${PROG}';` +
+    asUser(OWNER) + acceptTerms +
+    attempt('pro edits a stopped Offer',     `update public.local_offers set title='ordinary' where id='${OFFER}'`) +
+    attempt('pro edits a stopped programme', `update public.local_loyalty_programs set stamp_reward='ordinary' where id='${PROG}'`) +
+    asServer + lapse(B.lapsing) + asUser(OWNER) +
+    attempt('edit a stopped Offer',      `update public.local_offers set title='prepared' where id='${OFFER}'`) +
+    attempt('edit a stopped programme',  `update public.local_loyalty_programs set stamp_reward='prepared' where id='${PROG}'`) +
+    attempt('reactivate the Offer',      `update public.local_offers set is_active=true where id='${OFFER}'`) +
+    attempt('restart the programme',     `update public.local_loyalty_programs set is_active=true where id='${PROG}'`) +
+    attempt('bookkeeping while stopped', `update public.local_offers set redemption_count=coalesce(redemption_count,0)+1 where id='${OFFER}'`) +
+    // put both back up as the server, so the reduction cases have something live
+    asServer +
+    `update public.local_offers set is_active=true where id='${OFFER}';` +
+    `update public.local_loyalty_programs set is_active=true where id='${PROG}';` +
+    asUser(OWNER) +
+    attempt('edit a live Offer',            `update public.local_offers set title='live edit' where id='${OFFER}'`) +
+    attempt('bookkeeping while live',       `update public.local_offers set redemption_count=coalesce(redemption_count,0)+1 where id='${OFFER}'`) +
+    attempt('withdraw AND edit together',   `update public.local_offers set title='ride along', is_active=false where id='${OFFER}'`) +
+    attempt('disable AND change the rules', `update public.local_loyalty_programs set stamps_required=3, is_active=false where id='${PROG}'`) +
+    attempt('withdraw, alone',              `update public.local_offers set is_active=false where id='${OFFER}'`) +
+    measure('offer withdrawn',              `select not is_active from public.local_offers where id='${OFFER}'`) +
+    attempt('disable, alone',               `update public.local_loyalty_programs set is_active=false where id='${PROG}'`) +
+    measure('programme stopped',            `select not is_active from public.local_loyalty_programs where id='${PROG}'`) +
+    // 'ordinary' is the last value a PERMITTED write set, back when the plan was
+    // still good. Every under-tier attempt after it tried 'prepared', 'live edit'
+    // or 'ride along'; none of them may have landed.
+    measure('offer title',  `select title from public.local_offers where id='${OFFER}'`) +
+    measure('reward text',  `select stamp_reward from public.local_loyalty_programs where id='${PROG}'`) +
+    END);
+
+  test('1. a Pro owner may edit an inactive Offer', () => allowed(rows, 'pro edits a stopped Offer'));
+  test('8. a Pro owner may edit an inactive programme', () => allowed(rows, 'pro edits a stopped programme'));
+
+  test('2. an under-tier owner may NOT edit an already-inactive Offer', () =>
+    refused(rows, 'edit a stopped Offer'));
+  test('9. an under-tier owner may NOT edit an already-inactive programme', () =>
+    refused(rows, 'edit a stopped programme'));
+
+  test('5 & 12. reactivation stays shut', () => {
+    refused(rows, 'reactivate the Offer');
+    refused(rows, 'restart the programme');
+  });
+
+  test('4 & 11. a commercial change cannot ride along with the switch-off', () => {
+    refused(rows, 'withdraw AND edit together');
+    refused(rows, 'disable AND change the rules');
+  });
+
+  test('3 & 10. the genuine reduction is still free, and still reduces', () => {
+    allowed(rows, 'withdraw, alone');
+    assert.equal(outcome(rows, 'offer withdrawn'), 'true');
+    allowed(rows, 'disable, alone');
+    assert.equal(outcome(rows, 'programme stopped'), 'true');
+  });
+
+  test('7. server-managed redemption bookkeeping keeps working either way', () => {
+    allowed(rows, 'bookkeeping while live');
+    allowed(rows, 'bookkeeping while stopped');
+  });
+
+  test('editing a live Offer is still refused', () => refused(rows, 'edit a live Offer'));
+
+  test('nothing the guard refused actually landed', () => {
+    assert.equal(outcome(rows, 'offer title'), 'ordinary');
+    assert.equal(outcome(rows, 'reward text'), 'ordinary');
+  });
+
+  test('the guards compare fields, they do not just read is_active', () => {
+    for (const fn of ['local_offers_tier_guard', 'local_loyalty_programs_tier_guard']) {
+      const [row] = sql(`select pg_get_functiondef('public.${fn}'::regproc) as d;`);
+      const def = String(row.d);
+      assert.match(def, /v_commercial_changed/, `${fn} must decide on what moved, not on the resulting flag`);
+      assert.match(def, /old\.is_active is true and new\.is_active is not true/,
+        `${fn} must require the reducing DIRECTION, not merely an inactive result`);
+    }
   });
 });
