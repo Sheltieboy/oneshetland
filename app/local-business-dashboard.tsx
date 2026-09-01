@@ -23,7 +23,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
 import { Sheet } from '@/components/ui/Sheet';
 import { SECTIONS } from '@/constants/sections';
-import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
+import { NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
 import { fetchBusinessHome, type BusinessHome } from '@/lib/business-home';
 import { businessOutcomes, type Outcome } from '@/lib/business-outcomes';
 import { nextAction, hasOperationalAttention } from '@/lib/business-next-action';
@@ -181,7 +181,7 @@ export default function BusinessDashboardScreen() {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, schedRows, entitlement, homeData] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, schedRows, homeData] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -201,7 +201,6 @@ export default function BusinessDashboardScreen() {
       fetchMyAlertAccess(target.id).catch(() => null),
       fetchMyBusinessAlerts(target.id).catch(() => [] as PartnerAlert[]),
       fetchScheduledAlerts(target.id).catch(() => [] as PartnerAlert[]),
-      fetchEffectiveTier(target.id).catch(() => NO_ENTITLEMENT),
       fetchBusinessHome(target.id, profile!.id,
         target as { trade_availability?: string | null; trade_availability_set_at?: string | null },
         (setAt) => !availabilityIsFresh(setAt)).catch(() => null),
@@ -210,8 +209,12 @@ export default function BusinessDashboardScreen() {
     setOffers(ofs);
     setCode(cd);
     setBookServiceCount(bookSvcs.length);
-    setEff(entitlement as Effective);
-    setHome(homeData as BusinessHome | null);
+    // One question, one answer. fetchBusinessHome already asked the server what
+    // this plan allows; asking again beside it was two identical RPC pairs for
+    // the same business. Unreadable still means not entitled, exactly as before.
+    const home = homeData as BusinessHome | null;
+    setEff(home?.effective ?? NO_ENTITLEMENT);
+    setHome(home);
     setOrphanedShiftCount(orphanCount as number);
     setWalletReceipts(receipts);
     setAlertAccess(alertAcc as AlertAccess | null);
