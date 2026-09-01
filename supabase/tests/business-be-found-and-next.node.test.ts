@@ -333,16 +333,29 @@ describe('the rest of Business Home is where it was', () => {
     assert.match(claim, /status:\s*"pending"/);
   });
 
-  test('33. no migration was introduced', () => {
-    const list = execFileSync('git', ['status', '--porcelain', 'supabase/migrations'],
-      { cwd: REPO_ROOT, encoding: 'utf8' });
-    assert.equal(list.trim(), '', 'Phase 1 is derived state — it needs no schema');
+  // These two originally read `git status`, which asks what is dirty right now
+  // rather than what Phase 1 did — so the very next unrelated migration broke
+  // them. They now pin the claim itself: Be Found is derived, and it is web-only.
+  test('33. Be Found introduced no schema', () => {
+    const migrations = execFileSync('git', ['ls-files', 'supabase/migrations'],
+      { cwd: REPO_ROOT, encoding: 'utf8' }).trim().split('\n');
+    for (const m of migrations) {
+      assert.doesNotMatch(m, /be[-_]found|next[-_]action/i, `${m} — Phase 1 stores nothing`);
+      const body = readFileSync(join(REPO_ROOT, m), 'utf8');
+      assert.doesNotMatch(body, /be_found|business_intent|capability_state|next_action/i,
+        `${m} must not persist Business 2.0 state`);
+    }
   });
 
-  test('34. no mobile source changed', () => {
-    const list = execFileSync('git', ['status', '--porcelain', 'app', 'lib', 'components'],
-      { cwd: REPO_ROOT, encoding: 'utf8' });
-    assert.equal(list.trim(), '', 'mobile convergence is a later phase');
+  test('34. Be Found is web-only — no mobile source consumes it', () => {
+    // git grep exits 1 when it finds nothing, which is the passing case here.
+    let hits = '';
+    try {
+      hits = execFileSync('git',
+        ['grep', '-l', '-E', 'be-found|business-next-action', '--', 'app', 'lib', 'components'],
+        { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    } catch { hits = ''; }
+    assert.equal(hits, '', 'mobile convergence is a later phase');
   });
 
   test('35. no entitlement boundary changed', () => {

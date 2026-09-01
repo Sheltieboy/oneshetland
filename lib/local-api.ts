@@ -59,7 +59,7 @@ export type LoyaltyTxType = 'stamp' | 'points_earn' | 'redeem' | 'reward';
 
 export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness | null> {
   const { data, error } = await supabase
-    .from('local_businesses')
+    .from(BUSINESS_PUBLIC_SOURCE)
     .select(BUSINESS_PUBLIC_COLS)
     .eq('slug', slug)
     .eq('is_active', true)
@@ -81,7 +81,24 @@ export async function fetchBusinessBySlug(slug: string): Promise<LocalBusiness |
  * business_private_fields RPC, which checks that you own the business.
  */
 export const BUSINESS_PUBLIC_COLS =
-  'id, owner_id, name, category, description, address, lat, lng, logo_url, cover_url, brand_color, tags, phone, website, email, slug, opening_hours, opening_hours_until, is_verified, is_active, is_claimed, claimed_at, verified_at, created_at, accepts_wallet, wallet_live, accepts_bookings, cashback_percent, payout_enabled, subscription_tier, subscription_until, can_publish_urgent, planner_visitor_ready, planner_dwell_minutes, planner_setting, planner_good_for, planner_booking, planner_note, planner_context_source, trade_categories, trade_availability, trade_availability_set_at, trade_min_job_pence, trade_credentials';
+  'id, name, category, description, address, lat, lng, logo_url, cover_url, brand_color, tags, phone, website, email, slug, opening_hours, opening_hours_until, is_verified, is_active, is_claimed, claimed_at, verified_at, created_at, accepts_wallet, wallet_live, accepts_bookings, cashback_percent, payout_enabled, subscription_tier, subscription_until, can_publish_urgent, planner_visitor_ready, planner_dwell_minutes, planner_setting, planner_good_for, planner_booking, planner_note, planner_context_source, trade_categories, trade_availability, trade_availability_set_at, trade_min_job_pence, trade_credentials';
+
+/**
+ * The public business view. wallet_live is a derived column there rather than a
+ * computed column on the table: as a computed column it needed a whole-row
+ * reference, which Postgres checks against TABLE-level SELECT, and neither anon
+ * nor authenticated holds that here on purpose. Every public read 401'd.
+ */
+export const BUSINESS_PUBLIC_SOURCE = 'local_businesses_public';
+
+/**
+ * Owner-context reads, straight from the table because they need owner_id —
+ * which the public view deliberately omits. No wallet_live: an owner screen
+ * reads accepts_wallet and its own plan, and does not need the customer-facing
+ * answer.
+ */
+export const BUSINESS_OWNER_COLS =
+  'id, owner_id, name, category, description, address, lat, lng, logo_url, cover_url, brand_color, tags, phone, website, email, slug, opening_hours, opening_hours_until, is_verified, is_active, is_claimed, claimed_at, verified_at, created_at, accepts_wallet, accepts_bookings, cashback_percent, payout_enabled, subscription_tier, subscription_until, can_publish_urgent, planner_visitor_ready, planner_dwell_minutes, planner_setting, planner_good_for, planner_booking, planner_note, planner_context_source, trade_categories, trade_availability, trade_availability_set_at, trade_min_job_pence, trade_credentials';
 
 export interface OpeningHours {
   mon?: string; tue?: string; wed?: string; thu?: string;
@@ -96,7 +113,8 @@ export interface OpeningHours {
  */
 export interface LocalBusiness {
   id:                string;
-  owner_id:          string;
+  /** Absent on public-view reads; present on owner-context reads. */
+  owner_id?:         string;
   name:              string;
   category:          LocalCategory;
   description:       string | null;
@@ -323,7 +341,7 @@ export function distanceKm(lat1: number, lng1: number, lat2: number, lng2: numbe
 /** All active businesses, optionally filtered by category */
 export async function fetchActiveBusinesses(category?: LocalCategory): Promise<LocalBusiness[]> {
   let q = supabase
-    .from('local_businesses')
+    .from(BUSINESS_PUBLIC_SOURCE)
     .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .order('is_verified', { ascending: false })
@@ -337,7 +355,7 @@ export async function fetchActiveBusinesses(category?: LocalCategory): Promise<L
 /** Single business by id */
 export async function fetchBusiness(id: string): Promise<LocalBusiness | null> {
   const { data, error } = await supabase
-    .from('local_businesses')
+    .from(BUSINESS_PUBLIC_SOURCE)
     .select(BUSINESS_PUBLIC_COLS)
     .eq('id', id)
     .maybeSingle();
@@ -349,7 +367,7 @@ export async function fetchBusiness(id: string): Promise<LocalBusiness | null> {
 export async function fetchMyBusinesses(userId: string): Promise<LocalBusiness[]> {
   const { data, error } = await supabase
     .from('local_businesses')
-    .select(BUSINESS_PUBLIC_COLS)
+    .select(BUSINESS_OWNER_COLS)
     .eq('owner_id', userId)
     .order('created_at', { ascending: false });
   if (error) throw error;
@@ -390,7 +408,7 @@ export async function createBusiness(userId: string, input: BusinessUpsertInput)
   const { data, error } = await supabase
     .from('local_businesses')
     .insert({ owner_id: userId, ...input })
-    .select(BUSINESS_PUBLIC_COLS)
+    .select(BUSINESS_OWNER_COLS)
     .single();
   if (error) throw error;
   return data as LocalBusiness;
@@ -1037,7 +1055,7 @@ export async function fetchFeaturedBusinesses(limit = 12): Promise<LocalBusiness
   const now = new Date().toISOString();
 
   const { data: subs } = await supabase
-    .from('local_businesses')
+    .from(BUSINESS_PUBLIC_SOURCE)
     .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .in('subscription_tier', ['pro', 'premium'])
@@ -1052,7 +1070,7 @@ export async function fetchFeaturedBusinesses(limit = 12): Promise<LocalBusiness
   // Backfill with other active businesses we haven't already included.
   const have = new Set(featured.map(b => b.id));
   const { data: rest } = await supabase
-    .from('local_businesses')
+    .from(BUSINESS_PUBLIC_SOURCE)
     .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .order('is_verified', { ascending: false })
@@ -1834,7 +1852,7 @@ export async function fetchLocalFeed(area?: string): Promise<{
   if (area) evQ = evQ.ilike('locality', `%${area}%`);
 
   let bizQ = supabase
-    .from('local_businesses')
+    .from(BUSINESS_PUBLIC_SOURCE)
     .select(BUSINESS_PUBLIC_COLS)
     .eq('is_active', true)
     .order('is_verified', { ascending: false })
