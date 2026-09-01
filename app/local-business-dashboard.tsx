@@ -24,6 +24,10 @@ import { NavRail } from '@/components/NavRail';
 import { Sheet } from '@/components/ui/Sheet';
 import { SECTIONS } from '@/constants/sections';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
+import { fetchBusinessHome, type BusinessHome } from '@/lib/business-home';
+import { businessOutcomes, type Outcome } from '@/lib/business-outcomes';
+import { nextAction, hasOperationalAttention } from '@/lib/business-next-action';
+import { availabilityIsFresh } from '@/constants/trades';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchMyBusinesses, fetchBusinessPrivate, updateBusiness,
@@ -53,6 +57,34 @@ import {
 import { supabase } from '@/lib/supabase';
 
 const S = SECTIONS.local;
+
+/**
+ * One owner outcome, compact and thumb-friendly.
+ *
+ * A status sentence and a dot, above whatever detailed card already exists for
+ * that outcome. Two-state on purpose: green means live to customers, grey means
+ * everything else — including perfectly finished states like "not selling on
+ * OneShetland". Amber would turn every unused capability into a warning, and
+ * only NEEDS YOU is allowed to feel urgent.
+ */
+function OutcomeCard({ outcome, accent, onPress }: {
+  outcome?: Outcome; accent: string; onPress?: () => void;
+}) {
+  if (!outcome) return null;
+  const body = (
+    <View style={styles.outcomeRow}>
+      <View style={[styles.outcomeDot, { backgroundColor: outcome.tone === 'positive' ? '#16A34A' : '#C3CCD6' }]} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.outcomeTitle}>{outcome.title}</Text>
+        <Text style={styles.outcomeStatus}>{outcome.status}</Text>
+      </View>
+      {onPress && <FontAwesome5 name="chevron-right" size={12} color={accent} />}
+    </View>
+  );
+  return onPress
+    ? <TouchableOpacity onPress={onPress} activeOpacity={0.85}>{body}</TouchableOpacity>
+    : body;
+}
 
 // Tier helpers — single source of truth for "does this user's plan include X?"
 type TierLevel = 'free' | 'pro' | 'premium';
@@ -95,6 +127,8 @@ export default function BusinessDashboardScreen() {
    * bought and not whether it is still in date.
    */
   const [eff, setEff] = useState<Effective>(NO_ENTITLEMENT);
+  /** Attention, the week and the five outcome states — all derived, none stored. */
+  const [home, setHome] = useState<BusinessHome | null>(null);
   const [savingPaymentToggle, setSavingPaymentToggle] = useState(false);
   const [savingPayoutToggle,  setSavingPayoutToggle]  = useState(false);
   const [walletReceipts, setWalletReceipts] = useState<BusinessWalletReceipt[]>([]);
@@ -147,7 +181,7 @@ export default function BusinessDashboardScreen() {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, schedRows, entitlement] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, schedRows, entitlement, homeData] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -168,12 +202,16 @@ export default function BusinessDashboardScreen() {
       fetchMyBusinessAlerts(target.id).catch(() => [] as PartnerAlert[]),
       fetchScheduledAlerts(target.id).catch(() => [] as PartnerAlert[]),
       fetchEffectiveTier(target.id).catch(() => NO_ENTITLEMENT),
+      fetchBusinessHome(target.id, profile!.id,
+        target as { trade_availability?: string | null; trade_availability_set_at?: string | null },
+        (setAt) => !availabilityIsFresh(setAt)).catch(() => null),
     ]);
     setProgram(prog);
     setOffers(ofs);
     setCode(cd);
     setBookServiceCount(bookSvcs.length);
     setEff(entitlement as Effective);
+    setHome(homeData as BusinessHome | null);
     setOrphanedShiftCount(orphanCount as number);
     setWalletReceipts(receipts);
     setAlertAccess(alertAcc as AlertAccess | null);
@@ -357,6 +395,39 @@ export default function BusinessDashboardScreen() {
    * programme's own state and nothing else — customer cards, stamps, points and
    * history are not the shop's to clear.
    */
+  /* ── The spine ───────────────────────────────────────────────────────────
+     Derived on every load from lib/business-outcomes.ts — the same file the
+     web Home uses, copied and pinned. Nothing here is stored. */
+  const outcomes: Outcome[] = home
+    ? businessOutcomes(
+        { ...(activeBusiness as unknown as Record<string, unknown>), id: activeBusiness?.id ?? '' } as never,
+        home.outcomes, '',
+      )
+    : [];
+  const attention = home?.attention ?? [];
+  /* NEXT defers entirely to what is waiting: suggesting a description while
+     four customers wait would be insulting, and printing the same thing twice
+     in two voices teaches people to ignore both. */
+  const next = home && !hasOperationalAttention({
+    orders: { length: attention.some(a => a.key === 'orders') ? 1 : 0 },
+    bookings: { length: attention.some(a => a.key === 'bookings') ? 1 : 0 },
+    leads: { length: attention.some(a => a.key === 'leads') ? 1 : 0 },
+    needs: { jobApplications: attention.some(a => a.key === 'applications') ? 1 : 0 },
+    isTrade: attention.some(a => a.key === 'availability'),
+    tradeAvailability: attention.some(a => a.key === 'availability') ? 'stale' : null,
+    tradeAvailabilitySetAt: null,
+  })
+    ? nextAction(
+        { orders: { length: 0 }, bookings: { length: 0 }, leads: { length: 0 },
+          needs: { jobApplications: 0 }, isTrade: false,
+          tradeAvailability: null, tradeAvailabilitySetAt: null },
+        (activeBusiness ?? {}) as never, '',
+      )
+    : null;
+
+  const editBusiness = () =>
+    router.push({ pathname: '/local-business-register', params: { id: activeBusiness!.id } });
+
   const stopLoyalty = async () => {
     if (!activeBusiness) return;
     try {
@@ -513,6 +584,67 @@ export default function BusinessDashboardScreen() {
           </ScrollView>
         )}
 
+        {/* ── Needs you ──────────────────────────────────────────────────
+             The actual things waiting, and nothing else. A zero is not shown:
+             a row of zeroes teaches you to skim past the row that finally
+             matters. Work items link into Work; they are not owned here. */}
+        {attention.length > 0 && (
+          <View style={styles.attentionCard}>
+            <Text style={styles.groupHeader}>Needs you</Text>
+            {attention.map((a) => (
+              <TouchableOpacity key={a.key} style={styles.attentionRow} activeOpacity={0.85}
+                onPress={() => router.push({ pathname: a.route as never, params: { businessId: activeBusiness.id } })}>
+                <FontAwesome5 name="exclamation-circle" size={14} color="#B4820F" solid />
+                <Text style={styles.attentionText}>{a.label}</Text>
+                <FontAwesome5 name="chevron-right" size={11} color="#B4820F" />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* Nothing waiting is a real state and has to look like one. */}
+        {home && attention.length === 0 && !next && (
+          <View style={styles.calmCard}>
+            <Text style={styles.calmText}>Nothing needs you right now</Text>
+            <Text style={styles.calmSub}>Orders, bookings and leads will appear here as they come in.</Text>
+          </View>
+        )}
+
+        {/* ── Next ───────────────────────────────────────────────────────
+             One thing, and only when nothing is waiting. */}
+        {next && (
+          <TouchableOpacity style={styles.calmCard} activeOpacity={0.85} onPress={editBusiness}>
+            <Text style={styles.groupHeader}>Next</Text>
+            <Text style={styles.calmText}>{next.title}</Text>
+            <Text style={styles.calmSub}>{next.body}</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── This week ──────────────────────────────────────────────────
+             A figure we cannot see is not shown as zero. Revenue is genuinely
+             unknown without the paid tier, and printing £0 to somebody who took
+             £400 would wreck trust in every other number here. */}
+        {home && (
+          <>
+            <Text style={styles.groupHeader}>This week</Text>
+            <View style={styles.weekRow}>
+              {([
+                ['Profile views', home.week.views],
+                ['Contacts', home.week.contacts],
+                ['Followers', home.week.followers],
+                ['Money in', home.week.revenuePence === null ? null : home.week.revenuePence / 100],
+              ] as [string, number | null][]).map(([label, value], i) => (
+                <View key={label} style={styles.weekStat}>
+                  <Text style={styles.weekValue}>
+                    {value === null ? '—' : i === 3 ? `£${value.toFixed(2)}` : value.toLocaleString()}
+                  </Text>
+                  <Text style={styles.weekLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
         <Text style={styles.groupHeader}>At the counter</Text>
 
         {/* ── Counter mode — the screen to leave open on the counter all day.
@@ -577,6 +709,335 @@ export default function BusinessDashboardScreen() {
           </View>
           <FontAwesome5 name="chevron-right" size={11} color={S.color} />
         </TouchableOpacity>
+
+        {/* ── Your business ──────────────────────────────────────── */}
+        <Text style={styles.groupHeader}>Your business</Text>
+
+        {/* Be found — never tiered. The editor, and the listing as folk see it. */}
+        <OutcomeCard outcome={outcomes[0]} accent={S.color} onPress={editBusiness} />
+
+        {/* ── Public profile link ── */}
+        <TouchableOpacity
+          style={styles.viewPublicBtn}
+          onPress={() => router.push({ pathname: '/local-business-detail', params: { id: activeBusiness.id } })}
+          activeOpacity={0.8}
+        >
+          <FontAwesome5 name="eye" size={11} color={S.color} />
+          <Text style={[styles.viewPublicText, { color: S.color }]}>View public profile</Text>
+        </TouchableOpacity>
+
+        {/* Sell things — products and passes. Waiting orders live in NEEDS YOU. */}
+        <OutcomeCard outcome={outcomes[1]} accent={S.color} />
+        {/* ── Products (Shop Shetland) — Premium only ── */}
+        {/* Visible on any plan: services, availability and products may all be
+            prepared before paying — the server allows exactly that. The plan is
+            asked for at the switch and at publish. */}
+        {true && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+                <FontAwesome5 name="shopping-bag" size={13} color={S.color} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Products</Text>
+                <Text style={styles.cardSub}>Sell across OneShetland — 5% per sale, and we promote your shop</Text>
+              </View>
+            </View>
+            <View style={styles.bookActionsRow}>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/business-products', params: { businessId: activeBusiness.id } } as any)}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="shopping-bag" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Products</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/business-orders', params: { businessId: activeBusiness.id } } as any)}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="box-open" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Orders</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/local-book-units', params: { businessId: activeBusiness.id } })}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="ticket-alt" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Passes & packs</Text>
+              </TouchableOpacity>
+
+        {/* Take bookings — four screens stay four screens; this is the way in. */}
+        <OutcomeCard outcome={outcomes[2]} accent={S.color} />
+        {/* ── Bookings — Pro at the switch, and open to set up on any plan ── */}
+        {/* Visible on any plan: services, availability and products may all be
+            prepared before paying — the server allows exactly that. The plan is
+            asked for at the switch and at publish. */}
+        {true && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+                <FontAwesome5 name="calendar-check" size={13} color={S.color} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Bookings</Text>
+                <Text style={styles.cardSub}>
+                  {/* "live for booking" only when it genuinely is: the flag AND
+                      a plan that is still in date. Add-ons stopped existing when
+                      the tier model replaced them. */}
+                  {activeBusiness.accepts_bookings && eff.pro
+                    ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} · live for booking`
+                    : bookServiceCount > 0
+                      ? eff.pro
+                        ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} ready · turn bookings on`
+                        : `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} saved · Pro needed to take bookings`
+                      : 'Manage services, schedule and bookings'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.bookActionsRow}>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/local-book-services', params: { businessId: activeBusiness.id } })}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="concierge-bell" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>
+                  Services {bookServiceCount > 0 ? `(${bookServiceCount})` : ''}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/local-book-schedule', params: { businessId: activeBusiness.id } })}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="clock" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Schedule</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: S.color }]}
+                onPress={() => router.push({ pathname: '/local-book-bookings', params: { businessId: activeBusiness.id } })}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="list" size={11} color={S.color} solid />
+                <Text style={[styles.bookActionText, { color: S.color }]}>Bookings</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Run events — free, always. */}
+        <OutcomeCard outcome={outcomes[3]} accent={S.color} />
+        {/* ── Events — shown when events add-on is enabled ── */}
+        {(
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.cardIcon, { backgroundColor: SECTIONS.events.color + '18' }]}>
+                <FontAwesome5 name="calendar-alt" size={13} color={SECTIONS.events.color} solid />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Events</Text>
+                <Text style={styles.cardSub}>
+                  {bizEvents.length > 0
+                    ? `${bizEvents.length} upcoming event${bizEvents.length !== 1 ? 's' : ''}`
+                    : 'Create and manage events, sell tickets'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.cardIconBtn, { backgroundColor: SECTIONS.events.color }]}
+                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
+              >
+                <FontAwesome5 name="plus" size={11} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Upcoming events list */}
+            {bizEvents.length > 0 && (
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                {bizEvents.map(ev => {
+                  const d = new Date(ev.starts_at);
+                  const dateStr = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+                  const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <View key={ev.id} style={styles.evRow}>
+                      <View style={[styles.evDatePill, { backgroundColor: SECTIONS.events.color + '18' }]}>
+                        <Text style={[styles.evDateText, { color: SECTIONS.events.color }]}>{dateStr}</Text>
+                        <Text style={[styles.evTimeText, { color: SECTIONS.events.color }]}>{timeStr}</Text>
+                      </View>
+                      <Text style={styles.evTitle} numberOfLines={1}>{ev.title}</Text>
+                      <View style={styles.evActions}>
+                        <TouchableOpacity
+                          style={[styles.evBtn, { backgroundColor: SECTIONS.events.color + '18' }]}
+                          onPress={() => router.push({ pathname: '/event-manage', params: { id: ev.id } })}
+                          hitSlop={8}
+                        >
+                          <FontAwesome5 name="cog" size={11} color={SECTIONS.events.color} />
+                        </TouchableOpacity>
+                        {ev.has_tickets && (
+                          <TouchableOpacity
+                            style={[styles.evBtn, { backgroundColor: SECTIONS.events.color }]}
+                            onPress={() => router.push({ pathname: '/event-scanner', params: { id: ev.id } })}
+                            hitSlop={8}
+                          >
+                            <FontAwesome5 name="qrcode" size={11} color="#fff" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            <View style={styles.bookActionsRow}>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
+                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="plus" size={11} color={SECTIONS.events.color} />
+                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>New event</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
+                onPress={() => router.push('/(tabs)/whats-on' as any)}
+                activeOpacity={0.85}
+              >
+                <FontAwesome5 name="calendar" size={11} color={SECTIONS.events.color} />
+                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>What's On</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Keep customers coming back. */}
+        <OutcomeCard outcome={outcomes[4]} accent={S.color} />
+        {/* ── Loyalty programme ──────────────────────────────────────────
+            Gate before setup: the server refuses the insert without Pro, so
+            below it the card explains rather than vanishing. An existing
+            programme stays visible and stoppable, because the server permits
+            the reducing direction without a plan and nobody should be stuck
+            running something they cannot switch off. */}
+        {true && (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+              <FontAwesome5 name="stamp" size={13} color={S.color} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Loyalty programme</Text>
+              <Text style={styles.cardSub}>
+                {program
+                  ? stamps
+                    ? `${program.stamps_required} stamps · ${program.stamp_reward}${eff.pro ? '' : ' · Pro needed to change it'}`
+                    : `${program.points_per_pound} points per £1${eff.pro ? '' : ' · Pro needed to change it'}`
+                  : eff.pro
+                    ? 'Not set up yet'
+                    : 'Part of Pro — a stamp card customers collect on their phone'}
+              </Text>
+            </View>
+          </View>
+
+          {eff.pro && (
+            <TouchableOpacity
+              style={[styles.upgradeBtn, { backgroundColor: S.color, marginTop: 12 }]}
+              onPress={() => setShowLoyaltyModal(true)}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name={program ? 'pen' : 'plus'} size={11} color="#fff" solid />
+              <Text style={styles.upgradeBtnText}>
+                {program ? 'Edit programme' : 'Set up loyalty programme'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Reduction only, and deliberately never gated: the server allows
+              stopping without Pro, and an owner whose plan lapsed must be able
+              to switch off a programme that is still running. Customer stamps,
+              points and history are untouched by it. */}
+          {program?.is_active && (
+            <TouchableOpacity style={styles.reduceBtn} onPress={stopLoyalty} activeOpacity={0.85}>
+              <Text style={styles.reduceBtnText}>Stop programme</Text>
+            </TouchableOpacity>
+          )}
+
+          {!eff.pro && !program && (
+            <TouchableOpacity style={styles.reduceBtn} onPress={openBillingPortal} activeOpacity={0.85}>
+              <Text style={styles.reduceBtnText}>See plans</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        )}
+
+        {/* ── Offers ─────────────────────────────────────────────────────
+            Gate before setup, same as Loyalty. Existing offers stay listed and
+            endable after a downgrade — ending one is a reduction the server
+            allows without a plan. */}
+        {true && (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
+              <FontAwesome5 name="tags" size={13} color={S.color} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Offers</Text>
+              <Text style={styles.cardSub}>
+                {offers.length > 0
+                  ? `${offers.filter(o => o.is_active).length} active${eff.pro ? '' : ' · Pro needed to add more'}`
+                  : eff.pro
+                    ? 'No offers yet'
+                    : 'Part of Pro — time-limited deals across OneShetland'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.cardIconBtn, { backgroundColor: S.color }]}
+              onPress={() => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness.id } })}
+            >
+              <FontAwesome5 name="plus" size={11} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {offers.length > 0 && (
+            <View style={{ gap: 8, marginTop: 12 }}>
+              {offers.map(o => (
+                <View key={o.id} style={[styles.offerLine, !o.is_active && { opacity: 0.5 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.offerLineTitle}>{o.title}</Text>
+                    <Text style={styles.offerLineMeta}>
+                      {formatOfferDiscount(o)} · {o.redemption_count} claim{o.redemption_count !== 1 ? 's' : ''}
+                      {o.is_active ? ` · ${daysRemaining(o.valid_until)}d left` : ' · ended'}
+                    </Text>
+                  </View>
+                  {o.is_active && (
+                    <TouchableOpacity onPress={() => {
+                      brandedAlert({
+                        title: 'End this offer?',
+                        message: 'It will no longer be visible to customers.',
+                        actions: [
+                          { label: 'Cancel', style: 'cancel' },
+                          { label: 'End', style: 'destructive', onPress: async () => {
+                            await deactivateOffer(o.id);
+                            loadAll(activeBusiness);
+                          }},
+                        ],
+                      });
+                    }}>
+                      <FontAwesome5 name="times" size={12} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+        )}
 
         <Text style={styles.groupHeader}>Money</Text>
 
@@ -892,358 +1353,8 @@ export default function BusinessDashboardScreen() {
           </View>
         </TouchableOpacity>
 
-        <Text style={styles.groupHeader}>Loyalty &amp; offers</Text>
 
-        {/* ── Loyalty programme ──────────────────────────────────────────
-            Gate before setup: the server refuses the insert without Pro, so
-            below it the card explains rather than vanishing. An existing
-            programme stays visible and stoppable, because the server permits
-            the reducing direction without a plan and nobody should be stuck
-            running something they cannot switch off. */}
-        {true && (
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5 name="stamp" size={13} color={S.color} solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Loyalty programme</Text>
-              <Text style={styles.cardSub}>
-                {program
-                  ? stamps
-                    ? `${program.stamps_required} stamps · ${program.stamp_reward}${eff.pro ? '' : ' · Pro needed to change it'}`
-                    : `${program.points_per_pound} points per £1${eff.pro ? '' : ' · Pro needed to change it'}`
-                  : eff.pro
-                    ? 'Not set up yet'
-                    : 'Part of Pro — a stamp card customers collect on their phone'}
-              </Text>
-            </View>
-          </View>
-
-          {eff.pro && (
-            <TouchableOpacity
-              style={[styles.upgradeBtn, { backgroundColor: S.color, marginTop: 12 }]}
-              onPress={() => setShowLoyaltyModal(true)}
-              activeOpacity={0.85}
-            >
-              <FontAwesome5 name={program ? 'pen' : 'plus'} size={11} color="#fff" solid />
-              <Text style={styles.upgradeBtnText}>
-                {program ? 'Edit programme' : 'Set up loyalty programme'}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Reduction only, and deliberately never gated: the server allows
-              stopping without Pro, and an owner whose plan lapsed must be able
-              to switch off a programme that is still running. Customer stamps,
-              points and history are untouched by it. */}
-          {program?.is_active && (
-            <TouchableOpacity style={styles.reduceBtn} onPress={stopLoyalty} activeOpacity={0.85}>
-              <Text style={styles.reduceBtnText}>Stop programme</Text>
-            </TouchableOpacity>
-          )}
-
-          {!eff.pro && !program && (
-            <TouchableOpacity style={styles.reduceBtn} onPress={openBillingPortal} activeOpacity={0.85}>
-              <Text style={styles.reduceBtnText}>See plans</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        )}
-
-        {/* ── Offers ─────────────────────────────────────────────────────
-            Gate before setup, same as Loyalty. Existing offers stay listed and
-            endable after a downgrade — ending one is a reduction the server
-            allows without a plan. */}
-        {true && (
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5 name="tags" size={13} color={S.color} solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Offers</Text>
-              <Text style={styles.cardSub}>
-                {offers.length > 0
-                  ? `${offers.filter(o => o.is_active).length} active${eff.pro ? '' : ' · Pro needed to add more'}`
-                  : eff.pro
-                    ? 'No offers yet'
-                    : 'Part of Pro — time-limited deals across OneShetland'}
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.cardIconBtn, { backgroundColor: S.color }]}
-              onPress={() => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness.id } })}
-            >
-              <FontAwesome5 name="plus" size={11} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          {offers.length > 0 && (
-            <View style={{ gap: 8, marginTop: 12 }}>
-              {offers.map(o => (
-                <View key={o.id} style={[styles.offerLine, !o.is_active && { opacity: 0.5 }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.offerLineTitle}>{o.title}</Text>
-                    <Text style={styles.offerLineMeta}>
-                      {formatOfferDiscount(o)} · {o.redemption_count} claim{o.redemption_count !== 1 ? 's' : ''}
-                      {o.is_active ? ` · ${daysRemaining(o.valid_until)}d left` : ' · ended'}
-                    </Text>
-                  </View>
-                  {o.is_active && (
-                    <TouchableOpacity onPress={() => {
-                      brandedAlert({
-                        title: 'End this offer?',
-                        message: 'It will no longer be visible to customers.',
-                        actions: [
-                          { label: 'Cancel', style: 'cancel' },
-                          { label: 'End', style: 'destructive', onPress: async () => {
-                            await deactivateOffer(o.id);
-                            loadAll(activeBusiness);
-                          }},
-                        ],
-                      });
-                    }}>
-                      <FontAwesome5 name="times" size={12} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-        )}
-
-        <Text style={styles.groupHeader}>Sell &amp; list</Text>
-
-        {/* ── Bookings — Premium only; hidden otherwise (Plan card handles awareness) ── */}
-        {/* Visible on any plan: services, availability and products may all be
-            prepared before paying — the server allows exactly that. The plan is
-            asked for at the switch and at publish. */}
-        {true && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-                <FontAwesome5 name="calendar-check" size={13} color={S.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Bookings</Text>
-                <Text style={styles.cardSub}>
-                  {/* "live for booking" only when it genuinely is: the flag AND
-                      a plan that is still in date. Add-ons stopped existing when
-                      the tier model replaced them. */}
-                  {activeBusiness.accepts_bookings && eff.pro
-                    ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} · live for booking`
-                    : bookServiceCount > 0
-                      ? eff.pro
-                        ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} ready · turn bookings on`
-                        : `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} saved · Pro needed to take bookings`
-                      : 'Manage services, schedule and bookings'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.bookActionsRow}>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-services', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="concierge-bell" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>
-                  Services {bookServiceCount > 0 ? `(${bookServiceCount})` : ''}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-schedule', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="clock" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Schedule</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-bookings', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="list" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Bookings</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-units', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="ticket-alt" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Passes & packs</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* ── Products (Shop Shetland) — Premium only ── */}
-        {/* Visible on any plan: services, availability and products may all be
-            prepared before paying — the server allows exactly that. The plan is
-            asked for at the switch and at publish. */}
-        {true && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-                <FontAwesome5 name="shopping-bag" size={13} color={S.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Products</Text>
-                <Text style={styles.cardSub}>Sell across OneShetland — 5% per sale, and we promote your shop</Text>
-              </View>
-            </View>
-            <View style={styles.bookActionsRow}>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/business-products', params: { businessId: activeBusiness.id } } as any)}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="shopping-bag" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Products</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/business-orders', params: { businessId: activeBusiness.id } } as any)}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="box-open" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Orders</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* ── Jobs — shown when the (free) jobs add-on is enabled ── */}
-        {(
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push({ pathname: '/business-jobs', params: { businessId: activeBusiness.id } } as any)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: SECTIONS.jobs.color + '18' }]}>
-                <FontAwesome5 name="briefcase" size={13} color={SECTIONS.jobs.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Jobs</Text>
-                <Text style={styles.cardSub}>Post roles, take applications, manage hiring — free</Text>
-              </View>
-              <View style={[styles.cardIconBtn, { backgroundColor: SECTIONS.jobs.color }]}>
-                <FontAwesome5 name="chevron-right" size={11} color="#fff" />
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Job leads — folk looking for a tradesperson.
-             Deliberately NOT gated on a tier or an add-on. A free listing that
-             never rings is why nobody claims theirs, and the trades most worth
-             reaching are the ones nobody has heard of. ── */}
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push({ pathname: '/business-leads', params: { businessId: activeBusiness.id } } as any)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: '#2a8b5c18' }]}>
-              <FontAwesome5 name="tools" size={13} color="#2a8b5c" solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Job leads</Text>
-              <Text style={styles.cardSub}>Folk needing a tradesperson — say what you cover and when</Text>
-            </View>
-            <View style={[styles.cardIconBtn, { backgroundColor: '#2a8b5c' }]}>
-              <FontAwesome5 name="chevron-right" size={11} color="#fff" />
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* ── Events — shown when events add-on is enabled ── */}
-        {(
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: SECTIONS.events.color + '18' }]}>
-                <FontAwesome5 name="calendar-alt" size={13} color={SECTIONS.events.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Events</Text>
-                <Text style={styles.cardSub}>
-                  {bizEvents.length > 0
-                    ? `${bizEvents.length} upcoming event${bizEvents.length !== 1 ? 's' : ''}`
-                    : 'Create and manage events, sell tickets'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.cardIconBtn, { backgroundColor: SECTIONS.events.color }]}
-                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
-              >
-                <FontAwesome5 name="plus" size={11} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Upcoming events list */}
-            {bizEvents.length > 0 && (
-              <View style={{ gap: 8, marginBottom: 12 }}>
-                {bizEvents.map(ev => {
-                  const d = new Date(ev.starts_at);
-                  const dateStr = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-                  const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                  return (
-                    <View key={ev.id} style={styles.evRow}>
-                      <View style={[styles.evDatePill, { backgroundColor: SECTIONS.events.color + '18' }]}>
-                        <Text style={[styles.evDateText, { color: SECTIONS.events.color }]}>{dateStr}</Text>
-                        <Text style={[styles.evTimeText, { color: SECTIONS.events.color }]}>{timeStr}</Text>
-                      </View>
-                      <Text style={styles.evTitle} numberOfLines={1}>{ev.title}</Text>
-                      <View style={styles.evActions}>
-                        <TouchableOpacity
-                          style={[styles.evBtn, { backgroundColor: SECTIONS.events.color + '18' }]}
-                          onPress={() => router.push({ pathname: '/event-manage', params: { id: ev.id } })}
-                          hitSlop={8}
-                        >
-                          <FontAwesome5 name="cog" size={11} color={SECTIONS.events.color} />
-                        </TouchableOpacity>
-                        {ev.has_tickets && (
-                          <TouchableOpacity
-                            style={[styles.evBtn, { backgroundColor: SECTIONS.events.color }]}
-                            onPress={() => router.push({ pathname: '/event-scanner', params: { id: ev.id } })}
-                            hitSlop={8}
-                          >
-                            <FontAwesome5 name="qrcode" size={11} color="#fff" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-
-            <View style={styles.bookActionsRow}>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
-                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="plus" size={11} color={SECTIONS.events.color} />
-                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>New event</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
-                onPress={() => router.push('/(tabs)/whats-on' as any)}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="calendar" size={11} color={SECTIONS.events.color} />
-                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>What's On</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+        <Text style={styles.groupHeader}>Grow</Text>
 
         {/* ── Analytics ── */}
         <TouchableOpacity
@@ -1260,81 +1371,6 @@ export default function BusinessDashboardScreen() {
           </View>
           <FontAwesome5 name="chevron-right" size={11} color={S.color} />
         </TouchableOpacity>
-
-        {/* ── Schedule picker modal ── */}
-        {/* ── Schedule presets modal ── */}
-        {showDatePicker && (
-          <Sheet
-            visible={showDatePicker}
-            onClose={() => { setShowDatePicker(false); setShowCustomPicker(false); }}
-          >
-                  <Text style={{ fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md }}>
-                    {showCustomPicker ? 'Pick a time' : 'Schedule alert'}
-                  </Text>
-
-                  {!showCustomPicker ? (
-                    <>
-                      {[
-                        { label: 'In 1 hour',     getDate: () => new Date(Date.now() + 3600000) },
-                        { label: 'In 2 hours',    getDate: () => new Date(Date.now() + 7200000) },
-                        { label: 'Tomorrow 9am',  getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; } },
-                        { label: 'Tomorrow noon', getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0); return d; } },
-                      ].map((p) => (
-                        <TouchableOpacity
-                          key={p.label}
-                          style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}
-                          onPress={() => { setScheduledFor(p.getDate()); setShowDatePicker(false); }}
-                        >
-                          <Text style={{ fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '600' }}>{p.label}</Text>
-                          <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 }}>
-                            {p.getDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-
-                      <TouchableOpacity
-                        style={{ paddingVertical: 14 }}
-                        onPress={() => {
-                          const d = new Date();
-                          d.setDate(d.getDate() + 1);
-                          d.setHours(9, 0, 0, 0);
-                          setCustomPickerDate(d);
-                          setShowCustomPicker(true);
-                        }}
-                      >
-                        <Text style={{ fontSize: fontSize.sm, color: colors.accent, fontWeight: '700' }}>Pick a custom time →</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <DateTimePicker
-                        value={customPickerDate}
-                        mode="datetime"
-                        display="spinner"
-                        minimumDate={new Date()}
-                        onChange={(_e, date) => { if (date) setCustomPickerDate(date); }}
-                        style={{ height: 180 }}
-                      />
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: spacing.md }}>
-                        <TouchableOpacity
-                          style={{ flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}
-                          onPress={() => setShowCustomPicker(false)}
-                        >
-                          <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.textMuted }}>Back</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={{ flex: 2, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.navy, alignItems: 'center' }}
-                          onPress={() => { setScheduledFor(customPickerDate); setShowDatePicker(false); setShowCustomPicker(false); }}
-                        >
-                          <Text style={{ fontSize: fontSize.sm, fontWeight: '800', color: '#fff' }}>
-                            Confirm — {customPickerDate.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </>
-                  )}
-          </Sheet>
-        )}
 
         {/* ── Urgent Alerts ── */}
         <AlertsCard
@@ -1419,6 +1455,84 @@ export default function BusinessDashboardScreen() {
           }}
         />
 
+
+
+        {/* ── Schedule picker modal ── */}
+        {/* ── Schedule presets modal ── */}
+        {showDatePicker && (
+          <Sheet
+            visible={showDatePicker}
+            onClose={() => { setShowDatePicker(false); setShowCustomPicker(false); }}
+          >
+                  <Text style={{ fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md }}>
+                    {showCustomPicker ? 'Pick a time' : 'Schedule alert'}
+                  </Text>
+
+                  {!showCustomPicker ? (
+                    <>
+                      {[
+                        { label: 'In 1 hour',     getDate: () => new Date(Date.now() + 3600000) },
+                        { label: 'In 2 hours',    getDate: () => new Date(Date.now() + 7200000) },
+                        { label: 'Tomorrow 9am',  getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; } },
+                        { label: 'Tomorrow noon', getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0); return d; } },
+                      ].map((p) => (
+                        <TouchableOpacity
+                          key={p.label}
+                          style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                          onPress={() => { setScheduledFor(p.getDate()); setShowDatePicker(false); }}
+                        >
+                          <Text style={{ fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '600' }}>{p.label}</Text>
+                          <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 }}>
+                            {p.getDate().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+
+                      <TouchableOpacity
+                        style={{ paddingVertical: 14 }}
+                        onPress={() => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + 1);
+                          d.setHours(9, 0, 0, 0);
+                          setCustomPickerDate(d);
+                          setShowCustomPicker(true);
+                        }}
+                      >
+                        <Text style={{ fontSize: fontSize.sm, color: colors.accent, fontWeight: '700' }}>Pick a custom time →</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <DateTimePicker
+                        value={customPickerDate}
+                        mode="datetime"
+                        display="spinner"
+                        minimumDate={new Date()}
+                        onChange={(_e, date) => { if (date) setCustomPickerDate(date); }}
+                        style={{ height: 180 }}
+                      />
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: spacing.md }}>
+                        <TouchableOpacity
+                          style={{ flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}
+                          onPress={() => setShowCustomPicker(false)}
+                        >
+                          <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.textMuted }}>Back</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{ flex: 2, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.navy, alignItems: 'center' }}
+                          onPress={() => { setScheduledFor(customPickerDate); setShowDatePicker(false); setShowCustomPicker(false); }}
+                        >
+                          <Text style={{ fontSize: fontSize.sm, fontWeight: '800', color: '#fff' }}>
+                            Confirm — {customPickerDate.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+          </Sheet>
+        )}
+
+
         {/* ── Backfill orphaned shifts banner ── */}
         {orphanedShiftCount > 0 && (
           <TouchableOpacity
@@ -1444,15 +1558,6 @@ export default function BusinessDashboardScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Public profile link ── */}
-        <TouchableOpacity
-          style={styles.viewPublicBtn}
-          onPress={() => router.push({ pathname: '/local-business-detail', params: { id: activeBusiness.id } })}
-          activeOpacity={0.8}
-        >
-          <FontAwesome5 name="eye" size={11} color={S.color} />
-          <Text style={[styles.viewPublicText, { color: S.color }]}>View public profile</Text>
-        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -2275,6 +2380,20 @@ const styles = StyleSheet.create({
 
   // Merged-card sub-sections
   subSectionLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  outcomeRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4, marginTop: 6 },
+  outcomeDot:      { width: 8, height: 8, borderRadius: 4 },
+  outcomeTitle:    { fontSize: 15, fontWeight: '800', color: '#12212E' },
+  outcomeStatus:   { fontSize: 13, color: '#5B6B7A', marginTop: 1 },
+  attentionCard:   { backgroundColor: '#FFF7E6', borderColor: '#F5D58A', borderWidth: 1, borderRadius: 14, padding: 14, gap: 8 },
+  attentionRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  attentionText:   { flex: 1, fontSize: 14, fontWeight: '700', color: '#7A5A12' },
+  calmCard:        { backgroundColor: '#FFFFFF', borderColor: '#E4E9EF', borderWidth: 1, borderRadius: 14, padding: 14 },
+  calmText:        { fontSize: 14, fontWeight: '700', color: '#12212E' },
+  calmSub:         { fontSize: 13, color: '#5B6B7A', marginTop: 2 },
+  weekRow:         { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  weekStat:        { flexGrow: 1, minWidth: '45%', backgroundColor: '#FFFFFF', borderColor: '#E4E9EF', borderWidth: 1, borderRadius: 14, padding: 12 },
+  weekValue:       { fontSize: 20, fontWeight: '900', color: '#12212E' },
+  weekLabel:       { fontSize: 12, color: '#5B6B7A', marginTop: 2 },
   reduceBtn:       { marginTop: 10, borderWidth: 1, borderColor: '#D6DCE3', borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
   reduceBtnText:   { fontSize: 13, fontWeight: '700', color: '#5B6B7A' },
   groupHeader:     { fontSize: 12, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginTop: 18, marginBottom: 6 },

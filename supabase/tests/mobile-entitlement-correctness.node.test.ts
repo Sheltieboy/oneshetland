@@ -251,24 +251,29 @@ describe('plan facts and access claims are different things', () => {
 /* ── 11 & 12. Scope ───────────────────────────────────────────────────────── */
 
 describe('nothing outside correctness moved', () => {
-  test('Jobs and Job leads are still reachable', () => {
-    for (const r of ['/business-jobs', '/business-leads']) {
-      assert.match(dash(), new RegExp(`'${r}'`), `${r} must stay for now`);
+  // These three pinned Phase 3B's deliberate NOT-YETs: Work still listed, the
+  // dashboard not regrouped, no spine. Phase 3C is the yet. What they guard now
+  // is that none of it cost anything — the detail lives in
+  // mobile-business-home.node.test.ts.
+  test('Work functionality was not lost when it left the Business list', () => {
+    for (const f of ['app/business-jobs.tsx', 'app/business-leads.tsx']) {
+      assert.ok(read(f).length > 0, `${f} must still exist`);
     }
-    assert.match(dash(), /orphanedShiftCount/, 'the shift backfill prompt stays too');
+    assert.match(code('lib/business-home.ts'), /route: '\/business-jobs'/,
+      'Work attention still deep-links into Work');
+    assert.match(dash(), /orphanedShiftCount/, 'the shift backfill prompt stays');
   });
 
-  test('the dashboard was not regrouped', () => {
-    for (const g of ['At the counter', 'Money', 'Loyalty &amp; offers', 'Sell &amp; list']) {
-      assert.ok(read(DASH).includes(g), `group header changed: ${g}`);
+  test('the counter block and Money survived the regroup', () => {
+    for (const g of ['At the counter', 'Money']) {
+      assert.ok(read(DASH).includes(g), `group header lost: ${g}`);
     }
   });
 
-  test('NEEDS YOU / NEXT / THIS WEEK were not started', () => {
+  test('the spine exists, and Next still defers to what is waiting', () => {
     const d = dash();
-    for (const later of ['NEEDS YOU', 'nextAction', 'businessOutcomes', 'beFound']) {
-      assert.ok(!d.includes(later), `${later} belongs to the next slice`);
-    }
+    assert.match(d, /const next = home && !hasOperationalAttention\(/);
+    assert.match(d, /\{attention\.length > 0 && \(/);
   });
 
   test('no web source was changed', () => {

@@ -348,15 +348,20 @@ describe('the rest of Business Home is where it was', () => {
     }
   });
 
-  test('34. Be Found is web-only — no mobile source consumes it', () => {
-    // git grep exits 1 when it finds nothing, which is the passing case here.
-    let hits = '';
-    try {
-      hits = execFileSync('git',
-        ['grep', '-l', '-E', 'be-found|business-next-action', '--', 'app', 'lib', 'components'],
-        { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    } catch { hits = ''; }
-    assert.equal(hits, '', 'mobile convergence is a later phase');
+  // Phase 1 pinned this as web-only, because mobile convergence was a later
+  // phase. Phase 3C is that phase: mobile now has copies of these helpers. What
+  // matters is that it is still ONE rule — the copies are pinned byte-for-byte
+  // against these originals in mobile-business-home.node.test.ts — and that
+  // neither side re-derives it.
+  test('34. mobile uses copies of these rules, and never its own', () => {
+    for (const f of ['lib/be-found.ts', 'lib/business-next-action.ts']) {
+      const mobile = readFileSync(join(REPO_ROOT, f), 'utf8');
+      assert.match(mobile, /Copied from oneshetland-web/,
+        `${f} must declare itself a copy, not an independent implementation`);
+    }
+    // The pin that actually holds them together.
+    const pinned = readFileSync(join(REPO_ROOT, 'supabase/tests/mobile-business-home.node.test.ts'), 'utf8');
+    assert.match(pinned, /matches the web original/);
   });
 
   test('35. no entitlement boundary changed', () => {
