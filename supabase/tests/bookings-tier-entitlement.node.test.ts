@@ -397,9 +397,15 @@ describe('deployed shape and composition', () => {
     assert.equal(outcome(rows, 'service without terms'), 'refused');
   });
 
-  test('the existing web tier redirect is untouched — UX changes later', () => {
+  test('the web asks the effective predicate, and no longer redirects on entry', () => {
+    // Phase 2C replaced the blind redirect this used to pin. The web now opens
+    // the manager and asks the deployed predicate, so the thing worth guarding
+    // is that presentation follows EFFECTIVE entitlement and never the stored
+    // column — the server enforcement below is unchanged either way.
     const page = readFileSync(join(WEB, 'app/business/[id]/manage/bookings/page.tsx'), 'utf8');
-    assert.match(page, /if \(!tierUnlocks\(business\.subscription_tier, "bookings"\)\) redirect/);
+    assert.match(page, /getEffectiveTier\(business\.id\)/);
+    assert.doesNotMatch(page, /tierUnlocks|subscription_tier/);
+    assert.doesNotMatch(page, /redirect\(`\/business\/\$\{business\.id\}\/manage\/billing`\)/);
   });
 
   test('the enforced set is exactly the six approved capabilities', () => {

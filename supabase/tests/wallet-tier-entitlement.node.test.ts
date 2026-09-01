@@ -381,8 +381,12 @@ describe('no way round, nothing else disturbed', () => {
   });
 
   test('the ordinary Pro management gates are unchanged', () => {
-    assert.match(readWeb('app/business/[id]/manage/wallet/page.tsx'),
-      /tierUnlocks\(business\.subscription_tier, "wallet"\)/);
+    // Phase 2C replaced the blind redirect this used to pin. The web now opens
+    // the manager and asks the deployed predicate, so the thing worth guarding
+    // is that presentation follows EFFECTIVE entitlement and never the stored
+    // column — the server enforcement below is unchanged either way.
+    assert.match(readWeb('app/business/[id]/manage/wallet/page.tsx'), /getEffectiveTier\(business\.id\)/);
+    assert.doesNotMatch(readWeb('app/business/[id]/manage/wallet/page.tsx'), /tierUnlocks|subscription_tier/);
   });
 });
 

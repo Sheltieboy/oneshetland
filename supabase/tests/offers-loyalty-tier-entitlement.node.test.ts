@@ -563,8 +563,17 @@ describe('the rest of the platform is where it was', () => {
   });
 
   test('the existing management tier gates are untouched', () => {
-    assert.match(readWeb('app/business/[id]/manage/offers/page.tsx'), /tierUnlocks\(/);
-    assert.match(readWeb('app/business/[id]/manage/loyalty/page.tsx'), /tierUnlocks\(/);
+    // Phase 2C replaced the blind redirect this used to pin. The web now opens
+    // the manager and asks the deployed predicate, so the thing worth guarding
+    // is that presentation follows EFFECTIVE entitlement and never the stored
+    // column — the server enforcement below is unchanged either way.
+    for (const n of ['offers', 'loyalty']) {
+      const page = readWeb(`app/business/[id]/manage/${n}/page.tsx`);
+      assert.match(page, /getEffectiveTier\(business\.id\)/, n);
+      assert.doesNotMatch(page, /tierUnlocks|subscription_tier/, n);
+      // Gate-before-setup still gates — it explains now instead of redirecting.
+      assert.match(page, /CapabilityPaywall/, n);
+    }
   });
 
   test('both canonical tier maps still say Pro, and still agree', () => {

@@ -364,7 +364,12 @@ describe('no way round, and nothing else disturbed', () => {
   });
 
   test('the existing Premium navigation gate is untouched', () => {
+    // Phase 2C replaced the blind redirect this used to pin. The web now opens
+    // the manager and asks the deployed predicate, so the thing worth guarding
+    // is that presentation follows EFFECTIVE entitlement and never the stored
+    // column — the server enforcement below is unchanged either way.
     const page = readFileSync(join(WEB, 'app/business/[id]/manage/passes/page.tsx'), 'utf8');
-    assert.match(page, /tierUnlocks\(business\.subscription_tier, "passes"\)/);
+    assert.match(page, /getEffectiveTier\(business\.id\)/);
+    assert.doesNotMatch(page, /tierUnlocks|subscription_tier/);
   });
 });

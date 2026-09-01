@@ -322,10 +322,17 @@ describe('no way round, and nothing else disturbed', () => {
   });
 
   test('the existing Premium navigation gates are untouched', () => {
+    // Phase 2C replaced the blind redirect this used to pin. The web now opens
+    // the manager and asks the deployed predicate, so the thing worth guarding
+    // is that presentation follows EFFECTIVE entitlement and never the stored
+    // column — the server enforcement below is unchanged either way.
     const page = readFileSync(join(WEB, 'app/business/[id]/manage/products/page.tsx'), 'utf8');
-    assert.match(page, /if \(!tierUnlocks\(business\.subscription_tier, "products"\)\) redirect/);
+    assert.match(page, /getEffectiveTier\(business\.id\)/);
+    assert.doesNotMatch(page, /tierUnlocks|subscription_tier/);
     const mgr = readFileSync(join(WEB, 'components/business/ProductsManager.tsx'), 'utf8');
-    assert.match(mgr, /is_active: true/, 'the create default is deliberately unchanged in this slice');
+    // The create default DID change, and had to: the guard's draft carve-out is
+    // useless while the client publishes on save.
+    assert.match(mgr, /is_active: canPublish/);
     for (const notYet of ['Draft', 'Publish', 'Preview']) {
       assert.ok(!new RegExp(`>\\s*${notYet}`).test(mgr), `the draft UX is a later slice: ${notYet}`);
     }
