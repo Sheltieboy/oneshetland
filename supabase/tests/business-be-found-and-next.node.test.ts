@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 import { beFound, hasValidPin } from '../../../oneshetland-web/lib/be-found.ts';
 import { nextAction, hasOperationalAttention } from '../../../oneshetland-web/lib/business-next-action.ts';
+import { pinPosition, mapCentre, mapZoom, SHETLAND } from '../../../oneshetland-web/lib/map-pin.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEB = join(REPO_ROOT, '..', 'oneshetland-web');
@@ -390,5 +391,75 @@ describe('the rest of Business Home is where it was', () => {
     for (const p of ['lib/business-capabilities.ts', 'lib/business-intent.ts']) {
       assert.equal(existsSync(join(WEB, p)), false, `${p} belongs to a later phase`);
     }
+  });
+});
+
+/* ── 5. The pin only exists once somebody puts it somewhere ───────────────── */
+
+describe('an unset pin is not a pin in Lerwick', () => {
+  // The defect this fixes: the picker built a marker unconditionally and fell
+  // back to the default centre for its position, so a business with no saved
+  // coordinates opened with a red marker sitting on Lerwick. The component
+  // knew there was no pin — the helper text and the missing "Remove the pin"
+  // both said so — but the map claimed otherwise, which is the half an owner
+  // actually looks at.
+  const src = readWeb('components/business/MapPinPicker.tsx');
+
+  test('1. no saved coordinates means no marker', () => {
+    assert.equal(pinPosition(null, null), null);
+    assert.equal(pinPosition(undefined, undefined), null);
+  });
+
+  test('2. no saved coordinates still opens the map somewhere sensible', () => {
+    assert.deepEqual(mapCentre(null, null), SHETLAND);
+    assert.equal(mapZoom(null, null), 12, 'wide, because it is an invitation to choose');
+    // Centre and marker are separate answers — that is the whole fix.
+    assert.notEqual(mapCentre(null, null), pinPosition(null, null));
+  });
+
+  test('3. the first tap is what creates the marker', () => {
+    assert.deepEqual(pinPosition(60.2, -1.2), { lat: 60.2, lng: -1.2 });
+    // The marker is built inside show(), which the map click handler reaches
+    // through place() — never at map construction.
+    const setup = src.slice(src.indexOf('new g.maps.Map('), src.indexOf('setState("ready")'));
+    const markerLine = setup.indexOf('new g.maps.Marker(');
+    assert.ok(markerLine > -1, 'the marker must still be creatable');
+    assert.ok(setup.slice(0, markerLine).includes('const show ='),
+      'the marker may only be created inside show()');
+    assert.match(setup, /const saved = pinPosition\(lat, lng\);\s*\n\s*if \(saved\) show\(saved\);/,
+      'on load a marker appears only when there genuinely is a saved pin');
+  });
+
+  test('4. valid saved coordinates put the marker there immediately', () => {
+    assert.deepEqual(pinPosition(60.1546, -1.1494), SHETLAND);
+    assert.deepEqual(mapCentre(60.9, -1.9), { lat: 60.9, lng: -1.9 });
+    assert.equal(mapZoom(60.9, -1.9), 16, 'close in on a place somebody has named');
+  });
+
+  test('5. removing the pin clears the selection and takes the marker off the map', () => {
+    assert.match(src, /onChange\(null, null\)/, 'the parent must be told there is no pin');
+    assert.match(src, /markerRef\.current\.setMap\(null\)/,
+      'setPosition alone would leave the marker sitting there');
+    assert.match(src, /markerRef\.current = null/, 'and the ref must not keep a dead marker');
+    assert.equal(pinPosition(null, null), null);
+  });
+
+  test('6. (0,0) and half a pair are still not pins', () => {
+    for (const [a, b] of [[0, 0], [60.1, null], [null, -1.1], [NaN, -1.1], [91, 0], [60, 181]] as const) {
+      assert.equal(pinPosition(a as number, b as number), null, `${a},${b}`);
+      assert.deepEqual(mapCentre(a as number, b as number), SHETLAND);
+    }
+  });
+
+  test('the component asks map-pin for these answers rather than deciding again', () => {
+    assert.match(src, /from "@\/lib\/map-pin"/);
+    assert.doesNotMatch(src.replace(/\/\*[\s\S]*?\*\//g, ''), /const SHETLAND =/,
+      'the default centre lives in one place now');
+  });
+
+  test('the coordinate fallback survives', () => {
+    assert.match(src, /state === "unavailable"/);
+    assert.match(src, /Latitude/);
+    assert.match(src, /Longitude/);
   });
 });
