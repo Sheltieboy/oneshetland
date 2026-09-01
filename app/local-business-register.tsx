@@ -34,8 +34,7 @@ import { PlannerContextEditor } from '@/components/business/PlannerContextEditor
 import {
   EMPTY_PLANNER_CONTEXT, hasPlannerContext, type PlannerContext,
 } from '@/constants/planner-context';
-import { hasAnyHours, type OpeningHoursMap } from '@/lib/opening-hours';
-import { fetchBusinessPrivate } from '@/lib/local-api';
+import { hasAnyHours, DAYS, type OpeningHoursMap } from '@/lib/opening-hours';
 
 const S = SECTIONS.local;
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
@@ -48,6 +47,29 @@ const CATEGORIES: { id: LocalCategory; label: string; icon: string }[] = [
   { id: 'accommodation', label: 'Accommodation', icon: 'bed' },
   { id: 'other',         label: 'Other',         icon: 'store' },
 ];
+
+/**
+ * A week in one line. Runs of identical days are collapsed, so the common case
+ * reads "Mon–Fri 09:00–17:00 · Sat 10:00–16:00 · Sun closed" rather than seven
+ * rows. Purely presentational: the stored shape and every rule about Closed,
+ * Not set and after-midnight belong to OpeningHoursEditor and are untouched.
+ */
+function summariseHours(hours: OpeningHoursMap | null | undefined): string {
+  if (!hasAnyHours(hours)) return 'Not set';
+  const parts: string[] = [];
+  let runStart = 0;
+  for (let i = 0; i <= DAYS.length; i++) {
+    const prev = hours?.[DAYS[i - 1]?.key];
+    const cur  = i < DAYS.length ? hours?.[DAYS[i].key] : Symbol('end') as unknown as string;
+    if (i > 0 && cur !== prev) {
+      const from = DAYS[runStart].short, to = DAYS[i - 1].short;
+      const label = from === to ? from : `${from}–${to}`;
+      parts.push(`${label} ${prev ? prev : 'not set'}`);
+      runStart = i;
+    }
+  }
+  return parts.join(' · ');
+}
 
 export default function BusinessRegisterScreen() {
   const router = useRouter();
@@ -72,13 +94,39 @@ export default function BusinessRegisterScreen() {
   const [logoFile, setLogoFile]   = useState<PickedFile | null>(null);
   const [brandColor, setBrandColor] = useState<string | null>(null);
   const [tags, setTags]           = useState<string[]>([]);
+
+  /* Progressive disclosure. Hours, services and the visitor questions are all
+     real work, but they are not what somebody opening "Edit business" is
+     usually here to do — and rendering all three in full turned the primary
+     job, the profile, into something you scroll past. Each shows what it holds
+     and opens in place.
+
+     `focus` lets NEXT land the owner on the right one: being told to add
+     opening hours and then dropped at the top of a long form is the same
+     failure in a different place. */
+  const focus = useLocalSearchParams<{ focus?: string }>().focus;
+  const [open, setOpen] = useState({
+    hours:    focus === 'opening_hours',
+    offer:    false,
+    visitors: false,
+  });
+
   const [customTag, setCustomTag] = useState('');
   const [hours, setHours]         = useState<OpeningHoursMap>({});
   const [planner, setPlanner]     = useState<PlannerContext>(EMPTY_PLANNER_CONTEXT);
 
+  /** What each collapsed section says it holds. Never a count of what is missing. */
+  const hoursSummary = summariseHours(hours);
+  const offerSummary = tags.length === 0
+    ? 'Nothing selected'
+    : tags.length <= 3
+      ? tags.join(' · ')
+      : `${tags.slice(0, 2).join(' · ')} · ${tags.length - 2} more`;
+  const visitorSummary = hasPlannerContext(planner)
+    ? 'Answered — helps visitors find you at the right time of day'
+    : 'Optional — a few questions that put you in visitors\' plans';
+
   // Payment / payout overrides — both off by default (use central card/bank)
-  const [useBusinessPayment, setUseBusinessPayment] = useState(false);
-  const [useBusinessPayout,  setUseBusinessPayout]  = useState(false);
 
   const [loading, setLoading]     = useState(!!id);
   const [saving, setSaving]       = useState(false);
@@ -109,11 +157,6 @@ export default function BusinessRegisterScreen() {
           planner_booking:       (b as any).planner_booking ?? null,
           planner_note:          (b as any).planner_note ?? null,
         });
-        // These two are owner-private and no longer arrive on the row, so they
-        // are fetched through the ownership-checked RPC.
-        const priv = await fetchBusinessPrivate(b.id);
-        setUseBusinessPayment(priv.use_business_payment ?? false);
-        setUseBusinessPayout(priv.use_business_payout ?? false);
       }
       setLoading(false);
     });
@@ -180,8 +223,6 @@ export default function BusinessRegisterScreen() {
       ...(hasPlannerContext(planner)
         ? { ...planner, planner_context_source: 'owner' as const }
         : {}),
-      use_business_payment: useBusinessPayment,
-      use_business_payout:  useBusinessPayout,
     };
 
     try {
@@ -303,6 +344,13 @@ export default function BusinessRegisterScreen() {
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
           {/* Logo + auto-tinted banner preview */}
+        {/* ── Profile & contact ────────────────────────────────────────
+             Everything a customer needs, in one run, at the top. Contact
+             details used to sit below the whole visitor questionnaire, so
+             an owner sent here by "Add a way customers can contact you"
+             arrived at a form and had to scroll past three other subjects
+             to do the one thing they were asked to do. */}
+
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Logo</Text>
             <View style={[styles.logoBanner, { backgroundColor: brandColor ?? S.color }]}>
@@ -352,76 +400,6 @@ export default function BusinessRegisterScreen() {
                 );
               })}
             </View>
-          </View>
-
-          {/* Services & trades — powers directory search */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Services &amp; trades</Text>
-            <Text style={styles.fieldHint}>
-              Pick what you offer so customers find you when they search (e.g. “plumber”).
-            </Text>
-
-            {tags.length > 0 && (
-              <View style={[styles.tagWrap, { marginTop: 10 }]}>
-                {tags.map(t => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.tagChip, { backgroundColor: S.color, borderColor: S.color }]}
-                    onPress={() => toggleTag(t)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.tagChipText, { color: '#fff' }]}>{t}</Text>
-                    <FontAwesome5 name="times" size={10} color="#fff" />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            <View style={[styles.tagWrap, { marginTop: 10 }]}>
-              {TRADE_TAGS.filter(t => !tags.includes(t)).slice(0, 24).map(t => (
-                <TouchableOpacity
-                  key={t}
-                  style={styles.tagChip}
-                  onPress={() => toggleTag(t)}
-                  activeOpacity={0.75}
-                >
-                  <FontAwesome5 name="plus" size={9} color={colors.textMuted} />
-                  <Text style={styles.tagChipText}>{t}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.tagAddRow}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                value={customTag}
-                onChangeText={setCustomTag}
-                placeholder="Add your own…"
-                placeholderTextColor={colors.textLight}
-                returnKeyType="done"
-                onSubmitEditing={addCustomTag}
-              />
-              <TouchableOpacity
-                style={[styles.tagAddBtn, { backgroundColor: customTag.trim() ? S.color : colors.border }]}
-                onPress={addCustomTag}
-                disabled={!customTag.trim()}
-              >
-                <FontAwesome5 name="plus" size={13} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Opening hours</Text>
-            <Text style={styles.fieldHint}>
-              Worth filling in properly — it&apos;s what puts you in a visitor&apos;s plan for the right part of
-              the day, and stops folk turning up when you&apos;re shut.
-            </Text>
-            <OpeningHoursEditor value={hours} onChange={setHours} accent={S.color} />
-          </View>
-
-          <View style={styles.field}>
-            <PlannerContextEditor value={planner} onChange={setPlanner} accent={S.color} />
           </View>
 
           <View style={styles.field}>
@@ -515,50 +493,120 @@ export default function BusinessRegisterScreen() {
             <Text style={styles.fieldHint}>Used for Stripe payouts and account verification</Text>
           </View>
 
-          {/* ── Payment & Payout setup ──────────────────────────────────────── */}
-          <View style={styles.paymentSection}>
-            <Text style={styles.paymentSectionTitle}>Payments & Payouts</Text>
-            <Text style={styles.paymentSectionSub}>
-              By default this business uses your central OneShetland payment card and bank account.
-              Turn on a toggle to set up separate payment details for this business only.
+        {/* Opening hours — summary by default; the real editor is one tap away. */}
+        <View style={styles.field}>
+          <TouchableOpacity style={styles.discloseRow} activeOpacity={0.7}
+            onPress={() => setOpen(o => ({ ...o, hours: !o.hours }))}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Opening hours</Text>
+              <Text style={styles.discloseSummary} numberOfLines={2}>{hoursSummary}</Text>
+            </View>
+            <FontAwesome5 name={open.hours ? "chevron-up" : "chevron-down"} size={13} color={S.color} />
+          </TouchableOpacity>
+        </View>
+        {open.hours && (<>
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Opening hours</Text>
+            <Text style={styles.fieldHint}>
+              Worth filling in properly — it&apos;s what puts you in a visitor&apos;s plan for the right part of
+              the day, and stops folk turning up when you&apos;re shut.
+            </Text>
+            <OpeningHoursEditor value={hours} onChange={setHours} accent={S.color} />
+          </View>
+        </>)}
+
+        {/* What you offer — summary by default; the real editor is one tap away. */}
+        <View style={styles.field}>
+          <TouchableOpacity style={styles.discloseRow} activeOpacity={0.7}
+            onPress={() => setOpen(o => ({ ...o, offer: !o.offer }))}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>What you offer</Text>
+              <Text style={styles.discloseSummary} numberOfLines={2}>{offerSummary}</Text>
+            </View>
+            <FontAwesome5 name={open.offer ? "chevron-up" : "chevron-down"} size={13} color={S.color} />
+          </TouchableOpacity>
+        </View>
+        {open.offer && (<>
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Services &amp; trades</Text>
+            <Text style={styles.fieldHint}>
+              Pick what you offer so customers find you when they search (e.g. “plumber”).
             </Text>
 
-            {/* Payment card toggle */}
-            <View style={styles.toggleRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.toggleLabel}>Business payment card</Text>
-                <Text style={styles.toggleSub}>
-                  {useBusinessPayment
-                    ? 'Using a separate card for this business — set up in Payments & Banking after saving'
-                    : 'Using your central OneShetland payment card'}
-                </Text>
+            {tags.length > 0 && (
+              <View style={[styles.tagWrap, { marginTop: 10 }]}>
+                {tags.map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.tagChip, { backgroundColor: S.color, borderColor: S.color }]}
+                    onPress={() => toggleTag(t)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.tagChipText, { color: '#fff' }]}>{t}</Text>
+                    <FontAwesome5 name="times" size={10} color="#fff" />
+                  </TouchableOpacity>
+                ))}
               </View>
-              <Switch
-                value={useBusinessPayment}
-                onValueChange={v => { Haptics.selectionAsync(); setUseBusinessPayment(v); }}
-                trackColor={{ false: colors.border, true: S.color + '55' }}
-                thumbColor={useBusinessPayment ? S.color : '#fff'}
-              />
+            )}
+
+            <View style={[styles.tagWrap, { marginTop: 10 }]}>
+              {TRADE_TAGS.filter(t => !tags.includes(t)).slice(0, 24).map(t => (
+                <TouchableOpacity
+                  key={t}
+                  style={styles.tagChip}
+                  onPress={() => toggleTag(t)}
+                  activeOpacity={0.75}
+                >
+                  <FontAwesome5 name="plus" size={9} color={colors.textMuted} />
+                  <Text style={styles.tagChipText}>{t}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            {/* Payout bank toggle */}
-            <View style={[styles.toggleRow, { borderBottomWidth: 0 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.toggleLabel}>Business bank account</Text>
-                <Text style={styles.toggleSub}>
-                  {useBusinessPayout
-                    ? 'Using a separate bank account for payouts — connect it in Payments & Banking after saving'
-                    : 'Using your central OneShetland bank account'}
-                </Text>
-              </View>
-              <Switch
-                value={useBusinessPayout}
-                onValueChange={v => { Haptics.selectionAsync(); setUseBusinessPayout(v); }}
-                trackColor={{ false: colors.border, true: S.color + '55' }}
-                thumbColor={useBusinessPayout ? S.color : '#fff'}
+            <View style={styles.tagAddRow}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={customTag}
+                onChangeText={setCustomTag}
+                placeholder="Add your own…"
+                placeholderTextColor={colors.textLight}
+                returnKeyType="done"
+                onSubmitEditing={addCustomTag}
               />
+              <TouchableOpacity
+                style={[styles.tagAddBtn, { backgroundColor: customTag.trim() ? S.color : colors.border }]}
+                onPress={addCustomTag}
+                disabled={!customTag.trim()}
+              >
+                <FontAwesome5 name="plus" size={13} color="#fff" />
+              </TouchableOpacity>
             </View>
           </View>
+        </>)}
+
+        {/* For visitors — summary by default; the real editor is one tap away. */}
+        <View style={styles.field}>
+          <TouchableOpacity style={styles.discloseRow} activeOpacity={0.7}
+            onPress={() => setOpen(o => ({ ...o, visitors: !o.visitors }))}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>For visitors</Text>
+              <Text style={styles.discloseSummary} numberOfLines={2}>{visitorSummary}</Text>
+            </View>
+            <FontAwesome5 name={open.visitors ? "chevron-up" : "chevron-down"} size={13} color={S.color} />
+          </TouchableOpacity>
+        </View>
+        {open.visitors && (<>
+          <View style={styles.field}>
+            <PlannerContextEditor value={planner} onChange={setPlanner} accent={S.color} />
+          </View>
+        </>)}
+
+        {/* Payments and payouts are not profile. Both toggles already
+            live in Money on Business Home, which is where the accepted
+            architecture puts them and where the rest of the payout setup
+            already is. This screen had a second copy of the same two
+            settings; a duplicate is how two truths start. */}
+
 
           <Button
             label={id ? 'Save changes' : 'List my business'}
@@ -615,6 +663,8 @@ const styles = StyleSheet.create({
   toggleSub:   { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
 
   field:      {},
+  discloseRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  discloseSummary: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   fieldLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   fieldHint:  { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 },
 

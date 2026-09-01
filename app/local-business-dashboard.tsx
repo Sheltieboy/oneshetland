@@ -494,8 +494,12 @@ export default function BusinessDashboardScreen() {
          onPress: () => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness!.id } }) },
   };
 
-  const editBusiness = () =>
-    router.push({ pathname: '/local-business-register', params: { id: activeBusiness!.id } });
+  /* NEXT knows which milestone it asked for, so it says so. Being told to add
+     opening hours and then landing at the top of a long form is the same
+     failure as not being told at all. */
+  const editBusiness = (focus?: string) =>
+    router.push({ pathname: '/local-business-register',
+                  params: { id: activeBusiness!.id, ...(focus ? { focus } : {}) } });
 
   const stopLoyalty = async () => {
     if (!activeBusiness) return;
@@ -682,7 +686,7 @@ export default function BusinessDashboardScreen() {
         {/* ── Next ───────────────────────────────────────────────────────
              One thing, and only when nothing is waiting. */}
         {next && (
-          <TouchableOpacity style={styles.calmCard} activeOpacity={0.85} onPress={editBusiness}>
+          <TouchableOpacity style={styles.calmCard} activeOpacity={0.85} onPress={() => editBusiness(next.key)}>
             <Text style={styles.groupHeader}>Next</Text>
             <Text style={styles.calmText}>{next.title}</Text>
             <Text style={styles.calmSub}>{next.body}</Text>
