@@ -447,6 +447,40 @@ export default function BusinessDashboardScreen() {
       )
     : null;
 
+  /* ── Discovery ───────────────────────────────────────────────────────────
+     A capability nobody has ever touched is not unfinished work sitting in the
+     owner's way; it is something OneShetland can do that they may not know
+     about. So `available` — the canonical never-configured state — moves out of
+     the working area and into a quiet shelf, and anything with real
+     configuration or history behind it stays where the work is.
+
+     `unknown` is deliberately NOT discovery: a read we could not make is not
+     proof that nothing exists.
+
+     And the shelf waits. While the listing is still incomplete the owner's job
+     is to be findable, and inviting them to build a loyalty card instead would
+     be the product talking over them. */
+  const DISCOVERABLE = [1, 2, 3, 4] as const;
+  const discovery = home
+    ? DISCOVERABLE.filter((i) => outcomes[i]?.state === 'available')
+    : [];
+  const showDiscovery = outcomes[0]?.state === 'good' && discovery.length > 0;
+  /** Shown as a working outcome: everything except a never-used capability. */
+  const isWorking = (i: number) => !!outcomes[i] && !(showDiscovery && discovery.includes(i as 1));
+
+  /* One obvious way in per capability, all of them routes that already exist
+     and that actually BEGIN configuration — not a menu of managers. */
+  const DISCOVERY_ITEMS: Record<number, { title: string; blurb: string; plan: string; icon: string; onPress: () => void }> = {
+    1: { title: 'Sell things', blurb: 'Products and passes people can buy', plan: 'Premium', icon: 'shopping-bag',
+         onPress: () => router.push({ pathname: '/business-products', params: { businessId: activeBusiness!.id } }) },
+    2: { title: 'Take bookings', blurb: 'Let customers book your services', plan: 'Pro', icon: 'calendar-check',
+         onPress: () => router.push({ pathname: '/local-book-services', params: { businessId: activeBusiness!.id } }) },
+    3: { title: 'Run events', blurb: 'Publish events and manage tickets', plan: 'Free', icon: 'ticket-alt',
+         onPress: () => router.push({ pathname: '/event-create', params: { businessId: activeBusiness!.id } }) },
+    4: { title: 'Keep customers coming back', blurb: 'Offers and loyalty for returning customers', plan: 'Pro', icon: 'stamp',
+         onPress: () => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness!.id } }) },
+  };
+
   const editBusiness = () =>
     router.push({ pathname: '/local-business-register', params: { id: activeBusiness!.id } });
 
@@ -748,6 +782,7 @@ export default function BusinessDashboardScreen() {
           ]}
         />
 
+        {isWorking(1) && (
         <OutcomeCard
           outcome={outcomes[1]} accent={S.color}
           actions={[
@@ -756,7 +791,9 @@ export default function BusinessDashboardScreen() {
             { label: 'Orders', onPress: () => router.push({ pathname: '/business-orders', params: { businessId: activeBusiness.id } }) },
           ]}
         />
+        )}
 
+        {isWorking(2) && (
         <OutcomeCard
           outcome={outcomes[2]} accent={S.color}
           actions={[
@@ -778,7 +815,9 @@ export default function BusinessDashboardScreen() {
             />
           </View>
         </OutcomeCard>
+        )}
 
+        {isWorking(3) && (
         <OutcomeCard
           outcome={outcomes[3]} accent={S.color}
           fact={bizEvents.length > 0
@@ -790,7 +829,9 @@ export default function BusinessDashboardScreen() {
             { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { businessId: activeBusiness.id } }) },
           ]}
         />
+        )}
 
+        {isWorking(4) && (
         <OutcomeCard
           outcome={outcomes[4]} accent={S.color}
           actions={[
@@ -834,7 +875,40 @@ export default function BusinessDashboardScreen() {
             </View>
           )}
         </OutcomeCard>
+        )}
 
+
+        {/* ── Also possible on OneShetland ───────────────────────────────
+             Quiet on purpose. No dot, no badge, no count, no "not set up" —
+             none of these is a task the owner has failed to do. It only appears
+             once the listing is genuinely good, and each item leaves the shelf
+             by itself the moment anything is configured, because the state that
+             put it here stops being true. Nothing is stored. */}
+        {showDiscovery && (
+          <>
+            <Text style={styles.groupHeader}>Also possible on OneShetland</Text>
+            <View style={styles.shelf}>
+              {discovery.map((i) => {
+                const it = DISCOVERY_ITEMS[i];
+                return (
+                  <TouchableOpacity key={it.title} style={styles.shelfItem} activeOpacity={0.7}
+                    onPress={it.onPress}>
+                    <View style={[styles.shelfIcon, { backgroundColor: S.color + '14' }]}>
+                      <FontAwesome5 name={it.icon} size={13} color={S.color} solid />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.shelfTitle}>{it.title}</Text>
+                      <Text style={styles.shelfBlurb}>{it.blurb}</Text>
+                    </View>
+                    {/* The plan is a fact about the capability, not a pitch. */}
+                    <Text style={styles.shelfPlan}>{it.plan}</Text>
+                    <FontAwesome5 name="chevron-right" size={11} color={S.color} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         <Text style={styles.groupHeader}>Money</Text>
 
@@ -2195,6 +2269,12 @@ const styles = StyleSheet.create({
 
   // Merged-card sub-sections
   subSectionLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  shelf:           { backgroundColor: '#FFFFFF', borderColor: '#E4E9EF', borderWidth: 1, borderRadius: 14, marginTop: 8 },
+  shelfItem:       { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderTopWidth: 1, borderTopColor: '#EEF1F5' },
+  shelfIcon:       { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  shelfTitle:      { fontSize: 14, fontWeight: '800', color: '#12212E' },
+  shelfBlurb:      { fontSize: 12, color: '#5B6B7A', marginTop: 1 },
+  shelfPlan:       { fontSize: 11, fontWeight: '700', color: '#8A97A4' },
   outcomeCard:     { backgroundColor: '#FFFFFF', borderColor: '#E4E9EF', borderWidth: 1, borderRadius: 14, padding: 14, marginTop: 8, gap: 10 },
   outcomeHead:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   outcomeActions:  { flexDirection: 'row', flexWrap: 'wrap', gap: 18 },

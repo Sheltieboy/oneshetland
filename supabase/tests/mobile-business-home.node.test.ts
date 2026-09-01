@@ -95,7 +95,9 @@ describe('needs you, next, this week', () => {
   test('the hierarchy is exactly the accepted one', () => {
     const headers = [...raw().matchAll(/groupHeader}>([^<]+)/g)].map((m) => m[1]);
     assert.deepEqual(headers,
-      ['Needs you', 'Next', 'This week', 'At the counter', 'Your business', 'Money', 'Grow']);
+      ['Needs you', 'Next', 'This week', 'At the counter', 'Your business',
+       // Phase 3E: quiet, optional, and between the work and the layers.
+       'Also possible on OneShetland', 'Money', 'Grow']);
   });
 
   test('needs you renders only when something is genuinely waiting', () => {
@@ -455,5 +457,143 @@ describe('the rest of Home is navigation and status, not the managers', () => {
     }
     assert.ok(src.indexOf('>At the counter<') < src.indexOf('>Your business<'),
       'and it stays above the outcomes');
+  });
+});
+
+/* ── 7. Phase 3E — the discovery shelf ────────────────────────────────────── */
+
+describe('also possible on OneShetland', () => {
+  const src = () => raw();
+  /* The rule as the screen expresses it, exercised against the real helpers:
+     a capability is discovery only in the canonical never-configured state, and
+     the shelf waits until the listing is genuinely good. */
+  const GOOD = { phone: '01595', lat: 60.15, lng: -1.15, description: 'x',
+                 logo_url: 'u', opening_hours: { mon: '9-5' } as never };
+  const READY = { phone: '01595', lat: 60.15, lng: -1.15 };
+  const shelfFor = (business: Record<string, unknown>, data: OutcomeData) => {
+    const o = businessOutcomes({ ...business, id: 'b', slug: 's' } as never, data, '');
+    const discovery = [1, 2, 3, 4].filter((i) => o[i].state === 'available');
+    return { show: o[0].state === 'good' && discovery.length > 0, discovery, outcomes: o };
+  };
+
+  test('1. nothing while Be found is incomplete', () =>
+    assert.equal(shelfFor({}, NONE).show, false));
+
+  test('2. nothing while Be found is only ready', () =>
+    assert.equal(shelfFor(READY, NONE).show, false));
+
+  test('3. it appears once Be found is good and something is unused', () => {
+    const r = shelfFor(GOOD, NONE);
+    assert.equal(r.show, true);
+    assert.deepEqual(r.discovery, [1, 2, 3, 4]);
+  });
+
+  test('4 & 9. only the canonical never-used state qualifies, and never twice', () => {
+    // Products saved but unpublished is real work, not discovery.
+    const r = shelfFor(GOOD, d({ products: 3, meetsPremium: true }));
+    assert.deepEqual(r.discovery, [2, 3, 4]);
+    assert.equal(r.outcomes[1].state, 'saved');
+    // A capability is either working or discoverable — the screen derives one
+    // list from the other, so it cannot be in both.
+    assert.match(src(), /const isWorking = \(i: number\) => !!outcomes\[i\] && !\(showDiscovery && discovery\.includes/);
+  });
+
+  test('an unreadable capability is not discovery — we do not know it is unused', () =>
+    assert.equal(shelfFor(GOOD, d({ products: null })).discovery.includes(1), false));
+
+  test('the screen selects on exactly the canonical never-used state', () => {
+    // Without this the tests above only prove the RULE, not that the dashboard
+    // implements it — a mutation loosening the predicate to `!== 'live'` would
+    // move saved, setup and unknown capabilities into discovery unnoticed.
+    assert.match(code(DASH), /outcomes\[i\]\?\.state === 'available'/,
+      'discovery must select the canonical never-configured state, and only that');
+    assert.match(code(DASH), /const showDiscovery = outcomes\[0\]\?\.state === 'good' && discovery\.length > 0;/,
+      'and it must wait for a genuinely good listing');
+  });
+
+  test('5. configured Sell stays a working outcome', () => {
+    const r = shelfFor(GOOD, d({ products: 2, productsActive: 2, meetsPremium: true }));
+    assert.equal(r.outcomes[1].state, 'live');
+    assert.equal(r.discovery.includes(1), false);
+  });
+
+  test('6. configured Bookings stays a working outcome', () => {
+    const r = shelfFor(GOOD, d({ services: 1, meetsPro: true }));
+    assert.equal(r.outcomes[2].state, 'setup');
+    assert.equal(r.discovery.includes(2), false);
+  });
+
+  test('7. past-only Events stays a working outcome', () => {
+    const r = shelfFor(GOOD, d({ events: 4, eventsUpcoming: 0 }));
+    assert.equal(r.outcomes[3].state, 'none_upcoming');
+    assert.equal(r.discovery.includes(3), false);
+  });
+
+  test('8. an inactive offer keeps Retention a working outcome', () => {
+    const r = shelfFor(GOOD, d({ offers: 1, offersLive: 0, meetsPro: true }));
+    assert.equal(r.outcomes[4].state, 'saved');
+    assert.equal(r.discovery.includes(4), false);
+  });
+
+  test('10. the shelf disappears once all four have been used', () => {
+    const r = shelfFor(GOOD, d({ products: 1, services: 1, events: 1, loyalty: 1, meetsPro: true }));
+    assert.deepEqual(r.discovery, []);
+    assert.equal(r.show, false);
+  });
+
+  test('11 & 12. only the four capabilities are ever discoverable', () => {
+    // Be found is index 0 and is never in the list the screen builds from.
+    assert.match(src(), /const DISCOVERABLE = \[1, 2, 3, 4\] as const;/);
+    const items = src().slice(src().indexOf('DISCOVERY_ITEMS'), src().indexOf('const editBusiness'));
+    for (const never of ['Be found', 'Money', 'Grow', 'Counter', 'Jobs', 'Job leads', 'Analytics',
+                         'Boost', 'Urgent alerts', 'Wallet', 'transactions']) {
+      assert.ok(!items.includes(never), `${never} must never be discovery`);
+    }
+  });
+
+  test('13. it does not nag, badge or score', () => {
+    // Comments stripped: the shelf's own comment explains that it carries no
+    // dot, badge or count, which would otherwise trip this.
+    const s2 = code(DASH);
+    const shelf = s2.slice(s2.indexOf('Also possible on OneShetland'), s2.indexOf('>Money<'));
+    for (const word of ['Upgrade', 'upgrade', 'Unlock', 'unlock', 'incomplete', 'Not set up',
+                        'recommended', 'complete', '%']) {
+      assert.ok(!shelf.includes(word), `discovery must not say "${word}"`);
+    }
+    for (const ornament of ['outcomeDot', 'tone ===', 'badge', 'attentionCard']) {
+      assert.ok(!shelf.includes(ornament), `discovery must not carry ${ornament}`);
+    }
+  });
+
+  test('14. the plan facts are right, and are facts', () => {
+    const items = src().slice(src().indexOf('DISCOVERY_ITEMS'), src().indexOf('const editBusiness'));
+    for (const [title, plan] of [['Sell things', 'Premium'], ['Take bookings', 'Pro'],
+                                 ['Run events', 'Free'], ['Keep customers coming back', 'Pro']]) {
+      const line = items.split('\n').find((l) => l.includes(`'${title}'`)) ?? '';
+      assert.match(line, new RegExp(`plan: '${plan}'`), `${title} is ${plan}`);
+    }
+    // The shelf must not consult what the owner is paying for.
+    const decide = src().slice(src().indexOf('const DISCOVERABLE'), src().indexOf('const editBusiness'));
+    assert.doesNotMatch(decide, /subscription_tier|eff\.pro|eff\.premium/,
+      'discovery is not entitlement enforcement');
+  });
+
+  test('15. every entry action is an existing route that begins setup', () => {
+    const items = src().slice(src().indexOf('DISCOVERY_ITEMS'), src().indexOf('const editBusiness'));
+    for (const r of ['/business-products', '/local-book-services', '/event-create', '/local-offer-new']) {
+      assert.ok(items.includes(`'${r}'`), `${r} must be the way in`);
+    }
+    // One way in each, not a menu.
+    assert.equal((items.match(/router\.push/g) ?? []).length, 4);
+  });
+
+  test('16. the Phase 3D controls and destinations are untouched', () => {
+    const s2 = src();
+    for (const keep of ['onValueChange={toggleAcceptsBookings}', 'onPress={stopLoyalty}',
+                        'deactivateOffer(o.id)', 'setShowLoyaltyModal(true)',
+                        '/local-counter', '/local-till', '/local-verify']) {
+      assert.ok(s2.includes(keep), `${keep} must survive`);
+    }
+    assert.equal((s2.match(/<OutcomeCard/g) ?? []).length, 5, 'still five outcome cards');
   });
 });
