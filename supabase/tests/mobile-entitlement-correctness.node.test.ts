@@ -98,8 +98,15 @@ describe('bookings is Pro, effective, and open to set up', () => {
     }
   });
 
-  test('"live for booking" needs the flag AND a plan in date', () =>
-    assert.match(dash(), /activeBusiness\.accepts_bookings && eff\.pro/));
+  test('"live for booking" needs the flag AND a plan in date', () => {
+    // Phase 3D replaced the large capability cards with one compact outcome
+    // card each. The behaviour is unchanged; the markup it used to be pinned to
+    // is not.
+    // The status line now comes from bookingsOutcome, which is the web helper,
+    // pinned byte-for-byte and already proved to require both.
+    assert.match(dash(), /outcome=\{outcomes\[2\]\}/);
+    assert.match(dash(), /onValueChange=\{toggleAcceptsBookings\}/);
+  });
 
   test('the add-ons copy is gone — add-ons stopped existing', () =>
     assert.doesNotMatch(dash(), /enable via Add-ons/));
@@ -183,27 +190,36 @@ describe('a downgrade does not strand offers or a running programme', () => {
     }
   });
 
-  test('both cards stay visible below Pro and explain themselves', () => {
-    const d = dash();
-    for (const marker of ['Part of Pro — a stamp card', 'Part of Pro — time-limited deals']) {
-      assert.ok(d.includes(marker), `missing explanation: ${marker}`);
-    }
-    assert.doesNotMatch(d, /tierMeets[^\n]*\n[\s\S]{0,120}cardTitle}>Loyalty programme/);
+  test('retention stays visible below Pro and explains itself', () => {
+    // Phase 3D replaced the large capability cards with one compact outcome
+    // card each. The behaviour is unchanged; the markup it used to be pinned to
+    // is not.
+    // The explanation moved into retentionOutcome's status line — the shared
+    // helper — so it is one sentence in one place instead of two card bodies.
+    const web = readFileSync(join(REPO_ROOT, '..', 'oneshetland-web', 'lib', 'business-outcomes.ts'), 'utf8');
+    assert.match(web, /Part of Pro — a reason for folk to come back/);
+    assert.match(dash(), /outcome=\{outcomes\[4\]\}/);
   });
 
   test('creating and editing stay unavailable below Pro', () => {
+    // Phase 3D replaced the large capability cards with one compact outcome
+    // card each. The behaviour is unchanged; the markup it used to be pinned to
+    // is not.
     const d = dash();
-    assert.match(d, /\{eff\.pro && \(\s*\n\s*<TouchableOpacity[\s\S]{0,300}setShowLoyaltyModal\(true\)/);
+    assert.match(d, /eff\.pro \? \[[\s\S]{0,400}setShowLoyaltyModal\(true\)/,
+      'new offer and edit loyalty are offered only with Pro');
+    assert.match(d, /\] : \[\{ label: 'See plans'/, 'and below it, the plans instead');
   });
 
-  test('Stop programme exists, and is not gated', () => {
+  test('stopping a programme exists, and is not gated', () => {
+    // Phase 3D shortened the label to "Stop" inside the compact outcome card.
+    // The handler, and the fact that it sits outside the plan check, are what
+    // this was ever protecting.
     const d = dash();
     assert.match(d, /const stopLoyalty = async \(\) => \{/);
-    assert.match(d, /Stop programme/);
-    // Just the stop block itself: what follows it is the "See plans" branch,
-    // which legitimately asks eff.pro.
     const from = d.indexOf('{program?.is_active && (');
-    const stop = d.slice(from, d.indexOf(')}', d.indexOf('</TouchableOpacity>', from)));
+    assert.ok(from > -1, 'the stop control must still be conditional on a running programme');
+    const stop = d.slice(from, from + 600);
     assert.match(stop, /onPress=\{stopLoyalty\}/);
     assert.doesNotMatch(stop, /eff\.pro/, 'stopping never depends on the plan');
   });
@@ -216,8 +232,12 @@ describe('a downgrade does not strand offers or a running programme', () => {
   });
 
   test('existing offers stay listed, and ending one is still possible', () => {
+    // Phase 3D replaced the large capability cards with one compact outcome
+    // card each. The behaviour is unchanged; the markup it used to be pinned to
+    // is not.
     const d = dash();
-    assert.match(d, /offers\.filter\(o => o\.is_active\)\.length/);
+    assert.match(d, /offers\.filter\(o => o\.is_active\)\.map/, 'live offers are still listed');
+    assert.match(d, /deactivateOffer\(o\.id\)/, 'and each can still be ended');
     assert.match(d, /'\/local-offer-new'/, 'the offers route stays reachable');
   });
 });

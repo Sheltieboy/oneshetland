@@ -38,7 +38,6 @@ import {
   isOnBoost,
   requestNfcTile, NFC_TILE_URL_PREFIX,
   isBusinessFeatured, TIER_LABELS, TIER_PRICE,
-  formatOfferDiscount, daysRemaining,
   fetchBusinessWalletReceipts,
   normalizeTiers,
   type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType, type RewardTier,
@@ -67,23 +66,38 @@ const S = SECTIONS.local;
  * OneShetland". Amber would turn every unused capability into a warning, and
  * only NEEDS YOU is allowed to feel urgent.
  */
-function OutcomeCard({ outcome, accent, onPress }: {
-  outcome?: Outcome; accent: string; onPress?: () => void;
+function OutcomeCard({ outcome, accent, fact, actions, children }: {
+  outcome?: Outcome;
+  accent: string;
+  /** One supporting fact, when there is a useful one. */
+  fact?: string | null;
+  /** Compact text destinations. The managers live behind these, not in here. */
+  actions?: { label: string; onPress: () => void }[];
+  /** Anything that must stay operable from Home — a switch, a withdrawal. */
+  children?: React.ReactNode;
 }) {
   if (!outcome) return null;
-  const body = (
-    <View style={styles.outcomeRow}>
-      <View style={[styles.outcomeDot, { backgroundColor: outcome.tone === 'positive' ? '#16A34A' : '#C3CCD6' }]} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.outcomeTitle}>{outcome.title}</Text>
-        <Text style={styles.outcomeStatus}>{outcome.status}</Text>
+  return (
+    <View style={styles.outcomeCard}>
+      <View style={styles.outcomeHead}>
+        <View style={[styles.outcomeDot, { backgroundColor: outcome.tone === 'positive' ? '#16A34A' : '#C3CCD6' }]} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.outcomeTitle}>{outcome.title}</Text>
+          <Text style={styles.outcomeStatus}>{outcome.status}{fact ? ` · ${fact}` : ''}</Text>
+        </View>
       </View>
-      {onPress && <FontAwesome5 name="chevron-right" size={12} color={accent} />}
+      {children}
+      {!!actions?.length && (
+        <View style={styles.outcomeActions}>
+          {actions.map((a) => (
+            <TouchableOpacity key={a.label} onPress={a.onPress} hitSlop={8} activeOpacity={0.7}>
+              <Text style={[styles.outcomeAction, { color: accent }]}>{a.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </View>
   );
-  return onPress
-    ? <TouchableOpacity onPress={onPress} activeOpacity={0.85}>{body}</TouchableOpacity>
-    : body;
 }
 
 // Tier helpers — single source of truth for "does this user's plan include X?"
@@ -220,11 +234,16 @@ export default function BusinessDashboardScreen() {
     setAlertAccess(alertAcc as AlertAccess | null);
     setBizAlerts((alertRows as PartnerAlert[]).filter(a => a.is_active));
     setScheduledAlerts(schedRows as PartnerAlert[]);
-    // Show upcoming + ongoing events (starts in future, or ends in future)
+    /* The one reading of "an upcoming event", matching the count in
+       lib/business-home.ts exactly: published, not hidden, and still to come.
+       This used to filter on the date alone, so a CANCELLED, HIDDEN event was
+       listed here as upcoming while the outcome above it — correctly — said
+       there were none. Two answers to one question, and the wrong one was the
+       one with a date on it. */
     const now = new Date();
     setBizEvents(
       (evRows as OsEvent[])
-        .filter(e => new Date(e.ends_at ?? e.starts_at) >= now)
+        .filter(e => e.status === 'published' && !e.is_hidden && new Date(e.starts_at) > now)
         .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
         .slice(0, 5),
     );
@@ -716,331 +735,106 @@ export default function BusinessDashboardScreen() {
         {/* ── Your business ──────────────────────────────────────── */}
         <Text style={styles.groupHeader}>Your business</Text>
 
-        {/* Be found — never tiered. The editor, and the listing as folk see it. */}
-        <OutcomeCard outcome={outcomes[0]} accent={S.color} onPress={editBusiness} />
+        {/* Five compact cards. The outcome IS the unit now: it used to sit as a
+            one-line summary above the old full-size feature card, which said the
+            same thing twice and made Home four screens long. The managers live
+            behind these, not inside them. */}
 
-        {/* ── Public profile link ── */}
-        <TouchableOpacity
-          style={styles.viewPublicBtn}
-          onPress={() => router.push({ pathname: '/local-business-detail', params: { id: activeBusiness.id } })}
-          activeOpacity={0.8}
+        <OutcomeCard
+          outcome={outcomes[0]} accent={S.color}
+          actions={[
+            { label: 'Edit profile', onPress: editBusiness },
+            { label: 'View public profile', onPress: () => router.push({ pathname: '/local-business-detail', params: { id: activeBusiness.id } }) },
+          ]}
+        />
+
+        <OutcomeCard
+          outcome={outcomes[1]} accent={S.color}
+          actions={[
+            { label: 'Products', onPress: () => router.push({ pathname: '/business-products', params: { businessId: activeBusiness.id } }) },
+            { label: 'Passes', onPress: () => router.push({ pathname: '/local-book-units', params: { businessId: activeBusiness.id } }) },
+            { label: 'Orders', onPress: () => router.push({ pathname: '/business-orders', params: { businessId: activeBusiness.id } }) },
+          ]}
+        />
+
+        <OutcomeCard
+          outcome={outcomes[2]} accent={S.color}
+          actions={[
+            { label: 'Services', onPress: () => router.push({ pathname: '/local-book-services', params: { businessId: activeBusiness.id } }) },
+            { label: 'Schedule', onPress: () => router.push({ pathname: '/local-book-schedule', params: { businessId: activeBusiness.id } }) },
+            { label: 'Bookings', onPress: () => router.push({ pathname: '/local-book-bookings', params: { businessId: activeBusiness.id } }) },
+          ]}
         >
-          <FontAwesome5 name="eye" size={11} color={S.color} />
-          <Text style={[styles.viewPublicText, { color: S.color }]}>View public profile</Text>
-        </TouchableOpacity>
-
-        {/* Sell things — products and passes. Waiting orders live in NEEDS YOU. */}
-        <OutcomeCard outcome={outcomes[1]} accent={S.color} />
-        {/* ── Products (Shop Shetland) — Premium only ── */}
-        {/* Visible on any plan: services, availability and products may all be
-            prepared before paying — the server allows exactly that. The plan is
-            asked for at the switch and at publish. */}
-        {true && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-                <FontAwesome5 name="shopping-bag" size={13} color={S.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Products</Text>
-                <Text style={styles.cardSub}>Sell across OneShetland — 5% per sale, and we promote your shop</Text>
-              </View>
-            </View>
-            <View style={styles.bookActionsRow}>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/business-products', params: { businessId: activeBusiness.id } } as any)}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="shopping-bag" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Products</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/business-orders', params: { businessId: activeBusiness.id } } as any)}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="box-open" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Orders</Text>
-              </TouchableOpacity>
-            </View>
+          {/* The live switch stays on Home: it is the one booking control an
+              owner flips often, and it carries the Pro boundary. */}
+          <View style={styles.outcomeInline}>
+            <Text style={styles.outcomeInlineText}>
+              {activeBusiness.accepts_bookings ? 'Taking bookings' : 'Not taking bookings yet'}
+            </Text>
+            <Switch
+              value={!!activeBusiness.accepts_bookings}
+              onValueChange={toggleAcceptsBookings}
+              trackColor={{ false: '#D6DCE3', true: S.color }}
+            />
           </View>
-        )}
+        </OutcomeCard>
 
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-units', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="ticket-alt" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Passes & packs</Text>
-              </TouchableOpacity>
+        <OutcomeCard
+          outcome={outcomes[3]} accent={S.color}
+          fact={bizEvents.length > 0
+            ? `next ${new Date(bizEvents[0].starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+            : null}
+          actions={[
+            { label: 'Manage events', onPress: () => router.push({ pathname: '/event-manage', params: { businessId: activeBusiness.id } }) },
+            { label: 'New event', onPress: () => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } }) },
+            { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { businessId: activeBusiness.id } }) },
+          ]}
+        />
 
-        {/* Take bookings — four screens stay four screens; this is the way in. */}
-        <OutcomeCard outcome={outcomes[2]} accent={S.color} />
-        {/* ── Bookings — Pro at the switch, and open to set up on any plan ── */}
-        {/* Visible on any plan: services, availability and products may all be
-            prepared before paying — the server allows exactly that. The plan is
-            asked for at the switch and at publish. */}
-        {true && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-                <FontAwesome5 name="calendar-check" size={13} color={S.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Bookings</Text>
-                <Text style={styles.cardSub}>
-                  {/* "live for booking" only when it genuinely is: the flag AND
-                      a plan that is still in date. Add-ons stopped existing when
-                      the tier model replaced them. */}
-                  {activeBusiness.accepts_bookings && eff.pro
-                    ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} · live for booking`
-                    : bookServiceCount > 0
-                      ? eff.pro
-                        ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} ready · turn bookings on`
-                        : `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} saved · Pro needed to take bookings`
-                      : 'Manage services, schedule and bookings'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.bookActionsRow}>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-services', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="concierge-bell" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>
-                  Services {bookServiceCount > 0 ? `(${bookServiceCount})` : ''}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-schedule', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="clock" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Schedule</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: S.color }]}
-                onPress={() => router.push({ pathname: '/local-book-bookings', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="list" size={11} color={S.color} solid />
-                <Text style={[styles.bookActionText, { color: S.color }]}>Bookings</Text>
+        <OutcomeCard
+          outcome={outcomes[4]} accent={S.color}
+          actions={[
+            ...(eff.pro ? [
+              { label: 'New offer', onPress: () => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness.id } }) },
+              { label: program ? 'Edit loyalty' : 'Set up loyalty', onPress: () => setShowLoyaltyModal(true) },
+            ] : [{ label: 'See plans', onPress: openBillingPortal }]),
+          ]}
+        >
+          {/* Withdrawal stays reachable whatever the plan says — the server
+              permits it, and there is nowhere else on mobile to end an offer or
+              stop a programme. Compact lines, not a second manager. */}
+          {offers.filter(o => o.is_active).map(o => (
+            <View key={o.id} style={styles.outcomeInline}>
+              <Text style={styles.outcomeInlineText} numberOfLines={1}>{o.title}</Text>
+              <TouchableOpacity hitSlop={8} onPress={() => {
+                brandedAlert({
+                  title: 'End this offer?',
+                  message: 'It will no longer be visible to customers.',
+                  actions: [
+                    { label: 'Cancel', style: 'cancel' },
+                    { label: 'End', style: 'destructive', onPress: async () => {
+                      await deactivateOffer(o.id);
+                      loadAll(activeBusiness);
+                    }},
+                  ],
+                });
+              }}>
+                <Text style={styles.outcomeAction}>End</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        )}
-
-        {/* Run events — free, always. */}
-        <OutcomeCard outcome={outcomes[3]} accent={S.color} />
-        {/* ── Events — shown when events add-on is enabled ── */}
-        {(
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.cardIcon, { backgroundColor: SECTIONS.events.color + '18' }]}>
-                <FontAwesome5 name="calendar-alt" size={13} color={SECTIONS.events.color} solid />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Events</Text>
-                <Text style={styles.cardSub}>
-                  {bizEvents.length > 0
-                    ? `${bizEvents.length} upcoming event${bizEvents.length !== 1 ? 's' : ''}`
-                    : 'Create and manage events, sell tickets'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.cardIconBtn, { backgroundColor: SECTIONS.events.color }]}
-                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
-              >
-                <FontAwesome5 name="plus" size={11} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Upcoming events list */}
-            {bizEvents.length > 0 && (
-              <View style={{ gap: 8, marginBottom: 12 }}>
-                {bizEvents.map(ev => {
-                  const d = new Date(ev.starts_at);
-                  const dateStr = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-                  const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-                  return (
-                    <View key={ev.id} style={styles.evRow}>
-                      <View style={[styles.evDatePill, { backgroundColor: SECTIONS.events.color + '18' }]}>
-                        <Text style={[styles.evDateText, { color: SECTIONS.events.color }]}>{dateStr}</Text>
-                        <Text style={[styles.evTimeText, { color: SECTIONS.events.color }]}>{timeStr}</Text>
-                      </View>
-                      <Text style={styles.evTitle} numberOfLines={1}>{ev.title}</Text>
-                      <View style={styles.evActions}>
-                        <TouchableOpacity
-                          style={[styles.evBtn, { backgroundColor: SECTIONS.events.color + '18' }]}
-                          onPress={() => router.push({ pathname: '/event-manage', params: { id: ev.id } })}
-                          hitSlop={8}
-                        >
-                          <FontAwesome5 name="cog" size={11} color={SECTIONS.events.color} />
-                        </TouchableOpacity>
-                        {ev.has_tickets && (
-                          <TouchableOpacity
-                            style={[styles.evBtn, { backgroundColor: SECTIONS.events.color }]}
-                            onPress={() => router.push({ pathname: '/event-scanner', params: { id: ev.id } })}
-                            hitSlop={8}
-                          >
-                            <FontAwesome5 name="qrcode" size={11} color="#fff" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-
-            <View style={styles.bookActionsRow}>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
-                onPress={() => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } })}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="plus" size={11} color={SECTIONS.events.color} />
-                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>New event</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bookActionBtn, { borderColor: SECTIONS.events.color }]}
-                onPress={() => router.push('/(tabs)/whats-on' as any)}
-                activeOpacity={0.85}
-              >
-                <FontAwesome5 name="calendar" size={11} color={SECTIONS.events.color} />
-                <Text style={[styles.bookActionText, { color: SECTIONS.events.color }]}>What's On</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Keep customers coming back. */}
-        <OutcomeCard outcome={outcomes[4]} accent={S.color} />
-        {/* ── Loyalty programme ──────────────────────────────────────────
-            Gate before setup: the server refuses the insert without Pro, so
-            below it the card explains rather than vanishing. An existing
-            programme stays visible and stoppable, because the server permits
-            the reducing direction without a plan and nobody should be stuck
-            running something they cannot switch off. */}
-        {true && (
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5 name="stamp" size={13} color={S.color} solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Loyalty programme</Text>
-              <Text style={styles.cardSub}>
-                {program
-                  ? stamps
-                    ? `${program.stamps_required} stamps · ${program.stamp_reward}${eff.pro ? '' : ' · Pro needed to change it'}`
-                    : `${program.points_per_pound} points per £1${eff.pro ? '' : ' · Pro needed to change it'}`
-                  : eff.pro
-                    ? 'Not set up yet'
-                    : 'Part of Pro — a stamp card customers collect on their phone'}
-              </Text>
-            </View>
-          </View>
-
-          {eff.pro && (
-            <TouchableOpacity
-              style={[styles.upgradeBtn, { backgroundColor: S.color, marginTop: 12 }]}
-              onPress={() => setShowLoyaltyModal(true)}
-              activeOpacity={0.85}
-            >
-              <FontAwesome5 name={program ? 'pen' : 'plus'} size={11} color="#fff" solid />
-              <Text style={styles.upgradeBtnText}>
-                {program ? 'Edit programme' : 'Set up loyalty programme'}
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Reduction only, and deliberately never gated: the server allows
-              stopping without Pro, and an owner whose plan lapsed must be able
-              to switch off a programme that is still running. Customer stamps,
-              points and history are untouched by it. */}
+          ))}
           {program?.is_active && (
-            <TouchableOpacity style={styles.reduceBtn} onPress={stopLoyalty} activeOpacity={0.85}>
-              <Text style={styles.reduceBtnText}>Stop programme</Text>
-            </TouchableOpacity>
-          )}
-
-          {!eff.pro && !program && (
-            <TouchableOpacity style={styles.reduceBtn} onPress={openBillingPortal} activeOpacity={0.85}>
-              <Text style={styles.reduceBtnText}>See plans</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        )}
-
-        {/* ── Offers ─────────────────────────────────────────────────────
-            Gate before setup, same as Loyalty. Existing offers stay listed and
-            endable after a downgrade — ending one is a reduction the server
-            allows without a plan. */}
-        {true && (
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
-              <FontAwesome5 name="tags" size={13} color={S.color} solid />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Offers</Text>
-              <Text style={styles.cardSub}>
-                {offers.length > 0
-                  ? `${offers.filter(o => o.is_active).length} active${eff.pro ? '' : ' · Pro needed to add more'}`
-                  : eff.pro
-                    ? 'No offers yet'
-                    : 'Part of Pro — time-limited deals across OneShetland'}
+            <View style={styles.outcomeInline}>
+              <Text style={styles.outcomeInlineText} numberOfLines={1}>
+                {stamps ? `${program.stamps_required} stamps · ${program.stamp_reward}` : `${program.points_per_pound} points per £1`}
               </Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.cardIconBtn, { backgroundColor: S.color }]}
-              onPress={() => router.push({ pathname: '/local-offer-new', params: { businessId: activeBusiness.id } })}
-            >
-              <FontAwesome5 name="plus" size={11} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          {offers.length > 0 && (
-            <View style={{ gap: 8, marginTop: 12 }}>
-              {offers.map(o => (
-                <View key={o.id} style={[styles.offerLine, !o.is_active && { opacity: 0.5 }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.offerLineTitle}>{o.title}</Text>
-                    <Text style={styles.offerLineMeta}>
-                      {formatOfferDiscount(o)} · {o.redemption_count} claim{o.redemption_count !== 1 ? 's' : ''}
-                      {o.is_active ? ` · ${daysRemaining(o.valid_until)}d left` : ' · ended'}
-                    </Text>
-                  </View>
-                  {o.is_active && (
-                    <TouchableOpacity onPress={() => {
-                      brandedAlert({
-                        title: 'End this offer?',
-                        message: 'It will no longer be visible to customers.',
-                        actions: [
-                          { label: 'Cancel', style: 'cancel' },
-                          { label: 'End', style: 'destructive', onPress: async () => {
-                            await deactivateOffer(o.id);
-                            loadAll(activeBusiness);
-                          }},
-                        ],
-                      });
-                    }}>
-                      <FontAwesome5 name="times" size={12} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
+              <TouchableOpacity hitSlop={8} onPress={stopLoyalty}>
+                <Text style={styles.outcomeAction}>Stop</Text>
+              </TouchableOpacity>
             </View>
           )}
-        </View>
-        )}
+        </OutcomeCard>
+
 
         <Text style={styles.groupHeader}>Money</Text>
 
@@ -1683,6 +1477,11 @@ function AlertsCard({
   const router = useRouter();
   const { alert } = useAlert();
   const ALERT_RED = '#FF3B30';
+  /* Collapsed on Home. Everything below — the explainer, the access request,
+     the composer — is the manager, and Home is not the manager. It opens on a
+     tap rather than moving anywhere, so nothing is lost and nothing had to be
+     rebuilt on the alerts screen. An alert already running still shows. */
+  const [open, setOpen] = useState(false);
 
   return (
     <View style={[alertStyles.card, activeAlerts.length > 0 && alertStyles.cardActive]}>
@@ -1706,6 +1505,18 @@ function AlertsCard({
           </View>
         )}
       </View>
+
+      {/* One tap opens the manager's worth of controls; the header alone is
+          what Home needs to say. */}
+      {!open && (
+        <TouchableOpacity onPress={() => setOpen(true)} hitSlop={8} activeOpacity={0.7}>
+          <Text style={[alertStyles.openLink, { color: ALERT_RED }]}>
+            {activeAlerts.length > 0 ? 'Manage alerts' : 'Send an urgent alert'}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {open && (<>
 
       {/* State: no access request yet */}
       {!access && (
@@ -1929,11 +1740,13 @@ function AlertsCard({
           </TouchableOpacity>
         </View>
       )}
+      </>)}
     </View>
   );
 }
 
 const alertStyles = StyleSheet.create({
+  openLink:  { fontSize: 14, fontWeight: '800', marginTop: 10 },
   card: {
     backgroundColor: '#fff',
     borderRadius: radius.lg,
@@ -2375,7 +2188,6 @@ const styles = StyleSheet.create({
   cardIcon:  { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   cardSub:   { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
-  cardIconBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 
   tierRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tierPrice:  { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '700' },
@@ -2383,6 +2195,12 @@ const styles = StyleSheet.create({
 
   // Merged-card sub-sections
   subSectionLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  outcomeCard:     { backgroundColor: '#FFFFFF', borderColor: '#E4E9EF', borderWidth: 1, borderRadius: 14, padding: 14, marginTop: 8, gap: 10 },
+  outcomeHead:     { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  outcomeActions:  { flexDirection: 'row', flexWrap: 'wrap', gap: 18 },
+  outcomeAction:   { fontSize: 14, fontWeight: '800' },
+  outcomeInline:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  outcomeInlineText: { flex: 1, fontSize: 13, color: '#5B6B7A' },
   outcomeRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4, marginTop: 6 },
   outcomeDot:      { width: 8, height: 8, borderRadius: 4 },
   outcomeTitle:    { fontSize: 15, fontWeight: '800', color: '#12212E' },
@@ -2478,7 +2296,6 @@ const styles = StyleSheet.create({
   receiptSep:        { fontSize: fontSize.xs, color: colors.textLight },
 
   // 2×2 grid — four buttons don't fit on one row without the labels overflowing the borders
-  bookActionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   bookActionBtn:  { flexGrow: 1, flexBasis: '47%', minWidth: 130, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 8, borderRadius: radius.md, borderWidth: 1.5, backgroundColor: '#fff' },
   bookActionText: { fontSize: fontSize.xs, fontWeight: '800' },
   evRow:       { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -2488,10 +2305,6 @@ const styles = StyleSheet.create({
   evTitle:     { flex: 1, fontSize: fontSize.xs, fontWeight: '700', color: colors.textPrimary },
   evActions:   { flexDirection: 'row', gap: 6 },
   evBtn:       { width: 30, height: 30, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
-
-  offerLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border },
-  offerLineTitle: { fontSize: fontSize.xs, fontWeight: '800', color: colors.textPrimary },
-  offerLineMeta:  { fontSize: 10, color: colors.textMuted, marginTop: 1 },
 
   viewPublicBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, backgroundColor: S.light, borderRadius: radius.md },
   viewPublicText:{ fontSize: fontSize.xs, fontWeight: '800' },

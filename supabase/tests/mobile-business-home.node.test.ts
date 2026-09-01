@@ -15,6 +15,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +37,15 @@ const WEB = join(REPO_ROOT, '..', 'oneshetland-web');
 const read = (p: string) => readFileSync(join(REPO_ROOT, p), 'utf8');
 const readWeb = (p: string) => readFileSync(join(WEB, p), 'utf8');
 const code = (p: string) => read(p).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+function sql(body: string): Record<string, unknown>[] {
+  const out = execFileSync('npx',
+    ['supabase', 'db', 'query', '--linked', `select 1 as _guard where false;\n${body}`, '--output-format', 'json'],
+    { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 240_000 });
+  const parsed = JSON.parse(out.slice(out.indexOf('{'))) as { rows?: Record<string, unknown>[]; error?: unknown };
+  if (parsed.error) throw new Error(JSON.stringify(parsed.error).slice(0, 400));
+  return parsed.rows ?? [];
+}
 
 const DASH = 'app/local-business-dashboard.tsx';
 const dash = () => code(DASH);
@@ -202,8 +212,10 @@ describe('five outcomes, same semantics as web', () => {
     assert.equal(retentionOutcome(d({ offers: 1, offersLive: 1, meetsPro: true }), '').state, 'live');
     assert.equal(retentionOutcome(d({ offers: 1, offersLive: 1, meetsPro: false }), '').state, 'saved');
     const src = raw();
-    assert.match(src, /Stop programme/, 'a lapsed owner can still stop a running programme');
-    assert.match(src, /'\/local-offer-new'/, 'and still reach their offers to end one');
+    // Phase 3D shortened the label to "Stop" inside the compact card. What
+    // matters is the handler, not the wording.
+    assert.match(src, /onPress=\{stopLoyalty\}/, 'a lapsed owner can still stop a running programme');
+    assert.match(src, /deactivateOffer\(o\.id\)/, 'and still end a live offer');
   });
 
   test('a failed read leaves an outcome unknown, never a confident nothing', () => {
@@ -337,5 +349,111 @@ describe('nothing of the old dashboard survives', () => {
       assert.ok(!dash().includes(bad), bad);
       assert.ok(!code('lib/business-home.ts').includes(bad), bad);
     }
+  });
+});
+
+/* ── 6. Phase 3D — one reading of an event, and one card per outcome ─────── */
+
+describe('an event cannot be upcoming and not upcoming at once', () => {
+  test('the contradiction is reproducible from real data', () => {
+    // Anderson & Co: the Home said "No upcoming events" while the card beneath
+    // listed "Folk Festival at Mareel". The festival is CANCELLED and HIDDEN,
+    // and the card filtered on the date alone.
+    const [row] = sql(`
+      select
+        count(*) filter (where e.starts_at > now())                    as date_only,
+        count(*) filter (where e.status = 'published' and not e.is_hidden
+                           and e.starts_at > now())                    as canonical
+      from public.events e join public.local_businesses b
+        on b.id = e.organiser_business_id
+      where b.name = 'Anderson & Co';`);
+    assert.equal(String(row.date_only), '1', 'a date-only filter still finds it');
+    assert.equal(String(row.canonical), '0', 'and the canonical rule correctly does not');
+  });
+
+  test('both sides of the Home now apply the same rule', () => {
+    const loader = code('lib/business-home.ts');
+    assert.match(loader, /\.eq\('status', 'published'\)[\s\S]{0,80}\.eq\('is_hidden', false\)[\s\S]{0,60}\.gt\('starts_at', now\)/,
+      'the count must require published, not hidden, and still to come');
+    const list = code(DASH);
+    assert.match(list, /e\.status === 'published' && !e\.is_hidden && new Date\(e\.starts_at\) > now/,
+      'and the list beneath it must require exactly the same');
+    assert.doesNotMatch(list, /new Date\(e\.ends_at \?\? e\.starts_at\) >= now/,
+      'the date-only filter is what caused the contradiction');
+  });
+
+  test('the supporting fact comes from the same filtered list', () => {
+    assert.match(raw(), /fact=\{bizEvents\.length > 0/);
+    assert.match(raw(), /bizEvents\[0\]\.starts_at/);
+  });
+});
+
+describe('one compact card per outcome, and no repeats beneath it', () => {
+  test('exactly five outcome cards render', () => {
+    const n = (raw().match(/<OutcomeCard/g) ?? []).length;
+    assert.equal(n, 5, 'five outcomes, five cards');
+  });
+
+  test('the old full-size feature cards are gone from Home', () => {
+    const src = raw();
+    const your = src.slice(src.indexOf('>Your business<'), src.indexOf('>Money<'));
+    for (const gone of ['cardTitle}>Products<', 'cardTitle}>Bookings<',
+                        'cardTitle}>Offers<', 'cardTitle}>Loyalty programme<',
+                        'cardTitle}>Events<']) {
+      assert.ok(!your.includes(gone), `${gone} must not be repeated beneath its outcome`);
+    }
+    assert.doesNotMatch(your, /styles\.card\b/, 'no nested feature cards inside an outcome');
+  });
+
+  test('every destination those cards used is still reachable', () => {
+    for (const r of ['/business-products', '/business-orders', '/local-book-units',
+                     '/local-book-services', '/local-book-schedule', '/local-book-bookings',
+                     '/event-manage', '/event-create', '/event-scanner',
+                     '/local-offer-new', '/local-business-detail', '/local-business-register']) {
+      assert.match(raw(), new RegExp(`'${r}'`), `${r} must stay reachable`);
+    }
+  });
+
+  test('the controls that had nowhere else to live are still on Home', () => {
+    const src = raw();
+    assert.match(src, /onValueChange=\{toggleAcceptsBookings\}/, 'the bookings switch');
+    assert.match(src, /onPress=\{stopLoyalty\}/, 'stopping a running programme');
+    assert.match(src, /deactivateOffer\(o\.id\)/, 'ending a live offer');
+    assert.match(src, /setShowLoyaltyModal\(true\)/, 'editing the programme');
+  });
+
+  test('an unused capability stays calm — no purple set-up wall', () => {
+    const src = raw();
+    const your = src.slice(src.indexOf('>Your business<'), src.indexOf('>Money<'));
+    assert.doesNotMatch(your, /Not set up yet|No offers yet/,
+      'the outcome line already carries that state');
+    assert.doesNotMatch(your, /upgradeBtn/, 'no large call-to-action buttons among the outcomes');
+  });
+});
+
+describe('the rest of Home is navigation and status, not the managers', () => {
+  test('urgent alerts is collapsed on Home', () => {
+    const src = raw();
+    assert.match(src, /const \[open, setOpen\] = useState\(false\);/);
+    assert.match(src, /\{!open && \(/);
+    assert.match(src, /Send an urgent alert|Manage alerts/);
+    assert.match(src, /\{open && \(<>/, 'the composer and access request open on a tap');
+  });
+
+  test('nothing about alerts was removed', () => {
+    const src = raw();
+    for (const keep of ['onRequestAccess', 'onSendAlert', 'onCancelAlert', 'onAcceptPolicy']) {
+      assert.ok(src.includes(keep), `${keep} must survive`);
+    }
+  });
+
+  test('Counter keeps its richer treatment', () => {
+    const src = raw();
+    const counter = src.slice(src.indexOf('>At the counter<'), src.indexOf('>Your business<'));
+    for (const r of ['/local-counter', '/local-till', '/local-verify']) {
+      assert.ok(counter.includes(r), `${r} stays in the counter block`);
+    }
+    assert.ok(src.indexOf('>At the counter<') < src.indexOf('>Your business<'),
+      'and it stays above the outcomes');
   });
 });
