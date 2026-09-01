@@ -121,8 +121,24 @@ describe('the Work hub people actually land on has a way through', () => {
 /* ── 2. the business area has Shifts ──────────────────────────────────────── */
 
 describe('Business → Manage → Shifts', () => {
-  test('the dashboard lists it, next to Jobs, under People', () => {
-    assert.match(manageDash, /\$\{base\}\/shifts`, group: "People", icon: "⚡", title: "Shifts", desc: "Post and manage shifts for your business"/);
+  // This originally pinned a Shifts tile in the Business manage grid, next to
+  // Jobs under "People". Business 2.0 Phase 2B removed that grid: Work is a
+  // separate product, and Business Home is now five owner outcomes with no
+  // Jobs, Shifts or Job leads among them.
+  //
+  // That deliberately gives up ONE of the two doors this suite added. The other
+  // — the poster's shortcut on the /jobs hub people actually land on — is still
+  // here and still tested above, and is the door that fixed the original
+  // complaint. What must not happen is BOTH disappearing, so this now pins the
+  // survivor rather than the tile.
+  test('Work is no longer a Business capability, and the other door still works', () => {
+    for (const gone of ['/shifts', '/jobs', '/leads']) {
+      assert.ok(!code(manageDash).includes(`\${base}${gone}\``),
+        `${gone} must not be a Business Home tile — Work is its own product`);
+    }
+    assert.match(jobsHub, /My posted shifts/);
+    assert.match(jobsHub, /const manageHref = isShifts \? "\/shifts\/manage" : "\/jobs\/manage"/);
+    assert.match(workPage, /href: "\/shifts\/manage", title: "My posted shifts"/);
   });
 
   test('the route exists', () => {
