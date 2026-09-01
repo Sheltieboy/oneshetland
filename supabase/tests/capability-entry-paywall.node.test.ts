@@ -271,3 +271,67 @@ describe('enforcement is untouched', () => {
     assert.match(home, /<DashboardTop/);
   });
 });
+
+/* ── 6. A lapsed loyalty programme reads as a fact, not a form ────────────── */
+
+describe('below Pro the programme is shown, not offered for editing', () => {
+  const src = code('components/business/LoyaltyManager.tsx');
+  // Everything before `return (` for the editable branch is the read-only one.
+  const readOnly = src.slice(src.indexOf('if (!canConfigure) {'), src.lastIndexOf('return ('));
+
+  test('there is one manager, with a read-only branch — not a second component', () => {
+    assert.equal((src.match(/export function/g) ?? []).length, 1);
+    assert.ok(readOnly.length > 0, 'the read-only branch must exist');
+  });
+
+  test('1. the programme details are still shown', () => {
+    // Read from `program`, because this states what exists rather than drafting
+    // what might.
+    assert.match(readOnly, /program\?\.type/);
+    assert.match(readOnly, /points_per_pound/);
+    assert.match(readOnly, /points_for_pound/);
+    assert.match(readOnly, /normalizeTiers\(program\?\.reward_tiers\)/);
+    assert.match(readOnly, /stamps<\/span> — \{t\.reward\}|\{t\.stamps\} stamps/);
+    assert.match(readOnly, /Running|Stopped/);
+  });
+
+  test('2. nothing in it is editable', () => {
+    for (const editable of ['<input', '<textarea', '<select', 'onChange']) {
+      assert.ok(!readOnly.includes(editable), `${editable} must not appear below Pro`);
+    }
+    // The type pills are buttons that mutate state — they must not be here either.
+    assert.doesNotMatch(readOnly, /setType|setStampsRequired|setStampReward|setExtraTiers|setPerPound|setForPound/);
+  });
+
+  test('3. save, restart and create are all unavailable', () => {
+    assert.doesNotMatch(readOnly, /onClick=\{save\}|upsertLoyaltyProgram/);
+    for (const label of ['Update programme', 'Set up programme', 'Add another reward tier']) {
+      assert.ok(!readOnly.includes(label), `${label} must not appear below Pro`);
+    }
+  });
+
+  test('4. Stop programme is still there, and still not gated', () => {
+    assert.match(readOnly, /Stop programme/);
+    assert.match(readOnly, /onClick=\{stop\}/);
+    const stopBlock = readOnly.slice(readOnly.indexOf('program?.is_active && ('));
+    assert.doesNotMatch(stopBlock, /canConfigure/, 'stopping never depends on the plan');
+  });
+
+  test('5. nothing here touches customer cards or history', () => {
+    assert.doesNotMatch(readOnly, /local_loyalty_cards|local_loyalty_transactions|delete|clear/i);
+    const client = code('lib/business-client.ts');
+    const stopFn = client.slice(client.indexOf('export async function stopLoyaltyProgram'));
+    assert.doesNotMatch(stopFn.slice(0, stopFn.indexOf('\n}')), /cards|transactions|delete/i);
+  });
+
+  test('with effective Pro the editable manager is exactly as it was', () => {
+    const editable = src.slice(src.lastIndexOf('return ('));
+    for (const keep of ['setType', 'Stamps to collect', 'Add another reward tier',
+                        'onClick={save}', 'Points earned per £1 spent']) {
+      assert.ok(editable.includes(keep), `${keep} must survive for an entitled owner`);
+    }
+    // The save button is no longer wrapped in a plan check — it cannot be
+    // reached without one.
+    assert.doesNotMatch(editable, /canConfigure/);
+  });
+});
