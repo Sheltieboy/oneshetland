@@ -23,6 +23,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { NavRail } from '@/components/NavRail';
 import { Sheet } from '@/components/ui/Sheet';
 import { SECTIONS } from '@/constants/sections';
+import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchMyBusinesses, fetchBusinessPrivate, updateBusiness,
@@ -55,9 +56,10 @@ const S = SECTIONS.local;
 
 // Tier helpers — single source of truth for "does this user's plan include X?"
 type TierLevel = 'free' | 'pro' | 'premium';
-const TIER_RANK: Record<TierLevel, number> = { free: 0, pro: 1, premium: 2 };
-const tierMeets = (current: TierLevel, required: TierLevel) =>
-  TIER_RANK[current] >= TIER_RANK[required];
+// No local tierMeets any more. Comparing the stored subscription_tier is how
+// this screen came to refuse Bookings to the Pro customers paying for it, so
+// the helper is gone rather than left lying about for the next person.
+// Entitlement comes from lib/entitlement.ts, which asks the server.
 
 const PREMIUM_PURPLE = '#A855F7';
 
@@ -68,7 +70,7 @@ const PLAN_FEATURES: { label: string; req: TierLevel }[] = [
   { label: 'Time-limited offers',    req: 'pro'     },
   { label: 'Local Wallet payments',  req: 'pro'     },
   { label: 'NFC tap-to-stamp tile',  req: 'pro'     },
-  { label: 'In-app bookings',        req: 'premium' },
+  { label: 'In-app bookings',        req: 'pro'     },
   { label: 'Featured homepage spot', req: 'premium' },
 ];
 
@@ -87,6 +89,12 @@ export default function BusinessDashboardScreen() {
 
   const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
   const [bookServiceCount, setBookServiceCount] = useState(0);
+  /**
+   * What the plan actually allows, from the server. Every paid action on this
+   * screen asks this rather than subscription_tier, which only records what was
+   * bought and not whether it is still in date.
+   */
+  const [eff, setEff] = useState<Effective>(NO_ENTITLEMENT);
   const [savingPaymentToggle, setSavingPaymentToggle] = useState(false);
   const [savingPayoutToggle,  setSavingPayoutToggle]  = useState(false);
   const [walletReceipts, setWalletReceipts] = useState<BusinessWalletReceipt[]>([]);
@@ -139,7 +147,7 @@ export default function BusinessDashboardScreen() {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, schedRows] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, schedRows, entitlement] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -152,18 +160,20 @@ export default function BusinessDashboardScreen() {
         .eq('employer_id', profile!.id)
         .is('posted_as_business_id', null)
         .then(({ count }) => count ?? 0, () => 0),
-      target.accepts_wallet
-        ? fetchBusinessWalletReceipts(target.id, 20).catch(() => [] as BusinessWalletReceipt[])
-        : Promise.resolve([] as BusinessWalletReceipt[]),
+      // Always fetched. Receipts are the business's own record of money it has
+      // taken; switching Wallet off, or a plan lapsing, does not un-take it.
+      fetchBusinessWalletReceipts(target.id, 20).catch(() => [] as BusinessWalletReceipt[]),
       fetchBusinessEvents(target.id).catch(() => [] as OsEvent[]),
       fetchMyAlertAccess(target.id).catch(() => null),
       fetchMyBusinessAlerts(target.id).catch(() => [] as PartnerAlert[]),
       fetchScheduledAlerts(target.id).catch(() => [] as PartnerAlert[]),
+      fetchEffectiveTier(target.id).catch(() => NO_ENTITLEMENT),
     ]);
     setProgram(prog);
     setOffers(ofs);
     setCode(cd);
     setBookServiceCount(bookSvcs.length);
+    setEff(entitlement as Effective);
     setOrphanedShiftCount(orphanCount as number);
     setWalletReceipts(receipts);
     setAlertAccess(alertAcc as AlertAccess | null);
@@ -323,6 +333,14 @@ export default function BusinessDashboardScreen() {
     if (value && !activeBusiness.payout_enabled) {
       return brandedAlert({ title: 'Complete Stripe first', message: 'Connect your Stripe account before accepting wallet payments.' });
     }
+    // Switching OFF is always allowed. Switching ON is the paid boundary, and
+    // is what the server refuses too.
+    if (value && !eff.pro) {
+      return brandedAlert({
+        title: 'Wallet payments need Pro',
+        message: 'Your settings are saved. Switch Wallet on once your plan is active.',
+      });
+    }
     const prev = activeBusiness.accepts_wallet;
     setActiveBusiness({ ...activeBusiness, accepts_wallet: value });
     try {
@@ -330,6 +348,24 @@ export default function BusinessDashboardScreen() {
     } catch (e: any) {
       setActiveBusiness({ ...activeBusiness, accepts_wallet: prev });
       brandedAlert({ title: 'Could not update', message: e?.message ?? 'Try again.' });
+    }
+  };
+
+  /**
+   * Stop a running loyalty programme. Reduction only, and offered whatever the
+   * plan says: the server permits exactly this without Pro. It changes the
+   * programme's own state and nothing else — customer cards, stamps, points and
+   * history are not the shop's to clear.
+   */
+  const stopLoyalty = async () => {
+    if (!activeBusiness) return;
+    try {
+      const { error } = await supabase.from('local_loyalty_programs')
+        .update({ is_active: false }).eq('business_id', activeBusiness.id);
+      if (error) throw error;
+      setProgram(p => (p ? { ...p, is_active: false } : p));
+    } catch (e: any) {
+      brandedAlert({ title: 'Could not stop it', message: e?.message ?? 'Try again.' });
     }
   };
 
@@ -347,10 +383,12 @@ export default function BusinessDashboardScreen() {
 
   const toggleAcceptsBookings = async (value: boolean) => {
     if (!activeBusiness) return;
-    if (activeBusiness.subscription_tier !== 'premium') {
+    // Switching OFF is always allowed — nobody is trapped taking bookings.
+    // Switching ON needs effective Pro, which is what the server enforces.
+    if (value && !eff.pro) {
       return brandedAlert({
-        title: 'Premium feature',
-        message: 'In-app bookings aren\'t enabled on your current plan.',
+        title: 'Bookings need Pro',
+        message: 'Your services and availability are saved. Turn bookings on once your plan is active.',
       });
     }
     if (value && bookServiceCount === 0) {
@@ -657,7 +695,9 @@ export default function BusinessDashboardScreen() {
           {/* Feature checklist — instantly clear what's unlocked vs locked */}
           <View style={styles.featureList}>
             {PLAN_FEATURES.map(f => {
-              const unlocked = tierMeets(activeBusiness.subscription_tier as TierLevel, f.req);
+              // What is available NOW, not what was once bought. A premium row
+              // whose date has passed unlocks nothing.
+              const unlocked = f.req === 'free' ? true : f.req === 'pro' ? eff.pro : eff.premium;
               return (
                 <View key={f.label} style={styles.featureRow}>
                   <FontAwesome5
@@ -682,7 +722,7 @@ export default function BusinessDashboardScreen() {
           {/* In-app plan upgrades and boosts have been removed for store
               compliance. The feature checklist above shows, read-only, which
               features the current plan includes and which are locked. */}
-          {activeBusiness.subscription_tier === 'premium' && (
+          {eff.premium && (
             <View style={styles.allUnlocked}>
               <FontAwesome5 name="crown" size={13} color={PREMIUM_PURPLE} solid />
               <Text style={styles.allUnlockedText}>All features unlocked</Text>
@@ -701,7 +741,9 @@ export default function BusinessDashboardScreen() {
           )}
 
           {/* Manage subscription — only when there's a paid plan to manage */}
-          {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
+          {/* Never gated. A free, lapsed or downgraded owner is the one most
+              likely to need the plans and billing screen. */}
+          {true && (
             <TouchableOpacity
               style={styles.manageBtn}
               onPress={openBillingPortal}
@@ -716,7 +758,9 @@ export default function BusinessDashboardScreen() {
           )}
 
           {/* ── NFC tile — Pro+ only ── */}
-          {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (<>
+          {/* The tile can be read about and requested on any plan. What it
+              cannot do is behave as though Wallet were live — see walletLive. */}
+          {true && (<>
             <View style={styles.subDivider} />
             <Text style={styles.subSectionLabel}>NFC tile</Text>
             <Text style={styles.cardSub}>
@@ -768,7 +812,9 @@ export default function BusinessDashboardScreen() {
         </View>
 
         {/* ── Stripe Connect (for wallet) — Pro+ only ── */}
-        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
+        {/* Connecting a bank is setup, not a paid action — and an owner whose
+            plan lapsed may still need to reach their payout account. */}
+        {true && (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
@@ -822,7 +868,10 @@ export default function BusinessDashboardScreen() {
         )}
 
         {/* ── Wallet payments received — Pro+, only when wallet accepted ── */}
-        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && activeBusiness.accepts_wallet && (
+        {/* The business's own record of money it has taken. Neither a lapsed
+            plan nor switching Wallet off makes that money un-taken, so this is
+            shown whenever there is anything to show. */}
+        {walletReceipts.length > 0 && (
           <WalletReceiptsCard receipts={walletReceipts} accentColor={S.color} />
         )}
 
@@ -845,8 +894,13 @@ export default function BusinessDashboardScreen() {
 
         <Text style={styles.groupHeader}>Loyalty &amp; offers</Text>
 
-        {/* ── Loyalty programme — Pro+ only ── */}
-        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
+        {/* ── Loyalty programme ──────────────────────────────────────────
+            Gate before setup: the server refuses the insert without Pro, so
+            below it the card explains rather than vanishing. An existing
+            programme stays visible and stoppable, because the server permits
+            the reducing direction without a plan and nobody should be stuck
+            running something they cannot switch off. */}
+        {true && (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
@@ -857,28 +911,51 @@ export default function BusinessDashboardScreen() {
               <Text style={styles.cardSub}>
                 {program
                   ? stamps
-                    ? `${program.stamps_required} stamps · ${program.stamp_reward}`
-                    : `${program.points_per_pound} points per £1`
-                  : 'Not set up yet'}
+                    ? `${program.stamps_required} stamps · ${program.stamp_reward}${eff.pro ? '' : ' · Pro needed to change it'}`
+                    : `${program.points_per_pound} points per £1${eff.pro ? '' : ' · Pro needed to change it'}`
+                  : eff.pro
+                    ? 'Not set up yet'
+                    : 'Part of Pro — a stamp card customers collect on their phone'}
               </Text>
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.upgradeBtn, { backgroundColor: S.color, marginTop: 12 }]}
-            onPress={() => setShowLoyaltyModal(true)}
-            activeOpacity={0.85}
-          >
-            <FontAwesome5 name={program ? 'pen' : 'plus'} size={11} color="#fff" solid />
-            <Text style={styles.upgradeBtnText}>
-              {program ? 'Edit programme' : 'Set up loyalty programme'}
-            </Text>
-          </TouchableOpacity>
+          {eff.pro && (
+            <TouchableOpacity
+              style={[styles.upgradeBtn, { backgroundColor: S.color, marginTop: 12 }]}
+              onPress={() => setShowLoyaltyModal(true)}
+              activeOpacity={0.85}
+            >
+              <FontAwesome5 name={program ? 'pen' : 'plus'} size={11} color="#fff" solid />
+              <Text style={styles.upgradeBtnText}>
+                {program ? 'Edit programme' : 'Set up loyalty programme'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Reduction only, and deliberately never gated: the server allows
+              stopping without Pro, and an owner whose plan lapsed must be able
+              to switch off a programme that is still running. Customer stamps,
+              points and history are untouched by it. */}
+          {program?.is_active && (
+            <TouchableOpacity style={styles.reduceBtn} onPress={stopLoyalty} activeOpacity={0.85}>
+              <Text style={styles.reduceBtnText}>Stop programme</Text>
+            </TouchableOpacity>
+          )}
+
+          {!eff.pro && !program && (
+            <TouchableOpacity style={styles.reduceBtn} onPress={openBillingPortal} activeOpacity={0.85}>
+              <Text style={styles.reduceBtnText}>See plans</Text>
+            </TouchableOpacity>
+          )}
         </View>
         )}
 
-        {/* ── Offers — Pro+ only ── */}
-        {tierMeets(activeBusiness.subscription_tier as TierLevel, 'pro') && (
+        {/* ── Offers ─────────────────────────────────────────────────────
+            Gate before setup, same as Loyalty. Existing offers stay listed and
+            endable after a downgrade — ending one is a reduction the server
+            allows without a plan. */}
+        {true && (
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
@@ -886,7 +963,13 @@ export default function BusinessDashboardScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Offers</Text>
-              <Text style={styles.cardSub}>{offers.filter(o => o.is_active).length} active</Text>
+              <Text style={styles.cardSub}>
+                {offers.length > 0
+                  ? `${offers.filter(o => o.is_active).length} active${eff.pro ? '' : ' · Pro needed to add more'}`
+                  : eff.pro
+                    ? 'No offers yet'
+                    : 'Part of Pro — time-limited deals across OneShetland'}
+              </Text>
             </View>
             <TouchableOpacity
               style={[styles.cardIconBtn, { backgroundColor: S.color }]}
@@ -934,7 +1017,10 @@ export default function BusinessDashboardScreen() {
         <Text style={styles.groupHeader}>Sell &amp; list</Text>
 
         {/* ── Bookings — Premium only; hidden otherwise (Plan card handles awareness) ── */}
-        {activeBusiness.subscription_tier === 'premium' && (
+        {/* Visible on any plan: services, availability and products may all be
+            prepared before paying — the server allows exactly that. The plan is
+            asked for at the switch and at publish. */}
+        {true && (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
@@ -943,10 +1029,15 @@ export default function BusinessDashboardScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>Bookings</Text>
                 <Text style={styles.cardSub}>
-                  {activeBusiness.accepts_bookings
+                  {/* "live for booking" only when it genuinely is: the flag AND
+                      a plan that is still in date. Add-ons stopped existing when
+                      the tier model replaced them. */}
+                  {activeBusiness.accepts_bookings && eff.pro
                     ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} · live for booking`
                     : bookServiceCount > 0
-                      ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} ready · enable via Add-ons`
+                      ? eff.pro
+                        ? `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} ready · turn bookings on`
+                        : `${bookServiceCount} service${bookServiceCount === 1 ? '' : 's'} saved · Pro needed to take bookings`
                       : 'Manage services, schedule and bookings'}
                 </Text>
               </View>
@@ -992,7 +1083,10 @@ export default function BusinessDashboardScreen() {
         )}
 
         {/* ── Products (Shop Shetland) — Premium only ── */}
-        {activeBusiness.subscription_tier === 'premium' && (
+        {/* Visible on any plan: services, availability and products may all be
+            prepared before paying — the server allows exactly that. The plan is
+            asked for at the switch and at publish. */}
+        {true && (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
@@ -2181,6 +2275,8 @@ const styles = StyleSheet.create({
 
   // Merged-card sub-sections
   subSectionLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  reduceBtn:       { marginTop: 10, borderWidth: 1, borderColor: '#D6DCE3', borderRadius: 999, paddingVertical: 10, alignItems: 'center' },
+  reduceBtnText:   { fontSize: 13, fontWeight: '700', color: '#5B6B7A' },
   groupHeader:     { fontSize: 12, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginTop: 18, marginBottom: 6 },
   subDivider:      { height: 1, backgroundColor: colors.border, marginTop: 16, marginBottom: 14 },
 

@@ -27,6 +27,7 @@ import {
   type BookUnitItem, type UnitItemUpsertInput,
 } from '@/lib/book-api';
 import { useAlert } from '@/components/BrandedAlert';
+import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
 
 const S = SECTIONS.local;
 
@@ -227,6 +228,11 @@ function UnitEditor({
   const [validDaysText, setVd]    = useState('');
   const [usesText, setUses]       = useState('1');
   const [saving, setSaving]       = useState(false);
+  /** Effective Premium — same contract as products. */
+  const [eff, setEff] = useState<Effective>(NO_ENTITLEMENT);
+  useEffect(() => {
+    fetchEffectiveTier(businessId).then(setEff).catch(() => setEff(NO_ENTITLEMENT));
+  }, [businessId]);
 
   useEffect(() => {
     if (visible) {
@@ -281,7 +287,9 @@ function UnitEditor({
       stock,
       valid_days:        validDays,
       uses_per_purchase: uses,
-      is_active:         true,
+      // A new pass is a draft unless the plan can publish it; editing an
+      // existing one never changes whether it is on sale.
+      ...(isNew ? { is_active: eff.premium } : {}),
     };
 
     setSaving(true);

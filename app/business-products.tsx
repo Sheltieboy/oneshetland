@@ -28,6 +28,7 @@ import {
   type Product, type ProductVariant, type BusinessShipping, type StockMode,
 } from '@/lib/products-api';
 import { formatPence } from '@/lib/local-api';
+import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
 
 const S = SECTIONS.local;
 
@@ -65,6 +66,14 @@ function BusinessProductsBody() {
   const [freeUkPost, setFreeUkPost] = useState(false);
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [saving, setSaving] = useState(false);
+  /**
+   * Effective Premium. A product may be built on any plan — the server keeps a
+   * draft carve-out for exactly that — so this decides only whether a NEW one
+   * goes straight on sale, never whether this screen opens.
+   */
+  const [eff, setEff] = useState<Effective>(NO_ENTITLEMENT);
+  /** The product being edited, as it already stands. Editing never republishes. */
+  const [editingActive, setEditingActive] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   // Shipping card state
@@ -80,6 +89,7 @@ function BusinessProductsBody() {
   const [shipMsg, setShipMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (businessId) fetchEffectiveTier(businessId).then(setEff).catch(() => setEff(NO_ENTITLEMENT));
     if (!businessId) return;
     try {
       const [rows, ship] = await Promise.all([fetchMerchantProducts(businessId), fetchShipping(businessId)]);
@@ -97,13 +107,13 @@ function BusinessProductsBody() {
   useEffect(() => { load(); }, [load]);
 
   function openNew() {
-    setEditingId(null); setTitle(''); setDescription(''); setCategory('other'); setPrice('');
+    setEditingId(null); setEditingActive(null); setTitle(''); setDescription(''); setCategory('other'); setPrice('');
     setPhoto1(null); setPhoto2(null); setStockMode('tracked'); setStock(''); setLeadDays('14');
     setCollectOnly(false); setFreeUkPost(false); setVariants([]); setErr(null);
     setShowEditor(true);
   }
   function openEdit(p: Product) {
-    setEditingId(p.id); setTitle(p.title); setDescription(p.description ?? '');
+    setEditingId(p.id); setEditingActive(p.is_active); setTitle(p.title); setDescription(p.description ?? '');
     setCategory(p.category ?? 'other'); setPrice(pounds(p.price_pence));
     setPhoto1(p.photos[0] ?? null); setPhoto2(p.photos[1] ?? null);
     setStockMode(p.stock_mode); setStock(p.stock == null ? '' : String(p.stock));
@@ -133,7 +143,10 @@ function BusinessProductsBody() {
         lead_time_days: stockMode === 'made_to_order' ? Math.min(90, Math.max(1, Math.floor(Number(leadDays) || 14))) : null,
         collect_only: collectOnly,
         free_uk_post: freeUkPost,
-        is_active: true,
+        // New products start as drafts unless the plan can publish them. An
+        // existing product keeps whatever the owner set — a lapsed plan must
+        // never silently unpublish a shop.
+        is_active: editingId ? (editingActive ?? true) : eff.premium,
       }, variants.map((v) => ({ id: v.id, name: v.name, price_delta_pence: toPence(v.delta) ?? 0, stock: v.stock === '' ? null : Math.max(0, Math.floor(Number(v.stock))) })));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowEditor(false);
