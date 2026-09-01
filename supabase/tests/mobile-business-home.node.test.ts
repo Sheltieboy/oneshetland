@@ -493,9 +493,11 @@ describe('also possible on OneShetland', () => {
     const r = shelfFor(GOOD, d({ products: 3, meetsPremium: true }));
     assert.deepEqual(r.discovery, [2, 3, 4]);
     assert.equal(r.outcomes[1].state, 'saved');
-    // A capability is either working or discoverable — the screen derives one
-    // list from the other, so it cannot be in both.
-    assert.match(src(), /const isWorking = \(i: number\) => !!outcomes\[i\] && !\(showDiscovery && discovery\.includes/);
+    // A capability is either working or discoverable. This used to pin the
+    // expression that coupled isWorking to showDiscovery — which was the bug —
+    // so it now pins the corrected separation, and the executed screen tests
+    // below prove the behaviour rather than the wording.
+    assert.match(src(), /const isWorking = \(i: number\) => !!outcomes\[i\] && outcomes\[i\]\.state !== 'available';/);
   });
 
   test('an unreadable capability is not discovery — we do not know it is unused', () =>
@@ -595,5 +597,103 @@ describe('also possible on OneShetland', () => {
       assert.ok(s2.includes(keep), `${keep} must survive`);
     }
     assert.equal((s2.match(/<OutcomeCard/g) ?? []).length, 5, 'still five outcome cards');
+  });
+});
+
+/* ── 8. The screen's own logic, executed ──────────────────────────────────── */
+
+describe('what the dashboard actually renders', () => {
+  /**
+   * The Phase 3E tests above proved the RULE and then asserted the scenarios
+   * from a reimplementation of it. That is how a real contradiction survived
+   * review: isWorking was coupled to showDiscovery, so with the shelf hidden
+   * the exclusion switched off and all four never-used cards came back — the
+   * exact wall the phase existed to remove — while the tests, which never
+   * touched isWorking, stayed green.
+   *
+   * So these lift the three expressions out of the source and run them. A
+   * mutation to the screen changes what executes here.
+   */
+  function screenLogic() {
+    const src = read(DASH);
+    const grab = (re: RegExp, what: string) => {
+      const m = re.exec(src);
+      assert.ok(m, `could not find ${what} in ${DASH} — the test must follow the screen`);
+      return m[1];
+    };
+    const discoverable = grab(/const DISCOVERABLE = (\[[^\]]*\])/, 'DISCOVERABLE');
+    const discoveryExpr = grab(/const discovery = home\s*\n\s*\?\s*([\s\S]*?)\n\s*: \[\];/, 'discovery');
+    const showExpr = grab(/const showDiscovery = ([^;]+);/, 'showDiscovery');
+    const workingExpr = grab(/const isWorking = \(i: number\) => ([^;]+);/, 'isWorking');
+
+    return (outcomes: { state: string }[]) => {
+      const body = `
+        const DISCOVERABLE = ${discoverable};
+        const home = true;
+        const discovery = ${discoveryExpr.replace(/ as const/g, '')};
+        const showDiscovery = ${showExpr};
+        const isWorking = (i) => ${workingExpr.replace(/ as 1/g, '')};
+        return { discovery, showDiscovery, working: [0,1,2,3,4].filter(isWorking) };
+      `;
+      return new Function('outcomes', body)(outcomes) as
+        { discovery: number[]; showDiscovery: boolean; working: number[] };
+    };
+  }
+
+  const run = screenLogic();
+  const scene = (found: string, rest: string[]) =>
+    run([{ state: found }, ...rest.map((state) => ({ state }))]);
+  const FOUR_UNUSED = ['available', 'available', 'available', 'available'];
+
+  test('1. incomplete + four never used → Be found alone, no shelf', () => {
+    const r = scene('incomplete', FOUR_UNUSED);
+    assert.deepEqual(r.working, [0], 'only Be found may render as a working card');
+    assert.equal(r.showDiscovery, false, 'and the shelf waits');
+  });
+
+  test('2. ready + four never used → Be found alone, no shelf', () => {
+    const r = scene('ready', FOUR_UNUSED);
+    assert.deepEqual(r.working, [0]);
+    assert.equal(r.showDiscovery, false, 'ready is not good enough');
+  });
+
+  test('3. good + four never used → Be found working, four in discovery', () => {
+    const r = scene('good', FOUR_UNUSED);
+    assert.deepEqual(r.working, [0]);
+    assert.equal(r.showDiscovery, true);
+    assert.deepEqual(r.discovery, [1, 2, 3, 4]);
+  });
+
+  test('4. a configured capability stays working, whatever Be found says', () => {
+    for (const found of ['incomplete', 'ready', 'good']) {
+      const r = scene(found, ['saved', 'available', 'available', 'available']);
+      assert.ok(r.working.includes(1), `Sell must stay working when Be found is ${found}`);
+      assert.equal(r.discovery.includes(1), false, 'and never be discovery');
+    }
+  });
+
+  test('5. history-bearing states stay working too', () => {
+    const r = scene('good', ['live', 'setup', 'none_upcoming', 'saved']);
+    assert.deepEqual(r.working, [0, 1, 2, 3, 4]);
+    assert.deepEqual(r.discovery, []);
+    assert.equal(r.showDiscovery, false, 'nothing left to discover');
+  });
+
+  test('6. unknown is never discovery, and is not hidden from the working area', () => {
+    const r = scene('good', ['unknown', 'available', 'available', 'available']);
+    assert.ok(r.working.includes(1), 'a read we could not make still shows its row');
+    assert.equal(r.discovery.includes(1), false, 'and is no evidence it was never used');
+  });
+
+  test('nothing is ever in both places', () => {
+    for (const found of ['incomplete', 'ready', 'good']) {
+      for (const combo of [FOUR_UNUSED, ['saved', 'available', 'live', 'unknown'],
+                           ['live', 'live', 'live', 'live']]) {
+        const r = scene(found, combo);
+        for (const i of r.discovery) {
+          assert.equal(r.working.includes(i), false, `${i} in both, with Be found ${found}`);
+        }
+      }
+    }
   });
 });

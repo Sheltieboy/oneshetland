@@ -465,8 +465,21 @@ export default function BusinessDashboardScreen() {
     ? DISCOVERABLE.filter((i) => outcomes[i]?.state === 'available')
     : [];
   const showDiscovery = outcomes[0]?.state === 'good' && discovery.length > 0;
-  /** Shown as a working outcome: everything except a never-used capability. */
-  const isWorking = (i: number) => !!outcomes[i] && !(showDiscovery && discovery.includes(i as 1));
+  /**
+   * A never-used capability is not working area, full stop — whether or not the
+   * shelf is showing.
+   *
+   * This was previously coupled to showDiscovery, which quietly meant the
+   * opposite of the intent: with the shelf hidden (Be found not yet good) the
+   * exclusion switched off, so the four cards an owner has never touched came
+   * straight back and the newly-claimed business got exactly the wall of empty
+   * capabilities this phase existed to remove.
+   *
+   * `available` decides membership of the working area. Be found being good
+   * decides only whether the excluded ones are shown in discovery. Two separate
+   * questions.
+   */
+  const isWorking = (i: number) => !!outcomes[i] && outcomes[i].state !== 'available';
 
   /* One obvious way in per capability, all of them routes that already exist
      and that actually BEGIN configuration — not a menu of managers. */
