@@ -4,10 +4,11 @@
  * Pass ?id=xyz to edit, omit to create.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Switch,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -105,6 +106,20 @@ export default function BusinessRegisterScreen() {
      opening hours and then dropped at the top of a long form is the same
      failure in a different place. */
   const focus = useLocalSearchParams<{ focus?: string }>().focus;
+  /* Where each block ended up, recorded by the layout pass itself. No pixel
+     offsets and no persisted state: onLayout reports the real y, and NEXT
+     scrolls to the one it asked about. Opened with no focus, nothing happens
+     and the screen starts at the top as usual. */
+  const scroller = useRef<ScrollView>(null);
+  const spots = useRef<Record<string, number>>({});
+  const onLayout = (key: string) => (e: LayoutChangeEvent) => {
+    spots.current[key] = e.nativeEvent.layout.y;
+    if (key === focus) {
+      // A little headroom, so the label is not flush against the top.
+      scroller.current?.scrollTo({ y: Math.max(0, e.nativeEvent.layout.y - 16), animated: true });
+    }
+  };
+
   const [open, setOpen] = useState({
     hours:    focus === 'opening_hours',
     offer:    false,
@@ -341,7 +356,7 @@ export default function BusinessRegisterScreen() {
       />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scroller} style={styles.scroll} contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
 
           {/* Logo + auto-tinted banner preview */}
         {/* ── Profile & contact ────────────────────────────────────────
@@ -351,24 +366,25 @@ export default function BusinessRegisterScreen() {
              arrived at a form and had to scroll past three other subjects
              to do the one thing they were asked to do. */}
 
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Logo</Text>
-            <View style={[styles.logoBanner, { backgroundColor: brandColor ?? S.color }]}>
-              <TouchableOpacity style={styles.logoPick} onPress={pickLogo} activeOpacity={0.85}>
-                {logoUrl ? (
-                  <Image source={{ uri: logoUrl }} style={styles.logoImg} />
-                ) : (
-                  <View style={[styles.logoImg, styles.logoPlaceholder]}>
-                    <FontAwesome5 name="camera" size={20} color={S.color} solid />
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity onPress={pickLogo} activeOpacity={0.7}>
-              <Text style={styles.logoHint}>
-                {logoUrl ? 'Tap the logo to change it' : 'Tap to add a logo'}
-                {brandColor ? '  ·  banner tinted from your logo' : ''}
-              </Text>
+          {/* A thumbnail and a line, not a hero. The upload, the brand-colour
+              extraction and the tint are exactly as they were — this is the
+              same control taking a fifth of the room. */}
+          <View style={styles.field} onLayout={onLayout('image')}>
+            <TouchableOpacity style={styles.logoRow} onPress={pickLogo} activeOpacity={0.7}>
+              {logoUrl ? (
+                <Image source={{ uri: logoUrl }} style={styles.logoThumb} />
+              ) : (
+                <View style={[styles.logoThumb, styles.logoPlaceholder, { backgroundColor: (brandColor ?? S.color) + '18' }]}>
+                  <FontAwesome5 name="camera" size={16} color={S.color} solid />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>Logo</Text>
+                <Text style={styles.discloseSummary}>
+                  {logoUrl ? 'Tap to change it' : 'Tap to add one'}
+                  {brandColor ? '  ·  your colour comes from it' : ''}
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -402,7 +418,7 @@ export default function BusinessRegisterScreen() {
             </View>
           </View>
 
-          <View style={styles.field}>
+          <View style={styles.field} onLayout={onLayout('map_pin')}>
             <Text style={styles.fieldLabel}>Address *</Text>
             {GOOGLE_KEY ? (
               <View style={{ zIndex: 10 }}>
@@ -446,7 +462,47 @@ export default function BusinessRegisterScreen() {
             )}
           </View>
 
-          <View style={styles.field}>
+          {/* Phone, website and email together: NEXT sends people here by
+              name, so they are one block and they are above the fold. */}
+          <View onLayout={onLayout('contact')}>
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Phone</Text>
+              <TextInput
+                style={styles.input}
+                value={phone} onChangeText={setPhone}
+                placeholder="01595 ..."
+                placeholderTextColor={colors.textLight}
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Website</Text>
+              <TextInput
+                style={styles.input}
+                value={website} onChangeText={setWebsite}
+                placeholder="https://..."
+                placeholderTextColor={colors.textLight}
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Business email</Text>
+              <TextInput
+                style={styles.input}
+                value={email} onChangeText={setEmail}
+                placeholder="hello@yourbusiness.co.uk"
+                placeholderTextColor={colors.textLight}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+              <Text style={styles.fieldHint}>Used for Stripe payouts and account verification</Text>
+            </View>
+          </View>
+
+          <View style={styles.field} onLayout={onLayout('description')}>
             <Text style={styles.fieldLabel}>About</Text>
             <TextInput
               style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
@@ -455,42 +511,6 @@ export default function BusinessRegisterScreen() {
               placeholderTextColor={colors.textLight}
               multiline
             />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Phone</Text>
-            <TextInput
-              style={styles.input}
-              value={phone} onChangeText={setPhone}
-              placeholder="01595 ..."
-              placeholderTextColor={colors.textLight}
-              keyboardType="phone-pad"
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Website</Text>
-            <TextInput
-              style={styles.input}
-              value={website} onChangeText={setWebsite}
-              placeholder="https://..."
-              placeholderTextColor={colors.textLight}
-              autoCapitalize="none"
-              keyboardType="url"
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Business email</Text>
-            <TextInput
-              style={styles.input}
-              value={email} onChangeText={setEmail}
-              placeholder="hello@yourbusiness.co.uk"
-              placeholderTextColor={colors.textLight}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-            <Text style={styles.fieldHint}>Used for Stripe payouts and account verification</Text>
           </View>
 
         {/* Opening hours — summary by default; the real editor is one tap away. */}
@@ -663,26 +683,15 @@ const styles = StyleSheet.create({
   toggleSub:   { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
 
   field:      {},
+  logoRow:         { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  logoThumb:       { width: 48, height: 48, borderRadius: 12 },
+  logoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   discloseRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
   discloseSummary: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   fieldLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   fieldHint:  { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 },
 
   // Logo + banner preview
-  logoBanner: {
-    height: 110, borderRadius: radius.lg,
-    alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  logoPick: {},
-  logoImg: {
-    width: 76, height: 76, borderRadius: radius.lg,
-    borderWidth: 4, borderColor: '#fff', backgroundColor: '#fff',
-  },
-  logoPlaceholder: {
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
-  },
-  logoHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 8, textAlign: 'center' },
   input: {
     backgroundColor: '#fff', borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,

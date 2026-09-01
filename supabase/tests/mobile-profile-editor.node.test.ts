@@ -79,10 +79,23 @@ describe('the primary job is the primary thing', () => {
     }
   });
 
-  test('address and about are in the same first run', () => {
+  test('the first run follows Be Found priority, not form history', () => {
     const b = body();
-    assert.ok(b.indexOf('GooglePlacesAutocomplete') < b.indexOf('>Opening hours<'));
-    assert.ok(b.indexOf('value={description}') < b.indexOf('>Opening hours<'));
+    const at = (needle: string) => { const i = b.indexOf(needle); assert.ok(i > -1, needle); return i; };
+    const order = ['onLayout(\'image\')', 'value={name}', 'Category *',
+                   'GooglePlacesAutocomplete', 'value={phone}', 'value={website}',
+                   'value={email}', 'value={description}'].map(at);
+    assert.deepEqual([...order].sort((x, y) => x - y), order,
+      'logo, name, category, address, phone, website, email, then about');
+  });
+
+  test('the essentials come before the description', () => {
+    const b = body();
+    // Contact and location are Be Found ESSENTIALS; a description is an
+    // improvement after them, so it must not sit between them and the top.
+    assert.ok(b.indexOf('value={email}') < b.indexOf('value={description}'),
+      'About must come after the contact block');
+    assert.ok(b.indexOf('GooglePlacesAutocomplete') < b.indexOf('value={phone}'));
   });
 });
 
@@ -187,13 +200,14 @@ describe('being told what to do, then taken there', () => {
     assert.match(code(DASH), /onPress=\{\(\) => editBusiness\(next\.key\)\}/);
   });
 
-  test('contact, description and image land on the profile run, which is the top', () => {
-    // Those three fields are in the first section, so no anchor machinery is
-    // needed — and none was added.
+  test('contact, description and image are all in the first run', () => {
+    // This used to also assert that NO scroll mechanism existed, because Phase
+    // 3F sent every Be Found milestone to the top of the section. The refinement
+    // that followed aims at each one instead, using onLayout — measured, not
+    // guessed — which the tests below pin.
     const b = body();
     assert.ok(b.indexOf('value={phone}') < b.indexOf('>Opening hours<'));
-    assert.doesNotMatch(ed(), /scrollTo\(|measureLayout|useRef<ScrollView/,
-      'no brittle scroll state was invented');
+    assert.ok(b.indexOf('value={description}') < b.indexOf('>Opening hours<'));
   });
 });
 
@@ -210,4 +224,79 @@ describe('the derivation did not move', () => {
 
   test('and is_active is still no part of it', () =>
     assert.doesNotMatch(code('lib/be-found.ts'), /is_active/));
+});
+
+/* ── 7. Phase 3F refinement — a shorter first screen, aimed properly ─────── */
+
+describe('the first viewport is the job, not the furniture', () => {
+  test('the logo is a thumbnail row, not a hero block', () => {
+    const b = body();
+    assert.match(b, /styles\.logoRow/);
+    assert.match(b, /styles\.logoThumb/);
+    assert.doesNotMatch(raw(), /logoBanner|logoHint/, 'the hero block and its caption are gone');
+    // 48pt, so it cannot quietly become a hero again.
+    assert.match(ed(), /logoThumb:\s*\{ width: 48, height: 48/);
+  });
+
+  test('the upload and the colour it produces are untouched', () => {
+    const b = body();
+    assert.equal((b.match(/onPress=\{pickLogo\}/g) ?? []).length, 1, 'still one way to change it');
+    assert.match(ed(), /brand_color: color/, 'and the extraction still runs on save');
+    assert.doesNotMatch(ed(), /cover_url/, 'no cover image was invented');
+  });
+
+  test('contact fields are one block, above the fold', () => {
+    const b = body();
+    const contact = b.indexOf("onLayout('contact')");
+    assert.ok(contact > -1, 'the contact block must be anchored');
+    for (const f of ['value={phone}', 'value={website}', 'value={email}']) {
+      assert.ok(b.indexOf(f) > contact, `${f} belongs inside the contact block`);
+    }
+    assert.ok(contact < b.indexOf('>Opening hours<'));
+  });
+});
+
+describe('next lands on the thing it asked about', () => {
+  test('every Be Found milestone has somewhere to aim at', () => {
+    const b = body();
+    for (const key of ['image', 'map_pin', 'contact', 'description']) {
+      assert.ok(b.includes(`onLayout('${key}')`), `${key} needs an anchor`);
+    }
+    assert.match(ed(), /hours:\s+focus === 'opening_hours'/, 'and hours still opens its section');
+  });
+
+  test('it scrolls to a measured position, never a guessed one', () => {
+    const src = ed();
+    assert.match(src, /spots\.current\[key\] = e\.nativeEvent\.layout\.y;/);
+    assert.match(src, /scroller\.current\?\.scrollTo\(\{ y: Math\.max\(0, e\.nativeEvent\.layout\.y - 16\)/);
+    assert.match(src, /<ScrollView ref=\{scroller\}/);
+    // No magic numbers standing in for a layout.
+    assert.doesNotMatch(src, /scrollTo\(\{ y: [0-9]{2,}/, 'no hard-coded pixel offsets');
+  });
+
+  test('it only moves when NEXT asked it to', () => {
+    assert.match(ed(), /if \(key === focus\) \{/,
+      'opened normally, the screen starts at the top');
+  });
+
+  test('nothing persists — the anchors are layout, not state', () => {
+    const src = ed();
+    // keyboardShouldPersistTaps is an ordinary RN prop, so this asks about
+    // storage specifically.
+    assert.doesNotMatch(src, /AsyncStorage|SecureStore|useLocalStorage|persistState/i);
+    assert.match(src, /const spots = useRef<Record<string, number>>\(\{\}\);/,
+      'positions live in a ref for the life of the screen');
+  });
+});
+
+describe('the Phase 3F structure did not regress', () => {
+  test('all three disclosures still collapse by default', () => {
+    const b = body();
+    for (const k of ['hours', 'offer', 'visitors']) {
+      assert.ok(b.includes(`{open.${k} && (<>`), `${k} must stay behind its summary`);
+    }
+  });
+
+  test('and payments are still not here', () =>
+    assert.doesNotMatch(raw(), /Payments & Payouts|use_business_pay/));
 });
