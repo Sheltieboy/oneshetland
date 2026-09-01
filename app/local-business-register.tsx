@@ -464,7 +464,7 @@ export default function BusinessRegisterScreen() {
 
           {/* Phone, website and email together: NEXT sends people here by
               name, so they are one block and they are above the fold. */}
-          <View onLayout={onLayout('contact')}>
+          <View style={styles.fieldGroup} onLayout={onLayout('contact')}>
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Phone</Text>
               <TextInput
@@ -683,6 +683,10 @@ const styles = StyleSheet.create({
   toggleSub:   { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
 
   field:      {},
+  /* Grouping the three contact fields for onLayout cost them the gap the
+     ScrollView gives its direct children, so they sat flush against each
+     other's inputs. Same token, restored one level down. */
+  fieldGroup:      { gap: spacing.md },
   logoRow:         { flexDirection: 'row', alignItems: 'center', gap: 12 },
   logoThumb:       { width: 48, height: 48, borderRadius: 12 },
   logoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
