@@ -37,6 +37,37 @@ function sql(body: string): Record<string, unknown>[] {
   return parsed.rows ?? [];
 }
 
+/**
+ * A fingerprint of the Directory rows this suite must not touch, captured at
+ * import — before any test body has run — and compared again at the end.
+ *
+ * This used to assert a literal 536 businesses, 528 active. That could never
+ * prove the invariant it was named for: real businesses join OneShetland, so
+ * the number moves for reasons that have nothing to do with this file, and the
+ * guard failed on the day a 537th listing appeared. A snapshot of production
+ * measures the calendar, not the code.
+ *
+ * The digest covers id AND is_active, ordered by id, because counts alone are
+ * fooled by a create paired with a delete, and by a row swapped for another.
+ *
+ * Scope is deliberate: the id set and activation, not every column. A guard
+ * over the whole row would fail whenever a real owner edited their description
+ * while the suite happened to be running, which is a false alarm about
+ * somebody else's work rather than a finding about this one.
+ */
+const FINGERPRINT_EXPR = `
+  count(*)::text || '/' || count(*) filter (where is_active)::text || '/' ||
+  coalesce(md5(string_agg(id::text || ':' || is_active::text, ',' order by id)), 'empty')`;
+
+function directoryFingerprint(): { total: string; active: string; digest: string } {
+  const [row] = sql(`select ${FINGERPRINT_EXPR} as fp from public.local_businesses;`);
+  const [total, active, digest] = String(row.fp).split('/');
+  return { total, active, digest };
+}
+
+/* Captured at import, so it precedes every test in this file. */
+const DIRECTORY_BEFORE = directoryFingerprint();
+
 /* The anon key is the one a signed-out browser holds; it is public by design.
    Read from the web app's own env so this tests what actually ships. */
 function env(): { url: string; key: string } {
@@ -194,11 +225,62 @@ describe('nothing was weakened to achieve it', () => {
     assert.match(String(w.d), /b\.accepts_wallet/, 'the computed column stays for owner/server callers');
   });
 
-  test('no business data was mutated', () => {
+  /* Comparing the fingerprint against itself cannot prove the fingerprint is
+     worth anything: weaken it — drop is_active, say — and both readings weaken
+     together and still agree. So make it earn the guarantee, by mutating a
+     copy of production inside a transaction that is thrown away. */
+  test('the fingerprint actually notices the mutations it guards against', () => {
     const [row] = sql(`
-      select count(*)::text as total, count(*) filter (where is_active)::text as active
-        from public.local_businesses;`);
-    assert.equal(row.total, '536');
-    assert.equal(row.active, '528');
+      begin;
+      create temp table probe (case_name text, differs boolean) on commit drop;
+      do $p$
+      declare base text; owner uuid; fresh uuid; victim uuid;
+      begin
+        select ${FINGERPRINT_EXPR} into base from public.local_businesses;
+        select owner_id into owner from public.local_businesses where owner_id is not null limit 1;
+        select id into victim from public.local_businesses where is_active order by id limit 1;
+
+        fresh := gen_random_uuid();
+        insert into public.local_businesses (id,name,category,address,owner_id,subscription_tier,is_active)
+        values (fresh,'ZZ fingerprint probe','other','Lerwick',owner,'free',true);
+        insert into probe select 'created',
+          (select ${FINGERPRINT_EXPR} from public.local_businesses) is distinct from base;
+        delete from public.local_businesses where id = fresh;
+
+        update public.local_businesses set is_active = not is_active where id = victim;
+        insert into probe select 'deactivated',
+          (select ${FINGERPRINT_EXPR} from public.local_businesses) is distinct from base;
+        update public.local_businesses set is_active = not is_active where id = victim;
+
+        delete from public.local_businesses where id = victim;
+        insert into probe select 'deleted',
+          (select ${FINGERPRINT_EXPR} from public.local_businesses) is distinct from base;
+
+        -- One row swapped for another. Both counts come back to where they
+        -- started, so this is the case the old count-only guard could not see
+        -- and the only one that makes the digest worth carrying.
+        insert into public.local_businesses (id,name,category,address,owner_id,subscription_tier,is_active)
+        values (gen_random_uuid(),'ZZ fingerprint probe 2','other','Lerwick',owner,'free',true);
+        insert into probe select 'swapped, counts identical',
+          (select ${FINGERPRINT_EXPR} from public.local_businesses) is distinct from base;
+      end $p$;
+      select bool_and(differs)::text as all_caught,
+             count(*)::text as cases,
+             string_agg(case_name, ',' order by case_name) filter (where not differs) as missed
+        from probe;
+      rollback;`);
+    assert.equal(row.cases, '4', 'the sensitivity probe did not run every case');
+    assert.equal(row.all_caught, 'true',
+      `the fingerprint is blind to: ${row.missed} — it cannot prove this suite touched nothing`);
+  });
+
+  test('no business data was mutated', () => {
+    const after = directoryFingerprint();
+    assert.equal(after.total, DIRECTORY_BEFORE.total,
+      `this suite created or deleted a business: ${DIRECTORY_BEFORE.total} before, ${after.total} after`);
+    assert.equal(after.active, DIRECTORY_BEFORE.active,
+      `this suite changed whether a business is active: ${DIRECTORY_BEFORE.active} before, ${after.active} after`);
+    assert.equal(after.digest, DIRECTORY_BEFORE.digest,
+      'the set of businesses, or the active state of one of them, changed while this suite ran');
   });
 });
