@@ -235,31 +235,31 @@ ${rec('stacked_total', 'pg_temp.rel(b)')}
   perform public.record_boost_refund('pi_s1b',700);
 ${rec('refund_latest', 'pg_temp.rel(b)')}
   b := pg_temp.mkbiz(o);
-  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_s2a');
-  perform pg_temp.buy(b,o,'2026-08-27 10:00+00',1,700,'pi_s2b');
+  perform pg_temp.buy(b,o,pg_temp.anchor(),1,700,'pi_s2a');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '1 day',1,700,'pi_s2b');
   perform public.record_boost_refund('pi_s2a',700);
-${rec('refund_earlier', 'pg_temp.st(b)')}
+${rec('refund_earlier', 'pg_temp.rel(b)')}
   b := pg_temp.mkbiz(o);
-  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_s3a');
-  perform pg_temp.buy(b,o,'2026-08-28 10:00+00',3,1500,'pi_s3b');
-  perform pg_temp.buy(b,o,'2026-08-30 10:00+00',2,1200,'pi_s3c');
-${rec('mixed_total', 'pg_temp.st(b)')}
+  perform pg_temp.buy(b,o,pg_temp.anchor(),1,700,'pi_s3a');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '2 days',3,1500,'pi_s3b');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '4 days',2,1200,'pi_s3c');
+${rec('mixed_total', 'pg_temp.rel(b)')}
   perform public.record_boost_refund('pi_s3b',1500);
-${rec('mixed_refund_middle', 'pg_temp.st(b)')}
+${rec('mixed_refund_middle', 'pg_temp.rel(b)')}
   b := pg_temp.mkbiz(o);
-  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_s4a');
-  perform pg_temp.buy(b,o,'2026-08-28 10:00+00',3,1500,'pi_s4b');
-  perform pg_temp.buy(b,o,'2026-08-30 10:00+00',2,1200,'pi_s4c');
+  perform pg_temp.buy(b,o,pg_temp.anchor(),1,700,'pi_s4a');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '2 days',3,1500,'pi_s4b');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '4 days',2,1200,'pi_s4c');
   perform public.record_boost_refund('pi_s4a',700);
   perform public.record_boost_refund('pi_s4b',1500);
-${rec('order_a_then_b', 'pg_temp.st(b)')}
+${rec('order_a_then_b', 'pg_temp.rel(b)')}
   b := pg_temp.mkbiz(o);
-  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_s5a');
-  perform pg_temp.buy(b,o,'2026-08-28 10:00+00',3,1500,'pi_s5b');
-  perform pg_temp.buy(b,o,'2026-08-30 10:00+00',2,1200,'pi_s5c');
+  perform pg_temp.buy(b,o,pg_temp.anchor(),1,700,'pi_s5a');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '2 days',3,1500,'pi_s5b');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '4 days',2,1200,'pi_s5c');
   perform public.record_boost_refund('pi_s5b',1500);
   perform public.record_boost_refund('pi_s5a',700);
-${rec('order_b_then_a', 'pg_temp.st(b)')}`);
+${rec('order_b_then_a', 'pg_temp.rel(b)')}`);
 
   test('two stacked weeks reach a fortnight out', () => assert.equal(r.stacked_total, '14d/pro'));
 
@@ -267,23 +267,23 @@ ${rec('order_b_then_a', 'pg_temp.st(b)')}`);
     assert.equal(r.refund_latest, '7d/pro'));
 
   test('refunding the EARLIER boost restarts the later one from its own purchase date', () => {
-    // The whole reason replay exists. Subtracting seven days from 9 September
-    // would say 2 September, which would hand back a week nobody paid for:
-    // B was bought on the 27th, so without A its week runs 27 Aug → 3 Sep.
-    assert.equal(r.refund_earlier, '2026-09-03/pro');
-    assert.notEqual(r.refund_earlier, '2026-09-02/pro', 'this is the naive-subtraction answer');
+    // The whole reason replay exists. Subtracting seven days from the stacked
+    // fortnight would say day 7, which would hand back a week nobody paid for:
+    // B was bought a day after A, so without A its own week runs to day 8.
+    assert.equal(r.refund_earlier, '8d/pro');
+    assert.notEqual(r.refund_earlier, '7d/pro', 'this is the naive-subtraction answer');
   });
 
-  test('mixed durations stack correctly', () => assert.equal(r.mixed_total, '2026-10-07/pro'));
+  test('mixed durations stack correctly', () => assert.equal(r.mixed_total, '42d/pro'));
   test('refunding a middle purchase replays the rest', () =>
-    assert.equal(r.mixed_refund_middle, '2026-09-16/pro'));
+    assert.equal(r.mixed_refund_middle, '21d/pro'));
 
   test('the answer does not depend on the order the refunds arrived in', () => {
     // The first implementation failed exactly here: it checked the current
     // expiry against the LAST purchase's recorded one, which stopped matching
     // after the first refund, so the second silently did nothing.
-    assert.equal(r.order_a_then_b, '2026-09-13/pro');
-    assert.equal(r.order_b_then_a, '2026-09-13/pro');
+    assert.equal(r.order_a_then_b, '18d/pro');
+    assert.equal(r.order_b_then_a, '18d/pro');
     assert.equal(r.order_a_then_b, r.order_b_then_a);
   });
 });
@@ -298,9 +298,9 @@ describe('a refund only lowers entitlement the boosts can prove they granted', (
   r := public.record_boost_refund('pi_p1',700);
 ${rec('sub_money', 'pg_temp.fin(\'pi_p1\')')}${rec('sub_state', 'pg_temp.st(b)')}${rec('sub_reason', '(r->\'entitlement\'->>\'reason\')')}
   b := pg_temp.mkbiz(o); perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_p2');
-  update public.local_businesses set subscription_tier='premium', subscription_until='2027-06-01' where id=b;
+  update public.local_businesses set subscription_tier='premium', subscription_until=pg_temp.anchor() + interval '300 days' where id=b;
   r := public.record_boost_refund('pi_p2',700);
-${rec('manual_state', 'pg_temp.st(b)')}${rec('manual_reason', '(r->\'entitlement\'->>\'reason\')')}
+${rec('manual_state', 'pg_temp.rel(b)')}${rec('manual_reason', '(r->\'entitlement\'->>\'reason\')')}
   b := pg_temp.mkbiz(o); perform pg_temp.buy(b,o,now() - interval '30 days',1,700,'pi_p3');
   select subscription_until into t1 from public.local_businesses where id=b;
 ${rec('expired_was_past', '(t1 < now())::text')}
@@ -316,7 +316,7 @@ ${rec('expired_repeat', 'coalesce(r->\'entitlement\'->>\'reason\',\'NO CALL\')')
   });
 
   test('a stronger entitlement granted afterwards is not overwritten', () => {
-    assert.equal(r.manual_state, '2027-06-01/premium');
+    assert.equal(r.manual_state, '300d/premium');
     assert.equal(r.manual_reason, 'not_boost_derived');
   });
 
@@ -540,11 +540,11 @@ ${rec('stack_latest_preview', "pg_temp.previewrel(pg_temp.pid('pi_r2b'))")}
 ${rec('stack_latest_write', 'pg_temp.rel(b)')}
 
   b := pg_temp.mkbiz(o);
-  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r3a', interval '2.5 seconds');
-  perform pg_temp.buy(b,o,'2026-08-27 10:00+00',1,700,'pi_r3b', interval '900 milliseconds');
-${rec('stack_earlier_preview', "pg_temp.preview(pg_temp.pid('pi_r3a'))")}
+  perform pg_temp.buy(b,o,pg_temp.anchor(),1,700,'pi_r3a', interval '2.5 seconds');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '1 day',1,700,'pi_r3b', interval '900 milliseconds');
+${rec('stack_earlier_preview', "pg_temp.previewrel(pg_temp.pid('pi_r3a'))")}
   perform public.record_boost_refund('pi_r3a',700);
-${rec('stack_earlier_write', 'pg_temp.st(b)')}
+${rec('stack_earlier_write', 'pg_temp.rel(b)')}
 
   b := pg_temp.mkbiz(o);
   perform pg_temp.buy(b,o,now() - interval '30 days',1,700,'pi_r4', interval '3 seconds');
@@ -561,10 +561,10 @@ ${rec('subscriber_write', 'pg_temp.st(b)')}${rec('subscriber_reason', "(r->'enti
 
   b := pg_temp.mkbiz(o);
   perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r6', interval '1.2 seconds');
-  update public.local_businesses set subscription_tier='premium', subscription_until='2027-06-01' where id=b;
+  update public.local_businesses set subscription_tier='premium', subscription_until=pg_temp.anchor() + interval '300 days' where id=b;
 ${rec('manual_preview', "pg_temp.preview(pg_temp.pid('pi_r6'))")}
   r := public.record_boost_refund('pi_r6',700);
-${rec('manual_write', 'pg_temp.st(b)')}${rec('manual_reason', "(r->'entitlement'->>'reason')")}
+${rec('manual_write', 'pg_temp.rel(b)')}${rec('manual_reason', "(r->'entitlement'->>'reason')")}
 
   b := pg_temp.mkbiz(o);
   perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r7', interval '1.4 seconds');
@@ -588,8 +588,8 @@ ${rec('partial_state', 'pg_temp.st(b)')}${rec('partial_preview_after', "pg_temp.
   });
 
   test('preview and write agree on the earlier stacked boost', () => {
-    assert.equal(r.stack_earlier_preview, 'falls_back@2026-09-03');
-    assert.equal(r.stack_earlier_write, '2026-09-03/pro');
+    assert.equal(r.stack_earlier_preview, 'falls_back@8d');
+    assert.equal(r.stack_earlier_write, '8d/pro');
   });
 
   test('preview and write agree on an expired boost', () => {
@@ -605,7 +605,7 @@ ${rec('partial_state', 'pg_temp.st(b)')}${rec('partial_preview_after', "pg_temp.
 
   test('preview and write agree that a stronger manual grant is untouched', () => {
     assert.equal(r.manual_preview, 'not_boost_derived');
-    assert.equal(r.manual_write, '2027-06-01/premium');
+    assert.equal(r.manual_write, '300d/premium');
     assert.equal(r.manual_reason, 'not_boost_derived');
   });
 
