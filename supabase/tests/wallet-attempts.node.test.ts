@@ -362,7 +362,11 @@ describe('references are minted where the customer commits', () => {
       join(REPO_ROOT, 'app/hubs/[id].tsx'), join(REPO_ROOT, 'app/local-pay.tsx'),
       join(REPO_ROOT, 'app/nfc/[token].tsx'),
       join(WEB, 'components/local/PayAtTillCard.tsx'), join(WEB, 'components/local/BuyUnitModal.tsx'),
-      join(WEB, 'components/hubs/HubMembershipPanel.tsx'), join(WEB, 'components/hubs/DonateModal.tsx'),
+      // The membership wallet/card buttons used to live in HubMembershipPanel.
+      // That panel now renders one "Join" per tier and defers the choice of how
+      // to pay to the checkout, so the attempt id moved with it. Assert the
+      // place that actually mints the payment, not the place it used to be.
+      join(WEB, 'components/hubs/MembershipCheckout.tsx'), join(WEB, 'components/hubs/DonateModal.tsx'),
       join(WEB, 'components/jobs/ShiftBoostModal.tsx'),
     ];
     for (const f of files) {

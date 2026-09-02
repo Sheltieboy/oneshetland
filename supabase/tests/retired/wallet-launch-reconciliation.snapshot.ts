@@ -1,4 +1,43 @@
 /**
+ * RETIRED — a historical record, not an ongoing invariant suite.
+ *
+ * Retired at Launch Gate 2 (September 2026). Kept verbatim below because it is
+ * the only written account of the Step 6 wallet reconciliation: what the old
+ * non-atomic path left behind, why zeroing took two rows rather than one, and
+ * what the numbers were on the day.
+ *
+ * WHY IT IS NO LONGER A TEST
+ *
+ * It asserts a moment, not a rule: three wallets, zero liability, twenty
+ * historical rows. Legitimate sandbox activity has happened since, so those
+ * facts are expected to be false now, and were measured as 4 wallets, 1800p
+ * and 25 rows. A suite that must fail as the product is used is not an
+ * invariant suite.
+ *
+ * AND WHY IT MUST NOT RUN
+ *
+ * purgeFixtures() deletes from local_wallet_transactions and, worse, from
+ * local_wallet_balances by ALLOWLIST NEGATION — every balance without
+ * transactions whose user_id does not end in one of three hard-coded values.
+ * That was safe on the day the allowlist was written and is not safe now. Every
+ * other wallet suite scopes its deletes to its own marker or to a deliberately
+ * empty spare profile; this one does not.
+ *
+ * The file therefore sits outside the *.node.test.ts pattern, is absent from
+ * the canonical npm test registration, and refuses to execute. All three are
+ * asserted by supabase/tests/test-registration.node.test.ts.
+ */
+
+if (!process.env.ONESHETLAND_RUN_RETIRED_SNAPSHOT) {
+  throw new Error(
+    'wallet-launch-reconciliation is a RETIRED point-in-time snapshot, not a test. ' +
+    'It asserts launch-day figures that legitimate activity has since moved, and its ' +
+    'purgeFixtures() deletes production wallet balances by allowlist negation. ' +
+    'Read it as history. Do not run it.',
+  );
+}
+
+/**
  * wallet-launch-reconciliation.node.test.ts — a launch reset that explains
  * itself rather than tidying the number away.
  *

@@ -300,13 +300,27 @@ describe('claiming is atomic and cap-aware', () => {
 
   test('an ambiguous outcome is never recorded as success', () => {
     reset();
+    // The cap here is 1, and claim_bookings_for_metering counts the whole
+    // month as spoken for. So a single booking left in reported/reporting/
+    // unresolved by anything earlier makes the claim return NOTHING. Read
+    // through a row that always exists, and assert the claim first: an empty
+    // pick otherwise surfaces as state=undefined, which reads as the opposite
+    // of the truth — a booking wrongly stamped, rather than no booking at all.
     const r = one(`
       create temp table pick as
         select booking_id, attempt_id
           from public.claim_bookings_for_metering('${businessId}'::uuid, '${monthStart}'::timestamptz, 1) limit 1;
-      select public.settle_booking_metering(booking_id, attempt_id, 'unresolved', 'timeout') from pick;
-      select b.metering_state as state, (b.metered_at is null)::text as unstamped
-        from public.book_bookings b where b.id = (select booking_id from pick);`);
+      create temp table settled as
+        select public.settle_booking_metering(booking_id, attempt_id, 'unresolved', 'timeout') as ok from pick;
+      select (select count(*)::text from pick) as claimed,
+             (select ok::text from settled) as ok,
+             (select b.metering_state from public.book_bookings b
+               where b.id = (select booking_id from pick)) as state,
+             (select (b.metered_at is null)::text from public.book_bookings b
+               where b.id = (select booking_id from pick)) as unstamped;`);
+    assert.equal(r.claimed, '1',
+      'the claim handed out no booking, so this test exercised nothing: the month cap of 1 was already spoken for');
+    assert.equal(r.ok, 'true', 'the ambiguous settlement did not match a claimed booking');
     assert.equal(r.state, 'unresolved');
     assert.equal(r.unstamped, 'true', 'an unknown Stripe outcome was stamped as billed');
   });
