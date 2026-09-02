@@ -27,6 +27,7 @@ import {
   formatPence, formatDuration,
   type BookBooking, type BookingStatus,
 } from '@/lib/book-api';
+import { SHETLAND_TZ } from '@/lib/shetland-time';
 
 const S = SECTIONS.local;
 
@@ -278,7 +279,7 @@ function BookingRow({
           </Text>
           {tab !== 'today' && (
             <Text style={styles.dateLine}>
-              {start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+              {start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: SHETLAND_TZ })}
               {'  ·  '}
               {formatTime(start)}–{formatTime(end)}
             </Text>
@@ -366,7 +367,7 @@ const STATUS_INFO: Record<BookingStatus, { label: string; color: string }> = {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(d: Date): string {
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SHETLAND_TZ });
 }
 
 // ── Styles ───────────────────────────────────────────────────────────────────

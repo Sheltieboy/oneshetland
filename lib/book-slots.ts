@@ -11,14 +11,19 @@
  * …and produces the list of bookable Slots for a given service inside a
  * window. Pure function — no Supabase calls.
  *
- * Timezone: everything is treated in the device's local timezone. Weekly rule
- * TIME values are anchored to local midnight of each day; overrides and
+ * Timezone: slot COMPUTATION is done in the device's local timezone. Weekly
+ * rule TIME values are anchored to local midnight of each day; overrides and
  * bookings are stored as TIMESTAMPTZ and converted via the JS Date.
+ *
+ * Slot DISPLAY is not: a Shetland appointment is a Shetland hour, so the
+ * formatters and the day key below name Europe/London explicitly rather than
+ * inheriting whichever clock the phone is keeping.
  */
 
 import type {
   BookService, BookAvailabilityRule, BookSlotOverride, BookBooking,
 } from './book-api';
+import { SHETLAND_TZ, shetlandDayKey } from './shetland-time';
 
 const ONE_MINUTE = 60_000;
 
@@ -215,18 +220,18 @@ export function groupSlotsByDate(slots: Slot[]): Map<string, Slot[]> {
 
 /** YYYY-MM-DD in local time (NOT UTC, so days don't shift on timezone seams). */
 export function dateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  // The SHETLAND day, not the phone's. Local date parts filed an early slot
+  // under the previous day for a customer abroad, and the tab then disagreed
+  // with the time printed on the slot inside it.
+  return shetlandDayKey(d);
 }
 
 /** "09:30" */
 export function formatSlotTime(d: Date): string {
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SHETLAND_TZ });
 }
 
 /** "Tue 28 May" */
 export function formatSlotDay(d: Date): string {
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: SHETLAND_TZ });
 }

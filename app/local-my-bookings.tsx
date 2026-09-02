@@ -24,6 +24,7 @@ import {
   formatPence, formatDuration,
   type BookBooking,
 } from '@/lib/book-api';
+import { SHETLAND_TZ } from '@/lib/shetland-time';
 
 const S = SECTIONS.local;
 
@@ -331,10 +332,10 @@ function Header({ onBack }: { onBack: () => void }) {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  return new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: SHETLAND_TZ });
 }
 function formatTime(d: Date): string {
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SHETLAND_TZ });
 }
 
 // ── Styles ───────────────────────────────────────────────────────────────────
