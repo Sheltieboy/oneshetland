@@ -95,6 +95,26 @@ $f$ select coalesce(to_char(subscription_until,'YYYY-MM-DD'),'NULL')||'/'||subsc
 create or replace function pg_temp.fin(p_pi text) returns text language sql as
 $f$ select refunded_pence||'/'||refund_state||'/'||status||'/'||(refunded_at is not null)
      from public.local_boost_purchases where stripe_payment_intent_id=p_pi $f$;
+-- Anchored to today rather than to a date someone typed. A fixture that says
+-- 26 August is a fixture that stops meaning what it meant: these scenarios turn
+-- on whether the SURVIVING boost is still running, so a hard-coded expiry
+-- silently changes the question the day it passes. Fixed time of day, so the
+-- day arithmetic is exact whenever in the day the suite runs.
+create or replace function pg_temp.anchor() returns timestamptz language sql stable as
+$f$ select date_trunc('day', now()) + interval '10 hours' $f$;
+create or replace function pg_temp.rel(p_biz uuid) returns text language sql as
+$f$ select coalesce((subscription_until::date - current_date)::text,'NULL')||'d/'||subscription_tier
+     from public.local_businesses where id=p_biz $f$;
+create or replace function pg_temp.previewrel(p_purchase uuid) returns text language plpgsql as $f$
+declare v_admin uuid; r jsonb; begin
+  select id into v_admin from public.profiles where role='admin' limit 1;
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub',v_admin::text,'role','authenticated')::text, true);
+  r := public.boost_refund_consequence(p_purchase);
+  reset role;
+  return coalesce(r->>'outcome','?') ||
+         case when r ? 'pro_until' then '@'||((r->>'pro_until')::timestamptz::date - current_date)||'d' else '' end;
+exception when others then reset role; return 'ERROR:'||sqlerrm; end $f$;
 `;
 
 /** Runs a rolled-back scenario block and returns its recorded assertions. */
@@ -209,11 +229,11 @@ ${rec('foreign_pi', '(r->>\'reason\')')}`);
 describe('entitlement is replayed from the purchases that still stand', () => {
   const r = scenario(`
   b := pg_temp.mkbiz(o);
-  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_s1a');
-  perform pg_temp.buy(b,o,'2026-08-27 10:00+00',1,700,'pi_s1b');
-${rec('stacked_total', 'pg_temp.st(b)')}
+  perform pg_temp.buy(b,o,pg_temp.anchor(),1,700,'pi_s1a');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '1 day',1,700,'pi_s1b');
+${rec('stacked_total', 'pg_temp.rel(b)')}
   perform public.record_boost_refund('pi_s1b',700);
-${rec('refund_latest', 'pg_temp.st(b)')}
+${rec('refund_latest', 'pg_temp.rel(b)')}
   b := pg_temp.mkbiz(o);
   perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_s2a');
   perform pg_temp.buy(b,o,'2026-08-27 10:00+00',1,700,'pi_s2b');
@@ -241,10 +261,10 @@ ${rec('order_a_then_b', 'pg_temp.st(b)')}
   perform public.record_boost_refund('pi_s5a',700);
 ${rec('order_b_then_a', 'pg_temp.st(b)')}`);
 
-  test('two stacked weeks reach 9 September', () => assert.equal(r.stacked_total, '2026-09-09/pro'));
+  test('two stacked weeks reach a fortnight out', () => assert.equal(r.stacked_total, '14d/pro'));
 
   test('refunding the LATEST boost falls back to the earlier expiry', () =>
-    assert.equal(r.refund_latest, '2026-09-02/pro'));
+    assert.equal(r.refund_latest, '7d/pro'));
 
   test('refunding the EARLIER boost restarts the later one from its own purchase date', () => {
     // The whole reason replay exists. Subtracting seven days from 9 September
@@ -513,11 +533,11 @@ ${rec('real_shape_preview', "pg_temp.preview(pg_temp.pid('pi_r1'))")}
 ${rec('real_shape_write', 'pg_temp.st(b)')}${rec('real_shape_revoked', "(r->>'revoked')")}
 
   b := pg_temp.mkbiz(o);
-  perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r2a', interval '2.5 seconds');
-  perform pg_temp.buy(b,o,'2026-08-27 10:00+00',1,700,'pi_r2b', interval '900 milliseconds');
-${rec('stack_latest_preview', "pg_temp.preview(pg_temp.pid('pi_r2b'))")}
+  perform pg_temp.buy(b,o,pg_temp.anchor(),1,700,'pi_r2a', interval '2.5 seconds');
+  perform pg_temp.buy(b,o,pg_temp.anchor() + interval '1 day',1,700,'pi_r2b', interval '900 milliseconds');
+${rec('stack_latest_preview', "pg_temp.previewrel(pg_temp.pid('pi_r2b'))")}
   perform public.record_boost_refund('pi_r2b',700);
-${rec('stack_latest_write', 'pg_temp.st(b)')}
+${rec('stack_latest_write', 'pg_temp.rel(b)')}
 
   b := pg_temp.mkbiz(o);
   perform pg_temp.buy(b,o,'2026-08-26 10:00+00',1,700,'pi_r3a', interval '2.5 seconds');
@@ -563,8 +583,8 @@ ${rec('partial_state', 'pg_temp.st(b)')}${rec('partial_preview_after', "pg_temp.
   });
 
   test('preview and write agree on the latest stacked boost', () => {
-    assert.equal(r.stack_latest_preview, 'falls_back@2026-09-02');
-    assert.equal(r.stack_latest_write, '2026-09-02/pro');
+    assert.equal(r.stack_latest_preview, 'falls_back@7d');
+    assert.equal(r.stack_latest_write, '7d/pro');
   });
 
   test('preview and write agree on the earlier stacked boost', () => {
