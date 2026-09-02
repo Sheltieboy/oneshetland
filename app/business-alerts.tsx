@@ -16,6 +16,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { useAlert } from '@/components/BrandedAlert';
 import { fetchAllBusinessAlerts, cancelAlert, forceExpireAlert, type PartnerAlert } from '@/lib/alerts-api';
+import { UrgentAlertsCard } from '@/components/business/UrgentAlertsCard';
 
 const TYPE_META = {
   emergency:  { label: 'Emergency',  color: '#FF3B30', bg: '#FFF2F1', icon: 'exclamation-triangle' },
@@ -122,6 +123,11 @@ export default function BusinessAlertsScreen() {
           contentContainerStyle={{ padding: spacing.md, gap: spacing.md, paddingBottom: 40 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
         >
+            {/* Requesting access, composing and scheduling all live here now. Home
+                shows a status line and a way in — it is not the manager. */}
+            {!!businessId && (
+              <UrgentAlertsCard business={{ id: String(businessId), name: String(businessName ?? '') }} />
+            )}
           {/* Live */}
           {live.length > 0 && (
             <Section label="LIVE NOW" accent="#FF3B30">

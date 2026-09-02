@@ -273,7 +273,10 @@ describe('the layers below the outcomes', () => {
     const src = raw();
     const grow = src.slice(src.indexOf('>Grow<'));
     assert.match(grow, /local-business-analytics/);
-    assert.match(grow, /AlertsCard/);
+    // Phase 3G moved the alerts MANAGER to /business-alerts; Home keeps a
+    // status row. The section still holds the same three things.
+    assert.match(grow, /Urgent alerts/);
+    assert.match(grow, /'\/business-alerts'/);
     // Boost has no standalone mobile route; the plan card already shows it.
     assert.match(src, /isOnBoost\(activeBusiness\)/);
   });
@@ -434,19 +437,24 @@ describe('one compact card per outcome, and no repeats beneath it', () => {
 });
 
 describe('the rest of Home is navigation and status, not the managers', () => {
-  test('urgent alerts is collapsed on Home', () => {
+  // Phase 3D collapsed the alerts card on Home because its compose and
+  // access-request flows existed nowhere else. Phase 3G moved them to
+  // /business-alerts, so Home now shows a row and the collapse is gone with the
+  // card. What still has to hold is that nothing was lost on the way.
+  test('urgent alerts is a status row on Home, not a manager', () => {
     const src = raw();
-    assert.match(src, /const \[open, setOpen\] = useState\(false\);/);
-    assert.match(src, /\{!open && \(/);
-    assert.match(src, /Send an urgent alert|Manage alerts/);
-    assert.match(src, /\{open && \(<>/, 'the composer and access request open on a tap');
+    assert.doesNotMatch(src, /<AlertsCard|function AlertsCard/);
+    const grow = src.slice(src.indexOf('>Grow<'));
+    assert.match(grow, /Urgent alerts/);
+    assert.match(grow, /'\/business-alerts'/);
   });
 
   test('nothing about alerts was removed', () => {
-    const src = raw();
+    const card = read('components/business/UrgentAlertsCard.tsx');
     for (const keep of ['onRequestAccess', 'onSendAlert', 'onCancelAlert', 'onAcceptPolicy']) {
-      assert.ok(src.includes(keep), `${keep} must survive`);
+      assert.ok(card.includes(keep), `${keep} must survive at the destination`);
     }
+    assert.match(read('app/business-alerts.tsx'), /UrgentAlertsCard/);
   });
 
   test('Counter keeps its richer treatment', () => {
@@ -695,5 +703,110 @@ describe('what the dashboard actually renders', () => {
         }
       }
     }
+  });
+});
+
+/* ── 9. Phase 3G — Money and Grow are supporting layers ──────────────────── */
+
+describe('money is a utility strip, not a manager', () => {
+  const money = () => { const s = raw(); return s.slice(s.indexOf('>Money<'), s.indexOf('>Grow<')); };
+
+  test('Counter is still not duplicated here', () =>
+    assert.doesNotMatch(money(), /local-counter|local-till|local-verify/));
+
+  test('billing stays reachable on any plan', () => {
+    const lines = code(DASH).split('\n');
+    const btn = lines.findIndex((l, i) => l.includes('onPress={openBillingPortal}') &&
+      lines.slice(Math.max(0, i - 3), i).some((x) => x.includes('styles.manageBtn')));
+    assert.ok(btn > -1);
+    const wrapper = [...lines.slice(0, btn)].reverse().find((l) => /&& \(\s*$/.test(l)) ?? '';
+    assert.match(wrapper, /\{true && \(/, 'no plan check in front of the plans screen');
+  });
+
+  test('the plan card is collapsed by default', () =>
+    assert.match(code(DASH), /useState<\{ pay: boolean; plan: boolean; nfc: boolean; wallet: boolean \}>\(\{ pay: false, plan: false, nfc: false, wallet: false \}\)/));
+
+  test('wallet keeps its switch, and cashback moves behind a setting', () => {
+    const m = money();
+    assert.match(m, /onValueChange=\{toggleAcceptWallet\}/, 'the switch stays on Home');
+    assert.match(m, /Wallet settings/);
+    assert.match(m, /\{expanded\.wallet && \(/, 'cashback is behind the disclosure');
+    // Home is the only owner UI for cashback, so it must still be reachable.
+    assert.match(m, /updateCashback\(pct\)/);
+    assert.match(m, /\[0, 2, 5, 10\]\.map/);
+  });
+
+  test('Phase 3B wallet rules are untouched', () => {
+    const d = code(DASH);
+    assert.match(d, /if \(value && !eff\.pro\) \{[\s\S]{0,200}Wallet payments need Pro/);
+    assert.match(d, /\{walletReceipts\.length > 0 && \(/, 'history survives a downgrade');
+    assert.doesNotMatch(d, /local_wallet_balances|balance_pence/, 'customer money is not business money');
+  });
+
+  test('Stripe connection and transactions are unchanged routes', () => {
+    const m = money();
+    assert.match(m, /handleConnectStripe/);
+    assert.match(m, /'\/local-business-transactions'/);
+    assert.match(m, /styles\.utilityRow/, 'transactions is a row now, not a card');
+  });
+});
+
+describe('grow is compact, and holds no manager', () => {
+  const grow = () => { const s = raw(); return s.slice(s.indexOf('>Grow<'), s.indexOf('orphanedShiftCount > 0')); };
+
+  test('analytics is still one row to its own screen', () =>
+    assert.match(grow(), /'\/local-business-analytics'/));
+
+  test('urgent alerts is a status row that navigates away', () => {
+    const g = grow();
+    assert.match(g, /Urgent alerts/);
+    assert.match(g, /styles\.utilityRow/);
+    assert.match(g, /'\/business-alerts'/);
+    assert.match(g, /Request access to broadcast urgent messages|Approved|Request under review/);
+  });
+
+  test('the manager itself is no longer on Home', () => {
+    const d = raw();
+    for (const gone of ['<AlertsCard', 'function AlertsCard', 'alertStyles',
+                        'onRequestAccess', 'onSendAlert', 'onAcceptPolicy',
+                        'showDatePicker', 'DURATION_OPTIONS']) {
+      assert.ok(!d.includes(gone), `${gone} belongs to the alerts screen now`);
+    }
+  });
+
+  test('and all of it lives at the destination', () => {
+    const card = read('components/business/UrgentAlertsCard.tsx');
+    for (const keep of ['requestAlertAccess', 'sendAlert', 'cancelAlert', 'acceptAlertPolicy',
+                        'DURATION_OPTIONS', 'showDatePicker', 'DateTimePicker']) {
+      assert.ok(card.includes(keep), `${keep} must have moved, not vanished`);
+    }
+    assert.match(read('app/business-alerts.tsx'), /<UrgentAlertsCard business=\{\{ id: String\(businessId\)/);
+    // It feeds itself now, which is why it can live anywhere.
+    assert.match(card, /fetchMyAlertAccess\(business\.id\)/);
+    assert.match(card, /export function UrgentAlertsCard\(\{ business \}/);
+  });
+
+  test('the approval model was not touched', () => {
+    const card = read('components/business/UrgentAlertsCard.tsx');
+    assert.match(card, /access\?\.status/, 'the same access states drive the same branches');
+    assert.doesNotMatch(card, /is_admin|service_role|rpc\('/, 'no new privilege path');
+  });
+
+  test('Boost was given no invented route', () => {
+    const g = grow();
+    assert.doesNotMatch(g, /'\/boost'|boost-manage|BoostManager/);
+    assert.match(raw(), /isOnBoost\(activeBusiness\)/, 'it stays where it actually is, on the plan');
+  });
+});
+
+describe('the rest of Home did not move', () => {
+  test('outcomes, discovery and the spine are all still there', () => {
+    const d = raw();
+    assert.equal((d.match(/<OutcomeCard/g) ?? []).length, 5);
+    assert.match(d, /Also possible on OneShetland/);
+    const headers = [...d.matchAll(/groupHeader}>([^<]+)/g)].map((m) => m[1]);
+    assert.deepEqual(headers,
+      ['Needs you', 'Next', 'This week', 'At the counter', 'Your business',
+       'Also possible on OneShetland', 'Money', 'Grow']);
   });
 });
