@@ -13,7 +13,6 @@ cannot be proved any other way:
 |---|---|
 | `wallet-attempts` | two independent connections have to contend over the same wallet, and a rolled-back transaction is invisible to the other connection |
 | `wallet-integrity` | same: concurrent debits against one balance |
-| `wallet-launch-reconciliation` | two concurrent reconciliations must produce one adjustment |
 | `booking-metering` | two workers must race for the same booking, and the monthly cap must hold across them |
 | `stripe-idempotency` | webhook replay is only meaningful against committed event rows |
 | `ticket-redemption` | concurrent scans of one ticket must yield one check-in |
