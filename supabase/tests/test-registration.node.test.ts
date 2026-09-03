@@ -54,6 +54,13 @@ const EXCLUDED: Record<string, string> = {
     'races real inserts on purpose. Run it against a throwaway Postgres with ' +
     'BOOKING_PROOF_DSN set; that is where its concurrency, mutation, UPDATE ' +
     'and RLS proofs were taken and where they are re-taken.',
+  'booking-terminal-state.node.test.ts':
+    'PENDING MIGRATION — not isolated-only. It builds an INACTIVE fixture and ' +
+    'never activates it, so it belongs in the committed-fixture lane; it is ' +
+    'excluded only because 20260927120000_booking_transition_guard is not yet ' +
+    'applied to production, so its first assertion would fail there. Proved ' +
+    'on a throwaway Postgres with BOOKING_PROOF_DSN. Move it into ' +
+    'test:fixtures on the day that migration is applied, and delete this entry.',
 };
 
 /** Suites that must never join the routine lane, and why. */

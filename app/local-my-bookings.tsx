@@ -66,7 +66,13 @@ export default function MyBookingsScreen() {
     const p: BookBooking[] = [];
     for (const b of bookings) {
       const startMs = new Date(b.starts_at).getTime();
-      const isUpcoming = startMs >= now && b.status !== 'cancelled';
+      // Terminal is terminal, whatever the calendar says. A booking the
+      // business has already closed off — cancelled, completed or a no-show —
+      // is not something the customer is still waiting for, and calling a
+      // future completed booking "upcoming" contradicted the owner's own
+      // screen. Same three states the owner has always used.
+      const closed = b.status === 'cancelled' || b.status === 'completed' || b.status === 'no_show';
+      const isUpcoming = !closed && startMs >= now;
       (isUpcoming ? u : p).push(b);
     }
     // Upcoming: ascending (nearest first). Past: descending (most recent first).

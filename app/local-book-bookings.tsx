@@ -260,7 +260,19 @@ function BookingRow({
   const end   = new Date(booking.ends_at);
   const isDone = booking.status === 'completed' || booking.status === 'cancelled' || booking.status === 'no_show';
   const isPast = tab === 'past';
-  const startedAgo = Date.now() > end.getTime();
+  // Has it BEGUN — not has it finished, and not "is it sometime today". The
+  // Today tab used to show these buttons for an appointment still hours away,
+  // and every other tab waited for the end. Neither matched the rule, which is
+  // that an appointment cannot have been attended or missed before it starts.
+  // Marking either releases the slot, so the database refuses it outright and
+  // the button simply stops asking.
+  //
+  // A plain instant comparison, deliberately: both sides are moments in time,
+  // so no timezone arithmetic is involved and none should be invented.
+  const hasStarted = Date.now() >= start.getTime();
+  /** Only the Cancel button's condition, unchanged — cancelling has never
+   *  depended on the appointment having begun. */
+  const hasEnded = Date.now() > end.getTime();
 
   return (
     <View style={[styles.card, isDone && { opacity: 0.65 }]}>
@@ -314,7 +326,7 @@ function BookingRow({
       {/* Actions — none for done bookings, different sets for today vs upcoming */}
       {!isDone && (
         <View style={styles.actionRow}>
-          {(tab === 'today' || startedAgo) && (
+          {hasStarted && (
             <>
               <TouchableOpacity
                 style={[styles.actionBtn, { borderColor: '#10B981' }]}
@@ -332,7 +344,7 @@ function BookingRow({
               </TouchableOpacity>
             </>
           )}
-          {tab === 'upcoming' && !startedAgo && (
+          {tab === 'upcoming' && !hasEnded && (
             <TouchableOpacity
               style={[styles.actionBtn, { borderColor: colors.error }]}
               onPress={onCancel} activeOpacity={0.85}
