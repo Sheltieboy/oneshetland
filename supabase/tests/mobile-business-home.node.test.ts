@@ -364,16 +364,30 @@ describe('an event cannot be upcoming and not upcoming at once', () => {
     // Anderson & Co: the Home said "No upcoming events" while the card beneath
     // listed "Folk Festival at Mareel". The festival is CANCELLED and HIDDEN,
     // and the card filtered on the date alone.
+    // Counted, not totalled. This used to assert date_only = 1 and canonical =
+    // 0, which were Anderson & Co's figures on the day — and went red the
+    // moment a legitimate new event was published there. The contradiction is
+    // a RELATIONSHIP: some event is found by the date alone and not by the
+    // canonical rule. That stays true however many events exist.
     const [row] = sql(`
       select
-        count(*) filter (where e.starts_at > now())                    as date_only,
+        count(*) filter (where e.starts_at > now()
+                           and (e.status <> 'published' or e.is_hidden))  as hidden_but_future,
+        count(*) filter (where e.starts_at > now())                       as date_only,
         count(*) filter (where e.status = 'published' and not e.is_hidden
-                           and e.starts_at > now())                    as canonical
+                           and e.starts_at > now())                       as canonical
       from public.events e join public.local_businesses b
         on b.id = e.organiser_business_id
       where b.name = 'Anderson & Co';`);
-    assert.equal(String(row.date_only), '1', 'a date-only filter still finds it');
-    assert.equal(String(row.canonical), '0', 'and the canonical rule correctly does not');
+    const dateOnly = Number(row.date_only);
+    const canonical = Number(row.canonical);
+    const contradictory = Number(row.hidden_but_future);
+    assert.ok(contradictory > 0,
+      'no cancelled-or-hidden future event remains at Anderson & Co, so this test can no longer reproduce anything');
+    assert.equal(dateOnly - canonical, contradictory,
+      'the two filters no longer differ by exactly the events the canonical rule excludes');
+    assert.ok(dateOnly > canonical,
+      'a date-only filter must still over-count, or there is no contradiction to fix');
   });
 
   test('both sides of the Home now apply the same rule', () => {

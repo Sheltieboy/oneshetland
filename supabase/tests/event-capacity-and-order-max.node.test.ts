@@ -1,0 +1,213 @@
+/**
+ * event-capacity-and-order-max.node.test.ts — the owner's two numbers.
+ *
+ * WHAT WAS WRONG
+ *
+ * DEMO — Launch Test Event was created with one ticket type of quantity 5, and
+ * the owner dashboard reported "Capacity ∞". The 5 had saved perfectly; the
+ * card read events.capacity, a venue headcount nothing fills in, while the
+ * number that actually governs a sale is event_ticket_types.quantity_available
+ * — the one reserve_ticket_slots reads. So the card answered a different
+ * question from the one the owner had just answered, and read as "your cap did
+ * not save".
+ *
+ * Separately, the creation form offered name, price and quantity, and nothing
+ * else. per_order_max exists, is NOT NULL, defaults to 10 in the database and
+ * is enforced at checkout — but an owner could neither see it nor set it, so
+ * every ticket type silently became 10.
+ *
+ * WHAT IS ASSERTED
+ *   · a finite ticket type is never shown as ∞
+ *   · unlimited still is, and so is a finite/unlimited mixture, because once
+ *     one type is uncapped the event has no ceiling
+ *   · an event with no OneShetland types falls back to the venue figure
+ *   · the form shows the default of 10 rather than applying it behind the owner
+ *   · an owner can set 2, and an edit round-trip preserves what was stored
+ *   · price and quantity behaviour is untouched
+ *
+ * SAFETY
+ * Reads source from the web repository and evaluates the real helper. No
+ * database, no network, no writes.
+ */
+
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const WEB = join(REPO_ROOT, '..', 'oneshetland-web');
+const MANAGE_LIB = join(WEB, 'lib/events-manage.ts');
+const CARD = join(WEB, 'components/business/BusinessEventManage.tsx');
+const FORM = join(WEB, 'components/business/BusinessEventForm.tsx');
+const CLIENT = join(WEB, 'lib/events-manage-client.ts');
+
+const src = (p: string) => readFileSync(p, 'utf8');
+/** Source with comments stripped — assertions must match code, not prose. */
+const code = (p: string) => src(p)
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+
+/**
+ * Lift ticketCapacity out of the real file and run it. Asserting that the
+ * source mentions "∞" would pass on the broken version too — it is the same
+ * character either way.
+ */
+function ticketCapacity(): (types: { quantity_available: number | null; is_active: boolean }[], cap: number | null)
+  => { label: string; source: string } {
+  const s = src(MANAGE_LIB);
+  const start = s.indexOf('export function ticketCapacity(');
+  assert.notEqual(start, -1, 'ticketCapacity is gone — has the card gone back to events.capacity?');
+  // The BODY's opening brace, not the parameter type's. Both the argument and
+  // the return type are object literals, so counting from the signature grabs
+  // `{ quantity_available: ... }` and evaluates a type as if it were code.
+  const first = s.indexOf('const active = types.filter', start);
+  assert.notEqual(first, -1, 'ticketCapacity no longer starts by filtering active types');
+  const open = s.lastIndexOf('{', first);
+  let depth = 0, end = -1;
+  for (let i = open; i < s.length; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  const body = s.slice(open + 1, end);
+  return new Function('types', 'eventCapacity', body) as never;
+}
+
+describe('the Capacity card reports ticket inventory, not a venue field', () => {
+  // Lifted inside each test, not once in the describe body: a throw out here
+  // aborts the group before node has registered a single test, and the run
+  // reports "0 tests, 0 failures" — which reads exactly like success.
+  const t = (qty: number | null, is_active = true) => ({ quantity_available: qty, is_active });
+
+  test('the reported event: one finite type of 5 reads 5, not ∞', () => {
+    const cap = ticketCapacity();
+    const r = cap([t(5)], null);
+    assert.equal(r.label, '5', `the owner is still told "${r.label}" for a quantity of 5`);
+    assert.equal(r.source, 'tickets');
+    assert.notEqual(r.label, '∞');
+  });
+
+  test('several finite types add up', () => {
+    const cap = ticketCapacity();
+    assert.equal(cap([t(5), t(20), t(75)], null).label, '100');
+  });
+
+  test('an unlimited type is still ∞, because it genuinely is', () => {
+    const cap = ticketCapacity();
+    const r = cap([t(null)], null);
+    assert.equal(r.label, '∞');
+    assert.equal(r.source, 'tickets');
+  });
+
+  test('finite mixed with unlimited is ∞, not the finite subtotal', () => {
+    const cap = ticketCapacity();
+    // Adding 5 to "unlimited" and printing 5 would state a ceiling that does
+    // not exist — the misleading arithmetic worth refusing.
+    const r = cap([t(5), t(null)], null);
+    assert.equal(r.label, '∞', 'a mixture reported a limit the event does not have');
+  });
+
+  test('inactive types do not count', () => {
+    const cap = ticketCapacity();
+    assert.equal(cap([t(5), t(999, false)], null).label, '5');
+    assert.equal(cap([t(null, false), t(5)], null).label, '5',
+      'an inactive unlimited type dragged the answer to ∞');
+  });
+
+  test('no OneShetland types falls back to the venue figure', () => {
+    const cap = ticketCapacity();
+    assert.deepEqual(cap([], 250), { label: '250', source: 'venue' });
+    assert.deepEqual(cap([], null), { label: '∞', source: 'venue' });
+    assert.deepEqual(cap([t(5, false)], 250), { label: '250', source: 'venue' });
+  });
+
+  test('the card uses the helper, and labels the two sources differently', () => {
+    const c = code(CARD);
+    assert.match(c, /ticketCapacity\(event\.ticket_types, event\.capacity\)/,
+      'the card is not calling the helper on the real ticket types');
+    assert.ok(!/label="Capacity" value=\{event\.capacity/.test(c),
+      'the card still reads events.capacity directly');
+    assert.match(c, /"Ticket capacity"/, 'the two sources are not distinguishable to the owner');
+  });
+
+  test('quantity_available is still loaded, and per_order_max now too', () => {
+    const c = code(MANAGE_LIB);
+    assert.match(c, /quantity_available/);
+    assert.match(c, /per_order_max/, 'the edit round-trip cannot preserve what is never selected');
+  });
+});
+
+describe('Maximum per order is the owner\'s to set', () => {
+  test('the default is 10, named once and exported', () => {
+    assert.match(code(MANAGE_LIB), /DEFAULT_PER_ORDER_MAX = 10/);
+  });
+
+  test('the field exists, is an integer, and cannot go below 1', () => {
+    const c = code(FORM);
+    assert.match(c, /Maximum per order/, 'the owner still cannot see this');
+    const field = c.slice(c.indexOf('Maximum per order'), c.indexOf('Maximum per order') + 420);
+    assert.match(field, /type="number"/);
+    assert.match(field, /min="1"/, 'a maximum of zero would sell nothing');
+    assert.match(field, /step="1"/, 'half a ticket is not a quantity');
+    assert.match(field, /value=\{t\.per_order_max\}/, 'the field is not bound to the value');
+  });
+
+  test('a new ticket type shows 10 rather than receiving it silently', () => {
+    const c = code(FORM);
+    assert.match(c, /price_pence: 0, quantity_available: null, per_order_max: DEFAULT_PER_ORDER_MAX/,
+      'a new row does not carry the visible default');
+  });
+
+  test('an existing ticket type loads its stored value', () => {
+    assert.match(code(FORM), /per_order_max: t\.per_order_max \?\? DEFAULT_PER_ORDER_MAX/,
+      'editing an event would reset per_order_max instead of preserving it');
+  });
+
+  test('the save actually persists it', () => {
+    const c = code(CLIENT);
+    assert.match(c, /per_order_max: t\.per_order_max/, 'the value never reaches the database');
+    assert.match(c, /per_order_max: number/, 'EditableTicketType has no such field');
+  });
+
+  test('setting 2 survives the round trip, by the form\'s own binding', () => {
+    // The write path and the read path, in one assertion: what syncTicketTypes
+    // stores is exactly what the form state holds, and what the form loads is
+    // exactly what the row carries.
+    assert.match(code(CLIENT), /per_order_max: t\.per_order_max,/);
+    assert.match(code(MANAGE_LIB), /per_order_max: number;/);
+    assert.match(code(FORM), /per_order_max: t\.per_order_max \?\? DEFAULT_PER_ORDER_MAX/);
+  });
+
+  test('nothing claims this is a per-person limit', () => {
+    // It caps one basket. Nothing counts a buyer's previous orders, so ten
+    // orders of ten remain possible, and the copy must not imply otherwise.
+    const c = src(FORM);
+    const field = c.slice(c.indexOf('Maximum per order'), c.indexOf('Maximum per order') + 420);
+    assert.doesNotMatch(field, /per person|per customer|each customer|per buyer/i,
+      'the label promises a per-customer cap the system does not enforce');
+  });
+});
+
+describe('price and quantity are untouched', () => {
+  test('quantity still means unlimited when blank', () => {
+    const c = code(FORM);
+    assert.match(c, /Quantity \(blank = unlimited\)/);
+    assert.match(c, /quantity_available: e\.target\.value \? parseInt\(e\.target\.value, 10\) : null/);
+  });
+
+  test('price is still entered in pounds and stored in pence', () => {
+    assert.match(code(FORM), /price_pence: Math\.round\(parseFloat\(e\.target\.value \|\| "0"\) \* 100\)/);
+  });
+
+  test('the reservation path was not touched', () => {
+    // This change is owner-facing display and one form field. If it reached
+    // the thing that decides whether a ticket can be sold, that is a bug.
+    const f = join(REPO_ROOT, 'supabase/functions/create-event-ticket-intent/index.ts');
+    assert.ok(existsSync(f));
+    const c = readFileSync(f, 'utf8');
+    assert.match(c, /li\.quantity > type\.per_order_max/,
+      'checkout enforcement moved — it must stay exactly where it was');
+    assert.doesNotMatch(c, /events\.capacity/, 'reservation must never consult the venue field');
+  });
+});
