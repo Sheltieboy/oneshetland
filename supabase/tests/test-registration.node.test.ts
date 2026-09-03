@@ -47,11 +47,13 @@ const SUPABASE = join(REPO_ROOT, 'supabase');
  */
 const EXCLUDED: Record<string, string> = {
   'booking-capacity-concurrency.node.test.ts':
-    'Proves a capacity trigger that is committed but deliberately NOT yet ' +
-    'applied to production, so against the linked project it would fail on ' +
-    'its first assertion. It was proved on a throwaway Postgres instead: run ' +
-    'it with BOOKING_PROOF_DSN set. Register it in the fixture lane on the ' +
-    'day the migration is applied, and delete this entry.',
+    'ISOLATED DATABASE ONLY — never the linked project, and not merely until ' +
+    'the migration ships. To reach the capacity guard as a real customer it ' +
+    'must briefly make a synthetic business active, and a fixture business has ' +
+    'no business appearing in a live Directory even for a second. It also ' +
+    'races real inserts on purpose. Run it against a throwaway Postgres with ' +
+    'BOOKING_PROOF_DSN set; that is where its concurrency, mutation, UPDATE ' +
+    'and RLS proofs were taken and where they are re-taken.',
 };
 
 /** Suites that must never join the routine lane, and why. */
@@ -141,6 +143,18 @@ describe('every suite on disk is accounted for', () => {
     for (const [name, reason] of Object.entries(FIXTURE_ONLY)) {
       assert.ok(fixture.has(name), `${name} is fixture-only but not in test:fixtures`);
       assert.ok(reason.length > 20, `${name} sits in the fixture lane without a usable reason`);
+    }
+  });
+
+  test('the isolated-database suite stays excluded, and stays explained', () => {
+    // It cannot quietly drift into a lane: nothing here is a default, so its
+    // absence from EXCLUDED would fail the orphan test instead.
+    const name = 'booking-capacity-concurrency.node.test.ts';
+    assert.ok(name in EXCLUDED, `${name} must stay excluded — it must never run against production`);
+    assert.match(EXCLUDED[name], /ISOLATED DATABASE ONLY/, 'the reason no longer says what it is');
+    assert.match(EXCLUDED[name], /BOOKING_PROOF_DSN/, 'the reason no longer says how to run it');
+    for (const body of Object.values(lanes())) {
+      assert.ok(!body.includes(name), `${name} was registered in a lane — it races real inserts`);
     }
   });
 
