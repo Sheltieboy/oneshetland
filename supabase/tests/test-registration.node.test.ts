@@ -54,13 +54,6 @@ const EXCLUDED: Record<string, string> = {
     'races real inserts on purpose. Run it against a throwaway Postgres with ' +
     'BOOKING_PROOF_DSN set; that is where its concurrency, mutation, UPDATE ' +
     'and RLS proofs were taken and where they are re-taken.',
-  'booking-terminal-state.node.test.ts':
-    'PENDING MIGRATION — not isolated-only. It builds an INACTIVE fixture and ' +
-    'never activates it, so it belongs in the committed-fixture lane; it is ' +
-    'excluded only because 20260927120000_booking_transition_guard is not yet ' +
-    'applied to production, so its first assertion would fail there. Proved ' +
-    'on a throwaway Postgres with BOOKING_PROOF_DSN. Move it into ' +
-    'test:fixtures on the day that migration is applied, and delete this entry.',
 };
 
 /** Suites that must never join the routine lane, and why. */
@@ -69,6 +62,9 @@ const FIXTURE_ONLY: Record<string, string> = {
     'Needs genuinely separate OS processes to prove two callers contend; the ' +
     'file documents this itself.',
   'wallet-attempts.node.test.ts': 'Two connections must contend over one wallet.',
+  'booking-terminal-state.node.test.ts':
+    'Builds an INACTIVE fixture business with its own bookings and removes it; ' +
+    'the transitions it proves have to be committed to be seen.',
   'wallet-integrity.node.test.ts': 'Concurrent debits against one balance.',
   'booking-metering.node.test.ts': 'Two workers must race for one booking.',
   'stripe-idempotency.node.test.ts': 'Webhook replay needs committed event rows.',

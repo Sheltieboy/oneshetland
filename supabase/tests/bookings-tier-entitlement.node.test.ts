@@ -308,13 +308,38 @@ describe('a booking checks entitlement, not a flag set months ago', () => {
   });
 
   test('an existing booking can still be managed after the plan lapses', () => {
+    // This used to complete the fixture booking, which sits two days out. It
+    // now seeds one that has already happened and completes THAT, because
+    // book_booking_transition_guard refuses completing an appointment before
+    // it starts — a rule about time, not about entitlement. The subject here
+    // is unchanged: a lapsed plan must not strand the bookings already taken.
     const solo = sql(FIXTURE +
-      asOwnerRole + `update public.local_businesses set subscription_until=now()-interval '1 hour' where id='${B.lapsing}';` +
+      asOwnerRole +
+      `update public.local_businesses set subscription_until=now()-interval '1 hour' where id='${B.lapsing}';
+       insert into public.book_bookings (business_id,service_id,customer_id,starts_at,ends_at,price_pence,status)
+         values ('${B.lapsing}','${SVC_PAID}','${CUST}',
+                 now()-interval '2 hours', now()-interval '90 minutes', 2000, 'confirmed');` +
       asUser(OWNER) +
-      attempt('complete an existing booking',
-        `update public.book_bookings set status='completed' where business_id='${B.lapsing}'`) + END);
-    assert.equal(outcome(solo, 'complete an existing booking'), 'ALLOWED',
+      attempt('cancel one still to come',
+        `update public.book_bookings set status='cancelled'
+          where business_id='${B.lapsing}' and starts_at > now()`) +
+      attempt('complete one that has already happened',
+        `update public.book_bookings set status='completed'
+          where business_id='${B.lapsing}' and starts_at <= now()`) +
+      // attempt() calls a statement that changed nothing ALLOWED, because no
+      // error was raised. Read the rows back, or a filter that matches nothing
+      // passes this test while proving nothing happened.
+      asOwnerRole +
+      `insert into r select 'ended up cancelled', count(*)::text from public.book_bookings
+         where business_id='${B.lapsing}' and status='cancelled';
+       insert into r select 'ended up completed', count(*)::text from public.book_bookings
+         where business_id='${B.lapsing}' and status='completed';` + END);
+    assert.equal(outcome(solo, 'cancel one still to come'), 'ALLOWED',
       'obligations outlive the subscription');
+    assert.equal(outcome(solo, 'complete one that has already happened'), 'ALLOWED',
+      'obligations outlive the subscription');
+    assert.equal(outcome(solo, 'ended up cancelled'), '1', 'nothing was actually cancelled');
+    assert.equal(outcome(solo, 'ended up completed'), '1', 'nothing was actually completed');
   });
 });
 
