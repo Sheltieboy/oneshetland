@@ -41,11 +41,18 @@ const SUPABASE = join(REPO_ROOT, 'supabase');
  * with a reason someone can check. Removing a file from the run is a
  * decision, not an oversight, so it has to be written down.
  *
- * Empty on purpose: rate-limit-concurrency is not excluded, it lives in the
- * committed-fixture lane, which is where a suite that needs genuinely
- * separate OS processes belongs.
+ * rate-limit-concurrency is NOT here: it is not excluded, it lives in the
+ * committed-fixture lane, which is where a suite needing genuinely separate OS
+ * processes belongs.
  */
-const EXCLUDED: Record<string, string> = {};
+const EXCLUDED: Record<string, string> = {
+  'booking-capacity-concurrency.node.test.ts':
+    'Proves a capacity trigger that is committed but deliberately NOT yet ' +
+    'applied to production, so against the linked project it would fail on ' +
+    'its first assertion. It was proved on a throwaway Postgres instead: run ' +
+    'it with BOOKING_PROOF_DSN set. Register it in the fixture lane on the ' +
+    'day the migration is applied, and delete this entry.',
+};
 
 /** Suites that must never join the routine lane, and why. */
 const FIXTURE_ONLY: Record<string, string> = {

@@ -399,10 +399,13 @@ export async function isSlotAvailable(
   return (count ?? 0) < capacity;
 }
 
+/** One sentence for "somebody got there first", wherever we find out. */
+const SLOT_TAKEN = 'Sorry — that slot is now full. Please pick another.';
+
 export async function createBooking(input: CreateBookingInput): Promise<BookBooking> {
   const free = await isSlotAvailable(input.businessId, input.serviceId, input.startsAt, input.endsAt);
   if (!free) {
-    throw new Error('Sorry — that slot is now full. Please pick another.');
+    throw new Error(SLOT_TAKEN);
   }
   const { data, error } = await supabase
     .from('book_bookings')
@@ -420,7 +423,13 @@ export async function createBooking(input: CreateBookingInput): Promise<BookBook
     })
     .select()
     .single();
-  if (error) throw error;
+  // The pre-check above is a courtesy; the database is the authority. Between
+  // that read and this insert somebody else can take the last place, and the
+  // capacity trigger says so in Postgres's words. Say it in ours.
+  if (error) {
+    if (/slot_full/.test(error.message ?? '')) throw new Error(SLOT_TAKEN);
+    throw error;
+  }
 
   // If this booking was paid by a gift, mark the gift as used.
   if (input.giftId) {
