@@ -77,13 +77,23 @@ const RETIRED = 'supabase/tests/retired/wallet-launch-reconciliation.snapshot.ts
 
 type Lanes = Record<string, string>;
 
-/** Every npm script that runs tests, by name. test:all only chains the others. */
+/**
+ * Every npm script that runs tests, by name. test:all only chains the others.
+ *
+ * A lane usually lists its suites inline. `test:isolated` cannot: it has to
+ * build a throwaway PostgreSQL before anything can run, so it delegates to a
+ * runner and the list of suites lives there. Read that file, or the suites it
+ * runs look like orphans.
+ */
 const lanes = (): Lanes => {
   const scripts = (JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as
     { scripts: Record<string, string> }).scripts;
   const out: Lanes = {};
   for (const [name, body] of Object.entries(scripts)) {
-    if (name.startsWith('test') && body.includes('node --test')) out[name] = body;
+    if (!name.startsWith('test')) continue;
+    if (body.includes('node --test')) { out[name] = body; continue; }
+    const runner = body.match(/node\s+(scripts\/\S+\.mjs)/);
+    if (runner) out[name] = readFileSync(join(REPO_ROOT, runner[1]), 'utf8');
   }
   return out;
 };
@@ -105,7 +115,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 describe('every suite on disk is accounted for', () => {
   test('the lanes are the ones this file knows about', () => {
-    assert.deepEqual(Object.keys(lanes()).sort(), ['test', 'test:fixtures'],
+    assert.deepEqual(Object.keys(lanes()).sort(), ['test', 'test:fixtures', 'test:isolated'],
       'a test lane was added or renamed — teach this file about it before trusting it');
   });
 

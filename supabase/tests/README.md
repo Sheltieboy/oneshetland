@@ -20,6 +20,33 @@ cannot be proved any other way:
 
 `npm run test:all` runs both.
 
+`npm run test:isolated` is the **isolated-database** suite. It provisions a
+throwaway PostgreSQL 17 cluster in the OS temp directory, listening on a unix
+socket inside its own data directory — no TCP port, nothing shared, destroyed in
+a `finally`. It exists for invariants that only two competing connections can
+prove, where a rolled-back transaction is invisible to the other side and a
+committed fixture would mean writing to production.
+
+| Suite | Why it needs its own database |
+|---|---|
+| `pass-redemption-concurrency` | two tills spending one pass; the loser must block on a real row lock, and proving a lost update means committing |
+
+It needs `postgresql@17` installed locally, so it is deliberately **not** part of
+`test:all` — the routine gate must not depend on a local database server. Run it
+when redemption, locking or `redeem_pass_atomic` changes, and before a launch
+gate.
+
+The schema is not hand-written. Table definitions come out of the real
+migrations at run time, and every migration that defines `redeem_pass_atomic` is
+replayed in order, exactly as production got its current definition — so the
+proof cannot drift away from the function it claims to test. That matters: the
+function is defined twice, and pinning the first file would have proved a
+version that could never match a token.
+
+`booking-capacity-concurrency` is the other isolated-database suite. It is not
+in this lane yet because it expects the full schema rather than building its
+own, and still runs via `BOOKING_PROOF_DSN` against a database you supply.
+
 ## Why the split exists
 
 The fixture suite creates rows in `local_businesses`, `book_bookings`,
