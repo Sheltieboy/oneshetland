@@ -37,6 +37,37 @@ const SE = SECTIONS.local;
 
 function ticketTokenKey(ticketId: string) { return `event_ticket_token_${ticketId}`; }
 
+export type TicketQrCredential =
+  | { kind: 'token'; value: string }
+  | { kind: 'backup'; value: string }
+  | null;
+
+/**
+ * Which credential, if any, belongs in this ticket's QR.
+ *
+ * A ticket bought in the app keeps its raw_token in SecureStore and that is
+ * what the QR carries. A ticket bought on the web was never issued to this
+ * device, so the token is not here and never will be — the screen used to say
+ * "QR not available" and leave the holder reading a code aloud at the door.
+ * The backup code is a real credential: validate-event-ticket routes a scanned
+ * value of twelve characters or fewer to validate_backup_code, and the web
+ * ticket page has always put exactly this in its QR.
+ *
+ * Only a live ticket gets one. A used, refunded or cancelled ticket shows no
+ * scannable code at all — the backend would refuse it, and presenting one at a
+ * door invites an argument that the screen has already lost.
+ */
+export function ticketQrCredential(
+  status: string | null | undefined,
+  rawToken: string | null,
+  backupCode: string | null | undefined,
+): TicketQrCredential {
+  if (status !== 'valid') return null;
+  if (rawToken) return { kind: 'token', value: rawToken };
+  if (backupCode) return { kind: 'backup', value: backupCode };
+  return null;
+}
+
 export async function persistTicketToken(ticketId: string, rawToken: string) {
   try { await SecureStore.setItemAsync(ticketTokenKey(ticketId), rawToken); } catch {}
 }
@@ -118,6 +149,7 @@ export default function MyEventTicketScreen() {
   const isUsed       = ticket.status === 'used';
   const isCancelled  = ticket.status === 'cancelled' || ticket.status === 'refunded';
   const isPending    = ticket.status === 'pending_payment';
+  const credential   = ticketQrCredential(ticket.status, rawToken, ticket.backup_code);
 
   return (
     <ScreenScaffold
@@ -171,25 +203,22 @@ export default function MyEventTicketScreen() {
         {/* QR code */}
         <View style={styles.qrSection}>
           <View style={[styles.qrCard, (isUsed || isCancelled) && styles.qrCardDimmed]}>
-            {rawToken && !isCancelled && !isPending ? (
-              <>
-                <QRCode
-                  value={rawToken}
-                  size={220}
-                  color={isUsed ? colors.textMuted : colors.textPrimary}
-                  backgroundColor="#fff"
-                />
-                {isUsed && (
-                  <View style={styles.usedOverlay}>
-                    <FontAwesome5 name="check-circle" size={48} color={colors.success} solid />
-                    <Text style={styles.usedOverlayText}>Scanned</Text>
-                  </View>
-                )}
-              </>
+            {credential ? (
+              <QRCode
+                value={credential.value}
+                size={220}
+                color={colors.textPrimary}
+                backgroundColor="#fff"
+              />
             ) : isPending ? (
               <View style={styles.qrPending}>
                 <FontAwesome5 name="lock" size={40} color={colors.textLight} />
                 <Text style={styles.qrPendingText}>Awaiting payment</Text>
+              </View>
+            ) : isUsed ? (
+              <View style={styles.qrPending}>
+                <FontAwesome5 name="check-circle" size={40} color={colors.success} solid />
+                <Text style={styles.qrPendingText}>Scanned{'\n'}Already used at entry</Text>
               </View>
             ) : (
               <View style={styles.qrPending}>
@@ -201,7 +230,11 @@ export default function MyEventTicketScreen() {
 
           {!isCancelled && !isPending && (
             <Text style={styles.qrHint}>
-              {isUsed ? 'Already scanned at entry' : 'Show QR code to staff at entry'}
+              {isUsed
+                ? 'Already scanned at entry'
+                : credential?.kind === 'backup'
+                  ? 'Show QR code to staff at entry — it carries your backup code'
+                  : 'Show QR code to staff at entry'}
             </Text>
           )}
         </View>
@@ -303,13 +336,6 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   qrCardDimmed: { opacity: 0.5 },
-  usedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderRadius: radius.xl, gap: 8,
-  },
-  usedOverlayText: { fontSize: fontSize.md, fontWeight: '900', color: colors.success },
   qrPending: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center', gap: 12 },
   qrPendingText: { fontSize: fontSize.xs, color: colors.textMuted, textAlign: 'center', fontWeight: '600' },
   qrHint: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
