@@ -828,9 +828,14 @@ export default function BusinessDashboardScreen() {
             ? `next ${new Date(bizEvents[0].starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
             : null}
           actions={[
-            { label: 'Manage events', onPress: () => router.push({ pathname: '/event-manage', params: { businessId: activeBusiness.id } }) },
+            // event-manage and event-scanner are per-EVENT screens: they read
+            // `id`. This passed businessId, so both arrived with nothing to
+            // work on — Manage events hung on a spinner and the scanner
+            // ignored every code it read. The card already speaks about the
+            // next event ("next 10 Sep"), so its buttons act on that one.
+            { label: 'Manage events', onPress: () => router.push({ pathname: '/event-manage', params: { id: bizEvents[0]?.id ?? '' } }) },
             { label: 'New event', onPress: () => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } }) },
-            { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { businessId: activeBusiness.id } }) },
+            { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { id: bizEvents[0]?.id ?? '' } }) },
           ]}
         />
         )}

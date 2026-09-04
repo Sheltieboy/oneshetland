@@ -151,6 +151,28 @@ export default function EventScannerScreen() {
     handleValidate(data, undefined);
   }, [scanning, handleValidate]);
 
+  // No event to scan against. Every code read would be silently discarded by
+  // the guard in handleValidate, so the camera would look like it was working
+  // and simply never respond. Say so instead of miming.
+  if (!eventId) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
+            <FontAwesome5 name="chevron-left" size={14} color={S.color} />
+            <Text style={[styles.backText, { color: S.color }]}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Scan tickets</Text>
+        </View>
+        <View style={styles.center}>
+          <Text style={styles.permText}>
+            No event chosen. Open the event you are scanning for, then start the scanner.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // Native camera module not yet installed — degrade to backup-code mode only
   if (!CAMERA_NATIVE_AVAILABLE) {
     return (

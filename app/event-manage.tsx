@@ -50,15 +50,23 @@ export default function EventManageScreen() {
   const [statusBusy, setStatusBusy] = useState(false);
 
   const load = useCallback(async () => {
-    if (!id) return;
-    const [ev, st] = await Promise.all([
-      fetchEvent(id).catch(() => null),
-      fetchScannerStats(id).catch(() => null),
-    ]);
-    setEvent(ev);
-    setStats(st);
-    setLoading(false);
-    setRefreshing(false);
+    // `finally`, not a trailing call. This returned early when `id` was
+    // missing and left `loading` true for ever, so the screen was a spinner
+    // on a grey field with nothing behind it — no request, no error, no way
+    // out. The dashboard reached it with a businessId, so `id` was always
+    // missing and the screen always hung.
+    try {
+      if (!id) { setEvent(null); setStats(null); return; }
+      const [ev, st] = await Promise.all([
+        fetchEvent(id).catch(() => null),
+        fetchScannerStats(id).catch(() => null),
+      ]);
+      setEvent(ev);
+      setStats(st);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -125,9 +133,17 @@ export default function EventManageScreen() {
   }
 
   if (!event) {
+    // Two different nothings, and the owner deserves to know which.
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}><Text style={styles.errorText}>Event not found.</Text></View>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>
+            {id ? 'Event not found.' : 'No event chosen. Open an event first, then manage it.'}
+          </Text>
+          <TouchableOpacity onPress={() => router.back()} style={{ marginTop: spacing.md }}>
+            <Text style={{ color: S.color, fontWeight: '700' }}>Go back</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
