@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEB = join(REPO_ROOT, '..', 'oneshetland-web');
 const MANAGE_LIB = join(WEB, 'lib/events-manage.ts');
+const PURE = join(WEB, 'lib/event-ticket-utils.ts');
 const CARD = join(WEB, 'components/business/BusinessEventManage.tsx');
 const FORM = join(WEB, 'components/business/BusinessEventForm.tsx');
 const CLIENT = join(WEB, 'lib/events-manage-client.ts');
@@ -56,7 +57,7 @@ const code = (p: string) => src(p)
  */
 function ticketCapacity(): (types: { quantity_available: number | null; is_active: boolean }[], cap: number | null)
   => { label: string; source: string } {
-  const s = src(MANAGE_LIB);
+  const s = src(PURE);
   const start = s.indexOf('export function ticketCapacity(');
   assert.notEqual(start, -1, 'ticketCapacity is gone — has the card gone back to events.capacity?');
   // The BODY's opening brace, not the parameter type's. Both the argument and
@@ -140,7 +141,7 @@ describe('the Capacity card reports ticket inventory, not a venue field', () => 
 
 describe('Maximum per order is the owner\'s to set', () => {
   test('the default is 10, named once and exported', () => {
-    assert.match(code(MANAGE_LIB), /DEFAULT_PER_ORDER_MAX = 10/);
+    assert.match(code(PURE), /DEFAULT_PER_ORDER_MAX = 10/);
   });
 
   test('the field exists, is an integer, and cannot go below 1', () => {
@@ -186,6 +187,60 @@ describe('Maximum per order is the owner\'s to set', () => {
     const field = c.slice(c.indexOf('Maximum per order'), c.indexOf('Maximum per order') + 420);
     assert.doesNotMatch(field, /per person|per customer|each customer|per buyer/i,
       'the label promises a per-customer cap the system does not enforce');
+  });
+});
+
+describe('a Client Component never reaches the server', () => {
+  /**
+   * The build failure this file now guards. Both components held TYPE-ONLY
+   * imports from events-manage, which TypeScript erases. Adding a VALUE import
+   * to the same line turned an erased edge into a real one:
+   *
+   *   BusinessEventForm [Client] → events-manage → supabase/server → next/headers
+   *
+   * Turbopack refused it, Netlify's build failed, and the field never shipped —
+   * while `npm run build | tail` reported success, because that reports tail's
+   * exit status and not the build's.
+   */
+  const CLIENT_COMPONENTS = [
+    'components/business/BusinessEventForm.tsx',
+    'components/business/BusinessEventManage.tsx',
+  ];
+  /** Modules that reach next/headers, directly or through one hop. */
+  const SERVER_ONLY = ['@/lib/events-manage', '@/lib/supabase/server', 'next/headers'];
+
+  for (const rel of CLIENT_COMPONENTS) {
+    test(`${rel.split('/').pop()} takes no VALUE import from a server-only module`, () => {
+      const s = readFileSync(join(WEB, rel), 'utf8');
+      assert.match(s, /^"use client";/, `${rel} is not a Client Component — this test has the wrong file`);
+      for (const mod of SERVER_ONLY) {
+        // `import type { X } from` is erased and always fine. Anything else is
+        // a runtime edge, and a runtime edge to these modules fails the build.
+        const value = new RegExp(`import\\s+(?!type\\s)[^;]*from\\s+["']${mod.replace(/[/@]/g, '\\$&')}["']`);
+        assert.doesNotMatch(s, value,
+          `${rel} imports a VALUE from ${mod} — that is the import that failed the Netlify build`);
+      }
+    });
+  }
+
+  test('the pure module is genuinely pure', () => {
+    // Comments stripped: the file's own docblock explains next/headers, and an
+    // assertion that matches the explanation rather than the code proves only
+    // that I wrote a comment.
+    const s = code(join(WEB, 'lib/event-ticket-utils.ts'));
+    for (const bad of ['next/headers', 'supabase/server', 'createClient', 'cookies(']) {
+      assert.ok(!s.includes(bad), `event-ticket-utils reaches ${bad}, so it is not client-safe`);
+    }
+    assert.doesNotMatch(s, /^import\s/m, 'the pure module imports something — it should stand alone');
+  });
+
+  test('server code still has one definition, not a copy', () => {
+    // Re-exported rather than duplicated: two copies of a capacity rule would
+    // drift, and the owner would be told different numbers by different screens.
+    assert.match(code(MANAGE_LIB), /export \{ DEFAULT_PER_ORDER_MAX, ticketCapacity \} from "\.\/event-ticket-utils"/,
+      'events-manage no longer re-exports the pure helpers');
+    assert.ok(!/export function ticketCapacity\(/.test(code(MANAGE_LIB)),
+      'ticketCapacity is defined twice — the copies will drift');
   });
 });
 
