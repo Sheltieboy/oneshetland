@@ -75,6 +75,24 @@ function ticketCapacity(): (types: { quantity_available: number | null; is_activ
   return new Function('types', 'eventCapacity', body) as never;
 }
 
+
+/** Lift a named pure export out of event-ticket-utils and run it. */
+function pureFn(name: string, params: string): Function {
+  const src0 = src(PURE);
+  const start = src0.indexOf(`export function ${name}(`);
+  assert.notEqual(start, -1, `${name} is gone from event-ticket-utils`);
+  const open = src0.indexOf('{', src0.indexOf(')', start));
+  let depth = 0, end = -1;
+  for (let i = open; i < src0.length; i++) {
+    if (src0[i] === '{') depth++;
+    else if (src0[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  const body = src0.slice(open + 1, end)
+    .replace(/DEFAULT_PER_ORDER_MAX/g, '10')
+    .replace(/:\s*PerOrderMaxDraft/g, '');
+  return new Function(params, body);
+}
+
 describe('the Capacity card reports ticket inventory, not a venue field', () => {
   // Lifted inside each test, not once in the describe body: a throw out here
   // aborts the group before node has registered a single test, and the run
@@ -167,16 +185,18 @@ describe('Maximum per order is the owner\'s to set', () => {
 
   test('the save actually persists it', () => {
     const c = code(CLIENT);
-    assert.match(c, /per_order_max: t\.per_order_max/, 'the value never reaches the database');
-    assert.match(c, /per_order_max: number/, 'EditableTicketType has no such field');
+    assert.match(c, /per_order_max: normalisePerOrderMax\(t\.per_order_max\)/,
+      'the value never reaches the database, or reaches it unnormalised');
+    assert.match(c, /per_order_max: PerOrderMaxDraft/,
+      'the draft type cannot hold the empty state the box needs while editing');
   });
 
   test('setting 2 survives the round trip, by the form\'s own binding', () => {
     // The write path and the read path, in one assertion: what syncTicketTypes
     // stores is exactly what the form state holds, and what the form loads is
     // exactly what the row carries.
-    assert.match(code(CLIENT), /per_order_max: t\.per_order_max,/);
-    assert.match(code(MANAGE_LIB), /per_order_max: number;/);
+    assert.match(code(CLIENT), /per_order_max: normalisePerOrderMax\(t\.per_order_max\),/);
+    assert.match(code(MANAGE_LIB), /per_order_max: number;/);  // the STORED row is always a number
     assert.match(code(FORM), /per_order_max: t\.per_order_max \?\? DEFAULT_PER_ORDER_MAX/);
   });
 
@@ -241,6 +261,91 @@ describe('a Client Component never reaches the server', () => {
       'events-manage no longer re-exports the pure helpers');
     assert.ok(!/export function ticketCapacity\(/.test(code(MANAGE_LIB)),
       'ticketCapacity is defined twice — the copies will drift');
+  });
+});
+
+
+describe('Maximum per order can actually be edited', () => {
+  /**
+   * The reported defect. The first version normalised on every keystroke, so
+   * backspacing the last digit ran parseInt("") → NaN → 10, and the field
+   * sprang back under the cursor. Getting from 10 to 2 meant selecting the
+   * whole value and overtyping it.
+   */
+  const parse = () => pureFn('parsePerOrderMax', 'raw') as (raw: string) => number | '';
+  const norm = () => pureFn('normalisePerOrderMax', 'v') as (v: unknown) => number;
+
+  test("10 → backspace → backspace → '2' reaches 2, through an empty state", () => {
+    const p = parse();
+    // Exactly the keystrokes Darren described, as the box would report them.
+    assert.equal(p('1'), 1, 'deleting the 0 should leave 1');
+    assert.equal(p(''), '', 'deleting the 1 must leave the box EMPTY, not snap back');
+    assert.equal(p('2'), 2, 'typing 2 should give 2');
+  });
+
+  test('an empty box is never silently refilled while typing', () => {
+    const p = parse();
+    for (const raw of ['', '   ']) {
+      assert.equal(p(raw), '', `"${raw}" was refilled mid-edit`);
+    }
+  });
+
+  test('the draft is not judged while it is being typed', () => {
+    // 0 and negatives are allowed to EXIST in the box — they are settled on
+    // blur and again on save. Clamping here is what caused the defect.
+    const p = parse();
+    assert.equal(p('0'), 0);
+    assert.equal(p('-5'), -5);
+  });
+
+  test('blank settles to the documented default of 10', () => {
+    assert.equal(norm()(''), 10);
+    assert.equal(norm()(null), 10);
+    assert.equal(norm()(undefined), 10);
+  });
+
+  test('below 1 settles to 1, not to the default', () => {
+    // Snapping -5 to 10 would look like the field inventing a figure; the
+    // owner did choose a number, they just chose an impossible one.
+    const n = norm();
+    assert.equal(n(0), 1);
+    assert.equal(n(-5), 1);
+  });
+
+  test('a valid 2 survives untouched', () => {
+    assert.equal(norm()(2), 2);
+    assert.equal(norm()(10), 10);
+    assert.equal(norm()(250), 250);
+  });
+
+  test('fractions cannot persist', () => {
+    assert.equal(norm()(2.7), 2);
+    assert.equal(parse()('2.7'), 2);
+  });
+
+  test('the field allows the empty state and settles on blur', () => {
+    const c = code(FORM);
+    const field = c.slice(c.indexOf('Maximum per order'), c.indexOf('Maximum per order') + 520);
+    assert.match(field, /parsePerOrderMax\(e\.target\.value\)/,
+      'the box still normalises on every keystroke');
+    assert.match(field, /onBlur=\{\(\) => updateTicketType\(i, \{ per_order_max: normalisePerOrderMax/,
+      'nothing settles the value when the box is left');
+    assert.ok(!/Math\.max\(1, parseInt\(e\.target\.value/.test(field),
+      'the clamping onChange is back');
+  });
+
+  test('a blank that is never blurred still cannot be stored', () => {
+    // Blur is not a guarantee — a form can be submitted straight from the box.
+    assert.match(code(CLIENT), /per_order_max: normalisePerOrderMax\(t\.per_order_max\)/,
+      'the save path trusts the draft as-is');
+  });
+
+  test('the other two number boxes were already fine, and are untouched', () => {
+    // Price blanks to 0 and renders as "", Quantity blanks to null meaning
+    // unlimited. Neither clamps mid-edit, so neither was changed.
+    const c = code(FORM);
+    assert.match(c, /price_pence: Math\.round\(parseFloat\(e\.target\.value \|\| "0"\) \* 100\)/);
+    assert.match(c, /quantity_available: e\.target\.value \? parseInt\(e\.target\.value, 10\) : null/);
   });
 });
 
