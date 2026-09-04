@@ -43,6 +43,7 @@ const LIVE = join(WEB, 'lib/ticket-live.ts');
 const COMPONENT = join(WEB, 'components/account/TicketsLive.tsx');
 const PAGE = join(WEB, 'app/account/tickets/page.tsx');
 const CSS = join(WEB, 'app/globals.css');
+const CLIENT = join(WEB, 'lib/supabase/client.ts');
 
 const src = (p: string) => readFileSync(p, 'utf8');
 /** Strip comments so an assertion cannot be satisfied by prose about the code. */
@@ -71,13 +72,13 @@ function loadLive(source = src(LIVE)) {
     newlyUsedIds: (a: T[], b: T[]) => string[];
     mergeServerTickets: (a: T[], b: T[]) => T[];
     anyStillValid: (t: T[]) => boolean;
-    pollIntervalMs: (ok: boolean, t: T[]) => number | null;
+    pollIntervalMs: (proven: boolean, t: T[]) => number | null;
     ticketBadge: (t: T, eventStatus: string | null) => string;
     showsCode: (t: T, eventStatus: string | null) => boolean;
     checkedInTimeLabel: (iso: string | null) => string;
     CELEBRATION_MS: number;
-    POLL_MS_REALTIME_OK: number;
-    POLL_MS_REALTIME_DOWN: number;
+    POLL_MS_REALTIME_PROVEN: number;
+    POLL_MS_REALTIME_UNPROVEN: number;
   };
 }
 
@@ -204,23 +205,26 @@ describe('the badge still reads correctly for every state', () => {
   });
 });
 
-describe('the fallback is a backstop, not a habit', () => {
-  test('Realtime up: a slow poll', () => {
-    assert.equal(L.pollIntervalMs(true, [valid('a')]), L.POLL_MS_REALTIME_OK);
+describe('liveness is proven by delivery, not by a status string', () => {
+  test('nothing delivered yet: the fast poll', () => {
+    assert.equal(L.pollIntervalMs(false, [valid('a')]), L.POLL_MS_REALTIME_UNPROVEN);
+    assert.equal(L.POLL_MS_REALTIME_UNPROVEN, 10_000);
   });
 
-  test('Realtime down: tighter, so the customer is not stranded', () => {
-    const down = L.pollIntervalMs(false, [valid('a')])!;
-    assert.equal(down, L.POLL_MS_REALTIME_DOWN);
-    assert.ok(down < L.POLL_MS_REALTIME_OK, 'the disconnected poll must be the faster of the two');
+  test('Realtime has delivered: back off', () => {
+    assert.equal(L.pollIntervalMs(true, [valid('a')]), L.POLL_MS_REALTIME_PROVEN);
+    assert.equal(L.POLL_MS_REALTIME_PROVEN, 60_000);
+  });
+
+  test('the unproven interval is the faster of the two', () => {
+    assert.ok(L.POLL_MS_REALTIME_UNPROVEN < L.POLL_MS_REALTIME_PROVEN);
   });
 
   test('neither interval is aggressive', () => {
-    assert.ok(L.POLL_MS_REALTIME_DOWN >= 10_000, 'polling faster than 10s is hammering the database');
-    assert.ok(L.POLL_MS_REALTIME_OK >= 30_000);
+    assert.ok(L.POLL_MS_REALTIME_UNPROVEN >= 10_000, 'polling faster than 10s is hammering the database');
   });
 
-  test('once nothing is scannable the polling stops', () => {
+  test('once nothing is scannable the polling stops, proven or not', () => {
     assert.equal(L.pollIntervalMs(true, [used('a')]), null);
     assert.equal(L.pollIntervalMs(false, [used('a'), used('b')]), null);
     assert.equal(L.anyStillValid([used('a'), valid('b')]), true);
@@ -231,6 +235,75 @@ describe('the fallback is a backstop, not a habit', () => {
   });
 });
 
+describe('SUBSCRIBED is not evidence', () => {
+  const c = code(COMPONENT);
+
+  test('the subscribe status is not consulted at all', () => {
+    assert.match(c, /\.subscribe\(\)/, 'subscribe() must take no status callback');
+    assert.doesNotMatch(c, /SUBSCRIBED/, 'the channel status must not gate anything');
+    assert.doesNotMatch(c, /subscribe\(\(status/);
+  });
+
+  test('only a delivered postgres_changes event proves Realtime works', () => {
+    const calls = c.match(/setRealtimeProven\(true\)/g) ?? [];
+    assert.equal(calls.length, 1, 'exactly one place may declare Realtime proven');
+    const handler = c.slice(c.indexOf('"postgres_changes"'), c.indexOf('.subscribe()'));
+    assert.match(handler, /setRealtimeProven\(true\)/, 'it must be the event handler');
+  });
+
+  test('and it is the delivery, not the subscription, that backs the poll off', () => {
+    assert.match(c, /pollIntervalMs\(realtimeProven, live\)/);
+  });
+
+  test('a delivered event still triggers the authoritative re-read', () => {
+    const handler = c.slice(c.indexOf('"postgres_changes"'), c.indexOf('.subscribe()'));
+    assert.match(handler, /setRealtimeProven\(true\);\s*void refresh\(\);/,
+      'the event must prove liveness AND re-read, in that order');
+  });
+});
+
+describe('the browser client is one client', () => {
+  function loadClient() {
+    const js = ts.transpileModule(src(CLIENT), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText;
+    let built = 0;
+    const exports_: Record<string, unknown> = {};
+    const fakeRequire = (id: string) => {
+      if (id.includes('@supabase/ssr')) {
+        return { createBrowserClient: () => ({ instance: ++built }) };
+      }
+      throw new Error(`unexpected module: ${id}`);
+    };
+    new Function('exports', 'require', 'process', js)(exports_, fakeRequire, { env: {
+      NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'k',
+    } });
+    return { createClient: exports_.createClient as () => unknown, count: () => built };
+  }
+
+  test('repeated calls return the very same instance', () => {
+    const m = loadClient();
+    const a = m.createClient();
+    const b = m.createClient();
+    const c2 = m.createClient();
+    assert.equal(a, b);
+    assert.equal(b, c2);
+    assert.equal(m.count(), 1, 'createBrowserClient must be called exactly once');
+  });
+
+  test('so one page cannot end up with competing auth clients', () => {
+    const m = loadClient();
+    for (let i = 0; i < 25; i++) m.createClient();
+    assert.equal(m.count(), 1);
+  });
+
+  test('server clients are untouched and stay per-request', () => {
+    const server = src(join(WEB, 'lib/supabase/server.ts'));
+    assert.doesNotMatch(server, /let [a-zA-Z]*[Cc]lient[a-zA-Z]* *(:|=) *[^;]*null/,
+      'the server client must not be memoised across requests');
+  });
+});
+
 describe('the component reads the table rather than trusting the wire', () => {
   const c = code(COMPONENT);
 
@@ -238,7 +311,7 @@ describe('the component reads the table rather than trusting the wire', () => {
     assert.match(c, /postgres_changes/);
     assert.match(c, /from\(["']event_tickets["']\)/);
     assert.match(c, /select\(["']id, status, checked_in_at["']\)/);
-    assert.match(c, /\(\)\s*=>\s*\{\s*void refresh\(\);\s*\}/, 'the subscription handler must call refresh()');
+    assert.match(c, /\(\)\s*=>\s*\{ setRealtimeProven\(true\); void refresh\(\); \}/, 'the subscription handler must call refresh()');
   });
 
   test('the payload is never written into state directly', () => {
@@ -252,14 +325,15 @@ describe('the component reads the table rather than trusting the wire', () => {
   });
 
   test('the poll, visibility and focus backstops are all wired', () => {
-    assert.match(c, /pollIntervalMs\(realtimeOk, live\)/);
+    assert.match(c, /pollIntervalMs\(realtimeProven, live\)/);
     assert.match(c, /document\.addEventListener\(["']visibilitychange["'], onVisible\)/);
     assert.match(c, /window\.addEventListener\(["']focus["'], onVisible\)/);
     assert.match(c, /visibilityState === ["']visible["']/);
   });
 
-  test('subscription status drives the fallback speed', () => {
-    assert.match(c, /subscribe\(\(status\)\s*=>\s*setRealtimeOk\(status === ["']SUBSCRIBED["']\)\)/);
+  test('the tab being hidden pauses the poll', () => {
+    assert.match(c, /const tick = \(\) => \{ if \(document\.visibilityState === ["']visible["']\) void refresh\(\); \};/,
+      'the interval must check visibility before reading');
   });
 });
 
