@@ -17,9 +17,10 @@ import { SECTIONS } from '@/constants/sections';
 import { Linking } from 'react-native';
 import {
   fetchHub, fetchHubMembershipTypes, createMembershipType, updateMembershipType, deleteMembershipType,
-  createHubOnboardingLink, formatMembershipPrice,
+  createHubOnboardingLink, fetchHubPayoutReady, formatMembershipPrice,
   type Hub, type HubMembershipType, type MembershipPeriod,
 } from '@/lib/hubs-api';
+import { hubPayoutNotice } from '@/lib/hub-payout-notice';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAlert } from '@/components/BrandedAlert';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
@@ -57,6 +58,10 @@ export default function HubMembershipTypesScreen() {
 
   const [hub, setHub] = useState<Hub | null>(null);
   const [types, setTypes] = useState<HubMembershipType[]>([]);
+  // hub_payout_ready(): the hub's own connected account, payouts enabled. Not
+  // hubs.payout_enabled, which can be true with no account attached — and the
+  // account id itself is granted to no client role.
+  const [payoutReady, setPayoutReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -67,8 +72,12 @@ export default function HubMembershipTypesScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [h, t] = await Promise.all([fetchHub(id), fetchHubMembershipTypes(id)]);
-      setHub(h); setTypes(t);
+      const [h, t, ready] = await Promise.all([
+        fetchHub(id),
+        fetchHubMembershipTypes(id),
+        fetchHubPayoutReady(id).catch(() => false),
+      ]);
+      setHub(h); setTypes(t); setPayoutReady(ready);
     } finally { setLoading(false); }
   }, [id]);
 
@@ -121,8 +130,11 @@ export default function HubMembershipTypesScreen() {
   };
 
   const [onboarding, setOnboarding] = useState(false);
-  const hasPaid = types.some(t => t.price_pence > 0);
-  const needsPayouts = hasPaid && hub && !hub.payout_enabled;
+  // Shown whatever the tier list holds. The old gate was
+  // `hasPaid && !hub.payout_enabled`, so a brand-new hub could design and save
+  // a paid tier before anything mentioned that it could not be sold — and a hub
+  // with no tiers at all was told nothing.
+  const notice = hubPayoutNotice(payoutReady);
 
   const setUpPayouts = async () => {
     if (!id) return;
@@ -160,30 +172,31 @@ export default function HubMembershipTypesScreen() {
           Offer one or more ways to join — free or paid. Members choose a tier when they join.
         </Text>
 
-        {needsPayouts ? (
-          <View style={styles.warnCard}>
-            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-              <FontAwesome5 name="exclamation-circle" size={14} color="#B45309" solid style={{ marginTop: 2 }} />
-              <Text style={styles.warnText}>
-                You've added a paid tier. Set up payouts with Stripe so members can pay and the money
-                goes straight to your hub.
-              </Text>
+        <View style={payoutReady ? styles.okCard : styles.warnCard}>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+            <FontAwesome5
+              name={payoutReady ? 'check-circle' : 'exclamation-circle'}
+              size={14}
+              color={payoutReady ? '#15803D' : '#B45309'}
+              solid
+              style={{ marginTop: 2 }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={payoutReady ? styles.okTitle : styles.warnTitle}>{notice.title}</Text>
+              <Text style={payoutReady ? styles.okText : styles.warnText}>{notice.body}</Text>
             </View>
+          </View>
+          {!payoutReady && (
             <TouchableOpacity style={styles.payoutBtn} onPress={setUpPayouts} disabled={onboarding} activeOpacity={0.85}>
               {onboarding ? <ActivityIndicator color="#fff" size="small" /> : (
                 <>
                   <FontAwesome5 name="university" size={12} color="#fff" solid />
-                  <Text style={styles.payoutBtnText}>Set up payouts</Text>
+                  <Text style={styles.payoutBtnText}>{notice.cta}</Text>
                 </>
               )}
             </TouchableOpacity>
-          </View>
-        ) : hasPaid && hub?.payout_enabled ? (
-          <View style={styles.okCard}>
-            <FontAwesome5 name="check-circle" size={13} color="#15803D" solid />
-            <Text style={styles.okText}>Payouts are set up — you can sell memberships.</Text>
-          </View>
-        ) : null}
+          )}
+        </View>
 
         {types.length === 0 ? (
           <EmptyState
@@ -272,11 +285,13 @@ const styles = StyleSheet.create({
   intro: { fontSize: fontSize.sm, color: colors.textMuted, lineHeight: 21, marginBottom: spacing.md },
 
   warnCard: { backgroundColor: '#FEF3C7', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, gap: 12 },
-  warnText: { flex: 1, fontSize: fontSize.xs, color: '#92400E', lineHeight: 18 },
+  warnTitle: { fontSize: fontSize.sm, fontWeight: '800', color: '#92400E', marginBottom: 2 },
+  warnText: { fontSize: fontSize.xs, color: '#92400E', lineHeight: 18 },
   payoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#B45309', borderRadius: radius.md, paddingVertical: 11 },
   payoutBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
-  okCard: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#DCFCE7', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
-  okText: { fontSize: fontSize.xs, color: '#15803D', fontWeight: '700' },
+  okCard: { backgroundColor: '#DCFCE7', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, gap: 12 },
+  okTitle: { fontSize: fontSize.sm, fontWeight: '800', color: '#166534', marginBottom: 2 },
+  okText: { fontSize: fontSize.xs, color: '#166534', lineHeight: 18 },
 
   tierCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: 10 },
   tierName: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },

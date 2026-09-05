@@ -914,6 +914,20 @@ export async function deleteMembershipType(id: string): Promise<void> {
  * Start (or resume) the hub's Stripe Connect onboarding. Returns a URL the
  * owner opens in a browser; payout_enabled flips via the webhook once done.
  */
+/**
+ * Can this hub be paid for a membership?
+ *
+ * Asks hub_payout_ready() rather than reading hubs.payout_enabled: the flag
+ * alone can be true with no connected account, and hubs.stripe_account_id is
+ * granted to no client role, so the client cannot compute the real condition
+ * itself. One boolean, no identifiers.
+ */
+export async function fetchHubPayoutReady(hubId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('hub_payout_ready', { p_hub_id: hubId });
+  if (error) return false;
+  return data === true;
+}
+
 export async function createHubOnboardingLink(hubId: string): Promise<{ url: string }> {
   const { data, error } = await supabase.functions.invoke('hub-onboard', { body: { hub_id: hubId } });
   if (error) {

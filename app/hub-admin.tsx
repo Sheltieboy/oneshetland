@@ -111,6 +111,8 @@ export default function HubAdminScreen() {
           accent={accent} onPress={() => router.push(`/hub-membership-types?id=${hub.id}`)} />
         <Tile icon="address-book" title="Member directory" sub="Who's in the hub"
           accent={accent} onPress={() => router.push(`/hub-directory?id=${hub.id}`)} />
+        <Tile icon="university" title="Payouts" sub="Connect or manage where Hub payments are paid"
+          accent={accent} onPress={() => router.push(`/hub-payouts?id=${hub.id}`)} />
 
         {/* ── Content & comms ── */}
         <Text style={styles.groupLabel}>Content & comms</Text>
