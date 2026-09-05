@@ -365,15 +365,29 @@ describe('payment safety is untouched', () => {
     assert.equal(r.i, 'present');
   });
 
-  // A moving number, and each move was a real event rather than a test being
-  // loosened: 2 when written, 1 after Leave hub hard-deleted a paid membership
-  // (the defect the history work exists to stop), and 2 again after a genuine
-  // Junior purchase on 26 August 2026. It is pinned so that a CHANGE has to be
-  // explained, not so that the value never changes.
-  test('the real membership was not touched', () => {
-    const r = runSql(`select count(*)::text c, coalesce(max(member_no),'-') n
-                        from public.hub_members where stripe_payment_intent_id is not null;`)[0];
-    assert.equal(r.c, '2', 'the number of paid memberships changed');
+  // This counted paid memberships: 2 when written, 1 after Leave hub
+  // hard-deleted one (the defect the history work exists to stop), 2 again
+  // after a genuine Junior purchase. Every move was a real event — but the
+  // count moved again with legitimate Membership E2E, and re-explaining a
+  // number every time somebody buys a membership is not a test.
+  //
+  // The defect it was really guarding is that paying and then leaving must not
+  // erase you. Stated directly: no purchase may be left without the member row
+  // it belongs to. That holds however many memberships are bought, and it fails
+  // the moment a hard delete comes back.
+  test('no paid membership was erased from under its purchase', () => {
+    const r = runSql(`select count(*)::text orphaned
+                        from public.hub_membership_purchases p
+                       where not exists (
+                         select 1 from public.hub_members m
+                          where m.hub_id = p.hub_id and m.user_id = p.user_id);`)[0];
+    assert.equal(r.orphaned, '0', 'a purchase has no member row — a paid membership was hard-deleted');
+  });
+
+  test('and there are paid memberships for that to be true of', () => {
+    const r = runSql(`select count(*)::text c from public.hub_members
+                       where stripe_payment_intent_id is not null;`)[0];
+    assert.ok(Number(r.c) >= 1, 'no paid memberships at all — the check above would pass vacuously');
   });
 
   test('other paygates unchanged', () => {

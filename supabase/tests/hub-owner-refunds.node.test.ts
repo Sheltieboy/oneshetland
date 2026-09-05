@@ -228,10 +228,18 @@ describe('the refund itself is untouched', () => {
 /* ── 6. the refund that was actually made ─────────────────────────────────── */
 
 describe('the proven TEST refund is recorded correctly', () => {
+  // `source = 'live'` identified this purchase when it was the only live one.
+  // It is not an identity — legitimate Membership E2E has since added more —
+  // and taking [0] of three rows would have pinned whichever came back first.
+  // The tier and its hub do identify it.
   test('the Junior purchase is fully refunded and kept', () => {
-    const r = runSql(`select refund_state, refunded_pence::text, total_pence::text,
-                             (refunded_at is not null)::text stamped
-                        from public.hub_membership_purchases where source = 'live';`)[0];
+    const rows = runSql(`select refund_state, refunded_pence::text, total_pence::text,
+                                (refunded_at is not null)::text stamped
+                           from public.hub_membership_purchases
+                          where source = 'live' and tier_name = 'Junior'
+                            and hub_name like 'DEMO — Lerwick Rowing Club%';`);
+    assert.equal(rows.length, 1, 'the Junior TEST purchase is gone, or is no longer unique');
+    const r = rows[0];
     assert.equal(r.refund_state, 'full');
     assert.equal(r.refunded_pence, '1095');
     assert.equal(r.total_pence, '1095');
@@ -249,9 +257,23 @@ describe('the proven TEST refund is recorded correctly', () => {
     assert.equal(r.no, '2', 'the member number was not kept');
   });
 
-  test('no further refund has been issued', () => {
+  // Was a count of refunded rows, which said "nobody has refunded anything
+  // since" rather than anything about refunds being correct. What must hold
+  // however many refunds exist: none returns more than was paid, none is
+  // unstamped, and none claims to be a refund of nothing.
+  test('no refund exceeds what was paid, and every one is stamped', () => {
+    const r = runSql(`select count(*)::text bad
+                        from public.hub_membership_purchases
+                       where refund_state <> 'none'
+                         and (coalesce(refunded_pence, 0) <= 0
+                              or refunded_pence > total_pence
+                              or refunded_at is null);`)[0];
+    assert.equal(r.bad, '0', 'a refund returned more than was paid, or was never stamped');
+  });
+
+  test('and there is at least one refund to have got right', () => {
     const r = runSql(`select count(*)::text c from public.hub_membership_purchases
                        where refund_state <> 'none';`)[0];
-    assert.equal(r.c, '1');
+    assert.ok(Number(r.c) >= 1, 'no refunds on record — the assertion above would pass vacuously');
   });
 });

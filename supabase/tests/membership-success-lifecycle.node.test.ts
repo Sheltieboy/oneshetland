@@ -235,24 +235,38 @@ describe('the rest of Paygate 8 is untouched', () => {
     assert.match(refundFn, /reverse_transfer/);
   });
 
-  // That purchase has since been refunded in full, deliberately, to prove the
-  // refund economics. The row survives — which is the point of it.
-  test('the real purchase just made is exactly one, and survives its refund', () => {
-    const r = runSql(`select count(*)::text c,
-                             coalesce(sum(case when refund_state <> 'none' then 1 else 0 end),0)::text refunded,
-                             coalesce(max(total_pence) filter (where source = 'live'),0)::text live_total
-                        from public.hub_membership_purchases;`)[0];
-    assert.equal(r.c, '2', 'the number of membership purchases changed');
-    assert.equal(r.refunded, '1', 'the refunded count changed');
-    assert.equal(r.live_total, '1095');
+  // Counted every purchase in the table to say one refunded row survived.
+  // Legitimate Membership E2E has since added more, so the counts moved and the
+  // test said nothing about survival. What survival means, stated directly: a
+  // fully refunded purchase still carries what it cost and what came back.
+  test('a fully refunded purchase survives as a row, with its money intact', () => {
+    const r = runSql(`select count(*)::text bad
+                        from public.hub_membership_purchases
+                       where refund_state = 'full'
+                         and (total_pence is null or total_pence <= 0
+                              or refunded_pence is distinct from total_pence);`)[0];
+    assert.equal(r.bad, '0', 'a refunded purchase was zeroed out rather than kept and marked');
+    const n = runSql(`select count(*)::text c from public.hub_membership_purchases
+                       where refund_state = 'full';`)[0];
+    assert.ok(Number(n.c) >= 1, 'no fully refunded purchase exists — this would pass vacuously');
   });
 
-  test('one payment intent bought exactly one year', () => {
-    const r = runSql(`select count(*)::text c
+  // Measured from occurred_at, which is only right for a FIRST purchase. A
+  // renewal extends from the paid_until it already had, so the second £1 test
+  // purchase legitimately landed 731 days out — and a count pinned at 1 failed
+  // for doing the correct thing. What one payment buys is a year ADDED, from
+  // wherever the member's cover already reached.
+  test('one payment intent buys exactly one year, renewal or not', () => {
+    const r = runSql(`select count(*)::text bad
                         from public.hub_membership_purchases
-                       where source = 'live'
-                         and paid_until_after between occurred_at + interval '360 days'
-                                                  and occurred_at + interval '370 days';`)[0];
-    assert.equal(r.c, '1');
+                       where source = 'live' and period = 'year'
+                         and paid_until_after is not null
+                         and paid_until_after not between
+                               coalesce(paid_until_before, occurred_at) + interval '360 days'
+                           and coalesce(paid_until_before, occurred_at) + interval '370 days';`)[0];
+    assert.equal(r.bad, '0', 'a yearly payment did not add about a year to the cover it extended');
+    const n = runSql(`select count(*)::text c from public.hub_membership_purchases
+                       where source = 'live' and period = 'year' and paid_until_after is not null;`)[0];
+    assert.ok(Number(n.c) >= 1, 'no yearly purchase to check — this would pass vacuously');
   });
 });

@@ -201,17 +201,37 @@ describe('the native screen is correct but only reaches a published build', () =
 /* ── 6. nothing was spent proving any of this ─────────────────────────────── */
 
 describe('the TEST purchase is untouched', () => {
-  // Written while the £10.95 Junior purchase was unrefunded. It has since been
-  // refunded in full as the deliberate TEST proof, so these now pin the
-  // POST-refund truth: the purchase is kept and marked, not deleted.
-  test('one live £10.95 Junior purchase, now refunded in full', () => {
-    const r = runSql(`select count(*)::text c,
-                             coalesce(max(total_pence) filter (where source = 'live'),0)::text total,
-                             coalesce(max(refund_state) filter (where source = 'live'),'-') as state
-                        from public.hub_membership_purchases;`)[0];
-    assert.equal(r.c, '2');
-    assert.equal(r.total, '1095');
-    assert.equal(r.state, 'full');
+  // Written while the £10.95 Junior purchase was the only live one, and pinned
+  // as a global row count. Legitimate Membership E2E has since added two more
+  // live purchases, so counting every row in the table asserted "nobody has
+  // bought anything since" — which was never the point.
+  //
+  // The point is that a refunded purchase is KEPT and MARKED rather than
+  // deleted. So the purchase is found by what identifies it — its tier, on its
+  // hub — and the completeness of refunds is asserted over whatever rows exist.
+  test('the TEST Junior purchase is kept and marked, not deleted', () => {
+    const rows = runSql(`select refund_state, total_pence::text total,
+                                (refunded_at is not null)::text stamped
+                           from public.hub_membership_purchases
+                          where source = 'live' and tier_name = 'Junior'
+                            and hub_name like 'DEMO — Lerwick Rowing Club%';`);
+    assert.equal(rows.length, 1, 'the £10.95 Junior TEST purchase is gone, or is no longer unique');
+    assert.equal(rows[0].refund_state, 'full');
+    assert.equal(rows[0].total, '1095', 'the refunded row was zeroed rather than kept');
+    assert.equal(rows[0].stamped, 'true');
+  });
+
+  test('and every refund on record is recorded completely', () => {
+    // True of one refund or a hundred: a full refund returns exactly what was
+    // paid and says when. A count of rows could never have said this.
+    const r = runSql(`select count(*)::text bad
+                        from public.hub_membership_purchases
+                       where refund_state = 'full'
+                         and (refunded_pence is distinct from total_pence or refunded_at is null);`)[0];
+    assert.equal(r.bad, '0', 'a full refund did not return the full amount, or was never stamped');
+    const n = runSql(`select count(*)::text c from public.hub_membership_purchases
+                       where refund_state = 'full';`)[0];
+    assert.ok(Number(n.c) >= 1, 'no full refund on record — this assertion would pass vacuously');
   });
 
   test('the June Adult membership is untouched by any of it', () => {
