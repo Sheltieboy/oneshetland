@@ -14,7 +14,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
-import { Linking } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import {
   fetchHub, fetchHubMembershipTypes, createMembershipType, updateMembershipType, deleteMembershipType,
   createHubOnboardingLink, fetchHubPayoutReady, formatMembershipPrice,
@@ -140,8 +140,17 @@ export default function HubMembershipTypesScreen() {
     if (!id) return;
     setOnboarding(true);
     try {
+      // Fresh link each tap (Stripe's expire), presented as an in-app sheet
+      // rather than launching Safari — same mechanism as Hub → Payouts.
       const { url } = await createHubOnboardingLink(id);
-      await Linking.openURL(url);
+      await WebBrowser.openBrowserAsync(url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+        controlsColor:     S.color,
+        toolbarColor:      '#ffffff',
+        dismissButtonStyle:'close',
+      });
+      // Re-ask the database rather than assuming the sheet closing meant success.
+      await load();
     } catch (e: any) {
       alert({ title: 'Could not start payout setup', message: e?.message ?? 'Please try again.' });
     } finally { setOnboarding(false); }

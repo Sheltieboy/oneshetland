@@ -14,7 +14,8 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
@@ -60,8 +61,24 @@ export default function HubPayoutsScreen() {
     if (!id) return;
     setOnboarding(true);
     try {
+      // A fresh account link every time. Stripe's onboarding links expire, and
+      // hub-onboard mints a new one per call, so a stale sheet is fixed by
+      // tapping again rather than by any retry logic here.
       const { url } = await createHubOnboardingLink(id);
-      await Linking.openURL(url);
+      // In-app SFSafariViewController (iOS) / Custom Tabs (Android), sliding up
+      // as a sheet — the same presentation the business Connect onboarding uses.
+      // Never full external Safari: the user does not leave OneShetland.
+      await WebBrowser.openBrowserAsync(url, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+        controlsColor:     S.color,
+        toolbarColor:      '#ffffff',
+        dismissButtonStyle:'close',
+      });
+      // The sheet is a modal, not a navigation change, so the screen never lost
+      // focus and useFocusEffect will not fire. Ask again explicitly: Stripe may
+      // have finished while it was open, and the answer must be the database's,
+      // not an assumption that closing the sheet means success.
+      await load();
     } catch (e: any) {
       alert({ title: 'Could not start payout setup', message: e?.message ?? 'Please try again.' });
     } finally { setOnboarding(false); }
