@@ -27,6 +27,7 @@ const bin = (n) => (existsSync(join(PG_HOME, 'bin', n)) ? join(PG_HOME, 'bin', n
 const SUITES = [
   'supabase/tests/pass-redemption-concurrency.node.test.ts',
   'supabase/tests/hub-column-privacy.node.test.ts',
+  'supabase/tests/hub-member-number-concurrency.node.test.ts',
 ];
 
 // macOS ships a locale that makes the postmaster multithread during startup
