@@ -163,12 +163,15 @@ describe('the state comes from the server, and only the state', () => {
     assert.match(p, /payoutHref=\{hubPayoutHref\(hub\.slug \|\| hub\.id, ["']tiers["']\)\}/);
   });
 
-  test('the server read returns a boolean, not an account id', () => {
+  test('the server read returns a boolean, and never touches the column', () => {
     const s = code(SERVER);
     const fn = s.slice(s.indexOf('export async function hubPayoutReady'));
     const body = fn.slice(0, fn.indexOf('\n}') + 2);
     assert.match(body, /Promise<boolean>/);
-    assert.match(body, /return !!\(data\?\.payout_enabled && data\?\.stripe_account_id\)/);
+    // hubs.stripe_account_id is granted to no client role (20260928130000), so
+    // the admin screen asks the SECURITY DEFINER function instead.
+    assert.match(body, /rpc\("hub_payout_ready", \{ p_hub_id: hubId \}\)/);
+    assert.doesNotMatch(body, /stripe_account_id/, 'selecting it would be a permission error');
   });
 
   test('and it asks the same question the server gate asks', () => {

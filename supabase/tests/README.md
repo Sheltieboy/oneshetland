@@ -30,6 +30,7 @@ committed fixture would mean writing to production.
 | Suite | Why it needs its own database |
 |---|---|
 | `pass-redemption-concurrency` | two tills spending one pass; the loser must block on a real row lock, and proving a lost update means committing |
+| `hub-column-privacy` | a privilege boundary can only be proved by running as anon and being refused; it also installs the OLD grants first and demonstrates the leak, so the fix is measured against the defect |
 
 It needs `postgresql@17` installed locally, so it is deliberately **not** part of
 `test:all` — the routine gate must not depend on a local database server. Run it

@@ -24,7 +24,10 @@ import { join } from 'node:path';
 const PG_HOME = '/opt/homebrew/opt/postgresql@17';   // production is 17.x
 const bin = (n) => (existsSync(join(PG_HOME, 'bin', n)) ? join(PG_HOME, 'bin', n) : n);
 
-const SUITES = ['supabase/tests/pass-redemption-concurrency.node.test.ts'];
+const SUITES = [
+  'supabase/tests/pass-redemption-concurrency.node.test.ts',
+  'supabase/tests/hub-column-privacy.node.test.ts',
+];
 
 // macOS ships a locale that makes the postmaster multithread during startup
 // ("postmaster became multithreaded during startup"), so pin a plain one for

@@ -48,6 +48,17 @@ export const HUB_TYPE_ICONS: Record<HubType, string> = {
   other:     'sitemap',
 };
 
+/**
+ * Named columns, never `select *`.
+ *
+ * public.hubs is column-whitelisted (migration 20260928130000): a client role
+ * may read only the granted columns, so `*` is a permission error. owner_id is
+ * granted to authenticated only — the members screen asks "is this mine?" — and
+ * stripe_account_id is granted to nobody, which is why it is not here and not
+ * on the Hub interface below.
+ */
+export const HUB_COLS = 'id, owner_id, name, slug, type, description, logo_url, cover_url, brand_color, contact_email, contact_phone, website, area, join_mode, is_active, is_verified, payout_enabled, memberships_enabled, directory_enabled, is_charity, charity_number, created_at' as const;
+
 export interface Hub {
   id:            string;
   owner_id:      string;
@@ -65,8 +76,9 @@ export interface Hub {
   join_mode:     JoinMode;
   is_active:     boolean;
   is_verified:   boolean;
-  // Paid membership / Stripe Connect (migration 067)
-  stripe_account_id:   string | null;
+  // Paid membership / Stripe Connect (migration 067). The account id itself is
+  // granted to no client role — ask hub_payout_ready() when the full condition
+  // is needed; payout_enabled alone is a public readiness boolean.
   payout_enabled:      boolean;
   memberships_enabled: boolean;
   directory_enabled:   boolean;
@@ -156,7 +168,7 @@ export function slugifyHub(name: string): string {
 // ── Hubs CRUD ────────────────────────────────────────────────────────────────────
 
 export async function fetchActiveHubs(type?: HubType): Promise<Hub[]> {
-  let q = supabase.from('hubs').select('*')
+  let q = supabase.from('hubs').select(HUB_COLS)
     .eq('is_active', true)
     .order('is_verified', { ascending: false })
     .order('created_at', { ascending: false });
@@ -167,13 +179,13 @@ export async function fetchActiveHubs(type?: HubType): Promise<Hub[]> {
 }
 
 export async function fetchHub(id: string): Promise<Hub | null> {
-  const { data, error } = await supabase.from('hubs').select('*').eq('id', id).maybeSingle();
+  const { data, error } = await supabase.from('hubs').select(HUB_COLS).eq('id', id).maybeSingle();
   if (error) throw error;
   return (data ?? null) as Hub | null;
 }
 
 export async function fetchHubBySlug(slug: string): Promise<Hub | null> {
-  const { data, error } = await supabase.from('hubs').select('*').eq('slug', slug).maybeSingle();
+  const { data, error } = await supabase.from('hubs').select(HUB_COLS).eq('slug', slug).maybeSingle();
   if (error) throw error;
   return (data ?? null) as Hub | null;
 }
@@ -188,7 +200,7 @@ export async function fetchMyHubs(userId: string): Promise<Hub[]> {
     .eq('status', 'active');
   const ids = (mem ?? []).map(m => m.hub_id);
   if (ids.length === 0) return [];
-  const { data, error } = await supabase.from('hubs').select('*').in('id', ids);
+  const { data, error } = await supabase.from('hubs').select(HUB_COLS).in('id', ids);
   if (error) throw error;
   return (data ?? []) as Hub[];
 }
