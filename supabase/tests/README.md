@@ -33,6 +33,7 @@ committed fixture would mean writing to production.
 | `hub-column-privacy` | a privilege boundary can only be proved by running as anon and being refused; it also installs the OLD grants first and demonstrates the leak, so the fix is measured against the defect |
 | `hub-member-number-concurrency` | two first-time joins must contend for one allocation; it installs the CURRENT function first and reproduces two member 1s, so the fix is measured against the defect rather than an assumption |
 | `my-unclaimed-gifts` | an identity boundary can only be proved by running as four different accounts — matched, unrelated, unconfirmed and signed out — and being answered differently |
+| `gift-claim-concurrency` | two entitled claimers must contend for one gift, and the booking-gift rule has to be tested with and without the lock that actually protects it |
 
 It needs `postgresql@17` installed locally, so it is deliberately **not** part of
 `test:all` — the routine gate must not depend on a local database server. Run it
