@@ -53,6 +53,7 @@ const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const VERIFY = join(MIG, '20260824100000_gift_recipient_verification.sql');
 const GIFTGUARD = join(MIG, '20260824140000_gift_funded_booking_guard.sql');
 const CAPACITY = join(MIG, '20260926120000_booking_capacity_guard.sql');
+const GIFTLOCK = join(MIG, '20261001120000_gift_booking_lock.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -141,6 +142,11 @@ const giftGuard = () =>
   slice(GIFTGUARD, 'create or replace function public.enforce_gift_funded_booking', '$$;') + '\n' +
   slice(GIFTGUARD, 'drop trigger if exists enforce_gift_funded_booking', ';') + '\n' +
   slice(GIFTGUARD, 'create trigger enforce_gift_funded_booking', ';');
+/** The hardened guard: same rule, now holding its own lock. */
+const giftGuardLocked = () =>
+  slice(GIFTLOCK, 'create or replace function public.enforce_gift_funded_booking', '$$;') + '\n' +
+  slice(GIFTLOCK, 'drop trigger if exists enforce_gift_funded_booking', ';') + '\n' +
+  slice(GIFTLOCK, 'create trigger enforce_gift_funded_booking', ';');
 const capacityGuard = () =>
   slice(CAPACITY, 'create or replace function public.book_capacity_guard', '$$;') + '\n' +
   slice(CAPACITY, 'drop trigger if exists book_capacity_guard', ';') + '\n' +
@@ -213,6 +219,8 @@ let giftGuardAlone: string[] = [];
    Querying afterwards would ask the last stage's database about the first. */
 const unit = { status: '', owner: '', passes: 0, retryPasses: 0, thirdParty: '', passesAfterThirdParty: 0 };
 const booking = { withBothGuards: 0, capacity: '', giftGuardOnly: 0, giftGuardOnlyRefusals: 0 };
+/* The hardened guard, standing entirely on its own: no capacity guard at all. */
+const hardened = { alone: 0, aloneRefusals: 0, refusal: '', differentGiftsBoth: 0, rekeyed: 0, def: '' };
 
 before(async () => {
   assert.ok(DSN, 'PASS_PROOF_DSN is not set — run `npm run test:isolated`.');
@@ -246,6 +254,48 @@ before(async () => {
   giftGuardAlone = await race(bookHolding(A, '2026-12-01 10:00+00', 3), book(A, '2026-12-01 11:00+00'));
   booking.giftGuardOnly = liveBookings();
   booking.giftGuardOnlyRefusals = giftGuardAlone.filter((o) => /ERROR/i.test(o)).length;
+
+  // ── 4. The hardened guard, with NO capacity guard behind it at all ────────
+  baseSchema();
+  assert.doesNotMatch(raw(giftGuardLocked()), /ERROR/i, 'the hardened guard did not install');
+  seed(2);
+  const hardRace = await race(bookHolding(A, '2026-12-01 10:00+00', 3), book(A, '2026-12-01 11:00+00'));
+  hardened.alone = liveBookings();
+  // Read while it is installed. A later test rebuilds the schema with the plain
+  // guard, and asking afterwards would describe that one instead.
+  hardened.def = raw(`select pg_get_functiondef('public.enforce_gift_funded_booking'::regproc)`);
+  const hardRefusals = hardRace.filter((o) => /ERROR/i.test(o));
+  hardened.aloneRefusals = hardRefusals.length;
+  hardened.refusal = hardRefusals[0] ?? '';
+
+  // ── 5. And with the capacity lock deliberately re-keyed, which used to be
+  //       the thing that broke it ───────────────────────────────────────────
+  baseSchema();
+  raw(capacityGuard().replace(
+    "hashtextextended('book_capacity:' || new.service_id::text, 0)",
+    "hashtextextended('book_capacity:' || new.service_id::text || new.starts_at::text, 0)"));
+  assert.doesNotMatch(raw(giftGuardLocked()), /ERROR/i, 'the hardened guard did not install');
+  seed(2);
+  await race(bookHolding(A, '2026-12-01 10:00+00', 3), book(A, '2026-12-01 11:00+00'));
+  hardened.rekeyed = liveBookings();
+
+  // ── 6. Two DIFFERENT gifts must not wait on each other ────────────────────
+  baseSchema();
+  assert.doesNotMatch(raw(giftGuardLocked()), /ERROR/i, 'the hardened guard did not install');
+  seed(2);
+  const GIFT2 = '33330000-0000-4000-8000-000000000033';
+  raw(`insert into public.book_gifts (id, code, kind, status, business_id, service_id, purchaser_id,
+                                      recipient_email, price_paid_pence, claimed_at, claimed_by_user_id)
+       values ('${GIFT2}','ZZBOOK-0002','booking','claimed','${BIZ}','${SVC}','${OWNER}','${TO}',4500, now(), '${B}');`);
+  const two = await Promise.all([
+    rawAsync(`begin; insert into public.book_bookings (business_id, service_id, customer_id, gift_id, starts_at, ends_at, status, price_pence)
+                values ('${BIZ}','${SVC}','${A}','${BGIFT}','2026-12-08 10:00+00'::timestamptz,'2026-12-08 10:30+00'::timestamptz,'confirmed',0); commit;`),
+    rawAsync(`begin; insert into public.book_bookings (business_id, service_id, customer_id, gift_id, starts_at, ends_at, status, price_pence)
+                values ('${BIZ}','${SVC}','${B}','${GIFT2}','2026-12-08 11:00+00'::timestamptz,'2026-12-08 11:30+00'::timestamptz,'confirmed',0); commit;`),
+  ]);
+  void two;
+  hardened.differentGiftsBoth = Number(scalar(
+    `select count(*)::text from public.book_bookings where gift_id in ('${BGIFT}','${GIFT2}') and status <> 'cancelled'`));
 });
 
 describe('CASE 1 — one unit gift, two entitled claimers, at the same moment', () => {
@@ -314,11 +364,12 @@ describe('CASE 3 — the same race with the gift guard ALONE', () => {
       'the two trigger names no longer sort in the order this protection needs');
   });
 
-  test('the gift rule is a check-then-act with no lock of its own', () => {
-    const def = raw(`select pg_get_functiondef('public.enforce_gift_funded_booking'::regproc)`);
-    assert.match(def, /if exists \(/i, 'the one-live-booking rule is no longer an EXISTS');
-    assert.doesNotMatch(def, /pg_advisory_xact_lock/, 'it now takes its own lock — this suite needs updating');
-    assert.doesNotMatch(def, /for update/i, 'it now locks a row — this suite needs updating');
+  test('the ORIGINAL guard is a check-then-act with no lock of its own', () => {
+    // Asserted against the migration that shipped it, not the installed
+    // function: 20261001120000 now hardens it, and this records what it was.
+    const original = slice(GIFTGUARD, 'create or replace function public.enforce_gift_funded_booking', '$$;');
+    assert.match(original, /if exists \(/i, 'the one-live-booking rule is no longer an EXISTS');
+    assert.doesNotMatch(original, /pg_advisory_xact_lock/, 'the original already locked — this suite needs updating');
   });
 
   test('the capacity guard is what serialises them, keyed on the service', () => {
@@ -369,5 +420,70 @@ describe('cancelled bookings still release the gift', () => {
     raw(`update public.book_bookings set status='completed' where gift_id='${BGIFT}' and status='confirmed'`);
     const out = raw(book(A, '2026-12-03 10:00+00'));
     assert.match(out, /gift_already_booked/, 'a completed appointment released the gift for a second booking');
+  });
+});
+
+describe('CASE 4 — the hardened guard, standing on its own', () => {
+  test('with NO capacity guard at all, only one booking survives', () => {
+    assert.equal(hardened.alone, 1,
+      'the gift-scoped lock did not serialise two attempts to spend one gift');
+  });
+
+  test('and the second is refused by the gift rule itself', () => {
+    assert.equal(hardened.aloneRefusals, 1);
+    assert.match(hardened.refusal, /gift_already_booked/);
+    assert.doesNotMatch(hardened.refusal, /slot_full/, 'capacity cannot be what refused it — there is no capacity guard');
+  });
+
+  test('it still holds when the capacity lock is re-keyed', () => {
+    // This is the exact change that broke the old arrangement.
+    assert.equal(hardened.rekeyed, 1,
+      're-keying an unrelated lock still decides whether a gift can be spent twice');
+  });
+
+  test('service capacity was 2, so capacity could not have refused anything', () => {
+    assert.equal(booking.capacity, '2');
+  });
+
+  test('the lock is keyed on the gift, not the service', () => {
+    assert.match(hardened.def, /pg_advisory_xact_lock\(\s*hashtextextended\('gift_booking:' \|\| new\.gift_id::text, 0\)\)/);
+    assert.doesNotMatch(hardened.def, /gift_booking:' \|\| new\.service_id/, 'the lock must not be service-scoped');
+  });
+
+  test('and it is taken before the count it protects', () => {
+    const lock = hardened.def.indexOf('pg_advisory_xact_lock');
+    const exists = hardened.def.indexOf('gift_already_booked');
+    assert.ok(lock !== -1 && exists !== -1, 'the hardened function was not installed');
+    assert.ok(lock < exists, 'the lock must come before the EXISTS, or it protects nothing');
+  });
+});
+
+describe('CASE 5 — unrelated gifts do not wait on each other', () => {
+  test('two different gifts both book, concurrently', () => {
+    assert.equal(hardened.differentGiftsBoth, 2,
+      'the gift lock is serialising unrelated gifts — it is keyed too widely');
+  });
+});
+
+describe('CASE 6 — cancellation still releases the gift, with the lock in place', () => {
+  before(() => {
+    baseSchema();
+    raw(giftGuardLocked());
+    seed(2);
+    raw(book(A, '2026-12-09 10:00+00'));
+    raw(`update public.book_bookings set status='cancelled' where gift_id='${BGIFT}'`);
+  });
+
+  test('a cancelled booking frees the gift for rebooking', () => {
+    assert.equal(liveBookings(), 0);
+    const out = raw(book(A, '2026-12-09 14:00+00'));
+    assert.doesNotMatch(out, /gift_already_booked/, 'a cancelled booking still blocked a rebooking');
+    assert.equal(liveBookings(), 1);
+  });
+
+  test('and a completed one still holds it', () => {
+    raw(`update public.book_bookings set status='completed' where gift_id='${BGIFT}' and status='confirmed'`);
+    const out = raw(book(A, '2026-12-10 10:00+00'));
+    assert.match(out, /gift_already_booked/, 'a completed appointment released the gift');
   });
 });

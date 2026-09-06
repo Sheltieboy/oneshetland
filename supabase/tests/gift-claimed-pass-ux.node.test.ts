@@ -31,7 +31,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEB = join(REPO_ROOT, '..', 'oneshetland-web');
@@ -159,10 +158,24 @@ describe('nothing underneath moved', () => {
       'claiming from an effect would re-claim on every render');
   });
 
-  test('no migration was added for this', () => {
-    const out = execFileSync('git', ['status', '--porcelain', 'supabase/migrations', 'supabase/functions'],
-      { cwd: REPO_ROOT, encoding: 'utf8' });
-    assert.equal(out.trim(), '', `a migration or edge function changed:\n${out}`);
+  // Was `git status supabase/migrations` must be empty — true of the task that
+  // wrote it, and false the moment any later approved migration lands. It meant
+  // "this is presentation only", so it now says that about the files it guards
+  // rather than about the whole repository.
+  test('the gift UX is presentation only — no SQL, no schema, in these files', () => {
+    for (const f of [CLIENT, DATA]) {
+      const c = code(f);
+      assert.doesNotMatch(c, /\b(create|alter|drop)\s+(table|function|policy|index)\b/i,
+        `${f.split('/').pop()} contains DDL`);
+      assert.doesNotMatch(c, /\bfrom\("book_gifts"\)[\s\S]{0,200}\.update\(/,
+        `${f.split('/').pop()} writes gift state directly`);
+    }
+  });
+
+  test('and it writes no gift or pass state of its own', () => {
+    const c = code(CLIENT);
+    assert.doesNotMatch(c, /\.update\(\{/, 'the page performs a direct table write');
+    assert.doesNotMatch(c, /uses_remaining:\s*\d/, 'the page invents a balance');
   });
 
   test('the RPCs themselves are untouched in the migration chain', () => {
