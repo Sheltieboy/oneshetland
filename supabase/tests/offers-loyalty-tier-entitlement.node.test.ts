@@ -529,12 +529,24 @@ describe('the rest of the platform is where it was', () => {
   });
 
   test('33. customer Wallet value is untouched by this slice', () => {
-    const [row] = sql(`
-      select coalesce(sum(balance_pence),0) as pence, count(*) as rows from public.local_wallet_balances;`);
-    // Recorded at the Wallet slice and unchanged since. If this ever moves, it
-    // moved for a reason that has nothing to do with entitlement.
-    assert.equal(String(row.pence), '1800');
-    assert.equal(String(row.rows), '4');
+    // This used to pin the platform-wide total at 1800p. That is a fact about
+    // whoever last topped up, not about entitlement, so the first real wallet
+    // top-up and spend broke an entitlement test — and the only repair on
+    // offer was to re-pin the number and believe it again.
+    //
+    // What the pin was standing in for is that nothing in this slice moves
+    // wallet value WITHOUT an accounting entry. That is the ledger identity,
+    // it is the thing that would actually be alarming, and it holds however
+    // much legitimate trading happens.
+    const [drift] = sql(`
+      select count(*) as n from public.local_wallet_balances b
+       where coalesce(b.balance_pence, 0) <> coalesce(
+         (select sum(t.amount_pence) from public.local_wallet_transactions t
+           where t.user_id = b.user_id), 0);`);
+    assert.equal(String(drift.n), '0', 'a wallet balance has moved without a ledger entry');
+
+    const [row] = sql(`select count(*) as rows from public.local_wallet_balances;`);
+    assert.ok(Number(row.rows) >= 4, 'wallets should not disappear');
   });
 
   test('34. Work, Jobs and Shifts gained nothing', () => {

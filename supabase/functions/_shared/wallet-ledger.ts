@@ -128,7 +128,7 @@ export async function transferStateOf(
 export async function walletMarkTransfer(
   svc: SupabaseClient,
   transactionId: string,
-  state: 'none' | 'pending' | 'sent' | 'failed' | 'unresolved',
+  state: 'none' | 'pending' | 'sent' | 'failed' | 'unresolved' | 'reversed',
   transferId?: string | null,
 ): Promise<void> {
   const { error } = await svc.rpc('wallet_mark_transfer', {
@@ -297,7 +297,12 @@ export async function debitAndTransfer(
   // actually completed, or never needed to happen, is done.
   if (debit.alreadyApplied) {
     const state = await transferStateOf(svc, debit.transactionId);
-    if (state === 'sent' || state === 'none' || !args.transfer) {
+    // 'reversed' is terminal too, and for a sharper reason than the others. The
+    // transfer was sent, then clawed back to fund a refund. Resuming it would
+    // hand Stripe the same idempotency key, get the original (reversed)
+    // transfer back, read that as success, and overwrite the reversal with
+    // 'sent' — losing the only record that the money came back.
+    if (state === 'sent' || state === 'none' || state === 'reversed' || !args.transfer) {
       return { ok: true, balancePence: debit.balancePence, transactionId: debit.transactionId, transferId: null, alreadyApplied: true };
     }
     // 'pending' or 'unresolved': fall through and re-attempt. The Stripe key is

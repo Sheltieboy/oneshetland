@@ -295,11 +295,18 @@ describe('C — a refunded top-up comes back out of the wallet', () => {
 
   test('a refund after the money is spent takes what is there', () => {
     assert.equal(s().spend_allowed, 'spent');
-    assert.equal(s().spent_taken, '2000');
+    // The balance that stood before the recovery, not a number. The scenario
+    // runs against the oldest real account, and '2000' quietly assumed that
+    // account starts empty — so the first time it held £2 of its own, this
+    // read as a recovery defect. The invariant it was standing in for is that
+    // recovery takes exactly what is there, whatever that is.
+    assert.equal(s().spent_taken, s().balance_now);
   });
 
   test('and records the rest as a deficit rather than failing silently', () => {
-    assert.equal(s().spent_deficit, '8000');
+    // Every penny of the £100 top-up is accounted for: taken, or owed.
+    assert.equal(Number(s().spent_taken) + Number(s().spent_deficit), 10000);
+    assert.ok(Number(s().spent_deficit) > 0, 'a spent-away refund must leave a deficit');
     assert.equal(s().spent_reason, 'partial_deficit');
   });
 
@@ -331,8 +338,9 @@ describe('C6/C5 — a wallet that owes money does not spend, and repays first', 
   });
 
   test('the next top-up repays the deficit before anything is spendable', () => {
-    assert.equal(s().repaid, '8000');
-    assert.equal(s().spendable, '2000');
+    // Exactly the deficit, and only what is left over becomes spendable.
+    assert.equal(s().repaid, s().spent_deficit);
+    assert.equal(Number(s().spendable), 10000 - Number(s().repaid));
     assert.equal(s().deficit_left, '0');
   });
 

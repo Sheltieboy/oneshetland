@@ -69,8 +69,35 @@ async function chargeAmountRefunded(
   } catch { return null; }
 }
 
-/** Reverse a Connect transfer in full. Idempotent on the transfer id. */
+/**
+ * Reverse a Connect transfer in full, treating one already fully reversed as
+ * done rather than as a failure.
+ *
+ * The idempotency key makes a retry inside Stripe's 24-hour replay window
+ * return the original reversal. OUTSIDE that window Stripe reads the same
+ * request as a new reversal and refuses it, because nothing is left to
+ * reverse. That surfaced as "could not reverse the hub payout, so nothing was
+ * refunded" — which is the exact opposite of the truth, and stranded the
+ * refund permanently: the hub had already been clawed back, and every retry
+ * died here before the customer could be credited.
+ *
+ * Reading the transfer first makes recovery independent of how long the
+ * operator took to press the button again. A transfer we cannot read falls
+ * through to the POST, so nothing that worked before behaves differently.
+ */
 async function reverseTransfer(transferId: string): Promise<void> {
+  const look = await fetch(`${STRIPE}/transfers/${transferId}`, {
+    headers: {
+      'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+      'Stripe-Version': STRIPE_API_VERSION,
+    },
+  });
+  if (look.ok) {
+    const t = await look.json();
+    if (typeof t.amount === 'number' && typeof t.amount_reversed === 'number'
+        && t.amount_reversed >= t.amount) return;
+  }
+
   const res = await fetch(`${STRIPE}/transfers/${transferId}/reversals`, {
     method: 'POST',
     headers: {
@@ -136,20 +163,45 @@ async function refundWalletMembership(
   }).maybeSingle();
   if (revErr) {
     console.error('[refund-payment] wallet reversal failed', revErr);
-    return jsonResponse({ error: 'Could not return the money to the wallet. Nothing has been changed.' }, 502);
+    // Two genuinely different situations, and they used to share one message
+    // that was false in the worse of them. If the transfer came back, the hub
+    // HAS been clawed back and the refund is half-done: saying "nothing has
+    // been changed" invites the operator to walk away from money they have
+    // already taken off a business. Both states are safe to retry — Stripe
+    // will not reverse twice, and the ledger will not credit twice.
+    return jsonResponse(
+      transferReversed
+        ? {
+            error: 'The hub payout was reversed, but the money has not reached the wallet yet. '
+                 + 'Nothing has been taken twice — press Refund again to finish it.',
+            stage: 'merchant_reversed_wallet_pending',
+            retry_safe: true,
+          }
+        : {
+            error: 'Could not return the money to the wallet. Nothing has been changed.',
+            stage: 'nothing_changed',
+            retry_safe: true,
+          },
+      502);
   }
 
   const { data: rec, error: recErr } = await svc.rpc('record_membership_refund',
     { p_pi: m.payment_intent_id, p_cumulative: total });
   if (recErr) {
     console.error('[refund-payment] membership record failed', recErr);
-    return jsonResponse({ error: 'The money was returned but the record could not be updated. Please report this.' }, 500);
+    return jsonResponse({
+      error: 'The money is back in the wallet, but the membership record did not update. '
+           + 'Press Refund again to finish it.',
+      stage: 'wallet_credited_record_pending',
+      retry_safe: true,
+    }, 500);
   }
 
   console.log(`[refund-payment] wallet membership ${m.id} refunded by ${adminId}: ${JSON.stringify(rec)}`);
   return jsonResponse({
     ok: true,
     rail: 'wallet',
+    stage: 'completed',
     amount_pence: total,
     reversed_transfer: transferReversed,
     already_reversed: (rev as { already_reversed?: boolean } | null)?.already_reversed ?? false,
