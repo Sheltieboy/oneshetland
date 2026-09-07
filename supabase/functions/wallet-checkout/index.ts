@@ -350,6 +350,14 @@ async function unitPurchase(svc: any, userId: string, body: any, rid: string): P
     });
   }
 
+  // Loyalty is awarded HERE, once the pass exists — not at the debit. The
+  // retired trigger fired on the wallet insert, before the merchant was paid
+  // and before the purchase existed. Best-effort: a loyalty failure must never
+  // fail a purchase the customer has already paid for and received.
+  try {
+    await svc.rpc('loyalty_award_for_wallet_spend', { p_wallet_txn: paid.transactionId });
+  } catch (e) { console.error('[wallet-checkout] loyalty award failed', e); }
+
   // Ledger row already written by debitAndTransfer.
   const payload = { ok: true, balance_pence: newBalance, purchase_id: purchase?.id ?? null, uses_remaining: purchase?.uses_remaining ?? null, expires_at: purchase?.expires_at ?? null };
   await settleAttempt(svc, rid, 'completed', paid.transactionId, payload);

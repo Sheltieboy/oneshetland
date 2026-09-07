@@ -370,13 +370,26 @@ describe('a lapsed plan stops the points, not the payment', () => {
   test('but no new points are minted', () =>
     assert.equal(outcome(rows, 'points once lapsed'), '50'));
 
-  test('the award trigger skips rather than raises', () => {
-    const [row] = sql(`select pg_get_functiondef('public.tg_loyalty_earn_points'::regproc) as d;`);
+  test('the award path skips rather than raises', () => {
+    // The trigger is retired by 20261006120000 — it never fired, and it hung
+    // off the payment's own transaction where a raise would have rolled the
+    // payment back. While it still exists, that property still matters; once
+    // it is gone, the replacement must hold the same one from a safer place.
+    const [present] = sql(`select count(*)::int as n from pg_proc p
+       join pg_namespace n2 on n2.oid = p.pronamespace
+      where n2.nspname='public' and p.proname='tg_loyalty_earn_points';`);
+    if (Number(present.n) > 0) {
+      const [row] = sql(`select pg_get_functiondef('public.tg_loyalty_earn_points'::regproc) as d;`);
+      const def = String(row.d);
+      assert.match(def, /business_meets_tier\(new\.business_id, 'pro'\)/);
+      assert.match(def, /if not public\.business_meets_tier\(new\.business_id, 'pro'\) then\s*\n\s*return new;/);
+      return;
+    }
+    const [row] = sql(`select pg_get_functiondef('public.loyalty_award_for_wallet_spend'::regproc) as d;`);
     const def = String(row.d);
-    assert.match(def, /business_meets_tier\(new\.business_id, 'pro'\)/);
-    // The tier branch must return, not raise. A raise here would abort the
-    // wallet insert this trigger hangs off.
-    assert.match(def, /if not public\.business_meets_tier\(new\.business_id, 'pro'\) then\s*\n\s*return new;/);
+    assert.match(def, /business_meets_tier\(v_txn\.business_id, 'pro'\)/);
+    assert.doesNotMatch(def, /raise\s+exception/i,
+      'the replacement returns a refusal; it must not raise into a completed purchase');
   });
 });
 

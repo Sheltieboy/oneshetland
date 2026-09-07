@@ -300,6 +300,16 @@ serve(async (req) => {
       await svc.from('product_orders').update({
         status: 'paid', paid_via: 'wallet', paid_at: new Date().toISOString(), expires_at: null,
       }).eq('id', order.id);
+
+    // Loyalty is awarded HERE, at completion — not at the debit. The retired
+    // trigger fired on the wallet insert, before the merchant was paid and
+    // before this purchase existed, so three later events could undo the spend
+    // and none of them gave the points back. Best-effort: a loyalty failure
+    // must never fail a purchase that has already been paid for.
+    try {
+      await svc.rpc('loyalty_award_for_wallet_spend', { p_wallet_txn: res.transactionId });
+    } catch (e) { console.error('[create-product-order-intent] loyalty award failed', e); }
+
       await sendUserPush(svc, {
         userId: biz.owner_id, module: 'business', categoryId: 'business.order',
         title: '🛍️ New shop order!',

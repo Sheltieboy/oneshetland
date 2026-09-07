@@ -112,6 +112,16 @@ serve(async (req) => {
       return json({ error: result.error }, result.status);
     }
 
+
+    // Loyalty is awarded HERE, at completion — not at the debit. The retired
+    // trigger fired on the wallet insert, before the merchant was paid and
+    // before this purchase existed, so three later events could undo the spend
+    // and none of them gave the points back. Best-effort: a loyalty failure
+    // must never fail a purchase that has already been paid for.
+    try {
+      await svc.rpc('loyalty_award_for_wallet_spend', { p_wallet_txn: result.transactionId });
+    } catch (e) { console.error('[local-wallet-pay] loyalty award failed', e); }
+
     const payload = { balance_pence: result.balance_pence, cashback_pence: result.cashback_pence };
     await settleAttempt(svc, rid, 'completed', result.transactionId ?? null, payload);
     return json(payload);
