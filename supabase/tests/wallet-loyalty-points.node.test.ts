@@ -164,6 +164,8 @@ const fixSql = () => [
   slice(FIX, 'create or replace function public.loyalty_award_for_wallet_spend', '$$;'),
   slice(FIX, 'create or replace function public.loyalty_reverse_for_wallet_spend', '$$;'),
   slice(FIX, 'create or replace function public.wallet_reverse_debit', '$$;'),
+  slice(FIX, 'create or replace function public.loyalty_reversals_outstanding', '$$;'),
+  slice(FIX, 'create or replace function public.loyalty_recover_outstanding_reversals', '$$;'),
 ].join('\n');
 function installFix(mutate: (s: string) => string = (x) => x) {
   const out = raw(mutate(fixSql()));
@@ -220,15 +222,26 @@ const r = {
   redeemRefundBalance: 0, redeemRefundDeficit: 0,
   backfillPoints: 0, triggerGone: '',
   awardTierCheck: '', awardRaises: '',
+  // Forced-failure fixture: what survives when the loyalty reversal blows up
+  // inside a wallet refund that itself succeeds.
+  failState: '', failWalletBal: 0, failRefundRows: 0, failEarnRows: 0,
+  failPoints: 0, failReverseRows: 0, failDeficitRows: 0,
+  failDetected: 0, retryResult: '', retryPoints: 0, retryDeficit: 0, retryDetected: 0,
+  retryTwice: '', retryTwiceDeficit: 0, retryTwiceRows: 0,
+  failAfterRedeemDeficit: 0, failAfterRedeemBalance: 0,
+  raceRecoverOk: 0, raceRecoverRows: 0,
+  awardPending: '', awardUnresolved: '', awardFailed: '', awardNone: '', awardSent: '',
   walletRefundStillWorks: '', walletBalanceAfter: 0,
 };
 const priv: Record<string, string> = {};
-const anchors = { uniqueIndex: false, netBasis: false, deficitOffset: false, revIdempotent: false, cardLock: false };
+const anchors = { uniqueIndex: false, netBasis: false, deficitOffset: false, revIdempotent: false, cardLock: false,
+                  detectClause: false, stateGate: false };
 const mut = {
   m1EarnRows: 0, m1Balance: 0,
   m2Balance: 0,
   m3Deficit: 0, m3Balance: 0,
   m4Balance: 0,
+  m5Detected: 0, m6Award: '',
 };
 
 before(async () => {
@@ -391,11 +404,101 @@ before(async () => {
   spend(SPEND, { amount: 300, fee: 15 });
   r.walletRefundStillWorks = reverseSpend(SPEND);   // no award exists at all
 
+  // ══ THE DANGEROUS CASE ══════════════════════════════════════════════════
+  //
+  // The loyalty call inside wallet_reverse_debit sits in an exception guard so
+  // a refund can never fail over loyalty. A guard is a SUBTRANSACTION: if the
+  // inner work raises, everything it did is rolled back and the outer
+  // transaction carries on. So the question is not whether the refund survives
+  // — it does — but what is left behind when the loyalty half does not.
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  award(SPEND);
+  raw(`create function public.boom_ledger() returns trigger language plpgsql as $b$
+       begin
+         if new.type = 'points_reverse' then raise exception 'loyalty ledger is down'; end if;
+         return new;
+       end $b$;
+       create trigger boom_ledger before insert on public.local_loyalty_transactions
+         for each row execute function public.boom_ledger();`);
+  reverseSpend(SPEND);                       // the refund must still succeed
+  r.failState = scalar(`select transfer_state from public.local_wallet_transactions where id='${SPEND}';`);
+  r.failWalletBal = num(`select balance_pence::text from public.local_wallet_balances where user_id='${CUST}';`);
+  r.failRefundRows = num(
+    `select count(*)::text from public.local_wallet_transactions where reverses_transaction_id='${SPEND}';`);
+  r.failEarnRows = rowsOf('points_earn');
+  r.failPoints = balance();
+  r.failReverseRows = rowsOf('points_reverse');
+  r.failDeficitRows = rowsOf('points_deficit');
+  // Is the incomplete state derivable from what is already on disk?
+  r.failDetected = num(`select count(*)::text from public.loyalty_reversals_outstanding();`);
+
+  // ── Loyalty-only retry, after the money has already gone back ────────────
+  raw(`drop trigger boom_ledger on public.local_loyalty_transactions;`);
+  r.retryResult = value(raw(`select public.loyalty_reverse_for_wallet_spend('${SPEND}');`));
+  r.retryPoints = balance();
+  r.retryDeficit = deficit();
+  r.retryDetected = num(`select count(*)::text from public.loyalty_reversals_outstanding();`);
+  // And again — nothing further may happen.
+  r.retryTwice = value(raw(`select public.loyalty_reverse_for_wallet_spend('${SPEND}');`));
+  r.retryTwiceDeficit = deficit();
+  r.retryTwiceRows = rowsOf('points_reverse') + rowsOf('points_deficit');
+
+  // ── The same failure, but the points had already been spent ─────────────
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  award(SPEND); spendPoints(28);
+  raw(`create function public.boom_card() returns trigger language plpgsql as $b$
+       begin raise exception 'loyalty card is down'; end $b$;
+       create trigger boom_card before update on public.local_loyalty_cards
+         for each row execute function public.boom_card();`);
+  reverseSpend(SPEND);
+  raw(`drop trigger boom_card on public.local_loyalty_cards;`);
+  raw(`select public.loyalty_recover_outstanding_reversals(100);`);
+  r.failAfterRedeemDeficit = deficit();
+  r.failAfterRedeemBalance = balance();
+
+  // ── Two recovery runs at once produce one result ────────────────────────
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  award(SPEND);
+  raw(`create function public.boom_ledger2() returns trigger language plpgsql as $b$
+       begin
+         if new.type = 'points_reverse' then raise exception 'down'; end if;
+         return new;
+       end $b$;
+       create trigger boom_ledger2 before insert on public.local_loyalty_transactions
+         for each row execute function public.boom_ledger2();`);
+  reverseSpend(SPEND);
+  raw(`drop trigger boom_ledger2 on public.local_loyalty_transactions;`);
+  const rr = await race(`public.loyalty_reverse_for_wallet_spend('${SPEND}')`);
+  r.raceRecoverOk = okCount(rr);
+  r.raceRecoverRows = rowsOf('points_reverse') + rowsOf('points_deficit');
+
+  // ── The award refuses a spend that is not settled ───────────────────────
+  schema({ pointsPerPound: 10 }); installFix();
+  for (const [id, st, key] of [[SPEND, 'pending', 'awardPending'], [SPEND2, 'unresolved', 'awardUnresolved']] as const) {
+    spend(id, { amount: 300, fee: 15, state: st });
+    (r as Record<string, unknown>)[key] = award(id);
+  }
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15, state: 'failed' });
+  r.awardFailed = award(SPEND);
+  // Both settled states still award: 'sent' is every real rail, 'none' means
+  // no transfer was ever needed.
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15, state: 'sent' });
+  r.awardSent = award(SPEND);
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15, state: 'none' });
+  r.awardNone = award(SPEND);
+
   // ── Privileges ──────────────────────────────────────────────────────────
   schema({ pointsPerPound: 10 }); installFix();
   const g = raw(grantsBlock());
   assert.doesNotMatch(g, /ERROR/i, `grants failed:\n${g.slice(0, 600)}`);
-  for (const fn of ['loyalty_award_for_wallet_spend', 'loyalty_reverse_for_wallet_spend']) {
+  for (const fn of ['loyalty_award_for_wallet_spend', 'loyalty_reverse_for_wallet_spend',
+                    'loyalty_reversals_outstanding', 'loyalty_recover_outstanding_reversals']) {
     priv[fn] = scalar(
       `select string_agg(r || ':' || case when has_function_privilege(r, p.oid, 'execute') then 'yes' else 'no' end, ' ')
          from pg_proc p join pg_namespace n on n.oid=p.pronamespace,
@@ -415,12 +518,18 @@ before(async () => {
               where source_transaction_id = p_wallet_txn
                 and type in ('points_reverse', 'points_deficit')) then`;
   const cardLock = `  select * into v_card from public.local_loyalty_cards where id = v_earn.card_id for update;`;
+  const detectClause = `     and not exists (select 1 from public.local_loyalty_transactions x
+                      where x.source_transaction_id = e.source_transaction_id
+                        and x.type in ('points_reverse', 'points_deficit'))`;
+  const stateGate = `  if coalesce(v_txn.transfer_state, 'none') not in ('sent', 'none') then`;
   const f = fixSql();
   anchors.uniqueIndex = f.includes(uniqueIdx);
   anchors.netBasis = f.includes(netBasis);
   anchors.deficitOffset = f.includes(deficitOffset);
   anchors.revIdempotent = f.includes(revIdem);
   anchors.cardLock = f.includes(cardLock);
+  anchors.detectClause = f.includes(detectClause);
+  anchors.stateGate = f.includes(stateGate);
 
   // M1 — the source unique index removed, and the award's own guard with it.
   schema({ pointsPerPound: 10 });
@@ -452,6 +561,23 @@ before(async () => {
   award(SPEND2);
   mut.m3Deficit = deficit();
   mut.m3Balance = balance();
+
+  // M5 — the detection's "and nothing reversed it" clause removed: a spend
+  // that HAS been recovered still reports as outstanding, so the recovery
+  // driver would work on it for ever.
+  schema({ pointsPerPound: 10 });
+  installFix((x) => x.replace(detectClause, ''));
+  spend(SPEND, { amount: 300, fee: 15 });
+  award(SPEND);
+  reverseSpend(SPEND);                        // reverses cleanly, nothing outstanding
+  mut.m5Detected = num(`select count(*)::text from public.loyalty_reversals_outstanding();`);
+
+  // M6 — the award's settled-state gate removed: an early caller mints points
+  // against money that is still in motion.
+  schema({ pointsPerPound: 10 });
+  installFix((x) => x.replace(stateGate, '  if false then'));
+  spend(SPEND, { amount: 300, fee: 15, state: 'unresolved' });
+  mut.m6Award = award(SPEND);
 
   // M4 — the reversal's idempotency guard removed, and the unique index with
   // it. The index alone would turn a second reversal into an error rather than
@@ -627,5 +753,70 @@ describe('mutations — each protection is load-bearing', () => {
   });
   test('M4 removing reversal idempotency deficits twice', () => {
     assert.equal(mut.m4Balance, 56);
+  });
+});
+
+describe('a loyalty failure cannot silently leave free points', () => {
+  test('the wallet refund still completes in full', () => {
+    assert.equal(r.failState, 'reversed');
+    assert.equal(r.failRefundRows, 1);
+    assert.equal(r.failWalletBal, 10300);
+  });
+  test('the loyalty half is rolled back entirely — the guard is a subtransaction', () => {
+    assert.equal(r.failEarnRows, 1, 'the award survives');
+    assert.equal(r.failPoints, 28, 'and so do the points');
+    assert.equal(r.failReverseRows, 0);
+    assert.equal(r.failDeficitRows, 0);
+  });
+  test('but the incomplete state is derivable, not lost', () => {
+    assert.equal(r.failDetected, 1, 'loyalty_reversals_outstanding must see it');
+  });
+});
+
+describe('the loyalty-only retry, after the money has gone back', () => {
+  test('it completes without touching the financial refund again', () => {
+    assert.match(r.retryResult, /"ok"\s*:\s*true/);
+    assert.equal(r.retryPoints, 0);
+    assert.equal(r.retryDeficit, 0);
+  });
+  test('and the wallet spend is no longer outstanding', () => {
+    assert.equal(r.retryDetected, 0);
+  });
+  test('a second retry does nothing at all', () => {
+    assert.match(r.retryTwice, /already_reversed/);
+    assert.equal(r.retryTwiceDeficit, 0);
+    assert.equal(r.retryTwiceRows, 1, 'exactly one reversal row, ever');
+  });
+  test('recovery after the points were spent creates the right deficit', () => {
+    assert.equal(r.failAfterRedeemBalance, 0);
+    assert.equal(r.failAfterRedeemDeficit, 28);
+  });
+  test('two concurrent recoveries produce one result', () => {
+    assert.equal(r.raceRecoverOk, 2, 'both answer');
+    assert.equal(r.raceRecoverRows, 1, 'one reversal');
+  });
+});
+
+describe('the award refuses an unsettled spend', () => {
+  test('pending, unresolved and failed are all refused', () => {
+    assert.match(r.awardPending, /spend_not_settled/);
+    assert.match(r.awardUnresolved, /spend_not_settled/);
+    assert.match(r.awardFailed, /spend_not_settled/);
+  });
+  test('sent and none — the states every real rail reaches — still award', () => {
+    assert.match(r.awardSent, /"points_earned"\s*:\s*28/);
+    assert.match(r.awardNone, /"points_earned"\s*:\s*28/);
+  });
+});
+
+describe('the recovery protections are load-bearing', () => {
+  test('the detection clause is where the mutation expects it', () => { assert.ok(anchors.detectClause); });
+  test('the settled-state gate is where the mutation expects it', () => { assert.ok(anchors.stateGate); });
+
+  test('M5 removing the "nothing reversed it" clause reports recovered spends for ever', () => {
+    assert.equal(mut.m5Detected, 1, 'a fully reversed spend still looks outstanding');
+  });
+  test('M6 removing the settled-state gate mints points on unresolved money', () => {
+    assert.match(mut.m6Award, /"points_earned"\s*:\s*28/);
   });
 });

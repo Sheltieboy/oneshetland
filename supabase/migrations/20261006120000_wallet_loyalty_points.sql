@@ -150,6 +150,17 @@ begin
     return jsonb_build_object('ok', false, 'error', 'spend_already_reversed');
   end if;
 
+  -- A caller may only award on a settled spend. Every qualifying rail reaches
+  -- its fulfilment point with the transfer already marked 'sent' — walletPay
+  -- marks it before it returns ok, and it returns ok on nothing else. 'none'
+  -- is settled too: it means no transfer was ever needed. Everything else —
+  -- pending, failed, unresolved — is money still in motion, and a service-role
+  -- caller invoking this too early must not mint points against it.
+  if coalesce(v_txn.transfer_state, 'none') not in ('sent', 'none') then
+    return jsonb_build_object('ok', false, 'error', 'spend_not_settled',
+                              'transfer_state', v_txn.transfer_state);
+  end if;
+
   -- Hub donations, hub memberships, event tickets and shift boosts carry no
   -- business_id — a hub is not a local business — so they are ineligible by
   -- construction rather than by a rule someone has to remember.
@@ -400,6 +411,93 @@ comment on function public.wallet_reverse_debit(uuid, text, text) is
   'Reverses a wallet debit by APPENDING a refund entry linked to it, never by deleting or editing the original. Marks the original ''reversed'' when its transfer had been sent and has now been clawed back, ''failed'' when no money ever reached the merchant. Also reverses any loyalty points that spend earned, in a way that cannot fail the refund. Idempotent: a second call returns the existing reversal. service_role only.';
 
 
+
+-- ── 7a. When the loyalty half fails, it must not disappear ──────────────────
+--
+-- The guard above is a SUBTRANSACTION. If the loyalty reversal raises,
+-- everything it did is rolled back and the refund commits alone — which is the
+-- right trade, but it leaves points on a card for a purchase that was refunded,
+-- and a WARNING in a log nobody reads.
+--
+-- Executed, not assumed: with the loyalty ledger insert forced to fail, the
+-- refund completed (transfer_state 'reversed', balance restored) and 28 points
+-- survived with no reverse row, no deficit row and no marker of any kind.
+--
+-- No recovery table is added, because the state does not need recording — it is
+-- already written down. Three immutable, append-only facts derive it exactly:
+-- the wallet refund row that points at the spend, the points_earn row that
+-- points at the same spend, and the absence of any reversal row for it. A
+-- recovery table would be a fourth copy of something the ledgers already say.
+create or replace function public.loyalty_reversals_outstanding()
+  returns table (
+    wallet_transaction_id uuid,
+    card_id               uuid,
+    user_id               uuid,
+    business_id           uuid,
+    points_earned         integer,
+    earned_at             timestamptz
+  )
+  language sql
+  stable
+  security definer
+  set search_path = public, pg_temp
+as $$
+  select e.source_transaction_id, e.card_id, e.user_id, e.business_id, e.amount, e.created_at
+    from public.local_loyalty_transactions e
+   where e.type = 'points_earn'
+     and e.source_type = 'wallet'
+     and e.source_transaction_id is not null
+     -- the funding spend was reversed …
+     and exists (select 1 from public.local_wallet_transactions r
+                  where r.reverses_transaction_id = e.source_transaction_id)
+     -- … and nothing ever took the points back
+     and not exists (select 1 from public.local_loyalty_transactions x
+                      where x.source_transaction_id = e.source_transaction_id
+                        and x.type in ('points_reverse', 'points_deficit'))
+   order by e.created_at;
+$$;
+
+-- Retry, keyed by the spend, idempotent by the same guards the first attempt
+-- used. Safe to run twice, safe to run concurrently, and it needs no state of
+-- its own: it asks the ledgers what is outstanding and does that.
+create or replace function public.loyalty_recover_outstanding_reversals(p_limit integer default 100)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path = public, pg_temp
+as $$
+declare
+  v_row       record;
+  v_res       jsonb;
+  v_recovered integer := 0;
+  v_failed    integer := 0;
+begin
+  for v_row in
+    select * from public.loyalty_reversals_outstanding() limit greatest(coalesce(p_limit, 100), 1)
+  loop
+    begin
+      v_res := public.loyalty_reverse_for_wallet_spend(v_row.wallet_transaction_id);
+      if coalesce((v_res->>'ok')::boolean, false) then
+        v_recovered := v_recovered + 1;
+      else
+        v_failed := v_failed + 1;
+      end if;
+    exception when others then
+      -- One stubborn row must not stop the rest.
+      v_failed := v_failed + 1;
+      raise warning 'loyalty recovery failed for % (%)', v_row.wallet_transaction_id, sqlerrm;
+    end;
+  end loop;
+  return jsonb_build_object('ok', true, 'recovered', v_recovered, 'failed', v_failed);
+end;
+$$;
+
+comment on function public.loyalty_reversals_outstanding() is
+  'Wallet spends that were refunded, earned loyalty points, and never had those points reversed — derived from the ledgers themselves rather than from a status column, because all three facts are append-only. The detection half of the recovery for a loyalty reversal that failed inside a refund.';
+comment on function public.loyalty_recover_outstanding_reversals(integer) is
+  'Retries every outstanding loyalty reversal, keyed by the wallet spend that funded it. Idempotent and safe to run concurrently: each retry re-enters the same guards the first attempt used. service_role only.';
+
+
 -- ── 8. Privileges ───────────────────────────────────────────────────────────
 do $$
 declare fn text;
@@ -407,7 +505,9 @@ begin
   foreach fn in array array[
     'public.loyalty_award_for_wallet_spend(uuid)',
     'public.loyalty_reverse_for_wallet_spend(uuid)',
-    'public.wallet_reverse_debit(uuid, text, text)'
+    'public.wallet_reverse_debit(uuid, text, text)',
+    'public.loyalty_reversals_outstanding()',
+    'public.loyalty_recover_outstanding_reversals(integer)'
   ] loop
     execute format('revoke all on function %s from public', fn);
     execute format('revoke all on function %s from anon', fn);
