@@ -32,6 +32,7 @@ const SUITES = [
   'supabase/tests/gift-claim-concurrency.node.test.ts',
   'supabase/tests/wallet-reversal-integrity.node.test.ts',
   'supabase/tests/loyalty-redemption-atomicity.node.test.ts',
+  'supabase/tests/loyalty-earning-atomicity.node.test.ts',
 ];
 
 // macOS ships a locale that makes the postmaster multithread during startup

@@ -86,66 +86,34 @@ serve(async (req) => {
       .maybeSingle();
     if (!program) return json({ error: 'No active loyalty program' }, 404);
 
-    // Get or create card
-    let { data: card } = await svc
-      .from('local_loyalty_cards')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('program_id', program.id)
-      .maybeSingle();
-
-    if (!card) {
-      const { data: newCard, error } = await svc
-        .from('local_loyalty_cards')
-        .insert({
-          user_id: user.id,
-          program_id: program.id,
-          business_id: businessId,
-          stamps_collected: 0,
-          points_balance: 0,
-        })
-        .select('*')
-        .single();
-      if (error) return json({ error: error.message }, 500);
-      card = newCard;
+    // One transaction: created-or-locked card, gap under the lock, atomic
+    // increment, ledger row in the same commit. The rotating-code check, the
+    // owner block and the expiry check above are edge concerns and stay here.
+    const { data: earned, error: earnErr } = await svc.rpc('loyalty_earn_stamp', {
+      p_user:            user.id,
+      p_business:        businessId,
+      p_min_gap_seconds: 4 * 3600,
+    });
+    if (earnErr) {
+      console.error('[local-stamp-collect] loyalty_earn_stamp failed', earnErr);
+      return json({ error: "Couldn't save your stamp." }, 500);
     }
-
-    // Rate limit — 1 stamp per business per user per day
-    if (card.last_stamp_at) {
-      const last = new Date(card.last_stamp_at).getTime();
-      const hoursAgo = (Date.now() - last) / 3_600_000;
-      if (hoursAgo < 4) {
+    const outcome = earned as {
+      ok: boolean; error?: string;
+      stamps_collected?: number; stamps_required?: number; reward_ready?: boolean;
+    };
+    if (!outcome?.ok) {
+      if (outcome?.error === 'too_soon') {
         return json({ error: 'Already stamped today — come back tomorrow' }, 429);
       }
+      if (outcome?.error === 'no_stamp_program') {
+        return json({ error: 'No active loyalty program' }, 404);
+      }
+      return json({ error: "Couldn't save your stamp." }, 500);
     }
-
-    const newStamps = (card.stamps_collected ?? 0) + 1;
-    const needed    = program.stamps_required ?? 10;
-    const rewardReady = program.type === 'stamps' && newStamps >= needed;
-
-    // Checked: an unchecked failure here reports "Stamp collected!" to the
-    // customer while the card stays on zero.
-    const { data: saved, error: saveErr } = await svc
-      .from('local_loyalty_cards')
-      .update({
-        stamps_collected: newStamps,
-        last_stamp_at: new Date().toISOString(),
-        nudge_reminded_at: null,   // re-arm the "one more stamp" reminder as the card fills
-      })
-      .eq('id', card.id)
-      .select('id')
-      .maybeSingle();
-    if (saveErr || !saved) {
-      return json({ error: `Couldn't save your stamp: ${saveErr?.message ?? 'the card did not update'}` }, 500);
-    }
-
-    await svc.from('local_loyalty_transactions').insert({
-      card_id: card.id,
-      user_id: user.id,
-      business_id: businessId,
-      type: 'stamp',
-      amount: 1,
-    });
+    const newStamps = outcome.stamps_collected ?? 0;
+    const needed = outcome.stamps_required ?? 10;
+    const rewardReady = outcome.reward_ready === true;
 
     // Push notification if reward is ready (preference-aware).
     if (rewardReady) {

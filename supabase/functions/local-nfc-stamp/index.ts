@@ -85,69 +85,41 @@ serve(async (req) => {
       .maybeSingle();
     if (!program) return json({ error: `${business.name} hasn't set up a loyalty programme yet` }, 404);
 
-    // Get or create card. Surface a lookup failure rather than silently
-    // treating it as "no card" — that path quietly creates a duplicate.
-    const { data: existingCard, error: cardErr } = await svc
-      .from('local_loyalty_cards')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('program_id', program.id)
-      .maybeSingle();
-    if (cardErr) return json({ error: `Could not read your card: ${cardErr.message}` }, 500);
-    let card = existingCard;
-
-    if (!card) {
-      const { data: newCard, error } = await svc
-        .from('local_loyalty_cards')
-        .insert({
-          user_id: user.id,
-          program_id: program.id,
-          business_id: business.id,
-        })
-        .select('*')
-        .single();
-      if (error) return json({ error: error.message }, 500);
-      card = newCard;
+    // One transaction: the card is created-or-locked, the four-hour gap is
+    // evaluated while that lock is held, the increment is self-referential and
+    // the ledger row is written alongside it. The read-then-write this
+    // replaces let two taps both pass the gap and lose one increment between
+    // them — reproduced, and visible in production as a card holding fewer
+    // stamps than its own ledger.
+    //
+    // Everything above this line stays here: proximity, the owner block and
+    // the rate limiter are edge concerns, not database ones.
+    const { data: earned, error: earnErr } = await svc.rpc('loyalty_earn_stamp', {
+      p_user:            user.id,
+      p_business:        business.id,
+      p_min_gap_seconds: MIN_STAMP_GAP_HOURS * 3600,
+    });
+    if (earnErr) {
+      console.error('[local-nfc-stamp] loyalty_earn_stamp failed', earnErr);
+      return json({ error: "Couldn't save your stamp." }, 500);
     }
-
-    // Rate limit
-    if (card.last_stamp_at) {
-      const hoursAgo = (Date.now() - new Date(card.last_stamp_at).getTime()) / 3_600_000;
-      if (hoursAgo < MIN_STAMP_GAP_HOURS) {
-        const wait = Math.ceil(MIN_STAMP_GAP_HOURS - hoursAgo);
+    const outcome = earned as {
+      ok: boolean; error?: string; wait_seconds?: number;
+      stamps_collected?: number; stamps_required?: number; reward_ready?: boolean;
+    };
+    if (!outcome?.ok) {
+      if (outcome?.error === 'too_soon') {
+        const wait = Math.ceil((outcome.wait_seconds ?? 0) / 3600);
         return json({ error: `Already stamped recently — try again in ${wait}hr` }, 429);
       }
+      if (outcome?.error === 'no_stamp_program') {
+        return json({ error: `${business.name} hasn't set up a loyalty programme yet` }, 404);
+      }
+      return json({ error: "Couldn't save your stamp." }, 500);
     }
-
-    const newStamps = (card.stamps_collected ?? 0) + 1;
-    const needed = program.stamps_required ?? 10;
-    const rewardReady = program.type === 'stamps' && newStamps >= needed;
-
-    // This is the write that actually earns the stamp. Its result was
-    // previously unchecked, so a failure here returned "Stamp collected!" to
-    // the customer while the card stayed on zero — check it and say so.
-    const { data: saved, error: saveErr } = await svc
-      .from('local_loyalty_cards')
-      .update({
-        stamps_collected: newStamps,
-        last_stamp_at: new Date().toISOString(),
-        nudge_reminded_at: null,   // re-arm the "one more stamp" reminder as the card fills
-      })
-      .eq('id', card.id)
-      .select('id, stamps_collected')
-      .maybeSingle();
-    if (saveErr || !saved) {
-      return json({ error: `Couldn't save your stamp: ${saveErr?.message ?? 'the card did not update'}` }, 500);
-    }
-
-    await svc.from('local_loyalty_transactions').insert({
-      card_id: card.id,
-      user_id: user.id,
-      business_id: business.id,
-      type: 'stamp',
-      amount: 1,
-      note: 'NFC tap',
-    });
+    const newStamps = outcome.stamps_collected ?? 0;
+    const needed = outcome.stamps_required ?? 10;
+    const rewardReady = outcome.reward_ready === true;
 
     // Mark NFC as activated on first ever successful tap
     if (business.nfc_status !== 'active') {
