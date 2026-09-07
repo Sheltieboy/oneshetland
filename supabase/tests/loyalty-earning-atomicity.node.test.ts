@@ -263,6 +263,8 @@ const fixed = {
   tillSeqStamps: 0, tillSeqLedger: 0,
   ptsOk: 0, ptsBalance: 0, ptsLedger: 0, ptsRows: 0,
   firstCards: 0, firstOk: 0, firstStamps: 0, firstLedger: 0,
+  firstCustCards: 0, firstCustOk: 0, firstCustStamps: 0, firstCustLedger: 0, firstCustSecond: '', firstCustLastStamp: 0,
+  firstTillCards: 0, firstTillOk: 0, firstTillStamps: 0, firstTillLedger: 0, firstTillSecond: '',
   ledgerFailStamps: 0, ledgerFailRows: 0, cardFailRows: 0, cardFailStamps: 0,
   stampOnPoints: '', pointsOnStamps: '',
 };
@@ -388,6 +390,31 @@ before(async () => {
   fixed.firstCards = cardCount();
   fixed.firstStamps = anyCardStamps();
   fixed.firstLedger = ledgerStamps();
+
+  // FIRST CARD, REAL CUSTOMER GAP: the four-hour rule when no card exists yet.
+  //
+  // The stage above deliberately passes gap 0 to isolate conflict handling.
+  // That leaves the question this one answers: when the card is created by the
+  // race itself, does the loser observe the winner's last_stamp_at, or does a
+  // brand-new row let both through?
+  schema('stamps'); installFix(); noCard();
+  const fg = await raceRpc(`public.loyalty_earn_stamp('${CUST}', '${BIZ}', 14400)`);
+  fixed.firstCustOk = okCount(fg);
+  fixed.firstCustSecond = fg.find((o) => !/"ok"\s*:\s*true/.test(o)) ?? '';
+  fixed.firstCustCards = cardCount();
+  fixed.firstCustStamps = anyCardStamps();
+  fixed.firstCustLedger = ledgerStamps();
+  fixed.firstCustLastStamp = num(
+    `select count(*)::text from public.local_loyalty_cards where last_stamp_at is not null;`);
+
+  // FIRST CARD, REAL TILL GAP: the same question with the sixty-second rule.
+  schema('stamps'); installFix(); noCard();
+  const fh = await raceRpc(`public.loyalty_earn_stamp('${CUST}', '${BIZ}', 60)`);
+  fixed.firstTillOk = okCount(fh);
+  fixed.firstTillSecond = fh.find((o) => !/"ok"\s*:\s*true/.test(o)) ?? '';
+  fixed.firstTillCards = cardCount();
+  fixed.firstTillStamps = anyCardStamps();
+  fixed.firstTillLedger = ledgerStamps();
 
   // ROLLBACK: a failing ledger insert must take the card increment with it.
   schema('stamps'); installFix(); card({ stamps: 2, lastStampAgoHours: 9 });
@@ -597,7 +624,10 @@ describe('FIXED — till points: both legitimate awards are kept', () => {
   });
 });
 
-describe('FIXED — the first card', () => {
+describe('FIXED — first-card creation with no dedupe/gap semantics', () => {
+  // Gap 0 deliberately. This case exists to prove that creating the card under
+  // contention does not LOSE a valid award; it says nothing about the gap
+  // rules, which have their own cases below.
   test('two simultaneous first-time awards create exactly one card', () => {
     assert.equal(fixed.firstCards, 1);
   });
@@ -605,6 +635,51 @@ describe('FIXED — the first card', () => {
     assert.equal(fixed.firstOk, 2);
     assert.equal(fixed.firstStamps, 2);
     assert.equal(fixed.firstLedger, 2);
+  });
+});
+
+/*
+ * These two cases were missing until a review asked the obvious question: the
+ * no-gap case above proves conflict handling, so what happens to the REAL gap
+ * rules when the card is created by the race itself?
+ *
+ * The answer, measured rather than reasoned: the loser is refused. The ON
+ * CONFLICT arbiter has to resolve the conflicting row before it can act, so it
+ * waits for the winner's transaction; the statement that reads the card
+ * afterwards takes a fresh snapshot and sees the winner's last_stamp_at.
+ *
+ * Worth recording honestly: swapping DO UPDATE for DO NOTHING plus an unlocked
+ * read produces the same result in every case here, so the row lock cannot be
+ * shown to be load-bearing FOR THE GAP by these tests. DO UPDATE is kept
+ * because it states the intent and holds the row explicitly, rather than
+ * relying on statement-snapshot timing — not because a test proves it.
+ */
+describe('FIXED — first card under the real customer four-hour rule', () => {
+  test('exactly one card exists', () => {
+    assert.equal(fixed.firstCustCards, 1);
+  });
+  test('exactly one call succeeds; the other is refused as too soon', () => {
+    assert.equal(fixed.firstCustOk, 1);
+    assert.match(fixed.firstCustSecond, /too_soon/);
+  });
+  test('one stamp, one ledger row, last_stamp_at set once', () => {
+    assert.equal(fixed.firstCustStamps, 1);
+    assert.equal(fixed.firstCustLedger, 1);
+    assert.equal(fixed.firstCustLastStamp, 1);
+  });
+});
+
+describe('FIXED — first card under the real till sixty-second rule', () => {
+  test('exactly one card exists', () => {
+    assert.equal(fixed.firstTillCards, 1);
+  });
+  test('exactly one call succeeds; the other is refused as too soon', () => {
+    assert.equal(fixed.firstTillOk, 1);
+    assert.match(fixed.firstTillSecond, /too_soon/);
+  });
+  test('one stamp and one ledger row', () => {
+    assert.equal(fixed.firstTillStamps, 1);
+    assert.equal(fixed.firstTillLedger, 1);
   });
 });
 
