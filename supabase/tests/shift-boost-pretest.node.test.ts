@@ -408,7 +408,9 @@ describe('C — a shift must be boostable before it can be sold a boost', () => 
   test('wallet accounting was not touched', () => {
     assert.match(walletFn, /idempotencyKey: `wallet-attempt:\$\{rid\}`/);
     assert.match(walletFn, /platformFeePence: PRICE/);
-    assert.match(walletFn, /await walletReverse\(svc, paid\.transactionId, 'Shift boost could not be applied'\)/);
+    // Platform-funded, so the reversal must report 'no_transfer' rather than
+    // let the RPC infer a merchant outcome from the row.
+    assert.match(walletFn, /await walletReverse\(svc, paid\.transactionId, 'Shift boost could not be applied', 'no_transfer'\)/);
   });
 });
 

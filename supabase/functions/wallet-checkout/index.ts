@@ -404,7 +404,9 @@ async function shiftBoost(svc: any, userId: string, body: any, rid: string): Pro
   if (updErr || !boostedUntil) {
     // The entitlement could not be granted, so put the money back — as an
     // appended reversal linked to the debit, not by editing it away.
-    await walletReverse(svc, paid.transactionId, 'Shift boost could not be applied');
+    // Platform-funded: debitAndTransfer was called without a transfer, so the
+    // row is 'none' and no merchant was ever involved.
+    await walletReverse(svc, paid.transactionId, 'Shift boost could not be applied', 'no_transfer');
     await settleAttempt(svc, rid, 'reversed', paid.transactionId);
     return json({ error: 'Could not boost the shift — your wallet has been refunded.' }, 500);
   }
@@ -452,7 +454,14 @@ async function refundUnfulfilled(svc: any, o: {
   }
   // An appended, linked reversal rather than a bare credit — so the accounts
   // show the debit AND the refund, and a second attempt cannot refund twice.
-  const back = await walletReverse(svc, o.walletTransactionId, `${o.purpose} could not be completed`);
+  // Say only what is true. The claw-back above is allowed to fail and be
+  // logged — the customer is refunded either way, because they got nothing —
+  // but a transfer that did NOT come back must not be recorded as reversed.
+  // Passing nothing in that case settles the row as 'unresolved', which is
+  // what failed_fulfilments has been recording all along.
+  const back = await walletReverse(
+    svc, o.walletTransactionId, `${o.purpose} could not be completed`,
+    o.transferId === null ? 'no_transfer' : (transferReversed ? 'clawed_back' : undefined));
   walletRefunded = back !== null;
 
   const fullyReversed = transferReversed && walletRefunded;

@@ -157,9 +157,14 @@ async function refundWalletMembership(
     }
   }
 
+  // Only 'clawed_back' when this call actually clawed it back. A membership
+  // whose transfer ended 'unresolved' carries no transfer id, so nothing was
+  // reversed here and nothing may claim it was — the RPC refuses that row
+  // outright rather than crediting a wallet Stripe may already have paid for.
   const { data: rev, error: revErr } = await svc.rpc('wallet_reverse_debit', {
     p_transaction_id: txId,
     p_reason: `Refund · ${m.tier_name} membership · ${m.hub_name}`,
+    p_merchant: transferReversed ? 'clawed_back' : 'no_transfer',
   }).maybeSingle();
   if (revErr) {
     console.error('[refund-payment] wallet reversal failed', revErr);

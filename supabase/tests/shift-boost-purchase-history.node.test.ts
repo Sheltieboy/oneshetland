@@ -294,7 +294,10 @@ describe('a wallet boost gets the same receipt', () => {
     const wb = walletFn.slice(walletFn.indexOf('async function shiftBoost'));
     assert.match(wb, /idempotencyKey: `wallet-attempt:\$\{rid\}`/);
     assert.match(wb, /platformFeePence: PRICE/);
-    assert.match(wb, /await walletReverse\(svc, paid\.transactionId, 'Shift boost could not be applied'\)/);
+    // The merchant argument was added when wallet_reverse_debit stopped guessing
+    // what became of the transfer. A shift boost is platform-funded, so the only
+    // truthful answer is that there was never one.
+    assert.match(wb, /await walletReverse\(svc, paid\.transactionId, 'Shift boost could not be applied', 'no_transfer'\)/);
     assert.match(wb, /await settleAttempt\(svc, rid, 'reversed', paid\.transactionId\)/);
   });
 

@@ -150,10 +150,18 @@ export async function walletReverse(
   svc: SupabaseClient,
   transactionId: string,
   reason: string,
+  /**
+   * What the CALLER knows became of the merchant's money. The ledger row cannot
+   * tell a refused transfer from a process that died mid-transfer, nor a
+   * clawed-back one from a claw-back that threw, so it is not asked to guess:
+   * omit this and the row settles as 'unresolved' for a human to close.
+   */
+  merchant?: 'clawed_back' | 'never_paid' | 'no_transfer',
 ): Promise<number | null> {
   const { data, error } = await svc.rpc('wallet_reverse_debit', {
     p_transaction_id: transactionId,
     p_reason:         reason,
+    p_merchant:       merchant ?? null,
   }).maybeSingle<{ balance_pence: number; reversal_id: string; already_reversed: boolean }>();
   if (error) {
     console.error('[wallet-ledger] reversal failed:', error);
@@ -330,7 +338,9 @@ export async function debitAndTransfer(
   }
 
   if (outcome.kind === 'rejected') {
-    await walletReverse(svc, debit.transactionId, `Transfer rejected: ${outcome.message}`);
+    // Stripe refused it outright, which the row cannot know: it is still
+    // 'pending', because being marked 'sent' is exactly what did not happen.
+    await walletReverse(svc, debit.transactionId, `Transfer rejected: ${outcome.message}`, 'never_paid');
     return {
       ok: false, status: 502, reason: 'rejected', transactionId: debit.transactionId,
       error: 'Payment to the recipient failed — your wallet has been refunded.',

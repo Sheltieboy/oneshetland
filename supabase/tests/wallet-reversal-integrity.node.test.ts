@@ -105,10 +105,15 @@ function createTable(file: string, opener: string): string {
 const U = 'u0000000-0000-4000-8000-00000000000u'.replace(/u/g, 'a');
 const V = 'b0000000-0000-4000-8000-00000000000b';   // an unrelated wallet
 const BIZ = 'c0000000-0000-4000-8000-00000000000c';
-const KEYED = '11110000-0000-4000-8000-000000000001';
-const UNKEYED = '22220000-0000-4000-8000-000000000002';
-const PENDING = '33330000-0000-4000-8000-000000000003';
-const TOPUP = '44440000-0000-4000-8000-000000000004';
+const KEYED    = '11110000-0000-4000-8000-000000000001';  // sent,       keyed
+const UNKEYED  = '22220000-0000-4000-8000-000000000002';  // sent,       no key
+const PENDING  = '33330000-0000-4000-8000-000000000003';  // pending
+const TOPUP    = '44440000-0000-4000-8000-000000000004';  // a credit
+const NONEROW  = '55550000-0000-4000-8000-000000000005';  // none,       keyed
+const NONEFREE = '66660000-0000-4000-8000-000000000006';  // none,       no key
+const FAILROW  = '77770000-0000-4000-8000-000000000007';  // failed
+const UNRES    = '88880000-0000-4000-8000-000000000008';  // unresolved
+const REVMARK  = '99990000-0000-4000-8000-000000000009';  // reversed, with no reversal
 
 /** The real credit primitive and the real reconciliation, always. */
 const creditFn = () => slice(LEDGER, 'create or replace function public.wallet_credit_with_ledger', '$$;');
@@ -157,27 +162,41 @@ function schema(reverseSql: string, allowReversed: boolean) {
   assert.doesNotMatch(out, /ERROR/i, `schema failed:\n${out.slice(0, 1200)}`);
 }
 
-/** Four ledger rows and a balance that matches them exactly. */
+/**
+ * One spend per legal starting transfer_state, and a balance that matches the
+ * ledger exactly. Seven spends at 300p against a 2400p top-up leaves 300p.
+ */
+const BASE = 300;
 function fixtures() {
   const out = raw([
-    `insert into public.local_wallet_balances (user_id, balance_pence) values ('${U}', 200), ('${V}', 5000);`,
+    `insert into public.local_wallet_balances (user_id, balance_pence) values ('${U}', ${BASE}), ('${V}', 5000);`,
     `insert into public.local_wallet_transactions
        (id, user_id, business_id, type, amount_pence, platform_fee_pence, description, idempotency_key, transfer_state, stripe_transfer_id)
      values
-       ('${KEYED}',   '${U}', '${BIZ}', 'spend', -300, 15, 'Keyed spend',   'wallet-attempt:keyed', 'sent',    'tr_keyed'),
-       ('${UNKEYED}', '${U}', '${BIZ}', 'spend', -300, 15, 'Unkeyed spend', null,                   'sent',    'tr_unkeyed'),
-       ('${PENDING}', '${U}', '${BIZ}', 'spend', -300, 15, 'Never sent',    'wallet-attempt:pend',  'pending', null),
-       ('${TOPUP}',   '${U}', null,     'topup',  1100, null, 'Top-up',     'topup:1',              'none',    null);`,
+       ('${KEYED}',    '${U}', '${BIZ}', 'spend', -300, 15, 'Keyed spend',    'wallet-attempt:keyed', 'sent',       'tr_keyed'),
+       ('${UNKEYED}',  '${U}', '${BIZ}', 'spend', -300, 15, 'Unkeyed spend',  null,                   'sent',       'tr_unkeyed'),
+       ('${PENDING}',  '${U}', '${BIZ}', 'spend', -300, 15, 'Never sent',     'wallet-attempt:pend',  'pending',    null),
+       ('${NONEROW}',  '${U}', null,     'spend', -300, 300, 'Platform only', 'wallet-attempt:none',  'none',       null),
+       ('${NONEFREE}', '${U}', null,     'spend', -300, 300, 'Platform, no key', null,                'none',       null),
+       ('${FAILROW}',  '${U}', '${BIZ}', 'spend', -300, 15, 'Refused',        'wallet-attempt:fail',  'failed',     null),
+       ('${UNRES}',    '${U}', '${BIZ}', 'spend', -300, 15, 'Never answered', 'wallet-attempt:unres', 'unresolved', 'tr_unres'),
+       ('${TOPUP}',    '${U}', null,     'topup',  2400, null, 'Top-up',      'topup:1',              'none',       null);`,
   ].join('\n'));
   assert.doesNotMatch(out, /ERROR/i, `fixtures failed:\n${out.slice(0, 900)}`);
 }
 
-/** The fixture's un-sent spend, settled, so only the reversal is in question. */
-const settlePending = () =>
-  raw(`update public.local_wallet_transactions set transfer_state='sent' where id = '${PENDING}';`);
+/**
+ * Everything the fixture deliberately leaves unsettled, settled — so a
+ * reconciliation stage measures what the REVERSAL left behind and nothing else.
+ */
+const settleForRecon = () =>
+  raw(`update public.local_wallet_transactions set transfer_state='sent'
+        where id in ('${PENDING}', '${FAILROW}', '${UNRES}');`);
 
-const reverse = (id: string, reason = 'Refund') =>
-  raw(`select already_reversed from public.wallet_reverse_debit('${id}', '${reason}');`);
+type Merchant = 'clawed_back' | 'never_paid' | 'no_transfer' | 'nonsense';
+const reverse = (id: string, reason = 'Refund', merchant?: Merchant) =>
+  raw(`select already_reversed from public.wallet_reverse_debit('${id}', '${reason}'`
+      + (merchant ? `, '${merchant}'` : '') + `);`);
 const refundRows = (id: string) =>
   num(`select count(*)::text from public.local_wallet_transactions where reverses_transaction_id = '${id}';`);
 const balance = (u: string) =>
@@ -206,25 +225,39 @@ async function raceReverse(id: string): Promise<string[]> {
 
 /* Each stage rebuilds the schema, so its state must be READ while it exists.
    Querying afterwards would ask the last stage's database about the first. */
+/* Each stage rebuilds the schema, so its state must be READ while it exists.
+   Querying afterwards would ask the last stage's database about the first. */
 const fixed = {
   firstAlready: '', refundRowsAfterFirst: 0, balanceAfterFirst: 0, ledgerAfterFirst: 0,
-  originalAmount: 0, originalType: '', sentState: '', pendingState: '',
+  originalAmount: 0, originalType: '', refundLinkedAmount: 0, refundType: '',
   secondAlready: '', refundRowsAfterSecond: 0, balanceAfterSecond: 0,
   unkeyedSecondAlready: '', unkeyedRefundRows: 0, unkeyedBalance: 0,
-  topupError: '', otherWallet: 0, reconStatus: '', refundLinkedAmount: 0, refundType: '',
+  topupError: '', otherWallet: 0, reconStatus: '',
   raceRefundRows: 0, raceBalance: 0,
+};
+/** What the reversal leaves on the original, per starting state. */
+const marked = { sent: '', pending: '', none: '', failed: '', balanceAfterAll: 0 };
+/** The gates: what is refused, and what an unasserted caller settles as. */
+const gate = {
+  pendingClawedBack: '', sentNeverPaid: '', noneClawedBack: '',
+  unresolvedPlain: '', unresolvedClawedBack: '', badMerchant: '',
+  sentUnasserted: '', pendingUnasserted: '', balance: 0, unresRefundRows: 0,
+  reversedMarked: '', reversedMarkedRows: 0, overloads: 0,
 };
 const prod = { sentState: '', reconStatus: '' };
 /* Read from the migration text, asserted by name below rather than in before():
    a mutation that moves one of these should fail ONE test, not the file. */
-const anchors = { guard: false, verdict: false, lock: false, key: false };
+const anchors = { guard: false, verdict: false, lock: false, key: false, unresGate: false };
 const mut = {
-  m1RefundRows: 0, m1Balance: 0,
-  m2State: '', m2Recon: '',
-  m3RefundRows: 0, m3Balance: 0,
-  m4RefundRows: 0, m4Balance: 0,
-  m1Installed: '', m2Installed: '', m3Installed: '', m4Installed: '',
+  m1RefundRows: 0, m1Balance: 0, m1Installed: '',
+  m2State: '', m2Recon: '', m2Installed: '',
+  m3RefundRows: 0, m3Balance: 0, m3Installed: '',
+  m4RefundRows: 0, m4Balance: 0, m4Installed: '',
+  m5State: '', m5Rows: 0, m5Installed: '',
+  m6Sent: '', m6None: '', m6Installed: '',
 };
+
+const dropOld = () => slice(FIX, 'drop function if exists public.wallet_reverse_debit(uuid, text);', ';');
 
 before(async () => {
   assert.ok(DSN, 'PASS_PROOF_DSN is not set — run `npm run test:isolated`.');
@@ -234,13 +267,12 @@ before(async () => {
   schema(fixedReverse(), true);
   fixtures();
 
-  fixed.firstAlready = value(reverse(KEYED, 'Refund of keyed spend'));
+  fixed.firstAlready = value(reverse(KEYED, 'Refund of keyed spend', 'clawed_back'));
   fixed.refundRowsAfterFirst = refundRows(KEYED);
   fixed.balanceAfterFirst = balance(U);
   fixed.ledgerAfterFirst = ledgerSum(U);
   fixed.originalAmount = num(`select amount_pence::text from public.local_wallet_transactions where id='${KEYED}';`);
   fixed.originalType = scalar(`select type from public.local_wallet_transactions where id='${KEYED}';`);
-  fixed.sentState = stateOf(KEYED);
   fixed.refundLinkedAmount = num(
     `select amount_pence::text from public.local_wallet_transactions where reverses_transaction_id='${KEYED}';`);
   fixed.refundType = scalar(
@@ -248,32 +280,39 @@ before(async () => {
   fixed.otherWallet = balance(V);
 
   // A second reversal of the same keyed spend.
-  fixed.secondAlready = value(reverse(KEYED, 'Refund again'));
+  fixed.secondAlready = value(reverse(KEYED, 'Refund again', 'clawed_back'));
   fixed.refundRowsAfterSecond = refundRows(KEYED);
   fixed.balanceAfterSecond = balance(U);
 
   // The unkeyed spend: only the row guard protects it.
-  reverse(UNKEYED, 'Refund unkeyed');
-  fixed.unkeyedSecondAlready = value(reverse(UNKEYED, 'Refund unkeyed again'));
+  reverse(UNKEYED, 'Refund unkeyed', 'clawed_back');
+  fixed.unkeyedSecondAlready = value(reverse(UNKEYED, 'Refund unkeyed again', 'clawed_back'));
   fixed.unkeyedRefundRows = refundRows(UNKEYED);
   fixed.unkeyedBalance = balance(U);
 
-  // A spend whose transfer never went: still 'failed'.
-  reverse(PENDING, 'Transfer rejected');
-  fixed.pendingState = stateOf(PENDING);
+  // ── 1a. What each starting state is marked, when the caller does say ─────
+  marked.sent = stateOf(KEYED);
+  reverse(PENDING, 'Stripe refused it', 'never_paid');
+  marked.pending = stateOf(PENDING);
+  reverse(NONEROW, 'Platform purchase undone', 'no_transfer');
+  marked.none = stateOf(NONEROW);
+  reverse(FAILROW, 'Already refused', 'no_transfer');
+  marked.failed = stateOf(FAILROW);
+  marked.balanceAfterAll = balance(U);
 
   // A credit is not a spend.
   fixed.topupError = raw(`select * from public.wallet_reverse_debit('${TOPUP}', 'nope');`);
 
   // ── 1b. Reconciliation must not see a settled reversal as in flight ──────
   //
-  // Its own stage, because the fixture deliberately contains a spend still in
-  // 'pending' — which reconciliation blocks on for reasons that have nothing
-  // to do with reversal. Settling it isolates the one thing under test.
+  // Its own stage, because the fixture deliberately holds spends in 'pending',
+  // 'failed' and 'unresolved' — which reconciliation blocks on for reasons
+  // that have nothing to do with reversal. Settling them isolates the one
+  // thing under test.
   schema(fixedReverse(), true);
   fixtures();
-  settlePending();
-  reverse(KEYED, 'Refund of keyed spend');
+  settleForRecon();
+  reverse(KEYED, 'Refund of keyed spend', 'clawed_back');
   fixed.reconStatus = scalar(`select status from public.wallet_launch_reconciliation('${U}', 'proof');`);
 
   // ── 1c. The same contention, against the real function ───────────────────
@@ -283,15 +322,50 @@ before(async () => {
   fixed.raceRefundRows = refundRows(UNKEYED);
   fixed.raceBalance = balance(U);
 
+  // ── 1d. The gates ────────────────────────────────────────────────────────
+  //
+  // Refusals first: they change nothing, so they can share one database with
+  // the two settling cases that follow.
+  schema(fixedReverse(), true);
+  fixtures();
+  gate.pendingClawedBack = reverse(PENDING, 'x', 'clawed_back');
+  gate.sentNeverPaid = reverse(KEYED, 'x', 'never_paid');
+  gate.noneClawedBack = reverse(NONEROW, 'x', 'clawed_back');
+  gate.unresolvedPlain = reverse(UNRES, 'x');
+  gate.unresolvedClawedBack = reverse(UNRES, 'x', 'clawed_back');
+  gate.badMerchant = reverse(KEYED, 'x', 'nonsense');
+  gate.unresRefundRows = refundRows(UNRES);
+  // Now the two that do settle, unasserted: neither may claim a reversal.
+  reverse(UNKEYED, 'caller said nothing');
+  gate.sentUnasserted = stateOf(UNKEYED);
+  reverse(PENDING, 'caller said nothing');
+  gate.pendingUnasserted = stateOf(PENDING);
+  gate.balance = balance(U);
+
+  // A row already marked reversed, with no reversal recorded, is inconsistent.
+  gate.reversedMarked = raw(
+    `insert into public.local_wallet_transactions
+       (id, user_id, business_id, type, amount_pence, description, transfer_state)
+     values ('${REVMARK}', '${U}', '${BIZ}', 'spend', -300, 'Marked reversed', 'reversed');
+     select * from public.wallet_reverse_debit('${REVMARK}', 'x', 'clawed_back');`);
+  gate.reversedMarkedRows = refundRows(REVMARK);
+
+  // ── 1e. The old two-argument form must be GONE, not shadowed ─────────────
+  schema(prodReverse(), true);
+  raw(dropOld() + '\n' + fixedReverse());
+  gate.overloads = num(
+    `select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname='wallet_reverse_debit';`);
+
   // ── 2. The same fixtures against production as applied today ─────────────
   schema(prodReverse(), false);
   fixtures();
-  settlePending();
+  settleForRecon();
   reverse(KEYED, 'Refund of keyed spend');
   prod.sentState = stateOf(KEYED);
   prod.reconStatus = scalar(`select status from public.wallet_launch_reconciliation('${U}', 'proof');`);
 
-  // ── 3. Mutation: the reverses_transaction_id guard removed ───────────────
+  // ── 3. Mutations ─────────────────────────────────────────────────────────
   const guard = `  select id into v_existing from public.local_wallet_transactions
    where reverses_transaction_id = p_transaction_id
    limit 1;
@@ -301,68 +375,92 @@ before(async () => {
       v_existing, true;
     return;
   end if;`;
-  anchors.guard = fixedReverse().includes(guard);
-  const m1 = fixedReverse().replace(guard, '  v_existing := null;');
-  schema(m1, true);
-  fixtures();
-  mut.m1Installed = scalar(
-    `select case when position('v_existing := null' in pg_get_functiondef(p.oid)) > 0 then 'yes' else 'no' end
-       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname='wallet_reverse_debit';`);
-  reverse(UNKEYED, 'first');
-  reverse(UNKEYED, 'second');
-  mut.m1RefundRows = refundRows(UNKEYED);
-  mut.m1Balance = balance(U);
-
-  // ── 4. Mutation: 'reversed' put back to 'failed' ─────────────────────────
-  const verdict = `  v_state := case when v_orig.transfer_state = 'sent' then 'reversed' else 'failed' end;`;
-  anchors.verdict = fixedReverse().includes(verdict);
-  const m2 = fixedReverse().replace(verdict, `  v_state := 'failed';`);
-  schema(m2, true);
-  fixtures();
-  settlePending();
-  mut.m2Installed = scalar(
-    `select case when position('v_state := ''failed''' in pg_get_functiondef(p.oid)) > 0 then 'yes' else 'no' end
-       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname='wallet_reverse_debit';`);
-  reverse(KEYED, 'refund');
-  mut.m2State = stateOf(KEYED);
-  mut.m2Recon = scalar(`select status from public.wallet_launch_reconciliation('${U}', 'proof');`);
-
-  // ── 5. Mutation: the row lock removed ────────────────────────────────────
+  const verdict = `  v_state := case
+               when v_orig.transfer_state = 'sent'
+                 then case when p_merchant = 'clawed_back' then 'reversed' else 'unresolved' end
+               when v_orig.transfer_state = 'pending'
+                 then case when p_merchant = 'never_paid' then 'failed' else 'unresolved' end
+               else v_orig.transfer_state
+             end;`;
   const lock = `   where id = p_transaction_id
      for update;`;
+  const key = `    case when v_orig.idempotency_key is null then null else v_orig.idempotency_key || ':reversal' end,`;
+  const unresGate = `  if v_orig.transfer_state = 'unresolved' then
+    raise exception 'wallet_reverse_debit: the merchant transfer is unresolved — settle it at Stripe before refunding'
+      using errcode = '22023';
+  end if;`;
+  anchors.guard = fixedReverse().includes(guard);
+  anchors.verdict = fixedReverse().includes(verdict);
   anchors.lock = fixedReverse().includes(lock);
-  const m3 = fixedReverse().replace(lock, `   where id = p_transaction_id;`);
-  schema(m3, true);
-  fixtures();
-  mut.m3Installed = scalar(
-    `select case when position('for update' in lower(pg_get_functiondef(p.oid))) > 0 then 'yes' else 'no' end
+  anchors.key = fixedReverse().includes(key);
+  anchors.unresGate = fixedReverse().includes(unresGate);
+
+  const installed = (needle: string) => scalar(
+    `select case when position(${needle} in pg_get_functiondef(p.oid)) > 0 then 'yes' else 'no' end
        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname='wallet_reverse_debit';`);
+
+  // M1 — the row guard removed. Proved on the UNKEYED 'none' spend, whose
+  // reversal leaves a state no gate refuses, so the guard is the only thing
+  // between a retry and a second credit.
+  schema(fixedReverse().replace(guard, '  v_existing := null;'), true);
+  fixtures();
+
+  mut.m1Installed = installed("'v_existing := null'");
+  reverse(NONEFREE, 'first', 'no_transfer');
+  reverse(NONEFREE, 'second', 'no_transfer');
+  mut.m1RefundRows = refundRows(NONEFREE);
+  mut.m1Balance = balance(U);
+
+  // M2 — the first draft's guess, read on a platform-funded spend. It invents
+  // a failed transfer where none was ever attempted, and that invented failure
+  // is enough to refuse the whole wallet at reconciliation.
+  schema(fixedReverse().replace(verdict,
+    `  v_state := case when v_orig.transfer_state = 'sent' then 'reversed' else 'failed' end;`), true);
+  fixtures();
+  settleForRecon();
+  mut.m2Installed = installed("'then ''reversed'' else ''failed'''");
+  reverse(NONEROW, 'platform purchase undone', 'no_transfer');
+  mut.m2State = stateOf(NONEROW);
+  mut.m2Recon = scalar(`select status from public.wallet_launch_reconciliation('${U}', 'proof');`);
+
+  // M3 — the row lock removed.
+  schema(fixedReverse().replace(lock, `   where id = p_transaction_id;`), true);
+  fixtures();
+  mut.m3Installed = installed("'for update'");
   await raceReverse(UNKEYED);
   mut.m3RefundRows = refundRows(UNKEYED);
   mut.m3Balance = balance(U);
 
-  // ── 6. Mutation: the derived reversal key removed, guard also gone ───────
-  //
-  // On its own the key is invisible, because the guard already stops the
-  // second call. Removing BOTH is what shows the key is a real second layer:
-  // with the guard gone, the KEYED spend is protected by the unique index
-  // alone, and this proves that is not decoration.
-  const key = `    case when v_orig.idempotency_key is null then null else v_orig.idempotency_key || ':reversal' end,`;
-  anchors.key = fixedReverse().includes(key);
-  const m4 = fixedReverse().replace(guard, '  v_existing := null;').replace(key, '    null,');
-  schema(m4, true);
+  // M4 — guard AND derived key removed, on a KEYED 'none' spend: with the
+  // guard gone the unique index is all that is left, and this says whether it
+  // is really holding anything.
+  schema(fixedReverse().replace(guard, '  v_existing := null;').replace(key, '    null,'), true);
   fixtures();
-  mut.m4Installed = scalar(
-    `select case when position(''':reversal''' in pg_get_functiondef(p.oid)) > 0 then 'yes' else 'no' end
-       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname='wallet_reverse_debit';`);
-  reverse(KEYED, 'first');
-  reverse(KEYED, 'second');
-  mut.m4RefundRows = refundRows(KEYED);
+  mut.m4Installed = installed("''':reversal'''");
+  reverse(NONEROW, 'first', 'no_transfer');
+  reverse(NONEROW, 'second', 'no_transfer');
+  mut.m4RefundRows = refundRows(NONEROW);
   mut.m4Balance = balance(U);
+
+  // M5 — the unresolved gate removed: an uncertain transfer becomes a
+  // completed refund, which is the double-payment this whole gate exists for.
+  schema(fixedReverse().replace(unresGate, ''), true);
+  fixtures();
+  mut.m5Installed = installed("'settle it at Stripe'");
+  reverse(UNRES, 'refund anyway');
+  mut.m5Rows = refundRows(UNRES);
+  mut.m5State = stateOf(UNRES);
+
+  // M6 — the same first-draft guess, read on the two states it misreports.
+  schema(fixedReverse().replace(verdict,
+    `  v_state := case when v_orig.transfer_state = 'sent' then 'reversed' else 'failed' end;`), true);
+  fixtures();
+  mut.m6Installed = installed("'then ''reversed'' else ''failed'''");
+  reverse(UNKEYED, 'caller said nothing');
+  mut.m6Sent = stateOf(UNKEYED);
+  reverse(NONEROW, 'platform only', 'no_transfer');
+  mut.m6None = stateOf(NONEROW);
 
   // Leave a hardened database behind, so a stray query reads the real thing.
   schema(fixedReverse(), true);
@@ -380,7 +478,7 @@ describe('wallet_reverse_debit — the credit itself', () => {
   });
 
   test('the wallet is credited exactly once', () => {
-    assert.equal(fixed.balanceAfterFirst, 500);
+    assert.equal(fixed.balanceAfterFirst, BASE + 300);
   });
 
   test('stored balance and ledger sum agree after the reversal', () => {
@@ -397,17 +495,74 @@ describe('wallet_reverse_debit — the credit itself', () => {
   });
 });
 
-describe('wallet_reverse_debit — what the original is marked', () => {
-  test('a spend whose transfer was SENT becomes reversed', () => {
-    assert.equal(fixed.sentState, 'reversed');
+describe('what the original is marked, per starting state', () => {
+  test('sent + clawed back becomes reversed', () => {
+    assert.equal(marked.sent, 'reversed');
   });
 
-  test('a spend whose transfer never went stays failed', () => {
-    assert.equal(fixed.pendingState, 'failed');
+  test('pending + never paid becomes failed', () => {
+    assert.equal(marked.pending, 'failed');
+  });
+
+  test('none stays none — no transfer is invented to fail', () => {
+    assert.equal(marked.none, 'none');
+  });
+
+  test('failed stays failed', () => {
+    assert.equal(marked.failed, 'failed');
+  });
+
+  test('all four credited the wallet exactly once each', () => {
+    assert.equal(marked.balanceAfterAll, BASE + 300 * 5);
   });
 
   test('production as applied today marks a sent transfer failed', () => {
     assert.equal(prod.sentState, 'failed');
+  });
+});
+
+describe('the gates — nothing is settled on an assumption', () => {
+  test('an unresolved transfer is refused outright', () => {
+    assert.match(gate.unresolvedPlain, /unresolved — settle it at Stripe/i);
+    assert.match(gate.unresolvedClawedBack, /unresolved — settle it at Stripe/i);
+  });
+
+  test('and credits nothing while refusing', () => {
+    assert.equal(gate.unresRefundRows, 0);
+  });
+
+  test('a sent transfer cannot be reported unpaid', () => {
+    assert.match(gate.sentNeverPaid, /cannot be reported unpaid/i);
+  });
+
+  test('nothing unsent can have been clawed back', () => {
+    assert.match(gate.pendingClawedBack, /nothing can have been clawed back/i);
+    assert.match(gate.noneClawedBack, /nothing can have been clawed back/i);
+  });
+
+  test('an unknown merchant outcome is refused', () => {
+    assert.match(gate.badMerchant, /unknown merchant outcome/i);
+  });
+
+  test('a sent transfer nobody vouched for settles as unresolved, not reversed', () => {
+    assert.equal(gate.sentUnasserted, 'unresolved');
+  });
+
+  test('a pending transfer nobody vouched for settles as unresolved, not failed', () => {
+    assert.equal(gate.pendingUnasserted, 'unresolved');
+  });
+
+  test('the refusals credited nothing; only the two settling calls did', () => {
+    assert.equal(gate.balance, BASE + 300 * 2);
+  });
+
+  test('a row marked reversed with no reversal recorded is refused', () => {
+    assert.match(gate.reversedMarked, /marked reversed with no reversal recorded/i);
+    assert.equal(gate.reversedMarkedRows, 0);
+  });
+
+  test('the two-argument form is dropped, not left beside the new one', () => {
+    assert.equal(gate.overloads, 1);
   });
 });
 
@@ -433,9 +588,8 @@ describe('a second reversal', () => {
   });
 
   test('credits nothing further', () => {
-    // 500 after the keyed reversal, 800 after the unkeyed one, and no more.
-    assert.equal(fixed.balanceAfterSecond, 500);
-    assert.equal(fixed.unkeyedBalance, 800);
+    assert.equal(fixed.balanceAfterSecond, BASE + 300);
+    assert.equal(fixed.unkeyedBalance, BASE + 600);
   });
 });
 
@@ -445,7 +599,7 @@ describe('two reversals at once', () => {
   });
 
   test('credit the wallet exactly once', () => {
-    assert.equal(fixed.raceBalance, 500);
+    assert.equal(fixed.raceBalance, BASE + 300);
   });
 });
 
@@ -459,7 +613,7 @@ describe('the suite is anchored to the real migration', () => {
   test('the reverses_transaction_id guard is where the mutations expect it', () => {
     assert.ok(anchors.guard);
   });
-  test('the reversed/failed verdict is where the mutations expect it', () => {
+  test('the state verdict is where the mutations expect it', () => {
     assert.ok(anchors.verdict);
   });
   test('the SELECT ... FOR UPDATE is where the mutations expect it', () => {
@@ -468,16 +622,19 @@ describe('the suite is anchored to the real migration', () => {
   test('the derived :reversal key is where the mutations expect it', () => {
     assert.ok(anchors.key);
   });
+  test('the unresolved gate is where the mutations expect it', () => {
+    assert.ok(anchors.unresGate);
+  });
 });
 
 describe('mutations — each protection is load-bearing', () => {
   test('M1 removing the reversal guard double-credits an unkeyed spend', () => {
     assert.equal(mut.m1Installed, 'yes', 'the mutated function was not installed');
     assert.equal(mut.m1RefundRows, 2);
-    assert.equal(mut.m1Balance, 800);
+    assert.equal(mut.m1Balance, BASE + 600);
   });
 
-  test('M2 marking a sent transfer failed jams reconciliation', () => {
+  test('M2 guessing the verdict invents a failure and jams reconciliation', () => {
     assert.equal(mut.m2Installed, 'yes', 'the mutated function was not installed');
     assert.equal(mut.m2State, 'failed');
     assert.equal(mut.m2Recon, 'refused_unresolved_movement');
@@ -486,12 +643,24 @@ describe('mutations — each protection is load-bearing', () => {
   test('M3 removing FOR UPDATE lets two concurrent reversals both credit', () => {
     assert.equal(mut.m3Installed, 'no', 'the lock was not actually removed');
     assert.equal(mut.m3RefundRows, 2);
-    assert.equal(mut.m3Balance, 800);
+    assert.equal(mut.m3Balance, BASE + 600);
   });
 
   test('M4 removing the derived reversal key allows a second credit', () => {
     assert.equal(mut.m4Installed, 'no', 'the derived key was not actually removed');
     assert.equal(mut.m4RefundRows, 2);
-    assert.equal(mut.m4Balance, 800);
+    assert.equal(mut.m4Balance, BASE + 600);
+  });
+
+  test('M5 removing the unresolved gate completes a refund that may pay twice', () => {
+    assert.equal(mut.m5Installed, 'no', 'the gate was not actually removed');
+    assert.equal(mut.m5Rows, 1);
+    assert.equal(mut.m5State, 'unresolved');
+  });
+
+  test('M6 guessing the verdict misreports sent-unvouched and none', () => {
+    assert.equal(mut.m6Installed, 'yes', 'the mutated function was not installed');
+    assert.equal(mut.m6Sent, 'reversed', 'an unvouched transfer was claimed as reversed');
+    assert.equal(mut.m6None, 'failed', 'a transfer that never existed was claimed to have failed');
   });
 });
