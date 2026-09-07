@@ -54,6 +54,9 @@ const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const LEDGER = join(MIG, '20260820160000_wallet_atomic_ledger.sql');
 const RECON = join(MIG, '20260821210000_wallet_launch_reconciliation.sql');
 const FIX = join(MIG, '20261002120000_wallet_transfer_state_reversed.sql');
+const RECOVERY = join(MIG, '20260826140000_wallet_refund_and_dispute_recovery.sql');
+const DEBIT = join(MIG, '20260826150000_wallet_spend_blocked_by_recovery.sql');
+const RECONFIX = join(MIG, '20261003120000_reconciliation_accepts_refused_transfers.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -117,7 +120,17 @@ const REVMARK  = '99990000-0000-4000-8000-000000000009';  // reversed, with no r
 
 /** The real credit primitive and the real reconciliation, always. */
 const creditFn = () => slice(LEDGER, 'create or replace function public.wallet_credit_with_ledger', '$$;');
-const reconFn = () => slice(RECON, 'create or replace function public.wallet_launch_reconciliation', '$$;');
+const reconFn = () => slice(RECON, 'create or replace function public.wallet_launch_reconciliation', 'end $$;');
+/** The same function with 'failed' out of the blocker set. */
+const reconFixed = () => slice(RECONFIX, 'create or replace function public.wallet_launch_reconciliation', 'end $$;');
+
+/** Everything the REAL debit primitive needs, so the failed path is not faked. */
+const realDebitStack = () => [
+  'alter table public.local_wallet_balances add column if not exists deficit_pence integer not null default 0;',
+  createTable(RECOVERY, 'create table if not exists public.local_wallet_topup_recovery ('),
+  slice(RECOVERY, 'create or replace function public.wallet_spend_block(p_user uuid)', '$$;'),
+  slice(DEBIT, 'create function public.wallet_debit_with_ledger(', '$$;'),
+].join('\n');
 const typeWiden = () => slice(
   RECON,
   'alter table public.local_wallet_transactions\n  drop constraint if exists local_wallet_transactions_type_check;',
@@ -133,7 +146,11 @@ const fixedConstraint = () => slice(FIX, 'alter table public.local_wallet_transa
  * Rebuild from nothing. `reverseSql` decides which reversal is under test, so
  * the pre-fix and post-fix behaviours are executed against identical fixtures.
  */
-function schema(reverseSql: string, allowReversed: boolean) {
+function schema(
+  reverseSql: string,
+  allowReversed: boolean,
+  opts: { recon?: string; realDebit?: boolean } = {},
+) {
   const out = raw([
     'drop schema if exists public cascade; create schema public;',
     createTable(BASELINE, 'CREATE TABLE public.local_wallet_balances ('),
@@ -157,7 +174,8 @@ function schema(reverseSql: string, allowReversed: boolean) {
     'create table public.wallet_charge_requests (customer_id uuid, status text);',
     creditFn(),
     reverseSql,
-    reconFn(),
+    opts.recon ?? reconFn(),
+    opts.realDebit ? realDebitStack() : '',
   ].join('\n'));
   assert.doesNotMatch(out, /ERROR/i, `schema failed:\n${out.slice(0, 1200)}`);
 }
@@ -245,9 +263,18 @@ const gate = {
   reversedMarked: '', reversedMarkedRows: 0, overloads: 0,
 };
 const prod = { sentState: '', reconStatus: '' };
+/** Section 3: the refused-transfer path, driven through the real primitives. */
+const real = {
+  stateAfterDebit: '', balanceAfterDebit: 0, stateAfterReversal: '',
+  balanceAfterReversal: 0, ledgerAfterReversal: 0, rowCount: 0,
+  reconOld: '', reconNew: '',
+};
+/** Reconciliation's verdict on a wallet holding one spend in each state. */
+const reconBy: Record<string, { before: string; after: string }> = {};
+const mutRecon = { failedStatus: '', installed: '' };
 /* Read from the migration text, asserted by name below rather than in before():
    a mutation that moves one of these should fail ONE test, not the file. */
-const anchors = { guard: false, verdict: false, lock: false, key: false, unresGate: false };
+const anchors = { guard: false, verdict: false, lock: false, key: false, unresGate: false, blockerSet: false };
 const mut = {
   m1RefundRows: 0, m1Balance: 0, m1Installed: '',
   m2State: '', m2Recon: '', m2Installed: '',
@@ -356,6 +383,67 @@ before(async () => {
   gate.overloads = num(
     `select count(*)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname='wallet_reverse_debit';`);
+
+  // ── 1f. The refused-transfer path, through the REAL primitives ──────────
+  //
+  // Not a fixture row set to 'failed' by hand: the debit primitive writes
+  // 'pending', the reversal is the thing that writes 'failed', and this walks
+  // that path so the state under test is one the system actually produces.
+  schema(fixedReverse(), true, { realDebit: true });
+  raw(`insert into public.local_wallet_balances (user_id, balance_pence) values ('${U}', 1000);
+       insert into public.local_wallet_transactions
+         (user_id, type, amount_pence, description, idempotency_key, transfer_state)
+       values ('${U}', 'topup', 1000, 'Top-up', 'topup:real', 'none');`);
+  const realTxn = value(raw(
+    `select transaction_id from public.wallet_debit_with_ledger(
+       '${U}', 300, 0, 'spend', '${BIZ}', 'Real spend', 'wallet-attempt:real', 15, true);`));
+  real.stateAfterDebit = stateOf(realTxn);
+  real.balanceAfterDebit = balance(U);
+  // Stripe refused it. Only the caller knows that, so only the caller says it.
+  reverse(realTxn, 'Transfer rejected: no such destination', 'never_paid');
+  real.stateAfterReversal = stateOf(realTxn);
+  real.balanceAfterReversal = balance(U);
+  real.ledgerAfterReversal = ledgerSum(U);
+  real.rowCount = num(
+    `select count(*)::text from public.local_wallet_transactions where user_id = '${U}';`);
+  real.reconOld = scalar(`select status from public.wallet_launch_reconciliation('${U}', 'proof');`);
+  // Same database, same rows, only the function swapped.
+  raw(reconFixed());
+  real.reconNew = scalar(`select status from public.wallet_launch_reconciliation('${U}', 'proof2');`);
+
+  // ── 1g. Reconciliation's verdict on every state, before and after ────────
+  const STATES = ['none', 'sent', 'reversed', 'failed', 'pending', 'unresolved'];
+  const userFor = (i: number) => `d000000${i}-0000-4000-8000-000000000001`;
+  const seedStates = () => raw(STATES.map((st, i) => `
+    insert into public.local_wallet_balances (user_id, balance_pence) values ('${userFor(i)}', 700);
+    insert into public.local_wallet_transactions
+      (user_id, business_id, type, amount_pence, description, idempotency_key, transfer_state)
+    values ('${userFor(i)}', null, 'topup', 1000, 'Top-up', 'topup:${st}', 'none'),
+           ('${userFor(i)}', '${BIZ}', 'spend', -300, 'Spend', 'spend:${st}', '${st}');`).join('\n'));
+
+  schema(fixedReverse(), true);            // reconciliation as applied today
+  seedStates();
+  const before = STATES.map((_, i) =>
+    scalar(`select status from public.wallet_launch_reconciliation('${userFor(i)}', 'proof');`));
+  schema(fixedReverse(), true, { recon: reconFixed() });
+  seedStates();
+  const after = STATES.map((_, i) =>
+    scalar(`select status from public.wallet_launch_reconciliation('${userFor(i)}', 'proof');`));
+  STATES.forEach((st, i) => { reconBy[st] = { before: before[i], after: after[i] }; });
+
+  // ── 1h. Mutation: 'failed' put back into the blocker set ────────────────
+  const blockers = `        and t.transfer_state not in ('none','sent','reversed','failed'))`;
+  anchors.blockerSet = reconFixed().includes(blockers);
+  schema(fixedReverse(), true, {
+    recon: reconFixed().replace(blockers, `        and t.transfer_state not in ('none','sent','reversed'))`),
+  });
+  seedStates();
+  mutRecon.installed = scalar(
+    `select case when position('''reversed'',''failed''' in pg_get_functiondef(p.oid)) > 0 then 'yes' else 'no' end
+       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname='wallet_launch_reconciliation';`);
+  mutRecon.failedStatus = scalar(
+    `select status from public.wallet_launch_reconciliation('${userFor(3)}', 'proof');`);
 
   // ── 2. The same fixtures against production as applied today ─────────────
   schema(prodReverse(), false);
@@ -566,6 +654,55 @@ describe('the gates — nothing is settled on an assumption', () => {
   });
 });
 
+describe('the refused-transfer path, through the real primitives', () => {
+  test('the debit primitive writes pending, not failed', () => {
+    assert.equal(real.stateAfterDebit, 'pending');
+    assert.equal(real.balanceAfterDebit, 700);
+  });
+
+  test('the reversal marks it failed and puts the money back', () => {
+    assert.equal(real.stateAfterReversal, 'failed');
+    assert.equal(real.balanceAfterReversal, 1000);
+  });
+
+  test('the ledger agrees, and the debit is still there beside its refund', () => {
+    assert.equal(real.ledgerAfterReversal, 1000);
+    assert.equal(real.rowCount, 3);   // top-up, spend, refund
+  });
+
+  test('reconciliation as applied today refuses that wallet', () => {
+    assert.equal(real.reconOld, 'refused_unresolved_movement');
+  });
+
+  test('and the same rows reconcile once failed stops being a blocker', () => {
+    assert.equal(real.reconNew, 'reconciled');
+  });
+});
+
+describe('reconciliation, state by state', () => {
+  test('states with nothing outstanding are allowed', () => {
+    for (const st of ['none', 'sent', 'reversed']) {
+      assert.equal(reconBy[st].after, 'reconciled', `${st} should reconcile`);
+      assert.equal(reconBy[st].before, 'reconciled', `${st} reconciled before the change too`);
+    }
+  });
+
+  test('a refused transfer is allowed, where it used to be refused', () => {
+    assert.equal(reconBy.failed.before, 'refused_unresolved_movement');
+    assert.equal(reconBy.failed.after, 'reconciled');
+  });
+
+  test('pending still blocks — the money may yet move', () => {
+    assert.equal(reconBy.pending.before, 'refused_unresolved_movement');
+    assert.equal(reconBy.pending.after, 'refused_unresolved_movement');
+  });
+
+  test('unresolved still blocks — nobody knows whether it moved', () => {
+    assert.equal(reconBy.unresolved.before, 'refused_unresolved_movement');
+    assert.equal(reconBy.unresolved.after, 'refused_unresolved_movement');
+  });
+});
+
 describe('reconciliation after a reversal', () => {
   test('a settled reversal is not counted as movement in flight', () => {
     assert.equal(fixed.reconStatus, 'reconciled');
@@ -625,6 +762,9 @@ describe('the suite is anchored to the real migration', () => {
   test('the unresolved gate is where the mutations expect it', () => {
     assert.ok(anchors.unresGate);
   });
+  test('the reconciliation blocker set is where the mutation expects it', () => {
+    assert.ok(anchors.blockerSet);
+  });
 });
 
 describe('mutations — each protection is load-bearing', () => {
@@ -656,6 +796,11 @@ describe('mutations — each protection is load-bearing', () => {
     assert.equal(mut.m5Installed, 'no', 'the gate was not actually removed');
     assert.equal(mut.m5Rows, 1);
     assert.equal(mut.m5State, 'unresolved');
+  });
+
+  test('M7 putting failed back into the blocker set refuses a settled wallet', () => {
+    assert.equal(mutRecon.installed, 'no', 'the blocker set was not actually changed');
+    assert.equal(mutRecon.failedStatus, 'refused_unresolved_movement');
   });
 
   test('M6 guessing the verdict misreports sent-unvouched and none', () => {
