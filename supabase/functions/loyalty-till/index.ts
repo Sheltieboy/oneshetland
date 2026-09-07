@@ -177,33 +177,29 @@ serve(async (req) => {
       if (!program) return json({ error: 'No programme here' }, 400);
       const card = await getCard(false);
       if (!card) return json({ error: 'No card yet' }, 409);
-      const tiers = normalizeTiers(program.reward_tiers);
-      if (tiers.length) {
-        const upto = card.tiers_redeemed_upto ?? 0;
-        const ready = tiers.find((t) => t.stamps > upto && t.stamps <= (card.stamps_collected ?? 0));
-        if (!ready) return json({ error: 'No reward ready' }, 409);
-        const isTop = ready.stamps === tiers[tiers.length - 1].stamps;
-        const { data: redSaved, error: redErr } = await svc.from('local_loyalty_cards').update(isTop
-          ? { stamps_collected: 0, tiers_redeemed_upto: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null, nudge_reminded_at: null }
-          : { tiers_redeemed_upto: ready.stamps, total_redeemed: (card.total_redeemed ?? 0) + 1 })
-          .eq('id', card.id).select('id').maybeSingle();
-        // Unchecked, a rejected write would tell staff "Redeemed" while the card
-        // kept its stamps — the same reward claimable again and again.
-        if (redErr || !redSaved) {
-          return json({ error: `Couldn't record the redemption: ${redErr?.message ?? 'the card did not update'}` }, 500);
-        }
-        await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: shop.id, type: 'reward', amount: ready.stamps });
-        return json({ ok: true, message: `Redeemed: ${ready.reward}` });
+      // The card is locked for the whole decision, so two tills cannot both
+      // redeem one full card. Checking the write's result was not enough: both
+      // writes succeeded, and both staff were told "Redeemed".
+      const { data: applied, error: applyErr } = await svc.rpc('loyalty_redeem_card_atomic', {
+        p_actor: user.id,
+        p_card:  card.id,
+      });
+      if (applyErr) {
+        console.error('[loyalty-till] loyalty_redeem_card_atomic failed', applyErr);
+        return json({ error: "Couldn't record the redemption." }, 500);
       }
-      if ((card.stamps_collected ?? 0) < (program.stamps_required ?? 9999)) return json({ error: 'Card not complete' }, 409);
-      const { data: simpleSaved, error: simpleErr } = await svc.from('local_loyalty_cards')
-        .update({ stamps_collected: 0, total_redeemed: (card.total_redeemed ?? 0) + 1, reward_reminded_at: null })
-        .eq('id', card.id).select('id').maybeSingle();
-      if (simpleErr || !simpleSaved) {
-        return json({ error: `Couldn't record the redemption: ${simpleErr?.message ?? 'the card did not update'}` }, 500);
+      const outcome = applied as { ok: boolean; error?: string; reward?: string };
+      if (!outcome?.ok) {
+        const map: Record<string, [string, number]> = {
+          not_ready:         ['No reward ready', 409],
+          not_yours:         ['That card is not for your business', 403],
+          card_not_found:    ['No card yet', 409],
+          program_not_found: ['No programme here', 400],
+        };
+        const [msg, status] = map[outcome?.error ?? ''] ?? ['No reward ready', 409];
+        return json({ error: msg }, status);
       }
-      await svc.from('local_loyalty_transactions').insert({ card_id: card.id, user_id: cust.id, business_id: shop.id, type: 'reward', amount: program.stamps_required });
-      return json({ ok: true, message: `Redeemed: ${program.stamp_reward ?? 'reward'}` });
+      return json({ ok: true, message: `Redeemed: ${outcome.reward ?? 'reward'}` });
     }
 
     // ── APPLY AN OFFER ────────────────────────────────────────────────────────

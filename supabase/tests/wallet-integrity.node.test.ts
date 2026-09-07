@@ -193,14 +193,35 @@ insert into res (area, case_name, expected, actual)
 select 'reversal', 'the refund points at what it reverses', 'true',
   (select (reverses_transaction_id = (select transaction_id from s2))::text
      from public.local_wallet_transactions where idempotency_key='w:s2:reversal');
+-- 20261002120000 stopped the reversal rewriting every original to 'failed'.
+-- This spend was created with needs_transfer := false, so no transfer was ever
+-- attempted and there is nothing for the reversal to report about a merchant:
+-- 'none' stands. Expecting 'failed' here asserted the invented failure the
+-- state gate exists to prevent.
 insert into res (area, case_name, expected, actual)
-select 'reversal', 'the original is annotated, not deleted', 'failed',
+select 'reversal', 'a spend that never had a transfer keeps none', 'none',
   (select transfer_state from public.local_wallet_transactions where idempotency_key='w:s2');
 create temp table rv2 as select * from public.wallet_reverse_debit((select transaction_id from s2), 'again');
 insert into res (area, case_name, expected, actual)
 select 'reversal', 'reversing twice is a no-op', 'true', (select already_reversed::text from rv2);
 insert into res (area, case_name, expected, actual)
 select 'reversal', 'and did not credit twice', '13000', pg_temp.bal()::text;
+
+-- ══ a sent transfer, clawed back, reads as reversed ═══════════════════════
+create temp table s4 as select * from public.wallet_debit_with_ledger(
+  (select u from pp), 300, 0, 'spend', (select biz from pp), 'spend w/ transfer', 'w:s4', 15, true);
+update public.local_wallet_transactions
+   set transfer_state = 'sent', stripe_transfer_id = 'tr_probe'
+ where idempotency_key = 'w:s4';
+create temp table rv4 as select * from public.wallet_reverse_debit(
+  (select transaction_id from s4), 'refunded', 'clawed_back');
+insert into res (area, case_name, expected, actual)
+select 'reversal', 'a sent transfer clawed back reads as reversed', 'reversed',
+  (select transfer_state from public.local_wallet_transactions where idempotency_key='w:s4');
+insert into res (area, case_name, expected, actual)
+select 'reversal', 'and the customer got their money back', 'true',
+  (select (amount_pence = 300)::text from public.local_wallet_transactions
+    where idempotency_key='w:s4:reversal');
 
 -- ══ one identifier, one debit ═════════════════════════════════════════════
 create temp table d1 as select * from public.wallet_debit_with_ledger((select u from pp), 500, 0, 'spend', null, 'dup', 'w:dup', null, false);

@@ -39,40 +39,30 @@ serve(async (req) => {
     const { card_id } = await req.json();
     if (!card_id) return json({ error: 'card_id required' }, 400);
 
-    const { data: card } = await svc
-      .from('local_loyalty_cards')
-      .select('*')
-      .eq('id', card_id)
-      .single();
-
-    if (!card || card.user_id !== user.id) return json({ error: 'Not your card' }, 403);
-
-    const { data: program } = await svc
-      .from('local_loyalty_programs')
-      .select('stamps_required, type')
-      .eq('id', card.program_id)
-      .single();
-
-    if (!program || program.type !== 'stamps') return json({ error: 'No stamp program' }, 400);
-    if (card.stamps_collected < (program.stamps_required ?? 999)) {
-      return json({ error: 'Card not complete yet' }, 400);
-    }
-
-    await svc
-      .from('local_loyalty_cards')
-      .update({
-        stamps_collected: 0,
-        total_redeemed: (card.total_redeemed ?? 0) + 1,
-      })
-      .eq('id', card_id);
-
-    await svc.from('local_loyalty_transactions').insert({
-      card_id,
-      user_id: user.id,
-      business_id: card.business_id,
-      type: 'reward',
-      amount: program.stamps_required,
+    // The card is locked for the whole decision. This used to read the card,
+    // decide in TypeScript, then UPDATE ... WHERE id with no lock, so two
+    // simultaneous redemptions both reset one full card and both paid out.
+    // Authority is unchanged: the RPC accepts the card's owner or the owner of
+    // its business, and nobody else.
+    const { data: applied, error: applyErr } = await svc.rpc('loyalty_redeem_card_atomic', {
+      p_actor: user.id,
+      p_card:  card_id,
     });
+    if (applyErr) {
+      console.error('[local-redeem-reward] loyalty_redeem_card_atomic failed', applyErr);
+      return json({ error: 'Could not redeem that reward.' }, 500);
+    }
+    const outcome = applied as { ok: boolean; error?: string };
+    if (!outcome?.ok) {
+      const map: Record<string, [string, number]> = {
+        not_yours:         ['Not your card', 403],
+        not_ready:         ['Card not complete yet', 400],
+        card_not_found:    ['Not your card', 403],
+        program_not_found: ['No stamp program', 400],
+      };
+      const [msg, status] = map[outcome?.error ?? ''] ?? ['Could not redeem that reward.', 400];
+      return json({ error: msg }, status);
+    }
 
     return json({ ok: true });
   } catch (err) {
