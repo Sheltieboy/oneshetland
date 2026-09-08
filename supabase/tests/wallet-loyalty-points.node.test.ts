@@ -161,7 +161,12 @@ const fixSql = () => [
   slice(FIX, 'do $$\nbegin\n  if not exists (select 1 from pg_constraint', 'end $$;'),
   slice(FIX, 'alter table public.local_loyalty_transactions\n  drop constraint if exists', ';'),
   slice(FIX, 'alter table public.local_loyalty_transactions\n  add constraint local_loyalty_transactions_type_check', ']));'),
+  slice(FIX, 'create table if not exists public.loyalty_award_due', ');'),
+  slice(FIX, 'create index if not exists loyalty_award_due_unsettled', ';'),
+  slice(FIX, 'create or replace function public._loyalty_apply_award', '$$;'),
   slice(FIX, 'create or replace function public.loyalty_award_for_wallet_spend', '$$;'),
+  slice(FIX, 'create or replace function public.loyalty_awards_outstanding', '$$;'),
+  slice(FIX, 'create or replace function public.loyalty_recover_pending_awards', '$$;'),
   slice(FIX, 'create or replace function public.loyalty_reverse_for_wallet_spend', '$$;'),
   slice(FIX, 'create or replace function public.wallet_reverse_debit', '$$;'),
   slice(FIX, 'create or replace function public.loyalty_reversals_outstanding', '$$;'),
@@ -231,6 +236,13 @@ const r = {
   failAfterRedeemDeficit: 0, failAfterRedeemBalance: 0,
   raceRecoverOk: 0, raceRecoverRows: 0,
   awardPending: '', awardUnresolved: '', awardFailed: '', awardNone: '', awardSent: '',
+  // Award-side failure and recovery
+  awFailResult: '', awFailEarnRows: 0, awFailDue: 0, awFailPoints: 0,
+  awRecovered: '', awRecoverPoints: 0, awRecoverDue: 0, awRecoverEarnRows: 0,
+  awRecoverAgain: '', awRecoverAgainPoints: 0,
+  awRateChangePoints: 0, awRateChangeDue: 0,
+  awRaceOk: 0, awRaceEarnRows: 0, awRacePoints: 0,
+  awNeverRaises: '',
   walletRefundStillWorks: '', walletBalanceAfter: 0,
 };
 const priv: Record<string, string> = {};
@@ -493,12 +505,60 @@ before(async () => {
   spend(SPEND, { amount: 300, fee: 15, state: 'none' });
   r.awardNone = award(SPEND);
 
+  // ══ AWARD-SIDE FAILURE ══════════════════════════════════════════════════
+  //
+  // The purchase has already succeeded. Applying the points fails. Nothing may
+  // be lost, and nothing may be recomputed later at a rate the business
+  // changed in the meantime.
+  const boomEarn = `create function public.boom_earn() returns trigger language plpgsql as $b$
+       begin
+         if new.type = 'points_earn' then raise exception 'loyalty ledger is down'; end if;
+         return new;
+       end $b$;
+       create trigger boom_earn before insert on public.local_loyalty_transactions
+         for each row execute function public.boom_earn();`;
+
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  raw(boomEarn);
+  r.awFailResult = award(SPEND);
+  // 'ERROR:' with the colon — the JSON payload legitimately carries an "error" key.
+  r.awNeverRaises = /ERROR:/.test(r.awFailResult) ? 'raised' : 'returned';
+  r.awFailEarnRows = rowsOf('points_earn');
+  r.awFailPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+  r.awFailDue = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
+
+  // Recovery, after the fault clears — and after the business changes its rate.
+  raw(`drop trigger boom_earn on public.local_loyalty_transactions;`);
+  raw(`update public.local_loyalty_programs set points_per_pound = 20;`);
+  r.awRecovered = value(raw(`select public.loyalty_recover_pending_awards(100);`));
+  r.awRecoverPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+  r.awRecoverDue = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
+  r.awRecoverEarnRows = rowsOf('points_earn');
+  r.awRateChangePoints = r.awRecoverPoints;
+  // A second recovery does nothing.
+  r.awRecoverAgain = value(raw(`select public.loyalty_recover_pending_awards(100);`));
+  r.awRecoverAgainPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+  r.awRateChangeDue = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
+
+  // Two concurrent recoveries award once.
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  raw(boomEarn);
+  award(SPEND);
+  raw(`drop trigger boom_earn on public.local_loyalty_transactions;`);
+  const ar = await race(`public.loyalty_recover_pending_awards(100)`);
+  r.awRaceOk = okCount(ar);
+  r.awRaceEarnRows = rowsOf('points_earn');
+  r.awRacePoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+
   // ── Privileges ──────────────────────────────────────────────────────────
   schema({ pointsPerPound: 10 }); installFix();
   const g = raw(grantsBlock());
   assert.doesNotMatch(g, /ERROR/i, `grants failed:\n${g.slice(0, 600)}`);
   for (const fn of ['loyalty_award_for_wallet_spend', 'loyalty_reverse_for_wallet_spend',
-                    'loyalty_reversals_outstanding', 'loyalty_recover_outstanding_reversals']) {
+                    'loyalty_reversals_outstanding', 'loyalty_recover_outstanding_reversals',
+                    '_loyalty_apply_award', 'loyalty_awards_outstanding', 'loyalty_recover_pending_awards']) {
     priv[fn] = scalar(
       `select string_agg(r || ':' || case when has_function_privilege(r, p.oid, 'execute') then 'yes' else 'no' end, ' ')
          from pg_proc p join pg_namespace n on n.oid=p.pronamespace,
@@ -513,7 +573,7 @@ before(async () => {
   const netBasis = `  v_proceeds := abs(coalesce(v_txn.amount_pence, 0))
               - coalesce(v_txn.platform_fee_pence, 0)
               - coalesce(v_txn.cashback_pence, 0);`;
-  const deficitOffset = `  v_paid   := least(coalesce(v_card.points_deficit, 0), v_gross);`;
+  const deficitOffset = `  v_paid   := least(coalesce(v_card.points_deficit, 0), p_points);`;
   const revIdem = `  if exists (select 1 from public.local_loyalty_transactions
               where source_transaction_id = p_wallet_txn
                 and type in ('points_reverse', 'points_deficit')) then`;
@@ -535,7 +595,9 @@ before(async () => {
   schema({ pointsPerPound: 10 });
   installFix((x) => x.replace(uniqueIdx, '').replace(
     `  if exists (select 1 from public.local_loyalty_transactions
-              where source_transaction_id = p_wallet_txn and type = 'points_earn') then
+              where source_transaction_id = p_source and type = 'points_earn') then
+    update public.loyalty_award_due set settled_at = coalesce(settled_at, now())
+     where source_transaction_id = p_source;
     return jsonb_build_object('ok', true, 'already_awarded', true,
                               'points_balance', v_card.points_balance,
                               'points_deficit', v_card.points_deficit);
@@ -818,5 +880,46 @@ describe('the recovery protections are load-bearing', () => {
   });
   test('M6 removing the settled-state gate mints points on unresolved money', () => {
     assert.match(mut.m6Award, /"points_earned"\s*:\s*28/);
+  });
+});
+
+describe('an award failure after a successful purchase', () => {
+  test('the award never raises — the callers are safe by construction', () => {
+    assert.equal(r.awNeverRaises, 'returned',
+      'supabase-js returns a Postgres error rather than throwing, so a caller try/catch would not have caught one');
+    assert.match(r.awFailResult, /"error"\s*:\s*"award_failed"/);
+  });
+  test('nothing was applied', () => {
+    assert.equal(r.awFailEarnRows, 0);
+    assert.equal(r.awFailPoints, 0);
+  });
+  test('but what was owed is recorded, with the figures as they stood', () => {
+    assert.equal(r.awFailDue, 1);
+    assert.match(r.awFailResult, /"points_owed"\s*:\s*28/);
+    assert.match(r.awFailResult, /"recorded"\s*:\s*true/);
+  });
+});
+
+describe('the award recovery uses the snapshot, not a later rate', () => {
+  test('it recovers exactly one award', () => {
+    assert.match(r.awRecovered, /"recovered"\s*:\s*1/);
+    assert.equal(r.awRecoverEarnRows, 1);
+  });
+  test('and awards the 28 owed, not the 57 the doubled rate would give', () => {
+    assert.equal(r.awRateChangePoints, 28,
+      'points_per_pound was doubled to 20 between the failure and the recovery');
+  });
+  test('the entitlement is then settled and no longer outstanding', () => {
+    assert.equal(r.awRecoverDue, 0);
+  });
+  test('a second recovery is a no-op', () => {
+    assert.match(r.awRecoverAgain, /"recovered"\s*:\s*0/);
+    assert.equal(r.awRecoverAgainPoints, 28);
+    assert.equal(r.awRateChangeDue, 0);
+  });
+  test('two concurrent recoveries award once between them', () => {
+    assert.equal(r.awRaceOk, 2, 'both answer');
+    assert.equal(r.awRaceEarnRows, 1);
+    assert.equal(r.awRacePoints, 28);
   });
 });

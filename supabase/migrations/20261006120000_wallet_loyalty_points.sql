@@ -103,7 +103,120 @@ alter table public.local_loyalty_transactions
   ]));
 
 
--- ── 5. Award, at fulfilment ─────────────────────────────────────────────────
+-- ── 5. What was owed, recorded before it can be lost ────────────────────────
+--
+-- The award is ancillary: a loyalty failure must never make a successful
+-- purchase look failed, and it does not — all four callers ignore the result.
+-- But that was the whole of the safety net. Executed: with the points_earn
+-- insert forced to fail, the award raised, the card and every row it had
+-- written rolled back, and nothing recorded that anything was owed.
+--
+-- Unlike the reversal case, this one CANNOT be derived afterwards. "a business
+-- spend with no points_earn row" does not mean an award was lost: the business
+-- may not have been Pro then, may have had no points programme, or may have had
+-- one at a different rate. points_per_pound is mutable, so a later query cannot
+-- even say how much was owed — and would happily award today's rate for
+-- yesterday's purchase.
+--
+-- So the entitlement is written down at the moment it is computed. Not a job
+-- queue: one row per spend, holding the figures as they stood, settled when the
+-- award lands.
+create table if not exists public.loyalty_award_due (
+  source_transaction_id uuid primary key
+    references public.local_wallet_transactions(id) on delete cascade,
+  user_id          uuid        not null,
+  business_id      uuid        not null,
+  program_id       uuid        not null,
+  points           integer     not null check (points > 0),
+  proceeds_pence   integer     not null,
+  points_per_pound numeric     not null,
+  failed_reason    text,
+  created_at       timestamptz not null default now(),
+  settled_at       timestamptz
+);
+
+comment on table public.loyalty_award_due is
+  'Points a completed wallet purchase earned but which could not be applied at the time. Holds the entitlement AS IT STOOD — proceeds and rate — so a later recovery cannot award a rate the business set afterwards. One row per spend; settled_at is stamped when the award finally lands.';
+
+create index if not exists loyalty_award_due_unsettled
+  on public.loyalty_award_due (created_at) where settled_at is null;
+
+alter table public.loyalty_award_due enable row level security;
+revoke all on table public.loyalty_award_due from public, anon, authenticated;
+grant all on table public.loyalty_award_due to service_role;
+
+
+-- ── 5a. Applying an award, from a known entitlement ─────────────────────────
+--
+-- Shared by the live award and by recovery, so a recovered award and a
+-- first-time one cannot drift. Takes the POINTS, not the rate: recovery passes
+-- the snapshot, never a recomputation.
+create or replace function public._loyalty_apply_award(
+  p_source   uuid,
+  p_user     uuid,
+  p_business uuid,
+  p_program  uuid,
+  p_points   integer
+) returns jsonb
+  language plpgsql
+  security definer
+  set search_path = public, pg_temp
+as $$
+declare
+  v_card   public.local_loyalty_cards%rowtype;
+  v_paid   integer;
+  v_credit integer;
+begin
+  -- Create-or-lock, so two fulfilment callbacks for one spend serialise here.
+  insert into public.local_loyalty_cards (user_id, program_id, business_id, stamps_collected, points_balance)
+  values (p_user, p_program, p_business, 0, 0)
+  on conflict (user_id, program_id)
+    do update set business_id = public.local_loyalty_cards.business_id
+  returning * into v_card;
+
+  if exists (select 1 from public.local_loyalty_transactions
+              where source_transaction_id = p_source and type = 'points_earn') then
+    update public.loyalty_award_due set settled_at = coalesce(settled_at, now())
+     where source_transaction_id = p_source;
+    return jsonb_build_object('ok', true, 'already_awarded', true,
+                              'points_balance', v_card.points_balance,
+                              'points_deficit', v_card.points_deficit);
+  end if;
+
+  -- Debt first. A card that owes 30 and earns 50 clears the debt and banks 20.
+  v_paid   := least(coalesce(v_card.points_deficit, 0), p_points);
+  v_credit := p_points - v_paid;
+
+  update public.local_loyalty_cards
+     set points_balance = coalesce(points_balance, 0) + v_credit,
+         points_deficit = coalesce(points_deficit, 0) - v_paid,
+         last_stamp_at  = now()
+   where id = v_card.id;
+
+  insert into public.local_loyalty_transactions
+    (card_id, user_id, business_id, type, amount, note, source_transaction_id, source_type)
+  values (v_card.id, p_user, p_business, 'points_earn', p_points,
+          'Earned on business proceeds', p_source, 'wallet');
+
+  if v_paid > 0 then
+    insert into public.local_loyalty_transactions
+      (card_id, user_id, business_id, type, amount, note, source_transaction_id, source_type)
+    values (v_card.id, p_user, p_business, 'points_deficit_paid', v_paid,
+            'Cleared points owed from a refunded purchase', p_source, 'wallet');
+  end if;
+
+  update public.loyalty_award_due set settled_at = now(), failed_reason = null
+   where source_transaction_id = p_source;
+
+  return jsonb_build_object('ok', true, 'card_id', v_card.id,
+    'points_earned', p_points, 'deficit_cleared', v_paid, 'points_credited', v_credit,
+    'points_balance', coalesce(v_card.points_balance, 0) + v_credit,
+    'points_deficit', coalesce(v_card.points_deficit, 0) - v_paid);
+end;
+$$;
+
+
+-- ── 5b. Award, at fulfilment ────────────────────────────────────────────────
 --
 -- Takes only the wallet transaction id. Every figure — the business, the
 -- amount, the fee, the cashback — is read from the ledger row itself, so a
@@ -113,6 +226,12 @@ alter table public.local_loyalty_transactions
 -- arithmetic the wallet rail already uses to decide what to transfer, which is
 -- amount less the platform fee less business-funded cashback. A business
 -- should not fund a reward on money it never received.
+--
+-- It NEVER RAISES. That is what makes the four callers safe by construction
+-- rather than by each remembering to guard: supabase-js returns a Postgres
+-- error rather than throwing, so a caller's try/catch would not have caught one
+-- anyway. If the award cannot be applied, what was owed is recorded and the
+-- caller is told — and the purchase, which already succeeded, is untouched.
 create or replace function public.loyalty_award_for_wallet_spend(p_wallet_txn uuid)
   returns jsonb
   language plpgsql
@@ -122,11 +241,8 @@ as $$
 declare
   v_txn      public.local_wallet_transactions%rowtype;
   v_prog     public.local_loyalty_programs%rowtype;
-  v_card     public.local_loyalty_cards%rowtype;
   v_proceeds integer;
   v_gross    integer;
-  v_paid     integer;
-  v_credit   integer;
 begin
   if p_wallet_txn is null then
     return jsonb_build_object('ok', false, 'error', 'bad_request');
@@ -184,47 +300,84 @@ begin
     return jsonb_build_object('ok', false, 'error', 'no_points', 'proceeds_pence', v_proceeds);
   end if;
 
-  -- Create-or-lock, so two fulfilment callbacks for one spend serialise here.
-  insert into public.local_loyalty_cards (user_id, program_id, business_id, stamps_collected, points_balance)
-  values (v_txn.user_id, v_prog.id, v_txn.business_id, 0, 0)
-  on conflict (user_id, program_id)
-    do update set business_id = public.local_loyalty_cards.business_id
-  returning * into v_card;
+  -- From here the entitlement is known. If applying it fails, the sub-block is
+  -- rolled back but this transaction is not, so what was owed can still be
+  -- written down — which is the only reason any of it is recoverable.
+  begin
+    return public._loyalty_apply_award(p_wallet_txn, v_txn.user_id, v_txn.business_id, v_prog.id, v_gross)
+        || jsonb_build_object('proceeds_pence', v_proceeds);
+  exception when others then
+    insert into public.loyalty_award_due
+      (source_transaction_id, user_id, business_id, program_id, points, proceeds_pence, points_per_pound, failed_reason)
+    values (p_wallet_txn, v_txn.user_id, v_txn.business_id, v_prog.id, v_gross, v_proceeds,
+            coalesce(v_prog.points_per_pound, 0), left(sqlerrm, 300))
+    on conflict (source_transaction_id) do update
+      set failed_reason = excluded.failed_reason
+      where public.loyalty_award_due.settled_at is null;
+    return jsonb_build_object('ok', false, 'error', 'award_failed', 'recorded', true,
+                              'points_owed', v_gross, 'proceeds_pence', v_proceeds,
+                              'reason', left(sqlerrm, 300));
+  end;
+end;
+$$;
 
-  if exists (select 1 from public.local_loyalty_transactions
-              where source_transaction_id = p_wallet_txn and type = 'points_earn') then
-    return jsonb_build_object('ok', true, 'already_awarded', true,
-                              'points_balance', v_card.points_balance,
-                              'points_deficit', v_card.points_deficit);
-  end if;
 
-  -- Debt first. A card that owes 30 and earns 50 clears the debt and banks 20.
-  v_paid   := least(coalesce(v_card.points_deficit, 0), v_gross);
-  v_credit := v_gross - v_paid;
+-- ── 5c. Finding and finishing what was owed ─────────────────────────────────
+create or replace function public.loyalty_awards_outstanding()
+  returns table (
+    source_transaction_id uuid,
+    user_id               uuid,
+    business_id           uuid,
+    program_id            uuid,
+    points                integer,
+    proceeds_pence        integer,
+    points_per_pound      numeric,
+    failed_reason         text,
+    created_at            timestamptz
+  )
+  language sql
+  stable
+  security definer
+  set search_path = public, pg_temp
+as $$
+  select d.source_transaction_id, d.user_id, d.business_id, d.program_id, d.points,
+         d.proceeds_pence, d.points_per_pound, d.failed_reason, d.created_at
+    from public.loyalty_award_due d
+   where d.settled_at is null
+   order by d.created_at;
+$$;
 
-  update public.local_loyalty_cards
-     set points_balance = coalesce(points_balance, 0) + v_credit,
-         points_deficit = coalesce(points_deficit, 0) - v_paid,
-         last_stamp_at  = now()
-   where id = v_card.id;
-
-  insert into public.local_loyalty_transactions
-    (card_id, user_id, business_id, type, amount, note, source_transaction_id, source_type)
-  values (v_card.id, v_txn.user_id, v_txn.business_id, 'points_earn', v_gross,
-          'Earned on business proceeds', p_wallet_txn, 'wallet');
-
-  if v_paid > 0 then
-    insert into public.local_loyalty_transactions
-      (card_id, user_id, business_id, type, amount, note, source_transaction_id, source_type)
-    values (v_card.id, v_txn.user_id, v_txn.business_id, 'points_deficit_paid', v_paid,
-            'Cleared points owed from a refunded purchase', p_wallet_txn, 'wallet');
-  end if;
-
-  return jsonb_build_object('ok', true, 'card_id', v_card.id,
-    'proceeds_pence', v_proceeds, 'points_earned', v_gross,
-    'deficit_cleared', v_paid, 'points_credited', v_credit,
-    'points_balance', coalesce(v_card.points_balance, 0) + v_credit,
-    'points_deficit', coalesce(v_card.points_deficit, 0) - v_paid);
+-- Retries with the SNAPSHOT, never a recomputation: a business that doubles its
+-- rate tomorrow does not double what it owed yesterday.
+create or replace function public.loyalty_recover_pending_awards(p_limit integer default 100)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path = public, pg_temp
+as $$
+declare
+  v_row       record;
+  v_res       jsonb;
+  v_recovered integer := 0;
+  v_failed    integer := 0;
+begin
+  for v_row in
+    select * from public.loyalty_awards_outstanding() limit greatest(coalesce(p_limit, 100), 1)
+  loop
+    begin
+      v_res := public._loyalty_apply_award(v_row.source_transaction_id, v_row.user_id,
+                                           v_row.business_id, v_row.program_id, v_row.points);
+      if coalesce((v_res->>'ok')::boolean, false) then
+        v_recovered := v_recovered + 1;
+      else
+        v_failed := v_failed + 1;
+      end if;
+    exception when others then
+      v_failed := v_failed + 1;
+      raise warning 'loyalty award recovery failed for % (%)', v_row.source_transaction_id, sqlerrm;
+    end;
+  end loop;
+  return jsonb_build_object('ok', true, 'recovered', v_recovered, 'failed', v_failed);
 end;
 $$;
 
@@ -506,6 +659,9 @@ begin
     'public.loyalty_award_for_wallet_spend(uuid)',
     'public.loyalty_reverse_for_wallet_spend(uuid)',
     'public.wallet_reverse_debit(uuid, text, text)',
+    'public._loyalty_apply_award(uuid, uuid, uuid, uuid, integer)',
+    'public.loyalty_awards_outstanding()',
+    'public.loyalty_recover_pending_awards(integer)',
     'public.loyalty_reversals_outstanding()',
     'public.loyalty_recover_outstanding_reversals(integer)'
   ] loop
