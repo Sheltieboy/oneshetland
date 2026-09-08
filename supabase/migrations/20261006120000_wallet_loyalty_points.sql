@@ -132,14 +132,20 @@ create table if not exists public.loyalty_award_due (
   points_per_pound numeric     not null,
   failed_reason    text,
   created_at       timestamptz not null default now(),
-  settled_at       timestamptz
+  settled_at       timestamptz,
+  -- A due award whose funding purchase is refunded before recovery runs is not
+  -- payable and never will be. It is closed, never deleted: "28 points were
+  -- owed at purchase, the award failed, then the purchase was refunded, so none
+  -- were issued" is the whole point of keeping the row.
+  cancelled_at     timestamptz,
+  cancelled_reason text
 );
 
 comment on table public.loyalty_award_due is
   'Points a completed wallet purchase earned but which could not be applied at the time. Holds the entitlement AS IT STOOD — proceeds and rate — so a later recovery cannot award a rate the business set afterwards. One row per spend; settled_at is stamped when the award finally lands.';
 
 create index if not exists loyalty_award_due_unsettled
-  on public.loyalty_award_due (created_at) where settled_at is null;
+  on public.loyalty_award_due (created_at) where settled_at is null and cancelled_at is null;
 
 alter table public.loyalty_award_due enable row level security;
 revoke all on table public.loyalty_award_due from public, anon, authenticated;
@@ -344,6 +350,7 @@ as $$
          d.proceeds_pence, d.points_per_pound, d.failed_reason, d.created_at
     from public.loyalty_award_due d
    where d.settled_at is null
+     and d.cancelled_at is null
    order by d.created_at;
 $$;
 
@@ -357,14 +364,54 @@ create or replace function public.loyalty_recover_pending_awards(p_limit integer
 as $$
 declare
   v_row       record;
+  v_txn       public.local_wallet_transactions%rowtype;
   v_res       jsonb;
   v_recovered integer := 0;
   v_failed    integer := 0;
+  v_cancelled integer := 0;
+  v_skipped   integer := 0;
 begin
   for v_row in
     select * from public.loyalty_awards_outstanding() limit greatest(coalesce(p_limit, 100), 1)
   loop
     begin
+      -- Re-check the source. _loyalty_apply_award never looks at the wallet
+      -- ledger — it takes an entitlement and applies it — so without this the
+      -- recovery would happily mint points for a purchase refunded in the
+      -- meantime. Reproduced: 28 points, no reversal, nothing to take them back.
+      --
+      -- FOR UPDATE on the same row wallet_reverse_debit locks, so a refund and
+      -- a recovery of the same spend cannot interleave: whichever gets the lock
+      -- first decides, and the other sees its committed result.
+      select * into v_txn from public.local_wallet_transactions
+       where id = v_row.source_transaction_id
+         for update;
+
+      if not found then
+        update public.loyalty_award_due
+           set cancelled_at = now(), cancelled_reason = 'source_missing'
+         where source_transaction_id = v_row.source_transaction_id;
+        v_cancelled := v_cancelled + 1;
+        continue;
+      end if;
+
+      if exists (select 1 from public.local_wallet_transactions
+                  where reverses_transaction_id = v_row.source_transaction_id) then
+        update public.loyalty_award_due
+           set cancelled_at = now(), cancelled_reason = 'source_reversed'
+         where source_transaction_id = v_row.source_transaction_id
+           and settled_at is null and cancelled_at is null;
+        v_cancelled := v_cancelled + 1;
+        continue;
+      end if;
+
+      -- Money back in motion. Leave it outstanding rather than closing it:
+      -- it may settle again, and the entitlement is still owed.
+      if coalesce(v_txn.transfer_state, 'none') not in ('sent', 'none') then
+        v_skipped := v_skipped + 1;
+        continue;
+      end if;
+
       v_res := public._loyalty_apply_award(v_row.source_transaction_id, v_row.user_id,
                                            v_row.business_id, v_row.program_id, v_row.points);
       if coalesce((v_res->>'ok')::boolean, false) then
@@ -377,7 +424,8 @@ begin
       raise warning 'loyalty award recovery failed for % (%)', v_row.source_transaction_id, sqlerrm;
     end;
   end loop;
-  return jsonb_build_object('ok', true, 'recovered', v_recovered, 'failed', v_failed);
+  return jsonb_build_object('ok', true, 'recovered', v_recovered, 'cancelled', v_cancelled,
+                            'skipped', v_skipped, 'failed', v_failed);
 end;
 $$;
 
@@ -400,6 +448,14 @@ declare
   v_owed    integer;
 begin
   if p_wallet_txn is null then return jsonb_build_object('ok', false, 'error', 'bad_request'); end if;
+
+  -- An award that was owed but never applied dies with the purchase that owed
+  -- it. Closed here, in the refund's own transaction, so the terminal state and
+  -- the refund are the same commit and no recovery can find it in between.
+  update public.loyalty_award_due
+     set cancelled_at = now(), cancelled_reason = 'source_reversed'
+   where source_transaction_id = p_wallet_txn
+     and settled_at is null and cancelled_at is null;
 
   select * into v_earn from public.local_loyalty_transactions
    where source_transaction_id = p_wallet_txn and type = 'points_earn' limit 1;

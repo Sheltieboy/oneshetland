@@ -243,6 +243,12 @@ const r = {
   awRateChangePoints: 0, awRateChangeDue: 0,
   awRaceOk: 0, awRaceEarnRows: 0, awRacePoints: 0,
   awNeverRaises: '',
+  // failed award → refund → recovery
+  frDue: 0, frOutstanding: 0, frCancelled: '', frPoints: 0, frEarn: 0, frRev: 0, frDef: 0,
+  frAgain: '', frAudit: '',
+  frReopenResult: '', frReopenPoints: 0, frReopenOutstanding: 0,
+  raceRecFirstPoints: 0, raceRecFirstEarn: 0, raceRecFirstRev: 0,
+  raceRefFirstPoints: 0, raceRefFirstEarn: 0, raceRefFirstOutstanding: 0,
   walletRefundStillWorks: '', walletBalanceAfter: 0,
 };
 const priv: Record<string, string> = {};
@@ -551,6 +557,69 @@ before(async () => {
   r.awRaceOk = okCount(ar);
   r.awRaceEarnRows = rowsOf('points_earn');
   r.awRacePoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+
+  // ══ FAILED AWARD → REFUND → RECOVERY ════════════════════════════════════
+  const boomEarn2 = `create function public.boom_e2() returns trigger language plpgsql as $b$
+       begin
+         if new.type = 'points_earn' then raise exception 'loyalty ledger is down'; end if;
+         return new;
+       end $b$;
+       create trigger boom_e2 before insert on public.local_loyalty_transactions
+         for each row execute function public.boom_e2();`;
+
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  raw(boomEarn2);
+  award(SPEND);
+  r.frDue = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
+  raw(`drop trigger boom_e2 on public.local_loyalty_transactions;`);
+  reverseSpend(SPEND);                                  // the purchase is refunded
+  r.frOutstanding = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
+  r.frCancelled = scalar(`select cancelled_reason from public.loyalty_award_due;`);
+  value(raw(`select public.loyalty_recover_pending_awards(100);`));
+  r.frPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+  r.frEarn = rowsOf('points_earn');
+  r.frRev = rowsOf('points_reverse');
+  r.frDef = rowsOf('points_deficit');
+  r.frAgain = value(raw(`select public.loyalty_recover_pending_awards(100);`));
+  // The audit must survive intact — everything as it stood, plus why it closed.
+  r.frAudit = scalar(
+    `select points || '|' || proceeds_pence || '|' || points_per_pound || '|' ||
+            (created_at is not null)::text || '|' || (cancelled_at is not null)::text ||
+            '|' || coalesce(failed_reason,'-')
+       from public.loyalty_award_due;`);
+
+  // The recovery's own gate, tested where it is the only thing standing: a due
+  // row left open against a reversed source, as any path that skipped the
+  // refund's cancellation would leave it.
+  raw(`update public.loyalty_award_due set cancelled_at = null, cancelled_reason = null;`);
+  r.frReopenResult = value(raw(`select public.loyalty_recover_pending_awards(100);`));
+  r.frReopenPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+  r.frReopenOutstanding = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
+
+  // ── Race, recovery first ────────────────────────────────────────────────
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  raw(boomEarn2); award(SPEND); raw(`drop trigger boom_e2 on public.local_loyalty_transactions;`);
+  await Promise.all([
+    rawAsync(`begin; select public.loyalty_recover_pending_awards(100); select pg_sleep(0.5); commit;`),
+    sleep(100).then(() => rawAsync(`select already_reversed from public.wallet_reverse_debit('${SPEND}','refund','clawed_back');`)),
+  ]);
+  r.raceRecFirstPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+  r.raceRecFirstEarn = rowsOf('points_earn');
+  r.raceRecFirstRev = sumOf('points_reverse');
+
+  // ── Race, refund first ──────────────────────────────────────────────────
+  schema({ pointsPerPound: 10 }); installFix();
+  spend(SPEND, { amount: 300, fee: 15 });
+  raw(boomEarn2); award(SPEND); raw(`drop trigger boom_e2 on public.local_loyalty_transactions;`);
+  await Promise.all([
+    rawAsync(`begin; select already_reversed from public.wallet_reverse_debit('${SPEND}','refund','clawed_back'); select pg_sleep(0.5); commit;`),
+    sleep(100).then(() => rawAsync(`select public.loyalty_recover_pending_awards(100);`)),
+  ]);
+  r.raceRefFirstPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
+  r.raceRefFirstEarn = rowsOf('points_earn');
+  r.raceRefFirstOutstanding = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
 
   // ── Privileges ──────────────────────────────────────────────────────────
   schema({ pointsPerPound: 10 }); installFix();
@@ -921,5 +990,55 @@ describe('the award recovery uses the snapshot, not a later rate', () => {
     assert.equal(r.awRaceOk, 2, 'both answer');
     assert.equal(r.awRaceEarnRows, 1);
     assert.equal(r.awRacePoints, 28);
+  });
+});
+
+describe('a purchase refunded before the award could be recovered', () => {
+  test('the failed award is recorded as owed', () => {
+    assert.equal(r.frDue, 1);
+  });
+  test('the refund closes it, in the refund’s own transaction', () => {
+    assert.equal(r.frOutstanding, 0);
+    assert.equal(r.frCancelled, 'source_reversed');
+  });
+  test('recovery mints nothing for a refunded purchase', () => {
+    assert.equal(r.frPoints, 0);
+    assert.equal(r.frEarn, 0);
+  });
+  test('and does not fabricate a reversal of points that never existed', () => {
+    assert.equal(r.frRev, 0);
+    assert.equal(r.frDef, 0);
+  });
+  test('repeated recovery stays a no-op — it is not retried for ever', () => {
+    assert.match(r.frAgain, /"recovered"\s*:\s*0/);
+  });
+  test('the audit survives: what was owed, at what rate, and why none was issued', () => {
+    // points | proceeds | rate | created_at set | cancelled_at set | failure
+    // points_per_pound is numeric(6,2) on the programme, so it keeps its scale.
+    assert.equal(r.frAudit, '28|285|10.00|true|true|loyalty ledger is down');
+  });
+});
+
+describe('the recovery’s own reversed-source gate', () => {
+  test('a due row left open against a reversed source is closed, not paid', () => {
+    assert.match(r.frReopenResult, /"cancelled"\s*:\s*1/);
+    assert.match(r.frReopenResult, /"recovered"\s*:\s*0/);
+  });
+  test('no points are minted and nothing is left outstanding', () => {
+    assert.equal(r.frReopenPoints, 0);
+    assert.equal(r.frReopenOutstanding, 0);
+  });
+});
+
+describe('refund and recovery racing the same spend', () => {
+  test('recovery first: the award lands, then the refund reverses exactly it', () => {
+    assert.equal(r.raceRecFirstEarn, 1);
+    assert.equal(r.raceRecFirstRev, 28, 'reversed exactly what was awarded');
+    assert.equal(r.raceRecFirstPoints, 0);
+  });
+  test('refund first: no award happens at all', () => {
+    assert.equal(r.raceRefFirstEarn, 0);
+    assert.equal(r.raceRefFirstPoints, 0);
+    assert.equal(r.raceRefFirstOutstanding, 0, 'and nothing is left outstanding');
   });
 });
