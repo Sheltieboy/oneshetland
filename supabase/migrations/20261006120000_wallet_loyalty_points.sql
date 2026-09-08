@@ -592,7 +592,18 @@ begin
     p_transaction_id
   );
 
-  v_state := case when v_orig.transfer_state = 'sent' then 'reversed' else 'failed' end;
+  -- The verdict from 20261002120000, verbatim. An earlier draft of THIS file
+  -- carried the version that migration replaced — gates from the review, but
+  -- the guessing verdict from before it — which would have silently reverted
+  -- two approved decisions: a sent transfer nobody vouched for would have been
+  -- recorded 'reversed', and a spend that never had a transfer 'failed'.
+  v_state := case
+               when v_orig.transfer_state = 'sent'
+                 then case when p_merchant = 'clawed_back' then 'reversed' else 'unresolved' end
+               when v_orig.transfer_state = 'pending'
+                 then case when p_merchant = 'never_paid' then 'failed' else 'unresolved' end
+               else v_orig.transfer_state
+             end;
 
   update public.local_wallet_transactions
      set transfer_state = v_state

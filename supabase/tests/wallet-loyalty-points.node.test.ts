@@ -43,6 +43,7 @@ const LEDGER = join(MIG, '20260820160000_wallet_atomic_ledger.sql');
 const REMINDERS = join(MIG, '20260721020000_loyalty_reminders.sql');
 const TIERS = join(MIG, '20260721030000_loyalty_reward_tiers.sql');
 const FIX = join(MIG, '20261006120000_wallet_loyalty_points.sql');
+const STATEGATE = join(MIG, '20261002120000_wallet_transfer_state_reversed.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -249,6 +250,9 @@ const r = {
   frReopenResult: '', frReopenPoints: 0, frReopenOutstanding: 0,
   raceRecFirstPoints: 0, raceRecFirstEarn: 0, raceRecFirstRev: 0,
   raceRefFirstPoints: 0, raceRefFirstEarn: 0, raceRefFirstOutstanding: 0,
+  // 061 redefines wallet_reverse_debit. Every verdict it inherited must survive.
+  vSentClawed: '', vSentUnvouched: '', vPendingNeverPaid: '', vPendingUnvouched: '', vNone: '',
+  verdictIdentical: false,
   walletRefundStillWorks: '', walletBalanceAfter: 0,
 };
 const priv: Record<string, string> = {};
@@ -620,6 +624,38 @@ before(async () => {
   r.raceRefFirstPoints = num(`select coalesce(sum(points_balance),0)::text from public.local_loyalty_cards;`);
   r.raceRefFirstEarn = rowsOf('points_earn');
   r.raceRefFirstOutstanding = num(`select count(*)::text from public.loyalty_awards_outstanding();`);
+
+  // ══ 061 MUST NOT REGRESS THE WALLET STATE VERDICT ═══════════════════════
+  //
+  // 061 redefines wallet_reverse_debit, which 20261002120000 already settled
+  // and which is LIVE. An earlier draft of 061 carried the verdict that
+  // migration replaced — the gates from the review, but the guessing verdict
+  // from before it — and applying it would have reverted two approved
+  // decisions in production without anything failing. Caught by diffing the
+  // live definition against the migration, not by any test, which is why both
+  // of these now exist.
+  //
+  // Structural first: the verdict block must be the one 20261002120000 ships.
+  {
+    const verdict = slice(STATEGATE, '  v_state := case', 'end;');
+    verdictIdentical: {
+      r.verdictIdentical = src(FIX).includes(verdict);
+    }
+  }
+  // Then behaviourally, across the whole matrix, against 061's own function.
+  for (const [state, merchant, key] of [
+    ['sent', "'clawed_back'", 'vSentClawed'],
+    ['sent', 'null', 'vSentUnvouched'],
+    ['pending', "'never_paid'", 'vPendingNeverPaid'],
+    ['pending', 'null', 'vPendingUnvouched'],
+    ['none', 'null', 'vNone'],
+  ] as const) {
+    schema({ pointsPerPound: 10 }); installFix();
+    spend(SPEND, { amount: 300, fee: 15, state });
+    raw(`select already_reversed from public.wallet_reverse_debit('${SPEND}', 'refund', ${merchant});`);
+    (r as Record<string, unknown>)[key] =
+      scalar(`select transfer_state from public.local_wallet_transactions where id='${SPEND}';`);
+  }
 
   // ── Privileges ──────────────────────────────────────────────────────────
   schema({ pointsPerPound: 10 }); installFix();
@@ -1040,5 +1076,27 @@ describe('refund and recovery racing the same spend', () => {
     assert.equal(r.raceRefFirstEarn, 0);
     assert.equal(r.raceRefFirstPoints, 0);
     assert.equal(r.raceRefFirstOutstanding, 0, 'and nothing is left outstanding');
+  });
+});
+
+describe('061 inherits the wallet state verdict without regressing it', () => {
+  test('the verdict block is byte-identical to the one 20261002120000 ships', () => {
+    assert.ok(r.verdictIdentical,
+      'the verdict in 20261006120000 has drifted from the migration that settled it');
+  });
+  test('sent + clawed back is still reversed', () => {
+    assert.equal(r.vSentClawed, 'reversed');
+  });
+  test('sent with nobody vouching is still unresolved, not reversed', () => {
+    assert.equal(r.vSentUnvouched, 'unresolved');
+  });
+  test('pending + never paid is still failed', () => {
+    assert.equal(r.vPendingNeverPaid, 'failed');
+  });
+  test('pending with nobody vouching is still unresolved, not failed', () => {
+    assert.equal(r.vPendingUnvouched, 'unresolved');
+  });
+  test('a spend that never had a transfer still keeps none', () => {
+    assert.equal(r.vNone, 'none');
   });
 });
