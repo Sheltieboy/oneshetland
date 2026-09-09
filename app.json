@@ -124,7 +124,7 @@
     },
     "owner": "darrenfullerton",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/505d7724-8b86-493d-973e-45c44011157f"
