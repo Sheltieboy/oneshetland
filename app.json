@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.oneshetland.app",
-      "buildNumber": "3",
+      "buildNumber": "38",
       "icon": "./assets/icon.png",
       "associatedDomains": [
         "applinks:oneshetland.com"

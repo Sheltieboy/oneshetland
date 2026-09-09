@@ -52,6 +52,11 @@ module.exports = {
     'PackageJsonAndroidAndIosScriptsIfNotContainRun',
     // Drops every remaining script — test lanes, typecheck, start/web.
     'PackageJsonScriptsAll',
+    // Drops expo.version, ios.buildNumber and android.versionCode. A TestFlight
+    // build number says nothing about native compatibility: without this, moving
+    // to 38 for a local Xcode archive minted a different runtime, and build 39
+    // would have minted another — orphaning every install from later updates.
+    'ExpoConfigVersions',
   ],
   extraSources: [
     {
