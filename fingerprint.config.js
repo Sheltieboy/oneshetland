@@ -46,6 +46,16 @@ const NATIVE_AFFECTING_SCRIPTS = [
 const scripts = pkg.scripts ?? {};
 
 module.exports = {
+  // RNMapsDefines.h is written by a react-native-maps CocoaPods script phase on
+  // every build: it caches whether the GoogleMaps pods are present, shipping as
+  // 1 and being rewritten to 0 the first time a project without them builds.
+  // Hashing it made the runtime change DURING the Xcode build, so the value
+  // baked into the binary could never match the one an update was published
+  // against. The condition it caches is driven by ios.config.googleMapsApiKey,
+  // which is hashed inside expoConfig — so turning iOS Google Maps on still
+  // moves the runtime. Only this one file is ignored; the rest of the module is
+  // still hashed, so upgrading react-native-maps is still caught.
+  ignorePaths: ['node_modules/react-native-maps/ios/AirMaps/RNMapsDefines.h'],
   sourceSkips: [
     // Drops `android`/`ios` when they are the stock `expo run:*` values. Already
     // the library default; named explicitly so the intent survives an upgrade.
