@@ -39,6 +39,7 @@ import {
   requestNfcTile, NFC_TILE_URL_PREFIX,
   isBusinessFeatured, TIER_LABELS, TIER_PRICE,
   fetchBusinessWalletReceipts,
+  refundBusinessWalletPayment,
   normalizeTiers,
   type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType, type RewardTier,
   type BusinessWalletReceipt,
@@ -1226,7 +1227,7 @@ export default function BusinessDashboardScreen() {
             plan nor switching Wallet off makes that money un-taken, so this is
             shown whenever there is anything to show. */}
         {walletReceipts.length > 0 && (
-          <WalletReceiptsCard receipts={walletReceipts} accentColor={S.color} />
+          <WalletReceiptsCard receipts={walletReceipts} accentColor={S.color} onRefunded={() => loadAll(activeBusiness)} />
         )}
 
         {/* ── Money & transactions — full statement + CSV export ── */}
@@ -1406,11 +1407,47 @@ function CommercialTermsAccepted({ feature, onDone }: { feature: string; onDone:
 // because their fee_pence is NULL.
 
 function WalletReceiptsCard({
-  receipts, accentColor,
+  receipts, accentColor, onRefunded,
 }: {
   receipts: BusinessWalletReceipt[];
   accentColor: string;
+  onRefunded: () => void;
 }) {
+  const [refunding, setRefunding] = useState<string | null>(null);
+
+  // Full only. wallet_reverse_debit returns the whole original spend and records
+  // exactly one reversal linked to it; a partial would have to be a loose credit
+  // with no link back to what it reverses.
+  function confirmRefund(r: BusinessWalletReceipt) {
+    Alert.alert(
+      'Refund this payment?',
+      `\u00A3${(r.gross_pence / 100).toFixed(2)} goes back to ${r.customer_first_name ?? 'the customer'}, `
+        + `and \u00A3${((r.net_pence ?? r.gross_pence) / 100).toFixed(2)} comes back off your payout. `
+        + 'Refunds are for the full amount and cannot be undone.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Refund in full',
+          style: 'destructive',
+          onPress: async () => {
+            setRefunding(r.id);
+            try {
+              await refundBusinessWalletPayment(r.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Refunded', 'The money is back in the customer\u2019s wallet.');
+              onRefunded();
+            } catch (e) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert('Not refunded', e instanceof Error ? e.message : 'Please try again.');
+            } finally {
+              setRefunding(null);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   // Week total = sum of net amounts for receipts in the last 7 days.
   // We sum gross when net is unknown (legacy rows) so the headline is
   // not artificially low — but flag it visually.
@@ -1472,6 +1509,16 @@ function WalletReceiptsCard({
                   </>
                 )}
               </View>
+              <TouchableOpacity
+                style={styles.receiptRefundBtn}
+                disabled={refunding !== null}
+                onPress={() => confirmRefund(r)}
+                activeOpacity={0.8}
+              >
+                {refunding === r.id
+                  ? <ActivityIndicator size="small" color={colors.textLight} />
+                  : <Text style={styles.receiptRefundText}>Refund</Text>}
+              </TouchableOpacity>
             </View>
           ))}
         </View>
@@ -1827,6 +1874,9 @@ const styles = StyleSheet.create({
   // Wallet receipts list
   receiptList:       { marginTop: 12 },
   receiptRow:        { paddingVertical: 10, gap: 4 },
+  receiptRefundBtn:  { alignSelf: 'flex-start', marginTop: 6, paddingVertical: 5, paddingHorizontal: 10,
+                       borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border },
+  receiptRefundText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textLight },
   receiptRowBorder:  { borderBottomWidth: 1, borderBottomColor: colors.border },
   receiptTopLine:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   receiptWho:        { flex: 1, fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },

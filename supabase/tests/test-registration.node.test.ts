@@ -58,10 +58,9 @@ const EXCLUDED: Record<string, string> = {
 
 /** Suites that must never join the routine lane, and why. */
 const FIXTURE_ONLY: Record<string, string> = {
-  'rate-limit-concurrency.node.test.ts':
-    'Needs genuinely separate OS processes to prove two callers contend; the ' +
-    'file documents this itself.',
-  'wallet-attempts.node.test.ts': 'Two connections must contend over one wallet.',
+  'wallet-attempts.node.test.ts':
+    'Commits inside one rolled-back transaction against production shapes; the ' +
+    'two-connection proof moved to the isolated lane.',
   'booking-terminal-state.node.test.ts':
     'Builds an INACTIVE fixture business with its own bookings and removes it; ' +
     'the transitions it proves have to be committed to be seen.',
@@ -211,5 +210,145 @@ describe('the retired reconciliation snapshot stays retired', () => {
       'the history this file was kept for has been edited away');
     assert.match(src, /ALLOWLIST NEGATION/,
       'the header no longer explains why the file must not run');
+  });
+});
+
+/**
+ * The lane that talks to PRODUCTION may not move money.
+ *
+ * On 2026-09-08 the wallet-integrity concurrency proof left a real customer
+ * account holding a fabricated £38.00 balance with no top-up behind it. It was
+ * not a coding mistake: the proof needs two COMMITTED connections, so it cannot
+ * roll itself back, and it relied on cleanup that never ran when the Supabase
+ * CLI's login role failed mid-run. Worse, its account picker skips any profile
+ * that already has wallet rows, so the polluted account would be passed over
+ * next time and a fresh real account chosen — the damage accumulated.
+ *
+ * Those proofs now live in the isolated lane. This is the guard that stops them
+ * coming back, and it bites statically, before a single row is written.
+ *
+ * WHAT IS CHECKED, AND WHY THESE TWO THINGS
+ *
+ * Not "any write": the production lanes legitimately INSERT wallet rows inside
+ * `begin; … rollback;` fixtures, and their begin and rollback live in shared
+ * FIXTURE/END constants far from the statement, so no textual span check can
+ * tell those apart without lying. These two signatures can:
+ *
+ *   1  a DELETE against a wallet money table. A rolled-back fixture never needs
+ *      one; the removed proofs opened with three of them, to clear a real
+ *      account before overwriting it.
+ *   2  a cleanup hook that mentions a wallet money table. That is the literal
+ *      shape of "this suite depends on tidying production afterwards", which is
+ *      the assumption that failed.
+ */
+const MONEY_TABLE = String.raw`(public\.)?local_wallet_(balances|transactions)\b`;
+const MONEY_DELETE = new RegExp(String.raw`delete\s+from\s+` + MONEY_TABLE, 'gi');
+const PRODUCTION_LANES = ['test', 'test:fixtures'];
+
+/** The body of every after()/afterEach() hook in a file. */
+function cleanupHooks(src: string): string {
+  let out = '';
+  for (const m of src.matchAll(/\bafter(?:Each)?\s*\(/g)) {
+    let i = src.indexOf('(', m.index! + m[0].length - 1), depth = 0, start = i;
+    for (; i < src.length; i++) {
+      if (src[i] === '(') depth++;
+      else if (src[i] === ')') { depth--; if (depth === 0) break; }
+    }
+    out += src.slice(start, i + 1);
+  }
+  return out;
+}
+
+describe('the production lanes never move real money', () => {
+  test('the lanes being checked actually exist', () => {
+    const l = lanes();
+    for (const n of PRODUCTION_LANES) assert.ok(l[n], `lane ${n} is gone, so this guard checks nothing`);
+  });
+
+  for (const lane of PRODUCTION_LANES) {
+    test(`no suite in ${lane} deletes from a Wallet money table`, () => {
+      const offenders: string[] = [];
+      for (const f of filesIn(lanes()[lane])) {
+        const hits = readFileSync(join(REPO_ROOT, f), 'utf8').match(MONEY_DELETE);
+        if (hits) offenders.push(`${f}: ${hits.length} delete(s)`);
+      }
+      assert.deepEqual(offenders, [],
+        'a production-targeted suite deletes real Wallet rows. A rolled-back ' +
+        'fixture never needs to. Move the proof to the isolated lane ' +
+        '(scripts/isolated-pg.mjs), where the users are disposable.');
+    });
+
+    test(`no suite in ${lane} tidies Wallet rows up afterwards`, () => {
+      const offenders: string[] = [];
+      for (const f of filesIn(lanes()[lane])) {
+        const hooks = cleanupHooks(readFileSync(join(REPO_ROOT, f), 'utf8'));
+        if (new RegExp(MONEY_TABLE, 'i').test(hooks)) offenders.push(f);
+      }
+      assert.deepEqual(offenders, [],
+        'a production-targeted suite depends on a cleanup hook to restore real ' +
+        'Wallet state. That is exactly the assumption that failed on ' +
+        '2026-09-08 and left fabricated money on a real account.');
+    });
+  }
+
+  /**
+   * No concurrency proof may run against production at all.
+   *
+   * A proof that needs two connections cannot roll itself back — that is the
+   * whole point of it — so it must seed real rows and tidy up afterwards. Every
+   * one of them was doing exactly that: the AI quota rewrote a real person's
+   * hourly counter, booking metering created a business and twenty bookings
+   * under a real owner, ticket check-in created events and tickets. They also
+   * happened to be the tests that could not survive the Supabase CLI's login
+   * role failing, which is how the wallet one came to leave fabricated money
+   * behind on 2026-09-08.
+   *
+   * The signature is deliberately structural rather than semantic: a suite that
+   * builds an async database helper (execFileAsync) AND fans out with
+   * Promise.all is running two connections at once. Nothing else in these lanes
+   * does that, so it does not misfire.
+   */
+  for (const lane of PRODUCTION_LANES) {
+    test(`no suite in ${lane} races two database connections`, () => {
+      const offenders = filesIn(lanes()[lane]).filter((f) => {
+        // This file names both strings in order to look for them, and touches no
+        // database at all. Excluding it keeps the guard from flagging itself.
+        if (f.endsWith('test-registration.node.test.ts')) return false;
+        const src = readFileSync(join(REPO_ROOT, f), 'utf8');
+        return src.includes('execFileAsync') && src.includes('Promise.all');
+      });
+      assert.deepEqual(offenders, [],
+        'a production-targeted suite runs two database connections at once. A ' +
+        'proof that needs two committed connections cannot roll itself back, so ' +
+        'it must seed and then tidy real rows — and an interrupted run leaves ' +
+        'them behind. Move it to supabase/tests/production-concurrency-proofs' +
+        '.node.test.ts in the isolated lane (scripts/isolated-pg.mjs).');
+    });
+  }
+
+  test('the concurrency proofs still exist, in the isolated lane', () => {
+    const iso = readFileSync(join(REPO_ROOT, 'scripts/isolated-pg.mjs'), 'utf8');
+    assert.match(iso, /wallet-concurrency\.node\.test\.ts/,
+      'the wallet concurrency proofs were deleted rather than moved');
+    assert.match(iso, /production-concurrency-proofs\.node\.test\.ts/,
+      'the moved production concurrency proofs were deleted rather than moved');
+    const moved = readFileSync(join(REPO_ROOT, 'supabase/tests/production-concurrency-proofs.node.test.ts'), 'utf8');
+    for (const proof of [
+      'only one of them gets it',                                   // AI quota
+      'ten simultaneous connections cannot exceed a ceiling of six', // limiter
+      'exactly one delivery may proceed',                            // Stripe
+      'two concurrent workers never claim the same booking',         // metering
+      'exactly one entrance admits the attendee',                    // ticket door
+      'when the refund wins, the door is closed',                    // refund vs scan
+    ]) assert.ok(moved.includes(proof), `the "${proof}" proof did not survive the move`);
+    const src = readFileSync(join(REPO_ROOT, 'supabase/tests/wallet-concurrency.node.test.ts'), 'utf8');
+    for (const proof of [
+      'a wallet with 1000p cannot pay 800p twice',
+      'even from two connections',
+      'exactly one copy may claim the reference',
+      'and only one of them debits',
+    ]) assert.ok(src.includes(proof), `the "${proof}" proof did not survive the move`);
+    assert.match(src, /refusing to run against anything that looks like Supabase/,
+      'the moved proofs no longer refuse a production DSN');
   });
 });

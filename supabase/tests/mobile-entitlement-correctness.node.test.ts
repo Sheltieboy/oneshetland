@@ -296,10 +296,24 @@ describe('nothing outside correctness moved', () => {
     assert.match(d, /\{attention\.length > 0 && \(/);
   });
 
-  test('no web source was changed', () => {
+  test('web changes stay inside the approved refund-parity files', () => {
+    // Phase 3B was mobile-only and this guard existed to keep it that way. The
+    // business Wallet refund work is the one approved exception: a merchant who
+    // manages money in the web Business Suite has to be able to refund there
+    // too, and a refunded pass has to read truthfully on both clients. So the
+    // guard is NARROWED to exactly those files rather than dropped — anything
+    // else appearing in the web tree still fails here.
+    const APPROVED_WEB = [
+      'components/business/WalletManager.tsx',   // merchant Refund action
+      'lib/passes-data.ts',                      // pass refund_state model
+      'app/account/passes/PassesClient.tsx',     // pass refund_state on screen
+    ];
     const out = execFileSync('git', ['status', '--porcelain'],
       { cwd: join(REPO_ROOT, '..', 'oneshetland-web'), encoding: 'utf8' });
-    assert.equal(out.trim(), '', 'Phase 3B is mobile-only');
+    const changed = out.split('\n').map((l) => l.trim()).filter(Boolean)
+      .map((l) => l.replace(/^\S+\s+/, '').replace(/^"|"$/g, ''));
+    assert.deepEqual(changed.filter((f) => !APPROVED_WEB.includes(f)), [],
+      'Phase 3B is mobile-only apart from the approved business Wallet refund parity files');
   });
 
   test('backend enforcement is exactly where it was', () => {
@@ -309,7 +323,19 @@ describe('nothing outside correctness moved', () => {
        order by c.relname;`);
     assert.deepEqual(rows.map((r) => r.tbl),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
-       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
-       'local_wallet_transactions', 'products']);
+       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers', 'products']);
+    // local_wallet_transactions left this list when 20261006120000 retired
+    // tg_loyalty_earn_points. The gate did not leave with it: the tier check
+    // moved into loyalty_award_for_wallet_spend, which the four fulfilment
+    // callers invoke once the merchant has actually been paid. Asserted here so
+    // shrinking the list above can never quietly mean losing enforcement.
+    const [movedGate] = sql(`select pg_get_functiondef('public.loyalty_award_for_wallet_spend'::regproc) as d;`);
+    assert.match(String(movedGate.d), /business_meets_tier\(v_txn\.business_id, 'pro'\)/,
+      'the wallet-points tier gate vanished along with the trigger');
+    const [retired] = sql(`select count(*)::int as n from pg_proc p
+       join pg_namespace n2 on n2.oid = p.pronamespace
+      where n2.nspname='public' and p.proname='tg_loyalty_earn_points';`);
+    assert.equal(Number(retired.n), 0, 'the retired award trigger is back');
+
   });
 });

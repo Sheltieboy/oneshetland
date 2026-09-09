@@ -378,90 +378,28 @@ rollback;`);
   test('reconciliation is exact', () => assertAllPass(rows, 'reconciliation'));
 });
 
-// ── 2. Two spends at once ───────────────────────────────────────────────────
-
-describe('two wallet spends arriving together', () => {
-  let user = '';
-
-  const cleanup = () => query(`
-    delete from public.local_wallet_transactions where idempotency_key like 'wrace%';
-    delete from public.local_wallet_balances where user_id in (
-      select b.user_id from public.local_wallet_balances b
-       where not exists (select 1 from public.local_wallet_transactions t where t.user_id = b.user_id)
-         and b.user_id = '${user || NIL}');
-    select 1;`);
-
-  before(() => {
-    const r = query(`select ${SPARE_USER}::text as u;`);
-    user = String(r.u);
-    assert.match(user, /^[0-9a-f-]{36}$/, 'no spare profile without a wallet was available');
-  });
-
-  after(() => {
-    query(`delete from public.local_wallet_transactions where user_id='${user}';
-           delete from public.local_wallet_balances where user_id='${user}'; select 1;`);
-    const left = query(`select count(*)::int as n from public.local_wallet_balances where user_id='${user}';`);
-    assert.equal(left.n, 0, 'this suite left its test wallet behind');
-  });
-
-  test('a wallet with 1000p cannot pay 800p twice', async () => {
-    query(`delete from public.local_wallet_transactions where user_id='${user}';
-           delete from public.local_wallet_balances where user_id='${user}';
-           insert into public.local_wallet_balances (user_id, balance_pence) values ('${user}', 1000); select 1;`);
-
-    // A takes the row lock and holds it. B blocks, then re-tests the guard
-    // against the committed balance — 200p, which cannot cover 800p.
-    const a = queryAsync(`begin;
-create temp table x as select * from public.wallet_debit_with_ledger('${user}', 800, 0, 'spend', null, 'race A', 'wrace-a', null, false);
-select pg_sleep(6);
-select case when insufficient then 'insufficient' else 'ok' end r from x;
-commit;`);
-    const b = queryAsync(`select pg_sleep(3);
-select case when insufficient then 'insufficient' else 'ok' end as r
-  from public.wallet_debit_with_ledger('${user}', 800, 0, 'spend', null, 'race B', 'wrace-b', null, false);`);
-
-    const [ra, rb] = await Promise.all([a, b]);
-    const results = [String(ra.r), String(rb.r)];
-    const wins = results.filter((x) => x === 'ok').length;
-
-    assert.equal(wins, 1, `both spends succeeded — the wallet was overdrawn. Got ${JSON.stringify(results)}`);
-
-    const st = query(`select b.balance_pence,
-      (select count(*)::int from public.local_wallet_transactions t where t.user_id='${user}') rows_,
-      (select coalesce(sum(t.amount_pence),0)::int from public.local_wallet_transactions t where t.user_id='${user}') sum_
-      from public.local_wallet_balances b where b.user_id='${user}';`);
-    assert.equal(st.balance_pence, 200, 'the balance is not what one 800p spend leaves behind');
-    assert.ok((st.balance_pence as number) >= 0, 'the wallet went negative');
-    assert.equal(st.rows_, 1, 'the losing spend still wrote an accounting entry');
-    assert.equal(st.sum_, -800, 'the ledger does not match the one spend that happened');
-  });
-
-  test('one identifier debits once even from two connections', async () => {
-    query(`delete from public.local_wallet_transactions where user_id='${user}';
-           delete from public.local_wallet_balances where user_id='${user}';
-           insert into public.local_wallet_balances (user_id, balance_pence) values ('${user}', 5000); select 1;`);
-
-    const a = queryAsync(`begin;
-create temp table y as select * from public.wallet_debit_with_ledger('${user}', 1200, 0, 'spend', null, 'dup race', 'wrace-dup', null, false);
-select pg_sleep(6);
-select case when already_applied then 'already' else 'applied' end r from y;
-commit;`);
-    const b = queryAsync(`select pg_sleep(3);
-select case when already_applied then 'already' else 'applied' end as r
-  from public.wallet_debit_with_ledger('${user}', 1200, 0, 'spend', null, 'dup race', 'wrace-dup', null, false);`);
-
-    const [ra, rb] = await Promise.all([a, b]);
-    const results = [String(ra.r), String(rb.r)];
-    assert.equal(results.filter((x) => x === 'applied').length, 1,
-      `one payment identifier debited twice. Got ${JSON.stringify(results)}`);
-
-    const st = query(`select b.balance_pence,
-      (select count(*)::int from public.local_wallet_transactions t where t.user_id='${user}') rows_
-      from public.local_wallet_balances b where b.user_id='${user}';`);
-    assert.equal(st.balance_pence, 3800, 'the money moved more than once');
-    assert.equal(st.rows_, 1, 'the same payment wrote two accounting entries');
-  });
-});
+// ── 2. Two spends at once — MOVED ───────────────────────────────────────────
+//
+// The concurrency proof that used to live here raced two committed connections
+// against a wallet, which means it could not roll itself back. It did that
+// against PRODUCTION: it picked a real signed-up profile with no wallet
+// history, deleted what it found, inserted a synthetic balance, and tidied up
+// afterwards.
+//
+// On 2026-09-08 the tidying did not happen — the Supabase CLI's temporary login
+// role started failing mid-run — and a real customer account was left holding a
+// fabricated £38.00 balance with no top-up behind it. The account picker
+// requires a profile with NO wallet transactions, so the polluted account would
+// be skipped next run and a fresh real account chosen: the damage accumulated
+// rather than healing.
+//
+// The proof is unchanged and now lives in the isolated lane, where the users are
+// invented and the whole cluster is destroyed in a finally:
+//
+//     supabase/tests/wallet-concurrency.node.test.ts   (npm run test:isolated)
+//
+// Nothing in THIS lane may write to local_wallet_balances or
+// local_wallet_transactions. test-registration.node.test.ts enforces that.
 
 // ── 3. None of it is reachable from a browser ───────────────────────────────
 

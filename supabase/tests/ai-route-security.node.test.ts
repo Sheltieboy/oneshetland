@@ -276,56 +276,18 @@ rollback;`);
   });
 });
 
-// ── 3. Concurrency cannot beat the ceiling ──────────────────────────────────
-
-describe('two AI requests at the last slot', () => {
-  let user = '';
-
-  before(() => {
-    const r = query(`select (select id::text from public.profiles order by id offset 2 limit 1) as u;`);
-    user = String(r.u);
-    assert.match(user, /^[0-9a-f-]{36}$/, 'no spare profile available');
-  });
-
-  after(() => {
-    query(`delete from public.ai_usage where user_id='${user}'; select 1;`);
-    const left = query(`select count(*)::int as n from public.ai_usage where user_id='${user}';`);
-    assert.equal(left.n, 0, 'the test left usage rows behind');
-  });
-
-  test('only one of them gets it', async () => {
-    // Park the user one slot below the hourly aggregate, then have two requests
-    // arrive together. If the claim were a read-then-write, both would see 29.
-    query(`delete from public.ai_usage where user_id='${user}';
-      insert into public.ai_usage (user_id, bucket, total, per_route)
-      values ('${user}', date_trunc('hour', now()), 29, '{"parse-job": 1}'::jsonb); select 1;`);
-
-    // A helper that adopts the user's identity the way PostgREST does, so both
-    // connections claim as the same person.
-    const claimAs = (hold: boolean) => `
-create or replace function pg_temp.claim_as() returns text language plpgsql as $f$
-declare v boolean;
-begin
-  perform set_config('request.jwt.claims', json_build_object('sub','${user}','role','authenticated')::text, true);
-  select allowed into v from public.claim_ai_request('parse-job');
-  return case when v then 'allowed' else 'refused' end;
-end $f$;
-${hold ? `begin;
-create temp table x as select pg_temp.claim_as() r;
-select pg_sleep(6);
-select r from x;
-commit;` : `select pg_sleep(3);
-select pg_temp.claim_as() as r;`}`;
-
-    const [ra, rb] = await Promise.all([queryAsync(claimAs(true)), queryAsync(claimAs(false))]);
-    const results = [String(ra.r), String(rb.r)];
-    assert.equal(results.filter((x) => x === 'allowed').length, 1,
-      `both concurrent requests took the last slot. Got ${JSON.stringify(results)}`);
-
-    const st = query(`select total::int as t from public.ai_usage where user_id='${user}' and bucket=date_trunc('hour', now());`);
-    assert.equal(st.t, 30, `the ceiling was exceeded — total is ${st.t}, not 30`);
-  });
-});
+// ── 3. Two AI requests at the last slot — MOVED ────────────────────────────
+//
+// The proof that used to live here raced two COMMITTED connections against
+// production. It could not roll itself back, so it seeded real rows and relied
+// on an after() hook to remove them — the assumption that failed on 2026-09-08
+// and left fabricated money on a real customer account.
+//
+// It is unchanged and now lives in the isolated lane, where the identities are
+// invented and the cluster is destroyed in a finally:
+//
+//     supabase/tests/production-concurrency-proofs.node.test.ts
+//     (npm run test:isolated)
 
 // ── 4. The live boundary ────────────────────────────────────────────────────
 

@@ -955,6 +955,24 @@ export async function fetchBusinessWalletReceipts(
   return (data ?? []) as BusinessWalletReceipt[];
 }
 
+/**
+ * Give a business Wallet payment back, in full.
+ *
+ * The only thing sent is the ledger row's id. Business, customer, Stripe
+ * account and the purchase to void are all resolved server-side — a caller
+ * cannot name the business whose money this is, because it is never asked.
+ */
+export async function refundBusinessWalletPayment(
+  transactionId: string,
+  reason?: string,
+): Promise<{ ok: boolean; already_complete: boolean; amount_pence: number }> {
+  const { data, error } = await supabase.functions.invoke('wallet-refund-business', {
+    body: { transaction_id: transactionId, reason },
+  });
+  if (error) throw await fnErr(error, 'Could not refund that payment.');
+  return data as { ok: boolean; already_complete: boolean; amount_pence: number };
+}
+
 // ── Business owner: rotating code ─────────────────────────────────────────────
 
 export async function fetchBusinessCode(businessId: string): Promise<BusinessCode | null> {
@@ -1575,9 +1593,21 @@ export async function fetchActiveDiscount(businessId: string): Promise<DiscountG
  * an unexpired filter — so a pass vanished from the customer's account the
  * moment they finished using it.
  */
-export type PassStatus = 'active' | 'used' | 'expired';
+export type PassStatus = 'active' | 'used' | 'expired' | 'refund_pending' | 'refunded';
 
-export function classifyPass(usesRemaining: number, expiresAt: string | null): PassStatus {
+/**
+ * A refunded pass keeps its uses on purpose: "three bought, none used, refunded"
+ * is the truth, and zeroing them would read as exhaustion. So refund state has
+ * to be asked about FIRST — otherwise a refunded pass with uses left classifies
+ * as `active` and the customer is shown something they cannot redeem.
+ */
+export function classifyPass(
+  usesRemaining: number,
+  expiresAt: string | null,
+  refundState: string | null = 'none',
+): PassStatus {
+  if (refundState === 'refunded') return 'refunded';
+  if (refundState === 'pending') return 'refund_pending';
   if (usesRemaining <= 0) return 'used';
   if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) return 'expired';
   return 'active';
@@ -1596,6 +1626,8 @@ export interface MyPass {
   /** True if this purchase was acquired by claiming a gift. */
   from_gift:         boolean;
   fully_used_at:     string | null;
+  /** none | pending | refunded — server-managed; see the refund migration. */
+  refund_state:      string;
   status:            PassStatus;
 }
 
@@ -1607,7 +1639,7 @@ export async function fetchMyPasses(userId: string): Promise<MyPass[]> {
     .from('book_unit_purchases')
     .select(`
       id, item_id, business_id, uses_remaining, paid_amount_pence,
-      expires_at, created_at, gift_id, fully_used_at,
+      expires_at, created_at, gift_id, fully_used_at, refund_state,
       item:book_unit_items ( name ),
       business:local_businesses ( name )
     `)
@@ -1627,7 +1659,8 @@ export async function fetchMyPasses(userId: string): Promise<MyPass[]> {
     business_name:     r.business?.name ?? null,
     from_gift:         !!r.gift_id,
     fully_used_at:     r.fully_used_at ?? null,
-    status:            classifyPass(r.uses_remaining, r.expires_at ?? null),
+    refund_state:      r.refund_state ?? 'none',
+    status:            classifyPass(r.uses_remaining, r.expires_at ?? null, r.refund_state ?? 'none'),
   }));
 }
 

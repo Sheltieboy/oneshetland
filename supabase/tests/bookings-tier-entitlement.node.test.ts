@@ -446,8 +446,20 @@ describe('deployed shape and composition', () => {
     // Offers and Loyalty still are not.
     assert.deepEqual(rows.map((r) => r.tbl).sort(),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
-       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
-       'local_wallet_transactions', 'products'],
+       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers', 'products'],
       'this is the complete set of tier-enforced tables');
+    // local_wallet_transactions left this list when 20261006120000 retired
+    // tg_loyalty_earn_points. The gate did not leave with it: the tier check
+    // moved into loyalty_award_for_wallet_spend, which the four fulfilment
+    // callers invoke once the merchant has actually been paid. Asserted here so
+    // shrinking the list above can never quietly mean losing enforcement.
+    const [movedGate] = sql(`select pg_get_functiondef('public.loyalty_award_for_wallet_spend'::regproc) as d;`);
+    assert.match(String(movedGate.d), /business_meets_tier\(v_txn\.business_id, 'pro'\)/,
+      'the wallet-points tier gate vanished along with the trigger');
+    const [retired] = sql(`select count(*)::int as n from pg_proc p
+       join pg_namespace n2 on n2.oid = p.pronamespace
+      where n2.nspname='public' and p.proname='tg_loyalty_earn_points';`);
+    assert.equal(Number(retired.n), 0, 'the retired award trigger is back');
+
   });
 });

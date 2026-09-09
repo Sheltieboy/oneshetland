@@ -111,6 +111,13 @@ serve(async (req) => {
     } else if (kind === 'pass') {
       const { data: pass } = await svc.from('book_unit_purchases').select('*, item:book_unit_items(name)').eq('id', ref_id).single();
       if (!pass || pass.owner_id !== user.id) return json({ error: 'Not your pass' }, 403);
+      // A refunded pass keeps its uses on purpose — "three bought, none used,
+      // refunded" is the truth, and zeroing them would read as exhaustion. So
+      // the uses check below cannot catch this one, and without it the customer
+      // gets a code that redeem_pass_atomic then refuses at the till.
+      if ((pass.refund_state ?? 'none') !== 'none') {
+        return json({ error: 'This pass has been refunded' }, 410);
+      }
       if ((pass.uses_remaining ?? 0) <= 0) return json({ error: 'No uses left on this pass' }, 410);
       if (pass.expires_at && new Date(pass.expires_at).getTime() < Date.now()) {
         return json({ error: 'This pass has expired' }, 410);

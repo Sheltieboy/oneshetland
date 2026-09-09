@@ -525,6 +525,9 @@ serve(async (req) => {
         .from('book_unit_purchases')
         .select('id, owner_id, business:local_businesses(name), item:book_unit_items(name)')
         .gt('uses_remaining', 0)
+        // A refunded pass keeps its uses, so it would otherwise be chased with
+        // "use it before you lose it" for something already paid back.
+        .eq('refund_state', 'none')
         .is('expiry_reminded_at', null)
         .not('expires_at', 'is', null)
         .gt('expires_at', nowIso)

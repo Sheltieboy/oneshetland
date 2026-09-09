@@ -34,6 +34,9 @@ const SUITES = [
   'supabase/tests/loyalty-redemption-atomicity.node.test.ts',
   'supabase/tests/loyalty-earning-atomicity.node.test.ts',
   'supabase/tests/wallet-loyalty-points.node.test.ts',
+  'supabase/tests/business-wallet-refunds.node.test.ts',
+  'supabase/tests/wallet-concurrency.node.test.ts',
+  'supabase/tests/production-concurrency-proofs.node.test.ts',
 ];
 
 // macOS ships a locale that makes the postmaster multithread during startup

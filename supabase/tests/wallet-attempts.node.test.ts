@@ -258,75 +258,16 @@ rollback;`);
   test('all four wallet-checkout flows', () => assertAllPass(rows, 'four flows'));
 });
 
-// ── 2. Two copies of one attempt arriving together ──────────────────────────
-
-describe('two copies of one purchase arriving together', () => {
-  let user = '';
-
-  before(() => {
-    const r = query(`select ${SPARE_USER}::text as u;`);
-    user = String(r.u);
-    assert.match(user, /^[0-9a-f-]{36}$/, 'no spare profile without a wallet was available');
-  });
-
-  after(() => {
-    query(`delete from public.wallet_payment_claims where user_id='${user}';
-           delete from public.local_wallet_transactions where user_id='${user}';
-           delete from public.local_wallet_balances where user_id='${user}'; select 1;`);
-    const left = query(`select count(*)::int as n from public.local_wallet_balances where user_id='${user}';`);
-    assert.equal(left.n, 0, 'this suite left its test wallet behind');
-  });
-
-  test('exactly one copy may claim the reference', async () => {
-    query(`delete from public.wallet_payment_claims where client_request_id like 'RACE-%';
-           delete from public.local_wallet_transactions where user_id='${user}';
-           delete from public.local_wallet_balances where user_id='${user}';
-           insert into public.local_wallet_balances (user_id, balance_pence) values ('${user}', 10000); select 1;`);
-
-    const a = queryAsync(`begin;
-create temp table x as select * from public.claim_wallet_attempt('RACE-1','${user}','fp-race');
-select pg_sleep(6);
-select outcome r from x;
-commit;`);
-    const b = queryAsync(`select pg_sleep(3);
-select outcome as r from public.claim_wallet_attempt('RACE-1','${user}','fp-race');`);
-
-    const [ra, rb] = await Promise.all([a, b]);
-    const results = [String(ra.r), String(rb.r)];
-    assert.equal(results.filter((x) => x === 'claimed').length, 1,
-      `both copies claimed the same reference. Got ${JSON.stringify(results)}`);
-
-    const st = query(`select count(*)::int as n from public.wallet_payment_claims where client_request_id='RACE-1';`);
-    assert.equal(st.n, 1, 'the registry holds more than one row for one reference');
-  });
-
-  test('and only one of them debits', async () => {
-    query(`delete from public.wallet_payment_claims where client_request_id like 'RACE-%';
-           delete from public.local_wallet_transactions where user_id='${user}';
-           delete from public.local_wallet_balances where user_id='${user}';
-           insert into public.local_wallet_balances (user_id, balance_pence) values ('${user}', 10000); select 1;`);
-
-    const a = queryAsync(`begin;
-create temp table y as select * from public.wallet_debit_with_ledger('${user}', 2500, 0, 'spend', null, 'race pay', 'wallet-attempt:RACE-2', null, true);
-select pg_sleep(6);
-select case when already_applied then 'already' else 'applied' end r from y;
-commit;`);
-    const b = queryAsync(`select pg_sleep(3);
-select case when already_applied then 'already' else 'applied' end as r
-  from public.wallet_debit_with_ledger('${user}', 2500, 0, 'spend', null, 'race pay', 'wallet-attempt:RACE-2', null, true);`);
-
-    const [ra, rb] = await Promise.all([a, b]);
-    const results = [String(ra.r), String(rb.r)];
-    assert.equal(results.filter((x) => x === 'applied').length, 1,
-      `one purchase debited twice. Got ${JSON.stringify(results)}`);
-
-    const st = query(`select b.balance_pence,
-      (select count(*)::int from public.local_wallet_transactions t where t.user_id='${user}') rows_
-      from public.local_wallet_balances b where b.user_id='${user}';`);
-    assert.equal(st.balance_pence, 7500, 'the money moved more than once');
-    assert.equal(st.rows_, 1, 'one purchase wrote two accounting entries');
-  });
-});
+// ── 2. Two copies of one attempt arriving together — MOVED ──────────────────
+//
+// Same story as wallet-integrity section 2: two committed connections cannot be
+// rolled back, and this raced them against a real production profile's wallet.
+// The proof is unchanged and now lives in the isolated lane:
+//
+//     supabase/tests/wallet-concurrency.node.test.ts   (npm run test:isolated)
+//
+// Nothing in THIS lane may write to local_wallet_balances or
+// local_wallet_transactions. test-registration.node.test.ts enforces that.
 
 // ── 3. No client may mint a reference inside its API helper ─────────────────
 

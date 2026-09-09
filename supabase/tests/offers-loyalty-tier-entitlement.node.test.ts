@@ -344,15 +344,28 @@ describe('a downgrade does not reach the customer', () => {
 
 describe('a lapsed plan stops the points, not the payment', () => {
   const points = `select coalesce(sum(points_balance),0) from public.local_loyalty_cards where business_id='${B.lapsing}'`;
-  const spend = (n: number) => `insert into public.local_wallet_transactions (user_id,business_id,type,amount_pence)
-       values ('${CUST}','${B.lapsing}','spend',${n})`;
+  const SP_PRO  = 'f4f4e001-1111-1111-1111-111111111111';
+  const SP_LAPS = 'f4f4e002-2222-2222-2222-222222222222';
+  // Spends are stored NEGATIVE. The retired trigger required amount_pence > 0,
+  // which is why it never fired once in production; the RPC that replaced it
+  // reads the magnitude and nets the platform fee off it, so this fixture is
+  // finally the shape a real spend has.
+  const spend = (id: string, n: number) =>
+    `insert into public.local_wallet_transactions (id,user_id,business_id,type,amount_pence)
+       values ('${id}','${CUST}','${B.lapsing}','spend',${n})`;
+  // The award is no longer a side effect of the insert. It is called at
+  // fulfilment, once the merchant has actually been paid, and it is there that
+  // the tier is now asked about.
+  const award = (id: string) => `select public.loyalty_award_for_wallet_spend('${id}')`;
   const rows = sql(FIXTURE + asServer +
     `insert into public.local_loyalty_programs (id,business_id,type,points_per_pound,is_active)
        values ('${PROG}','${B.lapsing}','points',10,true);` +
-    attempt('spend while Pro', spend(500)) +
+    attempt('spend while Pro', spend(SP_PRO, -500)) +
+    measure('award while Pro', `${award(SP_PRO)} ->> 'ok'`) +
     measure('points while Pro', points) +
     lapse(B.lapsing) +
-    attempt('spend once lapsed', spend(500)) +
+    attempt('spend once lapsed', spend(SP_LAPS, -500)) +
+    measure('award once lapsed', `${award(SP_LAPS)} ->> 'error'`) +
     measure('points once lapsed', points) +
     measure('both payments landed',
       `select count(*) from public.local_wallet_transactions where business_id='${B.lapsing}' and type='spend'`) +
@@ -360,6 +373,7 @@ describe('a lapsed plan stops the points, not the payment', () => {
 
   test('the control passes — a Pro shop awards points on a spend', () => {
     allowed(rows, 'spend while Pro');
+    assert.equal(outcome(rows, 'award while Pro'), 'true', 'the award refused a Pro shop');
     assert.equal(outcome(rows, 'points while Pro'), '50');
   });
   test('the payment still completes once the plan lapses', () => {
@@ -367,8 +381,13 @@ describe('a lapsed plan stops the points, not the payment', () => {
     assert.equal(outcome(rows, 'both payments landed'), '2',
       'a loyalty rule must never roll back a customer payment');
   });
-  test('but no new points are minted', () =>
-    assert.equal(outcome(rows, 'points once lapsed'), '50'));
+  test('but no new points are minted', () => {
+    // Named, not merely absent: a zero here could just as easily mean the award
+    // path is broken. It has to refuse for the reason we think it refuses.
+    assert.equal(outcome(rows, 'award once lapsed'), 'business_not_pro',
+      'the award must refuse on tier, not by accident');
+    assert.equal(outcome(rows, 'points once lapsed'), '50');
+  });
 
   test('the award path skips rather than raises', () => {
     // The trigger is retired by 20261006120000 — it never fired, and it hung
@@ -572,13 +591,24 @@ describe('the rest of the platform is where it was', () => {
     assert.deepEqual(tables.sort(),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
        'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
-       // Not Wallet enforcement. tg_loyalty_earn_points is a LOYALTY award path
-       // that happens to hang off a wallet insert, and it now skips the award
-       // below tier instead of awarding. Wallet's own guard is on
-       // local_businesses and is untouched by this slice.
-       'local_wallet_transactions',
+       // local_wallet_transactions used to sit here because tg_loyalty_earn_points
+       // was a LOYALTY award path hanging off a wallet insert. 20261006120000
+       // retired it; Wallet's own guard is on local_businesses and is untouched.
        'products'],
       'this is the complete list of tier-enforced tables');
+    // local_wallet_transactions left this list when 20261006120000 retired
+    // tg_loyalty_earn_points. The gate did not leave with it: the tier check
+    // moved into loyalty_award_for_wallet_spend, which the four fulfilment
+    // callers invoke once the merchant has actually been paid. Asserted here so
+    // shrinking the list above can never quietly mean losing enforcement.
+    const [movedGate] = sql(`select pg_get_functiondef('public.loyalty_award_for_wallet_spend'::regproc) as d;`);
+    assert.match(String(movedGate.d), /business_meets_tier\(v_txn\.business_id, 'pro'\)/,
+      'the wallet-points tier gate vanished along with the trigger');
+    const [retired] = sql(`select count(*)::int as n from pg_proc p
+       join pg_namespace n2 on n2.oid = p.pronamespace
+      where n2.nspname='public' and p.proname='tg_loyalty_earn_points';`);
+    assert.equal(Number(retired.n), 0, 'the retired award trigger is back');
+
   });
 
   test('35. no Business 2.0 capability or onboarding UI was introduced', () => {
