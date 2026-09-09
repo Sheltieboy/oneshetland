@@ -1509,16 +1509,26 @@ function WalletReceiptsCard({
                   </>
                 )}
               </View>
-              <TouchableOpacity
-                style={styles.receiptRefundBtn}
-                disabled={refunding !== null}
-                onPress={() => confirmRefund(r)}
-                activeOpacity={0.8}
-              >
-                {refunding === r.id
-                  ? <ActivityIndicator size="small" color={colors.textLight} />
-                  : <Text style={styles.receiptRefundText}>Refund</Text>}
-              </TouchableOpacity>
+              {r.refund_state === 'refunded' ? (
+                // Kept in history, because the money did come in before it went
+                // back out — but stated plainly, and with nothing to press. The
+                // Refund button used to reappear here after a reload and hand
+                // back a second "Refunded" for a payment already returned.
+                <View style={styles.receiptRefundedPill}>
+                  <Text style={styles.receiptRefundedText}>Refunded</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.receiptRefundBtn}
+                  disabled={refunding !== null}
+                  onPress={() => confirmRefund(r)}
+                  activeOpacity={0.8}
+                >
+                  {refunding === r.id
+                    ? <ActivityIndicator size="small" color={colors.textLight} />
+                    : <Text style={styles.receiptRefundText}>Refund</Text>}
+                </TouchableOpacity>
+              )}
             </View>
           ))}
         </View>
@@ -1877,6 +1887,9 @@ const styles = StyleSheet.create({
   receiptRefundBtn:  { alignSelf: 'flex-start', marginTop: 6, paddingVertical: 5, paddingHorizontal: 10,
                        borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border },
   receiptRefundText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textLight },
+  receiptRefundedPill: { alignSelf: 'flex-start', marginTop: 6, paddingVertical: 5, paddingHorizontal: 10,
+                         borderRadius: 999, backgroundColor: colors.border },
+  receiptRefundedText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted },
   receiptRowBorder:  { borderBottomWidth: 1, borderBottomColor: colors.border },
   receiptTopLine:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   receiptWho:        { flex: 1, fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },

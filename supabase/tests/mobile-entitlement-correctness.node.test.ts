@@ -305,6 +305,7 @@ describe('nothing outside correctness moved', () => {
     // else appearing in the web tree still fails here.
     const APPROVED_WEB = [
       'components/business/WalletManager.tsx',   // merchant Refund action
+      'lib/business-data.ts',                    // merchant receipt refund_state model
       'lib/passes-data.ts',                      // pass refund_state model
       'app/account/passes/PassesClient.tsx',     // pass refund_state on screen
     ];

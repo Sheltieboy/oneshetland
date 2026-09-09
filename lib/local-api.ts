@@ -941,6 +941,17 @@ export interface BusinessWalletReceipt {
   net_pence:           number | null;
   customer_first_name: string | null;
   stripe_transfer_id:  string | null;
+  /**
+   * 'refunded' once a Wallet reversal row names this payment; 'none' otherwise.
+   * Derived in the RPC from the ledger, never from anything the client holds.
+   * A refund that has frozen its source but not yet credited the wallet is
+   * still 'none', so the merchant keeps the Refund button they need to retry.
+   */
+  refund_state:        'none' | 'refunded';
+  /** When the money went back. NULL unless refund_state is 'refunded'. */
+  refunded_at:         string | null;
+  /** The Wallet row that returned the money. NULL until it exists. */
+  refund_transaction_id: string | null;
 }
 
 export async function fetchBusinessWalletReceipts(
@@ -952,7 +963,15 @@ export async function fetchBusinessWalletReceipts(
     p_limit:       limit,
   });
   if (error) throw error;
-  return (data ?? []) as BusinessWalletReceipt[];
+  // A build talking to a backend without the refund columns yet reads them as
+  // undefined; default to 'none' so an older app never claims a live payment
+  // was refunded.
+  return ((data ?? []) as BusinessWalletReceipt[]).map((r) => ({
+    ...r,
+    refund_state:          r.refund_state === 'refunded' ? 'refunded' : 'none',
+    refunded_at:           r.refunded_at ?? null,
+    refund_transaction_id: r.refund_transaction_id ?? null,
+  }));
 }
 
 /**

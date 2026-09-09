@@ -46,6 +46,7 @@ const COMMERCE = join(MIG, '20260801130000_commerce_engine.sql');
 const POINTS = join(MIG, '20261006120000_wallet_loyalty_points.sql');
 const RATELIMITS = join(MIG, '20260821280000_rate_limits.sql');
 const FIX = join(MIG, '20261007120000_business_wallet_refunds.sql');
+const RECEIPTS = join(MIG, '20261008120000_receipt_refund_state.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -227,6 +228,36 @@ function installFix(mutate?: (s: string) => string) {
   const out = raw(sql);
   assert.doesNotMatch(out, /ERROR:/, `migration failed:\n${out.slice(0, 1600)}`);
 }
+
+/**
+ * The receipts RPC, plus the two things it needs that the refund functions do
+ * not: the caller's identity, and the customer's name. Supabase's auth.uid() is
+ * reproduced faithfully — the subject claim of the caller's JWT — so the
+ * ownership rule is tested the way production enforces it.
+ */
+function installReceipts() {
+  const out = raw([
+    `create or replace function auth.uid() returns uuid language sql stable as $$
+       select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`,
+    'grant usage on schema auth to anon, authenticated, service_role;',
+    'grant execute on function auth.uid() to anon, authenticated, service_role;',
+    'alter table public.profiles add column if not exists full_name text;',
+    src(RECEIPTS),
+  ].join('\n'));
+  assert.doesNotMatch(out, /ERROR:/, `receipts migration failed:\n${out.slice(0, 1600)}`);
+}
+
+/** The receipt list exactly as a signed-in merchant would receive it. */
+function receiptsAs(uid: string, limit = 20): Record<string, unknown>[] {
+  const out = raw(`select set_config('request.jwt.claim.sub','${uid}',false);
+    select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb)::text
+      from public.get_business_wallet_receipts('${BIZ}'::uuid, ${limit}) t;`);
+  const line = value(out);
+  assert.match(line, /^\[/, `receipts did not return JSON:\n${out.slice(0, 600)}`);
+  return JSON.parse(line) as Record<string, unknown>[];
+}
+const receiptFor = (id: string, uid = OWNER) =>
+  receiptsAs(uid).find((r) => r.id === id) as Record<string, unknown> | undefined;
 
 /** A business, a customer, a £3 wallet-funded pass, and a shop order. */
 function fixtures(opts: { itemStock?: string; uses?: number; passState?: string } = {}) {
@@ -862,6 +893,88 @@ describe('the historical Anderson & Co pass', () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+describe('a merchant can see which receipts were refunded', () => {
+  before(() => { schema(); installFix(); installReceipts(); fixtures(); });
+
+  test('a live payment reads none, with no refund timestamp', () => {
+    const r = receiptFor(SPEND)!;
+    assert.ok(r, 'the spend is missing from the receipt list');
+    assert.equal(r.refund_state, 'none');
+    assert.equal(r.refunded_at, null);
+    assert.equal(r.refund_transaction_id, null);
+  });
+
+  test('every field the clients already read survives the new columns', () => {
+    const r = receiptFor(SPEND)!;
+    assert.equal(r.gross_pence, 300);
+    assert.equal(r.fee_pence, 15);
+    assert.equal(r.cashback_pence, 0);
+    assert.equal(r.net_pence, 285);          // 300 − 15 − 0
+    assert.equal(r.stripe_transfer_id, 'tr_test');
+  });
+
+  test('a real refund flips it, and only it', () => {
+    fixtures();
+    claim();
+    finalise();
+    assert.equal(passState(), 'refunded', 'the refund did not complete');
+
+    assert.equal(receiptFor(SPEND)!.refund_state, 'refunded');
+    // The shop order was never refunded. One receipt cannot borrow another's.
+    assert.equal(receiptFor(OSPEND)!.refund_state, 'none');
+    assert.equal(receiptFor(OSPEND)!.refunded_at, null);
+  });
+
+  test('refunded_at and the id come from the reversal row itself', () => {
+    const r = receiptFor(SPEND)!;
+    const revId = scalar(`select id::text from public.local_wallet_transactions
+                           where reverses_transaction_id='${SPEND}' and type='refund';`);
+    const revAt = scalar(`select created_at::text from public.local_wallet_transactions
+                           where reverses_transaction_id='${SPEND}' and type='refund';`);
+    assert.equal(r.refund_transaction_id, revId);
+    assert.ok(revAt.startsWith(String(r.refunded_at).slice(0, 19).replace('T', ' ')),
+      `refunded_at ${r.refunded_at} is not the reversal's ${revAt}`);
+  });
+
+  test('the original payment stays in history, unaltered', () => {
+    const r = receiptFor(SPEND)!;
+    assert.equal(r.gross_pence, 300, 'the historical amount was rewritten');
+    assert.equal(r.net_pence, 285);
+    assert.equal(receiptsAs(OWNER).length, 2, 'a refund removed a receipt from history');
+  });
+
+  test('only a row of type refund counts — a spend pointing back does not', () => {
+    fixtures();
+    // Same link, wrong type. If the state were read from the link alone, this
+    // would report the shop order as refunded without a penny moving.
+    const o = raw(`insert into public.local_wallet_transactions
+      (id,user_id,business_id,type,amount_pence,reverses_transaction_id,idempotency_key)
+      values ('${RED}','${CUST}','${BIZ}','spend',-1,'${OSPEND}','decoy');`);
+    assert.doesNotMatch(o, /ERROR/i, o.slice(0, 400));
+    assert.equal(receiptFor(OSPEND)!.refund_state, 'none');
+  });
+
+  test('the auth rule is unchanged — no caller, no receipts', () => {
+    const o = raw(`select set_config('request.jwt.claim.sub','',false);
+                   select * from public.get_business_wallet_receipts('${BIZ}'::uuid, 20);`);
+    assert.match(o, /auth_required/, o.slice(0, 400));
+  });
+
+  test('the ownership rule is unchanged — another user gets nothing', () => {
+    const o = raw(`select set_config('request.jwt.claim.sub','${OTHER}',false);
+                   select * from public.get_business_wallet_receipts('${BIZ}'::uuid, 20);`);
+    assert.match(o, /not_business_owner/, o.slice(0, 400));
+  });
+
+  test('ordering is still newest first', () => {
+    fixtures();
+    const rows = receiptsAs(OWNER);
+    const times = rows.map((r) => String(r.created_at));
+    assert.deepEqual([...times].sort().reverse(), times, 'receipts are no longer newest first');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 describe('the callers are wired to the guards', () => {
   const fn = (p: string) => src(join(FN, p, 'index.ts'));
 
@@ -912,5 +1025,62 @@ describe('the callers are wired to the guards', () => {
 
   test('reminder-runner will not chase a refunded pass', () => {
     assert.match(fn('reminder-runner'), /\.eq\('refund_state', 'none'\)/);
+  });
+
+  // The merchant's own view of a refund. The RPC carries the state; these
+  // assert both clients actually spend it, because for a while neither could:
+  // a refunded payment read as an ordinary one and offered Refund again.
+  const WEB = join(REPO_ROOT, '..', 'oneshetland-web');
+  const web = (rel: string) => readFileSync(join(WEB, rel), 'utf8');
+  const appLib = () => src(join(REPO_ROOT, 'lib/local-api.ts'));
+  const appUi = () => src(join(REPO_ROOT, 'app/local-business-dashboard.tsx'));
+  const webUi = () => web('components/business/WalletManager.tsx');
+
+  test('the mobile receipt model carries the refund state', () => {
+    assert.match(appLib(), /refund_state:\s*'none' \| 'refunded'/,
+      'BusinessWalletReceipt cannot express a refunded receipt');
+    assert.match(appLib(), /refunded_at:\s*string \| null/);
+  });
+
+  test('a refunded mobile receipt says so, and offers nothing to press', () => {
+    const s = appUi();
+    assert.match(s, /r\.refund_state === 'refunded'/,
+      'the dashboard never asks whether a receipt was refunded');
+    assert.match(s, /styles\.receiptRefundedText[\s\S]{0,80}Refunded/,
+      'no visible Refunded state on the receipt');
+    // The Refund action must sit on the other side of that branch, not beside it.
+    const branchAt = s.indexOf("r.refund_state === 'refunded'");
+    const elseAt = s.indexOf(') : (', branchAt);
+    const btnAt = s.indexOf('onPress={() => confirmRefund(r)}', branchAt);
+    assert.ok(elseAt > -1 && btnAt > elseAt,
+      'the Refund button is still reachable for a refunded receipt');
+  });
+
+  test('an ordinary mobile receipt keeps its Refund action', () => {
+    assert.match(appUi(), /onPress=\{\(\) => confirmRefund\(r\)\}/,
+      'the refund flow was removed from live payments');
+  });
+
+  test('a refunded web receipt says so, and offers nothing to press', () => {
+    const s = webUi();
+    assert.match(s, /r\.refund_state === "refunded"/,
+      'WalletManager never asks whether a receipt was refunded');
+    assert.match(s, />\s*Refunded\s*</, 'no visible Refunded state on the web receipt');
+    const branchAt = s.indexOf('r.refund_state === "refunded"');
+    const elseAt = s.indexOf(') : (', branchAt);
+    const btnAt = s.indexOf('setConfirm(r)', branchAt);
+    assert.ok(elseAt > -1 && btnAt > elseAt,
+      'the Refund button is still reachable for a refunded web receipt');
+  });
+
+  test('an ordinary web receipt keeps its Refund action', () => {
+    assert.match(webUi(), /setConfirm\(r\)/, 'the refund flow was removed from live payments');
+  });
+
+  test('the receipts RPC is what tells them — neither client guesses', () => {
+    const rpc = src(RECEIPTS);
+    assert.match(rpc, /reverses_transaction_id = t\.id/, 'refund state is not derived from the ledger link');
+    assert.match(rpc, /r\.type = 'refund'/, 'any reversing row would count, not just a refund');
+    assert.match(rpc, /and t\.type\s*= 'spend'/, 'the original spend no longer anchors the receipt');
   });
 });
