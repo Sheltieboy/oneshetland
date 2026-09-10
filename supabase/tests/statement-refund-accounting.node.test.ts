@@ -35,7 +35,7 @@ const WEB_ROOT = join(REPO_ROOT, '..', 'oneshetland-web');
 const MIG = join(REPO_ROOT, 'supabase/migrations');
 const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const COMMERCE = join(MIG, '20260801130000_commerce_engine.sql');
-const STATEMENT = join(MIG, '20261009120000_statement_wallet_refunds.sql');
+const STATEMENT = join(MIG, '20261010120000_statement_one_event_one_row.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -477,6 +477,149 @@ describe('a shop order paid from the Wallet is reported once, not twice', () => 
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+describe('one commercial event, one statement row', () => {
+  // Every rail that can be paid from the Wallet writes BOTH a wallet spend and
+  // its own domain row. Anderson's live statement showed a £3 pass twice.
+  const PASSW = '10000000-0000-4000-8000-000000000001';  const PASSC = '10000000-0000-4000-8000-000000000002';
+  const GIFTW = '20000000-0000-4000-8000-000000000001';  const GIFTC = '20000000-0000-4000-8000-000000000002';
+  const TIXW  = '30000000-0000-4000-8000-000000000001';  const TIXC  = '30000000-0000-4000-8000-000000000002';
+  const EVT   = '30000000-0000-4000-8000-0000000000ee';
+  const ITEM  = '10000000-0000-4000-8000-0000000000ii'.replace(/i/g, '9');
+  const SW = '40000000-0000-4000-8000-000000000001';   // spend funding the pass
+  const SG = '40000000-0000-4000-8000-000000000002';   // spend funding the gift
+  const ST = '40000000-0000-4000-8000-000000000003';   // spend funding the tickets
+  const SD = '40000000-0000-4000-8000-000000000004';   // a direct wallet payment
+  const RW = '50000000-0000-4000-8000-000000000001';   // refund of the pass spend
+
+  function rails() {
+    const spend = (id: string, amt: number, fee: number, key: string, at: string) =>
+      `insert into public.local_wallet_transactions
+         (id,user_id,business_id,type,amount_pence,platform_fee_pence,cashback_pence,idempotency_key,transfer_state,stripe_transfer_id,created_at)
+         values ('${id}','${CUST}','${BIZ}','spend',-${amt},${fee},0,'${key}','sent','tr_${key}','${at}');`;
+    const o = raw(`
+      delete from public.book_unit_purchases; delete from public.book_unit_items;
+      delete from public.book_gifts; delete from public.event_ticket_orders; delete from public.events;
+      insert into public.book_unit_items (id, business_id, name, price_pence, uses_per_purchase)
+        values ('${ITEM}','${BIZ}','DEMO — 3 Session Pass',300,3);
+      insert into public.events (id, organiser_business_id, title, starts_at)
+        values ('${EVT}','${BIZ}','Launch Test Event','2026-09-20 19:00:00+00');
+
+      ${spend(SW, 300, 15, 'wallet-attempt:pass', '2026-09-06 10:00:00+00')}
+      ${spend(SG, 500, 25, 'wallet-attempt:gift', '2026-09-06 11:00:00+00')}
+      ${spend(ST, 800, 40, 'wallet-attempt:tix',  '2026-09-06 12:00:00+00')}
+      ${spend(SD, 900, 45, 'wallet-attempt:direct','2026-09-06 13:00:00+00')}
+
+      -- Wallet-funded, stamped by the writer as wallet_<txid>.
+      insert into public.book_unit_purchases (id,item_id,business_id,owner_id,paid_amount_pence,uses_remaining,payment_intent_id)
+        values ('${PASSW}','${ITEM}','${BIZ}','${CUST}',300,3,'wallet_${SW}');
+      insert into public.book_gifts (id,business_id,purchaser_id,recipient_email,price_paid_pence,status,code,kind,unit_item_id,payment_intent_id,created_at)
+        values ('${GIFTW}','${BIZ}','${CUST}','a@example.com',500,'sent','GIFTW','unit','${ITEM}','wallet_${SG}','2026-09-06 11:00:00+00');
+      insert into public.event_ticket_orders (id,event_id,buyer_id,status,total_pence,platform_fee_pence,stripe_payment_intent_id,paid_at)
+        values ('${TIXW}','${EVT}','${CUST}','paid',800,40,'wallet_${ST}','2026-09-06 12:00:00+00');
+
+      -- Card-funded equivalents, which must be untouched.
+      insert into public.book_unit_purchases (id,item_id,business_id,owner_id,paid_amount_pence,uses_remaining,payment_intent_id,created_at)
+        values ('${PASSC}','${ITEM}','${BIZ}','${CUST}',300,3,'pi_card_pass','2026-09-07 10:00:00+00');
+      insert into public.book_gifts (id,business_id,purchaser_id,recipient_email,price_paid_pence,status,code,kind,unit_item_id,payment_intent_id,created_at)
+        values ('${GIFTC}','${BIZ}','${CUST}','a@example.com',500,'sent','GIFTC','unit','${ITEM}','pi_card_gift','2026-09-07 11:00:00+00');
+      insert into public.event_ticket_orders (id,event_id,buyer_id,status,total_pence,platform_fee_pence,stripe_payment_intent_id,paid_at)
+        values ('${TIXC}','${EVT}','${CUST}','paid',800,40,'pi_card_tix','2026-09-07 12:00:00+00');
+    `);
+    assert.doesNotMatch(o, /ERROR/i, o.slice(0, 800));
+  }
+
+  before(() => { schema(); fixtures(); rails(); });
+
+  const rowsFor = (kind: string) => statement(SEPT, OCT).filter((r) => r.kind === kind && r.direction === 'in');
+
+  test('a wallet-funded pass appears once, from the ledger', () => {
+    const rows = rowsFor('pass_sale').filter((r) => r.gross_pence === 300 && r.fee_pence === 15);
+    assert.equal(rows.length, 1, 'the wallet pass was counted twice, or lost');
+    assert.equal(rows[0].description, 'DEMO — 3 Session Pass', 'it lost the item it bought');
+    assert.equal(rows[0].reference, PASSW, 'it lost the purchase reference');
+    assert.equal(rows[0].net_pence, 285, 'the pass branch would have claimed 300');
+  });
+
+  test('a card-funded pass still appears once, unchanged', () => {
+    const rows = rowsFor('pass_sale').filter((r) => r.reference === 'pi_card_pass');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].gross_pence, 300);
+    assert.equal(rows[0].net_pence, 300, 'a card pass carries no wallet fee');
+  });
+
+  test('a wallet-funded gift appears once, from the ledger', () => {
+    const rows = rowsFor('gift_sale').filter((r) => r.fee_pence === 25);
+    assert.equal(rows.length, 1, 'the wallet gift was counted twice, or lost');
+    assert.equal(rows[0].gross_pence, 500);
+    assert.equal(rows[0].net_pence, 475);
+  });
+
+  test('a card-funded gift still appears once', () => {
+    assert.equal(rowsFor('gift_sale').filter((r) => r.reference === 'GIFTC').length, 1);
+  });
+
+  test('a wallet-funded event ticket appears once, from the ledger', () => {
+    const rows = rowsFor('ticket_sale').filter((r) => r.reference === TIXW);
+    assert.equal(rows.length, 1, 'the wallet ticket order was counted twice, or lost');
+    assert.equal(rows[0].gross_pence, 800);
+    assert.equal(rows[0].fee_pence, 40);
+    assert.equal(rows[0].net_pence, 760);
+  });
+
+  test('a card-funded event ticket still appears once', () => {
+    assert.equal(rowsFor('ticket_sale').filter((r) => r.reference === 'pi_card_tix').length, 1);
+  });
+
+  test('a Wallet payment that bought nothing else stays a Wallet payment', () => {
+    const rows = rowsFor('wallet_payment');
+    assert.equal(rows.length, 2, 'the direct payments were relabelled or lost');
+    assert.ok(rows.every((r) => r.description === 'Wallet payment'));
+  });
+
+  test('no commercial event is emitted twice', () => {
+    const rows = statement(SEPT, OCT).filter((r) => r.direction === 'in');
+    const refs = rows.map((r) => r.reference);
+    assert.equal(refs.length, new Set(refs).size, `a reference appears twice: ${refs.join(', ')}`);
+  });
+
+  test('the totals count each sale once', () => {
+    const t = totals(statement(SEPT, OCT));
+    // 4 wallet spends (300+500+800+900) + 3 card sales (300+500+800), and the
+    // September fixture sale of 300.
+    assert.equal(t.moneyIn, 300 + 500 + 800 + 900 + 300 + 500 + 800 + 300);
+    assert.equal(t.moneyIn - t.refunds - t.fees - t.cashback, t.net);
+  });
+
+  test('a refunded wallet pass is one sale and one refund, netting to zero', () => {
+    const o = raw(`insert into public.local_wallet_transactions
+      (id,user_id,business_id,type,amount_pence,reverses_transaction_id,idempotency_key,created_at)
+      values ('${RW}','${CUST}','${BIZ}','refund',300,'${SW}','wallet-attempt:pass:reversal','2026-09-11 09:00:00+00');`);
+    assert.doesNotMatch(o, /ERROR/i, o.slice(0, 400));
+    const rows = statement(SEPT, OCT);
+    const sale = rows.filter((r) => r.reference === PASSW && r.direction === 'in');
+    const ref  = rows.filter((r) => r.reference === SW && r.direction === 'refund');
+    assert.equal(sale.length, 1, 'the refunded pass lost or duplicated its sale');
+    assert.equal(ref.length, 1, 'the reversal is missing or duplicated');
+    assert.equal(sale[0].gross_pence + ref[0].gross_pence, 0);
+    assert.equal(sale[0].fee_pence + ref[0].fee_pence, 0, 'the fee did not net to zero');
+    assert.equal(sale[0].net_pence + ref[0].net_pence, 0, 'the merchant net did not net to zero');
+  });
+
+  test('date filtering still places each row in its own period', () => {
+    assert.equal(statement(AUG, SEPT).filter((r) => r.reference === PASSW).length, 0,
+      'a September sale leaked into August');
+    assert.equal(statement(SEPT, OCT).filter((r) => r.reference === PASSW).length, 1);
+  });
+
+  test('CSV carries one line per commercial event', () => {
+    // Both clients build CSV from these rows verbatim.
+    const rows = statement(SEPT, OCT).filter((r) => r.direction === 'in');
+    const refs = rows.map((r) => r.reference);
+    assert.equal(refs.length, new Set(refs).size, 'CSV would repeat a commercial event');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 describe('the rest of the statement is exactly as it was', () => {
   before(() => { schema(); fixtures(); refundSept(); });
 
@@ -488,8 +631,24 @@ describe('the rest of the statement is exactly as it was', () => {
     }
   });
 
-  test('only one branch was added', () => {
-    assert.equal((src(STATEMENT).match(/UNION ALL/g) ?? []).length, 7);
+  test('the statement still has eight branches, and the funding lookup four arms', () => {
+    // 7 top-level UNION ALLs join the 8 statement branches; the funding lateral
+    // adds 3 more of its own for the four rails a Wallet payment can buy.
+    const fn = src(STATEMENT);
+    assert.equal((fn.match(/UNION ALL/g) ?? []).length, 10);
+    const lateral = fn.slice(fn.indexOf('LEFT JOIN LATERAL ('), fn.indexOf(') funded ON true'));
+    assert.equal((lateral.match(/UNION ALL/g) ?? []).length, 3, 'the funding lookup lost or gained a rail');
+    for (const kind of ['product_sale', 'pass_sale', 'gift_sale', 'ticket_sale']) {
+      assert.ok(lateral.includes(`'${kind}'`), `the funding lookup cannot recognise ${kind}`);
+    }
+  });
+
+  test('bookings and boosts keep their branches — they have no Wallet rail', () => {
+    const fn = src(STATEMENT);
+    assert.ok(fn.includes("'booking_deposit'") && fn.includes("'boost'"));
+    const lateral = fn.slice(fn.indexOf('LEFT JOIN LATERAL ('), fn.indexOf(') funded ON true'));
+    assert.ok(!lateral.includes('book_bookings') && !lateral.includes('local_boost_purchases'),
+      'a rail with no Wallet path was added to the funding lookup');
   });
 
   test('the sale branch still anchors on a spend', () => {
