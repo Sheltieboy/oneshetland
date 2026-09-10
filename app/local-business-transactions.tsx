@@ -17,7 +17,7 @@ const ACCENT = '#7C3AED';
 const money = (p: number) => `£${(p / 100).toFixed(2)}`;
 
 interface Txn {
-  occurred_at: string; direction: 'in' | 'out'; kind: string; description: string;
+  occurred_at: string; direction: 'in' | 'out' | 'refund'; kind: string; description: string;
   counterparty: string; gross_pence: number; fee_pence: number; cashback_pence: number;
   net_pence: number; status: string; reference: string | null;
 }
@@ -25,6 +25,7 @@ interface Txn {
 const KIND_LABEL: Record<string, string> = {
   wallet_payment: 'Wallet payment', pass_sale: 'Pass / pack', gift_sale: 'Gift',
   booking_deposit: 'Booking deposit', ticket_sale: 'Event tickets', product_sale: 'Shop order', boost: 'Boost',
+  wallet_refund: 'Refund',
 };
 
 type PresetKey = 'this_month' | 'last_month' | 'last_90' | 'this_year' | 'all';
@@ -72,12 +73,16 @@ export default function BusinessTransactionsScreen() {
   useEffect(() => { load(preset); }, [preset, load]);
 
   const totals = useMemo(() => {
-    let grossIn = 0, fees = 0, cashback = 0, netIn = 0, costsOut = 0;
+    // A refund carries the mirror of its sale, so its fee and cashback are
+    // negative and simply add in: the sale stays in Money in where it was
+    // earned, and Refunds shows separately what went back.
+    let grossIn = 0, refunds = 0, fees = 0, cashback = 0, netIn = 0, costsOut = 0;
     for (const r of rows) {
       if (r.direction === 'in') { grossIn += r.gross_pence; fees += r.fee_pence; cashback += r.cashback_pence; netIn += r.net_pence; }
+      else if (r.direction === 'refund') { refunds += Math.abs(r.gross_pence); fees += r.fee_pence; cashback += r.cashback_pence; netIn += r.net_pence; }
       else costsOut += r.gross_pence;
     }
-    return { grossIn, fees, cashback, net: netIn - costsOut };
+    return { grossIn, refunds, fees, cashback, net: netIn - costsOut };
   }, [rows]);
 
   async function exportCsv() {
@@ -113,6 +118,7 @@ export default function BusinessTransactionsScreen() {
         {/* Totals */}
         <View style={styles.totalsGrid}>
           <Stat label="Money in" value={money(totals.grossIn)} />
+          {totals.refunds > 0 && <Stat label="Refunds" value={`− ${money(totals.refunds)}`} />}
           <Stat label="Fees" value={`− ${money(totals.fees)}`} />
           <Stat label="Cashback" value={`− ${money(totals.cashback)}`} />
           <Stat label="Net to you" value={money(totals.net)} accent />
@@ -136,9 +142,21 @@ export default function BusinessTransactionsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowType}>{KIND_LABEL[r.kind] ?? r.kind}</Text>
                   <Text style={styles.rowMeta}>{fmtDate(r.occurred_at)} · {r.counterparty}</Text>
+                  {r.direction === 'refund' && (
+                    // What the customer got back, and the fee that came back
+                    // with it — so -£2.85 against the merchant reads as the
+                    // arithmetic it is rather than a number they must guess at.
+                    <Text style={styles.rowMeta}>
+                      {money(Math.abs(r.gross_pence))} returned to customer
+                      {r.fee_pence !== 0 ? ` · ${money(Math.abs(r.fee_pence))} OneShetland fee reversed` : ''}
+                      {r.cashback_pence !== 0 ? ` · ${money(Math.abs(r.cashback_pence))} cashback reversed` : ''}
+                    </Text>
+                  )}
                 </View>
-                <Text style={[styles.rowNet, { color: r.direction === 'out' ? '#dc2626' : '#16a34a' }]}>
-                  {r.direction === 'out' ? `− ${money(r.gross_pence)}` : money(r.net_pence)}
+                <Text style={[styles.rowNet, { color: r.direction === 'in' ? '#16a34a' : '#dc2626' }]}>
+                  {r.direction === 'in' ? money(r.net_pence)
+                    : r.direction === 'refund' ? `− ${money(Math.abs(r.net_pence))}`
+                    : `− ${money(r.gross_pence)}`}
                 </Text>
               </View>
             ))}

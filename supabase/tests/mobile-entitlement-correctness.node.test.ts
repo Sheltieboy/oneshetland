@@ -306,6 +306,7 @@ describe('nothing outside correctness moved', () => {
     const APPROVED_WEB = [
       'components/business/WalletManager.tsx',   // merchant Refund action
       'lib/business-data.ts',                    // merchant receipt refund_state model
+      'components/business/TransactionsLedger.tsx', // statement refund accounting
       'lib/passes-data.ts',                      // pass refund_state model
       'app/account/passes/PassesClient.tsx',     // pass refund_state on screen
     ];
