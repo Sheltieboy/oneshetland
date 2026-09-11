@@ -657,6 +657,104 @@ describe('the rest of the statement is exactly as it was', () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+describe('the exported CSV survives a spreadsheet', () => {
+  // Darren's export came out as mojibake. The data was always valid UTF-8 and
+  // every row had its 11 columns — the file simply carried no byte-order mark,
+  // so Excel guessed the encoding and mangled the em dash and the × sign.
+  const appSrc = () => src(join(REPO_ROOT, 'app/local-business-transactions.tsx'));
+  const webSrc = () => readFileSync(join(REPO_ROOT, '..', 'oneshetland-web',
+    'components/business/TransactionsLedger.tsx'), 'utf8');
+
+  /** The escape function as actually shipped, lifted out of the source and run. */
+  function escaper(source: string, which: string): (v: string) => string {
+    const m = source.match(/const esc = \(v: string\) => (.*);\n/);
+    assert.ok(m, which + ' no longer has a single-expression esc()');
+    return new Function('v', 'return ' + m![1] + ';') as (v: string) => string;
+  }
+  const clients = () => [
+    ['mobile', appSrc(), escaper(appSrc(), 'mobile')] as const,
+    ['web', webSrc(), escaper(webSrc(), 'web')] as const,
+  ];
+
+  const DQ = String.fromCharCode(34);
+
+  test('both exports begin with the UTF-8 BOM', () => {
+    for (const [name, source] of clients()) {
+      assert.match(source, /['"]\\uFEFF['"] \+ \[head\.join/, name + ' CSV does not start with U+FEFF');
+    }
+    // And that mark really is EF BB BF once encoded.
+    assert.deepEqual([...Buffer.from('﻿' + 'Date,Type', 'utf8').subarray(0, 3)],
+      [0xEF, 0xBB, 0xBF]);
+  });
+
+  test('an em dash round-trips untouched', () => {
+    const v = 'DEMO — 3 Session Pass';
+    for (const [name, , esc] of clients()) {
+      assert.equal(esc(v), v, name + ' altered an em dash');
+      assert.equal(Buffer.from(esc(v), 'utf8').toString('utf8'), v, name + ' lost bytes');
+    }
+  });
+
+  test('a multiplication sign round-trips untouched', () => {
+    const v = '1× DEMO — Launch Test Product';
+    for (const [name, , esc] of clients()) {
+      assert.equal(esc(v), v, name + ' altered the × sign');
+      assert.equal(Buffer.from(esc(v), 'utf8').toString('utf8'), v);
+    }
+  });
+
+  test('a value containing a comma is quoted', () => {
+    for (const [name, , esc] of clients()) {
+      assert.equal(esc('Gansey, large'), DQ + 'Gansey, large' + DQ, name + ' would split a row');
+    }
+  });
+
+  test('a value containing a quote is escaped by doubling', () => {
+    const input = 'He said ' + DQ + 'hello' + DQ;
+    const want = DQ + 'He said ' + DQ + DQ + 'hello' + DQ + DQ + DQ;
+    for (const [name, , esc] of clients()) {
+      assert.equal(esc(input), want, name + ' quote escaping is wrong');
+    }
+  });
+
+  test('values containing CR or LF are quoted', () => {
+    for (const [name, , esc] of clients()) {
+      assert.equal(esc('one\ntwo'), DQ + 'one\ntwo' + DQ, name + ' would split on LF');
+      assert.equal(esc('one\rtwo'), DQ + 'one\rtwo' + DQ, name + ' would split on CR');
+      assert.equal(esc('a\r\nb'), DQ + 'a\r\nb' + DQ, name + ' would split on CRLF');
+    }
+  });
+
+  test('an ordinary value is left alone', () => {
+    for (const [name, , esc] of clients()) {
+      assert.equal(esc('Wallet payment'), 'Wallet payment', name + ' quotes values needlessly');
+    }
+  });
+
+  test('the financial columns and their values are unchanged', () => {
+    for (const [name, source] of clients()) {
+      for (const col of ['Date', 'Type', 'Description', 'Customer', 'Direction',
+                         'Gross', 'Cashback', 'Net', 'Status', 'Reference']) {
+        assert.ok(source.includes(DQ + col) || source.includes("'" + col),
+          name + ' CSV lost the ' + col + ' column');
+      }
+      assert.match(source, /\(n: number\) => \(n \/ 100\)\.toFixed\(2\)/, name + ' changed the money format');
+      for (const f of ['gross_pence', 'fee_pence', 'cashback_pence', 'net_pence']) {
+        assert.ok(source.includes('p(r.' + f + ')'),
+          name + ' CSV no longer exports ' + f + ' as the screen totals it');
+      }
+    }
+  });
+
+  test('mobile and web escape identically', () => {
+    const [[, , appEsc], [, , webEsc]] = clients();
+    for (const v of ['DEMO — 3 Session Pass', '1× thing', 'a,b', 'q' + DQ + 'q', 'a\nb', 'a\rb', 'plain']) {
+      assert.equal(appEsc(v), webEsc(v), 'the two clients disagree on escaping ' + JSON.stringify(v));
+    }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 describe('both clients read the one accounting model', () => {
   const app = () => src(join(REPO_ROOT, 'app/local-business-transactions.tsx'));
   const web = () => src(join(WEB_ROOT, 'components/business/TransactionsLedger.tsx'));

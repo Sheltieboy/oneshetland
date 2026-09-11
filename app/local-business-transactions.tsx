@@ -88,13 +88,17 @@ export default function BusinessTransactionsScreen() {
   async function exportCsv() {
     try {
       const head = ['Date', 'Type', 'Description', 'Customer', 'Direction', 'Gross', 'Fee', 'Cashback', 'Net', 'Status', 'Reference'];
-      const esc = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      // CR too: a description carrying a bare \r would otherwise split the row.
+      const esc = (v: string) => /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
       const p = (n: number) => (n / 100).toFixed(2);
       const lines = rows.map((r) => [
         new Date(r.occurred_at).toISOString().slice(0, 10), KIND_LABEL[r.kind] ?? r.kind, r.description,
         r.counterparty, r.direction, p(r.gross_pence), p(r.fee_pence), p(r.cashback_pence), p(r.net_pence), r.status, r.reference ?? '',
       ].map((c) => esc(String(c))).join(','));
-      const csv = [head.join(','), ...lines].join('\n');
+      // U+FEFF, so the file opens EF BB BF. The data was always valid UTF-8;
+      // without the mark Excel guesses the encoding from the bytes and renders
+      // "DEMO — 3 Session Pass" and "1× …" as mojibake.
+      const csv = '\uFEFF' + [head.join(','), ...lines].join('\n');
       const uri = `${FileSystem.cacheDirectory}transactions-${preset}.csv`;
       await FileSystem.writeAsStringAsync(uri, csv);
       await Share.share({ url: uri, title: 'OneShetland transactions' });
