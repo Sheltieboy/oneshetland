@@ -11,7 +11,7 @@ import {
   ActivityIndicator, Switch, Linking, RefreshControl, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
@@ -123,6 +123,14 @@ const PLAN_FEATURES: { label: string; req: TierLevel }[] = [
 
 export default function BusinessDashboardScreen() {
   const router = useRouter();
+  /**
+   * The business the user actually tapped. Every caller that knows which one it
+   * means passes it; the dashboard used to ignore the parameter entirely and
+   * open bizList[0] — the NEWEST business, since fetchMyBusinesses orders by
+   * created_at desc. So tapping Anderson & Co opened DEMO — Subscription Test
+   * Co, and the merchant had to switch by hand on a screen full of money.
+   */
+  const { id: routeBusinessId } = useLocalSearchParams<{ id?: string }>();
   const { profile } = useAuth();
   const { sidePadding, isTablet } = useAppLayout();
 
@@ -179,7 +187,15 @@ export default function BusinessDashboardScreen() {
       bizList.map(async (b) => ({ ...b, ...(await fetchBusinessPrivate(b.id)) })),
     );
     setBusinesses(withPrivate);
-    const target = biz ?? bizList[0];
+    // An explicit choice wins: the one passed in (a switch made on this screen),
+    // then the one the route named, and only then the fallback. A route id
+    // naming a business this user does not own finds nothing here and falls
+    // through — ownership is what the list is built from, so it can never
+    // select someone else's business.
+    const requested = routeBusinessId
+      ? withPrivate.find((b) => b.id === routeBusinessId)
+      : undefined;
+    const target = biz ?? requested ?? withPrivate[0];
     setActiveBusiness(target ?? null);
     if (!target) {
       setLoading(false);
@@ -237,7 +253,7 @@ export default function BusinessDashboardScreen() {
     );
     setLoading(false);
     setRefreshing(false);
-  }, [profile?.id]);
+  }, [profile?.id, routeBusinessId]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 

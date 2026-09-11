@@ -341,3 +341,107 @@ describe('nothing outside correctness moved', () => {
 
   });
 });
+
+/* ── Selected-business context ────────────────────────────────────────────── */
+
+describe('the dashboard opens the business the user actually tapped', () => {
+  // Tapping Anderson & Co opened DEMO — Subscription Test Co. The dashboard
+  // never read its route parameter: it took bizList[0], and fetchMyBusinesses
+  // orders by created_at desc, so the newest business always won. On a screen
+  // carrying refunds, payouts and till access, that is the wrong business.
+  const dashSrc = () => read('app/local-business-dashboard.tsx');
+  const detailSrc = () => read('app/local-business-detail.tsx');
+
+  type Biz = { id: string; name: string };
+  const ANDERSON: Biz = { id: 'and-1', name: 'Anderson & Co' };
+  const DEMO: Biz = { id: 'demo-1', name: 'DEMO — Subscription Test Co' };
+  /** created_at desc, exactly as fetchMyBusinesses returns them. */
+  const OWNED: Biz[] = [DEMO, ANDERSON];
+
+  /** The shipped precedence, lifted out of the source and executed. */
+  function pick(biz: Biz | undefined, routeBusinessId: string | undefined, withPrivate: Biz[]): Biz | undefined {
+    const s = dashSrc();
+    const m = s.match(/const requested = routeBusinessId\s*\n?\s*\?([\s\S]*?);\n\s*const target = ([^;]+);/);
+    assert.ok(m, 'the dashboard no longer selects its business the way this test reads it');
+    const body = `const requested = routeBusinessId ? ${m![1].trim()}; const target = ${m![2].trim()}; return target;`;
+    return new Function('biz', 'routeBusinessId', 'withPrivate', body)(biz, routeBusinessId, withPrivate) as Biz | undefined;
+  }
+
+  test('the dashboard reads the business id from the route', () => {
+    assert.match(dashSrc(), /useLocalSearchParams<\{ id\?: string \}>\(\)/,
+      'the dashboard is not reading its route parameter');
+    assert.match(dashSrc(), /\}, \[profile\?\.id, routeBusinessId\]\);/,
+      'loadAll would not re-run when the route business changes');
+  });
+
+  test('an explicit Anderson id opens Anderson', () => {
+    assert.deepEqual(pick(undefined, ANDERSON.id, OWNED), ANDERSON);
+  });
+
+  test('the explicit id beats the default, which is the newest business', () => {
+    // Without the fix this returned DEMO, because DEMO is OWNED[0].
+    assert.notDeepEqual(pick(undefined, ANDERSON.id, OWNED), DEMO);
+    assert.deepEqual(pick(undefined, undefined, OWNED), DEMO, 'the fallback itself changed');
+  });
+
+  test('opening with no id keeps the existing fallback', () => {
+    assert.deepEqual(pick(undefined, undefined, OWNED), OWNED[0]);
+    assert.equal(pick(undefined, undefined, []), undefined, 'no businesses must not throw');
+  });
+
+  test('switching business on the screen still wins over the route', () => {
+    // loadAll(biz) is how the switcher reloads; an explicit argument outranks
+    // the route, or the user could never move off the business they arrived on.
+    assert.deepEqual(pick(DEMO, ANDERSON.id, OWNED), DEMO);
+  });
+
+  test('a reload cannot quietly revert to the default', () => {
+    // The selection is a pure function of (argument, route, list), so a second
+    // or third load — a refresh, a late effect — resolves the same way rather
+    // than falling back to OWNED[0].
+    for (let i = 0; i < 3; i++) {
+      assert.deepEqual(pick(undefined, ANDERSON.id, OWNED), ANDERSON, `load ${i + 1} drifted`);
+    }
+  });
+
+  test('an id the user does not own falls back rather than selecting it', () => {
+    // The list is built from fetchMyBusinesses(profile.id), so a foreign id
+    // simply finds nothing. It can never select someone else's business.
+    assert.deepEqual(pick(undefined, 'someone-elses-business', OWNED), DEMO);
+    assert.equal(pick(undefined, 'someone-elses-business', []), undefined);
+  });
+
+  test('every owner entry point names the business it came from', () => {
+    // me.tsx already passed { id }. The business page did not, so "Manage
+    // business" on Anderson & Co opened whichever business was newest.
+    const detail = detailSrc();
+    const bare = detail.match(/router\.push\('\/local-business-dashboard'\)/g) ?? [];
+    assert.equal(bare.length, 0, 'an owner entry still opens the dashboard with no business');
+    assert.match(detail, /pathname: '\/local-business-dashboard', params: \{ id \}/);
+    assert.match(read('app/(tabs)/me.tsx'), /pathname: '\/local-business-dashboard', params: \{ id: biz\.id/);
+  });
+
+  test('financial child screens are handed the business on screen', () => {
+    const s = dashSrc();
+    // Every push out of the dashboard carries activeBusiness.id — never
+    // businesses[0], never the route id, so a child can only ever act on the
+    // business the merchant can see.
+    const pushes = s.match(/pathname: '\/[a-z-]+', params: \{ (?:businessId|id): ([^,}]+)/g) ?? [];
+    assert.ok(pushes.length >= 10, `expected the dashboard to route to its sections, found ${pushes.length}`);
+    for (const p of pushes) {
+      assert.ok(/activeBusiness|bizEvents\[0\]/.test(p),
+        `a child screen is handed something other than the visible business: ${p}`);
+    }
+    assert.ok(!/params: \{ businessId: routeBusinessId/.test(s),
+      'a child screen is handed the route id instead of the visible business');
+  });
+
+  test('money screens in particular follow the visible business', () => {
+    const s = dashSrc();
+    for (const screen of ['local-till', 'local-counter', 'payment-setup', 'business-orders']) {
+      const m = s.match(new RegExp(`pathname: '/${screen}', params: \\{ businessId: ([^,}]+)`));
+      assert.ok(m, `the dashboard no longer routes to ${screen}`);
+      assert.match(m![1], /activeBusiness/, `${screen} is not given the visible business`);
+    }
+  });
+});

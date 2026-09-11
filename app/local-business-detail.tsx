@@ -857,7 +857,9 @@ export default function BusinessDetailScreen() {
           <View style={styles.section}>
             <TouchableOpacity
               style={[styles.ownerBtn, { backgroundColor: accent }]}
-              onPress={() => router.push('/local-business-dashboard')}
+              // This page IS a business, so say which one. Without the id the
+              // dashboard falls back to the newest business the owner has.
+              onPress={() => router.push({ pathname: '/local-business-dashboard', params: { id } })}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="cog" size={13} color="#fff" solid />
@@ -871,7 +873,7 @@ export default function BusinessDetailScreen() {
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.upgradeHint}
-              onPress={() => router.push('/local-business-dashboard')}
+              onPress={() => router.push({ pathname: '/local-business-dashboard', params: { id } })}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="unlock-alt" size={13} color={accent} solid />
