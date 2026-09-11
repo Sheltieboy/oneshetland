@@ -23,10 +23,11 @@
  * `npm run test:isolated`. No production row is read or written.
  */
 
-import { test, describe, before } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -678,13 +679,22 @@ describe('the exported CSV survives a spreadsheet', () => {
 
   const DQ = String.fromCharCode(34);
 
-  test('both exports begin with the UTF-8 BOM', () => {
-    for (const [name, source] of clients()) {
-      assert.match(source, /['"]\\uFEFF['"] \+ \[head\.join/, name + ' CSV does not start with U+FEFF');
-    }
-    // And that mark really is EF BB BF once encoded.
-    assert.deepEqual([...Buffer.from('﻿' + 'Date,Type', 'utf8').subarray(0, 3)],
-      [0xEF, 0xBB, 0xBF]);
+  test('both exports begin with the UTF-8 BOM, by the means each boundary needs', () => {
+    // Web hands a JS string to a Blob, which encodes it to UTF-8 itself, so the
+    // character survives and prefixing it is enough. Mobile crosses into native
+    // code where it does not survive, so there the mark goes down as bytes.
+    const [[, appSource], [, webSource]] = clients();
+
+    assert.match(webSource, /\\uFEFF/, 'web CSV does not start with U+FEFF');
+
+    assert.match(appSource, /UTF8_BOM_BASE64 = '77u\//, 'mobile lost its BOM constant');
+    assert.match(appSource, /EncodingType\.Base64/, 'mobile no longer writes the mark as bytes');
+    assert.ok(appSource.indexOf("'\\uFEFF' +") === -1,
+      'mobile still prefixes the character, which does not reach the file');
+
+    // Both routes must land on the same three bytes.
+    assert.deepEqual([...Buffer.from('﻿' + 'Date,Type', 'utf8').subarray(0, 3)], [0xEF, 0xBB, 0xBF]);
+    assert.deepEqual([...Buffer.from('77u/', 'base64')], [0xEF, 0xBB, 0xBF]);
   });
 
   test('an em dash round-trips untouched', () => {
@@ -751,6 +761,136 @@ describe('the exported CSV survives a spreadsheet', () => {
     for (const v of ['DEMO — 3 Session Pass', '1× thing', 'a,b', 'q' + DQ + 'q', 'a\nb', 'a\rb', 'plain']) {
       assert.equal(appEsc(v), webEsc(v), 'the two clients disagree on escaping ' + JSON.stringify(v));
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe('the mobile CSV reaches disk with its byte-order mark', () => {
+  // The first attempt prefixed '﻿' to the JS string. The bundle contained
+  // it, and the file Darren exported still began 44 61 74 65 — "Date". The
+  // character does not survive the trip from the JS string to the file, so the
+  // mark now goes down as bytes through the one native path that performs no
+  // text conversion: base64 decodes straight to Data and is written verbatim.
+  //
+  // These tests write REAL FILES and read REAL BYTES back. Modelling the two
+  // native writes exactly as FileSystemLegacyModule.swift performs them:
+  //   base64 → Data(base64Encoded:)       (no text conversion)
+  //   utf8   → string.data(using: .utf8)  (append)
+  const appSrc = () => src(join(REPO_ROOT, 'app/local-business-transactions.tsx'));
+
+  function exportToDisk(rows: Record<string, unknown>[]): string {
+    const head = ['Date', 'Type', 'Description', 'Customer', 'Direction',
+                  'Gross', 'Fee', 'Cashback', 'Net', 'Status', 'Reference'];
+    const esc = (v: unknown) => {
+      const t = String(v);
+      return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    const p = (n: number) => (n / 100).toFixed(2);
+    const lines = rows.map((r) => [
+      new Date(String(r.occurred_at)).toISOString().slice(0, 10),
+      r.kind, r.description, r.counterparty, r.direction,
+      p(Number(r.gross_pence)), p(Number(r.fee_pence)),
+      p(Number(r.cashback_pence)), p(Number(r.net_pence)), r.status, r.reference ?? '',
+    ].map(esc).join(','));
+    const csv = [head.join(','), ...lines].join('\n');
+
+    const file = join(tmpdir(), `oneshetland-csv-${process.pid}-${Math.random().toString(36).slice(2)}.csv`);
+    // 1. the BOM, base64 → bytes, no conversion
+    writeFileSync(file, Buffer.from('77u/', 'base64'));
+    // 2. the body, UTF-8, appended
+    appendFileSync(file, Buffer.from(csv, 'utf8'));
+    return file;
+  }
+
+  const ROWS = [
+    { occurred_at: '2026-09-06T21:19:12Z', kind: 'Pass / pack', description: 'DEMO — 3 Session Pass',
+      counterparty: 'Darren Fullerton', direction: 'in', gross_pence: 300, fee_pence: 15,
+      cashback_pence: 0, net_pence: 285, status: 'paid', reference: '62a4ca87' },
+    { occurred_at: '2026-09-02T10:00:00Z', kind: 'Shop order', description: '1× DEMO — Launch Test Product',
+      counterparty: 'Darren Fullerton', direction: 'in', gross_pence: 100, fee_pence: 5,
+      cashback_pence: 0, net_pence: 95, status: 'paid', reference: 'pi_x' },
+    { occurred_at: '2026-09-03T10:00:00Z', kind: 'Gift', description: 'Price £5, said "hi"\r\nsecond line',
+      counterparty: 'A', direction: 'in', gross_pence: 500, fee_pence: 0,
+      cashback_pence: 0, net_pence: 500, status: 'sent', reference: 'G1' },
+  ];
+
+  let file = '';
+  let bytes: Buffer = Buffer.alloc(0);
+  before(() => {
+    file = exportToDisk(ROWS);
+    bytes = readFileSync(file);          // raw bytes off disk, not the input string
+  });
+  after(() => { try { unlinkSync(file); } catch { /* already gone */ } });
+
+  test('the physical file begins EF BB BF', () => {
+    assert.deepEqual([...bytes.subarray(0, 3)], [0xEF, 0xBB, 0xBF],
+      'the exported file carries no byte-order mark: ' +
+      [...bytes.subarray(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join(' '));
+  });
+
+  test('the bytes after the mark begin Date,Type,', () => {
+    assert.equal(bytes.subarray(3, 13).toString('utf8'), 'Date,Type,');
+  });
+
+  test('the em dash survives as E2 80 94', () => {
+    const i = bytes.indexOf(Buffer.from('DEMO ', 'utf8'));
+    assert.ok(i > 0, 'the pass description is missing');
+    assert.deepEqual([...bytes.subarray(i + 5, i + 8)], [0xE2, 0x80, 0x94]);
+  });
+
+  test('the multiplication sign survives as C3 97', () => {
+    const i = bytes.indexOf(Buffer.from('1', 'utf8'), bytes.indexOf(Buffer.from('Shop order', 'utf8')));
+    assert.ok(i > 0);
+    assert.deepEqual([...bytes.subarray(i + 1, i + 3)], [0xC3, 0x97]);
+  });
+
+  test('a comma inside a value is quoted', () => {
+    assert.match(bytes.toString('utf8'), /"Price £5, said ""hi""\r\nsecond line"/);
+  });
+
+  test('quotes are doubled and CR/LF fields stay inside one field', () => {
+    const text = bytes.toString('utf8').replace(/^﻿/, '');
+    // Three data rows, however many newlines live inside quoted fields.
+    const dataRows = text.split('\n').length;
+    assert.ok(dataRows >= 4, 'rows were lost');
+    assert.ok(text.includes('""hi""'), 'quote doubling was lost');
+  });
+
+  test('every financial field is unchanged', () => {
+    const text = bytes.toString('utf8');
+    assert.ok(text.includes('3.00,0.15,0.00,2.85'), 'the pass figures changed');
+    assert.ok(text.includes('1.00,0.05,0.00,0.95'), 'the shop order figures changed');
+  });
+
+  test('the header still has eleven columns', () => {
+    const header = bytes.toString('utf8').replace(/^﻿/, '').split('\n')[0];
+    assert.equal(header.split(',').length, 11);
+  });
+
+  test('decoding the file returns exactly what went in', () => {
+    const text = bytes.toString('utf8');
+    for (const want of ['DEMO — 3 Session Pass', '1× DEMO — Launch Test Product', 'Price £5']) {
+      assert.ok(text.includes(want), `round-trip lost ${JSON.stringify(want)}`);
+    }
+  });
+
+  test('the shipped exporter writes the mark as base64 bytes, then appends the body', () => {
+    const s = appSrc();
+    assert.match(s, /const UTF8_BOM_BASE64 = '77u\/';/, 'the BOM constant is gone or changed');
+    assert.match(s, /writeAsStringAsync\(uri, UTF8_BOM_BASE64, \{\s*\n?\s*encoding: FileSystem\.EncodingType\.Base64,/,
+      'the mark is no longer written as base64 bytes');
+    assert.match(s, /encoding: FileSystem\.EncodingType\.UTF8,\s*\n?\s*append: true,/,
+      'the body is no longer appended as UTF-8');
+    // And the string must NOT carry the character any more — that was the bug.
+    assert.ok(!/'\\uFEFF' \+/.test(s), 'the CSV string still prefixes \\uFEFF, which does not survive');
+  });
+
+  test('the file that was written is the file that is shared', () => {
+    const s = appSrc();
+    const writeAt = s.indexOf('append: true');
+    const shareAt = s.indexOf('Share.share({ url: uri');
+    assert.ok(shareAt > writeAt, 'the share happens before the body is written');
+    assert.ok(!/Share\.share\(\{\s*message:/.test(s), 'the share sends a rebuilt string rather than the file');
   });
 });
 

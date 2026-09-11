@@ -16,6 +16,9 @@ import { supabase } from '@/lib/supabase';
 const ACCENT = '#7C3AED';
 const money = (p: number) => `£${(p / 100).toFixed(2)}`;
 
+/** EF BB BF. Base64 so the native writer takes it as bytes, never as text. */
+const UTF8_BOM_BASE64 = '77u/';
+
 interface Txn {
   occurred_at: string; direction: 'in' | 'out' | 'refund'; kind: string; description: string;
   counterparty: string; gross_pence: number; fee_pence: number; cashback_pence: number;
@@ -95,12 +98,25 @@ export default function BusinessTransactionsScreen() {
         new Date(r.occurred_at).toISOString().slice(0, 10), KIND_LABEL[r.kind] ?? r.kind, r.description,
         r.counterparty, r.direction, p(r.gross_pence), p(r.fee_pence), p(r.cashback_pence), p(r.net_pence), r.status, r.reference ?? '',
       ].map((c) => esc(String(c))).join(','));
-      // U+FEFF, so the file opens EF BB BF. The data was always valid UTF-8;
-      // without the mark Excel guesses the encoding from the bytes and renders
-      // "DEMO — 3 Session Pass" and "1× …" as mojibake.
-      const csv = '\uFEFF' + [head.join(','), ...lines].join('\n');
+      const csv = [head.join(','), ...lines].join('\n');
       const uri = `${FileSystem.cacheDirectory}transactions-${preset}.csv`;
-      await FileSystem.writeAsStringAsync(uri, csv);
+      // The mark goes down as BYTES, not as text. Prefixing '\uFEFF' to the
+      // string and writing it as UTF-8 looked right in the bundle and still
+      // arrived on disk as "Date,..." — the character does not survive the trip
+      // from the JS string to the file. Base64 is the one path the native
+      // writer does not convert: it decodes straight to Data and writes it, so
+      // these three bytes are exactly what lands.
+      await FileSystem.writeAsStringAsync(uri, UTF8_BOM_BASE64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      // Then the body, appended as UTF-8 — which was always encoded correctly;
+      // the em dash and × arrived intact even when the mark did not.
+      await FileSystem.writeAsStringAsync(uri, csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+        append: true,
+      });
+      // Shared by URL, so the share sheet sends this file rather than a copy
+      // built from a string.
       await Share.share({ url: uri, title: 'OneShetland transactions' });
     } catch { /* user cancelled or share unavailable */ }
   }
