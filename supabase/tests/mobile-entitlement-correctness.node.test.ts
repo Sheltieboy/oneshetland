@@ -368,7 +368,7 @@ describe('the dashboard opens the business the user actually tapped', () => {
   }
 
   test('the dashboard reads the business id from the route', () => {
-    assert.match(dashSrc(), /useLocalSearchParams<\{ id\?: string \}>\(\)/,
+    assert.match(dashSrc(), /useLocalSearchParams<\{ id\?: string(?:; tab\?: string)? \}>\(\)/,
       'the dashboard is not reading its route parameter');
     assert.match(dashSrc(), /\}, \[profile\?\.id, routeBusinessId\]\);/,
       'loadAll would not re-run when the route business changes');
@@ -442,6 +442,104 @@ describe('the dashboard opens the business the user actually tapped', () => {
       const m = s.match(new RegExp(`pathname: '/${screen}', params: \\{ businessId: ([^,}]+)`));
       assert.ok(m, `the dashboard no longer routes to ${screen}`);
       assert.match(m![1], /activeBusiness/, `${screen} is not given the visible business`);
+    }
+  });
+});
+
+/* ── Payments-section targeting ───────────────────────────────────────────── */
+
+describe('tab=payments lands the merchant on the payments section', () => {
+  // "Payment card" and "Payout bank" in the Me tab already pushed
+  // tab: 'payments'. The dashboard read neither, so both dropped the merchant
+  // at the top of a long screen to hunt for the section they had just tapped.
+  const dashSrc = () => read('app/local-business-dashboard.tsx');
+
+  /** The shipped guard, lifted out of the source and executed. */
+  function attempt(opts: {
+    routeTab?: string; activeBusiness: unknown; planCardY: number | null; alreadyJumped?: boolean;
+  }) {
+    const s = dashSrc();
+    const m = s.match(/const jumpToPaymentsIfRequested = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[routeTab, activeBusiness\]\);/);
+    assert.ok(m, 'the payments jump is no longer written the way this test reads it');
+    const body = m![1]
+      .replace(/didJumpToPayments\.current/g, 'state.jumped')
+      .replace(/planCardY\.current/g, 'planCardY')
+      .replace(/setExpanded\(\(prev\) => \(\{ \.\.\.prev, plan: true \}\)\);/, 'state.expandedPlan = true;')
+      .replace(/scrollRef\.current\?\.scrollTo\(\{ y: ([\s\S]+?), animated: true \}\);/, 'state.scrolledTo = $1;');
+    const state = { jumped: opts.alreadyJumped ?? false, expandedPlan: false, scrolledTo: null as number | null };
+    new Function('routeTab', 'activeBusiness', 'planCardY', 'state', 'Math', body)(
+      opts.routeTab, opts.activeBusiness, opts.planCardY, state, Math);
+    return state;
+  }
+
+  const BIZ = { id: 'and-1', name: 'Anderson & Co' };
+
+  test('the dashboard reads the tab parameter alongside the id', () => {
+    assert.match(dashSrc(), /useLocalSearchParams<\{ id\?: string; tab\?: string \}>\(\)/,
+      'the dashboard is not reading the tab parameter');
+  });
+
+  test('tab=payments opens the section and scrolls to it', () => {
+    const r = attempt({ routeTab: 'payments', activeBusiness: BIZ, planCardY: 420 });
+    assert.equal(r.jumped, true);
+    assert.equal(r.expandedPlan, true, 'the card was left collapsed, so there is nothing to see');
+    assert.equal(r.scrolledTo, 412, 'did not scroll to the payments card');
+  });
+
+  test('no tab does nothing at all', () => {
+    const r = attempt({ activeBusiness: BIZ, planCardY: 420 });
+    assert.deepEqual(r, { jumped: false, expandedPlan: false, scrolledTo: null });
+  });
+
+  test('an unknown tab does nothing at all', () => {
+    const r = attempt({ routeTab: 'loyalty', activeBusiness: BIZ, planCardY: 420 });
+    assert.deepEqual(r, { jumped: false, expandedPlan: false, scrolledTo: null });
+  });
+
+  test('it waits for the business rather than scrolling an empty screen', () => {
+    const r = attempt({ routeTab: 'payments', activeBusiness: null, planCardY: 420 });
+    assert.equal(r.jumped, false, 'jumped before the business had loaded');
+    assert.equal(r.scrolledTo, null);
+  });
+
+  test('it waits for the card to be laid out', () => {
+    const r = attempt({ routeTab: 'payments', activeBusiness: BIZ, planCardY: null });
+    assert.equal(r.jumped, false, 'scrolled to a position it had not measured');
+  });
+
+  test('it fires once, and never again', () => {
+    // The guard is a ref, so re-renders, a refresh, or the card re-laying out
+    // must not drag the merchant back down the screen.
+    const r = attempt({ routeTab: 'payments', activeBusiness: BIZ, planCardY: 900, alreadyJumped: true });
+    assert.equal(r.scrolledTo, null, 'scrolled a second time');
+    assert.equal(r.expandedPlan, false, 'reopened a card the merchant may have closed');
+  });
+
+  test('both the effect and the layout attempt it, so neither has to win the race', () => {
+    const s = dashSrc();
+    assert.match(s, /useEffect\(\(\) => \{ jumpToPaymentsIfRequested\(\); \}, \[jumpToPaymentsIfRequested, loading\]\);/);
+    assert.match(s, /onLayout=\{\(e\) => \{ planCardY\.current = e\.nativeEvent\.layout\.y; jumpToPaymentsIfRequested\(\); \}\}/);
+    assert.ok(!/setTimeout|setInterval/.test(s.slice(s.indexOf('jumpToPaymentsIfRequested'), s.indexOf('jumpToPaymentsIfRequested') + 900)),
+      'a timer was added to paper over the race');
+  });
+
+  test('business selection is untouched by any of this', () => {
+    const s = dashSrc();
+    // The tab must never influence which business is chosen.
+    assert.match(s, /const target = biz \?\? requested \?\? withPrivate\[0\];/);
+    assert.ok(!/routeTab.*withPrivate|withPrivate.*routeTab/.test(s),
+      'the tab parameter leaked into business selection');
+    assert.match(s, /withPrivate\.find\(\(b\) => b\.id === routeBusinessId\)/,
+      'the owned-business check was lost');
+  });
+
+  test('manual switching and child routing still stand', () => {
+    const s = dashSrc();
+    assert.match(s, /loadAll\(b\)|loadAll\(activeBusiness\)/, 'the switcher no longer reloads a chosen business');
+    const pushes = s.match(/pathname: '\/[a-z-]+', params: \{ (?:businessId|id): ([^,}]+)/g) ?? [];
+    assert.ok(pushes.length >= 10);
+    for (const p of pushes) {
+      assert.ok(/activeBusiness|bizEvents\[0\]/.test(p), `a child screen is no longer given the visible business: ${p}`);
     }
   });
 });

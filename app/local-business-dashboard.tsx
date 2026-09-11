@@ -130,7 +130,7 @@ export default function BusinessDashboardScreen() {
    * created_at desc. So tapping Anderson & Co opened DEMO — Subscription Test
    * Co, and the merchant had to switch by hand on a screen full of money.
    */
-  const { id: routeBusinessId } = useLocalSearchParams<{ id?: string }>();
+  const { id: routeBusinessId, tab: routeTab } = useLocalSearchParams<{ id?: string; tab?: string }>();
   const { profile } = useAuth();
   const { sidePadding, isTablet } = useAppLayout();
 
@@ -176,6 +176,20 @@ export default function BusinessDashboardScreen() {
   };
 
   const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /**
+   * Landing on Payments when the route asked for it.
+   *
+   * "Payment card" and "Payout bank" in the Me tab already pushed
+   * tab: 'payments'; the dashboard read neither, so both dropped the merchant at
+   * the top of a long screen to hunt for the section they had just tapped.
+   *
+   * One shot, guarded by a ref rather than state so it neither re-renders nor
+   * fires again: once the merchant is there, the screen is theirs to scroll.
+   */
+  const scrollRef = useRef<ScrollView | null>(null);
+  const planCardY = useRef<number | null>(null);
+  const didJumpToPayments = useRef(false);
 
   const loadAll = useCallback(async (biz?: LocalBusiness) => {
     if (!profile) return;
@@ -256,6 +270,27 @@ export default function BusinessDashboardScreen() {
   }, [profile?.id, routeBusinessId]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  /**
+   * Both the data and the layout have to be ready, and neither reliably arrives
+   * last — a ref cannot re-run an effect, so the effect alone would race the
+   * card's onLayout. Both call this instead, and the guard makes the second
+   * caller a no-op. No timers, no retry loop.
+   */
+  const jumpToPaymentsIfRequested = useCallback(() => {
+    if (routeTab !== 'payments') return;          // any other value opens normally
+    if (didJumpToPayments.current) return;        // once, however many renders follow
+    if (!activeBusiness) return;                  // wait for the business, or the section is empty
+    const y = planCardY.current;
+    if (y == null) return;                        // and for the card to have been laid out
+    didJumpToPayments.current = true;
+    // Open it: a collapsed card would show the merchant a header and none of
+    // what they tapped for.
+    setExpanded((prev) => ({ ...prev, plan: true }));
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+  }, [routeTab, activeBusiness]);
+
+  useEffect(() => { jumpToPaymentsIfRequested(); }, [jumpToPaymentsIfRequested, loading]);
 
   // Auto-refresh code every 60s while screen is open
   useEffect(() => {
@@ -641,6 +676,7 @@ export default function BusinessDashboardScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingHorizontal: Math.max(spacing.lg, sidePadding) }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(activeBusiness); }} tintColor={S.color} />}
@@ -939,7 +975,10 @@ export default function BusinessDashboardScreen() {
         <Text style={styles.groupHeader}>Money</Text>
 
         {/* ── Plan, payments & payouts (merged) ── */}
-        <View style={styles.card}>
+        <View
+          style={styles.card}
+          onLayout={(e) => { planCardY.current = e.nativeEvent.layout.y; jumpToPaymentsIfRequested(); }}
+        >
           <TouchableOpacity style={styles.cardHeader} onPress={() => toggleCard('plan')} activeOpacity={0.7}>
             <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
               <FontAwesome5 name="cog" size={13} color={S.color} solid />
