@@ -198,17 +198,38 @@ function LocalCounterBody() {
             : 'Refreshing…'}
         </Text>
 
+        {/* TWO JOBS, TWO BUTTONS.
+
+            Counter mode used to offer one button, to the till, under the words
+            "Scan a member card". That is only half the counter's work: a
+            customer who has pressed "Use at till" in the app is holding a
+            one-time reward QR, and the till cannot redeem one — it resolves
+            member cards. Staff had no route to the screen that could, and
+            Counter mode is PIN-locked, so they could not even leave to find it.
+            Each job now says what it is and what to ask the customer for. */}
         <TouchableOpacity
           style={styles.scanBtn}
           activeOpacity={0.88}
           onPress={() => router.push(`/local-till?businessId=${business.id}`)}
           accessibilityRole="button"
-          accessibilityLabel="Scan a member card"
+          accessibilityLabel="Add loyalty — scan the customer's member card"
         >
-          <FontAwesome5 name="qrcode" size={20} color="#fff" solid />
-          <Text style={styles.scanText}>Scan a member card</Text>
+          <FontAwesome5 name="stamp" size={20} color="#fff" solid />
+          <Text style={styles.scanText}>Add loyalty</Text>
         </TouchableOpacity>
-        <Text style={styles.scanHint}>Stamps, points, rewards, offers and card payments</Text>
+        <Text style={styles.scanHint}>Scan their member card · stamps, points and card payments</Text>
+
+        <TouchableOpacity
+          style={styles.redeemBtn}
+          activeOpacity={0.88}
+          onPress={() => router.push(`/local-verify?businessId=${business.id}`)}
+          accessibilityRole="button"
+          accessibilityLabel="Redeem a reward — scan the customer's reward QR"
+        >
+          <FontAwesome5 name="gift" size={18} color="#fff" solid />
+          <Text style={styles.redeemText}>Redeem a reward</Text>
+        </TouchableOpacity>
+        <Text style={styles.scanHint}>Scan their reward QR · passes, vouchers, rewards and offers</Text>
       </View>
 
       <View style={styles.footer}>
@@ -274,6 +295,8 @@ const styles = StyleSheet.create({
   scanBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md, backgroundColor: ACCENT, borderRadius: radius.lg, paddingVertical: 22, paddingHorizontal: 32, alignSelf: 'stretch' },
   scanText: { color: '#fff', fontSize: fontSize.xl, fontWeight: '900' },
   scanHint: { color: 'rgba(255,255,255,0.5)', fontSize: fontSize.xs, marginTop: spacing.sm },
+  redeemBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.md, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.35)', borderRadius: radius.lg, paddingVertical: 18, paddingHorizontal: 32, alignSelf: 'stretch', marginTop: spacing.lg },
+  redeemText: { color: '#fff', fontSize: fontSize.lg, fontWeight: '900' },
 
   footer:     { alignItems: 'center', paddingVertical: spacing.md },
   footerLink: { color: 'rgba(255,255,255,0.6)', fontSize: fontSize.xs, fontWeight: '700', textDecorationLine: 'underline' },

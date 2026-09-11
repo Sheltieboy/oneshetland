@@ -309,6 +309,15 @@ describe('nothing outside correctness moved', () => {
       'components/business/TransactionsLedger.tsx', // statement refund accounting
       'lib/passes-data.ts',                      // pass refund_state model
       'app/account/passes/PassesClient.tsx',     // pass refund_state on screen
+      // The redemption business scope. The same merchant redemption workflow is
+      // exposed on both clients, and the web one carried the identical defect:
+      // RedeemVerify took no businessId while every sibling on its page did, so
+      // an owner of two businesses could redeem one business's reward while
+      // managing the other. Fixing mobile alone would have left the blocker
+      // live on web, so these three are approved on the same ticket.
+      'app/business/[id]/manage/loyalty/page.tsx', // passes businessId down
+      'components/business/RedeemVerify.tsx',      // scopes preview and redeem
+      'lib/loyalty-redeem-client.ts',              // sends business_id
     ];
     const out = execFileSync('git', ['status', '--porcelain'],
       { cwd: join(REPO_ROOT, '..', 'oneshetland-web'), encoding: 'utf8' });

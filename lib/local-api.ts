@@ -752,9 +752,35 @@ export async function startRedemption(kind: RedeemKind, refId: string, amount?: 
   return data as RedemptionTicket;
 }
 
+/**
+ * READ-ONLY look-up of a pending code. Consumes nothing — the merchant sees what
+ * they are about to redeem before they redeem it.
+ *
+ * The backend has supported this since the redemption-preview migration and the
+ * website has used it since; the app's Confirm-a-redemption screen was the last
+ * surface still calling the mutating verify the instant a QR came into frame.
+ * Backed by preview_redemption(), which is declared STABLE and writes nothing.
+ */
+export async function previewRedemption(input: { code?: string; token?: string; businessId: string }): Promise<{
+  kind: RedeemKind;
+  detail: { title?: string; subtitle?: string };
+  uses_remaining?: number;
+  business_id?: string;
+}> {
+  const { code, token, businessId } = input;
+  const { data, error } = await supabase.functions.invoke('local-redeem-verify', {
+    body: { code, token, business_id: businessId, preview: true },
+  });
+  if (error) throw await fnErr(error, 'Could not look that code up.');
+  return data as { kind: RedeemKind; detail: { title?: string; subtitle?: string }; uses_remaining?: number; business_id?: string };
+}
+
 /** Staff confirm a customer's code or scanned QR token → applies the effect. */
-export async function verifyRedemption(input: { code?: string; token?: string }): Promise<{ ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } }> {
-  const { data, error } = await supabase.functions.invoke('local-redeem-verify', { body: input });
+export async function verifyRedemption(input: { code?: string; token?: string; businessId: string }): Promise<{ ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } }> {
+  const { code, token, businessId } = input;
+  const { data, error } = await supabase.functions.invoke('local-redeem-verify', {
+    body: { code, token, business_id: businessId },
+  });
   if (error) throw await fnErr(error, 'Could not verify.');
   return data as { ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } };
 }

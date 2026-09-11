@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { tillLookup, tillAction, createChargeRequest, getChargeStatus, type TillLookup } from '@/lib/member-card';
+import { classifyScan, tillErrorState, wrongScannerState } from '@/lib/redemption-ux';
 
 // Soft-load expo-camera (mirrors local-verify.tsx).
 let _CameraView: React.ComponentType<any> = View;
@@ -42,6 +43,8 @@ function LocalTillBody() {
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const [chargeAmount, setChargeAmount] = useState('');
   const [charge, setCharge] = useState<{ requestId: string; amountPence: number; status: string } | null>(null);
+  // A wrong-kind scan is answered from its shape alone — no lookup, no action.
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
   const lockRef = useRef(false);
 
   // Poll the pending charge until the customer approves / declines / it lapses.
@@ -67,20 +70,41 @@ function LocalTillBody() {
       Haptics.selectionAsync();
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setToast({ ok: false, text: e instanceof Error ? e.message : 'Could not start the charge' });
+      const st = tillErrorState(e);
+      if (st.detail) console.warn('[local-till]', st.detail);
+      setToast({ ok: false, text: st.message ? `${st.title} — ${st.message}` : st.title });
     } finally { setBusy(false); }
+  }
+
+  /**
+   * Everything that starts a lookup comes through here. A reward/pass QR is a
+   * UUID and a member card is 8 characters, so the wrong one is recognised by
+   * shape and answered with a pointer to the redemption screen — it is never
+   * sent to loyalty-till, which would only say “Member code not found”.
+   */
+  function scanned(raw: string) {
+    if (lockRef.current) return;
+    const wrong = wrongScannerState('till', classifyScan(raw));
+    if (wrong) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      setNotice(wrong);
+      return;
+    }
+    lookup(raw);
   }
 
   async function lookup(memberCode: string) {
     if (lockRef.current) return;
-    lockRef.current = true; setBusy(true); setToast(null);
+    lockRef.current = true; setBusy(true); setToast(null); setNotice(null);
     try {
       const res = await tillLookup(memberCode.toUpperCase().trim(), businessId);
       setData(res); setCode(memberCode.toUpperCase().trim());
       Haptics.selectionAsync();
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setToast({ ok: false, text: e instanceof Error ? e.message : 'Not found' });
+      const st = tillErrorState(e);
+      if (st.detail) console.warn('[local-till]', st.detail);
+      setNotice({ title: st.title, message: st.message });
     } finally { setBusy(false); lockRef.current = false; }
   }
 
@@ -93,28 +117,30 @@ function LocalTillBody() {
       await lookupSilent();   // refresh status
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setToast({ ok: false, text: e instanceof Error ? e.message : 'Failed' });
+      const st = tillErrorState(e);
+      if (st.detail) console.warn('[local-till]', st.detail);
+      setToast({ ok: false, text: st.message ? `${st.title} — ${st.message}` : st.title });
     } finally { setBusy(false); }
   }
   async function lookupSilent() {
     try { setData(await tillLookup(code, businessId)); } catch { /* keep */ }
   }
 
-  function reset() { setData(null); setCode(''); setManual(''); setAmount(''); setToast(null); setChargeAmount(''); setCharge(null); lockRef.current = false; }
+  function reset() { setData(null); setCode(''); setManual(''); setAmount(''); setToast(null); setNotice(null); setChargeAmount(''); setCharge(null); lockRef.current = false; }
 
   const program = data?.program;
   const card = data?.card;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Loyalty till" subtitle={data ? data.business.name : 'Scan a member’s card'} onClose={() => router.back()} accent={ACCENT} />
+      <ScreenHeader title="Add loyalty" subtitle={data ? data.business.name : 'Scan the customer’s member card'} onClose={() => router.back()} accent={ACCENT} />
       <ScrollView contentContainerStyle={styles.body}>
         {!data ? (
           <>
             <View style={styles.scannerBox}>
               {CAMERA_AVAILABLE && permission?.granted ? (
                 <CameraView style={StyleSheet.absoluteFill} barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                  onBarcodeScanned={({ data: d }: { data: string }) => { if (!lockRef.current && d) lookup(d); }} />
+                  onBarcodeScanned={({ data: d }: { data: string }) => { if (!notice && d) scanned(d); }} />
               ) : (
                 <View style={styles.scannerPlaceholder}>
                   <FontAwesome5 name="qrcode" size={40} color={colors.textLight} />
@@ -127,13 +153,34 @@ function LocalTillBody() {
                 </View>
               )}
             </View>
+            {notice ? (
+              <View style={styles.noticeCard}>
+                <FontAwesome5 name="exclamation-circle" size={18} color="#B45309" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.noticeTitle}>{notice.title}</Text>
+                  <Text style={styles.noticeBody}>{notice.message}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setNotice(null)} accessibilityRole="button" accessibilityLabel="Dismiss">
+                  <Text style={styles.noticeDismiss}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <Text style={styles.leadIn}>
+                Add a stamp, add points, give a ready reward or take a card payment. To redeem a
+                reward the customer is already showing, use “Redeem a reward” instead.
+              </Text>
+            )}
             <Text style={styles.manualLabel}>…or type their member code</Text>
             <View style={styles.manualRow}>
               <TextInput style={styles.manualInput} value={manual}
                 onChangeText={(t) => setManual(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
                 placeholder="ABCD1234" placeholderTextColor={colors.textLight} autoCapitalize="characters" autoCorrect={false} maxLength={8} />
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: ACCENT, opacity: manual.length >= 6 && !busy ? 1 : 0.4 }]}
-                disabled={manual.length < 6 || busy} onPress={() => lookup(manual)}>
+              {/* A member code is ALWAYS eight characters — ensure_member_code()
+                  writes upper(substr(replace(uuid,'-',''),1,8)), and every live
+                  code is exactly that. Find used to enable at six, so staff
+                  could submit something that had never been able to match. */}
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: ACCENT, opacity: manual.length === 8 && !busy ? 1 : 0.4 }]}
+                disabled={manual.length !== 8 || busy} onPress={() => scanned(manual)}>
                 {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Find</Text>}
               </TouchableOpacity>
             </View>
@@ -237,6 +284,15 @@ const styles = StyleSheet.create({
   btn: { borderRadius: radius.md, paddingHorizontal: 20, paddingVertical: 12, alignItems: 'center' },
   btnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
   toast: { fontSize: fontSize.sm, fontWeight: '800', textAlign: 'center', paddingVertical: 4 },
+  leadIn: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center', paddingHorizontal: spacing.sm, lineHeight: 19 },
+  noticeCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FCD34D',
+    borderRadius: radius.md, padding: 12,
+  },
+  noticeTitle: { fontSize: fontSize.sm, fontWeight: '900', color: '#92400E' },
+  noticeBody: { fontSize: fontSize.xs, color: '#92400E', lineHeight: 17, marginTop: 2 },
+  noticeDismiss: { fontSize: fontSize.sm, fontWeight: '900', color: '#B45309', paddingHorizontal: 4 },
 
   statusCard: { backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 16, alignItems: 'center', gap: 6 },
   custName: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },

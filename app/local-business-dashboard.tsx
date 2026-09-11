@@ -791,34 +791,36 @@ export default function BusinessDashboardScreen() {
           </View>
         </View>
 
-        {/* ── Loyalty till (scan the member's one card) ── */}
+        {/* ── Add loyalty: scan the member's ONE card, then choose an action ── */}
         <TouchableOpacity
           style={[styles.backfillBanner, { backgroundColor: S.color, borderColor: S.color }]}
           onPress={() => router.push({ pathname: '/local-till', params: { businessId: activeBusiness.id } })}
           activeOpacity={0.85}
         >
           <View style={[styles.backfillIcon, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-            <FontAwesome5 name="qrcode" size={11} color="#fff" solid />
+            <FontAwesome5 name="stamp" size={11} color="#fff" solid />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.backfillTitle, { color: '#fff' }]}>Loyalty till</Text>
-            <Text style={[styles.backfillSub, { color: 'rgba(255,255,255,0.9)' }]}>Scan a customer’s card to add a stamp, add points or give a reward.</Text>
+            <Text style={[styles.backfillTitle, { color: '#fff' }]}>Add loyalty</Text>
+            <Text style={[styles.backfillSub, { color: 'rgba(255,255,255,0.9)' }]}>Scan the customer’s member card, then add a stamp, add points or give a ready reward.</Text>
           </View>
           <FontAwesome5 name="chevron-right" size={11} color="rgba(255,255,255,0.8)" />
         </TouchableOpacity>
 
-        {/* ── Confirm a redemption (customer-generated code / passes) ── */}
+        {/* ── Redeem a reward: a one-time code the CUSTOMER generated. A
+             different job from the one above, and it used to be titled
+             "Confirm a redemption", which read like a second step of it. ── */}
         <TouchableOpacity
           style={styles.backfillBanner}
-          onPress={() => router.push('/local-verify')}
+          onPress={() => router.push({ pathname: '/local-verify', params: { businessId: activeBusiness.id } })}
           activeOpacity={0.85}
         >
           <View style={styles.backfillIcon}>
-            <FontAwesome5 name="qrcode" size={11} color={S.color} solid />
+            <FontAwesome5 name="gift" size={11} color={S.color} solid />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.backfillTitle}>Confirm a redemption</Text>
-            <Text style={styles.backfillSub}>Scan or enter a customer’s one-time code (passes &amp; app redemptions).</Text>
+            <Text style={styles.backfillTitle}>Redeem a reward</Text>
+            <Text style={styles.backfillSub}>Scan the customer’s reward QR — passes, vouchers, rewards and offers. Nothing is used until you confirm.</Text>
           </View>
           <FontAwesome5 name="chevron-right" size={11} color={S.color} />
         </TouchableOpacity>
