@@ -14,7 +14,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { tillLookup, tillAction, createChargeRequest, getChargeStatus, type TillLookup } from '@/lib/member-card';
+import { tillLookup, tillAction, createChargeRequest, getChargeStatus, cancelChargeRequest, type TillLookup } from '@/lib/member-card';
 import { classifyScan, tillErrorState, wrongScannerState } from '@/lib/redemption-ux';
 
 // Soft-load expo-camera (mirrors local-verify.tsx).
@@ -43,6 +43,7 @@ function LocalTillBody() {
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const [chargeAmount, setChargeAmount] = useState('');
   const [charge, setCharge] = useState<{ requestId: string; amountPence: number; status: string } | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   // A wrong-kind scan is answered from its shape alone — no lookup, no action.
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
   const lockRef = useRef(false);
@@ -74,6 +75,33 @@ function LocalTillBody() {
       if (st.detail) console.warn('[local-till]', st.detail);
       setToast({ ok: false, text: st.message ? `${st.title} — ${st.message}` : st.title });
     } finally { setBusy(false); }
+  }
+
+  /**
+   * Cancel used to only clear local state — the request stayed 'pending'
+   * server-side, so a merchant who mistyped an amount and tapped Cancel had
+   * no guarantee the customer couldn't still approve it a moment later. This
+   * calls wallet-charge-cancel and reflects whatever it actually settled to:
+   * on success that's 'cancelled', but if the customer's own approval won
+   * the race a beat earlier, the server reports 'paid' (or 'charging') and
+   * that is shown instead of a false "cancelled" — never pretend a cancel
+   * succeeded when it didn't. A network/server failure leaves `charge`
+   * exactly as it was (still pending/charging, poll still running, Cancel
+   * still there to retry) rather than clearing it.
+   */
+  async function cancelCharge() {
+    if (!charge) return;
+    setCancelling(true);
+    try {
+      const r = await cancelChargeRequest(charge.requestId);
+      setCharge((c) => (c ? { ...c, status: r.status } : c));
+      if (r.status === 'cancelled') Haptics.selectionAsync();
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const st = tillErrorState(e);
+      if (st.detail) console.warn('[local-till]', st.detail);
+      setToast({ ok: false, text: 'Could not cancel — try again' });
+    } finally { setCancelling(false); }
   }
 
   /**
@@ -126,7 +154,7 @@ function LocalTillBody() {
     try { setData(await tillLookup(code, businessId)); } catch { /* keep */ }
   }
 
-  function reset() { setData(null); setCode(''); setManual(''); setAmount(''); setToast(null); setNotice(null); setChargeAmount(''); setCharge(null); lockRef.current = false; }
+  function reset() { setData(null); setCode(''); setManual(''); setAmount(''); setToast(null); setNotice(null); setChargeAmount(''); setCharge(null); setCancelling(false); lockRef.current = false; }
 
   const program = data?.program;
   const card = data?.card;
@@ -254,7 +282,20 @@ function LocalTillBody() {
                   {charge.status === 'declined' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Customer declined</Text>}
                   {charge.status === 'expired' && <Text style={[styles.chargeResult, { color: '#d97706' }]}>Request expired — try again</Text>}
                   {charge.status === 'failed' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Payment failed (not charged)</Text>}
-                  <TouchableOpacity onPress={() => setCharge(null)}><Text style={styles.chargeCancel}>{charge.status === 'pending' || charge.status === 'charging' ? 'Cancel' : 'New charge'}</Text></TouchableOpacity>
+                  {charge.status === 'cancelled' && <Text style={[styles.chargeResult, { color: colors.textMuted }]}>Cancelled</Text>}
+                  <TouchableOpacity
+                    disabled={cancelling}
+                    onPress={() => {
+                      if (charge.status === 'pending' || charge.status === 'charging') cancelCharge();
+                      else setCharge(null);
+                    }}
+                  >
+                    <Text style={styles.chargeCancel}>
+                      {charge.status === 'pending' || charge.status === 'charging'
+                        ? (cancelling ? 'Cancelling…' : 'Cancel')
+                        : 'New charge'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>

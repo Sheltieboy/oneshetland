@@ -702,7 +702,10 @@ describe('raw internals never reach the merchant', () => {
 
   test('the till routes its failures through the same mapper', () => {
     const src = code(read(TILL_SRC));
-    assert.equal((src.match(/tillErrorState\(e\)/g) ?? []).length, 3,
+    // lookup, requestCharge, act — plus cancelCharge (wallet-charge-cancel's
+    // client call), added when the till's Cancel button started making a
+    // real server call instead of only clearing local state.
+    assert.equal((src.match(/tillErrorState\(e\)/g) ?? []).length, 4,
       'a till failure path bypasses the mapper');
     assert.match(src, /console\.warn\('\[local-till\]', st\.detail\)/);
   });

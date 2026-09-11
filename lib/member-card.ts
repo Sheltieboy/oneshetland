@@ -68,7 +68,7 @@ export function tillAction(
    on their own phone before any money moves. Mirrors the web member-card client. */
 
 export interface ChargeRequest { request_id: string; customer_name: string; amount_pence: number; expires_at: string; }
-export type ChargeStatus = 'pending' | 'charging' | 'paid' | 'declined' | 'expired' | 'failed';
+export type ChargeStatus = 'pending' | 'charging' | 'paid' | 'declined' | 'expired' | 'failed' | 'cancelled';
 
 async function invokeErr(error: unknown): Promise<Error> {
   let msg = (error as { message?: string }).message ?? 'Something went wrong';
@@ -89,6 +89,32 @@ export async function createChargeRequest(memberCode: string, amountPence: numbe
 export async function getChargeStatus(requestId: string): Promise<ChargeStatus | null> {
   const { data } = await supabase.from('wallet_charge_requests').select('status').eq('id', requestId).maybeSingle();
   return (data as { status: ChargeStatus } | null)?.status ?? null;
+}
+
+/**
+ * Business side: cancel a still-pending request server-side — the actual fix
+ * for "tapped Cancel, but the customer could still approve it".
+ *
+ * A 409 here means the request already settled a different way (the customer
+ * approved a beat earlier, it lapsed, or this is a harmless repeat call after
+ * cancelling once already) — not a hard failure. That status is returned
+ * rather than thrown, so the caller can reflect the true outcome (e.g. "✓
+ * Paid" if the customer got there first) instead of a scary error for
+ * something that isn't one. A genuine failure (network, 500, unexpected
+ * shape) still throws, friendly-messaged the same way every other call here
+ * is — never a raw Postgres/PostgREST/Edge Function message.
+ */
+export async function cancelChargeRequest(requestId: string): Promise<{ status: ChargeStatus }> {
+  const { data, error } = await supabase.functions.invoke('wallet-charge-cancel', {
+    body: { request_id: requestId },
+  });
+  if (error) {
+    let body: { error?: string; status?: ChargeStatus } | null = null;
+    try { body = await (error as any).context?.json?.(); } catch { /* */ }
+    if (body?.status) return { status: body.status };
+    throw await invokeErr(error);
+  }
+  return { status: 'cancelled' };
 }
 
 /** Customer side: approve or decline a charge request aimed at them. */
