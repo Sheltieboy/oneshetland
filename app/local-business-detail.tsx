@@ -634,7 +634,14 @@ export default function BusinessDetailScreen() {
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                                backgroundColor: SECTIONS.events.color, borderRadius: 999,
                                paddingHorizontal: 10, paddingVertical: 5 }}
-                      onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/event-ticket-checkout', params: { id: ev.id } }); }}
+                      onPress={e => {
+                        e.stopPropagation?.();
+                        // Route to the event detail page so the organiser payout-readiness
+                        // gate (working buy CTA vs "Tickets coming soon") always applies,
+                        // rather than landing straight on checkout. Mirrors whats-on.tsx —
+                        // event-detail stays the one canonical gate.
+                        router.push({ pathname: '/events/[id]', params: { id: ev.id } });
+                      }}
                       hitSlop={8}
                     >
                       <FontAwesome5 name="ticket-alt" size={9} color="#fff" solid />

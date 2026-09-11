@@ -33,6 +33,7 @@ import {
   EVENT_CATEGORIES, AGE_RESTRICTIONS,
   type EventUpsertInput, type EventTicketType, type HubEventVisibility,
 } from '@/lib/events-api';
+import { ticketTypesToDeactivate } from '@/lib/ticket-type-save';
 import { fetchHub, createHubNotice } from '@/lib/hubs-api';
 import { track } from '@/lib/analytics';
 import { PeerieFill } from '@/components/ai/PeerieFill';
@@ -88,6 +89,10 @@ function EventCreateBody() {
   const [ticketMode,  setTicketMode]  = useState<'none' | 'oneshetland' | 'external'>('none');
   const [ticketTypes, setTicketTypes] = useState<(Partial<EventTicketType> & { _local?: boolean })[]>([]);
   const [ticketUrl,   setTicketUrl]   = useState('');
+  // Ticket-type ids the event was loaded with. Used on Save to work out which
+  // existing types the owner removed (they're no longer in `ticketTypes`) so
+  // they can be taken off sale — see lib/ticket-type-save.ts.
+  const [originalTicketTypeIds, setOriginalTicketTypeIds] = useState<string[]>([]);
 
   // Misc
   const [refundPolicy, setRefundPolicy] = useState('');
@@ -116,7 +121,10 @@ function EventCreateBody() {
       setTicketUrl(ev.ticket_url);
     } else if (ev.has_tickets || (ev.ticket_types && ev.ticket_types.length > 0)) {
       setTicketMode('oneshetland');
-      if (ev.ticket_types) setTicketTypes(ev.ticket_types);
+      if (ev.ticket_types) {
+        setTicketTypes(ev.ticket_types);
+        setOriginalTicketTypeIds(ev.ticket_types.map(t => t.id).filter((id): id is string => !!id));
+      }
     } else {
       setTicketMode('none');
     }
@@ -268,11 +276,21 @@ function EventCreateBody() {
         track('event_published', { objectType: 'event', objectId: targetId });
       }
 
-      // Upsert ticket types (only when using OneShetland ticketing)
+      // Which originally-loaded ticket types the owner removed (or the event
+      // left OneShetland ticketing entirely) — computed BEFORE the array
+      // below is truncated, from the ids the event was loaded with, so a
+      // removal is judged against what actually existed, not against itself.
+      const idsToDeactivate = ticketTypesToDeactivate(originalTicketTypeIds, ticketTypes, ticketMode);
+
+      // Upsert ticket types (only when using OneShetland ticketing). A type
+      // with a blank name is left exactly as it was — same as before this
+      // fix — rather than dropped from the visible list, since nothing was
+      // actually saved for it.
       if (ticketMode !== 'oneshetland') ticketTypes.length = 0;
+      const updatedTicketTypes: (Partial<EventTicketType> & { _local?: boolean })[] = [];
       for (const tt of ticketTypes) {
-        if (!tt.name?.trim()) continue;
-        await upsertTicketType({
+        if (!tt.name?.trim()) { updatedTicketTypes.push(tt); continue; }
+        const saved = await upsertTicketType({
           id:                       tt._local ? undefined : tt.id,
           event_id:                 targetId,
           name:                     tt.name!,
@@ -286,6 +304,26 @@ function EventCreateBody() {
           sale_ends_at:             tt.sale_ends_at ?? null,
           display_order:            tt.display_order ?? 0,
         } as any);
+        // Carry the real id back onto local state so a second Save (without a
+        // reload) updates this row instead of inserting a duplicate.
+        updatedTicketTypes.push(saved);
+      }
+
+      // Take removed existing types off sale. Soft delete (is_active: false)
+      // — see lib/ticket-type-save.ts for why this is the safe operation:
+      // existing tickets/orders for the type are untouched, only future sale
+      // stops. Runs before the success path below, so a failure here surfaces
+      // as the same "Error" alert as any other save failure, not a silent
+      // partial success.
+      for (const id of idsToDeactivate) {
+        await deleteTicketType(id);
+      }
+
+      if (ticketMode === 'oneshetland') {
+        setTicketTypes(updatedTicketTypes);
+        setOriginalTicketTypeIds(updatedTicketTypes.map(t => t.id).filter((id): id is string => !!id));
+      } else {
+        setOriginalTicketTypeIds([]);
       }
 
       // For a freshly-published hub event, optionally announce it as a notice.
