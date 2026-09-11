@@ -48,6 +48,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { track } from '@/lib/analytics';
 import { setAcceptsBookings, fetchBusinessServices } from '@/lib/book-api';
 import { fetchBusinessEvents, type OsEvent } from '@/lib/events-api';
+import { selectNextBusinessEvent } from '@/lib/business-next-event';
 import {
   fetchMyAlertAccess, requestAlertAccess,
   sendAlert, cancelAlert, fetchMyBusinessAlerts, acceptAlertPolicy,
@@ -163,6 +164,13 @@ export default function BusinessDashboardScreen() {
   const [backfilling,        setBackfilling]        = useState(false);
 
   const [bizEvents, setBizEvents] = useState<OsEvent[]>([]);
+  // Unlike bizEvents (which excludes anything already started, to match
+  // lib/business-home.ts's "upcoming" count exactly — see the comment at its
+  // setBizEvents call), the Scan tickets / Manage events shortcut needs an
+  // event that is currently IN PROGRESS too: that's the one staff are at the
+  // door for right now. Kept separate so bizEvents' own filter — pinned
+  // against lib/business-home.ts's count query — is untouched.
+  const [bizEventsRaw, setBizEventsRaw] = useState<OsEvent[]>([]);
 
   // Urgent alert state
   const [alertAccess,      setAlertAccess]      = useState<AlertAccess | null>(null);
@@ -265,6 +273,7 @@ export default function BusinessDashboardScreen() {
         .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
         .slice(0, 5),
     );
+    setBizEventsRaw(evRows as OsEvent[]);
     setLoading(false);
     setRefreshing(false);
   }, [profile?.id, routeBusinessId]);
@@ -651,6 +660,15 @@ export default function BusinessDashboardScreen() {
   if (!activeBusiness) return null;
 
   const stamps = program?.type === 'stamps';
+  // The nearest relevant event — in progress, else soonest upcoming; never a
+  // past one. See lib/business-next-event.ts. Sourced from bizEventsRaw, not
+  // bizEvents: bizEvents deliberately excludes anything already started (to
+  // match lib/business-home.ts's "upcoming" count), which would silently
+  // drop the one event staff most need to find — the one happening right
+  // now. Still published-and-not-hidden only, same as bizEvents.
+  const nextBizEvent = selectNextBusinessEvent(
+    bizEventsRaw.filter(e => e.status === 'published' && !e.is_hidden),
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -879,18 +897,20 @@ export default function BusinessDashboardScreen() {
         {isWorking(3) && (
         <OutcomeCard
           outcome={outcomes[3]} accent={S.color}
-          fact={bizEvents.length > 0
-            ? `next ${new Date(bizEvents[0].starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+          fact={nextBizEvent
+            ? `next ${new Date(nextBizEvent.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
             : null}
           actions={[
             // event-manage and event-scanner are per-EVENT screens: they read
             // `id`. This passed businessId, so both arrived with nothing to
             // work on — Manage events hung on a spinner and the scanner
             // ignored every code it read. The card already speaks about the
-            // next event ("next 10 Sep"), so its buttons act on that one.
-            { label: 'Manage events', onPress: () => router.push({ pathname: '/event-manage', params: { id: bizEvents[0]?.id ?? '' } }) },
+            // next event ("next 10 Sep"), so its buttons act on that one —
+            // the nearest in-progress-or-upcoming one, never a past one that
+            // merely happens to have the latest starts_at among all of them.
+            { label: 'Manage events', onPress: () => router.push({ pathname: '/event-manage', params: { id: nextBizEvent?.id ?? '' } }) },
             { label: 'New event', onPress: () => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } }) },
-            { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { id: bizEvents[0]?.id ?? '' } }) },
+            { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { id: nextBizEvent?.id ?? '' } }) },
           ]}
         />
         )}
@@ -1034,10 +1054,18 @@ export default function BusinessDashboardScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.payToggleLabel}>Payout bank account</Text>
               <Text style={styles.payToggleSub}>
+                {/* payout_enabled / stripe_connected are the maintained pair —
+                    the same ones actual payment routing and the Accept Local
+                    Wallet card below use. business_stripe_payouts_enabled /
+                    business_stripe_onboarding_complete are a parallel column
+                    pair nothing ever populates (see
+                    20260822160000_business_payout_and_product_read.sql), so
+                    a business whose bank really is connected was shown
+                    "setup needed" forever. Do not revert to those columns. */}
                 {(activeBusiness as any).use_business_payout
-                  ? (activeBusiness as any).business_stripe_payouts_enabled
+                  ? activeBusiness.payout_enabled
                     ? '✓ Business bank connected'
-                    : (activeBusiness as any).business_stripe_onboarding_complete
+                    : (activeBusiness as any).stripe_connected
                       ? 'Verification in progress'
                       : 'Business bank — setup needed'
                   : 'Using your central OneShetland bank'}
@@ -1053,7 +1081,7 @@ export default function BusinessDashboardScreen() {
           </View>
 
           {/* If business bank is ON and not yet connected, show Connect CTA */}
-          {(activeBusiness as any).use_business_payout && !(activeBusiness as any).business_stripe_payouts_enabled && (
+          {(activeBusiness as any).use_business_payout && !activeBusiness.payout_enabled && (
             <TouchableOpacity
               style={[styles.paySetupBtn, { borderColor: colors.jobs, marginTop: 4 }]}
               onPress={handleConnectStripe}
@@ -1061,7 +1089,7 @@ export default function BusinessDashboardScreen() {
             >
               <FontAwesome5 name="university" size={11} color={colors.jobs} />
               <Text style={[styles.paySetupBtnText, { color: colors.jobs }]}>
-                {(activeBusiness as any).business_stripe_onboarding_complete
+                {(activeBusiness as any).stripe_connected
                   ? 'Check verification status'
                   : 'Connect business bank account'}
               </Text>

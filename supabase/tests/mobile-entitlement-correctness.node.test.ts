@@ -434,11 +434,16 @@ describe('the dashboard opens the business the user actually tapped', () => {
     const s = dashSrc();
     // Every push out of the dashboard carries activeBusiness.id — never
     // businesses[0], never the route id, so a child can only ever act on the
-    // business the merchant can see.
+    // business the merchant can see. event-manage/event-scanner carry an
+    // EVENT id instead (they're per-event screens, not per-business), but
+    // nextBizEvent is itself derived from data fetched for activeBusiness.id
+    // (fetchBusinessEvents(target.id) — see business-next-event.node.test.ts
+    // and the "the dashboard actually uses the fix" checks there), so it is
+    // still transitively business-scoped, not a stray index or route id.
     const pushes = s.match(/pathname: '\/[a-z-]+', params: \{ (?:businessId|id): ([^,}]+)/g) ?? [];
     assert.ok(pushes.length >= 10, `expected the dashboard to route to its sections, found ${pushes.length}`);
     for (const p of pushes) {
-      assert.ok(/activeBusiness|bizEvents\[0\]/.test(p),
+      assert.ok(/activeBusiness|nextBizEvent/.test(p),
         `a child screen is handed something other than the visible business: ${p}`);
     }
     assert.ok(!/params: \{ businessId: routeBusinessId/.test(s),
@@ -548,7 +553,7 @@ describe('tab=payments lands the merchant on the payments section', () => {
     const pushes = s.match(/pathname: '\/[a-z-]+', params: \{ (?:businessId|id): ([^,}]+)/g) ?? [];
     assert.ok(pushes.length >= 10);
     for (const p of pushes) {
-      assert.ok(/activeBusiness|bizEvents\[0\]/.test(p), `a child screen is no longer given the visible business: ${p}`);
+      assert.ok(/activeBusiness|nextBizEvent/.test(p), `a child screen is no longer given the visible business: ${p}`);
     }
   });
 });

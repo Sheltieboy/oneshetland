@@ -401,9 +401,25 @@ describe('an event cannot be upcoming and not upcoming at once', () => {
       'the date-only filter is what caused the contradiction');
   });
 
-  test('the supporting fact comes from the same filtered list', () => {
-    assert.match(raw(), /fact=\{bizEvents\.length > 0/);
-    assert.match(raw(), /bizEvents\[0\]\.starts_at/);
+  test('the supporting fact and the Scan/Manage targets are the same single value', () => {
+    // Was bizEvents[0] directly — which meant the "next 10 Sep" text and the
+    // event the Scan tickets / Manage events buttons opened could each read
+    // a different index if the array or its consumers ever drifted. Both now
+    // read one derived const, nextBizEvent, so there is nothing left to
+    // drift between what the card SAYS and what it ACTS on.
+    //
+    // nextBizEvent is deliberately NOT sourced from bizEvents above (whose
+    // future-only filter this test pins two lines up) — an in-progress
+    // event needs to still be reachable here, which bizEvents' filter
+    // excludes by design. See supabase/tests/business-next-event.node.test.ts
+    // for that behaviour in full; this test only pins that the dashboard
+    // uses ONE value for both the fact and the actions.
+    const src = raw();
+    const factIdx = src.indexOf('fact={nextBizEvent');
+    assert.notEqual(factIdx, -1, 'the fact must read the single derived value');
+    const cardBlock = src.slice(factIdx, factIdx + 1400);
+    const idMatches = cardBlock.match(/nextBizEvent\?\.id/g) ?? [];
+    assert.equal(idMatches.length, 2, 'both Manage events and Scan tickets must target nextBizEvent, not two different values');
   });
 });
 
