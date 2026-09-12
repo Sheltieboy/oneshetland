@@ -254,10 +254,16 @@ describe('scenario 5 — merchant cancel removes/disables the web request', () =
     assert.match(block, /setReq\(null\)/);
   });
 
-  test('an in-flight decision (phase "working") is never interrupted by this', () => {
+  test('an in-flight or already-answered decision is never interrupted by this', () => {
+    // Originally guarded only "working". That let the request's own final
+    // "paid" UPDATE arrive AFTER phase had already flipped to the done state,
+    // clearing req and closing the modal on top of the success screen — see
+    // the dedicated regression coverage below. The guard now covers every
+    // phase past "ask", not just "working".
     const anchor = listener.indexOf('const dismissIfSettledElsewhere');
     const block = listener.slice(anchor, anchor + 400);
-    assert.match(block, /if \(phaseRef\.current === "working"\) return;/);
+    assert.match(block, /if \(phaseRef\.current !== "ask"\) return;/);
+    assert.doesNotMatch(block, /phaseRef\.current === "working"/);
   });
 
   test('only the request currently tracked can be dismissed by it — not some unrelated update', () => {
@@ -440,5 +446,244 @@ describe('cross-client — web and mobile refer to the same row, the same author
     const out = execFileSync('git', ['diff', '--stat', 'origin/home-redesign', '--', 'supabase/functions/'],
       { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
     assert.equal(out, '', `supabase/functions/ must be untouched by this web-only change, got:\n${out}`);
+  });
+});
+
+/* ── success-state UX ──────────────────────────────────────────────────────
+ *
+ * WHAT WAS WRONG (second live acceptance test)
+ *
+ * Anderson & Co sent Darren Fullerton a real £0.50 request; he tapped Pay,
+ * the merchant's mobile immediately showed "Paid £0.50" — the backend flow
+ * was correct — but on web the approval modal simply disappeared and he was
+ * dropped back on the underlying page. No confirmation. He had to infer
+ * success from the pop-up closing.
+ *
+ * ROOT CAUSE
+ * wallet_charge_requests moves pending -> charging -> paid as part of the
+ * same approve call. The row's own final "paid" UPDATE is delivered over the
+ * same postgres_changes channel this component already subscribes to, and it
+ * can arrive AFTER respondToCharge() has resolved locally and phase has
+ * already moved past "working". dismissIfSettledElsewhere only excluded
+ * "working", so that trailing UPDATE cleared `req` moments after success —
+ * and because the modal's `open` prop is `!!req && !dismissed`, clearing req
+ * closed the modal itself, wiping out the done screen before the customer
+ * could read it.
+ *
+ * THE FIX
+ *   · phase is now one of ask/working/succeeded/failed/declined, not a vague
+ *     "done" plus a result.ok boolean
+ *   · dismissIfSettledElsewhere's guard widened to "anything past ask", so a
+ *     trailing UPDATE can never clear req once the customer has an answer —
+ *     covered directly below by simulating that exact arrival order
+ *   · a real success screen: business name, amount, the wallet's own
+ *     balance_pence from wallet-charge-approve's response (not recomputed),
+ *     Done and View wallet — mirroring the existing TicketModal success
+ *     pattern already in house style
+ *   · failure keeps a friendly, non-leaking message (respondToCharge's
+ *     invokeErr already unwraps the edge function's own safe `error` field);
+ *     decline keeps its own distinct, unchanged confirmation
+ *
+ * No backend, no wallet-charge-approve, no debit/fee/transfer logic touched —
+ * this is customer-side presentation only, reading a field the endpoint
+ * already returned.
+ */
+
+describe('success state — an explicit confirmation, never a disappearing modal', () => {
+  const listener = code(LISTENER);
+
+  test('phase is an explicit five-state union, not a generic "done" flag', () => {
+    assert.match(listener, /type Phase = "ask" \| "working" \| "succeeded" \| "failed" \| "declined";/);
+  });
+
+  test('a successful approve sets phase "succeeded" and carries business, amount and balance', () => {
+    const anchor = listener.indexOf('async function respond');
+    const block = listener.slice(anchor, listener.indexOf('} catch', anchor));
+    assert.match(block, /setPhase\("succeeded"\)/);
+    assert.match(block, /req\.amountPence/);
+    assert.match(block, /req\.businessName/);
+    assert.match(block, /balancePence:\s*r\.balance_pence/);
+  });
+
+  test('the success screen renders "Payment complete", the amount, the business name and Done/View wallet', () => {
+    // Anchored on the RENDER ternary specifically — "phase === \"succeeded\" ?"
+    // also appears earlier in the title ternary, which indexOf would find
+    // first and give a near-empty, wrong slice.
+    const anchor = listener.indexOf('{!req ? null : phase === "succeeded" ? (');
+    assert.notEqual(anchor, -1);
+    const block = listener.slice(anchor, listener.indexOf(') : phase === "failed" ? (', anchor));
+    assert.match(block, /Payment complete/);
+    assert.match(block, /\{gbp\(req\.amountPence\)\}/);
+    assert.match(block, /\{req\.businessName\}/);
+    assert.match(block, /onClick=\{viewWallet\}/);
+    assert.match(block, /View wallet/);
+    assert.match(block, /onClick=\{finish\}/);
+    assert.match(block, />\s*Done\s*</);
+  });
+
+  test('the Modal title itself swaps to "Payment complete" on success, mirroring the house pattern', () => {
+    assert.match(listener, /phase === "succeeded" \? "Payment complete"/);
+  });
+});
+
+describe('the fix: a trailing realtime UPDATE can no longer erase the success screen', () => {
+  const listener = code(LISTENER);
+
+  test('dismissIfSettledElsewhere is a no-op once phase has left "ask" — executed with the exact arrival order that broke it', () => {
+    // This runs the guard's ACTUAL body (extracted verbatim from source, TS
+    // type annotations stripped by slicing past the declaration line — the
+    // body itself is plain JS) against the exact sequence that produced the
+    // live bug: decision made -> phase already "succeeded" -> the row's own
+    // trailing "paid" UPDATE arrives after. The guard must refuse to touch req.
+    const decl = 'const dismissIfSettledElsewhere = useCallback((row: Row) => {';
+    const declAnchor = listener.indexOf(decl);
+    assert.notEqual(declAnchor, -1, 'dismissIfSettledElsewhere\'s declaration has moved or changed shape');
+    const bodyStart = declAnchor + decl.length;
+    const bodyEnd = listener.indexOf('}, []);', declAnchor);
+    const body = listener.slice(bodyStart, bodyEnd);
+    assert.doesNotMatch(body, /:\s*(Row|string|number|boolean)\b/, 'body slice must be plain JS, not TS, or new Function below cannot parse it');
+
+    function run(phase: string, rowStatus: string, reqId: string, rowId: string) {
+      let cleared = false;
+      const phaseRef = { current: phase };
+      const reqRef = { current: { id: reqId } as { id: string } | null };
+      const setReq = (v: null) => { cleared = v === null; };
+      const setDismissed = (_v: boolean) => {};
+      const row = { status: rowStatus, id: rowId };
+      // eslint-disable-next-line no-new-func
+      new Function('row', 'phaseRef', 'reqRef', 'setReq', 'setDismissed', body)(row, phaseRef, reqRef, setReq, setDismissed);
+      return cleared;
+    }
+    assert.equal(run('succeeded', 'paid', 'r1', 'r1'), false, 'must not clear req once succeeded — this was the live bug');
+    assert.equal(run('failed', 'failed', 'r1', 'r1'), false, 'must not clear req once failed');
+    assert.equal(run('declined', 'declined', 'r1', 'r1'), false, 'must not clear req once declined');
+    assert.equal(run('working', 'charging', 'r1', 'r1'), false, 'must not clear req while working (unchanged behaviour)');
+    assert.equal(run('ask', 'declined', 'r1', 'r1'), true, 'must still clear req for a merchant cancel/expiry while still asking');
+    assert.equal(run('ask', 'pending', 'r1', 'r1'), false, 'still pending is never a settlement, regardless of phase');
+    assert.equal(run('ask', 'declined', 'r1', 'other-request'), false, 'never dismisses a request other than the one currently tracked');
+  });
+
+  test('processing ("working") cannot render the success branch — it falls through to the ask/working UI', () => {
+    const anchor = listener.indexOf('{!req ? null : phase === "succeeded" ?');
+    assert.notEqual(anchor, -1, 'the render branch order has moved');
+    // "working" must not equal "succeeded", so it falls to the final `: (` branch,
+    // which is the same ask/working markup showing the disabled "Paying…" button.
+    assert.match(listener, /\{phase === "working" \? "Paying…" : `Pay \$\{gbp\(req\.amountPence\)\}`\}/);
+  });
+});
+
+describe('failure and decline are visually and textually distinct from success', () => {
+  const listener = code(LISTENER);
+
+  test('a thrown error sets phase "failed", never "succeeded"', () => {
+    const anchor = listener.indexOf('} catch (e) {');
+    const block = listener.slice(anchor, anchor + 300);
+    assert.match(block, /setPhase\("failed"\)/);
+    assert.doesNotMatch(block, /setPhase\("succeeded"\)/);
+  });
+
+  test('the failed screen shows the error text but never "Payment complete" or a checkmark tied to success', () => {
+    // Anchored on the RENDER ternary — the same string also opens the title
+    // ternary and the Modal's accent-colour ternary earlier in the file.
+    const anchor = listener.indexOf(') : phase === "failed" ? (');
+    assert.notEqual(anchor, -1);
+    const block = listener.slice(anchor, listener.indexOf(') : phase === "declined" ? (', anchor));
+    assert.match(block, /outcome\?\.text/);
+    assert.doesNotMatch(block, /Payment complete/);
+    assert.doesNotMatch(block, /View wallet/);
+  });
+
+  test('the error text shown is respondToCharge\'s own message — never a raw backend/PostgREST string', () => {
+    const memberClient = code(MEMBER_CLIENT);
+    // invokeErr unwraps the edge function's own safe JSON `error` field (a
+    // deliberate message, or wallet-charge-approve's fixed catch-all
+    // sentence) rather than surfacing a raw PostgrestError.
+    assert.match(memberClient, /async function invokeErr/);
+    const anchor = listener.indexOf('} catch (e) {');
+    const block = listener.slice(anchor, anchor + 300);
+    assert.match(block, /e instanceof Error \? e\.message/);
+    assert.doesNotMatch(block, /PGRST|23505|pg_|SQLSTATE/i);
+  });
+
+  test('a decline gets its own distinct confirmation, never phrased or styled as a payment', () => {
+    const anchor = listener.indexOf('decision === "decline"');
+    const block = listener.slice(anchor, anchor + 200);
+    assert.match(block, /setPhase\("declined"\)/);
+    assert.match(block, /Declined — nothing was charged\./);
+  });
+
+  test('the declined screen never claims a payment happened', () => {
+    // Anchored on the RENDER ternary, same reasoning as above.
+    const anchor = listener.indexOf(') : phase === "declined" ? (');
+    assert.notEqual(anchor, -1);
+    const block = listener.slice(anchor, listener.indexOf('<div className="py-2 text-center">', anchor));
+    assert.doesNotMatch(block, /Payment complete|paid to/i);
+  });
+});
+
+describe('cancelled and expired requests can never show success', () => {
+  const listener = code(LISTENER);
+
+  test('a merchant cancellation only ever calls setReq(null) — it cannot set phase "succeeded"', () => {
+    const anchor = listener.indexOf('const dismissIfSettledElsewhere = useCallback((row: Row) => {');
+    const block = listener.slice(anchor, listener.indexOf('}, []);', anchor));
+    assert.doesNotMatch(block, /setPhase/);
+  });
+
+  test('expiry (the countdown reaching zero) only ever calls setReq(null) — it cannot set phase "succeeded"', () => {
+    const anchor = listener.indexOf('if (left <= 0)');
+    const block = listener.slice(anchor, anchor + 80);
+    assert.doesNotMatch(block, /setPhase/);
+    assert.match(block, /setReq\(null\); setDismissed\(false\);/);
+  });
+});
+
+describe('Done and View wallet', () => {
+  const listener = code(LISTENER);
+
+  test('Done (finish) clears the request without navigating', () => {
+    const anchor = listener.indexOf('function finish() {');
+    assert.notEqual(anchor, -1);
+    // Bounded to just this function — a fixed char count would bleed into
+    // viewWallet's body just below, which does call router.push.
+    const block = listener.slice(anchor, listener.indexOf('function viewWallet', anchor));
+    assert.match(block, /setReq\(null\)/);
+    assert.match(block, /setDismissed\(false\)/);
+    assert.doesNotMatch(block, /router\.push/);
+  });
+
+  test('View wallet clears the request and navigates to the canonical wallet page', () => {
+    const anchor = listener.indexOf('function viewWallet() {');
+    const block = listener.slice(anchor, anchor + 150);
+    assert.match(block, /finish\(\)/);
+    assert.match(block, /router\.push\("\/account\/wallet"\)/);
+  });
+
+  test('router comes from next/navigation\'s useRouter, the same navigation primitive used elsewhere on web', () => {
+    assert.match(listener, /import \{ useRouter \} from "next\/navigation";/);
+    assert.match(listener, /const router = useRouter\(\);/);
+  });
+});
+
+describe('the updated balance is read, not recomputed', () => {
+  const listener = raw(LISTENER);
+
+  test('balancePence comes directly from wallet-charge-approve\'s own response field', () => {
+    assert.match(listener, /balancePence:\s*r\.balance_pence/);
+  });
+
+  test('no arithmetic is performed on the balance or amount anywhere in the listener', () => {
+    // Guards against a client-side "current balance minus amount" shortcut,
+    // which would silently drift from whatever wallet-charge-approve actually
+    // debited (fees, cashback, rounding all live server-side).
+    assert.doesNotMatch(listener, /balancePence\s*[-+*/]/);
+    assert.doesNotMatch(listener, /amountPence\s*[-+*/]/);
+  });
+
+  test('respondToCharge\'s return type already documents balance_pence — no new field was invented', () => {
+    const memberClient = code(MEMBER_CLIENT);
+    const anchor = memberClient.indexOf('export async function respondToCharge');
+    const block = memberClient.slice(anchor, anchor + 400);
+    assert.match(block, /balance_pence\?:\s*number/);
   });
 });
