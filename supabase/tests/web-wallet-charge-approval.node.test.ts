@@ -107,6 +107,46 @@ const runSql = (sql: string) => rowsOf(execFileSync('npx',
   ['supabase', 'db', 'query', '--linked', `select 1 as _guard where false;\n${sql}`, '--output-format', 'json'],
   { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300_000 }));
 
+/**
+ * Extracts dismissIfSettledElsewhere's real function body from source (past
+ * the declaration line, so no TypeScript type annotation survives into the
+ * slice — new Function below needs plain JS) and returns a runner that
+ * executes that exact body against a given (phase, incoming row) pair,
+ * reporting what it actually did. Used by several describe blocks below to
+ * prove the guard's behaviour directly, rather than trusting adjacent text.
+ */
+function dismissRunner(listener: string) {
+  const decl = 'const dismissIfSettledElsewhere = useCallback((row: Row) => {';
+  const declAnchor = listener.indexOf(decl);
+  if (declAnchor === -1) throw new Error('dismissIfSettledElsewhere\'s declaration has moved or changed shape');
+  const bodyStart = declAnchor + decl.length;
+  const bodyEnd = listener.indexOf('}, []);', declAnchor);
+  const body = listener.slice(bodyStart, bodyEnd);
+  if (/:\s*(Row|string|number|boolean)\b/.test(body)) {
+    throw new Error('body slice still carries a TS type annotation — new Function cannot parse it');
+  }
+  return function run(phase: string, rowStatus: string, opts: { rowId?: string; trackedId?: string | null } = {}) {
+    const trackedId = opts.trackedId === undefined ? 'r1' : opts.trackedId;
+    const rowId = opts.rowId ?? 'r1';
+    let reqCleared = false;
+    let phaseSet: string | null = null;
+    let outcomeSet: { text: string } | null = null;
+    let dismissedSet: boolean | null = null;
+    const phaseRef = { current: phase };
+    const reqRef = { current: trackedId ? { id: trackedId, businessName: 'Anderson & Co' } : null };
+    const setReq = (v: null) => { reqCleared = v === null; };
+    const setPhase = (v: string) => { phaseSet = v; };
+    const setOutcome = (v: { text: string } | null) => { outcomeSet = v; };
+    const setDismissed = (v: boolean) => { dismissedSet = v; };
+    const gbp = (p: number) => `£${(p / 100).toFixed(2)}`;
+    const row = { status: rowStatus, id: rowId, amount_pence: 5000 };
+    // eslint-disable-next-line no-new-func
+    new Function('row', 'phaseRef', 'reqRef', 'setReq', 'setPhase', 'setOutcome', 'setDismissed', 'gbp', body)
+      (row, phaseRef, reqRef, setReq, setPhase, setOutcome, setDismissed, gbp);
+    return { reqCleared, phaseSet, outcomeSet, dismissedSet };
+  };
+}
+
 describe('the sibling web checkout is present to test against', () => {
   test('oneshetland-web is checked out as a sibling of this repo', () => {
     assert.ok(existsSync(WEB_ROOT), `expected a sibling checkout at ${WEB_ROOT}`);
@@ -249,27 +289,28 @@ describe('scenario 5 — merchant cancel removes/disables the web request', () =
 
   test('dismissIfSettledElsewhere clears the request once it is no longer pending', () => {
     const anchor = listener.indexOf('const dismissIfSettledElsewhere');
-    const block = listener.slice(anchor, anchor + 400);
+    const block = listener.slice(anchor, listener.indexOf('}, []);', anchor));
     assert.match(block, /if \(row\.status === "pending"\) return;/);
     assert.match(block, /setReq\(null\)/);
   });
 
-  test('an in-flight or already-answered decision is never interrupted by this', () => {
-    // Originally guarded only "working". That let the request's own final
-    // "paid" UPDATE arrive AFTER phase had already flipped to the done state,
-    // clearing req and closing the modal on top of the success screen — see
-    // the dedicated regression coverage below. The guard now covers every
-    // phase past "ask", not just "working".
+  test('working, succeeded and declined are fully protected — the guard is a no-op for all three', () => {
+    // Widened from the original single-phase "working" guard (which let the
+    // request's own final "paid" UPDATE arrive after phase had already
+    // flipped to done, clearing req on top of the success screen — see the
+    // dedicated regression coverage below). "ask" and "failed" are
+    // deliberately NOT in this list — see the review-driven coverage further
+    // down for exactly why each of those two still needs to react.
     const anchor = listener.indexOf('const dismissIfSettledElsewhere');
-    const block = listener.slice(anchor, anchor + 400);
-    assert.match(block, /if \(phaseRef\.current !== "ask"\) return;/);
-    assert.doesNotMatch(block, /phaseRef\.current === "working"/);
+    const block = listener.slice(anchor, listener.indexOf('}, []);', anchor));
+    assert.match(block, /if \(phase === "working" \|\| phase === "succeeded" \|\| phase === "declined"\) return;/);
+    assert.doesNotMatch(block, /phaseRef\.current === "working"\) return;/, 'the old single-phase form must be gone, not just widened by addition');
   });
 
   test('only the request currently tracked can be dismissed by it — not some unrelated update', () => {
     const anchor = listener.indexOf('const dismissIfSettledElsewhere');
-    const block = listener.slice(anchor, anchor + 400);
-    assert.match(block, /if \(reqRef\.current\?\.id !== row\.id\) return;/);
+    const block = listener.slice(anchor, listener.indexOf('}, []);', anchor));
+    assert.match(block, /if \(!current \|\| current\.id !== row\.id\) return;/);
   });
 });
 
@@ -529,38 +570,18 @@ describe('success state — an explicit confirmation, never a disappearing modal
 describe('the fix: a trailing realtime UPDATE can no longer erase the success screen', () => {
   const listener = code(LISTENER);
 
-  test('dismissIfSettledElsewhere is a no-op once phase has left "ask" — executed with the exact arrival order that broke it', () => {
-    // This runs the guard's ACTUAL body (extracted verbatim from source, TS
-    // type annotations stripped by slicing past the declaration line — the
-    // body itself is plain JS) against the exact sequence that produced the
-    // live bug: decision made -> phase already "succeeded" -> the row's own
-    // trailing "paid" UPDATE arrives after. The guard must refuse to touch req.
-    const decl = 'const dismissIfSettledElsewhere = useCallback((row: Row) => {';
-    const declAnchor = listener.indexOf(decl);
-    assert.notEqual(declAnchor, -1, 'dismissIfSettledElsewhere\'s declaration has moved or changed shape');
-    const bodyStart = declAnchor + decl.length;
-    const bodyEnd = listener.indexOf('}, []);', declAnchor);
-    const body = listener.slice(bodyStart, bodyEnd);
-    assert.doesNotMatch(body, /:\s*(Row|string|number|boolean)\b/, 'body slice must be plain JS, not TS, or new Function below cannot parse it');
+  test('succeeded is fully protected from the trailing paid echo — the original live bug', () => {
+    const run = dismissRunner(listener);
+    const r = run('succeeded', 'paid');
+    assert.equal(r.reqCleared, false, 'must not clear req once succeeded — this was the live bug');
+    assert.equal(r.phaseSet, null);
+  });
 
-    function run(phase: string, rowStatus: string, reqId: string, rowId: string) {
-      let cleared = false;
-      const phaseRef = { current: phase };
-      const reqRef = { current: { id: reqId } as { id: string } | null };
-      const setReq = (v: null) => { cleared = v === null; };
-      const setDismissed = (_v: boolean) => {};
-      const row = { status: rowStatus, id: rowId };
-      // eslint-disable-next-line no-new-func
-      new Function('row', 'phaseRef', 'reqRef', 'setReq', 'setDismissed', body)(row, phaseRef, reqRef, setReq, setDismissed);
-      return cleared;
-    }
-    assert.equal(run('succeeded', 'paid', 'r1', 'r1'), false, 'must not clear req once succeeded — this was the live bug');
-    assert.equal(run('failed', 'failed', 'r1', 'r1'), false, 'must not clear req once failed');
-    assert.equal(run('declined', 'declined', 'r1', 'r1'), false, 'must not clear req once declined');
-    assert.equal(run('working', 'charging', 'r1', 'r1'), false, 'must not clear req while working (unchanged behaviour)');
-    assert.equal(run('ask', 'declined', 'r1', 'r1'), true, 'must still clear req for a merchant cancel/expiry while still asking');
-    assert.equal(run('ask', 'pending', 'r1', 'r1'), false, 'still pending is never a settlement, regardless of phase');
-    assert.equal(run('ask', 'declined', 'r1', 'other-request'), false, 'never dismisses a request other than the one currently tracked');
+  test('working and declined are also fully protected, unaffected by this review', () => {
+    const run = dismissRunner(listener);
+    assert.equal(run('working', 'charging').reqCleared, false);
+    assert.equal(run('declined', 'declined').reqCleared, false);
+    assert.equal(run('declined', 'cancelled').reqCleared, false, 'a decline already stands — a merchant cancel racing it changes nothing for the customer');
   });
 
   test('processing ("working") cannot render the success branch — it falls through to the ask/working UI', () => {
@@ -569,6 +590,115 @@ describe('the fix: a trailing realtime UPDATE can no longer erase the success sc
     // "working" must not equal "succeeded", so it falls to the final `: (` branch,
     // which is the same ask/working markup showing the disabled "Paying…" button.
     assert.match(listener, /\{phase === "working" \? "Paying…" : `Pay \$\{gbp\(req\.amountPence\)\}`\}/);
+  });
+});
+
+/* ── realtime guard review — "ask" and "failed" must stay reactive ─────────
+ *
+ * The prior fix protected "succeeded" (and, more broadly than strictly
+ * required, "working" and "declined") from a trailing realtime UPDATE. A
+ * follow-up review asked whether guarding "failed" the same way could leave
+ * a customer stuck looking at a stale request.
+ *
+ * It could have. "failed" does not mean this ROW is settled the way
+ * "succeeded"/"declined" do — respondToCharge() throws for two different
+ * reasons: the server said no in a structured way (already
+ * cancelled/expired/claimed — genuinely terminal), or a transport failure
+ * (dropped connection, timeout) where the request may still be exactly
+ * pending, or — rarer, and the reason "failed" cannot be blanket-protected —
+ * the charge actually completed and only the confirmation was lost in
+ * transit. So "failed" stays reactive to the row's real state, same as
+ * "ask" always has been, with one addition: a late "paid" arriving while
+ * "failed" now recovers to the success screen instead of silently
+ * dismissing, which would just be this same defect reached a different way.
+ *
+ * THE CONCRETE SCENARIO
+ *   1. request is pending
+ *   2. customer attempts Pay
+ *   3. the approve attempt fails while the row is still genuinely pending
+ *      (a transport-level failure, before the server's own claim step ran)
+ *   4. the merchant cancels the (still pending) request
+ *   5. the row's UPDATE (status -> 'cancelled') arrives
+ * Expected: the customer is not left with a stale payable/failed request —
+ * proven directly below.
+ */
+
+describe('realtime guard review: "ask" and "failed" stay reactive, "succeeded"/"working"/"declined" do not', () => {
+  const listener = code(LISTENER);
+
+  test('the concrete reviewed scenario: failed-while-pending, then a merchant cancel arrives — the stale request is dismissed', () => {
+    const run = dismissRunner(listener);
+    const r = run('failed', 'cancelled');
+    assert.equal(r.reqCleared, true, 'the customer must not remain with a stale payable/failed request');
+    assert.equal(r.phaseSet, null, 'a cancel is not a payment — it must never set phase to succeeded');
+  });
+
+  test('a merchant cancel while the customer is merely viewing (ask) still dismisses — unchanged', () => {
+    const run = dismissRunner(listener);
+    const r = run('ask', 'cancelled');
+    assert.equal(r.reqCleared, true);
+    assert.equal(r.phaseSet, null);
+  });
+
+  test('an expired request reached via a failed approval is dismissed, not left stale', () => {
+    const run = dismissRunner(listener);
+    const r = run('failed', 'expired');
+    assert.equal(r.reqCleared, true);
+    assert.equal(r.phaseSet, null);
+  });
+
+  test('a customer-side decline settling elsewhere (already declined) after a failed attempt is dismissed', () => {
+    const run = dismissRunner(listener);
+    const r = run('failed', 'declined');
+    assert.equal(r.reqCleared, true);
+    assert.equal(r.phaseSet, null);
+  });
+
+  test('the one exception: a late "paid" arriving after "failed" recovers to success, never silence', () => {
+    // The ambiguous case: the charge went through but the HTTP response back
+    // to the browser was lost, so respondToCharge() threw locally even
+    // though the server completed the charge. The customer must see success
+    // here, not have the pop-up quietly vanish — that would be the original
+    // defect again, just reached via "failed" instead of "working".
+    const run = dismissRunner(listener);
+    const r = run('failed', 'paid');
+    assert.equal(r.phaseSet, 'succeeded');
+    assert.match(r.outcomeSet?.text ?? '', /Paid £50\.00 to Anderson & Co\./);
+    assert.equal(r.dismissedSet, false, 'must not stay hidden — the recovered success screen has to actually show');
+  });
+
+  test('still-pending never settles anything, regardless of phase — sanity check across every phase', () => {
+    const run = dismissRunner(listener);
+    for (const phase of ['ask', 'working', 'succeeded', 'failed', 'declined']) {
+      const r = run(phase, 'pending');
+      assert.equal(r.reqCleared, false, `phase ${phase}: still-pending must never clear req`);
+      assert.equal(r.phaseSet, null, `phase ${phase}: still-pending must never change phase`);
+    }
+  });
+
+  test('never touches a request other than the one currently tracked, in either reactive phase', () => {
+    const run = dismissRunner(listener);
+    assert.equal(run('ask', 'cancelled', { rowId: 'other-request' }).reqCleared, false);
+    assert.equal(run('failed', 'cancelled', { rowId: 'other-request' }).reqCleared, false);
+    assert.equal(run('failed', 'paid', { rowId: 'other-request' }).phaseSet, null, 'must not steal a success screen for a request that is not the one being shown');
+  });
+
+  test('no combination of (phase, incoming status) other than (failed, paid) ever produces a false success', () => {
+    // Exhaustive: the only path to setPhase("succeeded") in this function is
+    // the one deliberate recovery case. Every other reachable combination —
+    // including every terminal status a cancel/expiry/decline can produce —
+    // must never fabricate success.
+    const run = dismissRunner(listener);
+    const phases = ['ask', 'working', 'succeeded', 'failed', 'declined'];
+    const statuses = ['pending', 'charging', 'paid', 'declined', 'expired', 'failed', 'cancelled'];
+    for (const phase of phases) {
+      for (const status of statuses) {
+        if (phase === 'failed' && status === 'paid') continue; // the one intended exception
+        const r = run(phase, status);
+        assert.notEqual(r.phaseSet, 'succeeded',
+          `phase ${phase} + incoming status ${status} must never set phase to "succeeded"`);
+      }
+    }
   });
 });
 
@@ -624,10 +754,19 @@ describe('failure and decline are visually and textually distinct from success',
 describe('cancelled and expired requests can never show success', () => {
   const listener = code(LISTENER);
 
-  test('a merchant cancellation only ever calls setReq(null) — it cannot set phase "succeeded"', () => {
-    const anchor = listener.indexOf('const dismissIfSettledElsewhere = useCallback((row: Row) => {');
-    const block = listener.slice(anchor, listener.indexOf('}, []);', anchor));
-    assert.doesNotMatch(block, /setPhase/);
+  test('a merchant cancellation (or any settlement other than the one deliberate failed->paid recovery) only ever calls setReq(null)', () => {
+    // The function DOES contain one setPhase call — the deliberate
+    // failed->paid recovery covered in detail in the realtime-guard-review
+    // describe block above. A literal "never mentions setPhase" assertion
+    // would now be wrong; the precise claim is that a cancellation
+    // specifically (status 'cancelled', the value wallet-charge-cancel
+    // actually writes) never reaches it.
+    const run = dismissRunner(listener);
+    for (const phase of ['ask', 'failed']) {
+      const r = run(phase, 'cancelled');
+      assert.equal(r.reqCleared, true);
+      assert.equal(r.phaseSet, null, `phase ${phase}: a cancellation must never set phase "succeeded"`);
+    }
   });
 
   test('expiry (the countdown reaching zero) only ever calls setReq(null) — it cannot set phase "succeeded"', () => {
