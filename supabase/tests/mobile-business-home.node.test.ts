@@ -445,9 +445,15 @@ describe('an event cannot be upcoming and not upcoming at once', () => {
     const src = raw();
     const factIdx = src.indexOf('fact={nextBizEvent');
     assert.notEqual(factIdx, -1, 'the fact must read the single derived value');
-    const cardBlock = src.slice(factIdx, factIdx + 1400);
-    const idMatches = cardBlock.match(/nextBizEvent\?\.id/g) ?? [];
-    assert.equal(idMatches.length, 2, 'both Manage events and Scan tickets must target nextBizEvent, not two different values');
+    const cardEnd = src.indexOf(']}', factIdx);
+    assert.notEqual(cardEnd, -1, 'the actions array for this card has moved');
+    const cardBlock = src.slice(factIdx, cardEnd);
+    // Manage event and Scan tickets only render at all once nextBizEvent
+    // exists (see mobile-event-manage-entry.node.test.ts), so inside
+    // that guard the reference is unconditional (nextBizEvent.id, no `?.`) —
+    // there is no other value either action could read.
+    const idMatches = cardBlock.match(/nextBizEvent\.id/g) ?? [];
+    assert.equal(idMatches.length, 2, 'both Manage event and Scan tickets must target nextBizEvent, not two different values');
   });
 });
 
