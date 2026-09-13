@@ -360,30 +360,58 @@ describe('nothing of the old dashboard survives', () => {
 /* ── 6. Phase 3D — one reading of an event, and one card per outcome ─────── */
 
 describe('an event cannot be upcoming and not upcoming at once', () => {
-  test('the contradiction is reproducible from real data', () => {
+  test('the contradiction is reproducible, deterministically — not tied to any one event\'s clock', () => {
     // Anderson & Co: the Home said "No upcoming events" while the card beneath
-    // listed "Folk Festival at Mareel". The festival is CANCELLED and HIDDEN,
+    // listed "Folk Festival at Mareel". The festival was CANCELLED and HIDDEN,
     // and the card filtered on the date alone.
-    // Counted, not totalled. This used to assert date_only = 1 and canonical =
-    // 0, which were Anderson & Co's figures on the day — and went red the
-    // moment a legitimate new event was published there. The contradiction is
-    // a RELATIONSHIP: some event is found by the date alone and not by the
-    // canonical rule. That stays true however many events exist.
+    //
+    // This test used to reproduce that exact contradiction against Anderson &
+    // Co's real production data, pointing at the real Folk Festival row. That
+    // worked only for as long as the festival's own starts_at stayed in the
+    // future — the moment real time caught up with it (its starts_at was
+    // 2026-09-13 18:00 UTC), the row stopped being "future" and the test could
+    // no longer reproduce anything, exactly as its own failure message warned
+    // it would ("no cancelled-or-hidden future event remains at Anderson &
+    // Co..."). That is a live-data clock dependency, not a regression: it
+    // never touched source code, and the actual guard against this class of
+    // bug is the sibling test below, "both sides of the Home now apply the
+    // same rule", which pins the SOURCE query shape in lib/business-home.ts
+    // and the dashboard directly — untouched by what any event's start time
+    // happens to be today, and still green.
+    //
+    // Reproduces the same RELATIONSHIP deterministically instead: plants one
+    // throwaway event — cancelled, and therefore hidden via the table's own
+    // tg_events_sync_hidden trigger (is_hidden := status <> 'published') —
+    // with a start time fixed relative to now() rather than to a calendar
+    // date, inside a transaction that is never committed. It is found by the
+    // date-only filter and excluded by the canonical one, which is the whole
+    // contradiction, scoped to this one marked row so no other business's
+    // real data can mask or fake the result. now() is fixed for the whole
+    // transaction in Postgres, so "now() + 1 day" is always tomorrow relative
+    // to whenever this test runs — it cannot age out the way a specific
+    // event's calendar date eventually will.
     const [row] = sql(`
+      begin;
+
+      insert into public.events (organiser_business_id, title, status, starts_at)
+      select b.id, 'zz-contradiction-probe (rolled back, never committed)', 'cancelled', now() + interval '1 day'
+      from public.local_businesses b limit 1;
+
       select
         count(*) filter (where e.starts_at > now()
                            and (e.status <> 'published' or e.is_hidden))  as hidden_but_future,
         count(*) filter (where e.starts_at > now())                       as date_only,
         count(*) filter (where e.status = 'published' and not e.is_hidden
                            and e.starts_at > now())                       as canonical
-      from public.events e join public.local_businesses b
-        on b.id = e.organiser_business_id
-      where b.name = 'Anderson & Co';`);
+      from public.events e
+      where e.title = 'zz-contradiction-probe (rolled back, never committed)';
+
+      rollback;`);
     const dateOnly = Number(row.date_only);
     const canonical = Number(row.canonical);
     const contradictory = Number(row.hidden_but_future);
     assert.ok(contradictory > 0,
-      'no cancelled-or-hidden future event remains at Anderson & Co, so this test can no longer reproduce anything');
+      'the planted cancelled-but-future probe event did not appear — the fixture insert itself is broken');
     assert.equal(dateOnly - canonical, contradictory,
       'the two filters no longer differ by exactly the events the canonical rule excludes');
     assert.ok(dateOnly > canonical,
