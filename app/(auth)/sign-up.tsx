@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { getTurnstileToken } from '@/lib/turnstile';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -51,10 +52,27 @@ export default function SignUpScreen() {
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
+
+    // A verification check runs before any account is created — there is no
+    // path below that calls signUp without a fresh token. Cancelling or
+    // failing the check simply stops here with a clear message; it never
+    // silently proceeds unprotected.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setLoading(false);
+      setError(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again to create your account.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      return;
+    }
+
     const { error: authError } = await signUp(
       email.trim().toLowerCase(),
       password,
       fullName.trim(),
+      turnstile.token,
       phone.trim() || undefined,
       marketingOptIn,
       next,

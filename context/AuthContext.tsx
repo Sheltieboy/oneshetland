@@ -29,6 +29,7 @@ interface AuthContextType {
     email: string,
     password: string,
     fullName: string,
+    captchaToken: string,
     phone?: string,
     marketingOptIn?: boolean,
     next?: string,
@@ -114,7 +115,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return { error: error?.message ?? null };
   }
 
-  async function signUp(email: string, password: string, fullName: string, phone?: string, marketingOptIn = false, next?: string) {
+  async function signUp(email: string, password: string, fullName: string, captchaToken: string, phone?: string, marketingOptIn = false, next?: string) {
     // Carry the return-to path through the confirmation deep link so a user who
     // signed up mid-action lands back where they were after confirming.
     const emailRedirectTo = next
@@ -124,6 +125,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       email,
       password,
       options: {
+        // Required once Supabase Auth's CAPTCHA enforcement is turned on.
+        // The caller is responsible for obtaining a fresh, unused token before
+        // calling signUp — there is no path here that calls the API without one.
+        captchaToken,
         // Marketing consent is captured here so it survives email confirmation
         // (there's no session immediately after sign-up). Terms/privacy/age are
         // implied by the on-screen agreement and logged best-effort below.
