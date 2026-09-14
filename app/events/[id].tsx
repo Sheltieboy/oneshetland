@@ -2,7 +2,7 @@
  * events/[id].tsx — Public event detail page
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   ActivityIndicator, Linking, Share,
@@ -36,7 +36,7 @@ const S = SECTIONS.events;
 const SE = SECTIONS.local;
 
 export default function EventDetailScreen() {
-  const { id }   = useLocalSearchParams<{ id: string }>();
+  const { id, autoOpenTickets } = useLocalSearchParams<{ id: string; autoOpenTickets?: string }>();
   const router   = useRouter();
   const { alert } = useAlert();
   const { profile } = useAuth();
@@ -50,6 +50,53 @@ export default function EventDetailScreen() {
   const [accent, setAccent] = useState<string>(S.color);
   const [social, setSocial] = useState<EventSocialStats | null>(null);
   const [conditions, setConditions] = useState<EventConditions | null>(null);
+
+  // ── Derived from the event ──────────────────────────────────────────────
+  //
+  // Computed unconditionally, before the loading/not-found returns below, so
+  // that BOTH the auto-open-tickets effect further down and the Get tickets
+  // button in the render body read the exact same values — one gate, not a
+  // second copy of it. Safe on a null event (still loading, or not found):
+  // every flag simply reads as "not yet eligible" until the event arrives.
+  const isOwner = !!event && (profile?.id === event.organiser_user_id ||
+    !!(event.business && profile?.id === (event.business as any).owner_id));
+
+  const ticketTypes    = event?.ticket_types ?? [];
+  const updates        = event?.updates ?? [];
+  const hasTickets     = !!event?.has_tickets && ticketTypes.length > 0;
+  const ticketsOnSale  = ticketTypes.some(ticketTypeOnSale);
+  const priceLabel     = hasTickets
+    ? (isFreeEvent(ticketTypes) ? 'Free' : (() => { const l = lowestTicketPrice(ticketTypes); return l !== null ? `From £${(l / 100).toFixed(2)}` : null; })())
+    : (event?.price_text ?? null);
+
+  const isCancelled = event?.status === 'cancelled';
+  const isPostponed = event?.status === 'postponed';
+  // Organiser must be able to receive the money before we offer a Buy button.
+  //
+  // This asks the backend's single resolver (event_payout_ready), NOT
+  // event.business.payout_enabled. A business inherits its owner's central
+  // bank unless explicitly given its own, and the old check saw only the
+  // business — so an organiser with a working central account had their
+  // tickets hidden behind "Tickets coming soon".
+  const payoutReady = event?.payout_ready === true;
+
+  // Navigation runs in an event handler, and React error boundaries do NOT
+  // catch those — a throw here takes the whole app down with nothing on screen
+  // to say why. Catching it turns a silent crash into a readable message and a
+  // log line, which is the difference between 'it crashed' and a bug report.
+  const openTicketCheckout = useCallback(() => {
+    if (!event) return;
+    try {
+      router.push({ pathname: '/event-ticket-checkout', params: { id: event.id } });
+    } catch (e) {
+      const err = e as Error;
+      console.error('[events/[id]] could not open ticket checkout:', err);
+      alert({
+        title: 'Could not open tickets',
+        message: err?.message ?? 'Something went wrong opening the ticket screen.',
+      });
+    }
+  }, [event, router, alert]);
 
   const load = useCallback(async () => {
     // No id, or a non-uuid id (e.g. a seed/sample 'e1') → show "not found"
@@ -99,6 +146,37 @@ export default function EventDetailScreen() {
     return () => { active = false; };
   }, [event?.cover_url]);
 
+  /**
+   * The business profile's "Tickets" button passes autoOpenTickets=1 rather
+   * than routing to checkout directly, precisely so this page still loads
+   * canonically and runs its own readiness gate first — the exact same gate
+   * the Get tickets button below reads (hasTickets, ticketsOnSale,
+   * isCancelled, isOwner, payoutReady), not a parallel copy of it. If the
+   * event turns out not to be eligible, this does nothing: the visitor is
+   * simply left on the normal event page, exactly as if they had tapped the
+   * event card instead.
+   *
+   * One-shot, guarded by a ref rather than state — mirrors the dashboard's
+   * tab=payments jump (app/local-business-dashboard.tsx). It must never
+   * fire twice: not on a later re-render once loading/event settle, not if
+   * the visitor backs out of ticket selection and this page happens to
+   * re-render for an unrelated reason, and not as a retry if the gate is
+   * false now but becomes true later in the same screen's lifetime (e.g.
+   * payout onboarding completes while this page is still open) — the
+   * intent is consumed the first time it is observed after load, once,
+   * never revisited.
+   */
+  const consumedAutoOpenTickets = useRef(false);
+  useEffect(() => {
+    if (consumedAutoOpenTickets.current) return;
+    if (loading) return;
+    if (autoOpenTickets !== '1') return;
+    consumedAutoOpenTickets.current = true;
+    if (hasTickets && ticketsOnSale && !isCancelled && !isOwner && payoutReady) {
+      openTicketCheckout();
+    }
+  }, [loading, autoOpenTickets, hasTickets, ticketsOnSale, isCancelled, isOwner, payoutReady, openTicketCheckout]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
@@ -119,45 +197,6 @@ export default function EventDetailScreen() {
       </SafeAreaView>
     );
   }
-
-  const isOwner = profile?.id === event.organiser_user_id ||
-    (event.business && profile?.id === (event.business as any).owner_id);
-
-  const ticketTypes    = event.ticket_types ?? [];
-  const updates        = event.updates ?? [];
-  const hasTickets     = event.has_tickets && ticketTypes.length > 0;
-  const ticketsOnSale  = ticketTypes.some(ticketTypeOnSale);
-  const priceLabel     = hasTickets
-    ? (isFreeEvent(ticketTypes) ? 'Free' : (() => { const l = lowestTicketPrice(ticketTypes); return l !== null ? `From £${(l / 100).toFixed(2)}` : null; })())
-    : (event.price_text ?? null);
-
-  const isCancelled = event.status === 'cancelled';
-  const isPostponed = event.status === 'postponed';
-  // Organiser must be able to receive the money before we offer a Buy button.
-  //
-  // This asks the backend's single resolver (event_payout_ready), NOT
-  // event.business.payout_enabled. A business inherits its owner's central
-  // bank unless explicitly given its own, and the old check saw only the
-  // business — so an organiser with a working central account had their
-  // tickets hidden behind "Tickets coming soon".
-  const payoutReady = event.payout_ready === true;
-
-  // Navigation runs in an event handler, and React error boundaries do NOT
-  // catch those — a throw here takes the whole app down with nothing on screen
-  // to say why. Catching it turns a silent crash into a readable message and a
-  // log line, which is the difference between 'it crashed' and a bug report.
-  const openTicketCheckout = () => {
-    try {
-      router.push({ pathname: '/event-ticket-checkout', params: { id: event.id } });
-    } catch (e) {
-      const err = e as Error;
-      console.error('[events/[id]] could not open ticket checkout:', err);
-      alert({
-        title: 'Could not open tickets',
-        message: err?.message ?? 'Something went wrong opening the ticket screen.',
-      });
-    }
-  };
 
   const urgentUpdate = updates.find(u => u.is_urgent);
 

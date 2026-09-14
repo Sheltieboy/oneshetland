@@ -69,8 +69,11 @@ describe('business-detail Upcoming events "Tickets" pill', () => {
     const block = ticketPillBlock();
     assert.match(block, /pathname:\s*'\/events\/\[id\]'/,
       'must route through the event detail screen, which resolves payout_ready');
-    assert.match(block, /params:\s*\{\s*id:\s*ev\.id\s*\}/,
-      'must pass the event id under the param name events/[id] reads');
+    // autoOpenTickets=1 was added alongside id afterward (business-profile
+    // auto-open-tickets intent — see business-profile-tickets-intent.node.test.ts),
+    // so this now allows, rather than forbids, that extra param.
+    assert.match(block, /params:\s*\{\s*id:\s*ev\.id,\s*autoOpenTickets:\s*'1'\s*\}/,
+      'must pass the event id under the param name events/[id] reads, plus the auto-open intent');
   });
 
   test('no longer routes straight to /event-ticket-checkout', () => {

@@ -77,7 +77,9 @@ describe('Get tickets opens a route that exists', () => {
 
   test('a navigation failure is reported, not swallowed and not fatal', () => {
     const src = detail();
-    assert.match(src, /const openTicketCheckout = \(\) => \{/);
+    // Now a useCallback (so the business-profile auto-open intent can list it
+    // as a stable effect dependency), same body otherwise.
+    assert.match(src, /const openTicketCheckout = useCallback\(\(\) => \{/);
     assert.match(src, /console\.error\('\[events\/\[id\]\] could not open ticket checkout:'/,
       'the real error must reach the log');
     assert.match(src, /alert\(\{/, 'and the user must be told something rather than losing the app');

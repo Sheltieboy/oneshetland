@@ -179,7 +179,10 @@ describe('a business inherits its owner’s bank unless given its own', () => {
 describe('the ticket gate and the charge agree', () => {
   test('the mobile gate asks the resolver, not the business row', () => {
     const src = read(join(REPO_ROOT, 'app', 'events', '[id].tsx'));
-    assert.match(src, /event\.payout_ready === true/, 'the gate must use the resolved flag');
+    // event?. rather than event. since this is now computed unconditionally,
+    // before the loading/not-found early returns, so the business-profile
+    // auto-open-tickets intent can read it too — same resolved flag either way.
+    assert.match(src, /event\?\.payout_ready === true/, 'the gate must use the resolved flag');
     assert.ok(!/business as any\)\?\.payout_enabled/.test(src),
       'the old business-only check must be gone, not merely supplemented');
   });

@@ -636,11 +636,16 @@ export default function BusinessDetailScreen() {
                                paddingHorizontal: 10, paddingVertical: 5 }}
                       onPress={e => {
                         e.stopPropagation?.();
-                        // Route to the event detail page so the organiser payout-readiness
-                        // gate (working buy CTA vs "Tickets coming soon") always applies,
-                        // rather than landing straight on checkout. Mirrors whats-on.tsx —
-                        // event-detail stays the one canonical gate.
-                        router.push({ pathname: '/events/[id]', params: { id: ev.id } });
+                        // Still the event detail page, not checkout directly — the
+                        // organiser payout-readiness gate (working buy CTA vs "Tickets
+                        // coming soon") always runs there first. autoOpenTickets=1 asks
+                        // that page, once it has loaded canonically and the gate has
+                        // run, to continue straight to ticket selection on our behalf —
+                        // it is a continuation of the same gated flow, not a bypass of
+                        // it. The event card/title above intentionally carries no such
+                        // param: tapping the card is "show me this event", tapping this
+                        // button is "I want a ticket".
+                        router.push({ pathname: '/events/[id]', params: { id: ev.id, autoOpenTickets: '1' } });
                       }}
                       hitSlop={8}
                     >
