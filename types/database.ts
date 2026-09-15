@@ -33,6 +33,10 @@ export interface Profile {
   // Ranking hint only — reorders Home for someone visiting rather than living
   // here. Never hides a section, never gates anything. See lib/audience.ts.
   audience: 'resident' | 'visiting';
+  // Mandatory account-level onboarding (display name, resident/visitor, area
+  // if resident — see app/onboarding.tsx). NULL = not yet completed. Written
+  // only by that screen, never inferred from other populated fields.
+  onboarding_completed_at: string | null;
   email_verified: boolean;
   is_active: boolean;
   // Games Centre — public handle shown on leaderboards. Null = "Anon".

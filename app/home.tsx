@@ -287,7 +287,7 @@ export default function HomeScreen() {
         )}
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>OneShetland · Everything Shetland, All in One Place</Text>
+          <Text style={styles.footerText}>Shop Shetland. Discover Shetland. OneShetland.</Text>
         </View>
 
       </ScrollView>

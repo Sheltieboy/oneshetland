@@ -450,7 +450,7 @@ export default function EmailCentreScreen() {
                     {([
                       { field: 'footer_sign_off',  label: 'Sign-off',     placeholder: 'Thanks,' },
                       { field: 'footer_signature',  label: 'Signature',    placeholder: 'The OneShetland Team' },
-                      { field: 'footer_tagline',    label: 'Tagline',      placeholder: 'Everything Shetland, All in One Place' },
+                      { field: 'footer_tagline',    label: 'Tagline',      placeholder: 'Shop Shetland. Discover Shetland. OneShetland.' },
                       { field: 'footer_promo_text', label: 'Promo text',   placeholder: 'Download the app →' },
                       { field: 'footer_promo_url',  label: 'Promo URL',    placeholder: 'https://oneshetland.com/app' },
                       { field: 'footer_legal',      label: 'Legal line',   placeholder: 'OneShetland · Shetland Islands · Scotland' },

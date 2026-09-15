@@ -1,6 +1,6 @@
 # OneShetland — Brand Pack v1.0.0
 
-**Everything Shetland, in one place.**
+**Shop Shetland. Discover Shetland. OneShetland.**
 OneShetland · 60° North · oneshetland.com · Darren Fullerton Consultancy Ltd
 
 This folder is the single source of truth for the OneShetland visual identity.
@@ -111,8 +111,9 @@ Section icons in use: Local `map-pin` · Wallet `credit-card` · What's On
 
 ## 6. Voice
 
-- **Tagline:** "Everything Shetland, in one place." Comma, full stop. Never
-  abbreviated, never translated, never reworded.
+- **Tagline:** "Shop Shetland. Discover Shetland. OneShetland." Exact
+  capitalisation and punctuation. Never abbreviated, never translated, never
+  reworded.
 - **Supporting line:** "Built for the islands, by the islands." Once per page, no more.
 - **Dialect:** Shaetlan appears in *section names only* — Spik, Aald Stories,
   Da Boats. Never in instructions or UI copy. Set plain: no italics, no quote
