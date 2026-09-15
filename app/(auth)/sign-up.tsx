@@ -117,10 +117,25 @@ export default function SignUpScreen() {
     }
 
     setResending(true);
+
+    // A fresh token per resend — never the token the original signUp() call
+    // used (that one is already spent), and no fallback that skips this.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setResendMsg(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      setResending(false);
+      return;
+    }
+
     const { error: resendError } = await supabase.auth.resend({
       type: 'signup',
       email: email.trim().toLowerCase(),
       options: {
+        captchaToken: turnstile.token,
         emailRedirectTo: emailConfirmationRedirectTo(next),
       },
     });
@@ -146,7 +161,21 @@ export default function SignUpScreen() {
     if (checkingConfirm) return;
     setConfirmCheckMsg(null);
     setCheckingConfirm(true);
-    const { error: signInError } = await signIn(email.trim().toLowerCase(), password);
+
+    // This is a real sign-in attempt (signIn() calls signInWithPassword under
+    // the hood) — it needs a fresh token the same as the sign-in screen does.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setCheckingConfirm(false);
+      setConfirmCheckMsg(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      return;
+    }
+
+    const { error: signInError } = await signIn(email.trim().toLowerCase(), password, turnstile.token);
     setCheckingConfirm(false);
     if (!signInError) {
       router.replace((sanitizeNext(next) ?? '/(tabs)') as never);

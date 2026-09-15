@@ -25,7 +25,7 @@ interface AuthContextType {
   isDriver: boolean;
   /** True once the user has applied (pending/approved/rejected/suspended) — i.e. the Driver area is relevant to them. */
   hasAppliedToDrive: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string, captchaToken: string) => Promise<{ error: string | null }>;
   signUp: (
     email: string,
     password: string,
@@ -111,8 +111,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }
 
-  async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  async function signIn(email: string, password: string, captchaToken: string) {
+    // Required once Supabase Auth's CAPTCHA enforcement is turned on. The
+    // caller is responsible for obtaining a fresh, unused token before
+    // calling signIn — there is no path here that calls the API without one.
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken },
+    });
     return { error: error?.message ?? null };
   }
 

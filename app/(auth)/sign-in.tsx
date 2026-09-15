@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { getTurnstileToken } from '@/lib/turnstile';
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -41,7 +42,23 @@ export default function SignInScreen() {
     }
 
     setLoading(true);
-    const { error: authError } = await signIn(email.trim().toLowerCase(), password);
+
+    // A verification check runs before every sign-in attempt — there is no
+    // path below that calls signIn without a fresh token. Cancelling or
+    // failing the check simply stops here with a clear message; it never
+    // silently falls back to an unprotected sign-in.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setLoading(false);
+      setError(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again to sign in.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      return;
+    }
+
+    const { error: authError } = await signIn(email.trim().toLowerCase(), password, turnstile.token);
     setLoading(false);
 
     if (authError) {

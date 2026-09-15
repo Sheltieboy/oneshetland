@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { getTurnstileToken } from '@/lib/turnstile';
 
 // The reset link opens the OneShetland website reset page, which completes the
 // password change. Keeps the flow robust without app deep-link handling.
@@ -27,9 +28,23 @@ export default function ForgotPasswordScreen() {
     if (!isSupabaseConfigured) { setError('Supabase is not configured. Check your .env file.'); return; }
     if (!email.trim()) { setError('Please enter your email address.'); return; }
     setLoading(true);
+
+    // A fresh token per request — no fallback that reaches Supabase without
+    // one.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setLoading(false);
+      setError(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      return;
+    }
+
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       email.trim().toLowerCase(),
-      { redirectTo: RESET_REDIRECT },
+      { redirectTo: RESET_REDIRECT, captchaToken: turnstile.token },
     );
     setLoading(false);
     // Always show success even if the email isn't registered, so we don't reveal
