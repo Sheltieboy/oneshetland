@@ -18,8 +18,15 @@
  *
  * Avatar upload reuses lib/image-upload.ts#uploadAvatar and the exact
  * expo-image-picker pattern already shipped in app/edit-profile.tsx. The
- * Shetland area list is intentionally duplicated from edit-profile.tsx rather
- * than extracted to a shared constant — out of scope for this task.
+ * Shetland area list comes from constants/shetland-areas.ts — the one mobile
+ * source of truth, shared with app/edit-profile.tsx (see that file for how
+ * it was reconciled from the two lists that used to drift independently).
+ *
+ * The area chooser itself is the app's existing Sheet component (the same
+ * bottom-sheet already used for other "pick one thing" moments elsewhere) —
+ * its list scrolls inside its own Modal layer, entirely independent of this
+ * screen's own ScrollView, so there's no nested-scroll conflict and no
+ * silently-clipped list.
  */
 import React, { useState, useRef } from 'react';
 import {
@@ -31,6 +38,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { SHETLAND_AREAS } from '@/constants/shetland-areas';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { sanitizeNext } from '@/lib/auth-redirect';
@@ -38,6 +46,7 @@ import { uploadAvatar } from '@/lib/image-upload';
 import { cacheAudience, type Audience } from '@/lib/audience';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { useAlert } from '@/components/BrandedAlert';
 
 // expo-image-picker is loaded lazily so the screen never hard-crashes if the
@@ -49,17 +58,6 @@ try {
 } catch {
   ImagePicker = null;
 }
-
-// Mirrored from app/edit-profile.tsx by design — not extracted to a shared
-// constant in this task (see file doc comment above).
-const SHETLAND_AREAS = [
-  'Lerwick', 'Scalloway', 'Brae', 'Voe', 'Vidlin', 'Laxo',
-  'Mossbank', 'Sullom', 'Hillswick', 'Walls', 'Sandness', 'Bixter',
-  'Tingwall', 'Whiteness', 'Weisdale', 'Cunningsburgh', 'Sandwick',
-  'Bigton', 'Levenwick', 'Sumburgh', 'Boddam',
-  'Yell', 'Unst', 'Fetlar', 'Whalsay', 'Skerries', 'Bressay',
-  'Fair Isle', 'Foula', 'Papa Stour',
-];
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -292,38 +290,14 @@ export default function OnboardingScreen() {
               </Text>
               <TouchableOpacity
                 style={styles.inputWrap}
-                onPress={() => { Haptics.selectionAsync(); setShowAreaPicker(!showAreaPicker); }}
+                onPress={() => { Haptics.selectionAsync(); setShowAreaPicker(true); }}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.input, !area && { color: colors.textLight }]}>
                   {area || 'Select your area…'}
                 </Text>
-                <FontAwesome5
-                  name={showAreaPicker ? 'chevron-up' : 'chevron-down'}
-                  size={11}
-                  color={colors.textLight}
-                />
+                <FontAwesome5 name="chevron-down" size={11} color={colors.textLight} />
               </TouchableOpacity>
-
-              {showAreaPicker && (
-                <View style={styles.areaPicker}>
-                  {SHETLAND_AREAS.map(a => (
-                    <TouchableOpacity
-                      key={a}
-                      style={[styles.areaOption, area === a && styles.areaOptionActive]}
-                      onPress={() => { Haptics.selectionAsync(); setArea(a); setShowAreaPicker(false); }}
-                      activeOpacity={0.7}
-                    >
-                      {area === a && (
-                        <FontAwesome5 name="check" size={10} color={colors.accent} style={{ marginRight: 6 }} />
-                      )}
-                      <Text style={[styles.areaOptionText, area === a && styles.areaOptionTextActive]}>
-                        {a}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
             </>
           )}
 
@@ -347,6 +321,27 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Its own Modal layer — scrolls independently of the form above, so a
+          36-entry list can never be clipped by or fight the page's own
+          ScrollView (the bug this replaced). */}
+      <Sheet visible={showAreaPicker} onClose={() => setShowAreaPicker(false)} title="Where in Shetland?" scroll>
+        {SHETLAND_AREAS.map(a => (
+          <TouchableOpacity
+            key={a}
+            style={[styles.areaOption, area === a && styles.areaOptionActive]}
+            onPress={() => { Haptics.selectionAsync(); setArea(a); setShowAreaPicker(false); }}
+            activeOpacity={0.7}
+          >
+            {area === a && (
+              <FontAwesome5 name="check" size={10} color={colors.accent} style={{ marginRight: 6 }} />
+            )}
+            <Text style={[styles.areaOptionText, area === a && styles.areaOptionTextActive]}>
+              {a}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -408,11 +403,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, minHeight: 46,
   },
   input: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm, paddingVertical: 12 },
-  areaPicker: {
-    backgroundColor: '#fff', borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    marginTop: 4, overflow: 'hidden', maxHeight: 260,
-  },
+  // Rows rendered inside the Sheet area chooser (its own scroll, not this page's).
   areaOption: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 12,

@@ -48,6 +48,10 @@ const paymentReturn  = read('app/payment-return.tsx'); // exact bytes — must b
 const authContext    = code(read('context/AuthContext.tsx'));
 const mobileSignIn   = code(read('app/(auth)/sign-in.tsx'));
 const profileType    = code(read('types/database.ts'));
+const editProfile    = code(read('app/edit-profile.tsx'));
+const areasSource    = read('constants/shetland-areas.ts');
+const areasCode      = code(areasSource);
+const sheetComponent = code(read('components/ui/Sheet.tsx'));
 
 /* ── 1, 2, 3. Migration ───────────────────────────────────────────────────── */
 
@@ -365,3 +369,119 @@ describe('app/onboarding.tsx exposes a Sign out escape hatch', () => {
 function onboarding_layout_count(src: string): number {
   return (src.match(/const onOnboardingScreen = /g) ?? []).length;
 }
+
+/* ── The Shetland area list: one canonical source, reconciled, complete ──── */
+
+function parseAreaList(src: string): string[] {
+  const m = src.match(/SHETLAND_AREAS = \[([\s\S]*?)\] as const;/);
+  if (!m) throw new Error('SHETLAND_AREAS array literal not found');
+  return (m[1].match(/'([^']+)'/g) ?? []).map(s => s.slice(1, -1));
+}
+
+const canonicalAreas = parseAreaList(areasSource);
+
+describe('constants/shetland-areas.ts is the one mobile source of truth', () => {
+  test('app/onboarding.tsx imports the shared list — no local SHETLAND_AREAS array of its own', () => {
+    assert.match(onboarding, /import \{ SHETLAND_AREAS \} from '@\/constants\/shetland-areas';/);
+    assert.doesNotMatch(onboarding, /const SHETLAND_AREAS = \[/);
+  });
+
+  test('app/edit-profile.tsx imports the same shared list — no local SHETLAND_AREAS array of its own', () => {
+    assert.match(editProfile, /import \{ SHETLAND_AREAS \} from '@\/constants\/shetland-areas';/);
+    assert.doesNotMatch(editProfile, /const SHETLAND_AREAS = \[/);
+  });
+
+  test('the array literal itself exists in exactly one file across the mobile app', () => {
+    // Belt-and-braces: neither screen re-declares it under any name pattern.
+    assert.doesNotMatch(onboarding, /SHETLAND_AREAS\s*=\s*\[/);
+    assert.doesNotMatch(editProfile, /SHETLAND_AREAS\s*=\s*\[/);
+    assert.match(areasCode, /export const SHETLAND_AREAS = \[/);
+  });
+
+  test('the canonical list keeps every area unique to mobile before this fix', () => {
+    for (const a of ['Laxo', 'Sullom', 'Levenwick', 'Sumburgh', 'Boddam']) {
+      assert.ok(canonicalAreas.includes(a), `expected mobile-only area "${a}" to survive reconciliation`);
+    }
+  });
+
+  test('the canonical list adds every area unique to web before this fix', () => {
+    for (const a of ['Aith', 'Nesting', 'Toft', 'North Roe', 'Burra', 'Trondra']) {
+      assert.ok(canonicalAreas.includes(a), `expected web-only area "${a}" to be included`);
+    }
+  });
+
+  test('the Skerries / Out Skerries naming split is reconciled to one entry, not two', () => {
+    assert.ok(canonicalAreas.includes('Out Skerries'));
+    assert.ok(!canonicalAreas.includes('Skerries'));
+    assert.equal(canonicalAreas.filter(a => /skerries/i.test(a)).length, 1);
+  });
+
+  test('every area appears exactly once — no duplicate entries anywhere in the merge', () => {
+    assert.equal(new Set(canonicalAreas).size, canonicalAreas.length);
+  });
+
+  test('the full reconciled list is exactly 37 areas, including the catch-all', () => {
+    assert.equal(canonicalAreas.length, 37);
+  });
+
+  test('the catch-all "Other / elsewhere in Shetland" exists and is the final entry', () => {
+    assert.ok(canonicalAreas.includes('Other / elsewhere in Shetland'));
+    assert.equal(canonicalAreas[canonicalAreas.length - 1], 'Other / elsewhere in Shetland');
+  });
+
+  test('the catch-all is a plain list item — no free-text field, no second picker, anywhere in either screen', () => {
+    for (const src of [onboarding, editProfile]) {
+      assert.doesNotMatch(src, /TextInput.*[Oo]ther|other.*TextInput/);
+      assert.doesNotMatch(src, /custom.*area|otherArea|customArea/i);
+    }
+  });
+
+  test('both screens receive it purely by importing the shared constant — no special-casing of the last entry', () => {
+    // Same .map(SHETLAND_AREAS) rendering every row identically — the
+    // catch-all needs no screen-side code change to appear or be selectable.
+    assert.match(onboarding, /\{SHETLAND_AREAS\.map\(a => \(/);
+    assert.match(editProfile, /\{SHETLAND_AREAS\.map\(area => \(/);
+  });
+});
+
+/* ── The area chooser is a real, independently-scrolling Sheet ───────────── */
+
+describe('the resident area chooser is a Sheet, not an inline non-scrolling dropdown', () => {
+  test('app/onboarding.tsx renders the shared Sheet component for its area chooser', () => {
+    assert.match(onboarding, /import \{ Sheet \} from '@\/components\/ui\/Sheet';/);
+    assert.match(onboarding, /<Sheet visible=\{showAreaPicker\} onClose=\{\(\) => setShowAreaPicker\(false\)\}[^>]*scroll>/);
+  });
+
+  test('app/edit-profile.tsx renders the same shared Sheet component for its area chooser', () => {
+    assert.match(editProfile, /import \{ Sheet \} from '@\/components\/ui\/Sheet';/);
+    assert.match(editProfile, /<Sheet visible=\{showAreaPicker\} onClose=\{\(\) => setShowAreaPicker\(false\)\}[^>]*scroll>/);
+  });
+
+  test('neither screen still renders the old inline, unbounded-height dropdown View', () => {
+    assert.doesNotMatch(onboarding, /areaPicker:/);
+    assert.doesNotMatch(editProfile, /areaPicker:\s*\{/);
+  });
+
+  test('Sheet itself scrolls inside its own Modal — independent of any parent ScrollView', () => {
+    // components/ui/Sheet.tsx: a real react-native Modal, with its own
+    // ScrollView body when `scroll` is passed — this is a second, separate
+    // scroll surface, not nested inside the page's own ScrollView at all.
+    assert.match(sheetComponent, /<Modal visible=\{visible\} transparent animationType="slide"/);
+    assert.match(sheetComponent, /const Body: any = scroll \? ScrollView : View;/);
+  });
+
+  test('both screens pass scroll to Sheet, so the 36-entry list is a real scroll surface, not clipped', () => {
+    assert.match(onboarding, /<Sheet visible=\{showAreaPicker\}[\s\S]{0,80}scroll>/);
+    assert.match(editProfile, /<Sheet visible=\{showAreaPicker\}[\s\S]{0,80}scroll>/);
+  });
+
+  test('the parent onboarding screen keeps its own ScrollView untouched by the chooser', () => {
+    assert.match(onboarding, /<ScrollView\s*\n\s*contentContainerStyle=\{styles\.scroll\}/);
+  });
+
+  test('selecting an area sets it and closes the sheet in the same handler, on both screens', () => {
+    const onboardIdx = onboarding.indexOf("setArea(a); setShowAreaPicker(false);");
+    assert.ok(onboardIdx !== -1);
+    assert.match(editProfile, /setLocationArea\(area\);\s*setShowAreaPicker\(false\);/);
+  });
+});
