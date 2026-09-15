@@ -151,9 +151,14 @@ describe('existing signup validation is unchanged on both clients', () => {
     assert.match(mobileSignUp, /if \(password !== confirmPassword\) \{ setError\('Passwords do not match\.'\); return; \}/);
   });
 
-  test('redirect/next behaviour is unchanged on both clients', () => {
+  test('redirect/next behaviour is unchanged on web, and now HTTPS on mobile too', () => {
     assert.match(webSignUp, /emailRedirectTo: `\$\{window\.location\.origin\}\/auth\/callback\?next=/);
-    assert.match(mobileAuthContext, /oneshetland-fetch:\/\/auth\/confirm/);
+    // Superseded by signup-cross-device-confirmation-and-consent.node.test.ts,
+    // which covers this in full — mobile intentionally moved off the bare
+    // oneshetland-fetch:// scheme to the same HTTPS callback web uses, fixing
+    // the cross-device confirmation dead-end. Just confirm that move stuck.
+    assert.match(mobileAuthContext, /emailConfirmationRedirectTo\(next\)/);
+    assert.doesNotMatch(mobileAuthContext, /oneshetland-fetch:\/\/auth\/confirm\?next=\$\{encodeURIComponent/);
   });
 });
 

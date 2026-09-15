@@ -192,9 +192,19 @@ describe('nothing here opens a redirect', () => {
 
 /* ── 6. The app keeps its own path ──────────────────────────────────────── */
 
-describe('the mobile confirmation is untouched', () => {
-  test('the app still deep-links and sets the session from the fragment', () => {
-    assert.match(authCtx, /oneshetland-fetch:\/\/auth\/confirm/);
+describe('mobile confirmation: the same-device deep link is untouched, the redirect target is not', () => {
+  // Mobile hit the identical bug this file exists for — opened on a laptop,
+  // oneshetland-fetch:// has no handler there, dead end at about:blank —
+  // fixed by routing mobile through this same HTTPS callback too (see
+  // signup-cross-device-confirmation-and-consent.node.test.ts for the full
+  // proof). What stays genuinely untouched is app/auth/confirm.tsx's own
+  // handling of the same-device deep link once the app does receive it.
+  test('mobile now goes through the same HTTPS callback as web, not a bare scheme', () => {
+    assert.match(authCtx, /emailConfirmationRedirectTo\(next\)/);
+    assert.doesNotMatch(authCtx, /oneshetland-fetch:\/\/auth\/confirm\?next=\$\{encodeURIComponent/);
+  });
+
+  test('the app deep-link handler itself still sets the session from the fragment, unchanged', () => {
     assert.match(appConfirm, /access_token/);
     assert.match(appConfirm, /setSession\(\{ access_token, refresh_token \}\)/);
   });

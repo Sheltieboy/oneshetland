@@ -9,6 +9,7 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/types/database';
 import { registerPushToken, clearPushToken } from '@/lib/notifications';
+import { emailConfirmationRedirectTo } from '@/lib/auth-redirect';
 
 interface AuthContextType {
   session: Session | null;
@@ -116,11 +117,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function signUp(email: string, password: string, fullName: string, captchaToken: string, phone?: string, marketingOptIn = false, next?: string) {
-    // Carry the return-to path through the confirmation deep link so a user who
-    // signed up mid-action lands back where they were after confirming.
-    const emailRedirectTo = next
-      ? `oneshetland-fetch://auth/confirm?next=${encodeURIComponent(next)}`
-      : 'oneshetland-fetch://auth/confirm';
+    const emailRedirectTo = emailConfirmationRedirectTo(next);
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -130,14 +127,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // calling signUp — there is no path here that calls the API without one.
         captchaToken,
         // Marketing consent is captured here so it survives email confirmation
-        // (there's no session immediately after sign-up). Terms/privacy/age are
-        // implied by the on-screen agreement and logged best-effort below.
-        // signup_platform tells the confirmation email template which link to
-        // send: the app needs its deep link, the web needs a token_hash URL
-        // that works even when the email is opened on another device.
+        // (there's no session immediately after sign-up). Terms/privacy/age
+        // are only ever recorded once the required consent checkbox on this
+        // screen has actually been ticked — see handleSignUp in sign-up.tsx.
         data: { full_name: fullName, marketing_opt_in: marketingOptIn, signup_platform: 'app' },
-        // Deep link back into the app after email confirmation
-        // Requires "oneshetland-fetch://**" in Supabase → Auth → URL Configuration
         emailRedirectTo,
       },
     });
