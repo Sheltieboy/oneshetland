@@ -192,21 +192,26 @@ describe('nothing here opens a redirect', () => {
 
 /* ── 6. The app keeps its own path ──────────────────────────────────────── */
 
-describe('mobile confirmation: the same-device deep link is untouched, the redirect target is not', () => {
+describe('mobile confirmation: cross-device fixed, same-device deep link simplified in step', () => {
   // Mobile hit the identical bug this file exists for — opened on a laptop,
   // oneshetland-fetch:// has no handler there, dead end at about:blank —
   // fixed by routing mobile through this same HTTPS callback too (see
   // signup-cross-device-confirmation-and-consent.node.test.ts for the full
-  // proof). What stays genuinely untouched is app/auth/confirm.tsx's own
-  // handling of the same-device deep link once the app does receive it.
+  // proof). app/auth/confirm.tsx's own fragment/session handling — once
+  // genuinely untouched — was later found to hang on a warm app resume
+  // (Linking.useURL() can permanently return null) and, since nothing
+  // constructs this link with a fragment any more anyway, was removed
+  // rather than patched. See signup-cross-device-confirmation-and-consent
+  // .node.test.ts for that proof too.
   test('mobile now goes through the same HTTPS callback as web, not a bare scheme', () => {
     assert.match(authCtx, /emailConfirmationRedirectTo\(next\)/);
     assert.doesNotMatch(authCtx, /oneshetland-fetch:\/\/auth\/confirm\?next=\$\{encodeURIComponent/);
   });
 
-  test('the app deep-link handler itself still sets the session from the fragment, unchanged', () => {
-    assert.match(appConfirm, /access_token/);
-    assert.match(appConfirm, /setSession\(\{ access_token, refresh_token \}\)/);
+  test('the app deep-link handler no longer waits on a fragment — routes straight to sign-in', () => {
+    assert.doesNotMatch(appConfirm, /access_token/);
+    assert.doesNotMatch(appConfirm, /Linking\.useURL/);
+    assert.match(appConfirm, /pathname: '\/\(auth\)\/sign-in' as const/);
   });
 
   test('each client stamps which one started the sign-up', () => {

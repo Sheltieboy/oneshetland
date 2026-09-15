@@ -45,7 +45,6 @@ const authContext   = code(read('context/AuthContext.tsx'));
 const authRedirect  = code(read('lib/auth-redirect.ts'));
 const mobileSignUp  = code(read('app/(auth)/sign-up.tsx'));
 const mobileConfirm = code(read('app/auth/confirm.tsx'));
-const mobileConfirmRaw = read('app/auth/confirm.tsx'); // comments intact, for the one doc-comment check
 
 const webCallback   = code(web('app/auth/callback/route.ts'));
 const webConfirmed  = code(readFileSync(join(WEB_ROOT, 'app/auth/confirmed/page.tsx'), 'utf8'));
@@ -126,14 +125,42 @@ describe('no access_token or refresh_token is ever exposed in a URL', () => {
 
 /* ── 4. Same-device app-return path is intact ─────────────────────────────── */
 
-describe('same-device confirmation still works exactly as before', () => {
-  test('app/auth/confirm.tsx keeps its dual path: tokens present → sign in; tokens absent → sign-in screen', () => {
-    assert.match(mobileConfirm, /const \{ access_token, refresh_token \} = parseFragment\(url\);/);
-    assert.match(mobileConfirm, /supabase\.auth[\s\S]{0,20}\.setSession\(\{ access_token, refresh_token \}\)/);
-    // The token-less fallback: the effect ends by falling through to the
-    // sign-in redirect when no tokens were on the link.
-    assert.match(mobileConfirm, /router\.replace\(toSignIn\);/);
-    assert.match(mobileConfirmRaw, /No tokens on the link — the account is confirmed, but we still need them/);
+describe('app/auth/confirm.tsx no longer waits on Linking.useURL() and cannot hang', () => {
+  // Superseded design: this screen used to wait on Linking.useURL() to read
+  // a #access_token=… fragment off its own link — a mechanism now proven
+  // unreachable (nothing in either repo constructs this link with a
+  // fragment any more) and actively broken on a warm app resume, where
+  // Expo Router's own linking listener consumes the one native "url" event
+  // before this screen's own hook ever subscribes, leaving `url` null
+  // forever. It now routes to sign-in unconditionally, with nothing to wait
+  // on and therefore nothing that can hang.
+  test('Linking.useURL() is gone — nothing left that can return null forever', () => {
+    assert.doesNotMatch(mobileConfirm, /Linking\.useURL\(\)/);
+    assert.doesNotMatch(mobileConfirm, /import \* as Linking from 'expo-linking'/);
+  });
+
+  test('no fragment/token parsing remains — parseFragment, access_token and refresh_token are gone', () => {
+    assert.doesNotMatch(mobileConfirm, /parseFragment/);
+    assert.doesNotMatch(mobileConfirm, /access_token/);
+    assert.doesNotMatch(mobileConfirm, /refresh_token/);
+    assert.doesNotMatch(mobileConfirm, /setSession/);
+  });
+
+  test('the effect is gated on nothing but mount — runs exactly once, unconditionally', () => {
+    assert.match(mobileConfirm, /useEffect\(\(\) => \{\s*const dest = sanitizeNext\(next\);/);
+    // An empty dependency array — no `handled`/`url` guard reintroduced.
+    assert.match(mobileConfirm, /\}, \[\]\);/);
+    assert.doesNotMatch(mobileConfirm, /if \(handled \|\| !url\) return;/);
+  });
+
+  test('it routes straight to sign-in, with next sanitised the same way the rest of the app does', () => {
+    assert.match(mobileConfirm, /const dest = sanitizeNext\(next\);/);
+    assert.match(mobileConfirm, /pathname: '\/\(auth\)\/sign-in' as const,/);
+    assert.match(mobileConfirm, /params: \{ \.\.\.\(dest \? \{ next: dest \} : \{\}\), confirmed: '1' \}/);
+  });
+
+  test('no auth token of any kind is read, held, or forwarded by this screen', () => {
+    assert.doesNotMatch(mobileConfirm, /token/i);
   });
 
   test('the hosted /auth/confirmed page always offers a plain, token-less deep link back into the app', () => {
