@@ -256,6 +256,7 @@ function RootNavigator() {
           <Stack.Screen name="index" />
           <Stack.Screen name="intro" />
           <Stack.Screen name="onboarding" />
+          <Stack.Screen name="+not-found" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="auth/confirm" />
           <Stack.Screen name="(customer)" />
