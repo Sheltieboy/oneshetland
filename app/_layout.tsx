@@ -176,11 +176,16 @@ function RootNavigator() {
     const inDriverGroup   = segments[0] === '(driver)';
     const inAdminGroup    = segments[0] === '(admin)';
     const inAccountScreen = (segments as string[])[0] === 'account';
+    const onOnboardingScreen = (segments as string[])[0] === 'onboarding';
 
     // Only genuinely-private routes are protected. Tabs, Spik detail,
     // Local browsing, etc. are all open — each screen prompts for sign-in
-    // when the user tries to do something that needs an account.
-    const inProtected = inCustomerGroup || inDriverGroup || inAdminGroup || inAccountScreen;
+    // when the user tries to do something that needs an account. Onboarding
+    // is included here too: it has its own sign-out escape hatch (a user
+    // must never be trapped inside an account), and the moment session
+    // clears, this is what sends them back into the open app rather than
+    // leaving them stranded on a now-signed-out onboarding screen.
+    const inProtected = inCustomerGroup || inDriverGroup || inAdminGroup || inAccountScreen || onOnboardingScreen;
 
     if (!session) {
       // Not signed in — bounce off the genuinely-protected routes into the open app
@@ -206,7 +211,6 @@ function RootNavigator() {
     // gifts, NFC) are deliberately NOT exempt — their destination is instead
     // preserved via the same `next` mechanism sign-in already uses, and
     // honoured once onboarding finishes.
-    const onOnboardingScreen = (segments as string[])[0] === 'onboarding';
     const isInfrastructureRoute =
       (segments as string[])[0] === 'auth' ||              // auth/confirm
       (segments as string[])[0] === 'turnstile-callback' ||

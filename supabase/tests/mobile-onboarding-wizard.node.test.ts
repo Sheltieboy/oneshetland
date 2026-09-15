@@ -234,7 +234,10 @@ describe('successful completion refreshes in-memory profile before leaving the s
   });
 
   test('it reuses the existing AuthContext mechanism — no second/independent profile store is introduced', () => {
-    assert.match(onboarding, /const \{ profile, refreshProfile \} = useAuth\(\);/);
+    // Same one useAuth() call for everything this screen needs from context,
+    // signOut included (see the Sign out describe block below) — never a
+    // second, separately-fetched profile.
+    assert.match(onboarding, /const \{ profile, refreshProfile, signOut \} = useAuth\(\);/);
     assert.doesNotMatch(onboarding, /useState.*profile.*Profile\b/); // no local profile state shadowing context
   });
 
@@ -292,3 +295,73 @@ describe('the Profile type includes the new column', () => {
     assert.match(profileType, /onboarding_completed_at:\s*string \| null;/);
   });
 });
+
+/* ── Onboarding is mandatory, but never a trap: a real sign-out exists ───── */
+
+describe('app/onboarding.tsx exposes a Sign out escape hatch', () => {
+  test('it destructures signOut from the same AuthContext every other screen uses — no separate mechanism', () => {
+    assert.match(onboarding, /const \{ profile, refreshProfile, signOut \} = useAuth\(\);/);
+  });
+
+  test('handleSignOut calls the canonical signOut() directly — no reimplemented logout logic', () => {
+    const i = onboarding.indexOf('const handleSignOut');
+    const body = onboarding.slice(i, onboarding.indexOf('const handleComplete', i));
+    assert.match(body, /onPress: signOut \}/);
+    // Not a bespoke call — no supabase.auth.signOut() or clearPushToken here;
+    // that's all inside AuthContext.signOut() already.
+    assert.doesNotMatch(body, /supabase\.auth\.signOut/);
+    assert.doesNotMatch(body, /clearPushToken/);
+  });
+
+  test('signing out performs no profile write of any kind — no update, no onboarding_completed_at, no other field', () => {
+    const i = onboarding.indexOf('const handleSignOut');
+    const j = onboarding.indexOf('const handleComplete', i);
+    const body = onboarding.slice(i, j);
+    assert.doesNotMatch(body, /\.from\('profiles'\)/);
+    assert.doesNotMatch(body, /\.update\(/);
+    assert.doesNotMatch(body, /onboarding_completed_at/);
+  });
+
+  test('the Sign out control is rendered, styled as a secondary action beneath Complete setup', () => {
+    const completeIdx = onboarding.indexOf('label="Complete setup"');
+    const signOutIdx = onboarding.indexOf('onPress={handleSignOut}');
+    assert.ok(completeIdx !== -1 && signOutIdx !== -1 && completeIdx < signOutIdx,
+      'Sign out must appear after, not before, Complete setup');
+    assert.match(onboarding, /<Text style={styles\.signOutText}>Sign out<\/Text>/);
+  });
+
+  test('no Skip / Finish later / Continue-without-setup control was added alongside it', () => {
+    assert.doesNotMatch(onboarding, /[Ss]kip|[Ff]inish later|[Cc]ontinue without/);
+  });
+
+  test('the mandatory gate itself is unchanged — same condition, same exemptions, still redirects INTO onboarding exactly as before', () => {
+    assert.match(layout, /if \(profile && !profile\.onboarding_completed_at && !onOnboardingScreen && !isInfrastructureRoute\) \{/);
+    assert.match(layout, /router\.replace\(\(dest \? `\/onboarding\?next=\$\{encodeURIComponent\(dest\)\}` : '\/onboarding'\) as never\);/);
+  });
+
+  test('completing onboarding is unchanged — same required fields, same single update, same completion timestamp', () => {
+    assert.match(onboarding, /if \(!displayName\.trim\(\)\) \{/);
+    assert.match(onboarding, /if \(!audience\) \{/);
+    assert.match(onboarding, /onboarding_completed_at:\s*new Date\(\)\.toISOString\(\)/);
+  });
+
+  test('a signed-out session on /onboarding is bounced to the open app, the same way every other protected route already is', () => {
+    // onOnboardingScreen is folded into inProtected — a signed-out user
+    // landing on /onboarding (e.g. right after tapping Sign out) is bounced
+    // to /(tabs) by the SAME !session branch that already handles every
+    // other protected route, not a separate mechanism.
+    const inProtectedLine = layout.match(/const inProtected = [^;]+;/)?.[0] ?? '';
+    assert.match(inProtectedLine, /\bonOnboardingScreen\b/);
+    const sessionBlock = layout.slice(layout.indexOf('if (!session) {'), layout.indexOf('if (!session) {') + 200);
+    assert.match(sessionBlock, /if \(inProtected\) \{\s*router\.replace\('\/\(tabs\)'\);/);
+  });
+
+  test('onOnboardingScreen is declared exactly once and shared — not duplicated between the two checks', () => {
+    const occurrences = onboarding_layout_count(layout);
+    assert.equal(occurrences, 1);
+  });
+});
+
+function onboarding_layout_count(src: string): number {
+  return (src.match(/const onOnboardingScreen = /g) ?? []).length;
+}

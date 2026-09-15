@@ -64,7 +64,7 @@ const SHETLAND_AREAS = [
 export default function OnboardingScreen() {
   const router = useRouter();
   const { next } = useLocalSearchParams<{ next?: string }>();
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, signOut } = useAuth();
   const { alert } = useAlert();
 
   const [displayName, setDisplayName] = useState(profile?.full_name ?? '');
@@ -124,6 +124,28 @@ export default function OnboardingScreen() {
     Haptics.selectionAsync();
     setAudience(a);
     if (a === 'visiting') { setArea(''); setShowAreaPicker(false); }
+  };
+
+  // Onboarding gates access, but must never trap someone inside an account —
+  // this calls the same canonical sign-out AuthContext exposes everywhere
+  // else (app/(tabs)/me.tsx, app/account.tsx, the admin dashboard), with no
+  // profile write of any kind: it neither touches onboarding_completed_at
+  // nor any other field. Once session clears, app/_layout.tsx's own routing
+  // takes it from there — same as it does when signing out from anywhere
+  // else in the app. Signing back into this same, still-incomplete account
+  // lands back here, because nothing about its onboarding state changed.
+  const handleSignOut = () => {
+    Haptics.selectionAsync();
+    alert({
+      title:   'Sign out?',
+      message: 'Your account isn\'t set up yet — you can finish this any time you sign back in.',
+      icon:    'sign-out-alt',
+      accent:  '#DC2626',
+      actions: [
+        { label: 'Cancel',   style: 'cancel' },
+        { label: 'Sign out', style: 'destructive', onPress: signOut },
+      ],
+    });
   };
 
   const handleComplete = async () => {
@@ -314,6 +336,15 @@ export default function OnboardingScreen() {
             size="lg"
             style={styles.submitBtn}
           />
+
+          <TouchableOpacity
+            onPress={handleSignOut}
+            disabled={saving}
+            style={styles.signOutBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.signOutText}>Sign out</Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -392,4 +423,9 @@ const styles = StyleSheet.create({
   areaOptionTextActive: { color: colors.accent, fontWeight: '700' },
 
   submitBtn: { marginTop: spacing.xl },
+
+  // Secondary, deliberately understated — this is an escape hatch from the
+  // account, not an alternative to completing setup.
+  signOutBtn: { marginTop: spacing.md, alignSelf: 'center', paddingVertical: spacing.sm },
+  signOutText: { fontSize: fontSize.sm, fontWeight: '600', color: colors.textMuted },
 });
