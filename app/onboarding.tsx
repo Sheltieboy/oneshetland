@@ -28,10 +28,10 @@
  * screen's own ScrollView, so there's no nested-scroll conflict and no
  * silently-clipped list.
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform, TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -71,6 +71,7 @@ export default function OnboardingScreen() {
   const [audience, setAudience] = useState<Audience | null>(null);
   const [area, setArea] = useState('');
   const [showAreaPicker, setShowAreaPicker] = useState(false);
+  const [areaSearch, setAreaSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
@@ -79,6 +80,23 @@ export default function OnboardingScreen() {
     displayName.trim().length > 0 &&
     audience !== null &&
     (!needsArea || area.length > 0);
+
+  // Case-insensitive, partial, local — against the same shared list every
+  // other area lookup already uses. "Other / elsewhere in Shetland" is just
+  // another entry here, matched (or not) like any place name.
+  const filteredAreas = useMemo(() => {
+    const q = areaSearch.trim().toLowerCase();
+    if (!q) return SHETLAND_AREAS;
+    return SHETLAND_AREAS.filter(a => a.toLowerCase().includes(q));
+  }, [areaSearch]);
+
+  // One place to close the sheet from — selecting an area and dismissing it
+  // both go through this, so the search term never survives into the next
+  // time it's opened.
+  const closeAreaPicker = () => {
+    setShowAreaPicker(false);
+    setAreaSearch('');
+  };
 
   const pickAvatar = async () => {
     if (!ImagePicker) {
@@ -121,7 +139,7 @@ export default function OnboardingScreen() {
   const pickAudience = (a: Audience) => {
     Haptics.selectionAsync();
     setAudience(a);
-    if (a === 'visiting') { setArea(''); setShowAreaPicker(false); }
+    if (a === 'visiting') { setArea(''); closeAreaPicker(); }
   };
 
   // Onboarding gates access, but must never trap someone inside an account —
@@ -323,24 +341,37 @@ export default function OnboardingScreen() {
       </KeyboardAvoidingView>
 
       {/* Its own Modal layer — scrolls independently of the form above, so a
-          36-entry list can never be clipped by or fight the page's own
+          37-entry list can never be clipped by or fight the page's own
           ScrollView (the bug this replaced). */}
-      <Sheet visible={showAreaPicker} onClose={() => setShowAreaPicker(false)} title="Where in Shetland?" scroll>
-        {SHETLAND_AREAS.map(a => (
-          <TouchableOpacity
-            key={a}
-            style={[styles.areaOption, area === a && styles.areaOptionActive]}
-            onPress={() => { Haptics.selectionAsync(); setArea(a); setShowAreaPicker(false); }}
-            activeOpacity={0.7}
-          >
-            {area === a && (
-              <FontAwesome5 name="check" size={10} color={colors.accent} style={{ marginRight: 6 }} />
-            )}
-            <Text style={[styles.areaOptionText, area === a && styles.areaOptionTextActive]}>
-              {a}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <Sheet visible={showAreaPicker} onClose={closeAreaPicker} title="Where in Shetland?" scroll>
+        <TextInput
+          value={areaSearch}
+          onChangeText={setAreaSearch}
+          placeholder="Search areas..."
+          placeholderTextColor={colors.textLight}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.areaSearchInput}
+        />
+        {filteredAreas.length === 0 ? (
+          <Text style={styles.areaNoResults}>No areas found</Text>
+        ) : (
+          filteredAreas.map(a => (
+            <TouchableOpacity
+              key={a}
+              style={[styles.areaOption, area === a && styles.areaOptionActive]}
+              onPress={() => { Haptics.selectionAsync(); setArea(a); closeAreaPicker(); }}
+              activeOpacity={0.7}
+            >
+              {area === a && (
+                <FontAwesome5 name="check" size={10} color={colors.accent} style={{ marginRight: 6 }} />
+              )}
+              <Text style={[styles.areaOptionText, area === a && styles.areaOptionTextActive]}>
+                {a}
+              </Text>
+            </TouchableOpacity>
+          ))
+        )}
       </Sheet>
     </SafeAreaView>
   );
@@ -403,7 +434,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, minHeight: 46,
   },
   input: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm, paddingVertical: 12 },
-  // Rows rendered inside the Sheet area chooser (its own scroll, not this page's).
+  // Search field + rows rendered inside the Sheet area chooser (its own scroll, not this page's).
+  areaSearchInput: {
+    backgroundColor: colors.screenBackground, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: fontSize.sm, color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  areaNoResults: {
+    fontSize: fontSize.sm, color: colors.textMuted,
+    textAlign: 'center', paddingVertical: spacing.lg,
+  },
   areaOption: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 12,

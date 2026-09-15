@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -59,6 +59,24 @@ export default function EditProfileScreen() {
   const [phone,        setPhone]        = useState(profile?.phone         ?? '');
   const [saving,       setSaving]       = useState(false);
   const [showAreaPicker, setShowAreaPicker] = useState(false);
+  const [areaSearch, setAreaSearch] = useState('');
+
+  // Case-insensitive, partial, local — same shared list every other area
+  // lookup already uses. "Other / elsewhere in Shetland" is just another
+  // entry here, matched (or not) like any place name.
+  const filteredAreas = useMemo(() => {
+    const q = areaSearch.trim().toLowerCase();
+    if (!q) return SHETLAND_AREAS;
+    return SHETLAND_AREAS.filter(a => a.toLowerCase().includes(q));
+  }, [areaSearch]);
+
+  // One place to close the sheet from — selecting an area and dismissing it
+  // both go through this, so the search term never survives into the next
+  // time it's opened.
+  const closeAreaPicker = () => {
+    setShowAreaPicker(false);
+    setAreaSearch('');
+  };
 
   // Games-handle live check: 'idle' before user touches, 'checking' while
   // debounced lookup is in flight, then 'free' | 'taken' | 'invalid'.
@@ -402,32 +420,45 @@ export default function EditProfileScreen() {
     </ScreenScaffold>
 
     {/* Its own Modal layer — scrolls independently of the form above. */}
-    <Sheet visible={showAreaPicker} onClose={() => setShowAreaPicker(false)} title="Area" scroll>
-      {SHETLAND_AREAS.map(area => (
-        <TouchableOpacity
-          key={area}
-          style={[
-            styles.areaOption,
-            locationArea === area && { backgroundColor: colors.shifts + '18' },
-          ]}
-          onPress={() => {
-            Haptics.selectionAsync();
-            setLocationArea(area);
-            setShowAreaPicker(false);
-          }}
-          activeOpacity={0.7}
-        >
-          {locationArea === area && (
-            <FontAwesome5 name="check" size={10} color={colors.shifts} style={{ marginRight: 6 }} />
-          )}
-          <Text style={[
-            styles.areaOptionText,
-            locationArea === area && { color: colors.shifts, fontWeight: '700' },
-          ]}>
-            {area}
-          </Text>
-        </TouchableOpacity>
-      ))}
+    <Sheet visible={showAreaPicker} onClose={closeAreaPicker} title="Area" scroll>
+      <TextInput
+        value={areaSearch}
+        onChangeText={setAreaSearch}
+        placeholder="Search areas..."
+        placeholderTextColor={colors.textLight}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={styles.areaSearchInput}
+      />
+      {filteredAreas.length === 0 ? (
+        <Text style={styles.areaNoResults}>No areas found</Text>
+      ) : (
+        filteredAreas.map(area => (
+          <TouchableOpacity
+            key={area}
+            style={[
+              styles.areaOption,
+              locationArea === area && { backgroundColor: colors.shifts + '18' },
+            ]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setLocationArea(area);
+              closeAreaPicker();
+            }}
+            activeOpacity={0.7}
+          >
+            {locationArea === area && (
+              <FontAwesome5 name="check" size={10} color={colors.shifts} style={{ marginRight: 6 }} />
+            )}
+            <Text style={[
+              styles.areaOptionText,
+              locationArea === area && { color: colors.shifts, fontWeight: '700' },
+            ]}>
+              {area}
+            </Text>
+          </TouchableOpacity>
+        ))
+      )}
     </Sheet>
     </>
   );
@@ -477,7 +508,18 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm, paddingVertical: 12 },
 
-  // Rows rendered inside the Sheet area chooser (its own scroll, not this page's).
+  // Search field + rows rendered inside the Sheet area chooser (its own scroll, not this page's).
+  areaSearchInput: {
+    backgroundColor: colors.screenBackground, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: fontSize.sm, color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  areaNoResults: {
+    fontSize: fontSize.sm, color: colors.textMuted,
+    textAlign: 'center', paddingVertical: spacing.lg,
+  },
   areaOption: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 12,

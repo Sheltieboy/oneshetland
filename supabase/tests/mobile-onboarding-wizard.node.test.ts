@@ -437,10 +437,77 @@ describe('constants/shetland-areas.ts is the one mobile source of truth', () => 
   });
 
   test('both screens receive it purely by importing the shared constant — no special-casing of the last entry', () => {
-    // Same .map(SHETLAND_AREAS) rendering every row identically — the
-    // catch-all needs no screen-side code change to appear or be selectable.
-    assert.match(onboarding, /\{SHETLAND_AREAS\.map\(a => \(/);
-    assert.match(editProfile, /\{SHETLAND_AREAS\.map\(area => \(/);
+    // Same .map() (now over the search-filtered list) rendering every row
+    // identically — the catch-all needs no screen-side code change to appear
+    // or be selectable.
+    assert.match(onboarding, /filteredAreas\.map\(a => \(/);
+    assert.match(editProfile, /filteredAreas\.map\(area => \(/);
+  });
+
+  test('the 36 real places are sorted A–Z, with the catch-all deliberately excluded from that ordering', () => {
+    const named = canonicalAreas.slice(0, -1);
+    const sorted = [...named].sort((a, b) => a.localeCompare(b));
+    assert.deepEqual(named, sorted);
+  });
+});
+
+/* ── Search / filter within the area Sheet ────────────────────────────────── */
+
+describe('the area chooser has a local Search areas filter', () => {
+  test('app/onboarding.tsx has a search TextInput with the required placeholder', () => {
+    assert.match(onboarding, /placeholder="Search areas\.\.\."/);
+    assert.match(onboarding, /value=\{areaSearch\}/);
+    assert.match(onboarding, /onChangeText=\{setAreaSearch\}/);
+  });
+
+  test('app/edit-profile.tsx has the same search TextInput with the required placeholder', () => {
+    assert.match(editProfile, /placeholder="Search areas\.\.\."/);
+    assert.match(editProfile, /value=\{areaSearch\}/);
+    assert.match(editProfile, /onChangeText=\{setAreaSearch\}/);
+  });
+
+  test('filtering is case-insensitive and local against the shared list, on both screens', () => {
+    for (const src of [onboarding, editProfile]) {
+      const i = src.indexOf('filteredAreas = useMemo');
+      const body = src.slice(i, src.indexOf('}, [areaSearch]);') + 20);
+      assert.match(body, /\.toLowerCase\(\)/);
+      assert.match(body, /SHETLAND_AREAS\.filter/);
+      // No network/database call — purely a local array filter.
+      assert.doesNotMatch(body, /supabase|fetch\(|await /);
+    }
+  });
+
+  test('partial substring matching works: "bur" -> Burra, "sca" -> Scalloway, "yell" -> Yell', () => {
+    const filter = (q: string) => canonicalAreas.filter(a => a.toLowerCase().includes(q.toLowerCase()));
+    assert.ok(filter('bur').includes('Burra'));
+    assert.ok(filter('sca').includes('Scalloway'));
+    assert.ok(filter('yell').includes('Yell'));
+  });
+
+  test('an empty search shows every area, in the same order — including the catch-all last', () => {
+    const q = '';
+    const result = q ? canonicalAreas.filter(a => a.toLowerCase().includes(q)) : canonicalAreas;
+    assert.deepEqual(result, canonicalAreas);
+    assert.equal(result[result.length - 1], 'Other / elsewhere in Shetland');
+  });
+
+  test('both screens show a "No areas found" message when nothing matches', () => {
+    assert.match(onboarding, /filteredAreas\.length === 0 \? \(\s*<Text style=\{styles\.areaNoResults\}>No areas found<\/Text>/);
+    assert.match(editProfile, /filteredAreas\.length === 0 \? \(\s*<Text style=\{styles\.areaNoResults\}>No areas found<\/Text>/);
+  });
+
+  test('closing the sheet — by cancel or by selecting an area — clears the search on both screens', () => {
+    for (const src of [onboarding, editProfile]) {
+      const i = src.indexOf('const closeAreaPicker = () => {');
+      const body = src.slice(i, src.indexOf('};', i));
+      assert.match(body, /setShowAreaPicker\(false\);/);
+      assert.match(body, /setAreaSearch\(''\);/);
+    }
+    // Sheet's onClose AND the row-selection handler both route through it —
+    // there is no second, separate way to dismiss that skips the reset.
+    assert.match(onboarding, /onClose=\{closeAreaPicker\}/);
+    assert.match(onboarding, /closeAreaPicker\(\); \}\}\s*\n\s*activeOpacity=\{0\.7\}\s*\n\s*>\s*\n\s*\{area === a/);
+    assert.match(editProfile, /onClose=\{closeAreaPicker\}/);
   });
 });
 
@@ -449,12 +516,12 @@ describe('constants/shetland-areas.ts is the one mobile source of truth', () => 
 describe('the resident area chooser is a Sheet, not an inline non-scrolling dropdown', () => {
   test('app/onboarding.tsx renders the shared Sheet component for its area chooser', () => {
     assert.match(onboarding, /import \{ Sheet \} from '@\/components\/ui\/Sheet';/);
-    assert.match(onboarding, /<Sheet visible=\{showAreaPicker\} onClose=\{\(\) => setShowAreaPicker\(false\)\}[^>]*scroll>/);
+    assert.match(onboarding, /<Sheet visible=\{showAreaPicker\} onClose=\{closeAreaPicker\}[^>]*scroll>/);
   });
 
   test('app/edit-profile.tsx renders the same shared Sheet component for its area chooser', () => {
     assert.match(editProfile, /import \{ Sheet \} from '@\/components\/ui\/Sheet';/);
-    assert.match(editProfile, /<Sheet visible=\{showAreaPicker\} onClose=\{\(\) => setShowAreaPicker\(false\)\}[^>]*scroll>/);
+    assert.match(editProfile, /<Sheet visible=\{showAreaPicker\} onClose=\{closeAreaPicker\}[^>]*scroll>/);
   });
 
   test('neither screen still renders the old inline, unbounded-height dropdown View', () => {
@@ -470,7 +537,7 @@ describe('the resident area chooser is a Sheet, not an inline non-scrolling drop
     assert.match(sheetComponent, /const Body: any = scroll \? ScrollView : View;/);
   });
 
-  test('both screens pass scroll to Sheet, so the 36-entry list is a real scroll surface, not clipped', () => {
+  test('both screens pass scroll to Sheet, so the 37-entry list is a real scroll surface, not clipped', () => {
     assert.match(onboarding, /<Sheet visible=\{showAreaPicker\}[\s\S]{0,80}scroll>/);
     assert.match(editProfile, /<Sheet visible=\{showAreaPicker\}[\s\S]{0,80}scroll>/);
   });
@@ -479,9 +546,9 @@ describe('the resident area chooser is a Sheet, not an inline non-scrolling drop
     assert.match(onboarding, /<ScrollView\s*\n\s*contentContainerStyle=\{styles\.scroll\}/);
   });
 
-  test('selecting an area sets it and closes the sheet in the same handler, on both screens', () => {
-    const onboardIdx = onboarding.indexOf("setArea(a); setShowAreaPicker(false);");
+  test('selecting an area sets it and closes the sheet via the shared close handler, on both screens', () => {
+    const onboardIdx = onboarding.indexOf("setArea(a); closeAreaPicker();");
     assert.ok(onboardIdx !== -1);
-    assert.match(editProfile, /setLocationArea\(area\);\s*setShowAreaPicker\(false\);/);
+    assert.match(editProfile, /setLocationArea\(area\);\s*closeAreaPicker\(\);/);
   });
 });

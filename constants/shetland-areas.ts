@@ -19,20 +19,22 @@
  * (this file plus web's two) read from one place, but that's out of scope
  * here.
  *
- * The final entry, "Other / elsewhere in Shetland", is a deliberate
- * catch-all — even a 36-place reconciled list, derived from two historical
- * lists, can't guarantee every legitimate locality is named. A resident
- * whose village isn't listed must still be able to pick something and finish
- * onboarding; it is a plain list item like any other, not a separate free-text
- * field or a second picker.
+ * The 36 real places are alphabetised A–Z, so both pickers (and their search
+ * field) read as a normal sorted list. The final entry, "Other / elsewhere in
+ * Shetland", is a deliberate catch-all — even a reconciled list, derived from
+ * two historical lists, can't guarantee every legitimate locality is named. A
+ * resident whose village isn't listed must still be able to pick something
+ * and finish onboarding; it is a plain, searchable list item like any other,
+ * not a separate free-text field or a second picker — it is simply kept last
+ * rather than sorted alphabetically, so it always reads as the deliberate
+ * fallback it is, not just another place name.
  */
 export const SHETLAND_AREAS = [
-  'Lerwick', 'Scalloway', 'Brae', 'Aith', 'Walls', 'Sandness', 'Sandwick',
-  'Levenwick', 'Bigton', 'Boddam', 'Sumburgh', 'Cunningsburgh', 'Bixter',
-  'Whiteness', 'Weisdale', 'Tingwall', 'Nesting', 'Vidlin', 'Laxo', 'Voe',
-  'Mossbank', 'Sullom', 'Toft', 'Hillswick', 'North Roe',
-  'Yell', 'Unst', 'Fetlar', 'Whalsay', 'Out Skerries',
-  'Bressay', 'Burra', 'Trondra',
-  'Foula', 'Fair Isle', 'Papa Stour',
+  'Aith', 'Bigton', 'Bixter', 'Boddam', 'Brae', 'Bressay', 'Burra',
+  'Cunningsburgh', 'Fair Isle', 'Fetlar', 'Foula', 'Hillswick', 'Laxo',
+  'Lerwick', 'Levenwick', 'Mossbank', 'Nesting', 'North Roe', 'Out Skerries',
+  'Papa Stour', 'Sandness', 'Sandwick', 'Scalloway', 'Sullom', 'Sumburgh',
+  'Tingwall', 'Toft', 'Trondra', 'Unst', 'Vidlin', 'Voe', 'Walls',
+  'Weisdale', 'Whalsay', 'Whiteness', 'Yell',
   'Other / elsewhere in Shetland',
 ] as const;
