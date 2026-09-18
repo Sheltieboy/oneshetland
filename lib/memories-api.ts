@@ -439,19 +439,79 @@ export interface UploadMemoryMediaInput {
  *   { uri, name, type } object lets the platform stream the real bytes.
  *   This is the supabase-js-recommended pattern for React Native.
  */
+
+/**
+ * Which stage a media upload failed at — carried on the thrown error so a
+ * caller (and, from there, diagnostics) can distinguish "your file never
+ * left the phone" from "Storage rejected it" from "it uploaded fine but the
+ * database row failed", instead of one opaque "could not save" for all of
+ * them.
+ *
+ *   auth           — no live session at upload time
+ *   local_read     — the fetch() to Storage never got a response at all
+ *                     (the local file couldn't be read/streamed — a bad or
+ *                     revoked local URI, not a server-side rejection)
+ *   storage_upload — Storage returned a response, and it was an error (the
+ *                     memories-media MIME allowlist rejecting a HEIC photo
+ *                     is exactly this — see pickPhoto's fix in
+ *                     app/memory-new.tsx)
+ *   db_insert      — the file is genuinely in Storage; the memory_media
+ *                     row failed to insert afterwards
+ */
+export type MediaUploadStage = 'auth' | 'local_read' | 'storage_upload' | 'db_insert';
+
+export class MediaUploadError extends Error {
+  stage: MediaUploadStage;
+  constructor(stage: MediaUploadStage, message: string) {
+    super(message);
+    this.name = 'MediaUploadError';
+    this.stage = stage;
+  }
+}
+
+/**
+ * Canonicalises a small, explicit set of MIME aliases to the value this
+ * bucket's allowlist actually carries under its "real" name — never a guess
+ * at what an unfamiliar MIME string might mean, only aliases KNOWN to name
+ * the exact same format as their canonical counterpart.
+ *
+ * audio/x-m4a → audio/m4a is the one entry today: a real iPhone voice-note
+ * upload arrived at Storage declared as audio/x-m4a even though this app's
+ * own JS explicitly sets audio/m4a — proven, not assumed, by a live
+ * production probe (memories-media accepts audio/m4a exactly as declared;
+ * something between this call and the wire substitutes the "x-" form,
+ * most likely iOS's own native multipart bridge deriving a MIME type from
+ * the file rather than trusting the caller's string — a known category of
+ * platform quirk, not something traceable further from JS alone). Both
+ * names the exact same AAC-in-MP4 format; canonicalising here keeps every
+ * stored object's declared type consistent regardless of which layer
+ * produced the alias, and keeps the bucket's own allowlist meaningful
+ * rather than growing an alias per quirk discovered.
+ *
+ * Deliberately NOT a broad audio/* passthrough — only mappings proven to be
+ * the same underlying format are ever added here.
+ */
+const MIME_ALIASES: Readonly<Record<string, string>> = {
+  'audio/x-m4a': 'audio/m4a',
+};
+function canonicalMimeType(mime: string): string {
+  return MIME_ALIASES[mime.toLowerCase()] ?? mime;
+}
+
 export async function uploadMemoryMedia(input: UploadMemoryMediaInput): Promise<MemoryMedia> {
   const extFallback = input.kind === 'audio' ? 'm4a' : input.kind === 'video' ? 'mp4' : 'jpg';
   const ext  = extFromFile(input.file, extFallback);
   const path = `${input.memoryId}/${input.kind}/${newFilename(ext)}`;
-  const contentType =
+  const contentType = canonicalMimeType(
     input.file.mimeType
     ?? (input.kind === 'photo' ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
        : input.kind === 'video' ? `video/${ext}`
-       : `audio/${ext}`);
+       : `audio/${ext}`),
+  );
 
   // ── Direct REST upload via FormData (RN-safe) ──────────────────────────
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Not signed in — please sign in and try again.');
+  if (!session) throw new MediaUploadError('auth', 'Not signed in — please sign in and try again.');
 
   const filename = path.split('/').pop() ?? `upload.${ext}`;
   const form = new FormData();
@@ -464,18 +524,25 @@ export async function uploadMemoryMedia(input: UploadMemoryMediaInput): Promise<
   } as any);
 
   const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${MEMORIES_BUCKET}/${path}`;
-  const uploadRes = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-      'x-upsert':    'true',
-      // Note: don't set Content-Type — let RN fill in the multipart boundary.
-    },
-    body: form,
-  });
+  let uploadRes: Response;
+  try {
+    uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        'x-upsert':    'true',
+        // Note: don't set Content-Type — let RN fill in the multipart boundary.
+      },
+      body: form,
+    });
+  } catch (err: any) {
+    // fetch() itself threw — no HTTP response at all. Most often the local
+    // file URI couldn't be read/streamed, or the device is offline.
+    throw new MediaUploadError('local_read', err?.message ?? 'Could not read the file to upload it.');
+  }
   if (!uploadRes.ok) {
     const text = await uploadRes.text().catch(() => '');
-    throw new Error(`Storage upload failed (${uploadRes.status}): ${text.slice(0, 200)}`);
+    throw new MediaUploadError('storage_upload', `Storage upload failed (${uploadRes.status}): ${text.slice(0, 200)}`);
   }
 
   // memories-media is a PRIVATE bucket, so there is no public URL to persist.
@@ -496,7 +563,7 @@ export async function uploadMemoryMedia(input: UploadMemoryMediaInput): Promise<
     })
     .select('*')
     .single();
-  if (error) throw error;
+  if (error) throw new MediaUploadError('db_insert', error.message);
   return data as MemoryMedia;
 }
 

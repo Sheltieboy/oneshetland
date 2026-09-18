@@ -62,10 +62,20 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
 } = {}) {
   const router = useRouter();
   const goToSignIn = useGoToSignIn();
-  const { id: routeId } = useLocalSearchParams<{ id: string }>();
+  const { id: routeId, justSaved } = useLocalSearchParams<{ id: string; justSaved?: string }>();
   const id = idOverride ?? routeId;
   const { profile } = useAuth();
   const { alert } = useAlert();
+
+  // A brief, quiet confirmation that the story genuinely saved — the create
+  // screen's own feedback (a spinner, then a screen change) wasn't
+  // unambiguous enough on its own. Self-dismisses; doesn't block anything.
+  const [showSavedBanner, setShowSavedBanner] = useState(justSaved === '1');
+  useEffect(() => {
+    if (!showSavedBanner) return;
+    const t = setTimeout(() => setShowSavedBanner(false), 3000);
+    return () => clearTimeout(t);
+  }, [showSavedBanner]);
 
   // Close: in embedded (right-pane) mode hand control back to the host;
   // otherwise pop the navigation stack.
@@ -306,6 +316,14 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
           />
         }
       >
+        {/* Quiet, self-dismissing "just saved" confirmation. */}
+        {showSavedBanner ? (
+          <View style={styles.savedBanner} pointerEvents="none">
+            <FontAwesome5 name="check-circle" size={13} color={colors.success} solid />
+            <Text style={styles.savedBannerText}>Story saved</Text>
+          </View>
+        ) : null}
+
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={goBack} style={styles.iconBtn} hitSlop={10}>
@@ -388,6 +406,16 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
         {/* Media */}
         {memory.media?.length ? (
           <View style={styles.mediaSection}>
+            {/*
+              Photo annotation ("who/what is this?") only exists on THIS
+              screen, after publishing, and only for the author — it was
+              never wired into the create flow (see app/memory-new.tsx).
+              A card here USED to duplicate this instruction alongside
+              ImageAnnotationOverlay's own in-photo hint (annotate mode,
+              zero pins — "Tap on the photo to mark 'who is this?'", right
+              on the relevant photo itself), so it's removed: the in-photo
+              hint alone is the one place this is said now.
+            */}
             {memory.media.map(mm => (
               <MediaTile
                 key={mm.id}
@@ -633,7 +661,13 @@ export default function MemoryDetailScreen({ idOverride, embedded, onClose }: {
 
 // ── Media tile ──────────────────────────────────────────────────────────────
 
-function MediaTile({
+// Memoised: each tile's own player/status state is already scoped to
+// itself and can't structurally reach the rest of the page (no lifted
+// state, no callback that touches parent state) — this is the second,
+// belt-and-braces layer on top of that: whatever churn a tile experiences
+// internally, React never even considers re-rendering its siblings
+// (header, reactions, comments, ScrollView) because of it.
+const MediaTile = React.memo(function MediaTile({
   media, pins, isAuthor, onTapPin, onTapEmpty,
 }: {
   media:      MemoryMedia;
@@ -663,13 +697,13 @@ function MediaTile({
 
   // audio
   return <AudioTile media={media} />;
-}
+});
 
 // ── Video tile ────────────────────────────────────────────────────────────────
 // Tapping the poster opens a fullscreen modal player with native controls,
 // mirroring the web's <video controls>.
 
-function VideoTile({ media }: { media: MemoryMedia }) {
+const VideoTile = React.memo(function VideoTile({ media }: { media: MemoryMedia }) {
   const [open, setOpen] = useState(false);
 
   const player = useVideoPlayer(open ? media.url : null, p => {
@@ -715,17 +749,39 @@ function VideoTile({ media }: { media: MemoryMedia }) {
       </Modal>
     </View>
   );
-}
+});
 
 // ── Audio tile ────────────────────────────────────────────────────────────────
 // Inline play/pause for a voice note, mirroring the web's <audio controls>.
-
-function AudioTile({ media }: { media: MemoryMedia }) {
-  const player = useAudioPlayer(media.url);
+//
+// LAZY, on purpose — same defensive pattern VideoTile already uses just
+// above (useVideoPlayer(open ? media.url : null, ...)). This tile used to
+// call useAudioPlayer(media.url) unconditionally, the instant it mounted:
+// landing on a freshly-saved story began loading/buffering the just-
+// uploaded, just-signed remote audio URL immediately and involuntarily,
+// before the user had done anything. A real physical-device freeze —
+// whole screen unresponsive, only cleared by force-close/reopen — was
+// observed in exactly that window: audio present, transcript_status still
+// "pending" (i.e. moments after upload), no tap yet. Video never showed
+// this because it already deferred loading until the user opened it;
+// audio didn't. The player now only receives a real source once the user
+// actually asks to play — passively viewing a story never touches the
+// native audio pipeline at all.
+const AudioTile = React.memo(function AudioTile({ media }: { media: MemoryMedia }) {
+  const [activated, setActivated] = useState(false);
+  const player = useAudioPlayer(activated ? media.url : null);
   const status = useAudioPlayerStatus(player);
-  const isPlaying = status.playing;
+  const isPlaying = activated && status.playing;
+
+  // Mirrors VideoTile's own "start once the real source is attached"
+  // effect — activating flips the player from a null source to a real one
+  // on the NEXT render, so play() belongs here, not inline in toggle().
+  useEffect(() => {
+    if (activated) player.play();
+  }, [activated, player]);
 
   const toggle = useCallback(() => {
+    if (!activated) { setActivated(true); return; }
     if (status.playing) {
       player.pause();
     } else {
@@ -735,7 +791,7 @@ function AudioTile({ media }: { media: MemoryMedia }) {
       }
       player.play();
     }
-  }, [player, status.playing, status.didJustFinish, status.currentTime, status.duration]);
+  }, [activated, player, status.playing, status.didJustFinish, status.currentTime, status.duration]);
 
   return (
     <View style={[styles.mediaTile, styles.audioTile]}>
@@ -760,7 +816,7 @@ function AudioTile({ media }: { media: MemoryMedia }) {
       </View>
     </View>
   );
-}
+});
 
 // ── Active pin panel ────────────────────────────────────────────────────────
 
@@ -931,6 +987,23 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.screenBackground },
   centerFill: { alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: spacing.xxl },
+
+  savedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.successLight,
+  },
+  savedBannerText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.successDark,
+  },
 
   header: {
     flexDirection: 'row',
