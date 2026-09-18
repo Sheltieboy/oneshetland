@@ -28,7 +28,7 @@ import {
 } from '@/lib/book-api';
 import { useAlert } from '@/components/BrandedAlert';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
-import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
 
 const S = SECTIONS.local;
 
@@ -219,7 +219,6 @@ function UnitEditor({
 }) {
   const isNew = !item;
   const { alert } = useAlert();
-  const router = useRouter();
 
   const [name, setName]           = useState('');
   const [description, setDesc]    = useState('');
@@ -308,7 +307,12 @@ function UnitEditor({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
       if (isNew && eff.premium && !activateNow) {
-        alert(payoutNotReadyPrompt(() => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } })));
+        // Launches the correct Stripe onboarding flow directly for this
+        // business (see startOrResumePayoutSetup) instead of sending the
+        // merchant to the dashboard's Money tab to find the same control a
+        // second time.
+        alert(payoutNotReadyPrompt(() => { startOrResumePayoutSetup(businessId).then(onSaved).catch((e: any) =>
+          alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' })); }));
       }
     } catch (e: any) {
       alert({ title: 'Save failed', message: e?.message ?? 'Try again.' });

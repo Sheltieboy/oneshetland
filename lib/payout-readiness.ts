@@ -1,4 +1,7 @@
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
+import { fetchBusinessPrivate, createBusinessOnboardingLink } from '@/lib/local-api';
+import { startPayoutOnboarding } from '@/lib/payment-state';
 import type { AlertOptions } from '@/components/BrandedAlert';
 import { colors } from '@/constants/theme';
 
@@ -74,4 +77,55 @@ export function eventSavedAsDraftPrompt(onConnectStripe: () => void): AlertOptio
       { label: 'Connect Stripe', style: 'primary', onPress: onConnectStripe },
     ],
   };
+}
+
+/**
+ * The one contextual "Connect Stripe" action, for every paid-activation
+ * guard above. Every caller used to hand the prompt's onConnectStripe a
+ * router.push to the dashboard's Money tab — one extra screen, and one extra
+ * decision, to reach a control OneShetland already knew the exact answer
+ * for. This opens the correct onboarding flow directly instead.
+ *
+ * "Correct" is business_payout_ready's own rule, not a new one: a business
+ * uses its own Connect account only once it has been explicitly given one
+ * (use_business_payout, from fetchBusinessPrivate — never reconstructed from
+ * raw Stripe columns), otherwise it inherits its owner's central account —
+ * see _business_payout_resolve. Both onboarding calls are the existing,
+ * unchanged mechanisms (createBusinessOnboardingLink / startPayoutOnboarding
+ * — see lib/local-api.ts and lib/payment-state.ts), and each already resumes
+ * an existing Stripe account rather than creating a second one.
+ *
+ * No returnContext parameter: WebBrowser.openBrowserAsync is a modal sheet,
+ * not a redirect away from the caller's screen, so awaiting it already
+ * returns the merchant to exactly the screen they tapped Connect Stripe
+ * from — a stronger guarantee than passing one back in would give.
+ */
+export async function startOrResumePayoutSetup(businessId: string): Promise<{ ready: boolean }> {
+  // Fresh canonical check first — never start onboarding a business that is
+  // already payable, whether it always was or the caller's own state (e.g. a
+  // stale payout_ready read on a list row) is merely out of date.
+  if (await requirePayoutReadyForPaidActivation(businessId)) return { ready: true };
+
+  const priv = await fetchBusinessPrivate(businessId);
+  const usesOwnAccount = priv.use_business_payout === true;
+
+  let url: string | null;
+  if (usesOwnAccount) {
+    ({ url } = await createBusinessOnboardingLink(businessId));
+  } else {
+    const central = await startPayoutOnboarding();
+    if (central.alreadyComplete) return { ready: await requirePayoutReadyForPaidActivation(businessId) };
+    url = central.url;
+  }
+  if (!url) throw new Error('No onboarding link was returned.');
+
+  await WebBrowser.openBrowserAsync(url, {
+    presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+    dismissButtonStyle: 'close',
+  });
+
+  // Onboarding can take a few minutes server-side even once the sheet is
+  // dismissed; this is the freshest answer available at the moment the
+  // merchant returns, and the caller's own reload still runs on top of it.
+  return { ready: await requirePayoutReadyForPaidActivation(businessId) };
 }

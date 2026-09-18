@@ -25,10 +25,12 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { supabase } from '@/lib/supabase';
+import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchBusinessEventsForManagement, groupEventsForManagement, eventHasActivePaidTicket,
   formatEventDate, type OsEvent, type EventStatus,
 } from '@/lib/events-api';
+import { startOrResumePayoutSetup } from '@/lib/payout-readiness';
 
 const S = SECTIONS.events;
 
@@ -43,6 +45,7 @@ const STATUS_CFG: Record<EventStatus, { label: string; color: string }> = {
 export default function BusinessEventsScreen() {
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
   const router = useRouter();
+  const { alert } = useAlert();
 
   const [events,     setEvents]     = useState<OsEvent[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -76,10 +79,19 @@ export default function BusinessEventsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const goConnectStripe = () => router.push({
-    pathname: '/local-business-dashboard',
-    params: { id: businessId ?? '', tab: 'payments' },
-  });
+  // Launches the correct Stripe onboarding flow directly for this business
+  // (see startOrResumePayoutSetup) instead of sending the merchant to the
+  // dashboard's Money tab — a draft row here already knows exactly which
+  // business it needs connected.
+  const goConnectStripe = async () => {
+    try {
+      await startOrResumePayoutSetup(businessId ?? '');
+    } catch (e: any) {
+      alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
+    } finally {
+      load();
+    }
+  };
 
   if (loading) {
     return (

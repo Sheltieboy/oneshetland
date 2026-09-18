@@ -16,7 +16,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { useAlert } from '@/components/BrandedAlert';
-import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
 import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { fetchCommercialTermsStatus } from '@/lib/commercial-terms';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
@@ -488,13 +488,35 @@ export default function BusinessDashboardScreen() {
     }
   };
 
+  /**
+   * The CONTEXTUAL "Connect Stripe" action — Wallet activation's own
+   * recovery, distinct from handleConnectStripe above. handleConnectStripe
+   * is unconditionally business-specific because its only caller is the
+   * explicit "use my own business bank" toggle row, where that is exactly
+   * what was asked for. Wallet's blocker can be either account depending on
+   * use_business_payout, so this goes through the shared
+   * startOrResumePayoutSetup instead, which resolves the right one — see its
+   * own doc comment in lib/payout-readiness.ts.
+   */
+  const handleConnectStripeContextual = async () => {
+    if (!activeBusiness) return;
+    if (!(await requireCommercialTerms('Local Wallet'))) return;
+    try {
+      await startOrResumePayoutSetup(activeBusiness.id);
+    } catch (e: any) {
+      brandedAlert({ title: 'Stripe onboarding failed', message: e?.message ?? 'Try again later' });
+    } finally {
+      loadAll(activeBusiness);
+    }
+  };
+
   const toggleAcceptWallet = async (value: boolean) => {
     if (!activeBusiness) return;
     // Fresh canonical check at the activation moment — payoutReady (state,
     // Phase 2) drives the card's display and can go stale between loads;
     // this is the actual gate and must not trust a cached value.
     if (value && !(await requirePayoutReadyForPaidActivation(activeBusiness.id))) {
-      return brandedAlert(payoutNotReadyPrompt(handleConnectStripe));
+      return brandedAlert(payoutNotReadyPrompt(handleConnectStripeContextual));
     }
     // Switching OFF is always allowed. Switching ON is the paid boundary, and
     // is what the server refuses too.
@@ -1315,7 +1337,7 @@ export default function BusinessDashboardScreen() {
           {!payoutReady ? (
             <TouchableOpacity
               style={[styles.primaryBtn, { backgroundColor: S.color, marginTop: 8 }]}
-              onPress={handleConnectStripe}
+              onPress={handleConnectStripeContextual}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="external-link-alt" size={11} color="#fff" />

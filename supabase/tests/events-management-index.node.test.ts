@@ -251,7 +251,15 @@ describe('the not-payout-ready paid draft indication reuses the existing payout-
   test('web: the same rule, read from getBusinessEvents\' resolved payout_ready', () => {
     assert.match(webListPage, /ev\.status === "draft"\s*\n\s*&& ev\.ticket_types\.some\(\(t\) => t\.is_active && t\.price_pence > 0\)\s*\n\s*&& !ev\.payout_ready;/);
     assert.match(webListPage, /Not published/);
-    assert.match(webListPage, /Connect Stripe to publish/);
+    // UPDATE — the contextual Connect Stripe follow-up
+    // (payout-setup-launcher.node.test.ts) moved this row's action out of a
+    // plain <Link> to /manage/billing and into ConnectStripeToPublishLink, a
+    // small client component that launches onboarding directly — so the
+    // literal text now lives in that component, not inline in the page.
+    assert.match(webListPage, /notReadyPaidDraft && <ConnectStripeToPublishLink businessId={businessId} \/>/);
+    const linkComponent = readWeb('components/business/ConnectStripeToPublishLink.tsx');
+    assert.match(linkComponent, /Connect Stripe to publish/);
+    assert.match(linkComponent, /startOrResumePayoutSetup\(businessId\)/);
   });
 
   test('parity: both platforms resolve payout_ready only for the events that actually need it (draft + active paid ticket), not every event', () => {

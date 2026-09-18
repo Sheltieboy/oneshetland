@@ -170,12 +170,23 @@ describe('requirePayoutReadyForPaidActivation fails closed on both platforms', (
     assert.match(code(webSrc), /rpc\("business_payout_ready",\s*\{\s*p_business:\s*businessId\s*\}\)/);
   });
 
-  test('neither reconstructs stripe_account_id / payout_enabled / use_business_payout locally', () => {
+  test('neither reconstructs stripe_account_id / payout_enabled locally', () => {
     for (const src of [code(mobileSrc), code(webSrc)]) {
       assert.doesNotMatch(src, /stripe_account_id/);
       assert.doesNotMatch(src, /payout_enabled/);
-      assert.doesNotMatch(src, /use_business_payout/);
     }
+  });
+
+  // UPDATE — the contextual Connect Stripe follow-up
+  // (payout-setup-launcher.node.test.ts) added startOrResumePayoutSetup to
+  // this same file, which legitimately reads use_business_payout — not to
+  // compute READINESS (that stays exactly business_payout_ready(), asserted
+  // above), but to choose which of the two existing onboarding flows to
+  // open. Narrowed to requirePayoutReadyForPaidActivation itself, which is
+  // what this test is actually about, rather than pinning the whole file.
+  test('requirePayoutReadyForPaidActivation itself never reads use_business_payout — that stays business_payout_ready()\'s own decision', () => {
+    assert.doesNotMatch(liftFn(code(mobileSrc), 'export async function requirePayoutReadyForPaidActivation('), /use_business_payout/);
+    assert.doesNotMatch(liftFn(code(webSrc), 'export async function requirePayoutReadyForPaidActivation('), /use_business_payout/);
   });
 
   test('the prompt shown on failure is the same wording on both platforms, and offers a way to keep drafting', () => {
@@ -525,7 +536,10 @@ describe('Wallet: accepts_wallet=true requires a fresh canonical check', () => {
       let alertShown = null;
       function brandedAlert(o) { alertShown = o; }
       function payoutNotReadyPrompt(_cb) { return { prompt: true }; }
-      function handleConnectStripe() {}
+      // UPDATE — the contextual Connect Stripe follow-up: Wallet's own
+      // recovery now targets handleConnectStripeContextual, not
+      // handleConnectStripe (see payout-setup-launcher.node.test.ts).
+      function handleConnectStripeContextual() {}
       const eff = { pro: true };
       function setActiveBusiness(_b) {}
       async function updateBusiness(_id, _patch) { updateCalled = true; }
@@ -552,7 +566,10 @@ describe('Wallet: accepts_wallet=true requires a fresh canonical check', () => {
       async function requirePayoutReadyForPaidActivation(_id) { return true; }
       function brandedAlert(_o) {}
       function payoutNotReadyPrompt(_cb) { return {}; }
-      function handleConnectStripe() {}
+      // UPDATE — the contextual Connect Stripe follow-up: Wallet's own
+      // recovery now targets handleConnectStripeContextual, not
+      // handleConnectStripe (see payout-setup-launcher.node.test.ts).
+      function handleConnectStripeContextual() {}
       const eff = { pro: true };
       function setActiveBusiness(_b) {}
       let updateCalled = false;

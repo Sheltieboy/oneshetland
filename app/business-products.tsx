@@ -29,7 +29,7 @@ import {
 } from '@/lib/products-api';
 import { formatPence } from '@/lib/local-api';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
-import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
 
 const S = SECTIONS.local;
 
@@ -45,7 +45,18 @@ function BusinessProductsBody() {
   const router = useRouter();
   const { alert } = useAlert();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
-  const goConnectStripe = () => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } });
+  // Launches the correct Stripe onboarding flow directly for this business
+  // (see startOrResumePayoutSetup) instead of sending the merchant to the
+  // dashboard's Money tab to find the same control a second time.
+  const goConnectStripe = async () => {
+    try {
+      await startOrResumePayoutSetup(businessId!);
+    } catch (e: any) {
+      alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
+    } finally {
+      load();
+    }
+  };
 
   const [items, setItems] = useState<Product[]>([]);
   const [variantsBy, setVariantsBy] = useState<Record<string, ProductVariant[]>>({});

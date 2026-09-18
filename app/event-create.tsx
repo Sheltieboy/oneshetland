@@ -21,7 +21,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
-import { requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
@@ -370,7 +370,11 @@ function EventCreateBody() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (wantsPaidPublish && !effectivePublish) {
-        alert(eventSavedAsDraftPrompt(() => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } })));
+        // The event this created is where the merchant already lands next
+        // (the router.replace below) — Connect Stripe opens directly on top
+        // of it rather than detouring through the dashboard's Money tab.
+        alert(eventSavedAsDraftPrompt(() => { startOrResumePayoutSetup(businessId!).catch((e: any) =>
+          alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' })); }));
       }
       router.replace({ pathname: '/event-manage', params: { id: targetId } });
     } catch (e: any) {

@@ -23,6 +23,7 @@ import {
   type OsEvent, type EventStatus, type UpdateKind, type ScannerStats,
 } from '@/lib/events-api';
 import { ticketCapacity } from '@/lib/event-ticket-utils';
+import { startOrResumePayoutSetup } from '@/lib/payout-readiness';
 
 const S  = SECTIONS.events;
 const SE = SECTIONS.local;
@@ -189,10 +190,21 @@ export default function EventManageScreen() {
     && eventHasActivePaidTicket(event.ticket_types ?? [])
     && event.payout_ready !== true;
 
-  const goConnectStripe = () => router.push({
-    pathname: '/local-business-dashboard',
-    params: { id: event.organiser_business_id ?? '', tab: 'payments' },
-  });
+  // Launches the correct Stripe onboarding flow directly (central or the
+  // business's own, whichever business_payout_ready actually uses — see
+  // startOrResumePayoutSetup) instead of sending the merchant to the
+  // dashboard's Money tab to find the same control a second time. The sheet
+  // this opens is modal, not a navigation, so dismissing it already leaves
+  // the merchant on this exact screen; load() picks up the fresh answer.
+  const goConnectStripe = async () => {
+    try {
+      await startOrResumePayoutSetup(event.organiser_business_id ?? '');
+    } catch (e: any) {
+      alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
+    } finally {
+      load();
+    }
+  };
 
   const hubReach = event.organiser_hub_id ? (
     event.hub_visibility === 'members' ? { label: 'Members only', icon: 'user-friends', color: '#6D28D9', bg: '#F3E8FF' }

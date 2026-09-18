@@ -127,13 +127,18 @@ const webPayout     = code(readWeb('lib/payout-readiness.ts'));
 
 describe('1-3. The post-save confirmation explicitly says the save succeeded and publish did not', () => {
   test('mobile: event-create.tsx calls eventSavedAsDraftPrompt, not the pre-save payoutNotReadyPrompt', () => {
-    assert.match(mobileCreate, /import \{ requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt \} from '@\/lib\/payout-readiness';/);
+    // UPDATE — the contextual Connect Stripe follow-up
+    // (payout-setup-launcher.node.test.ts) added a third import,
+    // startOrResumePayoutSetup, so the prompt's Connect Stripe action opens
+    // onboarding directly instead of navigating to the dashboard.
+    assert.match(mobileCreate, /import \{ requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, startOrResumePayoutSetup \} from '@\/lib\/payout-readiness';/);
     assert.match(mobileCreate, /alert\(eventSavedAsDraftPrompt\(/);
     assert.doesNotMatch(mobileCreate, /alert\(payoutNotReadyPrompt\(/, 'the generic pre-save prompt must not be reused here');
   });
 
   test('web: BusinessEventForm.tsx calls EVENT_SAVED_AS_DRAFT_PROMPT, not the pre-save PAYOUT_NOT_READY_PROMPT', () => {
-    assert.match(webForm, /import \{ requirePayoutReadyForPaidActivation, EVENT_SAVED_AS_DRAFT_PROMPT \} from "@\/lib\/payout-readiness";/);
+    // UPDATE — see the mobile test above; same third import, same reason.
+    assert.match(webForm, /import \{ requirePayoutReadyForPaidActivation, startOrResumePayoutSetup, EVENT_SAVED_AS_DRAFT_PROMPT \} from "@\/lib\/payout-readiness";/);
     assert.match(webForm, /confirm\(EVENT_SAVED_AS_DRAFT_PROMPT\)/);
     assert.doesNotMatch(webForm, /confirm\(PAYOUT_NOT_READY_PROMPT\)/, 'the generic pre-save prompt must not be reused here');
   });

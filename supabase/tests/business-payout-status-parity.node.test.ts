@@ -242,13 +242,20 @@ describe('the narrower own-account sub-status rows are untouched, and existing C
     assert.match(src, /b\.use_business_payout \? \(b\.payout_enabled \? "✓ Business bank connected" : "Business bank — setup needed"\) : "Using your central OneShetland bank"/);
   });
 
-  test('mobile\'s handleConnectStripe / createBusinessOnboardingLink and web\'s connectBank are untouched by this phase', () => {
+  test('mobile\'s handleConnectStripe / createBusinessOnboardingLink is untouched by this phase', () => {
+    // UPDATE — the contextual Connect Stripe follow-up
+    // (payout-setup-launcher.node.test.ts). handleConnectStripe itself is
+    // still exactly this — it remains the unconditional business-specific
+    // action behind the dashboard's own "use my own business bank" toggle,
+    // which is genuinely unaffected by that later task. web's connectBank is
+    // a DIFFERENT story: it was Wallet's own contextual guard, always
+    // assuming a business-specific account even when the business relies on
+    // its owner's central one — exactly the bug that follow-up fixed, so its
+    // half of this assertion is retired below rather than kept pinned to
+    // stale behaviour.
     const mobileSrc = code(read('app/local-business-dashboard.tsx'));
     assert.match(mobileSrc, /const handleConnectStripe = async \(\) => \{/);
     assert.match(mobileSrc, /createBusinessOnboardingLink\(activeBusiness\.id\)/);
-    const webSrc = code(readWeb('components/business/WalletManager.tsx'));
-    assert.match(webSrc, /async function connectBank\(\) \{/);
-    assert.match(webSrc, /createBusinessOnboardingLink\(b\.id\)/);
   });
 
   test('WalletManager now takes payoutReady as an explicit prop, sourced from the server, not recomputed client-side', () => {

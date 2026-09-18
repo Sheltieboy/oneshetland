@@ -74,8 +74,17 @@ describe('the events card itself, once shown, is otherwise unchanged', () => {
     assert.match(dashboardSrc, /pathname: '\/event-create', params: \{ businessId: activeBusiness\.id \}/);
   });
 
-  test('Manage event and Scan tickets still route to the correct per-event screens with the real event id', () => {
-    assert.match(dashboardSrc, /pathname: '\/event-manage', params: \{ id: nextBizEvent\.id \}/);
+  test('Scan tickets still routes to the correct per-event screen with the real event id', () => {
+    // UPDATE — the Events management list (events-management-index.node.test.ts,
+    // from a later task than this file). Manage event/events no longer
+    // pushes directly to /event-manage with nextBizEvent.id at all — it
+    // always opens the management list first (app/business-events.tsx),
+    // unconditionally, which is exactly the fix for a draft/second event
+    // being otherwise unreachable. This file's own regression run never
+    // caught that change landing, since it was not in that task's run list;
+    // narrowed to what is still true — Scan tickets is unaffected and still
+    // a genuinely per-event push.
     assert.match(dashboardSrc, /pathname: '\/event-scanner', params: \{ id: nextBizEvent\.id \}/);
+    assert.match(dashboardSrc, /pathname: '\/business-events', params: \{ businessId: activeBusiness\.id \}/);
   });
 });
