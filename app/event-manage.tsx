@@ -50,6 +50,7 @@ export default function EventManageScreen() {
   const [postingUpdate,  setPostingUpdate]  = useState(false);
 
   const [statusBusy, setStatusBusy] = useState(false);
+  const [connectingStripe, setConnectingStripe] = useState(false);
 
   const load = useCallback(async () => {
     // `finally`, not a trailing call. This returned early when `id` was
@@ -197,11 +198,17 @@ export default function EventManageScreen() {
   // this opens is modal, not a navigation, so dismissing it already leaves
   // the merchant on this exact screen; load() picks up the fresh answer.
   const goConnectStripe = async () => {
+    // Duplicate-tap guard: connectingStripe also disables both buttons that
+    // call this, but the disabled prop only takes effect after the next
+    // render, so this checks the value directly too.
+    if (connectingStripe) return;
+    setConnectingStripe(true);
     try {
       await startOrResumePayoutSetup(event.organiser_business_id ?? '');
     } catch (e: any) {
       alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
     } finally {
+      setConnectingStripe(false);
       load();
     }
   };
@@ -241,6 +248,7 @@ export default function EventManageScreen() {
           onChangeStatus={handleStatusChange}
           notReadyPaidDraft={notReadyPaidDraft}
           onConnectStripe={goConnectStripe}
+          connectingStripe={connectingStripe}
         />
 
         {/* Not published: paid/mixed draft, organiser not payout-ready. The
@@ -255,8 +263,14 @@ export default function EventManageScreen() {
                 Connect Stripe to publish this event and start selling paid tickets.
               </Text>
             </View>
-            <TouchableOpacity style={styles.payoutBannerBtn} onPress={goConnectStripe} activeOpacity={0.85}>
-              <Text style={styles.payoutBannerBtnText}>Connect Stripe</Text>
+            <TouchableOpacity
+              style={[styles.payoutBannerBtn, connectingStripe && styles.disabledBtn]}
+              onPress={goConnectStripe}
+              disabled={connectingStripe}
+              activeOpacity={0.85}
+            >
+              {connectingStripe && <ActivityIndicator size="small" color="#fff" style={styles.btnSpinner} />}
+              <Text style={styles.payoutBannerBtnText}>{connectingStripe ? 'Opening Stripe…' : 'Connect Stripe'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -426,13 +440,14 @@ export default function EventManageScreen() {
   );
 }
 
-function StatusStrip({ status, isBusy, onChangeStatus, notReadyPaidDraft, onConnectStripe }: {
+function StatusStrip({ status, isBusy, onChangeStatus, notReadyPaidDraft, onConnectStripe, connectingStripe }: {
   status: EventStatus; isBusy: boolean;
   onChangeStatus: (s: EventStatus) => void;
   /** True for a draft, paid/mixed event whose organiser isn't payout-ready
    *  yet — see the comment on its computation above. */
   notReadyPaidDraft: boolean;
   onConnectStripe: () => void;
+  connectingStripe: boolean;
 }) {
   const config: Record<EventStatus, { label: string; color: string }> = {
     draft:     { label: 'Draft',     color: colors.textMuted  },
@@ -453,9 +468,16 @@ function StatusStrip({ status, isBusy, onChangeStatus, notReadyPaidDraft, onConn
           // Reverts to the normal green "Publish now" the moment
           // event.payout_ready reads true (a free-only draft never sets
           // notReadyPaidDraft in the first place — see its computation).
-          <TouchableOpacity style={styles.connectToPublishBtn} onPress={onConnectStripe} activeOpacity={0.85}>
-            <FontAwesome5 name="university" size={10} color="#fff" solid />
-            <Text style={styles.publishNowText}>Connect Stripe to publish</Text>
+          <TouchableOpacity
+            style={[styles.connectToPublishBtn, connectingStripe && styles.disabledBtn]}
+            onPress={onConnectStripe}
+            disabled={connectingStripe}
+            activeOpacity={0.85}
+          >
+            {connectingStripe
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <FontAwesome5 name="university" size={10} color="#fff" solid />}
+            <Text style={styles.publishNowText}>{connectingStripe ? 'Opening Stripe…' : 'Connect Stripe to publish'}</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={styles.publishNowBtn} onPress={() => onChangeStatus('published')} activeOpacity={0.85}>
@@ -543,8 +565,13 @@ const styles = StyleSheet.create({
   },
   payoutBannerTitle: { fontSize: fontSize.sm, fontWeight: '900', color: colors.warningDark },
   payoutBannerText:  { fontSize: fontSize.xs, color: colors.warningDark, marginTop: 2, lineHeight: 16 },
-  payoutBannerBtn:   { backgroundColor: colors.warningDark, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md },
+  payoutBannerBtn:   {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.warningDark, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md,
+  },
   payoutBannerBtnText:{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
+  disabledBtn: { opacity: 0.6 },
+  btnSpinner: { marginRight: 2 },
 
   dateSummary: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

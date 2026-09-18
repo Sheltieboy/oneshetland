@@ -456,6 +456,7 @@ export default function BusinessDashboardScreen() {
    * gate, calls nothing at Stripe.
    */
   const [termsGateFor, setTermsGateFor] = useState<string | null>(null);
+  const [connectingStripeContextual, setConnectingStripeContextual] = useState(false);
 
   const requireCommercialTerms = useCallback(async (feature: string): Promise<boolean> => {
     if (!activeBusiness) return false;
@@ -499,13 +500,18 @@ export default function BusinessDashboardScreen() {
    * own doc comment in lib/payout-readiness.ts.
    */
   const handleConnectStripeContextual = async () => {
-    if (!activeBusiness) return;
-    if (!(await requireCommercialTerms('Local Wallet'))) return;
+    if (!activeBusiness || connectingStripeContextual) return;
+    // Set before anything else, including the commercial-terms check — the
+    // merchant needs to see the tap registered before ANY network call, not
+    // just before the Stripe-specific ones.
+    setConnectingStripeContextual(true);
     try {
+      if (!(await requireCommercialTerms('Local Wallet'))) return;
       await startOrResumePayoutSetup(activeBusiness.id);
     } catch (e: any) {
       brandedAlert({ title: 'Stripe onboarding failed', message: e?.message ?? 'Try again later' });
     } finally {
+      setConnectingStripeContextual(false);
       loadAll(activeBusiness);
     }
   };
@@ -1329,6 +1335,7 @@ export default function BusinessDashboardScreen() {
               <Switch
                 value={activeBusiness.accepts_wallet}
                 onValueChange={toggleAcceptWallet}
+                disabled={connectingStripeContextual}
                 trackColor={{ false: colors.border, true: S.color }}
               />
             )}
@@ -1336,12 +1343,15 @@ export default function BusinessDashboardScreen() {
 
           {!payoutReady ? (
             <TouchableOpacity
-              style={[styles.primaryBtn, { backgroundColor: S.color, marginTop: 8 }]}
+              style={[styles.primaryBtn, { backgroundColor: S.color, marginTop: 8 }, connectingStripeContextual && styles.disabledBtn]}
               onPress={handleConnectStripeContextual}
+              disabled={connectingStripeContextual}
               activeOpacity={0.85}
             >
-              <FontAwesome5 name="external-link-alt" size={11} color="#fff" />
-              <Text style={styles.primaryBtnText}>Connect Stripe</Text>
+              {connectingStripeContextual
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <FontAwesome5 name="external-link-alt" size={11} color="#fff" />}
+              <Text style={styles.primaryBtnText}>{connectingStripeContextual ? 'Opening Stripe…' : 'Connect Stripe'}</Text>
             </TouchableOpacity>
           ) : activeBusiness.accepts_wallet ? (
             <>
@@ -2123,6 +2133,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: radius.md,
   },
   primaryBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+  disabledBtn: { opacity: 0.6 },
 
   emptyIcon:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },

@@ -320,12 +320,18 @@ describe('6. payment-card setup is never reachable from a payout-readiness block
    Manage's own return context is preserved.
    ════════════════════════════════════════════════════════════════════════ */
 
-const SURFACES: Array<{ label: string; file: string; web?: boolean }> = [
+const SURFACES: Array<{ label: string; file: string; web?: boolean; viaLauncher?: boolean }> = [
   { label: '1 & 11. mobile event-manage.tsx (Event Manage\'s own banner/status strip)', file: 'app/event-manage.tsx' },
   { label: '1. mobile business-events.tsx (the management list\'s draft rows)',        file: 'app/business-events.tsx' },
-  { label: '1. mobile event-create.tsx (saved-as-draft prompt)',                       file: 'app/event-create.tsx' },
-  { label: '3. mobile business-products.tsx (product activation)',                     file: 'app/business-products.tsx' },
-  { label: '4. mobile local-book-units.tsx (pass activation)',                         file: 'app/local-book-units.tsx' },
+  // UPDATE — the loading-feedback follow-up (payout-loading-feedback.node.test.ts).
+  // BrandedAlert dismisses its dialog before onConnectStripe fires, so these
+  // three now go through launchPayoutSetupFromPrompt, which itself calls
+  // startOrResumePayoutSetup and layers a loading alert around it — the
+  // underlying mechanism is unchanged, only reached one level of indirection
+  // further in from the surface file itself.
+  { label: '1. mobile event-create.tsx (saved-as-draft prompt)',                       file: 'app/event-create.tsx', viaLauncher: true },
+  { label: '3. mobile business-products.tsx (product activation)',                     file: 'app/business-products.tsx', viaLauncher: true },
+  { label: '4. mobile local-book-units.tsx (pass activation)',                         file: 'app/local-book-units.tsx', viaLauncher: true },
   { label: '5. mobile local-business-dashboard.tsx (Wallet activation)',               file: 'app/local-business-dashboard.tsx' },
 ];
 
@@ -342,7 +348,8 @@ describe('every contextual paid-activation surface calls startOrResumePayoutSetu
   for (const s of SURFACES) {
     test(`${s.label} — calls the shared launcher and does not merely navigate to the dashboard's Money tab for this`, () => {
       const src = code(read(s.file));
-      assert.match(src, /startOrResumePayoutSetup\(/, `${s.file} must call startOrResumePayoutSetup`);
+      const pattern = s.viaLauncher ? /launchPayoutSetupFromPrompt\(/ : /startOrResumePayoutSetup\(/;
+      assert.match(src, pattern, `${s.file} must call ${s.viaLauncher ? 'launchPayoutSetupFromPrompt' : 'startOrResumePayoutSetup'}`);
     });
   }
 

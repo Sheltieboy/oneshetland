@@ -21,7 +21,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
-import { requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, launchPayoutSetupFromPrompt } from '@/lib/payout-readiness';
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
@@ -50,7 +50,7 @@ function EventCreateBody() {
   const router  = useRouter();
   const { profile } = useAuth();
   const { screenWidth } = useAppLayout();
-  const { alert } = useAlert();
+  const { alert, hide } = useAlert();
 
   const isEdit = !!eventId;
   const isHub  = !!hubId;
@@ -373,8 +373,10 @@ function EventCreateBody() {
         // The event this created is where the merchant already lands next
         // (the router.replace below) — Connect Stripe opens directly on top
         // of it rather than detouring through the dashboard's Money tab.
-        alert(eventSavedAsDraftPrompt(() => { startOrResumePayoutSetup(businessId!).catch((e: any) =>
-          alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' })); }));
+        // BrandedAlert dismisses this prompt before onConnectStripe fires,
+        // so launchPayoutSetupFromPrompt shows its own loading alert for
+        // immediate feedback — see lib/payout-readiness.ts.
+        alert(eventSavedAsDraftPrompt(() => launchPayoutSetupFromPrompt(businessId!, { alert, hide })));
       }
       router.replace({ pathname: '/event-manage', params: { id: targetId } });
     } catch (e: any) {

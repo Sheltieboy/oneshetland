@@ -29,7 +29,7 @@ import {
 } from '@/lib/products-api';
 import { formatPence } from '@/lib/local-api';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
-import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, launchPayoutSetupFromPrompt } from '@/lib/payout-readiness';
 
 const S = SECTIONS.local;
 
@@ -43,19 +43,16 @@ type VariantRow = { id?: string; name: string; delta: string; stock: string };
 
 function BusinessProductsBody() {
   const router = useRouter();
-  const { alert } = useAlert();
+  const { alert, hide } = useAlert();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
   // Launches the correct Stripe onboarding flow directly for this business
-  // (see startOrResumePayoutSetup) instead of sending the merchant to the
-  // dashboard's Money tab to find the same control a second time.
+  // (see startOrResumePayoutSetup), only ever reached from the
+  // payoutNotReadyPrompt alert below — launchPayoutSetupFromPrompt shows its
+  // own loading alert for immediate feedback, since BrandedAlert has already
+  // dismissed this one by the time onConnectStripe fires.
   const goConnectStripe = async () => {
-    try {
-      await startOrResumePayoutSetup(businessId!);
-    } catch (e: any) {
-      alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
-    } finally {
-      load();
-    }
+    await launchPayoutSetupFromPrompt(businessId!, { alert, hide });
+    load();
   };
 
   const [items, setItems] = useState<Product[]>([]);

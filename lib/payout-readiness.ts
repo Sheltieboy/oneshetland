@@ -129,3 +129,45 @@ export async function startOrResumePayoutSetup(businessId: string): Promise<{ re
   // merchant returns, and the caller's own reload still runs on top of it.
   return { ready: await requirePayoutReadyForPaidActivation(businessId) };
 }
+
+/**
+ * launchPayoutSetupFromPrompt — startOrResumePayoutSetup, called from an
+ * AlertAction. BrandedAlert always dismisses an alert before firing its
+ * onPress (see handleAction), so by the time onConnectStripe runs here,
+ * there is no longer a button on screen to show "Opening Stripe…" on — the
+ * merchant needs feedback wherever their attention now is instead. This
+ * shows a second, loading-only alert (BrandedAlert's opt-in `loading` mode)
+ * immediately, before startOrResumePayoutSetup's own first await, and
+ * replaces it with either nothing (hide, on success) or a plain error alert
+ * (on failure) once it settles.
+ *
+ * The loading alert is itself modal and non-dismissible, so a second tap at
+ * a payoutNotReadyPrompt elsewhere on the same screen cannot reach it while
+ * this is in flight — duplicate launches are prevented by the same modal
+ * that gives the feedback, not a separate flag.
+ */
+export async function launchPayoutSetupFromPrompt(
+  businessId: string,
+  ui: { alert: (o: AlertOptions) => void; hide: () => void },
+): Promise<void> {
+  ui.alert({
+    title: 'Opening Stripe…',
+    message: 'Connecting your Stripe account.',
+    icon: 'university',
+    accent: colors.jobs,
+    loading: true,
+    dismissible: false,
+  });
+  try {
+    await startOrResumePayoutSetup(businessId);
+    ui.hide();
+  } catch (e: any) {
+    ui.alert({
+      title: 'Could not open Stripe',
+      message: e?.message ?? 'Please try again.',
+      icon: 'university',
+      accent: colors.error,
+      actions: [{ label: 'OK', style: 'primary' }],
+    });
+  }
+}

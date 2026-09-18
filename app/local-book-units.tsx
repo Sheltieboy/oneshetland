@@ -28,7 +28,7 @@ import {
 } from '@/lib/book-api';
 import { useAlert } from '@/components/BrandedAlert';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
-import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, launchPayoutSetupFromPrompt } from '@/lib/payout-readiness';
 
 const S = SECTIONS.local;
 
@@ -218,7 +218,7 @@ function UnitEditor({
   onSaved: () => void;
 }) {
   const isNew = !item;
-  const { alert } = useAlert();
+  const { alert, hide } = useAlert();
 
   const [name, setName]           = useState('');
   const [description, setDesc]    = useState('');
@@ -308,11 +308,11 @@ function UnitEditor({
       onSaved();
       if (isNew && eff.premium && !activateNow) {
         // Launches the correct Stripe onboarding flow directly for this
-        // business (see startOrResumePayoutSetup) instead of sending the
-        // merchant to the dashboard's Money tab to find the same control a
-        // second time.
-        alert(payoutNotReadyPrompt(() => { startOrResumePayoutSetup(businessId).then(onSaved).catch((e: any) =>
-          alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' })); }));
+        // business (see startOrResumePayoutSetup), only ever reached from
+        // this alert — launchPayoutSetupFromPrompt shows its own loading
+        // alert for immediate feedback, since BrandedAlert has already
+        // dismissed this one by the time onConnectStripe fires.
+        alert(payoutNotReadyPrompt(() => { launchPayoutSetupFromPrompt(businessId, { alert, hide }).then(onSaved); }));
       }
     } catch (e: any) {
       alert({ title: 'Save failed', message: e?.message ?? 'Try again.' });

@@ -131,7 +131,13 @@ describe('1-3. The post-save confirmation explicitly says the save succeeded and
     // (payout-setup-launcher.node.test.ts) added a third import,
     // startOrResumePayoutSetup, so the prompt's Connect Stripe action opens
     // onboarding directly instead of navigating to the dashboard.
-    assert.match(mobileCreate, /import \{ requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, startOrResumePayoutSetup \} from '@\/lib\/payout-readiness';/);
+    // UPDATE 2 — the loading-feedback follow-up
+    // (payout-loading-feedback.node.test.ts): BrandedAlert dismisses this
+    // prompt before onConnectStripe fires, so it now goes through
+    // launchPayoutSetupFromPrompt (which shows its own loading alert, then
+    // calls startOrResumePayoutSetup internally) rather than calling
+    // startOrResumePayoutSetup directly.
+    assert.match(mobileCreate, /import \{ requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, launchPayoutSetupFromPrompt \} from '@\/lib\/payout-readiness';/);
     assert.match(mobileCreate, /alert\(eventSavedAsDraftPrompt\(/);
     assert.doesNotMatch(mobileCreate, /alert\(payoutNotReadyPrompt\(/, 'the generic pre-save prompt must not be reused here');
   });

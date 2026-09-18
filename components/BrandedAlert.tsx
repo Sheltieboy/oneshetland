@@ -27,7 +27,7 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing,
+  Modal, View, Text, TouchableOpacity, StyleSheet, Animated, Easing, ActivityIndicator,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -48,6 +48,16 @@ export interface AlertOptions {
   accent?:  string;                 // hex colour for icon + primary button
   actions?: AlertAction[];          // default: [{ label: 'OK', style: 'primary' }]
   dismissible?: boolean;            // tap backdrop to dismiss (default true)
+  /**
+   * Shows a spinner in place of the action row, for a brief, non-interactive
+   * "this is in progress" state — e.g. the moment onConnectStripe fires from
+   * an action that has already dismissed (see payoutLaunchingAlert in
+   * lib/payout-readiness.ts). The caller shows it via alert({...}) and
+   * dismisses it (typically by calling alert() again with actions, or
+   * hide()) once the work settles. Every other alert is unaffected — this
+   * is opt-in and changes nothing when omitted.
+   */
+  loading?: boolean;
 }
 
 interface AlertContextValue {
@@ -133,17 +143,21 @@ export function BrandedAlertProvider({ children }: { children: React.ReactNode }
             {options?.title && <Text style={styles.title}>{options.title}</Text>}
             {options?.message && <Text style={styles.message}>{options.message}</Text>}
 
-            <View style={[styles.actionsRow, isColumn && styles.actionsColumn]}>
-              {actions.map((action, i) => (
-                <ActionButton
-                  key={`${action.label}-${i}`}
-                  action={action}
-                  accent={accent}
-                  fullWidth={isColumn}
-                  onPress={() => handleAction(action)}
-                />
-              ))}
-            </View>
+            {options?.loading ? (
+              <ActivityIndicator color={accent} size="small" style={styles.loadingSpinner} />
+            ) : (
+              <View style={[styles.actionsRow, isColumn && styles.actionsColumn]}>
+                {actions.map((action, i) => (
+                  <ActionButton
+                    key={`${action.label}-${i}`}
+                    action={action}
+                    accent={accent}
+                    fullWidth={isColumn}
+                    onPress={() => handleAction(action)}
+                  />
+                ))}
+              </View>
+            )}
           </Animated.View>
         </Animated.View>
       </Modal>
@@ -248,6 +262,9 @@ const styles = StyleSheet.create({
   },
   actionsColumn: {
     flexDirection: 'column',
+  },
+  loadingSpinner: {
+    marginTop: 6,
   },
   btn: {
     paddingVertical: 13,

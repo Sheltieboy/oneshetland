@@ -49,6 +49,7 @@ export default function BusinessEventsScreen() {
 
   const [events,     setEvents]     = useState<OsEvent[]>([]);
   const [loading,    setLoading]    = useState(true);
+  const [connectingStripe, setConnectingStripe] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // Draft event id -> payout_ready. Resolved only for drafts that have an
   // active paid ticket type — the one case this list needs to say more than
@@ -84,11 +85,16 @@ export default function BusinessEventsScreen() {
   // dashboard's Money tab — a draft row here already knows exactly which
   // business it needs connected.
   const goConnectStripe = async () => {
+    // All draft rows on this screen share one business, so one flag
+    // correctly disables every row's link while a launch is in flight.
+    if (connectingStripe) return;
+    setConnectingStripe(true);
     try {
       await startOrResumePayoutSetup(businessId ?? '');
     } catch (e: any) {
       alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
     } finally {
+      setConnectingStripe(false);
       load();
     }
   };
@@ -151,6 +157,7 @@ export default function BusinessEventsScreen() {
                   onPress={() => router.push({ pathname: '/event-manage', params: { id: e.id } })}
                   notReadyPaidDraft={eventHasActivePaidTicket(e.ticket_types ?? []) && draftPayoutReady[e.id] !== true}
                   onConnectStripe={goConnectStripe}
+                  connectingStripe={connectingStripe}
                 />
               ))}
             </EventGroup>
@@ -188,11 +195,12 @@ function EventGroup({ title, quiet, children }: { title: string; quiet?: boolean
   );
 }
 
-function EventRow({ event, onPress, notReadyPaidDraft, onConnectStripe, quiet }: {
+function EventRow({ event, onPress, notReadyPaidDraft, onConnectStripe, connectingStripe, quiet }: {
   event: OsEvent;
   onPress: () => void;
   notReadyPaidDraft?: boolean;
   onConnectStripe?: () => void;
+  connectingStripe?: boolean;
   quiet?: boolean;
 }) {
   const cfg = STATUS_CFG[event.status] ?? STATUS_CFG.draft;
@@ -213,9 +221,16 @@ function EventRow({ event, onPress, notReadyPaidDraft, onConnectStripe, quiet }:
           )}
         </View>
         {notReadyPaidDraft && onConnectStripe && (
-          <TouchableOpacity onPress={onConnectStripe} hitSlop={8} style={styles.connectStripeLink}>
-            <FontAwesome5 name="university" size={10} color={colors.warningDark} solid />
-            <Text style={styles.connectStripeLinkText}>Connect Stripe to publish</Text>
+          <TouchableOpacity
+            onPress={onConnectStripe}
+            disabled={connectingStripe}
+            hitSlop={8}
+            style={[styles.connectStripeLink, connectingStripe && { opacity: 0.6 }]}
+          >
+            {connectingStripe
+              ? <ActivityIndicator size="small" color={colors.warningDark} />
+              : <FontAwesome5 name="university" size={10} color={colors.warningDark} solid />}
+            <Text style={styles.connectStripeLinkText}>{connectingStripe ? 'Opening Stripe…' : 'Connect Stripe to publish'}</Text>
           </TouchableOpacity>
         )}
       </View>
