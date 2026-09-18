@@ -29,6 +29,7 @@ import {
 } from '@/lib/products-api';
 import { formatPence } from '@/lib/local-api';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
 
 const S = SECTIONS.local;
 
@@ -44,6 +45,7 @@ function BusinessProductsBody() {
   const router = useRouter();
   const { alert } = useAlert();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
+  const goConnectStripe = () => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } });
 
   const [items, setItems] = useState<Product[]>([]);
   const [variantsBy, setVariantsBy] = useState<Record<string, ProductVariant[]>>({});
@@ -128,6 +130,20 @@ function BusinessProductsBody() {
     if (!title.trim()) { setErr('Give it a title'); return; }
     if (!p || p < 50) { setErr('Price needs to be at least £0.50'); return; }
     if (!photo1) { setErr("Add a photo — listings without photos don't sell"); return; }
+
+    // New products start as drafts unless the plan can publish them. An
+    // existing product keeps whatever the owner set — a lapsed plan must
+    // never silently unpublish a shop. Either way, going live for the first
+    // time also needs a working payout route — an already-active product
+    // being merely edited is not a new activation, so it's left alone.
+    const wantsActive = editingId ? (editingActive ?? true) : eff.premium;
+    const isNewActivation = wantsActive && !(editingId && editingActive);
+    let activeToSave = wantsActive;
+    if (isNewActivation) {
+      const ready = await requirePayoutReadyForPaidActivation(businessId!);
+      if (!ready) activeToSave = false;
+    }
+
     setSaving(true); setErr(null);
     try {
       await upsertProduct({
@@ -143,16 +159,25 @@ function BusinessProductsBody() {
         lead_time_days: stockMode === 'made_to_order' ? Math.min(90, Math.max(1, Math.floor(Number(leadDays) || 14))) : null,
         collect_only: collectOnly,
         free_uk_post: freeUkPost,
-        // New products start as drafts unless the plan can publish them. An
-        // existing product keeps whatever the owner set — a lapsed plan must
-        // never silently unpublish a shop.
-        is_active: editingId ? (editingActive ?? true) : eff.premium,
+        is_active: activeToSave,
       }, variants.map((v) => ({ id: v.id, name: v.name, price_delta_pence: toPence(v.delta) ?? 0, stock: v.stock === '' ? null : Math.max(0, Math.floor(Number(v.stock))) })));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowEditor(false);
       load();
+      if (isNewActivation && !activeToSave) {
+        alert(payoutNotReadyPrompt(goConnectStripe));
+      }
     } catch (e) { setErr(e instanceof Error ? e.message : "Couldn't save"); }
     finally { setSaving(false); }
+  }
+
+  async function toggleActive(p: Product) {
+    if (!p.is_active) {
+      const ready = await requirePayoutReadyForPaidActivation(businessId!);
+      if (!ready) { alert(payoutNotReadyPrompt(goConnectStripe)); return; }
+    }
+    await setProductActive(p.id, !p.is_active);
+    load();
   }
 
   function confirmDelete(p: Product) {
@@ -237,7 +262,7 @@ function BusinessProductsBody() {
               <TouchableOpacity onPress={() => openEdit(p)} hitSlop={8} style={styles.iconBtn}>
                 <FontAwesome5 name="pen" size={13} color={colors.textSecondary} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={async () => { await setProductActive(p.id, !p.is_active); load(); }} hitSlop={8} style={styles.iconBtn}>
+              <TouchableOpacity onPress={() => toggleActive(p)} hitSlop={8} style={styles.iconBtn}>
                 <FontAwesome5 name={p.is_active ? 'eye-slash' : 'eye'} size={13} color={colors.textSecondary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => confirmDelete(p)} hitSlop={8} style={styles.iconBtn}>

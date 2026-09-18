@@ -79,6 +79,11 @@ export default function EventDetailScreen() {
   // business — so an organiser with a working central account had their
   // tickets hidden behind "Tickets coming soon".
   const payoutReady = event?.payout_ready === true;
+  // A mixed free+paid event still has something genuinely buyable when the
+  // organiser isn't payout-ready — the free ticket type. Only a wholly-paid
+  // event (no free type at all) should stay behind "Tickets coming soon";
+  // event-ticket-checkout.tsx marks each individual paid row unavailable.
+  const canEnterTicketFlow = payoutReady || eventHasFreeActiveTicket(ticketTypes);
 
   // Navigation runs in an event handler, and React error boundaries do NOT
   // catch those — a throw here takes the whole app down with nothing on screen
@@ -172,10 +177,10 @@ export default function EventDetailScreen() {
     if (loading) return;
     if (autoOpenTickets !== '1') return;
     consumedAutoOpenTickets.current = true;
-    if (hasTickets && ticketsOnSale && !isCancelled && !isOwner && payoutReady) {
+    if (hasTickets && ticketsOnSale && !isCancelled && !isOwner && canEnterTicketFlow) {
       openTicketCheckout();
     }
-  }, [loading, autoOpenTickets, hasTickets, ticketsOnSale, isCancelled, isOwner, payoutReady, openTicketCheckout]);
+  }, [loading, autoOpenTickets, hasTickets, ticketsOnSale, isCancelled, isOwner, canEnterTicketFlow, openTicketCheckout]);
 
   if (loading) {
     return (
@@ -467,9 +472,12 @@ export default function EventDetailScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Buy tickets CTA — only when the organiser can actually receive payouts */}
+      {/* Buy tickets CTA — reachable whenever there's something actually
+          buyable: the organiser is payout-ready, or (mixed event) there's
+          at least a free ticket type. A wholly-paid, not-ready event stays
+          behind "Tickets coming soon". */}
       {hasTickets && ticketsOnSale && !isCancelled && !isOwner && (
-        payoutReady ? (
+        canEnterTicketFlow ? (
           <View style={[styles.ctaBar, { paddingBottom: insets.bottom + 12 }]}>
             {priceLabel && (
               <Text style={styles.ctaPrice}>{priceLabel}</Text>

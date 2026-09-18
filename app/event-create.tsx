@@ -21,6 +21,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
@@ -234,6 +235,19 @@ function EventCreateBody() {
   const handleSave = async (publish = false) => {
     if (!title.trim()) { alert({ title: 'Title required' }); return; }
     if (!profile) return;
+
+    // Any active ticket type priced above zero makes this a paid event for
+    // activation purposes, mixed free+paid included — a free-only event
+    // never needs a payout route to publish. Hub events aren't gated here:
+    // hubs don't use the business-owner payout model this check resolves.
+    const hasActivePaidTicket = ticketMode === 'oneshetland'
+      && ticketTypes.some(tt => tt.name?.trim() && (tt.is_active ?? true) && (tt.price_pence ?? 0) > 0);
+    const wantsPaidPublish = publish && !isHub && !!businessId && hasActivePaidTicket;
+    let effectivePublish = publish;
+    if (wantsPaidPublish && !(await requirePayoutReadyForPaidActivation(businessId!))) {
+      effectivePublish = false;
+    }
+
     setSaving(true);
     try {
       const finalCover = await uploadCover();
@@ -245,7 +259,7 @@ function EventCreateBody() {
         title:              title.trim(),
         description:        description.trim() || null,
         category:           category || null,
-        status:             publish ? 'published' : 'draft',
+        status:             effectivePublish ? 'published' : 'draft',
         venue:              venue.trim() || null,
         formatted_address:  address.trim() || null,
         lat,
@@ -272,7 +286,7 @@ function EventCreateBody() {
         targetId = ev.id;
         track('event_created', { objectType: 'event', objectId: ev.id, businessId: businessId ?? null });
       }
-      if (publish) {
+      if (effectivePublish) {
         track('event_published', { objectType: 'event', objectId: targetId });
       }
 
@@ -329,7 +343,7 @@ function EventCreateBody() {
       // For a freshly-published hub event, optionally announce it as a notice.
       // members → members-only notice; hub/islands → public notice (the home
       // feed only surfaces it islands-wide once the event is calendar-approved).
-      if (isHub && hubId && publish && !isEdit && postNotice) {
+      if (isHub && hubId && effectivePublish && !isEdit && postNotice) {
         try {
           await createHubNotice(hubId, {
             title:      `New event: ${title.trim()}`,
@@ -342,6 +356,9 @@ function EventCreateBody() {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (wantsPaidPublish && !effectivePublish) {
+        alert(payoutNotReadyPrompt(() => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } })));
+      }
       router.replace({ pathname: '/event-manage', params: { id: targetId } });
     } catch (e: any) {
       alert({ title: 'Error', message: e.message ?? 'Please try again' });

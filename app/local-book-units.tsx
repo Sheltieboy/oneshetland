@@ -28,6 +28,7 @@ import {
 } from '@/lib/book-api';
 import { useAlert } from '@/components/BrandedAlert';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
 
 const S = SECTIONS.local;
 
@@ -218,6 +219,7 @@ function UnitEditor({
 }) {
   const isNew = !item;
   const { alert } = useAlert();
+  const router = useRouter();
 
   const [name, setName]           = useState('');
   const [description, setDesc]    = useState('');
@@ -280,6 +282,15 @@ function UnitEditor({
       return alert({ title: 'Invalid uses', message: 'Between 1 and 999.' });
     }
 
+    // A new pass is a draft unless the plan can publish it — and even then,
+    // going live for the first time also needs a working payout route.
+    // Editing an existing pass never changes whether it is on sale.
+    let activateNow = isNew && eff.premium;
+    if (activateNow) {
+      const ready = await requirePayoutReadyForPaidActivation(businessId);
+      if (!ready) activateNow = false;
+    }
+
     const payload: UnitItemUpsertInput = {
       name:              trimmedName,
       description:       description.trim() || null,
@@ -287,9 +298,7 @@ function UnitEditor({
       stock,
       valid_days:        validDays,
       uses_per_purchase: uses,
-      // A new pass is a draft unless the plan can publish it; editing an
-      // existing one never changes whether it is on sale.
-      ...(isNew ? { is_active: eff.premium } : {}),
+      ...(isNew ? { is_active: activateNow } : {}),
     };
 
     setSaving(true);
@@ -298,6 +307,9 @@ function UnitEditor({
       else       await updateUnitItem(item!.id, payload);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved();
+      if (isNew && eff.premium && !activateNow) {
+        alert(payoutNotReadyPrompt(() => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } })));
+      }
     } catch (e: any) {
       alert({ title: 'Save failed', message: e?.message ?? 'Try again.' });
     } finally {

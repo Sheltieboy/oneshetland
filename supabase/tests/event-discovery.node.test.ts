@@ -211,12 +211,27 @@ describe('Get tickets goes somewhere that exists', () => {
       'a buyer with no saved card must fall through to the payment sheet, not crash');
   });
 
-  test('the checkout screen never needs the seller’s payout details', () => {
+  test('the checkout screen never reads the seller’s raw Stripe columns — only the safe, already-resolved payout_ready boolean', () => {
+    // UPDATE — the mixed-event ticket gating fix. This test originally
+    // asserted the checkout screen needed NO payout signal at all, because
+    // the only gate that existed lived one screen up (events/[id].tsx),
+    // entirely at event level. That gate had a real gap: a mixed free+paid
+    // event with a not-ready organiser hid the free ticket too, since the
+    // whole screen was never reached. The fix keeps that screen-level gate
+    // for entry (now canEnterTicketFlow — true whenever a free type exists),
+    // and adds a SECOND, finer gate here, per ticket type, so a paid type
+    // stays unavailable inside a reachable mixed-event checkout. What this
+    // test still protects is the one invariant that never changed: the raw
+    // seller Stripe columns must never reach a buyer screen. Only the safe,
+    // resolved boolean (payout_ready, from event_payout_ready — RLS cannot
+    // even let a buyer read the seller's own account columns) is legitimate
+    // here, exactly as it already was on events/[id].tsx.
     const src = read(join(REPO_ROOT, 'app', 'event-ticket-checkout.tsx'));
-    for (const seller of ['payout_enabled', 'stripe_account_id', 'payout_ready']) {
+    for (const seller of ['payout_enabled', 'stripe_account_id']) {
       assert.ok(!src.includes(seller),
-        `the buyer's checkout must not depend on ${seller} — that is the seller's side`);
+        `the buyer's checkout must not depend on ${seller} — that is the seller's raw side`);
     }
+    assert.match(src, /event\.payout_ready === true/, 'the per-ticket-type gate must read the safe, resolved boolean');
   });
 });
 

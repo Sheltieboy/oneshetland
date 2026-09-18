@@ -123,8 +123,18 @@ describe('products and passes can be prepared before paying', () => {
   });
 
   test('a new product is a draft unless the plan can publish it', () => {
+    // UPDATE — the canonical payout-readiness work, Phase 3 (paid-activation
+    // gating). The plan-based decision (editingId ? (editingActive ?? true) :
+    // eff.premium) still exists byte-for-byte, but is no longer written
+    // directly into the is_active payload: it now feeds `wantsActive`, which
+    // a payout-readiness check can additionally downgrade to false before
+    // `activeToSave` reaches the payload. The plan-only half of the rule
+    // asserted here is unchanged; the added payout half is covered by
+    // payout-activation-gate.node.test.ts, which is where "attempting to
+    // activate while not payout-ready is blocked" and "payout-ready →
+    // activation works" now live.
     const s = code('app/business-products.tsx');
-    assert.match(s, /is_active: editingId \? \(editingActive \?\? true\) : eff\.premium/);
+    assert.match(s, /const wantsActive = editingId \? \(editingActive \?\? true\) : eff\.premium/);
     assert.doesNotMatch(s, /is_active: true,/, 'creating must not publish unconditionally');
   });
 
@@ -135,8 +145,14 @@ describe('products and passes can be prepared before paying', () => {
   });
 
   test('a new pass is a draft unless the plan can publish it', () => {
+    // UPDATE — same Phase 3 change as the product test above: isNew &&
+    // eff.premium still decides intent (now named `activateNow`), but a
+    // payout-readiness check can additionally downgrade it before it reaches
+    // the is_active payload. See payout-activation-gate.node.test.ts for the
+    // payout half.
     const s = code('app/local-book-units.tsx');
-    assert.match(s, /\.\.\.\(isNew \? \{ is_active: eff\.premium \} : \{\}\)/);
+    assert.match(s, /let activateNow = isNew && eff\.premium;/);
+    assert.match(s, /\.\.\.\(isNew \? \{ is_active: activateNow \} : \{\}\)/);
     assert.doesNotMatch(s, /is_active:\s+true,/, 'creating must not publish unconditionally');
   });
 
@@ -318,6 +334,26 @@ describe('nothing outside correctness moved', () => {
       'app/business/[id]/manage/loyalty/page.tsx', // passes businessId down
       'components/business/RedeemVerify.tsx',      // scopes preview and redeem
       'lib/loyalty-redeem-client.ts',              // sends business_id
+      // UPDATE — the canonical payout-readiness work, Phase 3 (paid-activation
+      // gating; a wholly separate initiative from Phase 3B above, sharing a
+      // number by coincidence, not scope). That work is explicitly
+      // cross-platform by requirement ("Mobile and web must implement the
+      // same product rule") — see payout-activation-gate.node.test.ts for its
+      // own coverage. These are its web-side footprint: the new
+      // requirePayoutReadyForPaidActivation helper, its three activation
+      // call sites, the event fetch that now resolves payout_ready, and the
+      // buyer-side ticket page + modal that gate on it (TicketModal.tsx
+      // added by the follow-up mixed-event fix — a mixed free+paid event's
+      // free ticket must stay reachable and completable even when the
+      // organiser is not payout-ready, gated per ticket type instead of at
+      // the whole event).
+      'lib/payout-readiness.ts',
+      'components/business/ProductsManager.tsx',
+      'components/business/UnitItemsManager.tsx',
+      'components/business/BusinessEventForm.tsx',
+      'lib/events-data.ts',
+      'app/whats-on/[id]/page.tsx',
+      'components/events/TicketModal.tsx',
     ];
     const out = execFileSync('git', ['status', '--porcelain'],
       { cwd: join(REPO_ROOT, '..', 'oneshetland-web'), encoding: 'utf8' });

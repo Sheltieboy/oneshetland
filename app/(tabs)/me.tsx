@@ -14,7 +14,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
 import { useAlert } from '@/components/BrandedAlert';
-import { fetchBusinessPrivate } from '@/lib/local-api';
+import { fetchBusinessPrivate, fetchBusinessPayoutReady } from '@/lib/local-api';
 
 // ── Reusable components ───────────────────────────────────────────────────────
 
@@ -71,6 +71,14 @@ type MyBusiness = {
   use_business_payout: boolean;
   business_stripe_onboarding_complete: boolean;
   business_stripe_payouts_enabled: boolean;
+  /**
+   * The canonical business_payout_ready() answer — the business's own
+   * Connect account, or a valid fallback to its owner's central account.
+   * Not business_stripe_payouts_enabled, which is populated on no business
+   * at all and would show every business using its own account as
+   * permanently "Setup needed".
+   */
+  payout_ready: boolean;
 };
 
 export default function MeTab() {
@@ -102,10 +110,16 @@ export default function MeTab() {
         .eq('owner_id', profile.id)
         .eq('is_active', true);
       const rows = (biz ?? []) as { id: string; name: string }[];
-      const withPrivate = await Promise.all(rows.map(async (b) => ({
-        ...b,
-        ...(await fetchBusinessPrivate(b.id)),
-      })));
+      // One payout_ready fetch per business per load, alongside the existing
+      // private-fields fetch — reused from state for every render of this
+      // screen rather than re-asked.
+      const withPrivate = await Promise.all(rows.map(async (b) => {
+        const [priv, payoutReady] = await Promise.all([
+          fetchBusinessPrivate(b.id),
+          fetchBusinessPayoutReady(b.id),
+        ]);
+        return { ...b, ...priv, payout_ready: payoutReady };
+      }));
       setMyBusinesses(withPrivate as MyBusiness[]);
     } catch { /* silent */ }
   }, [profile?.id]);
@@ -451,19 +465,20 @@ export default function MeTab() {
                     <FontAwesome5 name="university" size={11} color={colors.textMuted} />
                     <Text style={styles.bizPaymentRowLabel}>Payout bank</Text>
                   </View>
+                  {/* payout_ready (business_payout_ready()) decides ready vs
+                      not — the canonical answer, covering both the business's
+                      own account and a valid owner-central-account fallback.
+                      use_business_payout only picks which account NAME to
+                      show once ready; it is not itself a readiness signal. */}
                   <View style={[styles.bizPaymentPill, {
-                    backgroundColor: biz.use_business_payout
-                      ? (biz.business_stripe_payouts_enabled ? colors.jobsLight : '#FEF3C7')
-                      : colors.accentLight,
+                    backgroundColor: biz.payout_ready ? colors.jobsLight : '#FEF3C7',
                   }]}>
                     <Text style={[styles.bizPaymentPillText, {
-                      color: biz.use_business_payout
-                        ? (biz.business_stripe_payouts_enabled ? colors.jobs : '#92400E')
-                        : colors.accentDark,
+                      color: biz.payout_ready ? colors.jobs : '#92400E',
                     }]}>
-                      {biz.use_business_payout
-                        ? (biz.business_stripe_payouts_enabled ? 'Business bank' : 'Setup needed')
-                        : 'Central bank'}
+                      {biz.payout_ready
+                        ? (biz.use_business_payout ? 'Business bank' : 'Central bank')
+                        : 'Setup needed'}
                     </Text>
                   </View>
                   <FontAwesome5 name="chevron-right" size={9} color={colors.textLight} />

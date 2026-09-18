@@ -95,10 +95,21 @@ describe('products and passes can be prepared before paying', () => {
   test('so the managers create drafts rather than being refused on save', () => {
     // This was the real blocker: both created with is_active: true, so opening
     // the door alone would have produced a 42501 on the first save.
+    //
+    // UPDATE — the canonical payout-readiness work, Phase 3 (paid-activation
+    // gating). is_active is no longer written as the literal `canPublish`
+    // value: canPublish still decides PLAN intent, but a payout-readiness
+    // check can additionally downgrade it to false before the value actually
+    // reaches the payload (now named `activeToSave`). The invariant this
+    // test guards — a business below Premium (canPublish=false) still gets a
+    // draft, never a 42501 — holds exactly as before, since activeToSave can
+    // only ever be false when canPublish is false, never the reverse. See
+    // payout-activation-gate.node.test.ts for the added payout half.
     for (const c of ['ProductsManager', 'UnitItemsManager']) {
       const src = code(`components/business/${c}.tsx`);
       assert.doesNotMatch(src, /is_active: true/, `${c} must not publish on create`);
-      assert.match(src, /is_active: canPublish/, `${c} must create a draft below Premium`);
+      assert.match(src, /is_active: activeToSave/, `${c} must create a draft below Premium`);
+      assert.match(src, /let activeToSave = canPublish;/, `${c} must still start from the plan's own answer`);
     }
   });
 

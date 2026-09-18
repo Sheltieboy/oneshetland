@@ -287,10 +287,18 @@ describe('the Home itself', () => {
 
   test('payout status is omitted rather than guessed', () => {
     assert.match(pageCode, /reads\.payoutReady === null \? null/);
+    // Phase 2 of the canonical payout-readiness work replaced this
+    // reconstruction (use_business_payout / business_stripe_payouts_enabled
+    // / business_private_fields) with a direct call to the canonical
+    // business_payout_ready() RPC — the same function every payment path
+    // already asks. Both payout routes (a business's own Connect account, or
+    // its owner's central account) are still consulted, just by the one
+    // function that resolves them correctly, not by reconstructing the
+    // question here. See business-payout-status-parity.node.test.ts.
     const loader = code('lib/business-dashboard.server.ts');
-    assert.match(loader, /use_business_payout/, 'both payout routes must be consulted');
-    assert.match(loader, /business_stripe_payouts_enabled/);
-    assert.match(loader, /business_private_fields/);
+    assert.match(loader, /rpc\("business_payout_ready", \{ p_business: businessId \}\)/);
+    assert.doesNotMatch(loader, /business_stripe_payouts_enabled/, 'the dead column must not return');
+    assert.doesNotMatch(loader, /business_private_fields/, 'the RPC that only fed the old reconstruction should not be fetched here any more');
   });
 
   test('the spine above is untouched', () => {

@@ -31,7 +31,9 @@
  *      /event-ticket-checkout directly
  *   3  the intent waits for loading to finish before doing anything
  *   4  an eligible event calls the existing openTicketCheckout()
- *   5  payout-not-ready does not continue
+ *   5  no entry point exists (paid-only, not payout-ready) does not continue
+ *   5b a mixed free+paid, not-ready event DOES continue (added by the
+ *      mixed-event ticket gating fix — see UPDATE below)
  *   6  a cancelled event does not continue
  *   7  tickets-off-sale does not continue
  *   8  the owner does not continue
@@ -41,6 +43,18 @@
  *  12  a repeat invocation with the intent already consumed cannot reopen
  *      ticket selection, regardless of what the gate values are by then —
  *      the one-shot guard is unconditional, not merely "same inputs again"
+ *
+ * UPDATE — the mixed-event ticket gating fix
+ * The gate this file executes used to be the bare payoutReady flag. A mixed
+ * free+paid event with a not-ready organiser has something genuinely
+ * buyable (the free type), so hiding the whole flow behind payoutReady was
+ * itself the gap being fixed. The gate is now canEnterTicketFlow
+ * (payoutReady || eventHasFreeActiveTicket(ticketTypes)), computed once in
+ * the component body and read here unchanged — this file still proves the
+ * auto-open effect reads ONE shared value, never re-derives it; it simply no
+ * longer assumes that value is payoutReady itself. See
+ * payout-activation-gate.node.test.ts for real execution of the derivation,
+ * and for the per-ticket-type gate inside event-ticket-checkout.tsx.
  *
  * SAFETY
  * Reads source only, and executes the real extracted effect body (not
@@ -90,10 +104,18 @@ describe('business-profile navigation: card vs Tickets button', () => {
 /* ── 11 — the manual path is unchanged ────────────────────────────────────── */
 
 describe('the existing manual Get tickets button is unchanged', () => {
-  test('11. Get tickets still renders only when payoutReady, and still calls the same openTicketCheckout', () => {
+  test('11. Get tickets still renders only when canEnterTicketFlow, and still calls the same openTicketCheckout', () => {
+    // UPDATE — the mixed-event ticket gating fix. The branch this button
+    // renders from is no longer the bare payoutReady flag: it is
+    // canEnterTicketFlow (payoutReady || eventHasFreeActiveTicket(ticketTypes)),
+    // so a mixed free+paid event with a not-ready organiser still shows this
+    // button (the free type is reachable inside; the paid type is gated
+    // per-row in event-ticket-checkout.tsx — see payout-activation-gate.node.test.ts).
+    // payoutReady itself is untouched and still exists as an input to that
+    // derivation — see the "declared exactly once" test below.
     const src = code(EVENT);
-    const anchor = src.indexOf('payoutReady ? (');
-    assert.notEqual(anchor, -1, 'the payout-ready branch has moved');
+    const anchor = src.indexOf('canEnterTicketFlow ? (');
+    assert.notEqual(anchor, -1, 'the ticket-flow-entry branch has moved');
     const block = src.slice(anchor, src.indexOf('Tickets coming soon', anchor));
     assert.match(block, /onPress=\{openTicketCheckout\}/);
     assert.match(block, />Get tickets</);
@@ -110,11 +132,11 @@ describe('events/[id]: the auto-open-tickets intent', () => {
   });
 
   test('the readiness values the intent reads are the SAME consts the Get tickets button renders from — not a second copy', () => {
-    // hasTickets/ticketsOnSale/isCancelled/isOwner/payoutReady must each be
-    // declared exactly once in the whole file. Two declarations of any of
-    // them would mean the auto-open path and the button could silently
-    // diverge over time even if they agree today.
-    for (const name of ['hasTickets', 'ticketsOnSale', 'isCancelled', 'isOwner', 'payoutReady']) {
+    // hasTickets/ticketsOnSale/isCancelled/isOwner/payoutReady/canEnterTicketFlow
+    // must each be declared exactly once in the whole file. Two declarations
+    // of any of them would mean the auto-open path and the button could
+    // silently diverge over time even if they agree today.
+    for (const name of ['hasTickets', 'ticketsOnSale', 'isCancelled', 'isOwner', 'payoutReady', 'canEnterTicketFlow']) {
       const decls = src.match(new RegExp(`const ${name}\\b`, 'g')) ?? [];
       assert.equal(decls.length, 1, `${name} must be declared exactly once — found ${decls.length}`);
     }
@@ -152,7 +174,7 @@ describe('events/[id]: the auto-open-tickets intent', () => {
     ref: { current: boolean },
     params: {
       loading: boolean; autoOpenTickets: string | undefined;
-      hasTickets: boolean; ticketsOnSale: boolean; isCancelled: boolean; isOwner: boolean; payoutReady: boolean;
+      hasTickets: boolean; ticketsOnSale: boolean; isCancelled: boolean; isOwner: boolean; canEnterTicketFlow: boolean;
     },
   ) {
     const body = extractEffectBody();
@@ -161,16 +183,23 @@ describe('events/[id]: the auto-open-tickets intent', () => {
     // eslint-disable-next-line no-new-func
     new Function(
       'consumedAutoOpenTickets', 'loading', 'autoOpenTickets',
-      'hasTickets', 'ticketsOnSale', 'isCancelled', 'isOwner', 'payoutReady', 'openTicketCheckout',
+      'hasTickets', 'ticketsOnSale', 'isCancelled', 'isOwner', 'canEnterTicketFlow', 'openTicketCheckout',
       body,
     )(
       ref, params.loading, params.autoOpenTickets,
-      params.hasTickets, params.ticketsOnSale, params.isCancelled, params.isOwner, params.payoutReady, openTicketCheckout,
+      params.hasTickets, params.ticketsOnSale, params.isCancelled, params.isOwner, params.canEnterTicketFlow, openTicketCheckout,
     );
     return { called, consumed: ref.current };
   }
 
-  const ELIGIBLE = { loading: false, autoOpenTickets: '1', hasTickets: true, ticketsOnSale: true, isCancelled: false, isOwner: false, payoutReady: true };
+  // UPDATE — the mixed-event ticket gating fix. The effect's gate reads
+  // canEnterTicketFlow now, not the bare payoutReady flag — it is true
+  // whenever the organiser is payout-ready OR the event has at least one
+  // free active ticket type (a mixed event). The derivation itself
+  // (payoutReady || eventHasFreeActiveTicket(ticketTypes)) is proven for
+  // real, separately, in payout-activation-gate.node.test.ts; this file only
+  // needs the already-computed boolean to exercise the effect body.
+  const ELIGIBLE = { loading: false, autoOpenTickets: '1', hasTickets: true, ticketsOnSale: true, isCancelled: false, isOwner: false, canEnterTicketFlow: true };
 
   test('3. the intent waits until loading finishes — it does nothing, and is not consumed, while loading', () => {
     const ref = { current: false };
@@ -186,10 +215,22 @@ describe('events/[id]: the auto-open-tickets intent', () => {
     assert.equal(r.consumed, true);
   });
 
-  test('5. payout-not-ready does not continue', () => {
+  test('5. no entry point exists (paid-only, not payout-ready) does not continue', () => {
+    // UPDATE — the mixed-event ticket gating fix renamed this from
+    // "payout-not-ready" because payout-not-ready alone no longer stops
+    // continuation: a mixed free+paid event's canEnterTicketFlow is still
+    // true (the free type makes it so). What still correctly blocks entry
+    // is canEnterTicketFlow=false, which only happens for a wholly-paid,
+    // not-ready event — there is nothing to open the checkout screen for.
     const ref = { current: false };
-    const r = run(ref, { ...ELIGIBLE, payoutReady: false });
-    assert.equal(r.called, 0, 'must not open tickets for an organiser who cannot yet receive payouts');
+    const r = run(ref, { ...ELIGIBLE, canEnterTicketFlow: false });
+    assert.equal(r.called, 0, 'must not open tickets when nothing in the event is actually buyable yet');
+  });
+
+  test('5b. a mixed free+paid event with a not-ready organiser DOES continue — the auto-open no longer hides the free ticket', () => {
+    const ref = { current: false };
+    const r = run(ref, { ...ELIGIBLE, canEnterTicketFlow: true }); // as computed for a mixed event: payoutReady=false, eventHasFreeActiveTicket=true
+    assert.equal(r.called, 1, 'a mixed event must still open ticket selection so the free type is reachable');
   });
 
   test('6. a cancelled event does not continue', () => {
@@ -239,7 +280,7 @@ describe('events/[id]: the auto-open-tickets intent', () => {
     const iLoadingGuard  = body.indexOf('if (loading) return;');
     const iIntentGuard   = body.indexOf("if (autoOpenTickets !== '1') return;");
     const iMarkConsumed  = body.indexOf('consumedAutoOpenTickets.current = true;');
-    const iGate          = body.indexOf('if (hasTickets && ticketsOnSale && !isCancelled && !isOwner && payoutReady)');
+    const iGate          = body.indexOf('if (hasTickets && ticketsOnSale && !isCancelled && !isOwner && canEnterTicketFlow)');
     for (const idx of [iConsumedGuard, iLoadingGuard, iIntentGuard, iMarkConsumed, iGate]) assert.notEqual(idx, -1);
     assert.ok(iConsumedGuard < iLoadingGuard && iLoadingGuard < iIntentGuard && iIntentGuard < iMarkConsumed && iMarkConsumed < iGate,
       'the guards must run in this order, or the one-shot/loading semantics above are not actually what the source does');

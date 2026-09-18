@@ -24,9 +24,8 @@
  *   · the dead column pair is no longer READ anywhere in the dashboard
  *     (the fix is display-only — the columns themselves are untouched, not
  *     revived or populated, matching what was asked)
- *   · the payout card instead reads activeBusiness.payout_enabled — the
- *     same field the Accept Local Wallet card already uses, so the two
- *     cards cannot disagree any more
+ *   · the payout card instead reads activeBusiness.payout_enabled — its own,
+ *     narrower question about THIS business's own Connect account
  *   · the connect CTA is gated on the same payout_enabled field, not a dead
  *     one
  *   · payout_enabled remains a real, actively-written column (this test
@@ -34,6 +33,22 @@
  *     the one payment routing actually maintains)
  *   · handleConnectStripe / toggleBusinessPayout — the actual Stripe/payout
  *     logic — are untouched by this fix (display/state-selection only)
+ *
+ * UPDATE — Phase 2 of the canonical payout-readiness work
+ *
+ * The premise above ("Accept Local Wallet already correctly reads
+ * payout_enabled — the same field actual payment routing treats as
+ * authoritative") turned out to be only half true: payout_enabled is the
+ * business's OWN account only, with no fallback to its owner's central
+ * account — the exact gap Phase 1 fixed server-side
+ * (business_payout_destination) and Phase 2 now fixes here. Accept Local
+ * Wallet was changed AGAIN, to read the fetched, canonical payoutReady state
+ * instead of payout_enabled directly. The "Payout bank account" card was
+ * deliberately left alone — it answers a genuinely different, narrower
+ * question ("is THIS account connected, or is verification in progress")
+ * that a single ready/not-ready boolean cannot express. The two cards no
+ * longer share a field; that is now correct, not a regression. See
+ * business-payout-status-parity.node.test.ts for the full Phase 2 coverage.
  *
  * SAFETY
  * Reads source only. No database, no network, no writes.
@@ -82,15 +97,29 @@ describe('the "Payout bank account" card', () => {
     assert.match(before, /!activeBusiness\.payout_enabled/);
   });
 
-  test('the Accept Local Wallet card and the Payout bank account card now agree on the same field', () => {
+  test('the Accept Local Wallet card now answers the canonical question, deliberately different from the Payout bank account card\'s narrower own-account question', () => {
+    // Superseded by the canonical payout-readiness work (Phase 2): Accept
+    // Local Wallet used to read activeBusiness.payout_enabled — the
+    // business's OWN account only — which is exactly the gap that let a
+    // business paying through its owner's central account be told "Connect
+    // Stripe to accept wallet payments" while it was already fully payable
+    // everywhere else. It now reads the fetched payoutReady state (from
+    // business_payout_ready(), the same function every payment path uses),
+    // while the Payout bank account card correctly keeps reading
+    // payout_enabled — a genuinely different, narrower question ("is THIS
+    // business's own account connected") that the canonical boolean cannot
+    // decompose into. The two cards no longer sharing a field is the fix, not
+    // a regression. See business-payout-status-parity.node.test.ts.
     const c = code(DASHBOARD);
     const walletAnchor = c.indexOf('Accept Local Wallet');
     const payoutAnchor = c.indexOf('Payout bank account');
     assert.notEqual(walletAnchor, -1);
     assert.notEqual(payoutAnchor, -1);
     const walletBlock = c.slice(walletAnchor, walletAnchor + 700);
-    assert.match(walletBlock, /activeBusiness\.payout_enabled/,
-      'Accept Local Wallet already read payout_enabled — confirms the fix matches it rather than inventing a third source of truth');
+    assert.match(walletBlock, /payoutReady/,
+      'Accept Local Wallet must read the canonical payoutReady state, not activeBusiness.payout_enabled directly');
+    assert.doesNotMatch(walletBlock, /activeBusiness\.payout_enabled/,
+      'the raw, own-account-only column must no longer gate this card');
   });
 });
 

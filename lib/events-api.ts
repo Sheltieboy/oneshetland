@@ -191,6 +191,30 @@ export function ticketTypeRemaining(tt: EventTicketType): number | null {
   return Math.max(0, tt.quantity_available - tt.quantity_sold);
 }
 
+/**
+ * Does this event have at least one active, free ticket type? A mixed
+ * free+paid event whose organiser is not payout-ready still has something
+ * genuinely obtainable — the buy flow must stay reachable, not be hidden
+ * behind "Tickets coming soon" the way a wholly-paid event correctly is.
+ * Mirrors the server's own all_free computation (see
+ * _event_payout_resolve in supabase/migrations/20260822120000_effective_event_payout.sql)
+ * at the opposite extreme: that asks "are ALL active types free"; this asks
+ * "is ANY active type free".
+ */
+export function eventHasFreeActiveTicket(types: EventTicketType[]): boolean {
+  return types.some(t => t.is_active && t.price_pence === 0);
+}
+
+/**
+ * Can THIS ticket type actually be bought right now, payout-wise? A free
+ * type never needs a payout route. A paid type needs the event's resolved
+ * payout_ready — the one place per-ticket-type gating and event-level
+ * payout readiness meet; nowhere else re-derives readiness itself.
+ */
+export function ticketTypePurchasable(tt: EventTicketType, eventPayoutReady: boolean): boolean {
+  return eventPayoutReady || tt.price_pence === 0;
+}
+
 export interface EventScarcity {
   measurable: boolean;
   totalCap:   number;

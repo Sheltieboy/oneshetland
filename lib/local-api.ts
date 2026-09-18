@@ -1977,3 +1977,19 @@ export async function fetchBusinessPrivate(businessId: string): Promise<Partial<
   if (error || !data) return {};
   return data as Partial<LocalBusiness>;
 }
+
+/**
+ * Can OneShetland currently route money to this business? The canonical
+ * answer — the business's own Connect account, or a valid fallback to its
+ * owner's central account — from business_payout_ready(), the same function
+ * every payment path (event tickets, products, passes, gifts, Wallet) asks
+ * before routing money. Not reconstructed from payout_enabled /
+ * use_business_payout / business_stripe_payouts_enabled here: that
+ * reconstruction is exactly how a dashboard ends up disagreeing with the
+ * server about whether a business can be paid. Fails closed: an unreadable
+ * answer is "not ready", never a guess that it is.
+ */
+export async function fetchBusinessPayoutReady(businessId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('business_payout_ready', { p_business: businessId });
+  return !error && data === true;
+}

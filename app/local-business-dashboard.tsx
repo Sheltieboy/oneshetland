@@ -16,6 +16,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { useAlert } from '@/components/BrandedAlert';
+import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
 import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { fetchCommercialTermsStatus } from '@/lib/commercial-terms';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
@@ -30,7 +31,7 @@ import { nextAction, hasOperationalAttention } from '@/lib/business-next-action'
 import { availabilityIsFresh } from '@/constants/trades';
 import { useAuth } from '@/context/AuthContext';
 import {
-  fetchMyBusinesses, fetchBusinessPrivate, updateBusiness,
+  fetchMyBusinesses, fetchBusinessPrivate, fetchBusinessPayoutReady, updateBusiness,
   fetchLoyaltyProgram, upsertLoyaltyProgram,
   fetchBusinessOffers, deactivateOffer,
   fetchBusinessCode, refreshBusinessCode,
@@ -151,6 +152,13 @@ export default function BusinessDashboardScreen() {
    * bought and not whether it is still in date.
    */
   const [eff, setEff] = useState<Effective>(NO_ENTITLEMENT);
+  /**
+   * Can OneShetland currently route money to this business — the canonical
+   * business_payout_ready() answer, fetched once per business load (see
+   * loadAll below) and reused everywhere this screen shows payout status,
+   * rather than each spot re-deriving it from raw Stripe columns.
+   */
+  const [payoutReady, setPayoutReady] = useState(false);
   /** Attention, the week and the five outcome states — all derived, none stored. */
   const [home, setHome] = useState<BusinessHome | null>(null);
   const [savingPaymentToggle, setSavingPaymentToggle] = useState(false);
@@ -223,7 +231,7 @@ export default function BusinessDashboardScreen() {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, homeData] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, homeData, payoutIsReady] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -245,11 +253,17 @@ export default function BusinessDashboardScreen() {
       fetchBusinessHome(target.id, profile!.id,
         target as { trade_availability?: string | null; trade_availability_set_at?: string | null },
         (setAt) => !availabilityIsFresh(setAt)).catch(() => null),
+      // The canonical payout answer, fetched once per business load and
+      // reused everywhere this screen shows payout status — not the raw
+      // stripe_account_id/payout_enabled columns, which say nothing about a
+      // valid owner-central-account fallback.
+      fetchBusinessPayoutReady(target.id).catch(() => false),
     ]);
     setProgram(prog);
     setOffers(ofs);
     setCode(cd);
     setBookServiceCount(bookSvcs.length);
+    setPayoutReady(payoutIsReady);
     // One question, one answer. fetchBusinessHome already asked the server what
     // this plan allows; asking again beside it was two identical RPC pairs for
     // the same business. Unreadable still means not entitled, exactly as before.
@@ -438,8 +452,11 @@ export default function BusinessDashboardScreen() {
 
   const toggleAcceptWallet = async (value: boolean) => {
     if (!activeBusiness) return;
-    if (value && !activeBusiness.payout_enabled) {
-      return brandedAlert({ title: 'Complete Stripe first', message: 'Connect your Stripe account before accepting wallet payments.' });
+    // Fresh canonical check at the activation moment — payoutReady (state,
+    // Phase 2) drives the card's display and can go stale between loads;
+    // this is the actual gate and must not trust a cached value.
+    if (value && !(await requirePayoutReadyForPaidActivation(activeBusiness.id))) {
+      return brandedAlert(payoutNotReadyPrompt(handleConnectStripe));
     }
     // Switching OFF is always allowed. Switching ON is the paid boundary, and
     // is what the server refuses too.
@@ -1266,12 +1283,12 @@ export default function BusinessDashboardScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Accept Local Wallet</Text>
               <Text style={styles.cardSub}>
-                {activeBusiness.payout_enabled
+                {payoutReady
                   ? 'Stripe connected · ready for payouts'
                   : 'Connect Stripe to accept wallet payments'}
               </Text>
             </View>
-            {activeBusiness.payout_enabled && (
+            {payoutReady && (
               <Switch
                 value={activeBusiness.accepts_wallet}
                 onValueChange={toggleAcceptWallet}
@@ -1280,7 +1297,7 @@ export default function BusinessDashboardScreen() {
             )}
           </View>
 
-          {!activeBusiness.payout_enabled ? (
+          {!payoutReady ? (
             <TouchableOpacity
               style={[styles.primaryBtn, { backgroundColor: S.color, marginTop: 8 }]}
               onPress={handleConnectStripe}

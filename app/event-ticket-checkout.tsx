@@ -26,7 +26,7 @@ import { describeCheckoutError } from '@/lib/checkout-errors';
 import {
   fetchEvent,
   purchaseTickets, confirmTicketPurchase,
-  ticketTypeOnSale, ticketTypeRemaining,
+  ticketTypeOnSale, ticketTypeRemaining, ticketTypePurchasable,
   type OsEvent, type EventTicketType, type LineItem,
 } from '@/lib/events-api';
 
@@ -91,8 +91,16 @@ export default function EventTicketCheckoutScreen() {
     });
   };
 
+  // Defensive, not just cosmetic: a paid type the UI never lets the buyer
+  // increment (see canSelect below) is filtered out here too, so nothing
+  // built from stale/leftover quantities state could ever line-item a
+  // ticket type this event isn't payout-ready to sell.
   const lineItems: LineItem[] = Object.entries(quantities)
-    .filter(([, qty]) => qty > 0)
+    .filter(([ticket_type_id, qty]) => {
+      if (qty <= 0) return false;
+      const tt = event?.ticket_types?.find(t => t.id === ticket_type_id);
+      return !!tt && ticketTypePurchasable(tt, event?.payout_ready === true);
+    })
     .map(([ticket_type_id, quantity]) => ({ ticket_type_id, quantity }));
 
   const totalPence = lineItems.reduce((sum, li) => {
@@ -253,6 +261,7 @@ export default function EventTicketCheckoutScreen() {
   }
 
   const ticketTypes = (event.ticket_types ?? []).filter(t => t.is_active);
+  const payoutReady = event.payout_ready === true;
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
@@ -308,14 +317,22 @@ export default function EventTicketCheckoutScreen() {
           ) : (
             <View style={{ gap: 10 }}>
               {ticketTypes.map(tt => {
-                const onSale    = ticketTypeOnSale(tt);
-                const remaining = ticketTypeRemaining(tt);
+                const onSale     = ticketTypeOnSale(tt);
+                const remaining  = ticketTypeRemaining(tt);
                 const almostGone = remaining !== null && remaining <= 10 && remaining > 0;
-                const maxQty    = Math.min(
+                const maxQty     = Math.min(
                   tt.per_order_max,
                   remaining !== null ? remaining : tt.per_order_max,
                 );
                 const qty = quantities[tt.id] ?? 0;
+                // This is the per-ticket-type half of the mixed-event rule:
+                // a free type never needs a payout route; a paid type does.
+                // Only reachable when canEnterTicketFlow already let the
+                // buyer this far — for a wholly-paid, not-ready event that
+                // never happens, so this only ever fires within a mixed
+                // event whose paid type isn't purchasable yet.
+                const purchasable = ticketTypePurchasable(tt, payoutReady);
+                const canSelect = onSale && remaining !== 0 && purchasable;
 
                 return (
                   <View key={tt.id} style={styles.ticketTypeRow}>
@@ -328,10 +345,11 @@ export default function EventTicketCheckoutScreen() {
                         </Text>
                         {almostGone && <Text style={styles.almostGone}>Only {remaining} left</Text>}
                         {remaining === 0 && <Text style={styles.soldOut}>Sold out</Text>}
-                        {!onSale && remaining !== 0 && <Text style={styles.offSale}>Not on sale</Text>}
+                        {remaining !== 0 && !onSale && <Text style={styles.offSale}>Not on sale</Text>}
+                        {remaining !== 0 && onSale && !purchasable && <Text style={styles.offSale}>Requires payment setup</Text>}
                       </View>
                     </View>
-                    {onSale && remaining !== 0 ? (
+                    {canSelect ? (
                       <View style={styles.qtyControl}>
                         <TouchableOpacity
                           style={[styles.qtyBtn, qty === 0 && styles.qtyBtnDisabled]}
@@ -351,7 +369,9 @@ export default function EventTicketCheckoutScreen() {
                       </View>
                     ) : (
                       <View style={styles.unavailablePill}>
-                        <Text style={styles.unavailablePillText}>{remaining === 0 ? 'Sold out' : 'Unavailable'}</Text>
+                        <Text style={styles.unavailablePillText}>
+                          {remaining === 0 ? 'Sold out' : !purchasable ? 'Paid tickets coming soon' : 'Unavailable'}
+                        </Text>
                       </View>
                     )}
                   </View>
