@@ -206,6 +206,19 @@ export function eventHasFreeActiveTicket(types: EventTicketType[]): boolean {
 }
 
 /**
+ * Does this event have at least one active ticket type priced above zero?
+ * The saved-event counterpart to event-create.tsx's own inline paid-draft
+ * check (which additionally filters on a non-blank name, since that screen
+ * works from in-progress draft rows before they're saved — a fully saved
+ * event's ticket_types never have that concern, so this is the plain rule).
+ * Used to decide whether Event Manage's publish action needs a payout
+ * route at all.
+ */
+export function eventHasActivePaidTicket(types: EventTicketType[]): boolean {
+  return types.some(t => t.is_active && t.price_pence > 0);
+}
+
+/**
  * Can THIS ticket type actually be bought right now, payout-wise? A free
  * type never needs a payout route. A paid type needs the event's resolved
  * payout_ready — the one place per-ticket-type gating and event-level

@@ -21,7 +21,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
-import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt } from '@/lib/payout-readiness';
+import { requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt } from '@/lib/payout-readiness';
 
 const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
@@ -370,7 +370,7 @@ function EventCreateBody() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (wantsPaidPublish && !effectivePublish) {
-        alert(payoutNotReadyPrompt(() => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } })));
+        alert(eventSavedAsDraftPrompt(() => router.push({ pathname: '/local-business-dashboard', params: { id: businessId, tab: 'payments' } })));
       }
       router.replace({ pathname: '/event-manage', params: { id: targetId } });
     } catch (e: any) {

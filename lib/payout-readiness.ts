@@ -52,3 +52,26 @@ export function payoutNotReadyPrompt(onConnectStripe: () => void): AlertOptions 
     ],
   };
 }
+
+/**
+ * The one prompt shown immediately after a paid/mixed event publish attempt
+ * was silently downgraded to a draft — distinct from payoutNotReadyPrompt
+ * above, which fires BEFORE anything is saved (a product/pass/Wallet
+ * toggle that never took effect). Here the save already succeeded; what
+ * failed is specifically going live. Naming that explicitly — "saved",
+ * "isn't live yet", "settings have been saved" — is the whole point: a
+ * merchant who only sees a generic error after a successful save
+ * reasonably assumes something was lost.
+ */
+export function eventSavedAsDraftPrompt(onConnectStripe: () => void): AlertOptions {
+  return {
+    title: 'Event saved as draft',
+    message: "Your event isn't live yet. Connect Stripe before you can publish paid tickets. Your event and ticket settings have been saved.",
+    icon: 'university',
+    accent: colors.jobs,
+    actions: [
+      { label: 'Not now', style: 'cancel' },
+      { label: 'Connect Stripe', style: 'primary', onPress: onConnectStripe },
+    ],
+  };
+}

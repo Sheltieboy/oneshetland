@@ -354,6 +354,17 @@ describe('nothing outside correctness moved', () => {
       'lib/events-data.ts',
       'app/whats-on/[id]/page.tsx',
       'components/events/TicketModal.tsx',
+      // Added by the "make the payout gate unmistakable" UX follow-up:
+      // Event Manage's own not-published banner and publish-button state,
+      // plus the event_payout_ready fetch it reads (getBusinessEvent) and
+      // the client-safe eventHasActivePaidTicket helper it needs
+      // (events-manage.ts reaches next/headers, so BusinessEventManage.tsx
+      // — "use client" — imports the helper from events-manage-client.ts
+      // instead, to avoid pulling the server-only import chain into the
+      // client bundle).
+      'components/business/BusinessEventManage.tsx',
+      'lib/events-manage.ts',
+      'lib/events-manage-client.ts',
     ];
     const out = execFileSync('git', ['status', '--porcelain'],
       { cwd: join(REPO_ROOT, '..', 'oneshetland-web'), encoding: 'utf8' });

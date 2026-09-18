@@ -19,7 +19,7 @@ import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchEvent, updateEvent, postEventUpdate, fetchScannerStats,
-  formatEventDate, UPDATE_KIND_LABELS,
+  formatEventDate, UPDATE_KIND_LABELS, eventHasActivePaidTicket,
   type OsEvent, type EventStatus, type UpdateKind, type ScannerStats,
 } from '@/lib/events-api';
 import { ticketCapacity } from '@/lib/event-ticket-utils';
@@ -174,6 +174,26 @@ export default function EventManageScreen() {
     ? { hubId: event.organiser_hub_id, eventId: event.id }
     : { businessId: event.organiser_business_id ?? '', eventId: event.id };
 
+  // A draft with an active paid (or mixed) ticket type can't actually go
+  // live until the organiser has a working payout route — the same rule
+  // event-create.tsx's Save & publish already enforces. Hub events are
+  // excluded: hubs don't use the business-owner payout model this reads
+  // (event.payout_ready, already resolved server-side by fetchEvent — see
+  // Phase 1/2 of the canonical payout-readiness work). This only changes
+  // what Event Manage SHOWS; it is a display/UX read of the same signal,
+  // not a new gate — publishing itself is stopped by not offering the
+  // action, and money still can't move without a real payout route
+  // regardless of what this screen shows.
+  const notReadyPaidDraft = status === 'draft'
+    && !event.organiser_hub_id
+    && eventHasActivePaidTicket(event.ticket_types ?? [])
+    && event.payout_ready !== true;
+
+  const goConnectStripe = () => router.push({
+    pathname: '/local-business-dashboard',
+    params: { id: event.organiser_business_id ?? '', tab: 'payments' },
+  });
+
   const hubReach = event.organiser_hub_id ? (
     event.hub_visibility === 'members' ? { label: 'Members only', icon: 'user-friends', color: '#6D28D9', bg: '#F3E8FF' }
     : event.hub_visibility === 'hub'   ? { label: 'On the hub page only', icon: 'store', color: S.color, bg: S.light }
@@ -203,7 +223,31 @@ export default function EventManageScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
       >
         {/* Status strip */}
-        <StatusStrip status={status} isBusy={statusBusy} onChangeStatus={handleStatusChange} />
+        <StatusStrip
+          status={status}
+          isBusy={statusBusy}
+          onChangeStatus={handleStatusChange}
+          notReadyPaidDraft={notReadyPaidDraft}
+          onConnectStripe={goConnectStripe}
+        />
+
+        {/* Not published: paid/mixed draft, organiser not payout-ready. The
+            small status dot above says "Draft" either way — this is the
+            unmissable version, with the actual next step attached. */}
+        {notReadyPaidDraft && (
+          <View style={styles.payoutBanner}>
+            <FontAwesome5 name="university" size={13} color={colors.jobs} solid />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.payoutBannerTitle}>Not published</Text>
+              <Text style={styles.payoutBannerText}>
+                Connect Stripe to publish this event and start selling paid tickets.
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.payoutBannerBtn} onPress={goConnectStripe} activeOpacity={0.85}>
+              <Text style={styles.payoutBannerBtnText}>Connect Stripe</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Hub event reach */}
         {hubReach ? (
@@ -250,7 +294,12 @@ export default function EventManageScreen() {
               disabled={!isPublished}
             />
             <ActionBtn
-              icon="eye" label="View public page"
+              icon="eye"
+              // A draft isn't publicly visible (see events_public_read — a
+              // non-published event is is_hidden, readable only by its
+              // owner/admin), so what this opens for the organiser here is
+              // a preview only they can see, not what a customer sees.
+              label={isPublished ? 'View public page' : 'Preview public page'}
               color={S.color}
               onPress={() => router.push({ pathname: '/events/[id]', params: { id: event.id } })}
             />
@@ -365,9 +414,13 @@ export default function EventManageScreen() {
   );
 }
 
-function StatusStrip({ status, isBusy, onChangeStatus }: {
+function StatusStrip({ status, isBusy, onChangeStatus, notReadyPaidDraft, onConnectStripe }: {
   status: EventStatus; isBusy: boolean;
   onChangeStatus: (s: EventStatus) => void;
+  /** True for a draft, paid/mixed event whose organiser isn't payout-ready
+   *  yet — see the comment on its computation above. */
+  notReadyPaidDraft: boolean;
+  onConnectStripe: () => void;
 }) {
   const config: Record<EventStatus, { label: string; color: string }> = {
     draft:     { label: 'Draft',     color: colors.textMuted  },
@@ -382,9 +435,21 @@ function StatusStrip({ status, isBusy, onChangeStatus }: {
       <View style={[styles.statusDot, { backgroundColor: cfg.color }]} />
       <Text style={[styles.statusLabel, { color: cfg.color }]}>{cfg.label}</Text>
       {status === 'draft' && !isBusy && (
-        <TouchableOpacity style={styles.publishNowBtn} onPress={() => onChangeStatus('published')} activeOpacity={0.85}>
-          <Text style={styles.publishNowText}>Publish now</Text>
-        </TouchableOpacity>
+        notReadyPaidDraft ? (
+          // Publishing cannot succeed yet, so this never attempts it —
+          // it goes straight to the one place that actually unblocks it.
+          // Reverts to the normal green "Publish now" the moment
+          // event.payout_ready reads true (a free-only draft never sets
+          // notReadyPaidDraft in the first place — see its computation).
+          <TouchableOpacity style={styles.connectToPublishBtn} onPress={onConnectStripe} activeOpacity={0.85}>
+            <FontAwesome5 name="university" size={10} color="#fff" solid />
+            <Text style={styles.publishNowText}>Connect Stripe to publish</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.publishNowBtn} onPress={() => onChangeStatus('published')} activeOpacity={0.85}>
+            <Text style={styles.publishNowText}>Publish now</Text>
+          </TouchableOpacity>
+        )
       )}
       {status === 'published' && !isBusy && (
         <TouchableOpacity style={styles.unpublishBtn} onPress={() => onChangeStatus('draft')} activeOpacity={0.85}>
@@ -450,8 +515,24 @@ const styles = StyleSheet.create({
   reachBannerText: { fontSize: fontSize.sm, fontWeight: '800' },
   publishNowBtn: { backgroundColor: colors.success, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
   publishNowText:{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
+  connectToPublishBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.warningDark, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full,
+  },
   unpublishBtn:  { borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
   unpublishText: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '700' },
+
+  payoutBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: colors.warningLight,
+    marginHorizontal: spacing.md, marginTop: spacing.md,
+    padding: spacing.md, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.warning + '60',
+  },
+  payoutBannerTitle: { fontSize: fontSize.sm, fontWeight: '900', color: colors.warningDark },
+  payoutBannerText:  { fontSize: fontSize.xs, color: colors.warningDark, marginTop: 2, lineHeight: 16 },
+  payoutBannerBtn:   { backgroundColor: colors.warningDark, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md },
+  payoutBannerBtnText:{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
 
   dateSummary: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
