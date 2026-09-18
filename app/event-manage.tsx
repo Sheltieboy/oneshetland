@@ -23,7 +23,7 @@ import {
   type OsEvent, type EventStatus, type UpdateKind, type ScannerStats,
 } from '@/lib/events-api';
 import { ticketCapacity } from '@/lib/event-ticket-utils';
-import { startOrResumePayoutSetup } from '@/lib/payout-readiness';
+import { startOrResumePayoutSetup, payoutOnboardingErrorAlert } from '@/lib/payout-readiness';
 
 const S  = SECTIONS.events;
 const SE = SECTIONS.local;
@@ -206,7 +206,7 @@ export default function EventManageScreen() {
     try {
       await startOrResumePayoutSetup(event.organiser_business_id ?? '');
     } catch (e: any) {
-      alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
+      alert(payoutOnboardingErrorAlert(e));
     } finally {
       setConnectingStripe(false);
       load();

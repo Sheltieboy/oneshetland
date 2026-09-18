@@ -115,6 +115,10 @@ function runMobile(opts: {
   const js = transpile(`
     let readyCalls = 0;
     async function requirePayoutReadyForPaidActivation(_id) { readyCalls++; return ${JSON.stringify(opts.ready)}; }
+    // UPDATE — the rate-limit resilience follow-up: the real guard is exercised in
+    // payout-rate-limit-resilience.node.test.ts; here it is a pass-through so these
+    // routing tests stay about routing.
+    async function guardPayoutOnboardingLaunch(_id, fn) { return fn(); }
     async function fetchBusinessPrivate(_id) { return { use_business_payout: ${JSON.stringify(opts.useOwnAccount)} }; }
     async function createBusinessOnboardingLink(_id) { __calls.business = true; return { url: ${JSON.stringify(opts.businessUrl ?? 'https://connect.stripe.com/business')} }; }
     async function startPayoutOnboarding() { __calls.central = true; return { url: ${JSON.stringify(opts.centralUrl ?? 'https://connect.stripe.com/central')}, alreadyComplete: ${JSON.stringify(!!opts.centralAlreadyComplete)} }; }
@@ -143,6 +147,9 @@ function runWeb(opts: {
   const js = transpile(`
     let readyCalls = 0;
     async function requirePayoutReadyForPaidActivation(_id) { readyCalls++; return ${JSON.stringify(opts.ready)}; }
+    async function guardPayoutOnboardingLaunch(_id, fn) { return fn(); }
+    function isPayoutOnboardingCoolingDown(_id) { return false; }
+    function rateLimitedCooldownError() { return new Error('blocked'); }
     async function createBusinessOnboardingLink(_id) { __calls.business = true; return { url: ${JSON.stringify(opts.businessUrl ?? 'https://connect.stripe.com/business')} }; }
     async function startPayoutOnboarding() { __calls.central = true; return { url: ${JSON.stringify(opts.centralUrl ?? 'https://connect.stripe.com/central')}, alreadyComplete: ${JSON.stringify(!!opts.centralAlreadyComplete)} }; }
     const fakePopup = { closed: false, location: { href: '' }, close() { this.closed = true; } };

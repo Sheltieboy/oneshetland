@@ -16,7 +16,10 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { useAlert } from '@/components/BrandedAlert';
-import { requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup } from '@/lib/payout-readiness';
+import {
+  requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup,
+  guardPayoutOnboardingLaunch, payoutOnboardingErrorAlert,
+} from '@/lib/payout-readiness';
 import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { fetchCommercialTermsStatus } from '@/lib/commercial-terms';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
@@ -471,7 +474,10 @@ export default function BusinessDashboardScreen() {
     // Before the account link exists, not after.
     if (!(await requireCommercialTerms('Business bank account'))) return;
     try {
-      const { url } = await createBusinessOnboardingLink(activeBusiness.id);
+      // Shares the same short cooldown as every contextual launcher (see
+      // guardPayoutOnboardingLaunch's own doc comment) — this is the
+      // explicit Plan & payouts control, not a separate allowance.
+      const { url } = await guardPayoutOnboardingLaunch(activeBusiness.id, () => createBusinessOnboardingLink(activeBusiness.id));
       // Present Stripe Connect onboarding as an in-app SFSafariViewController
       // modal — slides up like the billing portal, doesn't launch full Safari.
       await WebBrowser.openBrowserAsync(url, {
@@ -484,8 +490,8 @@ export default function BusinessDashboardScreen() {
       // when the sheet closes so payout_enabled flips to true if Stripe
       // approved the account.
       loadAll(activeBusiness);
-    } catch (e: any) {
-      brandedAlert({ title: 'Stripe onboarding failed', message: e?.message ?? 'Try again later' });
+    } catch (e) {
+      brandedAlert(payoutOnboardingErrorAlert(e));
     }
   };
 
@@ -508,8 +514,8 @@ export default function BusinessDashboardScreen() {
     try {
       if (!(await requireCommercialTerms('Local Wallet'))) return;
       await startOrResumePayoutSetup(activeBusiness.id);
-    } catch (e: any) {
-      brandedAlert({ title: 'Stripe onboarding failed', message: e?.message ?? 'Try again later' });
+    } catch (e) {
+      brandedAlert(payoutOnboardingErrorAlert(e));
     } finally {
       setConnectingStripeContextual(false);
       loadAll(activeBusiness);

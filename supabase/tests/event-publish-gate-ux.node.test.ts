@@ -144,7 +144,10 @@ describe('1-3. The post-save confirmation explicitly says the save succeeded and
 
   test('web: BusinessEventForm.tsx calls EVENT_SAVED_AS_DRAFT_PROMPT, not the pre-save PAYOUT_NOT_READY_PROMPT', () => {
     // UPDATE — see the mobile test above; same third import, same reason.
-    assert.match(webForm, /import \{ requirePayoutReadyForPaidActivation, startOrResumePayoutSetup, EVENT_SAVED_AS_DRAFT_PROMPT \} from "@\/lib\/payout-readiness";/);
+    // UPDATE 3 — the rate-limit resilience follow-up
+    // (payout-rate-limit-resilience.node.test.ts) added the two helpers used to
+    // show a friendly message instead of a raw 429.
+    assert.match(webForm, /import \{ requirePayoutReadyForPaidActivation, startOrResumePayoutSetup, classifyPayoutOnboardingError, payoutOnboardingErrorNotify, EVENT_SAVED_AS_DRAFT_PROMPT \} from "@\/lib\/payout-readiness";/);
     assert.match(webForm, /confirm\(EVENT_SAVED_AS_DRAFT_PROMPT\)/);
     assert.doesNotMatch(webForm, /confirm\(PAYOUT_NOT_READY_PROMPT\)/, 'the generic pre-save prompt must not be reused here');
   });

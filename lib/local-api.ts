@@ -6,19 +6,26 @@
 
 import { supabase } from './supabase';
 import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
+import { retryAfterSecsFrom } from './retry-after';
 
 /**
  * Decode the real error from a supabase.functions.invoke failure.
  * invoke() returns a generic "Edge Function returned a non-2xx status code";
  * the real reason is in error.context.json() → { error: "..." }.
  */
-async function fnErr(error: any, fallback: string): Promise<Error> {
+async function fnErr(error: any, fallback: string): Promise<Error & { status?: number; retryAfterSecs?: number }> {
   let msg = error?.message ?? fallback;
+  let status: number | undefined;
+  let retryAfterSecs: number | undefined;
   try {
     const c = error?.context;
+    if (c) { status = c.status; retryAfterSecs = retryAfterSecsFrom(c); }
     if (c?.json) { const b = await c.json(); if (b?.error) msg = b.error; }
   } catch { /* keep generic */ }
-  return new Error(msg);
+  const err = new Error(msg) as Error & { status?: number; retryAfterSecs?: number };
+  if (status !== undefined) err.status = status;
+  if (retryAfterSecs !== undefined) err.retryAfterSecs = retryAfterSecs;
+  return err;
 }
 
 // ---------------------------------------------------------------------------

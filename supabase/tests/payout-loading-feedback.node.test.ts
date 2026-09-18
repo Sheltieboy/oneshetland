@@ -338,7 +338,7 @@ describe('web BusinessEventForm.tsx (save-as-draft prompt) gets feedback via its
   test('busy is already true across the whole save, including the Stripe-launch phase — the button is disabled and spinning throughout', () => {
     assert.match(webEventForm, /setBusy\(true\);\s*\n\s*try \{/);
     const submitFn = liftFn(webEventForm, 'async function submit(publish: boolean) {');
-    assert.match(submitFn, /setConnectingStripe\(true\);\s*\n\s*await startOrResumePayoutSetup/);
+    assert.match(submitFn, /setConnectingStripe\(true\);\s*\n\s*let rateLimited: unknown = null;\s*\n\s*await startOrResumePayoutSetup/);
   });
 
   test('the label reads "Opening Stripe…" specifically during that phase, not the generic "Saving…"', () => {
@@ -384,6 +384,7 @@ describe('10. a failed launch always restores the control, real execution agains
       function setConnectingStripe(v) { connectingStripe = v; __calls.push('set:' + v); }
       const event = { organiser_business_id: 'biz-1' };
       async function startOrResumePayoutSetup(_id) { throw new Error('no url'); }
+      function payoutOnboardingErrorAlert(e) { return { title: 'Stripe onboarding failed', message: e.message }; }
       function alert(o) { __calls.push('alert:' + o.title); }
       function load() { __calls.push('load'); }
       ${fnSrc}
@@ -392,7 +393,7 @@ describe('10. a failed launch always restores the control, real execution agains
     const mod = { exports: {} as unknown };
     new Function('module', 'exports', '__calls', js)(mod, mod.exports, calls);
     await (mod.exports as () => Promise<void>)();
-    assert.deepEqual(calls, ['set:true', 'alert:Could not open Stripe', 'set:false', 'load']);
+    assert.deepEqual(calls, ['set:true', 'alert:Stripe onboarding failed', 'set:false', 'load']);
   });
 
   test('web WalletManager.tsx connectBank: setBusy("bank") then (null), an error message, no crash — even on failure', async () => {
@@ -405,6 +406,9 @@ describe('10. a failed launch always restores the control, real execution agains
       const b = { id: 'biz-1' };
       async function startOrResumePayoutSetup(_id) { throw new Error('no url'); }
       const router = { refresh: () => __calls.push('refresh') };
+      function classifyPayoutOnboardingError(_e) { return 'ordinary'; }
+      function payoutOnboardingErrorNotify(e) { return { title: 'x', body: e.message, okLabel: 'OK' }; }
+      async function notify(_o) { __calls.push('notify'); }
       ${fnSrc}
       module.exports = connectBank;
     `);
@@ -419,6 +423,7 @@ describe('10. a failed launch always restores the control, real execution agains
     const calls: string[] = [];
     const js = transpile(`
       const colors = { jobs: '#000', error: '#f00' };
+      function payoutOnboardingErrorAlert(e) { return { title: 'Stripe onboarding failed', message: e.message }; }
       async function startOrResumePayoutSetup(_id) { throw new Error('no url'); }
       ${fnSrc}
       module.exports = launchPayoutSetupFromPrompt;
@@ -430,7 +435,7 @@ describe('10. a failed launch always restores the control, real execution agains
       hide: () => calls.push('hide'),
     };
     await (mod.exports as (id: string, ui: unknown) => Promise<void>)('biz-1', ui);
-    assert.deepEqual(calls, ['loading-alert', 'error-alert:Could not open Stripe']);
+    assert.deepEqual(calls, ['loading-alert', 'error-alert:Stripe onboarding failed']);
   });
 });
 
@@ -517,9 +522,14 @@ describe('14. web popup behaviour remains compatible with user-gesture requireme
   test("startOrResumePayoutSetup itself still opens the popup as the literal first statement, unchanged by this task", () => {
     const webPayout = code(readWeb('lib/payout-readiness.ts'));
     const fn = liftFn(webPayout, 'export async function startOrResumePayoutSetup(businessId: string): Promise<{ ready: boolean }> {');
-    const openIdx = fn.indexOf('const popup = openStripePopup();');
+    // UPDATE — the rate-limit follow-up: the popup is now skipped while a
+    // guard/backoff is active, decided by a SYNCHRONOUS in-memory check, so it
+    // is still opened (when it is opened) before any await.
+    const checkIdx = fn.indexOf('const blocked = isPayoutOnboardingCoolingDown(businessId);');
+    const openIdx = fn.indexOf('const popup = blocked ? null : openStripePopup();');
     const firstAwaitIdx = fn.indexOf('await ');
-    assert.ok(openIdx !== -1 && firstAwaitIdx !== -1 && openIdx < firstAwaitIdx, 'popup must open before any await, exactly as before this task');
+    assert.ok(checkIdx !== -1 && openIdx > checkIdx && firstAwaitIdx !== -1 && openIdx < firstAwaitIdx, 'popup must open before any await');
+    assert.doesNotMatch(fn.slice(0, openIdx), /await /, 'nothing awaited before the popup decision');
   });
 
   test('every web call site invokes its launcher (startOrResumePayoutSetup / launchStripe / connectBank / goConnectStripe / go) with no intervening await after the synchronous "set connecting" call — the click-to-popup chain has no new task boundary', () => {

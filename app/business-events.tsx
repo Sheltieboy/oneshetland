@@ -26,11 +26,12 @@ import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { supabase } from '@/lib/supabase';
 import { useAlert } from '@/components/BrandedAlert';
+import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import {
   fetchBusinessEventsForManagement, groupEventsForManagement, eventHasActivePaidTicket,
   formatEventDate, type OsEvent, type EventStatus,
 } from '@/lib/events-api';
-import { startOrResumePayoutSetup } from '@/lib/payout-readiness';
+import { startOrResumePayoutSetup, payoutOnboardingErrorAlert } from '@/lib/payout-readiness';
 
 const S = SECTIONS.events;
 
@@ -42,7 +43,7 @@ const STATUS_CFG: Record<EventStatus, { label: string; color: string }> = {
   archived:  { label: 'Archived',  color: colors.textMuted },
 };
 
-export default function BusinessEventsScreen() {
+function BusinessEventsBody() {
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
   const router = useRouter();
   const { alert } = useAlert();
@@ -92,7 +93,7 @@ export default function BusinessEventsScreen() {
     try {
       await startOrResumePayoutSetup(businessId ?? '');
     } catch (e: any) {
-      alert({ title: 'Could not open Stripe', message: e?.message ?? 'Please try again.' });
+      alert(payoutOnboardingErrorAlert(e));
     } finally {
       setConnectingStripe(false);
       load();
@@ -183,6 +184,24 @@ export default function BusinessEventsScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+/**
+ * Commercial screen: the business must have accepted the business & selling
+ * terms first — the same gate, with the same "Events" label, that the web
+ * Events management page (app/business/[id]/manage/events/page.tsx) sits
+ * behind. One acceptance covers every commercial screen for that business;
+ * Directory management is never gated. The gate only decides whether this
+ * screen renders — it changes nothing about which events are listed, how they
+ * are grouped, who owns them, or any payout/ticketing rule.
+ */
+export default function BusinessEventsScreen() {
+  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  return (
+    <CommercialTermsGate businessId={businessId} feature="Events">
+      <BusinessEventsBody />
+    </CommercialTermsGate>
   );
 }
 
