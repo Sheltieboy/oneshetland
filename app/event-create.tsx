@@ -35,6 +35,7 @@ import {
   type EventUpsertInput, type EventTicketType, type HubEventVisibility,
 } from '@/lib/events-api';
 import { ticketTypesToDeactivate } from '@/lib/ticket-type-save';
+import { DEFAULT_PER_ORDER_MAX, parsePerOrderMax, normalisePerOrderMax, type PerOrderMaxDraft } from '@/lib/event-ticket-utils';
 import { fetchHub, createHubNotice } from '@/lib/hubs-api';
 import { track } from '@/lib/analytics';
 import { PeerieFill } from '@/components/ai/PeerieFill';
@@ -88,7 +89,16 @@ function EventCreateBody() {
 
   // Tickets
   const [ticketMode,  setTicketMode]  = useState<'none' | 'oneshetland' | 'external'>('none');
-  const [ticketTypes, setTicketTypes] = useState<(Partial<EventTicketType> & { _local?: boolean })[]>([]);
+  /**
+   * per_order_max is widened to PerOrderMaxDraft (number | "") here, same as
+   * web's EditableTicketType — "" is a legitimate mid-edit state for the
+   * Max per order box (see lib/event-ticket-utils.ts), and is normalised
+   * back to a real number on blur and again on save, never reaching
+   * EventTicketType (per_order_max: number) directly.
+   */
+  const [ticketTypes, setTicketTypes] = useState<
+    (Partial<Omit<EventTicketType, 'per_order_max'>> & { per_order_max?: PerOrderMaxDraft; _local?: boolean })[]
+  >([]);
   const [ticketUrl,   setTicketUrl]   = useState('');
   // Ticket-type ids the event was loaded with. Used on Save to work out which
   // existing types the owner removed (they're no longer in `ticketTypes`) so
@@ -176,7 +186,7 @@ function EventCreateBody() {
       name: '',
       price_pence: 0,
       quantity_available: null,
-      per_order_max: 10,
+      per_order_max: DEFAULT_PER_ORDER_MAX,
       is_active: true,
       requires_attendee_details: false,
     }]);
@@ -225,7 +235,7 @@ function EventCreateBody() {
         name: typeof t.name === 'string' ? t.name : '',
         price_pence: typeof t.price_gbp === 'number' ? Math.round(t.price_gbp * 100) : 0,
         quantity_available: null,
-        per_order_max: 10,
+        per_order_max: DEFAULT_PER_ORDER_MAX,
         is_active: true,
         requires_attendee_details: false,
       })));
@@ -301,7 +311,7 @@ function EventCreateBody() {
       // fix — rather than dropped from the visible list, since nothing was
       // actually saved for it.
       if (ticketMode !== 'oneshetland') ticketTypes.length = 0;
-      const updatedTicketTypes: (Partial<EventTicketType> & { _local?: boolean })[] = [];
+      const updatedTicketTypes: (Partial<Omit<EventTicketType, 'per_order_max'>> & { per_order_max?: PerOrderMaxDraft; _local?: boolean })[] = [];
       for (const tt of ticketTypes) {
         if (!tt.name?.trim()) { updatedTicketTypes.push(tt); continue; }
         const saved = await upsertTicketType({
@@ -311,7 +321,10 @@ function EventCreateBody() {
           description:              tt.description ?? null,
           price_pence:              tt.price_pence ?? 0,
           quantity_available:       tt.quantity_available ?? null,
-          per_order_max:            tt.per_order_max ?? 10,
+          // normalisePerOrderMax, not `?? 10`: same as web, so a box left
+          // mid-edit (e.g. "") or never touched at all still cannot reach
+          // the database as anything but a real per-order integer >= 1.
+          per_order_max:            normalisePerOrderMax(tt.per_order_max),
           is_active:                tt.is_active ?? true,
           requires_attendee_details:tt.requires_attendee_details ?? false,
           sale_starts_at:           tt.sale_starts_at ?? null,
@@ -656,6 +669,34 @@ function EventCreateBody() {
                         placeholderTextColor={colors.textLight}
                       />
                     </View>
+                  </View>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.fieldLabel}>Max per order</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={tt.per_order_max === undefined ? '' : String(tt.per_order_max)}
+                        onChangeText={v => {
+                          const draft = parsePerOrderMax(v);
+                          setTicketTypes(prev => { const n = [...prev]; n[i] = { ...n[i], per_order_max: draft }; return n; });
+                        }}
+                        onBlur={() => {
+                          setTicketTypes(prev => {
+                            const n = [...prev];
+                            n[i] = { ...n[i], per_order_max: normalisePerOrderMax(n[i].per_order_max) };
+                            return n;
+                          });
+                        }}
+                        keyboardType="number-pad"
+                        placeholder={String(DEFAULT_PER_ORDER_MAX)}
+                        placeholderTextColor={colors.textLight}
+                      />
+                    </View>
+                    {/* Empty second column: Max per order is a single value, not a
+                        pair, but the row's flex:1 columns keep it visually
+                        consistent with Price/Quantity above rather than
+                        stretching one input across the full card width. */}
+                    <View style={{ flex: 1 }} />
                   </View>
                   <TouchableOpacity onPress={() => setTicketTypes(prev => prev.filter((_, j) => j !== i))} style={styles.removeLink}>
                     <Text style={styles.removeLinkText}>Remove</Text>

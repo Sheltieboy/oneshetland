@@ -280,8 +280,40 @@ export function lowestTicketPrice(types: EventTicketType[]): number | null {
   return Math.min(...active.map(t => t.price_pence));
 }
 
+// True when a customer can actually get in for nothing: at least one ticket
+// type that is on sale costs £0. Mixed free+paid events count — the free ticket
+// is real, so "From £1.00" would have been a lie. Inactive types are ignored,
+// which is the same rule lowestTicketPrice() applies.
 export function isFreeEvent(types: EventTicketType[]): boolean {
-  return types.length > 0 && types.every(t => t.price_pence === 0);
+  const active = types.filter(t => t.is_active);
+  return active.length > 0 && active.some(t => t.price_pence === 0);
+}
+
+/**
+ * The one place the price label shown on every public surface (What's On
+ * cards, the event detail CTA) is derived, so the three call sites that used
+ * to each re-run the same "free or from £X" ternary can't drift from one
+ * another or from the Free-only filter.
+ *
+ * Built entirely from the two existing predicates rather than a third pass
+ * over `types`: hasFree is isFreeEvent() itself (at least one active ticket
+ * costs nothing — the same fact the Free-only filter reads), and hasPaid is
+ * lowestTicketPrice() !== null (that helper already answers "is there an
+ * active ticket priced above zero"; asking with a second, separately
+ * written filter would be the duplication this function exists to remove).
+ *
+ * Free and paid are not exclusive — a mixed event has both, and saying only
+ * "Free" would hide that some tickets cost money, while "From £1.00" was the
+ * original bug: a genuinely free ticket priced out of the label entirely.
+ */
+export function eventPriceLabel(types: EventTicketType[]): string | null {
+  const hasFree = isFreeEvent(types);
+  const cheapestPaid = lowestTicketPrice(types);
+  const hasPaid = cheapestPaid !== null;
+  if (hasFree && hasPaid) return 'Free + paid tickets';
+  if (hasFree) return 'Free';
+  if (hasPaid) return `From £${(cheapestPaid / 100).toFixed(2)}`;
+  return null;
 }
 
 export const UPDATE_KIND_LABELS: Record<UpdateKind, string> = {

@@ -22,7 +22,7 @@ import { useAuth } from '@/context/AuthContext';
 import {
   fetchEvent, fetchEventSocialStats, computeScarcity,
   formatEventDate, formatTime,
-  lowestTicketPrice, isFreeEvent, ticketTypeOnSale,
+  eventPriceLabel, ticketTypeOnSale, eventHasFreeActiveTicket,
   UPDATE_KIND_LABELS,
   type OsEvent, type EventTicketType, type EventUpdate, type EventSocialStats,
 } from '@/lib/events-api';
@@ -66,7 +66,7 @@ export default function EventDetailScreen() {
   const hasTickets     = !!event?.has_tickets && ticketTypes.length > 0;
   const ticketsOnSale  = ticketTypes.some(ticketTypeOnSale);
   const priceLabel     = hasTickets
-    ? (isFreeEvent(ticketTypes) ? 'Free' : (() => { const l = lowestTicketPrice(ticketTypes); return l !== null ? `From £${(l / 100).toFixed(2)}` : null; })())
+    ? eventPriceLabel(ticketTypes)
     : (event?.price_text ?? null);
 
   const isCancelled = event?.status === 'cancelled';

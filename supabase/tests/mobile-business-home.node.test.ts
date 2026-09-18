@@ -95,9 +95,12 @@ describe('needs you, next, this week', () => {
   test('the hierarchy is exactly the accepted one', () => {
     const headers = [...raw().matchAll(/groupHeader}>([^<]+)/g)].map((m) => m[1]);
     assert.deepEqual(headers,
+      // "Also possible on OneShetland" (Phase 3E) is retired: unused
+      // capabilities now live behind "Add to your business", a compact row
+      // (not its own group header) opening a Sheet — see
+      // business-dashboard-add-capability-chooser.node.test.ts.
       ['Needs you', 'Next', 'This week', 'At the counter', 'Your business',
-       // Phase 3E: quiet, optional, and between the work and the layers.
-       'Also possible on OneShetland', 'Money', 'Grow']);
+       'Money', 'Grow']);
   });
 
   test('needs you renders only when something is genuinely waiting', () => {
@@ -532,29 +535,35 @@ describe('the rest of Home is navigation and status, not the managers', () => {
   });
 });
 
-/* ── 7. Phase 3E — the discovery shelf ────────────────────────────────────── */
+/* ── 7. Phase 3F — Add to your business (replaces the discovery shelf) ─────
+   The discovery shelf ("Also possible on OneShetland") only appeared once Be
+   found reached 'good' — which meant it effectively never appeared for a
+   freshly claimed business, the entire launch cohort. "Add to your business"
+   drops that gate entirely: it shows the moment any capability is
+   `available`, independent of Be found's own state. */
 
-describe('also possible on OneShetland', () => {
+describe('add to your business', () => {
   const src = () => raw();
   /* The rule as the screen expresses it, exercised against the real helpers:
-     a capability is discovery only in the canonical never-configured state, and
-     the shelf waits until the listing is genuinely good. */
+     a capability is discovery only in the canonical never-configured state.
+     Unlike the retired shelf, the trigger no longer consults Be found at all. */
   const GOOD = { phone: '01595', lat: 60.15, lng: -1.15, description: 'x',
                  logo_url: 'u', opening_hours: { mon: '9-5' } as never };
   const READY = { phone: '01595', lat: 60.15, lng: -1.15 };
   const shelfFor = (business: Record<string, unknown>, data: OutcomeData) => {
     const o = businessOutcomes({ ...business, id: 'b', slug: 's' } as never, data, '');
     const discovery = [1, 2, 3, 4].filter((i) => o[i].state === 'available');
-    return { show: o[0].state === 'good' && discovery.length > 0, discovery, outcomes: o };
+    return { show: discovery.length > 0, discovery, outcomes: o };
   };
 
-  test('1. nothing while Be found is incomplete', () =>
-    assert.equal(shelfFor({}, NONE).show, false));
+  test('1. a newly claimed business (Be found incomplete) sees it immediately', () =>
+    assert.equal(shelfFor({}, NONE).show, true,
+      'a freshly claimed business must not have to wait on its profile'));
 
-  test('2. nothing while Be found is only ready', () =>
-    assert.equal(shelfFor(READY, NONE).show, false));
+  test('2. it shows just the same while Be found is only ready', () =>
+    assert.equal(shelfFor(READY, NONE).show, true));
 
-  test('3. it appears once Be found is good and something is unused', () => {
+  test('3. and just the same once Be found is good — Be found never decides this', () => {
     const r = shelfFor(GOOD, NONE);
     assert.equal(r.show, true);
     assert.deepEqual(r.discovery, [1, 2, 3, 4]);
@@ -581,8 +590,12 @@ describe('also possible on OneShetland', () => {
     // move saved, setup and unknown capabilities into discovery unnoticed.
     assert.match(code(DASH), /outcomes\[i\]\?\.state === 'available'/,
       'discovery must select the canonical never-configured state, and only that');
-    assert.match(code(DASH), /const showDiscovery = outcomes\[0\]\?\.state === 'good' && discovery\.length > 0;/,
-      'and it must wait for a genuinely good listing');
+    // The retired shelf gated its own visibility on Be found being 'good' —
+    // exactly the bug this phase removes. The trigger must depend on nothing
+    // but discovery itself.
+    assert.doesNotMatch(code(DASH), /showDiscovery/, 'the Be-found gate must not come back under any name');
+    assert.match(code(DASH), /\{discovery\.length > 0 && \(/,
+      'and the trigger must show for any discovery, waiting on nothing else');
   });
 
   test('5. configured Sell stays a working outcome', () => {
@@ -626,10 +639,16 @@ describe('also possible on OneShetland', () => {
   });
 
   test('13. it does not nag, badge or score', () => {
-    // Comments stripped: the shelf's own comment explains that it carries no
-    // dot, badge or count, which would otherwise trip this.
+    // Comments stripped: the trigger and sheet's own comments explain they
+    // carry no dot, badge or count, which would otherwise trip this. Two
+    // narrow slices, not the whole file between them — the trigger sits right
+    // before the unrelated Money section (which legitimately says "Pro"/
+    // upgrade-adjacent things for Wallet/NFC), and AddCapabilitySheet is a
+    // separate function defined near the end of the file.
     const s2 = code(DASH);
-    const shelf = s2.slice(s2.indexOf('Also possible on OneShetland'), s2.indexOf('>Money<'));
+    const trigger = s2.slice(s2.indexOf('Add to your business'), s2.indexOf('>Money<'));
+    const sheetFn = s2.slice(s2.indexOf('function AddCapabilitySheet'), s2.indexOf('function LoyaltyModal'));
+    const shelf = trigger + '\n' + sheetFn;
     for (const word of ['Upgrade', 'upgrade', 'Unlock', 'unlock', 'incomplete', 'Not set up',
                         'recommended', 'complete', '%']) {
       assert.ok(!shelf.includes(word), `discovery must not say "${word}"`);
@@ -676,15 +695,17 @@ describe('also possible on OneShetland', () => {
 
 describe('what the dashboard actually renders', () => {
   /**
-   * The Phase 3E tests above proved the RULE and then asserted the scenarios
-   * from a reimplementation of it. That is how a real contradiction survived
-   * review: isWorking was coupled to showDiscovery, so with the shelf hidden
-   * the exclusion switched off and all four never-used cards came back — the
-   * exact wall the phase existed to remove — while the tests, which never
-   * touched isWorking, stayed green.
+   * A prior Phase 3E contradiction survived review because these tests only
+   * proved the RULE, from a reimplementation of it, never the screen's own
+   * expressions: isWorking was coupled to showDiscovery, so with the shelf
+   * hidden the exclusion switched off and all four never-used cards came
+   * back — while the tests, which never touched isWorking, stayed green.
    *
-   * So these lift the three expressions out of the source and run them. A
-   * mutation to the screen changes what executes here.
+   * So these lift the real expressions out of the source and run them. A
+   * mutation to the screen changes what executes here. showDiscovery itself
+   * is gone (Phase 3F retired the Be-found gate along with the shelf), so
+   * what these now prove is that discovery — and therefore the trigger,
+   * which is just `discovery.length > 0` — never reads outcomes[0] at all.
    */
   function screenLogic() {
     const src = read(DASH);
@@ -695,20 +716,20 @@ describe('what the dashboard actually renders', () => {
     };
     const discoverable = grab(/const DISCOVERABLE = (\[[^\]]*\])/, 'DISCOVERABLE');
     const discoveryExpr = grab(/const discovery = home\s*\n\s*\?\s*([\s\S]*?)\n\s*: \[\];/, 'discovery');
-    const showExpr = grab(/const showDiscovery = ([^;]+);/, 'showDiscovery');
     const workingExpr = grab(/const isWorking = \(i: number\) => ([^;]+);/, 'isWorking');
+    assert.doesNotMatch(src, /const showDiscovery/, 'showDiscovery must stay retired');
 
     return (outcomes: { state: string }[]) => {
       const body = `
         const DISCOVERABLE = ${discoverable};
         const home = true;
         const discovery = ${discoveryExpr.replace(/ as const/g, '')};
-        const showDiscovery = ${showExpr};
+        const showAddToYourBusiness = discovery.length > 0;
         const isWorking = (i) => ${workingExpr.replace(/ as 1/g, '')};
-        return { discovery, showDiscovery, working: [0,1,2,3,4].filter(isWorking) };
+        return { discovery, showAddToYourBusiness, working: [0,1,2,3,4].filter(isWorking) };
       `;
       return new Function('outcomes', body)(outcomes) as
-        { discovery: number[]; showDiscovery: boolean; working: number[] };
+        { discovery: number[]; showAddToYourBusiness: boolean; working: number[] };
     };
   }
 
@@ -717,22 +738,23 @@ describe('what the dashboard actually renders', () => {
     run([{ state: found }, ...rest.map((state) => ({ state }))]);
   const FOUR_UNUSED = ['available', 'available', 'available', 'available'];
 
-  test('1. incomplete + four never used → Be found alone, no shelf', () => {
+  test('1. incomplete + four never used → Be found alone works, but Add to your business shows immediately', () => {
     const r = scene('incomplete', FOUR_UNUSED);
     assert.deepEqual(r.working, [0], 'only Be found may render as a working card');
-    assert.equal(r.showDiscovery, false, 'and the shelf waits');
+    assert.equal(r.showAddToYourBusiness, true, 'a freshly claimed business must see it right away');
+    assert.deepEqual(r.discovery, [1, 2, 3, 4]);
   });
 
-  test('2. ready + four never used → Be found alone, no shelf', () => {
+  test('2. ready + four never used → identical: the trigger does not wait for a better profile', () => {
     const r = scene('ready', FOUR_UNUSED);
     assert.deepEqual(r.working, [0]);
-    assert.equal(r.showDiscovery, false, 'ready is not good enough');
+    assert.equal(r.showAddToYourBusiness, true);
   });
 
-  test('3. good + four never used → Be found working, four in discovery', () => {
+  test('3. good + four never used → identical again: Be found\'s own state never changes this', () => {
     const r = scene('good', FOUR_UNUSED);
     assert.deepEqual(r.working, [0]);
-    assert.equal(r.showDiscovery, true);
+    assert.equal(r.showAddToYourBusiness, true);
     assert.deepEqual(r.discovery, [1, 2, 3, 4]);
   });
 
@@ -744,11 +766,11 @@ describe('what the dashboard actually renders', () => {
     }
   });
 
-  test('5. history-bearing states stay working too', () => {
+  test('5. history-bearing states stay working too, and the trigger disappears', () => {
     const r = scene('good', ['live', 'setup', 'none_upcoming', 'saved']);
     assert.deepEqual(r.working, [0, 1, 2, 3, 4]);
     assert.deepEqual(r.discovery, []);
-    assert.equal(r.showDiscovery, false, 'nothing left to discover');
+    assert.equal(r.showAddToYourBusiness, false, 'nothing left to add');
   });
 
   test('6. unknown is never discovery, and is not hidden from the working area', () => {
@@ -867,10 +889,10 @@ describe('the rest of Home did not move', () => {
   test('outcomes, discovery and the spine are all still there', () => {
     const d = raw();
     assert.equal((d.match(/<OutcomeCard/g) ?? []).length, 5);
-    assert.match(d, /Also possible on OneShetland/);
+    assert.match(d, /Add to your business/);
     const headers = [...d.matchAll(/groupHeader}>([^<]+)/g)].map((m) => m[1]);
     assert.deepEqual(headers,
       ['Needs you', 'Next', 'This week', 'At the counter', 'Your business',
-       'Also possible on OneShetland', 'Money', 'Grow']);
+       'Money', 'Grow']);
   });
 });

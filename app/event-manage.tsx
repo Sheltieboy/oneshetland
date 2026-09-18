@@ -4,13 +4,13 @@
  * Params: id (event ID)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
@@ -22,6 +22,7 @@ import {
   formatEventDate, UPDATE_KIND_LABELS,
   type OsEvent, type EventStatus, type UpdateKind, type ScannerStats,
 } from '@/lib/events-api';
+import { ticketCapacity } from '@/lib/event-ticket-utils';
 
 const S  = SECTIONS.events;
 const SE = SECTIONS.local;
@@ -69,7 +70,23 @@ export default function EventManageScreen() {
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  /**
+   * Loads on initial focus and every time this screen regains focus after
+   * that — the same useFocusEffect(useCallback(...)) idiom used for the
+   * Business Dashboard's own focus-refresh fix. One fetch path, not two:
+   * this replaces the previous mount-only useEffect(() => { load(); },
+   * [load]) rather than sitting beside it, since useFocusEffect already
+   * runs its callback once on the initial mount (a freshly mounted screen
+   * is focused) — a separate mount effect would have fired a second,
+   * redundant load every time this screen first opens.
+   *
+   * Without this, Scan tickets → check a ticket in → back left Event
+   * Manage showing whatever Sold/Checked in were before scanning, because
+   * nothing told the still-mounted screen to ask again. Unlike the
+   * dashboard's loadAll, load() here takes no argument and depends only on
+   * the stable route id, so no ref is needed to avoid a refetch loop.
+   */
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const handleStatusChange = async (newStatus: EventStatus) => {
     if (!event) return;
@@ -203,15 +220,24 @@ export default function EventManageScreen() {
         </View>
 
         {/* Stats */}
-        {isPublished && stats && (
-          <View style={styles.statsCard}>
-            <StatBox label="Sold"       value={stats.tickets_sold}  color={S.color} />
-            <View style={styles.statsDivider} />
-            <StatBox label="Checked in" value={stats.checked_in}   color={colors.success} />
-            <View style={styles.statsDivider} />
-            <StatBox label="Capacity"   value={event.capacity ?? '∞'} color={colors.textMuted} />
-          </View>
-        )}
+        {isPublished && stats && (() => {
+          // ticketCapacity(), not event.capacity directly: capacity is a
+          // venue headcount nobody fills in on mobile's own create form, so
+          // an organiser who had just set a ticket quantity of 5 was told
+          // "∞" here and reasonably concluded it had not saved — the exact
+          // bug web already fixed. See lib/event-ticket-utils.ts.
+          const cap = ticketCapacity(event.ticket_types ?? [], event.capacity);
+          return (
+            <View style={styles.statsCard}>
+              <StatBox label="Sold"       value={stats.tickets_sold}  color={S.color} />
+              <View style={styles.statsDivider} />
+              <StatBox label="Checked in" value={stats.checked_in}   color={colors.success} />
+              <View style={styles.statsDivider} />
+              <StatBox label={cap.source === 'tickets' ? 'Ticket capacity' : 'Capacity'}
+                       value={cap.label} color={colors.textMuted} />
+            </View>
+          );
+        })()}
 
         {/* Quick actions */}
         <View style={styles.section}>

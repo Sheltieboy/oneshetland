@@ -19,7 +19,7 @@ import { EventsCalendar, dayKey } from '@/components/EventsCalendar';
 import {
   fetchPublishedEvents,
   formatShortDate, formatTime,
-  lowestTicketPrice, isFreeEvent,
+  isFreeEvent, eventPriceLabel,
   EVENT_CATEGORIES,
   type OsEvent, type EventTicketType,
 } from '@/lib/events-api';
@@ -402,7 +402,7 @@ function FeatureCard({ event, onPress }: { event: OsEvent; onPress: () => void }
 
 function TicketCard({ event, onPress, onTickets }: { event: OsEvent; onPress: () => void; onTickets: () => void }) {
   const priceLabel = event.ticket_types?.length
-    ? (isFreeEvent(event.ticket_types) ? 'Free' : (() => { const l = lowestTicketPrice(event.ticket_types!); return l !== null ? `From £${(l / 100).toFixed(2)}` : null; })())
+    ? eventPriceLabel(event.ticket_types)
     : event.price_text;
   return (
     <TouchableOpacity style={styles.tkCard} onPress={onPress} activeOpacity={0.9}>
@@ -434,9 +434,7 @@ function EventCard({ event, onPress }: { event: OsEvent; onPress: () => void }) 
   const priceLabel = (() => {
     if (!event.has_tickets) return event.price_text ?? null;
     if (event.ticket_types?.length) {
-      if (isFreeEvent(event.ticket_types)) return 'Free';
-      const low = lowestTicketPrice(event.ticket_types);
-      return low !== null ? `From £${(low / 100).toFixed(2)}` : null;
+      return eventPriceLabel(event.ticket_types);
     }
     return event.price_text ?? null;
   })();

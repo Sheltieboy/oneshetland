@@ -11,7 +11,7 @@ import {
   ActivityIndicator, Switch, Linking, RefreshControl, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
@@ -138,6 +138,18 @@ export default function BusinessDashboardScreen() {
 
   const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
   const [activeBusiness, setActiveBusiness] = useState<LocalBusiness | null>(null);
+  /**
+   * Mirrors activeBusiness for the focus refetch below, without being a
+   * dependency of it. loadAll sets activeBusiness on every call, so if the
+   * focus effect closed over activeBusiness directly (or listed it as a
+   * dependency), each refetch would produce a new callback identity while
+   * the screen is still focused, which would re-run the effect immediately
+   * and refetch again — a self-sustaining loop. A ref sidesteps that: it
+   * always holds the latest value, but writing to it triggers no re-render
+   * and is not a dependency of anything.
+   */
+  const activeBusinessRef = useRef<LocalBusiness | null>(null);
+  activeBusinessRef.current = activeBusiness;
   const [program, setProgram] = useState<LoyaltyProgram | null>(null);
   const [offers, setOffers]   = useState<LocalOffer[]>([]);
   const [code, setCode]       = useState<BusinessCode | null>(null);
@@ -145,6 +157,7 @@ export default function BusinessDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
+  const [showAddCapability, setShowAddCapability] = useState(false);
   const [bookServiceCount, setBookServiceCount] = useState(0);
   /**
    * What the plan actually allows, from the server. Every paid action on this
@@ -292,7 +305,32 @@ export default function BusinessDashboardScreen() {
     setRefreshing(false);
   }, [profile?.id, routeBusinessId]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  /**
+   * Loads on initial focus and every time the screen regains focus after
+   * that — the same useFocusEffect(useCallback(...)) idiom already used by
+   * business-orders.tsx, business-alerts.tsx, business-jobs.tsx and others.
+   * One fetch path, not two: this replaces the previous mount-only
+   * useEffect(() => { loadAll(); }, [loadAll]) rather than sitting beside
+   * it, because useFocusEffect already runs its callback once on the
+   * initial mount (a freshly mounted screen is focused), so a separate
+   * mount effect would have fired a second, redundant load every time this
+   * screen first opens.
+   *
+   * Without this, entering a capability flow (add a product, create an
+   * event, set up bookings) and returning left the dashboard showing
+   * whatever outcomes were true before that flow ran — e.g. Run events
+   * stayed in "Add to your business" after an event had actually been
+   * created, because nothing had told the dashboard to ask again.
+   *
+   * activeBusinessRef.current, not activeBusiness: see the ref's own
+   * comment above for why. Passing it through as `biz` preserves whichever
+   * business is currently active (including one chosen via the switcher,
+   * which the route's own businessId param does not track) rather than
+   * resetting to the route-requested or first business on every return.
+   */
+  useFocusEffect(useCallback(() => {
+    loadAll(activeBusinessRef.current ?? undefined);
+  }, [loadAll]));
 
   /**
    * Both the data and the layout have to be ready, and neither reliably arrives
@@ -516,33 +554,25 @@ export default function BusinessDashboardScreen() {
      A capability nobody has ever touched is not unfinished work sitting in the
      owner's way; it is something OneShetland can do that they may not know
      about. So `available` — the canonical never-configured state — moves out of
-     the working area and into a quiet shelf, and anything with real
-     configuration or history behind it stays where the work is.
+     the working area and into "Add to your business" (a single row that opens
+     a chooser), and anything with real configuration or history behind it
+     stays where the work is.
 
      `unknown` is deliberately NOT discovery: a read we could not make is not
      proof that nothing exists.
 
-     And the shelf waits. While the listing is still incomplete the owner's job
-     is to be findable, and inviting them to build a loyalty card instead would
-     be the product talking over them. */
+     Shown independent of Be found's own state: a freshly claimed business
+     (every business at launch) has never used anything yet, so gating this
+     on the listing being "good" would hide it from exactly the businesses
+     that need it most. */
   const DISCOVERABLE = [1, 2, 3, 4] as const;
   const discovery = home
     ? DISCOVERABLE.filter((i) => outcomes[i]?.state === 'available')
     : [];
-  const showDiscovery = outcomes[0]?.state === 'good' && discovery.length > 0;
   /**
-   * A never-used capability is not working area, full stop — whether or not the
-   * shelf is showing.
-   *
-   * This was previously coupled to showDiscovery, which quietly meant the
-   * opposite of the intent: with the shelf hidden (Be found not yet good) the
-   * exclusion switched off, so the four cards an owner has never touched came
-   * straight back and the newly-claimed business got exactly the wall of empty
-   * capabilities this phase existed to remove.
-   *
-   * `available` decides membership of the working area. Be found being good
-   * decides only whether the excluded ones are shown in discovery. Two separate
-   * questions.
+   * A never-used capability is not working area, full stop — whether or not
+   * "Add to your business" is showing. `available` alone decides membership
+   * of the working area.
    */
   const isWorking = (i: number) => !!outcomes[i] && outcomes[i].state !== 'available';
 
@@ -995,36 +1025,31 @@ export default function BusinessDashboardScreen() {
         )}
 
 
-        {/* ── Also possible on OneShetland ───────────────────────────────
-             Quiet on purpose. No dot, no badge, no count, no "not set up" —
-             none of these is a task the owner has failed to do. It only appears
-             once the listing is genuinely good, and each item leaves the shelf
-             by itself the moment anything is configured, because the state that
-             put it here stops being true. Nothing is stored. */}
-        {showDiscovery && (
-          <>
-            <Text style={styles.groupHeader}>Also possible on OneShetland</Text>
-            <View style={styles.shelf}>
-              {discovery.map((i) => {
-                const it = DISCOVERY_ITEMS[i];
-                return (
-                  <TouchableOpacity key={it.title} style={styles.shelfItem} activeOpacity={0.7}
-                    onPress={it.onPress}>
-                    <View style={[styles.shelfIcon, { backgroundColor: S.color + '14' }]}>
-                      <FontAwesome5 name={it.icon} size={13} color={S.color} solid />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.shelfTitle}>{it.title}</Text>
-                      <Text style={styles.shelfBlurb}>{it.blurb}</Text>
-                    </View>
-                    {/* The plan is a fact about the capability, not a pitch. */}
-                    <Text style={styles.shelfPlan}>{it.plan}</Text>
-                    <FontAwesome5 name="chevron-right" size={11} color={S.color} />
-                  </TouchableOpacity>
-                );
-              })}
+        {/* ── Add to your business ────────────────────────────────────────
+             A capability nobody has ever touched is not unfinished work
+             sitting in the owner's way; it is something OneShetland can do
+             that they may not know about yet — so it lives behind one tap,
+             not as a permanent card. Shown the moment any capability is
+             `available`, independent of Be found's own state: a freshly
+             claimed business (every business at launch) must see this
+             immediately, not once its profile happens to be 'good'. */}
+        {discovery.length > 0 && (
+          <TouchableOpacity
+            style={styles.backfillBanner}
+            onPress={() => setShowAddCapability(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.backfillIcon}>
+              <FontAwesome5 name="plus" size={11} color={S.color} solid />
             </View>
-          </>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.backfillTitle}>Add to your business</Text>
+              <Text style={styles.backfillSub}>
+                {discovery.length === 1 ? DISCOVERY_ITEMS[discovery[0]].title : `${discovery.length} more things you can do on OneShetland`}
+              </Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={11} color={S.color} />
+          </TouchableOpacity>
         )}
 
         <Text style={styles.groupHeader}>Money</Text>
@@ -1453,6 +1478,13 @@ export default function BusinessDashboardScreen() {
         onSaved={() => { setShowLoyaltyModal(false); loadAll(activeBusiness); }}
       />
 
+      <AddCapabilitySheet
+        visible={showAddCapability}
+        items={discovery.map((i) => DISCOVERY_ITEMS[i])}
+        accent={S.color}
+        onClose={() => setShowAddCapability(false)}
+      />
+
       {/*
         The same acceptance experience the commercial screens use, shown over
         the dashboard instead of instead of it. No second checkbox, no second
@@ -1679,6 +1711,47 @@ function formatReceiptTime(iso: string): string {
 }
 
 // ── Loyalty editor modal ─────────────────────────────────────────────────────
+
+/**
+ * The chooser behind "Add to your business" — one row per capability the
+ * business has never used, using the same title/blurb/plan/icon/route already
+ * defined in DISCOVERY_ITEMS. Nothing new is decided here: an item's presence
+ * in `items` is entirely the caller's `discovery` list, so an already-active
+ * capability (or one whose state is `unknown`) never reaches this component
+ * at all.
+ */
+function AddCapabilitySheet({ visible, items, accent, onClose }: {
+  visible: boolean;
+  items: { title: string; blurb: string; plan: string; icon: string; onPress: () => void }[];
+  accent: string;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet visible={visible} onClose={onClose} title="Add to your business">
+      <View style={styles.shelf}>
+        {items.map((it) => (
+          <TouchableOpacity
+            key={it.title}
+            style={styles.shelfItem}
+            activeOpacity={0.7}
+            onPress={() => { onClose(); it.onPress(); }}
+          >
+            <View style={[styles.shelfIcon, { backgroundColor: accent + '14' }]}>
+              <FontAwesome5 name={it.icon} size={13} color={accent} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shelfTitle}>{it.title}</Text>
+              <Text style={styles.shelfBlurb}>{it.blurb}</Text>
+            </View>
+            {/* The plan is a fact about the capability, not a pitch. */}
+            <Text style={styles.shelfPlan}>{it.plan}</Text>
+            <FontAwesome5 name="chevron-right" size={11} color={accent} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </Sheet>
+  );
+}
 
 function LoyaltyModal({
   visible, program, businessId, onClose, onSaved,
