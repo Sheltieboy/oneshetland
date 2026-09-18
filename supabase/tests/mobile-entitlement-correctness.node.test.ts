@@ -365,6 +365,11 @@ describe('nothing outside correctness moved', () => {
       'components/business/BusinessEventManage.tsx',
       'lib/events-manage.ts',
       'lib/events-manage-client.ts',
+      // Added by the Events management list follow-up: the web events list
+      // page already existed and was already the dashboard's own primary
+      // action for Manage events — this only adds the draft-first grouping
+      // and not-payout-ready indication to it, reusing the two files above.
+      'app/business/[id]/manage/events/page.tsx',
     ];
     const out = execFileSync('git', ['status', '--porcelain'],
       { cwd: join(REPO_ROOT, '..', 'oneshetland-web'), encoding: 'utf8' });

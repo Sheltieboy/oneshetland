@@ -428,6 +428,73 @@ export async function fetchBusinessEvents(businessId: string): Promise<OsEvent[]
 }
 
 /**
+ * Every event this business organises, for the Events management list
+ * (app/business-events.tsx) — deliberately a SEPARATE query from
+ * fetchBusinessEvents above, not an extension of it: that one has exactly
+ * one call site (the dashboard's bizEvents/bizEventsRaw/nextBizEvent
+ * pipeline) and its own doc comment says it is left untouched. This embeds
+ * ticket_types, which that one does not, so the management list can decide
+ * per draft whether it has an active paid ticket without a second query.
+ */
+export async function fetchBusinessEventsForManagement(businessId: string): Promise<OsEvent[]> {
+  const { data, error } = await supabase
+    .from('events')
+    .select('*, ticket_types:event_ticket_types(*)')
+    .eq('organiser_business_id', businessId)
+    .order('starts_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as OsEvent[];
+}
+
+export interface ManagedEventGroups<T> {
+  drafts:   T[];
+  upcoming: T[];
+  past:     T[];
+}
+
+/**
+ * Groups a business's events for the management list: drafts/needs-attention
+ * first, then upcoming published, then past/cancelled — the same three
+ * buckets on both platforms (see oneshetland-web's lib/events-manage.ts).
+ *
+ * The 6-hour grace window on "upcoming" mirrors the web events list's
+ * existing upcoming/past split — an event that started minutes ago is still
+ * genuinely upcoming for a merchant glancing at this list, not yet history.
+ * This is a different, simpler question than lib/business-next-event.ts's
+ * "which one event is most relevant right now" (which reads ends_at and the
+ * event's own calendar day) — this just buckets a whole list for browsing,
+ * and does not replace or feed that selection.
+ *
+ * A cancelled, postponed or archived event — and a published one whose date
+ * has passed the grace window — all land in `past`, never hidden: "do not
+ * hide historic events simply because they are no longer upcoming."
+ */
+export function groupEventsForManagement<T extends { status: EventStatus; starts_at: string }>(
+  events: readonly T[],
+  now: Date = new Date(),
+): ManagedEventGroups<T> {
+  const nowMs = now.getTime();
+  const UPCOMING_GRACE_MS = 6 * 3600_000;
+  const drafts: T[] = [];
+  const upcoming: T[] = [];
+  const past: T[] = [];
+  for (const e of events) {
+    if (e.status === 'draft') { drafts.push(e); continue; }
+    if (e.status === 'published' && new Date(e.starts_at).getTime() >= nowMs - UPCOMING_GRACE_MS) {
+      upcoming.push(e);
+      continue;
+    }
+    past.push(e);
+  }
+  const byStartAsc  = (a: T, b: T) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
+  const byStartDesc = (a: T, b: T) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime();
+  drafts.sort(byStartAsc);
+  upcoming.sort(byStartAsc);
+  past.sort(byStartDesc);
+  return { drafts, upcoming, past };
+}
+
+/**
  * Events organised by a hub. Admins (the hub's own page) get every event
  * including drafts/members tiers — RLS already permits that for hub admins;
  * non-admin viewers only get the rows RLS exposes (public/hub tiers, or

@@ -432,31 +432,37 @@ describe('an event cannot be upcoming and not upcoming at once', () => {
       'the date-only filter is what caused the contradiction');
   });
 
-  test('the supporting fact and the Scan/Manage targets are the same single value', () => {
+  test('the supporting fact and the Scan tickets target are the same single value', () => {
     // Was bizEvents[0] directly — which meant the "next 10 Sep" text and the
-    // event the Scan tickets / Manage events buttons opened could each read
-    // a different index if the array or its consumers ever drifted. Both now
-    // read one derived const, nextBizEvent, so there is nothing left to
-    // drift between what the card SAYS and what it ACTS on.
+    // event Scan tickets opened could each read a different index if the
+    // array or its consumers ever drifted. Both now read one derived const,
+    // nextBizEvent, so there is nothing left to drift between what the card
+    // SAYS and what Scan tickets ACTS on.
+    //
+    // UPDATE — the Events management list. Manage events no longer reads
+    // nextBizEvent at all: it always opens the management list
+    // (app/business-events.tsx) unconditionally, with no single event to
+    // drift against. Scan tickets is the one action left here with a
+    // genuine "same value as the fact" property to protect.
     //
     // nextBizEvent is deliberately NOT sourced from bizEvents above (whose
     // future-only filter this test pins two lines up) — an in-progress
     // event needs to still be reachable here, which bizEvents' filter
     // excludes by design. See supabase/tests/business-next-event.node.test.ts
     // for that behaviour in full; this test only pins that the dashboard
-    // uses ONE value for both the fact and the actions.
+    // uses ONE value for both the fact and Scan tickets.
     const src = raw();
     const factIdx = src.indexOf('fact={nextBizEvent');
     assert.notEqual(factIdx, -1, 'the fact must read the single derived value');
     const cardEnd = src.indexOf(']}', factIdx);
     assert.notEqual(cardEnd, -1, 'the actions array for this card has moved');
     const cardBlock = src.slice(factIdx, cardEnd);
-    // Manage event and Scan tickets only render at all once nextBizEvent
-    // exists (see mobile-event-manage-entry.node.test.ts), so inside
-    // that guard the reference is unconditional (nextBizEvent.id, no `?.`) —
-    // there is no other value either action could read.
+    // Scan tickets only renders at all once nextBizEvent exists (see
+    // mobile-event-manage-entry.node.test.ts), so inside that guard the
+    // reference is unconditional (nextBizEvent.id, no `?.`) — there is no
+    // other value it could read.
     const idMatches = cardBlock.match(/nextBizEvent\.id/g) ?? [];
-    assert.equal(idMatches.length, 2, 'both Manage event and Scan tickets must target nextBizEvent, not two different values');
+    assert.equal(idMatches.length, 1, 'Scan tickets must target nextBizEvent, and Manage events must not reference it at all');
   });
 });
 
@@ -478,9 +484,15 @@ describe('one compact card per outcome, and no repeats beneath it', () => {
   });
 
   test('every destination those cards used is still reachable', () => {
+    // UPDATE — the Events management list. /event-manage is no longer a
+    // direct, one-hop destination from this screen — Manage events now
+    // opens /business-events first, exactly the fix this task is (a
+    // stranded draft could not be reached any other way). /event-manage
+    // itself is still genuinely reachable, just one hop further along; see
+    // events-management-index.node.test.ts for that hop proven directly.
     for (const r of ['/business-products', '/business-orders', '/local-book-units',
                      '/local-book-services', '/local-book-schedule', '/local-book-bookings',
-                     '/event-manage', '/event-create', '/event-scanner',
+                     '/business-events', '/event-create', '/event-scanner',
                      '/local-offer-new', '/local-business-detail', '/local-business-register']) {
       assert.match(raw(), new RegExp(`'${r}'`), `${r} must stay reachable`);
     }

@@ -948,29 +948,19 @@ export default function BusinessDashboardScreen() {
             ? `next ${new Date(nextBizEvent.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
             : null}
           actions={[
-            // event-manage and event-scanner are per-EVENT screens: they read
-            // `id`. This passed businessId, so both arrived with nothing to
-            // work on — Manage events hung on a spinner and the scanner
-            // ignored every code it read. The card already speaks about the
-            // next event ("next 10 Sep"), so its buttons act on that one —
-            // the nearest in-progress-or-upcoming one, never a past one that
-            // merely happens to have the latest starts_at among all of them.
-            //
-            // That fix wired the happy path but left the other one open: a
-            // business with no current/upcoming published event has
-            // nextBizEvent === null, and these two still pushed with
-            // `id: ''` — trading the old spinner-that-never-loads for a
-            // "No event chosen. Open an event first, then manage it." dead
-            // end (found live, on a business with no eligible event). Both
-            // are per-event actions with nothing to act on in that state, so
-            // they render only once nextBizEvent exists; there is no id-less
-            // form of either to fall back to, and no event list to send
-            // someone to instead. New event needs no event and stays
-            // available either way.
-            ...(nextBizEvent ? [
-              { label: 'Manage event', onPress: () => router.push({ pathname: '/event-manage', params: { id: nextBizEvent.id } }) },
-            ] : []),
+            // Manage events means manage ALL of this business's events, not
+            // whichever one is "next" — it always opens the management list
+            // (app/business-events.tsx), never a single event directly. The
+            // card only renders once isWorking(3) is true, which needs at
+            // least one event to exist at all (see eventsOutcome), so this
+            // never opens on a business with nothing to manage.
+            { label: 'Manage events', onPress: () => router.push({ pathname: '/business-events', params: { businessId: activeBusiness.id } }) },
             { label: 'New event', onPress: () => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } }) },
+            // event-scanner is a per-EVENT screen: it reads `id`, and genuinely
+            // needs the nearest in-progress-or-upcoming event (never a past one
+            // that merely happens to have the latest starts_at) — unlike Manage
+            // events above, there is no id-less form of this to fall back to,
+            // so it only renders once nextBizEvent exists.
             ...(nextBizEvent ? [
               { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { id: nextBizEvent.id } }) },
             ] : []),

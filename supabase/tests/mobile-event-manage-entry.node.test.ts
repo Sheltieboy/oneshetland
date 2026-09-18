@@ -58,7 +58,13 @@ function pushedParams(route: string): string {
 }
 
 describe('the per-event screens are given an event', () => {
-  for (const route of ['/event-manage', '/event-scanner']) {
+  // UPDATE — the Events management list. The dashboard no longer pushes
+  // /event-manage directly at all (that was exactly the bug the management
+  // list fixes — see the describe block above); only /event-scanner remains
+  // a genuinely per-EVENT dashboard push. /event-manage is still reached
+  // (unchanged) from app/business-events.tsx and app/event-create.tsx, and
+  // still reads `id`, so the assertion on MANAGE's own params below stays.
+  for (const route of ['/event-scanner']) {
     test(`${route} receives an id, not a businessId`, () => {
       const seg = pushedParams(route);
       assert.match(seg, /params: \{ id:/,
@@ -68,7 +74,7 @@ describe('the per-event screens are given an event', () => {
     });
   }
 
-  test('both screens do read `id`, so that is genuinely what they need', () => {
+  test('event-manage and the scanner both do read `id`, so that is genuinely what they need', () => {
     // If either screen ever starts reading businessId, the assertion above
     // becomes wrong rather than protective.
     assert.match(code(MANAGE), /const \{ id \}\s+= useLocalSearchParams<\{ id: string \}>/);
@@ -80,6 +86,10 @@ describe('the per-event screens are given an event', () => {
     assert.match(pushedParams('/event-create'), /businessId: activeBusiness!?\.id/,
       'event-create reads businessId — do not "fix" it to match the others');
     assert.match(code(CREATE), /useLocalSearchParams<\{ businessId\?: string/);
+  });
+
+  test('Manage events gets businessId, not an event id — it is a per-BUSINESS screen, the events management list, not a per-event one', () => {
+    assert.match(pushedParams('/business-events'), /businessId: activeBusiness\.id/);
   });
 });
 
@@ -133,12 +143,23 @@ describe('loading always resolves to something', () => {
  * fixture and business-next-event.node.test.ts for what "eligible" means),
  * and tapping Manage events did exactly this.
  *
- * Manage event and Scan tickets now render only when nextBizEvent exists;
- * New event needs no event and is unaffected either way. No event-list
- * screen was created — none exists, and this task's product bar is explicit
- * that hiding the id-less actions is correct, not a placeholder for one.
+ * UPDATE — the Events management list
+ *
+ * "Manage event and Scan tickets now render only when nextBizEvent exists;
+ * ... No event-list screen was created — none exists" (above) was the right
+ * call for THIS fix, and is no longer the whole story: a later acceptance
+ * pass found that reusing "the one relevant event" for Manage events too
+ * left every OTHER event — including any draft — unreachable from the main
+ * management flow. Manage events now always opens the events management
+ * list (app/business-events.tsx), unconditionally: it needs no event to act
+ * on (the list handles zero events itself, with its own empty state), so it
+ * is no longer guarded on nextBizEvent at all, and no longer pushes to
+ * /event-manage directly. Scan tickets is UNCHANGED — it is still a
+ * per-event action that genuinely needs nextBizEvent, exactly as this file
+ * originally proved. See event-management-index.node.test.ts for the new
+ * screen's own coverage.
  */
-describe('the Run events card: Manage event / Scan tickets only render when there is an event to act on', () => {
+describe('the Run events card: Manage events is unconditional; Scan tickets still needs an event to act on', () => {
   function runEventsCard(): string {
     const src = code(DASH);
     const start = src.indexOf('fact={nextBizEvent');
@@ -148,11 +169,13 @@ describe('the Run events card: Manage event / Scan tickets only render when ther
     return src.slice(start, end);
   }
 
-  test('1. nextBizEvent present → Manage event is rendered, targeting the real event id', () => {
+  test('1. Manage events is unconditional — it opens the management list, not nextBizEvent directly, regardless of whether nextBizEvent exists', () => {
     const block = runEventsCard();
     assert.match(block,
-      /\.\.\.\(nextBizEvent \? \[\s*\{ label: 'Manage event', onPress: \(\) => router\.push\(\{ pathname: '\/event-manage', params: \{ id: nextBizEvent\.id \} \}\) \},\s*\] : \[\]\)/,
-      'Manage event must be conditionally rendered on nextBizEvent, targeting nextBizEvent.id directly, no fallback');
+      /\{ label: 'Manage events', onPress: \(\) => router\.push\(\{ pathname: '\/business-events', params: \{ businessId: activeBusiness\.id \} \}\) \},/,
+      'Manage events must be a plain, unconditional entry targeting the management list with businessId, never a single event id');
+    assert.doesNotMatch(block, /label: 'Manage events'[\s\S]{0,120}nextBizEvent/,
+      'Manage events must not be guarded on, or reference, nextBizEvent at all');
   });
 
   test('2. nextBizEvent present → Scan tickets is rendered, targeting the real event id', () => {
@@ -162,46 +185,46 @@ describe('the Run events card: Manage event / Scan tickets only render when ther
       'Scan tickets must be conditionally rendered on nextBizEvent, targeting nextBizEvent.id directly, no fallback');
   });
 
-  test('3. nextBizEvent null → neither action is in the actions array at all', () => {
-    // Both are array SPREADS — ...(null ? [x] : []) contributes nothing, so
-    // when nextBizEvent is null these are not merely styled as hidden, they
-    // never reach OutcomeCard's actions.map at all.
+  test('3. nextBizEvent null → Scan tickets is not in the actions array at all; Manage events and New event still are', () => {
+    // Now exactly one spread guard remains (Scan tickets) — Manage events
+    // moved out of this pattern entirely in the update above.
     const block = runEventsCard();
     const guards = block.match(/\.\.\.\(nextBizEvent \? \[/g) ?? [];
-    assert.equal(guards.length, 2, 'exactly Manage event and Scan tickets must be guarded this way — nothing more, nothing less');
+    assert.equal(guards.length, 1, 'only Scan tickets should still be guarded this way');
+    assert.match(block, /label: 'Manage events'/);
+    assert.match(block, /label: 'New event'/);
   });
 
-  test('4. New event remains rendered in both states — it sits outside either guard', () => {
+  test('4. New event sits between the unconditional Manage events entry and the guarded Scan tickets entry', () => {
     const block = runEventsCard();
     assert.match(block,
-      /\] : \[\]\),\s*\{ label: 'New event', onPress: \(\) => router\.push\(\{ pathname: '\/event-create', params: \{ businessId: activeBusiness\.id \} \}\) \},\s*\.\.\.\(nextBizEvent \? \[/,
-      'New event must sit as a plain, unconditional array entry between the two guarded actions, unaffected by nextBizEvent');
+      /\{ label: 'Manage events'.*?\},\s*\{ label: 'New event', onPress: \(\) => router\.push\(\{ pathname: '\/event-create', params: \{ businessId: activeBusiness\.id \} \}\) \},\s*\.\.\.\(nextBizEvent \? \[/s,
+      'New event must sit as a plain, unconditional array entry right after Manage events and before the Scan tickets guard');
   });
 
-  test('5 & 6. no empty-id fallback survives in this card — the shape that produced the dead end is gone', () => {
+  test('5 & 6. no empty-id fallback survives on Scan tickets — the shape that produced the dead end is gone', () => {
     const block = runEventsCard();
     assert.doesNotMatch(block, /nextBizEvent\?\.id/,
-      'optional chaining on nextBizEvent.id means an id-less push to /event-manage or /event-scanner is still reachable');
+      'optional chaining on nextBizEvent.id means an id-less push to /event-scanner is still reachable');
     assert.doesNotMatch(block, /\?\?\s*''/,
       'an empty-string fallback id is exactly what produced "No event chosen" for a manufactured, not genuine, no-id arrival');
   });
 
-  test('the label is "Manage event", singular — it always manages the one selected event, never a list', () => {
+  test('the label is "Manage events", plural — it manages every event now, not the one selected event', () => {
     const block = runEventsCard();
-    assert.match(block, /label: 'Manage event'(?!s)/);
-    assert.doesNotMatch(block, /label: 'Manage events'/);
+    assert.match(block, /label: 'Manage events'/);
+    assert.doesNotMatch(block, /label: 'Manage event'(?!s)/);
   });
 
-  test('neither missing-event action was routed to /event-create — that would misrepresent what happened', () => {
+  test('Scan tickets, the one remaining missing-event-guarded action, is never routed to /event-create — that would misrepresent what happened', () => {
     // event-create is New event's own destination; a business with no
-    // eligible event must not be sent there under the Manage event or Scan
-    // tickets label, which would look like those actions succeeded.
+    // eligible event must not be sent there under the Scan tickets label,
+    // which would look like the action succeeded. Manage events no longer
+    // depends on there being an eligible event at all, so this concern no
+    // longer applies to it.
     const block = runEventsCard();
-    const manageIdx = block.indexOf("label: 'Manage event'");
     const scanIdx = block.indexOf("label: 'Scan tickets'");
-    assert.notEqual(manageIdx, -1);
     assert.notEqual(scanIdx, -1);
-    assert.doesNotMatch(block.slice(manageIdx, manageIdx + 200), /event-create/);
     assert.doesNotMatch(block.slice(scanIdx, scanIdx + 200), /event-create/);
   });
 });
