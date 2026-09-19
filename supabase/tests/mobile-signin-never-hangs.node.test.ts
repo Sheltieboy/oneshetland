@@ -742,6 +742,127 @@ describe('structure the behavioural tests rely on', () => {
     const src = code(TURNSTILE_SRC);
     const run = src.slice(src.indexOf('async function runChallenge'), src.indexOf('export async function getTurnstileToken'));
     assert.match(run, /^async function runChallenge[\s\S]*?\{\s*try \{/);
-    assert.match(run, /\} catch \(err\) \{[\s\S]*?return \{ ok: false, reason: 'challenge_failed' \};\s*\}\s*\}\s*$/);
+    // UPDATE — the physical-failure follow-up: the catch now distinguishes a
+    // native "session could not be started" rejection ('unavailable') from any
+    // other ('challenge_failed'). Still never throws, still always ok:false.
+    assert.match(run, /\} catch \(err\) \{[\s\S]*?return \{ ok: false, reason: isSessionFailedToStart\(err\) \? 'unavailable' : 'challenge_failed' \};\s*\}\s*\}\s*$/);
+    assert.doesNotMatch(run.slice(run.indexOf('} catch (err) {')), /ok: true|throw /);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE PHYSICAL FAILURE — 19 Sep 2026, ~10:35 UK, fresh TestFlight install.
+
+   Production diagnostics for that attempt (allow-listed events only):
+     session_bootstrap_started/completed  reason=no_session  (normal, ~5ms)
+     auth_submit_started
+     captcha_session_started
+       … nothing …
+     captcha_timed_out   reason=app_deadline  elapsed_ms=30003
+     auth_timed_out      reason=captcha
+   No captcha_session_completed, no captcha_failed, no hosted-page timeout
+   report (the page would have redirected with ?error= at 25s), and never
+   supabase_signin_started. The native openAuthSessionAsync() promise did not
+   settle at all.
+
+   The mechanism this pins: expo-web-browser < 55.0.19 (iOS) called
+   ASWebAuthenticationSession.start() and IGNORED its Bool result. When start()
+   returns false the completion handler never runs, so the JS promise stays
+   pending for ever (upstream expo/expo#47653, fixed by #47896). 55.0.19+
+   rejects with WebAuthSessionFailedToStartException instead.
+
+   What this file can and cannot show: it proves the app now (a) refuses to
+   ship a module that ignores start(), (b) turns the rejection into a fast,
+   distinct, retryable failure, and (c) still bounds a session that never
+   settles. It does NOT prove start() returned false on that phone — that was
+   not observable from telemetry — nor why it would; upstream never reproduced
+   that either.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe('a native auth session that cannot start', () => {
+  const failedToStart = () => Object.assign(new Error('The authentication session could not be started.'), {
+    code: 'ERR_WEB_AUTH_SESSION_FAILED_TO_START',
+  });
+
+  test('settles immediately as `unavailable` — no 30s wait, no timer left running, never a token', async () => {
+    const before = timers();
+    const { mod, logs, native } = makeTurnstile(() => Promise.reject(failedToStart()));
+    const r = await mod.getTurnstileToken();
+    assert.deepEqual(r, { ok: false, reason: 'unavailable' });
+    assert.ok(!('token' in r));
+    assert.equal(native.opens, 1);
+    assert.deepEqual(logs.map((l) => l[0]), ['captcha_session_started', 'captcha_failed']);
+    assert.equal(logs[1][1]?.reason, 'unavailable');
+    assert.equal(timers(), before, 'the deadline timer is cleared');
+  });
+
+  test('recognised by message alone too, in case a wrapper drops the error code', async () => {
+    const { mod } = makeTurnstile(() => Promise.reject(new Error('The authentication session could not be started.')));
+    assert.deepEqual(await mod.getTurnstileToken(), { ok: false, reason: 'unavailable' });
+  });
+
+  test('any OTHER native rejection stays an ordinary challenge failure', async () => {
+    const { mod, logs } = makeTurnstile(() => Promise.reject(new Error('something else')));
+    assert.deepEqual(await mod.getTurnstileToken(), { ok: false, reason: 'challenge_failed' });
+    assert.equal(logs.at(-1)?.[1]?.reason, 'challenge_failed');
+  });
+
+  test('a session that neither starts nor fails (the OLD module\'s behaviour) is still bounded at 30s', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod } = makeTurnstile(() => new Promise(() => {}));
+    let settled: any = null;
+    void mod.getTurnstileToken().then((r: unknown) => { settled = r; });
+    t.mock.timers.tick(30_000);
+    await flush();
+    assert.deepEqual(settled, { ok: false, reason: 'timeout' });
+  });
+
+  test('`unavailable` is on the diagnostics allow-list, and only as a fixed reason', () => {
+    assert.deepEqual(authStageProps({ reason: 'unavailable', elapsedMs: 12, email: 'a@b.c', token: 'x' }), { reason: 'unavailable', elapsed_ms: 12 });
+  });
+
+  test('sign-in screen: the spinner clears, no password sign-in is attempted, and the person can retry', async () => {
+    const logs: Log[] = [];
+    const { run, state, submitting } = makeScreen({ getTurnstileToken: async () => ({ ok: false, reason: 'unavailable' }), logs });
+    await run();
+    assert.equal(lastLoading(state), false);
+    assert.equal(state.signInCalls.length, 0, 'CAPTCHA is mandatory: no token, no password auth');
+    assert.equal(state.alerts.length, 0, 'not the timeout dialog — this failed fast');
+    assert.equal(state.errors.at(-1), "Couldn't complete the verification check. Please try again.");
+    assert.equal(submitting.current, false);
+  });
+
+  test('sensitive values never reach a diagnostic sink on this path', async () => {
+    const logs: Log[] = [];
+    const { mod } = makeTurnstile(() => Promise.reject(failedToStart()));
+    await mod.getTurnstileToken();
+    const s = JSON.stringify(logs);
+    assert.doesNotMatch(s, /token|password|email|session/i);
+  });
+});
+
+describe('the native module the TestFlight build embeds must not ignore ASWebAuthenticationSession.start()', () => {
+  const swift = readRepo('node_modules/expo-web-browser/ios/WebAuthSession.swift');
+  const pkg = JSON.parse(readRepo('node_modules/expo-web-browser/package.json'));
+  const semverGte = (v: string, min: string) => {
+    const a = v.split('.').map(Number), b = min.split('.').map(Number);
+    for (let i = 0; i < 3; i++) { if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0); }
+    return true;
+  };
+
+  test('the installed iOS source checks start()\'s result and rejects when it is false', () => {
+    assert.match(swift, /guard authSession\?\.start\(\) == true else \{\s*\n\s*promise\.reject\(WebAuthSessionFailedToStartException\(\)\)/);
+    // The failure mode itself: a bare, unchecked start() followed by holding the promise.
+    assert.doesNotMatch(swift, /^\s*authSession\?\.start\(\)\s*$/m);
+  });
+
+  test('installed version is 55.0.19 or later, and package.json cannot resolve below it', () => {
+    assert.ok(semverGte(pkg.version, '55.0.19'), `installed ${pkg.version}`);
+    const range = JSON.parse(readRepo('package.json')).dependencies['expo-web-browser'] as string;
+    assert.ok(semverGte(range.replace(/^[~^]/, ''), '55.0.19'), `range ${range}`);
+  });
+
+  test('the fixed exception exists natively', () => {
+    assert.match(readRepo('node_modules/expo-web-browser/ios/WebBrowserExceptions.swift'), /WebAuthSessionFailedToStartException/);
   });
 });

@@ -48,7 +48,23 @@ const HOSTED_TIMEOUT_REASONS = ['challenge_timeout', 'script_load_timeout'];
 
 export type TurnstileResult =
   | { ok: true; token: string }
-  | { ok: false; reason: 'cancelled' | 'no_token' | 'challenge_failed' | 'timeout' };
+  | { ok: false; reason: 'cancelled' | 'no_token' | 'challenge_failed' | 'timeout' | 'unavailable' };
+
+/**
+ * True when the NATIVE module refused to start the auth session at all.
+ * expo-web-browser 55.0.19+ rejects with WebAuthSessionFailedToStartException
+ * when ASWebAuthenticationSession.start() returns false. Older versions ignored
+ * that result and left the promise pending for ever — which is how a sign-in
+ * spinner could run until the 30s ceiling with no stage after
+ * captcha_session_started. Kept as its own reason ('unavailable') so it can be
+ * told apart from a hosted-page failure in diagnostics; the person still just
+ * sees the ordinary "couldn't complete the check" message and can retry.
+ */
+function isSessionFailedToStart(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null | undefined;
+  return e?.code === 'ERR_WEB_AUTH_SESSION_FAILED_TO_START'
+    || (typeof e?.message === 'string' && /authentication session could not be started/i.test(e.message));
+}
 
 /**
  * Ends any native auth session still pending. The iOS module throws
@@ -110,7 +126,7 @@ async function runChallenge(startedAt: number): Promise<TurnstileResult> {
     return { ok: true, token };
   } catch (err) {
     console.warn('[OneShetland] Challenge session failed to run:', err);
-    return { ok: false, reason: 'challenge_failed' };
+    return { ok: false, reason: isSessionFailedToStart(err) ? 'unavailable' : 'challenge_failed' };
   }
 }
 
