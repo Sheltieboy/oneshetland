@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,16 +18,27 @@ import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { getTurnstileToken } from '@/lib/turnstile';
+import { useAlert } from '@/components/BrandedAlert';
+import { logAuthStage } from '@/lib/auth-diagnostics';
+
+// One wording for every "an auth stage ran out of time" outcome — the challenge
+// deadline and the Supabase deadline alike.
+const TIMEOUT_ALERT = {
+  title: 'Sign in is taking too long',
+  message: 'Please check your connection and try again. If the problem continues, close and reopen OneShetland.',
+};
 
 export default function SignInScreen() {
   const router = useRouter();
   const { next } = useLocalSearchParams<{ next?: string }>();
   const { signIn } = useAuth();
+  const { alert } = useAlert();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submitting = useRef(false);
 
   async function handleSignIn() {
     setError(null);
@@ -41,34 +52,56 @@ export default function SignInScreen() {
       return;
     }
 
+    // The keyboard's "done" key and the button both land here; a second
+    // submit while one is pending would dismiss the first one's challenge.
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
+    logAuthStage('auth_submit_started');
 
-    // A verification check runs before every sign-in attempt — there is no
-    // path below that calls signIn without a fresh token. Cancelling or
-    // failing the check simply stops here with a clear message; it never
-    // silently falls back to an unprotected sign-in.
-    const turnstile = await getTurnstileToken();
-    if (!turnstile.ok) {
-      setLoading(false);
-      setError(
-        turnstile.reason === 'cancelled'
-          ? 'Verification was cancelled. Please try again to sign in.'
-          : "Couldn't complete the verification check. Please try again.",
-      );
-      return;
-    }
-
-    const { error: authError } = await signIn(email.trim().toLowerCase(), password, turnstile.token);
-    setLoading(false);
-
-    if (authError) {
-      if (authError.includes('Invalid login credentials')) {
-        setError('Email address or password is incorrect. Please try again.');
-      } else if (authError.includes('Email not confirmed')) {
-        setError('Please confirm your email address first. Check your inbox for a verification link.');
-      } else {
-        setError(authError);
+    // `finally` is what guarantees the spinner clears: every await below is
+    // bounded, but nothing here may ever leave `loading` set on a throw.
+    try {
+      // A verification check runs before every sign-in attempt — there is no
+      // path below that calls signIn without a fresh token. Cancelling or
+      // failing the check simply stops here with a clear message; it never
+      // silently falls back to an unprotected sign-in.
+      const turnstile = await getTurnstileToken();
+      if (!turnstile.ok) {
+        if (turnstile.reason === 'timeout') {
+          // The button is restored by `finally` in the same tick this returns.
+          logAuthStage('auth_timed_out', { reason: 'captcha' });
+          alert(TIMEOUT_ALERT);
+        } else {
+          setError(
+            turnstile.reason === 'cancelled'
+              ? 'Verification was cancelled. Please try again to sign in.'
+              : "Couldn't complete the verification check. Please try again.",
+          );
+        }
+        return;
       }
+
+      const { error: authError, timedOut } = await signIn(email.trim().toLowerCase(), password, turnstile.token);
+
+      if (timedOut) {
+        alert(TIMEOUT_ALERT);
+      } else if (authError) {
+        if (authError.includes('Invalid login credentials')) {
+          setError('Email address or password is incorrect. Please try again.');
+        } else if (authError.includes('Email not confirmed')) {
+          setError('Please confirm your email address first. Check your inbox for a verification link.');
+        } else {
+          setError(authError);
+        }
+      }
+    } catch (err) {
+      console.warn('[OneShetland] Sign-in failed unexpectedly:', err);
+      logAuthStage('auth_failed', { reason: 'exception' });
+      setError('Something went wrong signing in. Please try again.');
+    } finally {
+      submitting.current = false;
+      setLoading(false);
     }
   }
 

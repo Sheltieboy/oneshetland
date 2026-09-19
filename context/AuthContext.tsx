@@ -10,6 +10,11 @@ import { supabase } from '@/lib/supabase';
 import { Profile } from '@/types/database';
 import { registerPushToken, clearPushToken } from '@/lib/notifications';
 import { emailConfirmationRedirectTo } from '@/lib/auth-redirect';
+import { withDeadline, TIMED_OUT } from '@/lib/with-deadline';
+import { logAuthStage } from '@/lib/auth-diagnostics';
+import { classifyAuthError } from '@/lib/auth-stage';
+
+const SIGN_IN_TIMEOUT_MS = 30_000;
 
 interface AuthContextType {
   session: Session | null;
@@ -25,7 +30,8 @@ interface AuthContextType {
   isDriver: boolean;
   /** True once the user has applied (pending/approved/rejected/suspended) — i.e. the Driver area is relevant to them. */
   hasAppliedToDrive: boolean;
-  signIn: (email: string, password: string, captchaToken: string) => Promise<{ error: string | null }>;
+  /** `timedOut` is set only when the request outlived SIGN_IN_TIMEOUT_MS. */
+  signIn: (email: string, password: string, captchaToken: string) => Promise<{ error: string | null; timedOut?: boolean }>;
   signUp: (
     email: string,
     password: string,
@@ -48,13 +54,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const bootstrapStartedAt = Date.now();
+    logAuthStage('session_bootstrap_started', { phase: 'launch' });
     supabase.auth.getSession().then(({ data: { session } }) => {
+      logAuthStage('session_bootstrap_completed', {
+        phase: 'launch',
+        reason: session ? 'restored' : 'no_session',
+        elapsedMs: Date.now() - bootstrapStartedAt,
+      });
       setSession(session);
       if (session) {
         fetchProfile(session.user.id);
       } else {
         setLoading(false);
       }
+    }).catch((err) => {
+      // A failed storage read must read as "signed out", never as "still
+      // loading" — `loading` gates the whole navigator.
+      console.error('[OneShetland] getSession failed:', err);
+      logAuthStage('session_bootstrap_completed', {
+        phase: 'launch',
+        reason: 'error',
+        elapsedMs: Date.now() - bootstrapStartedAt,
+      });
+      setLoading(false);
     });
 
     const {
@@ -74,6 +97,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   async function fetchProfile(userId: string) {
+    const startedAt = Date.now();
+    logAuthStage('session_bootstrap_started', { phase: 'profile' });
+    let bootstrapReason: 'ok' | 'error' = 'ok';
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -82,6 +108,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         .single();
 
       if (error) {
+        bootstrapReason = 'error';
         console.error('[OneShetland] Profile fetch error:', error.message);
       } else {
         setProfile(data as Profile);
@@ -99,8 +126,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
         .maybeSingle();
       setDriverStatus((dp?.driver_status as string | undefined) ?? null);
     } catch (err) {
+      bootstrapReason = 'error';
       console.error('[OneShetland] Profile fetch exception:', err);
     } finally {
+      logAuthStage('session_bootstrap_completed', {
+        phase: 'profile',
+        reason: bootstrapReason,
+        elapsedMs: Date.now() - startedAt,
+      });
       setLoading(false);
     }
   }
@@ -115,12 +148,36 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // Required once Supabase Auth's CAPTCHA enforcement is turned on. The
     // caller is responsible for obtaining a fresh, unused token before
     // calling signIn — there is no path here that calls the API without one.
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-      options: { captchaToken },
-    });
-    return { error: error?.message ?? null };
+    //
+    // Bounded: supabase-js sets no request timeout, so a stalled connection
+    // would otherwise hold the caller's spinner until the OS gives up.
+    const startedAt = Date.now();
+    logAuthStage('supabase_signin_started');
+    try {
+      const result = await withDeadline(
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+          options: { captchaToken },
+        }),
+        SIGN_IN_TIMEOUT_MS,
+      );
+      if (result === TIMED_OUT) {
+        logAuthStage('auth_timed_out', { reason: 'supabase_deadline', elapsedMs: Date.now() - startedAt });
+        return {
+          error: 'Sign-in is taking too long. Check your connection and try again.',
+          timedOut: true,
+        };
+      }
+      // The request came back. Only the bucket is logged, never the message.
+      const reason = classifyAuthError(result.error?.message);
+      logAuthStage('supabase_signin_completed', { reason, elapsedMs: Date.now() - startedAt });
+      if (reason !== 'ok') logAuthStage('auth_failed', { reason, elapsedMs: Date.now() - startedAt });
+      return { error: result.error?.message ?? null };
+    } catch (err) {
+      logAuthStage('auth_failed', { reason: 'exception', elapsedMs: Date.now() - startedAt });
+      return { error: err instanceof Error ? err.message : 'Sign-in failed. Please try again.' };
+    }
   }
 
   async function signUp(email: string, password: string, fullName: string, captchaToken: string, phone?: string, marketingOptIn = false, next?: string) {
