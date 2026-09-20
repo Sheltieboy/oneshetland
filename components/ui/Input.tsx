@@ -41,33 +41,45 @@ interface InputProps extends TextInputProps {
   error?: string;
   hint?: string;
   containerStyle?: ViewStyle;
+  /** Rendered inside the field, on the right (e.g. a show/hide-password toggle). */
+  rightElement?: React.ReactNode;
 }
 
-export function Input({ label, error, hint, containerStyle, ...props }: InputProps) {
+export function Input({ label, error, hint, containerStyle, rightElement, ...props }: InputProps) {
   const [focused, setFocused] = useState(false);
+
+  const field = (
+    <TextInput
+      {...props}
+      inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
+      style={[
+        styles.input,
+        rightElement ? styles.inputWithRight : null,
+        focused && styles.inputFocused,
+        error && styles.inputError,
+        props.style,
+      ]}
+      placeholderTextColor={colors.textLight}
+      onFocus={(e) => {
+        setFocused(true);
+        props.onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        setFocused(false);
+        props.onBlur?.(e);
+      }}
+    />
+  );
 
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={styles.label}>{label}</Text>}
-      <TextInput
-        {...props}
-        inputAccessoryViewID={Platform.OS === 'ios' ? ACCESSORY_ID : undefined}
-        style={[
-          styles.input,
-          focused && styles.inputFocused,
-          error && styles.inputError,
-          props.style,
-        ]}
-        placeholderTextColor={colors.textLight}
-        onFocus={(e) => {
-          setFocused(true);
-          props.onFocus?.(e);
-        }}
-        onBlur={(e) => {
-          setFocused(false);
-          props.onBlur?.(e);
-        }}
-      />
+      {rightElement ? (
+        <View>
+          {field}
+          <View style={styles.rightSlot}>{rightElement}</View>
+        </View>
+      ) : field}
       {error && <Text style={styles.errorText}>{error}</Text>}
       {hint && !error && <Text style={styles.hint}>{hint}</Text>}
     </View>
@@ -93,6 +105,16 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     color: colors.textPrimary,
     backgroundColor: colors.white,
+  },
+  inputWithRight: {
+    paddingRight: 52,
+  },
+  rightSlot: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   inputFocused: {
     borderColor: colors.borderFocus,

@@ -11,6 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +21,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import { getTurnstileToken } from '@/lib/turnstile';
 import { useAlert } from '@/components/BrandedAlert';
 import { logAuthStage } from '@/lib/auth-diagnostics';
+import { passwordVisibility } from '@/lib/password-visibility';
 
 // One wording for every "an auth stage ran out of time" outcome — the challenge
 // deadline and the Supabase deadline alike.
@@ -38,7 +40,15 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Hidden by default, never persisted: a remount always starts hidden again.
+  const [showPassword, setShowPassword] = useState(false);
+  const pw = passwordVisibility(showPassword);
   const submitting = useRef(false);
+
+  // Only flips the mask. It never reads, writes or copies the password value.
+  function togglePasswordVisibility() {
+    setShowPassword((visible) => !visible);
+  }
 
   async function handleSignIn() {
     setError(null);
@@ -166,10 +176,21 @@ export default function SignInScreen() {
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Your password"
-                secureTextEntry
+                secureTextEntry={pw.secureTextEntry}
                 autoComplete="password"
                 returnKeyType="done"
                 onSubmitEditing={handleSignIn}
+                rightElement={
+                  <TouchableOpacity
+                    onPress={togglePasswordVisibility}
+                    style={styles.passwordToggle}
+                    accessibilityRole="button"
+                    accessibilityLabel={pw.accessibilityLabel}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <FontAwesome5 name={pw.icon} size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                }
               />
             </View>
 
@@ -290,6 +311,8 @@ const styles = StyleSheet.create({
   fields: { gap: spacing.xs, marginBottom: spacing.sm },
 
   submitBtn: { marginTop: spacing.md },
+  // 48pt wide, full field height: a comfortable target, and it sits inside the field.
+  passwordToggle: { width: 48, height: '100%', alignItems: 'center', justifyContent: 'center' },
   forgotBtn: { alignSelf: 'center', paddingVertical: spacing.md },
   forgotText: { color: colors.navy, fontSize: fontSize.sm, fontWeight: '600' },
 
