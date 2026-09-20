@@ -8,6 +8,9 @@
  *   phase       one of AUTH_PHASES
  *   reason      one of AUTH_REASONS
  *   elapsed_ms  a whole number of milliseconds
+ *   attempt     1 or 2 — which try of the verification session this was
+ *   keyboard    'visible' | 'hidden' — was the keyboard up when the check began
+ *   app_state   'active' | 'inactive' | 'background'
  * Anything else a caller passes is dropped, and a phase/reason outside the
  * lists is dropped rather than passed through — so an email address, a
  * password, a Turnstile token, an access/refresh token, a session object, an
@@ -18,6 +21,8 @@
 export const AUTH_STAGES = [
   'auth_submit_started',
   'captcha_session_started',
+  // The native session refused to start and the check is being tried once more.
+  'captcha_session_retry',
   'captcha_session_completed',
   'captcha_failed',
   'captcha_timed_out',
@@ -42,13 +47,27 @@ export const AUTH_REASONS = [
   'no_session', 'restored', 'error',
 ] as const;
 
+export const AUTH_ATTEMPTS = [1, 2] as const;
+export const AUTH_KEYBOARD_STATES = ['visible', 'hidden'] as const;
+export const AUTH_APP_STATES = ['active', 'inactive', 'background'] as const;
+
 export interface AuthStageDetail {
   phase?: (typeof AUTH_PHASES)[number];
   reason?: (typeof AUTH_REASONS)[number];
   elapsedMs?: number;
+  attempt?: (typeof AUTH_ATTEMPTS)[number];
+  keyboard?: (typeof AUTH_KEYBOARD_STATES)[number];
+  appState?: (typeof AUTH_APP_STATES)[number];
 }
 
-export type AuthStageProps = { phase?: string; reason?: string; elapsed_ms?: number };
+export type AuthStageProps = {
+  phase?: string;
+  reason?: string;
+  elapsed_ms?: number;
+  attempt?: number;
+  keyboard?: string;
+  app_state?: string;
+};
 
 /** Reduces whatever was passed to the allow-listed, non-sensitive props. */
 export function authStageProps(detail?: unknown): AuthStageProps {
@@ -60,6 +79,9 @@ export function authStageProps(detail?: unknown): AuthStageProps {
   if (typeof d.elapsedMs === 'number' && Number.isFinite(d.elapsedMs) && d.elapsedMs >= 0) {
     out.elapsed_ms = Math.round(d.elapsedMs);
   }
+  if ((AUTH_ATTEMPTS as readonly unknown[]).includes(d.attempt)) out.attempt = d.attempt as number;
+  if ((AUTH_KEYBOARD_STATES as readonly unknown[]).includes(d.keyboard)) out.keyboard = d.keyboard as string;
+  if ((AUTH_APP_STATES as readonly unknown[]).includes(d.appState)) out.app_state = d.appState as string;
   return out;
 }
 

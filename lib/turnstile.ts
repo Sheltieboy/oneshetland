@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, Keyboard, AppState } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { withDeadline, TIMED_OUT } from './with-deadline';
 import { logAuthStage } from './auth-diagnostics';
@@ -83,18 +83,80 @@ function releaseAuthSession(): void {
 }
 
 /**
+ * The one automatic retry of a native session that would not start. iOS 27
+ * devices were observed failing the FIRST start() in ~8ms and succeeding on the
+ * person's second tap, seconds later. Long enough for the keyboard's hide
+ * animation (~250-300ms) and a couple of frames to finish, short enough to read
+ * as the sheet opening after a beat. Not tuned against an iOS 27 device — the
+ * captcha_session_retry / attempt=2 diagnostics show whether it is enough.
+ */
+export const SESSION_RETRY_DELAY_MS = 450;
+
+/** Upper bound on waiting for the keyboard to finish hiding before presenting. */
+const KEYBOARD_SETTLE_MAX_MS = 500;
+
+/** Best-effort UI state for diagnostics; never throws, never sensitive. */
+function presentationState(): { keyboard: 'visible' | 'hidden'; appState: 'active' | 'inactive' | 'background' } {
+  let keyboard: 'visible' | 'hidden' = 'hidden';
+  let appState: 'active' | 'inactive' | 'background' = 'active';
+  try { if (Keyboard.isVisible()) keyboard = 'visible'; } catch { /* unknown → hidden */ }
+  try {
+    const s = AppState.currentState;
+    if (s === 'active' || s === 'inactive' || s === 'background') appState = s;
+  } catch { /* unknown → active */ }
+  return { keyboard, appState };
+}
+
+/**
+ * ASWebAuthenticationSession is anchored to UIApplication.keyWindow. Pressing
+ * Sign in leaves the password field focused, so the keyboard (and its Done bar)
+ * is still up in the same tick the session starts. Put the keyboard away and
+ * wait — bounded, never hanging — for it to finish hiding before presenting.
+ * iOS only, and a no-op when no keyboard is showing.
+ */
+async function settleKeyboard(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    if (!Keyboard.isVisible()) return;
+  } catch {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    let sub: { remove(): void } | undefined;
+    const finish = () => {
+      clearTimeout(timer);
+      try { sub?.remove(); } catch { /* already gone */ }
+      resolve();
+    };
+    const timer = setTimeout(finish, KEYBOARD_SETTLE_MAX_MS);
+    try {
+      sub = Keyboard.addListener('keyboardDidHide', finish);
+      Keyboard.dismiss();
+    } catch {
+      finish();
+    }
+  });
+}
+
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
  * Opens the hosted challenge and interprets what comes back. Never throws and
  * always settles — see getTurnstileToken. Timeouts are logged here, where the
  * source (this app's deadline vs the hosted page) is known; every other outcome
  * is logged once by getTurnstileToken.
+ *
+ * The 30s ceiling is for the whole check, not per attempt: a retry only gets
+ * whatever is left of it.
  */
 async function runChallenge(startedAt: number): Promise<TurnstileResult> {
   try {
     releaseAuthSession();
 
+    const budgetLeft = Math.max(0, CHALLENGE_TIMEOUT_MS - (Date.now() - startedAt));
     const result = await withDeadline(
       WebBrowser.openAuthSessionAsync(CHALLENGE_URL, RETURN_URL),
-      CHALLENGE_TIMEOUT_MS,
+      budgetLeft,
       releaseAuthSession,
     );
     if (result === TIMED_OUT) {
@@ -140,16 +202,37 @@ async function runChallenge(startedAt: number): Promise<TurnstileResult> {
  * It always settles: within CHALLENGE_TIMEOUT_MS, and it never throws — a
  * native rejection becomes `challenge_failed` rather than leaving the caller's
  * spinner running.
+ *
+ * Exactly ONE automatic retry, and only for `unavailable` — the native session
+ * refusing to start at all. Nothing else is retried: not a cancel, a hosted-page
+ * failure, an expired/invalid token or a timeout. The retry opens a brand-new
+ * session and needs its own genuine token; there is still no path to ok:true
+ * without one.
  */
 export async function getTurnstileToken(): Promise<TurnstileResult> {
   const startedAt = Date.now();
-  logAuthStage('captcha_session_started');
-  const result = await runChallenge(startedAt);
+  const ui = presentationState();
+  logAuthStage('captcha_session_started', { keyboard: ui.keyboard, appState: ui.appState });
+
+  await settleKeyboard();
+  let result = await runChallenge(startedAt);
+  let attempt: 1 | 2 = 1;
+
+  if (!result.ok && result.reason === 'unavailable') {
+    attempt = 2;
+    logAuthStage('captcha_session_retry', { reason: 'unavailable', attempt: 2, elapsedMs: Date.now() - startedAt });
+    releaseAuthSession();
+    await settleKeyboard();
+    await pause(SESSION_RETRY_DELAY_MS);
+    result = await runChallenge(startedAt);
+  }
+
   const elapsedMs = Date.now() - startedAt;
+  const tried = attempt === 2 ? { attempt: 2 as const } : {};
   if (result.ok) {
-    logAuthStage('captcha_session_completed', { elapsedMs });
+    logAuthStage('captcha_session_completed', { elapsedMs, ...tried });
   } else if (result.reason !== 'timeout') {
-    logAuthStage('captcha_failed', { reason: result.reason, elapsedMs });
+    logAuthStage('captcha_failed', { reason: result.reason, elapsedMs, ...tried });
   }
   return result;
 }

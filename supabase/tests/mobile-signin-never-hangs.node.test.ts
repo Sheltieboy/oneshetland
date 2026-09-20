@@ -46,20 +46,65 @@ const timers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeo
 
 type Log = [string, Record<string, unknown> | undefined];
 
+/** A fake react-native Keyboard: tests decide when (or whether) it finishes hiding. */
+function fakeKeyboard(visible = false) {
+  const st = { visible, dismissed: 0, removed: 0, hideListeners: [] as (() => void)[] };
+  const api = {
+    isVisible: () => st.visible,
+    dismiss: () => { st.dismissed++; },
+    addListener: (_ev: string, cb: () => void) => {
+      st.hideListeners.push(cb);
+      return { remove: () => { st.removed++; } };
+    },
+  };
+  const hide = () => { st.visible = false; st.hideListeners.forEach((f) => f()); };
+  return { st, api, hide };
+}
+
 /** The REAL lib/turnstile.ts, with the native browser and the logger faked. */
-function makeTurnstile(open: () => Promise<unknown>, os = 'ios') {
+function makeTurnstile(
+  open: () => Promise<unknown>,
+  os = 'ios',
+  ui: { keyboard?: ReturnType<typeof fakeKeyboard>; appState?: string; logger?: (s: string, d?: Record<string, unknown>) => void } = {},
+) {
   const logs: Log[] = [];
   const native = { dismissals: 0, opens: 0 };
   const mod = loadModule('lib/turnstile.ts', {
-    'react-native': { Platform: { OS: os } },
+    'react-native': {
+      Platform: { OS: os },
+      Keyboard: (ui.keyboard ?? fakeKeyboard(false)).api,
+      AppState: { currentState: ui.appState ?? 'active' },
+    },
     'expo-web-browser': {
       openAuthSessionAsync: () => { native.opens++; return open(); },
       dismissAuthSession: () => { native.dismissals++; },
     },
     './with-deadline': { withDeadline, TIMED_OUT },
-    './auth-diagnostics': { logAuthStage: (s: string, d?: Record<string, unknown>) => logs.push([s, d]) },
+    './auth-diagnostics': {
+      logAuthStage: (s: string, d?: Record<string, unknown>) => { logs.push([s, d]); ui.logger?.(s, d); },
+    },
   });
   return { mod, logs, native };
+}
+
+/**
+ * Runs `fn` to completion under MOCK timers, stepping through the retry pause.
+ * Each round lets pending microtasks run, then advances the mock clock by the
+ * retry delay. Bounded, so a hang fails the test instead of looping.
+ */
+async function drive<T>(t: { mock: { timers: { tick(ms: number): void } } }, fn: () => Promise<T>, stepMs = 450): Promise<T> {
+  let done = false;
+  let value: T | undefined;
+  let failure: unknown;
+  fn().then((v) => { value = v; done = true; }, (e) => { failure = e; done = true; });
+  for (let i = 0; i < 8 && !done; i++) {
+    await flush();
+    t.mock.timers.tick(stepMs);
+  }
+  await flush();
+  assert.ok(done, 'the check did not settle');
+  if (failure) throw failure;
+  return value as T;
 }
 
 const hostedReturn = (qs: string) => ({ type: 'success', url: `oneshetland-fetch://turnstile-callback?${qs}` });
@@ -193,6 +238,9 @@ describe('8. the challenge/auth-session stage is bounded at 30 seconds', () => {
     const { mod } = makeTurnstile(() => new Promise(() => {}));
     let settled: any;
     void mod.getTurnstileToken().then((r: unknown) => { settled = r; });
+    // UPDATE — the helper now yields once (keyboard settle) before it opens the
+    // session and arms the deadline, so let it get there before moving the clock.
+    await flush();
     t.mock.timers.tick(30_000);
     await flush();
     assert.equal(settled.ok, false);
@@ -205,7 +253,10 @@ describe('8. the challenge/auth-session stage is bounded at 30 seconds', () => {
     // Each is used only for its own stage.
     assert.doesNotMatch(code(AUTH_CTX_SRC), /CHALLENGE_TIMEOUT_MS/);
     assert.doesNotMatch(code(TURNSTILE_SRC), /SIGN_IN_TIMEOUT_MS/);
-    assert.match(code(TURNSTILE_SRC), /withDeadline\(\s*WebBrowser\.openAuthSessionAsync\(CHALLENGE_URL, RETURN_URL\),\s*CHALLENGE_TIMEOUT_MS,/);
+    // UPDATE — the ceiling is for the whole check, so an automatic retry draws on
+    // whatever is left of CHALLENGE_TIMEOUT_MS instead of getting a fresh 30s.
+    assert.match(code(TURNSTILE_SRC), /const budgetLeft = Math\.max\(0, CHALLENGE_TIMEOUT_MS - \(Date\.now\(\) - startedAt\)\);/);
+    assert.match(code(TURNSTILE_SRC), /withDeadline\(\s*WebBrowser\.openAuthSessionAsync\(CHALLENGE_URL, RETURN_URL\),\s*budgetLeft,/);
     assert.match(code(AUTH_CTX_SRC), /SIGN_IN_TIMEOUT_MS,?\s*\)/);
   });
 
@@ -663,7 +714,9 @@ describe('auth-stage diagnostics', () => {
     } finally { cap.restore(); }
     for (const [name, props] of cap.tracked) {
       assert.ok((AUTH_STAGES as readonly string[]).includes(name), name);
-      for (const k of Object.keys(props)) assert.ok(['phase', 'reason', 'elapsed_ms'].includes(k), `${name}: ${k}`);
+      // UPDATE — attempt / keyboard / app_state are fixed-vocabulary UI facts
+      // (see auth-stage.ts); still nothing free-form can appear.
+      for (const k of Object.keys(props)) assert.ok(['phase', 'reason', 'elapsed_ms', 'attempt', 'keyboard', 'app_state'].includes(k), `${name}: ${k}`);
     }
   });
 
@@ -705,7 +758,7 @@ describe('auth-stage diagnostics', () => {
         if (m[2]) {
           assert.doesNotMatch(m[2], forbidden, `${f}: ${m[1]} passes something sensitive: ${m[2]}`);
           const keys = [...m[2].matchAll(/^\s*(\w+):/gm)].map((k) => k[1]);
-          for (const k of keys) assert.ok(['phase', 'reason', 'elapsedMs'].includes(k), `${f}: ${m[1]} key ${k}`);
+          for (const k of keys) assert.ok(['phase', 'reason', 'elapsedMs', 'attempt', 'keyboard', 'appState'].includes(k), `${f}: ${m[1]} key ${k}`);
         }
       }
     }
@@ -784,21 +837,27 @@ describe('a native auth session that cannot start', () => {
     code: 'ERR_WEB_AUTH_SESSION_FAILED_TO_START',
   });
 
-  test('settles immediately as `unavailable` — no 30s wait, no timer left running, never a token', async () => {
+  // UPDATE — a start failure is now retried ONCE (see "one automatic retry"
+  // below). What these two still pin is the END STATE when it keeps failing:
+  // fast, distinct, never a token, no 30s wait, nothing left running.
+  test('a start failure that persists ends as `unavailable` — fast, never a token, no timer left running', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     const before = timers();
     const { mod, logs, native } = makeTurnstile(() => Promise.reject(failedToStart()));
-    const r = await mod.getTurnstileToken();
+    const r: any = await drive(t, () => mod.getTurnstileToken());
     assert.deepEqual(r, { ok: false, reason: 'unavailable' });
     assert.ok(!('token' in r));
-    assert.equal(native.opens, 1);
-    assert.deepEqual(logs.map((l) => l[0]), ['captcha_session_started', 'captcha_failed']);
-    assert.equal(logs[1][1]?.reason, 'unavailable');
+    assert.equal(native.opens, 2, 'the first try and exactly one retry');
+    assert.deepEqual(logs.map((l) => l[0]), ['captcha_session_started', 'captcha_session_retry', 'captcha_failed']);
+    assert.equal(logs[2][1]?.reason, 'unavailable');
     assert.equal(timers(), before, 'the deadline timer is cleared');
   });
 
-  test('recognised by message alone too, in case a wrapper drops the error code', async () => {
-    const { mod } = makeTurnstile(() => Promise.reject(new Error('The authentication session could not be started.')));
-    assert.deepEqual(await mod.getTurnstileToken(), { ok: false, reason: 'unavailable' });
+  test('recognised by message alone too, in case a wrapper drops the error code', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod, native } = makeTurnstile(() => Promise.reject(new Error('The authentication session could not be started.')));
+    assert.deepEqual(await drive(t, () => mod.getTurnstileToken()), { ok: false, reason: 'unavailable' });
+    assert.equal(native.opens, 2, 'message-only recognition still earns the one retry');
   });
 
   test('any OTHER native rejection stays an ordinary challenge failure', async () => {
@@ -812,6 +871,7 @@ describe('a native auth session that cannot start', () => {
     const { mod } = makeTurnstile(() => new Promise(() => {}));
     let settled: any = null;
     void mod.getTurnstileToken().then((r: unknown) => { settled = r; });
+    await flush(); // UPDATE — see above: the deadline is armed one microtask later now
     t.mock.timers.tick(30_000);
     await flush();
     assert.deepEqual(settled, { ok: false, reason: 'timeout' });
@@ -832,12 +892,13 @@ describe('a native auth session that cannot start', () => {
     assert.equal(submitting.current, false);
   });
 
-  test('sensitive values never reach a diagnostic sink on this path', async () => {
-    const logs: Log[] = [];
-    const { mod } = makeTurnstile(() => Promise.reject(failedToStart()));
-    await mod.getTurnstileToken();
-    const s = JSON.stringify(logs);
-    assert.doesNotMatch(s, /token|password|email|session/i);
+  test('sensitive values never reach a diagnostic sink on this path', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod, logs } = makeTurnstile(() => Promise.reject(failedToStart()));
+    await drive(t, () => mod.getTurnstileToken());
+    assert.ok(logs.length >= 3, 'the sequence was actually recorded');
+    // (Stage NAMES contain "captcha_session"; only the props are inspected.)
+    assert.doesNotMatch(JSON.stringify(logs.map((l) => l[1] ?? {})), /token|password|email|session/i);
   });
 });
 
@@ -864,5 +925,338 @@ describe('the native module the TestFlight build embeds must not ignore ASWebAut
 
   test('the fixed exception exists natively', () => {
     assert.match(readRepo('node_modules/expo-web-browser/ios/WebBrowserExceptions.swift'), /WebAuthSessionFailedToStartException/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BUILD 144 ACCEPTANCE FINDING — 20 Sep 2026, iPhone on iOS 27.
+
+   With expo-web-browser 55.0.20 the old indefinite spinner is gone, but the
+   FIRST native start() fails immediately and the person must tap Sign in twice.
+   Production diagnostics, twice (03:52 and 10:49 UTC):
+     captcha_session_started → captcha_failed reason=unavailable (8-9ms)
+     … second tap: session opens, captcha_session_completed, sign-in ok.
+   Both were the first native session after a cold launch, from a screen with
+   the keyboard up. That the keyboard / same-tick launch is the cause is a
+   HYPOTHESIS: it cannot be reproduced on the only simulator available (iOS
+   26.5). So the fix is two layers — remove the candidate race (dismiss the
+   keyboard and let it finish hiding before presenting) and, whatever the
+   cause, ONE automatic retry of exactly the `unavailable` failure. The
+   captcha_session_retry / attempt=2 diagnostics show how common it is.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe('one automatic retry when the native session will not start', () => {
+  const failedToStart = () => Object.assign(new Error('The authentication session could not be started.'), {
+    code: 'ERR_WEB_AUTH_SESSION_FAILED_TO_START',
+  });
+  const good = (token = 'GENUINE-TOKEN') => async () => hostedReturn(`token=${token}`);
+  const refuse = () => Promise.reject(failedToStart());
+  /** The Nth open follows the Nth step; any extra open is another refusal (and is counted). */
+  const scripted = (steps: (() => Promise<unknown>)[]) => {
+    let i = 0;
+    return () => (steps[i++] ?? refuse)();
+  };
+  const RETRY_ERROR = "Couldn't complete the verification check. Please try again.";
+
+  test('1. first `unavailable`, then success → exactly one automatic retry, after the pause, and overall success', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod, native, logs } = makeTurnstile(scripted([refuse, good('GENUINE-TOKEN')]));
+    const delay = mod.SESSION_RETRY_DELAY_MS as number;
+    let out: any;
+    void mod.getTurnstileToken().then((r: unknown) => { out = r; });
+
+    await flush();
+    assert.equal(native.opens, 1, 'the first try was made');
+    assert.equal(out, undefined, 'still waiting out the pause');
+    assert.equal(native.dismissals, 2, 'the failed session was cleaned up (once before opening, once before the retry)');
+
+    t.mock.timers.tick(delay - 1);
+    await flush();
+    assert.equal(native.opens, 1, 'not retried before the pause is over');
+
+    t.mock.timers.tick(1);
+    await flush();
+    assert.equal(native.opens, 2, 'retried exactly once');
+    assert.deepEqual(out, { ok: true, token: 'GENUINE-TOKEN' });
+    assert.deepEqual(logs.map((l) => l[0]), ['captcha_session_started', 'captcha_session_retry', 'captcha_session_completed']);
+  });
+
+  test('2. first success → no retry, no pause', async () => {
+    const { mod, native, logs } = makeTurnstile(good('T1'));
+    assert.deepEqual(await mod.getTurnstileToken(), { ok: true, token: 'T1' });
+    assert.equal(native.opens, 1);
+    assert.deepEqual(logs.map((l) => l[0]), ['captcha_session_started', 'captcha_session_completed']);
+    assert.equal(logs[1][1]?.attempt, undefined, 'a first-try success carries no attempt marker');
+  });
+
+  test('3. two `unavailable` results → exactly two attempts, then the ordinary failure', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod, native, logs } = makeTurnstile(() => refuse());
+    assert.deepEqual(await drive(t, () => mod.getTurnstileToken()), { ok: false, reason: 'unavailable' });
+    assert.equal(native.opens, 2);
+    assert.deepEqual(logs.map((l) => l[0]), ['captcha_session_started', 'captcha_session_retry', 'captcha_failed']);
+    assert.equal(logs[2][1]?.attempt, 2, 'the final failure says it was after a retry');
+  });
+
+  test('4. no third attempt, however long we wait', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod, native } = makeTurnstile(() => refuse());
+    await drive(t, () => mod.getTurnstileToken());
+    t.mock.timers.tick(120_000);
+    await flush();
+    assert.equal(native.opens, 2);
+  });
+
+  test('5. user cancellation is never retried', async () => {
+    for (const result of [{ type: 'cancel' }, { type: 'dismiss' }]) {
+      const { mod, native, logs } = makeTurnstile(async () => result);
+      assert.deepEqual(await mod.getTurnstileToken(), { ok: false, reason: 'cancelled' });
+      assert.equal(native.opens, 1);
+      assert.ok(!logs.some((l) => l[0] === 'captcha_session_retry'));
+    }
+  });
+
+  test('6. challenge failure is never retried — hosted failure, expiry, script failure, no token, any other native error', async () => {
+    const cases: [() => Promise<unknown>, string][] = [
+      [async () => hostedReturn('error=challenge_failed'), 'challenge_failed'],
+      [async () => hostedReturn('error=challenge_expired'), 'challenge_failed'],
+      [async () => hostedReturn('error=script_load_failed'), 'challenge_failed'],
+      [async () => hostedReturn('error=init_failed'), 'challenge_failed'],
+      [async () => hostedReturn(''), 'no_token'],
+      [() => Promise.reject(new Error('some other native failure')), 'challenge_failed'],
+    ];
+    for (const [open, reason] of cases) {
+      const { mod, native, logs } = makeTurnstile(open);
+      assert.deepEqual(await mod.getTurnstileToken(), { ok: false, reason });
+      assert.equal(native.opens, 1, reason);
+      assert.ok(!logs.some((l) => l[0] === 'captcha_session_retry'), reason);
+    }
+  });
+
+  test('7. a timeout is never retried — hosted-page timeouts and the app deadline alike', async (t) => {
+    for (const reason of ['challenge_timeout', 'script_load_timeout']) {
+      const { mod, native } = makeTurnstile(async () => hostedReturn(`error=${reason}`));
+      assert.deepEqual(await mod.getTurnstileToken(), { ok: false, reason: 'timeout' });
+      assert.equal(native.opens, 1, reason);
+    }
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod, native, logs } = makeTurnstile(() => new Promise(() => {}));
+    let out: any;
+    void mod.getTurnstileToken().then((r: unknown) => { out = r; });
+    await flush();
+    t.mock.timers.tick(30_000);
+    await flush();
+    assert.deepEqual(out, { ok: false, reason: 'timeout' });
+    assert.equal(native.opens, 1);
+    assert.ok(!logs.some((l) => l[0] === 'captcha_session_retry'));
+  });
+
+  test('7b. the retry shares the 30s ceiling — the whole check is still bounded at 30s, not 30s + a fresh 30s', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const { mod, native } = makeTurnstile(scripted([refuse, () => new Promise(() => {})]));
+    const delay = mod.SESSION_RETRY_DELAY_MS as number;
+    let out: any = null;
+    void mod.getTurnstileToken().then((r: unknown) => { out = r; });
+    await flush();
+    t.mock.timers.tick(delay);
+    await flush();
+    assert.equal(native.opens, 2, 'the retry is now waiting on a session that never answers');
+    t.mock.timers.tick(30_000 - delay - 1);
+    await flush();
+    assert.equal(out, null, 'still waiting one millisecond before 30s from the start');
+    t.mock.timers.tick(1);
+    await flush();
+    assert.deepEqual(out, { ok: false, reason: 'timeout' });
+  });
+
+  test('8. a genuine token stays mandatory — the retry can only succeed WITH a token', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    // The retry's own token is what is returned.
+    const a = makeTurnstile(scripted([refuse, good('RETRY-TOKEN')]));
+    assert.deepEqual(await drive(t, () => a.mod.getTurnstileToken()), { ok: true, token: 'RETRY-TOKEN' });
+    // A retry that comes back without one is a failure, never a pass.
+    for (const [second, reason] of [
+      [async () => hostedReturn(''), 'no_token'],
+      [async () => hostedReturn('token='), 'no_token'],
+      [async () => ({ type: 'cancel' }), 'cancelled'],
+      [async () => hostedReturn('error=challenge_failed'), 'challenge_failed'],
+    ] as [() => Promise<unknown>, string][]) {
+      const b = makeTurnstile(scripted([refuse, second]));
+      const r: any = await drive(t, () => b.mod.getTurnstileToken());
+      assert.deepEqual(r, { ok: false, reason }, reason);
+      assert.ok(!('token' in r));
+    }
+    // And structurally: the only `ok: true` in the helper carries the parsed token.
+    const oks = code(TURNSTILE_SRC).match(/ok: true,[^}]*/g) ?? [];
+    assert.deepEqual(oks.map((x) => x.trim()), ['ok: true, token']);
+  });
+
+  test('9. Supabase sign-in runs only after CAPTCHA success — once, with the retry\'s own token; never after two failures', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const recovered = makeTurnstile(scripted([refuse, good('RETRY-TOKEN')]));
+    const s1 = makeScreen({ getTurnstileToken: recovered.mod.getTurnstileToken });
+    await drive(t, () => s1.run());
+    assert.equal(s1.state.signInCalls.length, 1);
+    assert.equal(s1.state.signInCalls[0][2], 'RETRY-TOKEN');
+
+    const failed = makeTurnstile(() => refuse());
+    const s2 = makeScreen({ getTurnstileToken: failed.mod.getTurnstileToken });
+    await drive(t, () => s2.run());
+    assert.equal(s2.state.signInCalls.length, 0, 'no token, no password authentication');
+  });
+
+  test('10. recovered → no failure banner, spinner cleared; failed twice → the existing message, button restored', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const recovered = makeTurnstile(scripted([refuse, good()]));
+    const ok = makeScreen({ getTurnstileToken: recovered.mod.getTurnstileToken });
+    await drive(t, () => ok.run());
+    assert.deepEqual(ok.state.errors, [null], 'the only setError is the reset at the start — the red banner never appeared');
+    assert.equal(ok.state.alerts.length, 0);
+    assert.deepEqual(ok.state.loading, [true, false]);
+
+    const failed = makeTurnstile(() => refuse());
+    const bad = makeScreen({ getTurnstileToken: failed.mod.getTurnstileToken });
+    await drive(t, () => bad.run());
+    assert.equal(bad.state.errors.at(-1), RETRY_ERROR);
+    assert.equal(bad.state.alerts.length, 0, 'not the timeout dialog — this failed fast');
+    assert.equal(lastLoading(bad.state), false);
+    assert.equal(bad.submitting.current, false, 'a second tap is accepted again');
+  });
+
+  test('11. sensitive values never reach a log, a sink or the console — on the retry path or the failure path', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const SECRETS = ['Person@Example.com', 'person@example.com', 'hunter2-secret', 'TOK-SECRET-XYZ', 'ACCESS-SECRET-111', 'REFRESH-SECRET-222', 'Bearer '];
+    const lines: string[] = [];
+    const tracked: unknown[] = [];
+    const consoleOut: string[] = [];
+    const orig = { log: console.log, warn: console.warn, error: console.error, info: console.info };
+    console.log = console.warn = console.error = console.info = ((...a: unknown[]) => consoleOut.push(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '))) as never;
+    const real = createAuthStageLogger({ log: (l) => lines.push(l), track: (n, p) => tracked.push([n, p]) });
+    try {
+      for (const steps of [[refuse, good('TOK-SECRET-XYZ')], [refuse, refuse]]) {
+        const { mod } = makeTurnstile(scripted(steps), 'ios', { logger: real });
+        const screen = makeScreen({
+          getTurnstileToken: mod.getTurnstileToken,
+          signIn: async () => ({ error: null }),
+          logs: [],
+        });
+        await drive(t, () => screen.run());
+      }
+    } finally { Object.assign(console, orig); }
+    const everything = JSON.stringify([lines, tracked, consoleOut]);
+    assert.ok(lines.length >= 6, 'the sequences were actually recorded');
+    for (const secret of SECRETS) assert.ok(!everything.includes(secret), `leaked: ${secret}`);
+  });
+
+  test('12. the retry diagnostic is emitted with exactly the allow-listed props', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const tracked: [string, Record<string, unknown>][] = [];
+    const lines: string[] = [];
+    const real = createAuthStageLogger({ log: (l) => lines.push(l), track: (n, p) => tracked.push([n, p as Record<string, unknown>]) });
+    const { mod } = makeTurnstile(scripted([refuse, good()]), 'ios', { logger: real });
+    await drive(t, () => mod.getTurnstileToken());
+    assert.deepEqual(tracked, [
+      ['captcha_session_started', { keyboard: 'hidden', app_state: 'active' }],
+      ['captcha_session_retry', { reason: 'unavailable', attempt: 2, elapsed_ms: 0 }],
+      ['captcha_session_completed', { elapsed_ms: 450, attempt: 2 }],
+    ]);
+    assert.ok(lines.includes('[OneShetland] auth:captcha_session_retry reason=unavailable elapsed_ms=0 attempt=2'));
+    assert.ok((AUTH_STAGES as readonly string[]).includes('captcha_session_retry'));
+  });
+
+  test('12b. attempt / keyboard / app_state are fixed vocabularies — anything free-form is dropped', () => {
+    assert.deepEqual(
+      authStageProps({ attempt: 2, keyboard: 'visible', appState: 'inactive', email: 'a@b.c' }),
+      { attempt: 2, keyboard: 'visible', app_state: 'inactive' },
+    );
+    assert.deepEqual(authStageProps({ attempt: 3 }), {});
+    assert.deepEqual(authStageProps({ attempt: '2' }), {});
+    assert.deepEqual(authStageProps({ keyboard: 'a@b.c', appState: 'Bearer x' }), {});
+  });
+
+  test('the retry is a single, guarded, loop-free branch of the helper — the delay is ~400-500ms', () => {
+    const src = code(TURNSTILE_SRC);
+    const body = src.slice(src.indexOf('export async function getTurnstileToken'));
+    assert.equal((body.match(/runChallenge\(startedAt\)/g) ?? []).length, 2, 'one try + one retry');
+    assert.match(body, /if \(!result\.ok && result\.reason === 'unavailable'\) \{/);
+    assert.doesNotMatch(body, /\b(while|for|do)\b\s*[({]/, 'no loop');
+    const delay = Number(/export const SESSION_RETRY_DELAY_MS = (\d+);/.exec(src)?.[1]);
+    assert.ok(delay >= 400 && delay <= 500, `delay ${delay}`);
+  });
+
+  test('the hosted challenge URL and callback scheme are unchanged and still configured', () => {
+    const src = code(TURNSTILE_SRC);
+    assert.match(src, /const CHALLENGE_URL = 'https:\/\/oneshetland\.com\/mobile-turnstile-challenge';/);
+    assert.match(src, /const RETURN_URL = 'oneshetland-fetch:\/\/turnstile-callback';/);
+    assert.equal(JSON.parse(readRepo('app.json')).expo.scheme, 'oneshetland-fetch');
+  });
+});
+
+describe('presentation timing — the keyboard is put away before the session is presented', () => {
+  test('a visible keyboard is dismissed and the launch waits for it to finish hiding', async () => {
+    const kb = fakeKeyboard(true);
+    const { mod, native, logs } = makeTurnstile(async () => hostedReturn('token=T'), 'ios', { keyboard: kb });
+    let out: any;
+    void mod.getTurnstileToken().then((r: unknown) => { out = r; });
+    await flush();
+    assert.equal(kb.st.dismissed, 1);
+    assert.equal(native.opens, 0, 'not launched while the keyboard is still on its way down');
+    kb.hide();
+    await flush();
+    assert.equal(native.opens, 1);
+    assert.deepEqual(out, { ok: true, token: 'T' });
+    assert.equal(kb.st.removed, 1, 'the listener is removed');
+    assert.equal(logs[0][1]?.keyboard, 'visible', 'what the state WAS is recorded');
+  });
+
+  test('if the keyboard never reports hiding, the wait is bounded (500ms) and the check proceeds', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    const kb = fakeKeyboard(true);
+    const { mod, native } = makeTurnstile(async () => hostedReturn('token=T'), 'ios', { keyboard: kb });
+    let out: any;
+    void mod.getTurnstileToken().then((r: unknown) => { out = r; });
+    await flush();
+    t.mock.timers.tick(499);
+    await flush();
+    assert.equal(native.opens, 0);
+    t.mock.timers.tick(1);
+    await flush();
+    assert.equal(native.opens, 1);
+    assert.equal(out.ok, true);
+    assert.equal(kb.st.removed, 1);
+  });
+
+  test('no keyboard → nothing is dismissed and there is no added wait', async () => {
+    const kb = fakeKeyboard(false);
+    const { mod, native } = makeTurnstile(async () => hostedReturn('token=T'), 'ios', { keyboard: kb });
+    assert.equal((await mod.getTurnstileToken()).ok, true);
+    assert.equal(kb.st.dismissed, 0);
+    assert.equal(native.opens, 1);
+  });
+
+  test('Android is untouched even with a keyboard up', async () => {
+    const kb = fakeKeyboard(true);
+    const { mod, native } = makeTurnstile(async () => hostedReturn('token=T'), 'android', { keyboard: kb });
+    assert.equal((await mod.getTurnstileToken()).ok, true);
+    assert.equal(kb.st.dismissed, 0);
+    assert.equal(native.opens, 1);
+  });
+
+  test('a keyboard/app-state API that throws can never break the check', async () => {
+    const boom = () => { throw new Error('nope'); };
+    const kb = fakeKeyboard(true);
+    kb.api.isVisible = boom as never;
+    const { mod, native, logs } = makeTurnstile(async () => hostedReturn('token=T'), 'ios', { keyboard: kb });
+    assert.equal((await mod.getTurnstileToken()).ok, true);
+    assert.equal(native.opens, 1);
+    assert.equal(logs[0][1]?.keyboard, 'hidden');
+  });
+
+  test('the app state at the start of the check is recorded', async () => {
+    for (const s of ['active', 'inactive', 'background']) {
+      const { mod, logs } = makeTurnstile(async () => hostedReturn('token=T'), 'ios', { appState: s });
+      await mod.getTurnstileToken();
+      assert.equal(logs[0][1]?.appState, s);
+    }
   });
 });
