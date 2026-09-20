@@ -95,16 +95,60 @@ export const SESSION_RETRY_DELAY_MS = 450;
 /** Upper bound on waiting for the keyboard to finish hiding before presenting. */
 const KEYBOARD_SETTLE_MAX_MS = 500;
 
-/** Best-effort UI state for diagnostics; never throws, never sensitive. */
-function presentationState(): { keyboard: 'visible' | 'hidden'; appState: 'active' | 'inactive' | 'background' } {
+type UiAppState = 'active' | 'inactive' | 'background' | 'unknown';
+type UiGate = 'active' | 'waited' | 'timeout';
+
+/**
+ * UI state right now, for diagnostics and the pre-open gate. Never throws,
+ * never sensitive. An unreadable app state is 'unknown' — deliberately not
+ * 'active', so a missing reading can never look like a good one.
+ */
+function presentationState(): { keyboard: 'visible' | 'hidden'; appState: UiAppState } {
   let keyboard: 'visible' | 'hidden' = 'hidden';
-  let appState: 'active' | 'inactive' | 'background' = 'active';
-  try { if (Keyboard.isVisible()) keyboard = 'visible'; } catch { /* unknown → hidden */ }
+  let appState: UiAppState = 'unknown';
+  try { if (Keyboard.isVisible()) keyboard = 'visible'; } catch { /* unreadable → hidden */ }
   try {
     const s = AppState.currentState;
     if (s === 'active' || s === 'inactive' || s === 'background') appState = s;
-  } catch { /* unknown → active */ }
+  } catch { /* unreadable → unknown */ }
   return { keyboard, appState };
+}
+
+/**
+ * How long to wait for the app to become `active` before presenting. Both
+ * failing first attempts on iOS 27 were sampled `inactive` at the press, and an
+ * early analytics flush (which only a non-active change triggers) shows the app
+ * left `active` ~2s before it. Tight on purpose: when the app is already
+ * active this costs nothing, and when it is not, waiting longer than this only
+ * delays the person — the single retry below is the backstop.
+ */
+export const ACTIVE_WAIT_MAX_MS = 1200;
+
+/**
+ * ASWebAuthenticationSession cannot present into an app that is not active.
+ * Resolves immediately when the app is active (or its state cannot be read),
+ * otherwise waits — bounded, never hanging — for the next `active` change.
+ * 'active' = no wait, 'waited' = became active, 'timeout' = still not active.
+ * iOS only.
+ */
+async function awaitActive(): Promise<UiGate> {
+  if (Platform.OS !== 'ios') return 'active';
+  const state = presentationState().appState;
+  if (state === 'active' || state === 'unknown') return 'active';
+  return new Promise<UiGate>((resolve) => {
+    let sub: { remove(): void } | undefined;
+    const finish = (outcome: UiGate) => {
+      clearTimeout(timer);
+      try { sub?.remove(); } catch { /* already gone */ }
+      resolve(outcome);
+    };
+    const timer = setTimeout(() => finish('timeout'), ACTIVE_WAIT_MAX_MS);
+    try {
+      sub = AppState.addEventListener('change', (next) => { if (next === 'active') finish('waited'); });
+    } catch {
+      finish('active');
+    }
+  });
 }
 
 /**
@@ -149,9 +193,20 @@ const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * The 30s ceiling is for the whole check, not per attempt: a retry only gets
  * whatever is left of it.
  */
-async function runChallenge(startedAt: number): Promise<TurnstileResult> {
+async function runChallenge(startedAt: number, attempt: 1 | 2, gate: UiGate): Promise<TurnstileResult> {
   try {
     releaseAuthSession();
+
+    // Sampled at the last moment before the native call: this is the state the
+    // native module actually sees, as opposed to the one at the button press.
+    const beforeOpen = presentationState();
+    logAuthStage('captcha_session_open', {
+      attempt,
+      appState: beforeOpen.appState,
+      keyboard: beforeOpen.keyboard,
+      gate,
+      elapsedMs: Date.now() - startedAt,
+    });
 
     const budgetLeft = Math.max(0, CHALLENGE_TIMEOUT_MS - (Date.now() - startedAt));
     const result = await withDeadline(
@@ -211,28 +266,49 @@ async function runChallenge(startedAt: number): Promise<TurnstileResult> {
  */
 export async function getTurnstileToken(): Promise<TurnstileResult> {
   const startedAt = Date.now();
-  const ui = presentationState();
-  logAuthStage('captcha_session_started', { keyboard: ui.keyboard, appState: ui.appState });
+  // Order matters for reading the diagnostics. This first sample is taken
+  // synchronously in the button-press tick: before setLoading has re-rendered,
+  // before the keyboard is dismissed, before any native call. It cannot be an
+  // effect of the auth session.
+  const atPress = presentationState();
+  logAuthStage('captcha_session_started', { keyboard: atPress.keyboard, appState: atPress.appState });
 
   await settleKeyboard();
-  let result = await runChallenge(startedAt);
+  let gate = await awaitActive();
+  let nativeFrom = Date.now();
+  let result = await runChallenge(startedAt, 1, gate);
+  let nativeMs = Date.now() - nativeFrom;
   let attempt: 1 | 2 = 1;
 
   if (!result.ok && result.reason === 'unavailable') {
     attempt = 2;
-    logAuthStage('captcha_session_retry', { reason: 'unavailable', attempt: 2, elapsedMs: Date.now() - startedAt });
+    // State just AFTER the first native call was refused, and how long that
+    // call took — a few ms means it was refused on the spot.
+    const afterFailure = presentationState();
+    logAuthStage('captcha_session_retry', {
+      reason: 'unavailable',
+      attempt: 2,
+      elapsedMs: Date.now() - startedAt,
+      nativeMs,
+      appState: afterFailure.appState,
+      keyboard: afterFailure.keyboard,
+    });
     releaseAuthSession();
     await settleKeyboard();
     await pause(SESSION_RETRY_DELAY_MS);
-    result = await runChallenge(startedAt);
+    gate = await awaitActive();
+    nativeFrom = Date.now();
+    result = await runChallenge(startedAt, 2, gate);
+    nativeMs = Date.now() - nativeFrom;
   }
 
   const elapsedMs = Date.now() - startedAt;
+  const settled = presentationState();
   const tried = attempt === 2 ? { attempt: 2 as const } : {};
   if (result.ok) {
-    logAuthStage('captcha_session_completed', { elapsedMs, ...tried });
+    logAuthStage('captcha_session_completed', { elapsedMs, nativeMs, appState: settled.appState, ...tried });
   } else if (result.reason !== 'timeout') {
-    logAuthStage('captcha_failed', { reason: result.reason, elapsedMs, ...tried });
+    logAuthStage('captcha_failed', { reason: result.reason, elapsedMs, nativeMs, appState: settled.appState, ...tried });
   }
   return result;
 }
