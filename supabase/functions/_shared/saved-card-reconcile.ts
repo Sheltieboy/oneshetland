@@ -48,19 +48,21 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type Recovery =
   | { kind: 'one'; customerId: string }
   | { kind: 'none' }
-  | { kind: 'ambiguous'; count: number }
+  | { kind: 'ambiguous'; customerIds: string[] }
   | { kind: 'error' };
 
 /**
  * Customers Stripe holds for this user, identified ONLY by the metadata this
  * product stamps on creation. Exactly one match is proof enough to consider
- * binding; zero is "none"; several is ambiguous and is never guessed at.
+ * binding; zero is "none"; several is "ambiguous" — every one of them provably
+ * this user's (the duplicates the claim registry now prevents), but which to bind
+ * is decided by reconcileSavedCard from evidence, never by guessing.
  */
 export async function findOwnedCustomer(stripeKey: string, userId: string): Promise<Recovery> {
   if (!UUID.test(userId)) return { kind: 'none' };
   try {
     const query = encodeURIComponent(`metadata['supabase_user_id']:'${userId}'`);
-    const res = await fetch(`${STRIPE}/customers/search?limit=3&query=${query}`, {
+    const res = await fetch(`${STRIPE}/customers/search?limit=10&query=${query}`, {
       headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' },
     });
     if (!res.ok) return { kind: 'error' };
@@ -70,7 +72,7 @@ export async function findOwnedCustomer(stripeKey: string, userId: string): Prom
     const owned = body.data.filter((c: { id?: unknown; deleted?: unknown; metadata?: { supabase_user_id?: unknown } }) =>
       typeof c?.id === 'string' && c.deleted !== true && c.metadata?.supabase_user_id === userId);
     if (owned.length === 0) return { kind: 'none' };
-    if (owned.length > 1) return { kind: 'ambiguous', count: owned.length };
+    if (owned.length > 1) return { kind: 'ambiguous', customerIds: owned.map((c: { id: string }) => c.id) };
     return { kind: 'one', customerId: owned[0].id as string };
   } catch {
     return { kind: 'error' };
@@ -137,18 +139,33 @@ export async function reconcileSavedCard(opts: {
     if (found.kind === 'error') {
       return { user, customer: 'unknown', cards: null, flag_before: flagBefore, flag_after: flagBefore, action: 'skipped_unknown' };
     }
-    if (found.kind === 'ambiguous') customer = 'ambiguous';
-    if (found.kind === 'one') {
+    let chosen: string | null = found.kind === 'one' ? found.customerId : null;
+    if (found.kind === 'ambiguous') {
+      customer = 'ambiguous';
+      // All of these are provably this user's. Bind one ONLY if exactly one of them holds
+      // a usable card — that is evidence, not a guess. Zero or several with cards stays
+      // unbound (and unclaimed) for a person to decide.
+      const withCards: string[] = [];
+      for (const id of found.customerIds) {
+        const attachedHere = await listAttachedCards(stripeKey, id);
+        if (attachedHere === null) {
+          return { user, customer: 'unknown', cards: null, flag_before: flagBefore, flag_after: flagBefore, action: 'skipped_unknown' };
+        }
+        if (attachedHere.length > 0) withCards.push(id);
+      }
+      if (withCards.length === 1) chosen = withCards[0];
+    }
+    if (chosen) {
       if (dryRun) {
-        const cards = await listAttachedCards(stripeKey, found.customerId);
+        const cards = await listAttachedCards(stripeKey, chosen);
         return {
           user, customer: 'recoverable', cards: cards?.length ?? null,
           flag_before: flagBefore, flag_after: cards ? cards.length > 0 : flagBefore,
           action: 'recovered',
         };
       }
-      if (await bindRecovered(supabase, userId, found.customerId)) {
-        customerId = found.customerId;
+      if (await bindRecovered(supabase, userId, chosen)) {
+        customerId = chosen;
         customer = 'recovered';
       }
     }

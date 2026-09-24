@@ -177,6 +177,40 @@ describe('a flag with no bound customer', () => {
     }
   });
 
+  test('several customers, exactly ONE with a card → that one is bound (evidence, not a guess); the rest are left alone', async () => {
+    const both = [{ id: 'cus_A', metadata: { supabase_user_id: U } }, { id: 'cus_B', metadata: { supabase_user_id: U } }];
+    const stripe = fakeStripe({ search: both, cards: { cus_A: [], cus_B: [{ id: 'pm_1' }] } });
+    const db = fakeDb({ profiles: { maybe: profileRow(true) } }, { claim_stripe_customer: claimed, settle_stripe_customer: settled });
+    const r = await run(db, stripe);
+    assert.equal(r.customer, 'recovered');
+    assert.equal(r.action, 'recovered');
+    assert.deepEqual(db.log.rpcs[1].args, { p_user: U, p_customer: 'cus_B' });
+    assert.equal(stripe.writes().length, 0);
+  });
+
+  test('several customers with cards, or none with cards → nothing is bound and no Stripe write happens', async () => {
+    const both = [{ id: 'cus_A', metadata: { supabase_user_id: U } }, { id: 'cus_B', metadata: { supabase_user_id: U } }];
+    for (const cards of [{ cus_A: [{ id: 'pm_1' }], cus_B: [{ id: 'pm_2' }] }, { cus_A: [], cus_B: [] }]) {
+      const stripe = fakeStripe({ search: both, cards });
+      const db = fakeDb({ profiles: { maybe: profileRow(true) } }, { claim_stripe_customer: claimed, settle_stripe_customer: settled });
+      const r = await run(db, stripe);
+      assert.equal(r.customer, 'ambiguous');
+      assert.equal(r.action, 'flag_cleared');
+      assert.equal(db.log.rpcs.length, 0);
+      assert.equal(stripe.writes().length, 0);
+    }
+  });
+
+  test('ambiguous and Stripe cannot list one of the customers → unknown, nothing changes', async () => {
+    const both = [{ id: 'cus_A', metadata: { supabase_user_id: U } }, { id: 'cus_B', metadata: { supabase_user_id: U } }];
+    const stripe = fakeStripe({ search: both, cards: { cus_A: [{ id: 'pm_1' }], cus_B: 'error' } });
+    const db = fakeDb({ profiles: { maybe: profileRow(true) } }, { claim_stripe_customer: claimed, settle_stripe_customer: settled });
+    const r = await run(db, stripe);
+    assert.equal(r.action, 'skipped_unknown');
+    assert.equal(db.log.updates.length, 0);
+    assert.equal(db.log.rpcs.length, 0);
+  });
+
   test('a customer already held by ANOTHER profile is not this user’s, whatever its metadata says', async () => {
     const stripe = fakeStripe({ search: [{ id: CUS, metadata: { supabase_user_id: U } }], cards: { [CUS]: [{ id: 'pm_1' }] } });
     const db = fakeDb({ profiles: { maybe: profileRow(true), list: [{ id: OTHER_USER }] } }, { claim_stripe_customer: claimed, settle_stripe_customer: settled });
