@@ -82,13 +82,17 @@ describe('the web basket asks for the saved card', () => {
 // ── 2. One source of card state ────────────────────────────────────────────
 
 describe('card state cannot differ between screens', () => {
-  test('both derivations live in one file and read the same column', () => {
+  test('both derivations live in one file and share ONE canonical resolver', () => {
     const src = web('lib/payment-state.ts');
     assert.match(src, /export async function getPaymentState/, 'the server derivation');
     assert.match(src, /export async function fetchCardOnFile/, 'the client one');
-    // Both answer from profiles.has_payment_method.
-    const occurrences = src.split('has_payment_method').length - 1;
-    assert.ok(occurrences >= 2, 'both must read the same column');
+    assert.match(src, /export async function resolveCardState/, 'the shared resolver');
+    // UPDATE — they used to both read profiles.has_payment_method, the flag that lied for
+    // profiles with no Stripe Customer. Both now ask the same server-side resolver checkout uses.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.ok(!code.includes('has_payment_method'), 'the flag must not be read here at all');
+    assert.equal(code.split('resolveCardState(sb)').length - 1, 2, 'getPaymentState and fetchCardOnFile both call it');
+    assert.match(code, /functions\.invoke\("saved-card-state"\)/);
   });
 
   test('the account page and the checkout use those, not their own rule', () => {
@@ -101,7 +105,8 @@ describe('card state cannot differ between screens', () => {
     const src = web('lib/payment-state.ts');
     const fn = src.slice(src.indexOf('export async function fetchCardOnFile'));
     assert.ok(!/let cached|const cache|memo/i.test(fn), 'a cached answer would survive card removal');
-    assert.match(fn, /\.eq\("id", userId\)/, 'it must be read for the user being asked about');
+    // UPDATE — the answer is resolved server-side for the signed-in session, not by a userId column read.
+    assert.match(fn, /resolveCardState\(sb\)/, 'it must ask the canonical resolver each time');
   });
 });
 

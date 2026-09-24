@@ -247,7 +247,8 @@ describe('My Account and Manage report the same state', () => {
 
   test('the account screens consume booleans, not Stripe identifiers', () => {
     const src = read(join(WEB_ROOT, 'lib', 'payment-state.ts'));
-    const returned = src.slice(src.indexOf('return {'));
+    // UPDATE — resolveCardState has its own early returns; the state handed to a screen is the LAST return.
+    const returned = src.slice(src.lastIndexOf('return {'));
     for (const leak of ['stripe_account_id', 'stripe_customer_id', 'acct_', 'cus_']) {
       assert.ok(!returned.includes(leak), `payment state must not hand ${leak} to a screen`);
     }

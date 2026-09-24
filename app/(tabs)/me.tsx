@@ -13,6 +13,8 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
+import { useSavedCard } from '@/hooks/useSavedCard';
+import { formatCardLabel } from '@/lib/card-label';
 import { useAlert } from '@/components/BrandedAlert';
 import { fetchBusinessPrivate, fetchBusinessPayoutReady } from '@/lib/local-api';
 
@@ -84,6 +86,8 @@ type MyBusiness = {
 export default function MeTab() {
   const router = useRouter();
   const { session, profile, signOut, refreshProfile, isDriver, hasAppliedToDrive } = useAuth();
+  const savedCard = useSavedCard(profile?.id, profile?.has_payment_method);
+  const hasCard = savedCard?.state === 'card';
   const { alert } = useAlert();
   const { isTablet } = useAppLayout();
   const goToSignIn = useGoToSignIn();
@@ -344,20 +348,20 @@ export default function MeTab() {
 
             {/* Payment card status */}
             <View style={[styles.statusBanner, {
-              backgroundColor: profile?.has_payment_method ? colors.jobsLight : '#FEF3C7',
+              backgroundColor: hasCard ? colors.jobsLight : '#FEF3C7',
             }]}>
               <FontAwesome5
-                name={profile?.has_payment_method ? 'check-circle' : 'exclamation-circle'}
+                name={hasCard ? 'check-circle' : 'exclamation-circle'}
                 size={13}
-                color={profile?.has_payment_method ? colors.jobs : '#D97706'}
+                color={hasCard ? colors.jobs : '#D97706'}
                 solid
               />
               <Text style={[styles.statusText, {
-                color: profile?.has_payment_method ? colors.jobs : '#92400E',
+                color: hasCard ? colors.jobs : '#92400E',
               }]}>
-                {profile?.has_payment_method ? 'Payment card added' : 'No payment card yet'}
+                {savedCard?.state === 'card' ? `Payment card added · ${formatCardLabel(savedCard.brand, savedCard.last4)}` : savedCard === null ? 'Checking payment card…' : savedCard.state === 'unknown' ? 'Couldn\u2019t check payment card' : 'No payment card yet'}
               </Text>
-              {!profile?.has_payment_method && (
+              {!hasCard && savedCard !== null && (
                 <TouchableOpacity
                   style={[styles.statusBtn, { backgroundColor: '#D97706' }]}
                   onPress={() => { Haptics.selectionAsync(); router.push('/payment-setup'); }}
@@ -370,7 +374,7 @@ export default function MeTab() {
             <MenuRow
               icon="credit-card"
               iconColor={colors.jobs}
-              label={profile?.has_payment_method ? 'Update payment card' : 'Add a payment card'}
+              label={hasCard ? 'Update payment card' : 'Add a payment card'}
               sublabel="Used for Fetch, Shifts, Local, bookings and boosts across the whole app"
               onPress={() => { Haptics.selectionAsync(); router.push('/payment-setup'); }}
               last={!isSeller && myBusinesses.length === 0}
