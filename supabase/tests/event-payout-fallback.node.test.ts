@@ -259,9 +259,13 @@ describe('My Account and Manage report the same state', () => {
 describe('the buyer pays with their own card', () => {
   test('the buyer’s Stripe customer comes from the authenticated buyer', () => {
     const src = read(join(REPO_ROOT, 'supabase', 'functions', 'create-event-ticket-intent', 'index.ts'));
-    // The customer is read from the buyer's own profile row, keyed on the JWT
-    // user — never from the organiser, the business, or anything in the body.
-    assert.match(src, /profile\?\.stripe_customer_id/);
+    // UPDATE — the customer is no longer read inline from `profile?.stripe_customer_id`.
+    // It is resolved by the canonical helpers (_shared/saved-card-state.ts), which read
+    // the buyer's OWN profile / claim row keyed on the id passed in — and that id is the
+    // authenticated JWT user here. Never the organiser, the business, or the body.
+    assert.match(src, /resolveSavedCard\(\{[\s\S]*?userId: user\.id,?\s*\}\)/);
+    assert.match(src, /boundCustomerFor\(supabase, user\.id\)/);
+    assert.ok(!/body\.(customer|stripe_customer_id|payment_method)/.test(src), 'nothing customer-shaped comes from the request');
     assert.ok(!/organiser[^\n]*stripe_customer_id/i.test(src),
       'the organiser must never be the payer');
   });

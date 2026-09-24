@@ -92,7 +92,10 @@ describe('Get tickets opens a route that exists', () => {
     assert.match(src, /if \(loading\)/, 'loading');
     assert.match(src, /if \(!event\)/, 'missing event');
     assert.match(src, /ticketTypes\.length === 0/, 'no active ticket types');
-    assert.match(src, /use_saved_card: !!profile\.has_payment_method/,
+    // UPDATE — see event-discovery.node.test.ts: the screen now asks the server what card is
+    // really chargeable instead of trusting the profile flag. Same protection: no saved card
+    // (none / unknown / not yet answered) → use_saved_card:false → the payment sheet.
+    assert.match(src, /use_saved_card: cardState\?\.state === 'card'/,
       'a buyer with no saved card falls through to the payment sheet');
   });
 

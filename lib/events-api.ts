@@ -731,16 +731,21 @@ export async function purchaseTickets(params: {
   charged?:       boolean;
   free?:          boolean;
 }> {
+  // The server answers `saved_card_unavailable` / `saved_card_declined` with a
+  // machine-readable `code` next to the message. Carry it on the error so the
+  // screen can react to it instead of pattern-matching English.
+  const withCode = (message: string, code?: unknown) =>
+    Object.assign(new Error(message), typeof code === 'string' ? { code } : {});
   const { data, error } = await supabase.functions.invoke('create-event-ticket-intent', { body: params });
   // Supabase wraps HTTP errors as FunctionsHttpError — the real message is in data.error
-  if (data?.error) throw new Error(data.error);
+  if (data?.error) throw withCode(data.error, data.code);
   if (error) {
     // Try to extract the JSON body Supabase wraps in context
     const ctx = (error as any)?.context;
     if (ctx) {
       try {
         const body = typeof ctx === 'string' ? JSON.parse(ctx) : await ctx.json?.();
-        if (body?.error) throw new Error(body.error);
+        if (body?.error) throw withCode(body.error, body.code);
       } catch (inner) {
         if ((inner as Error).message !== ctx) throw inner;
       }

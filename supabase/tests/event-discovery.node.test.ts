@@ -207,7 +207,12 @@ describe('Get tickets goes somewhere that exists', () => {
     const src = read(join(REPO_ROOT, 'app', 'event-ticket-checkout.tsx'));
     assert.match(src, /if \(loading\)/, 'must not render against a half-loaded event');
     assert.match(src, /if \(!event\)/, 'must handle an event that failed to load');
-    assert.match(src, /use_saved_card: !!profile\.has_payment_method/,
+    // UPDATE — the saved-card fix. The screen no longer trusts profile.has_payment_method
+    // (true for accounts with no Stripe Customer at all); it asks the server what card is
+    // REALLY chargeable. The protection this pin exists for is unchanged: a buyer with no
+    // saved card — state 'none', 'unknown', or not yet answered — sends use_saved_card:false
+    // and falls through to the payment sheet instead of crashing.
+    assert.match(src, /use_saved_card: cardState\?\.state === 'card'/,
       'a buyer with no saved card must fall through to the payment sheet, not crash');
   });
 

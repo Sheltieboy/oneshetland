@@ -216,7 +216,12 @@ describe('every card paygate still prefers the saved card', () => {
   }
 
   test('the defaults in the shared clients are saved-card, not card-form', () => {
-    assert.match(events,   /useSavedCard = true/);
+    // UPDATE — event tickets no longer charge a saved card by default in the API
+    // layer: the ticket modal PRESELECTS the saved card, but the buyer must press
+    // Pay (see event-ticket-saved-card.node.test.ts). A card existing is never, on
+    // its own, permission to take money. The other shared client is unchanged.
+    assert.match(events,   /useSavedCard = false/);
+    assert.match(code(web('components/events/TicketModal.tsx')), /setMethod\(s\.state === "card" \? "saved" : "new"\)/);
     assert.match(commerce, /useSavedCard = true/);
   });
 

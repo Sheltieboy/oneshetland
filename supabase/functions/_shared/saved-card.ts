@@ -155,3 +155,89 @@ export async function defaultCardFor(stripeKey: string, customerId: string): Pro
   await setCustomerDefaultCard(stripeKey, customerId, promote).catch(() => { /* non-fatal */ });
   return promote;
 }
+
+/* ── Canonical "which card, and can I describe it safely?" ───────────────────
+ *
+ * Everything above answers "which card id". These add the two things the
+ * checkouts kept getting wrong on their own:
+ *
+ *   1. picking the card by the SAME rule everywhere — the Customer's default
+ *      when it is really attached, otherwise the newest attached card — instead
+ *      of `payment_methods?limit=1`, which is just "whatever Stripe listed first";
+ *   2. describing it to the buyer with SAFE metadata only (brand, last4) so a
+ *      checkout can say what will be charged before charging it.
+ *
+ * No card number, expiry, fingerprint or payment-method id ever leaves through
+ * the description. The id stays server-side.
+ */
+
+export type AttachedCardDetail = { id: string; brand?: string; last4?: string };
+
+/** Stripe brands are short lowercase tokens ('visa', 'amex'…). Anything else is dropped. */
+export function safeBrand(v: unknown): string | undefined {
+  return typeof v === 'string' && /^[a-z0-9_]{2,20}$/.test(v) ? v : undefined;
+}
+
+/** Exactly four digits, or nothing. */
+export function safeLast4(v: unknown): string | undefined {
+  return typeof v === 'string' && /^\d{4}$/.test(v) ? v : undefined;
+}
+
+/**
+ * Like listAttachedCards, but keeps the two display fields. `null` still means
+ * "could not ask", which is not the same as "no cards".
+ */
+export async function listAttachedCardsDetailed(
+  stripeKey: string,
+  customerId: string,
+): Promise<AttachedCardDetail[] | null> {
+  try {
+    const res = await fetch(
+      `${STRIPE}/customers/${customerId}/payment_methods?type=card&limit=100`,
+      { headers: headersFor(stripeKey) },
+    );
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => ({}));
+    if (!Array.isArray(body?.data)) return null;
+    return body.data
+      .filter((c: unknown) => typeof (c as { id?: unknown })?.id === 'string')
+      .map((c: { id: string; card?: { brand?: unknown; last4?: unknown } }) => ({
+        id: c.id,
+        brand: safeBrand(c.card?.brand),
+        last4: safeLast4(c.card?.last4),
+      }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The one selection rule. The stored default wins only if it is really attached
+ * (a detached card is permanently unusable); otherwise the newest attached card
+ * (Stripe lists newest first). Pure, so it is tested without a network.
+ */
+export function pickDefaultCard<T extends { id: string }>(
+  attached: T[],
+  storedDefault: string | null | undefined,
+): T | null {
+  if (attached.length === 0) return null;
+  if (typeof storedDefault === 'string') {
+    const hit = attached.find((c) => c.id === storedDefault);
+    if (hit) return hit;
+  }
+  return attached[0];
+}
+
+/**
+ * The card id to charge for this Customer, chosen by pickDefaultCard, or null
+ * when there is none. Throws when Stripe cannot be asked — a failed lookup must
+ * never read as "no saved card on file", which is what the per-function
+ * `listSavedCard` helpers this replaces also refused to do. Read-only: unlike
+ * defaultCardFor it does not repair the stored default.
+ */
+export async function chargeableCardFor(stripeKey: string, customerId: string): Promise<string | null> {
+  const attached = await listAttachedCards(stripeKey, customerId);
+  if (attached === null) throw new Error('Stripe payment_methods list failed');
+  const stored = await customerDefaultCard(stripeKey, customerId);
+  return pickDefaultCard(attached, stored)?.id ?? null;
+}

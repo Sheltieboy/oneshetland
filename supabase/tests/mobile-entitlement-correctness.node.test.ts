@@ -354,6 +354,14 @@ describe('nothing outside correctness moved', () => {
       'lib/events-data.ts',
       'app/whats-on/[id]/page.tsx',
       'components/events/TicketModal.tsx',
+      // UPDATE — the paid-ticket saved-card fix (cross-platform by requirement: the web
+      // modal must show the buyer's REAL saved card, and mobile consumes the same server
+      // state). TicketModal.tsx above is the modal itself; these are its client plumbing:
+      // the events client (no implicit saved-card charge), the saved-card state client
+      // (brand + last4 only) and the pure card-label helper.
+      'lib/events-client.ts',
+      'lib/saved-card-client.ts',
+      'lib/card-label.ts',
       // Added by the "make the payout gate unmistakable" UX follow-up:
       // Event Manage's own not-published banner and publish-button state,
       // plus the event_payout_ready fetch it reads (getBusinessEvent) and

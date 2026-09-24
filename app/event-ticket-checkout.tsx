@@ -23,6 +23,8 @@ import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { fetchWalletBalance } from '@/lib/local-api';
 import { describeCheckoutError } from '@/lib/checkout-errors';
+import { fetchSavedCardState, type SavedCardState } from '@/lib/saved-card-state';
+import { formatCardLabel } from '@/lib/card-label';
 import {
   fetchEvent,
   purchaseTickets, confirmTicketPurchase,
@@ -57,6 +59,18 @@ export default function EventTicketCheckoutScreen() {
   const [buying,  setBuying]  = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  // What the saved card REALLY is, from the server — not `profile.has_payment_method`,
+  // which says a card was added once and was true for accounts with no Customer.
+  const [cardState, setCardState] = useState<SavedCardState | null>(null);
+  const refreshSavedCard = useCallback(async () => {
+    setCardState(await fetchSavedCardState());
+  }, []);
+  useEffect(() => {
+    if (!profile?.id) { setCardState(null); return; }
+    let live = true;
+    fetchSavedCardState().then((s) => { if (live) setCardState(s); });
+    return () => { live = false; };
+  }, [profile?.id]);
   const [purchased, setPurchased] = useState(false);   // inline success state
   const [boughtCount, setBoughtCount] = useState(0);
 
@@ -139,7 +153,7 @@ export default function EventTicketCheckoutScreen() {
     // Paid tickets always open the confirm sheet (wallet AND card; the card
     // path uses Stripe's Payment Sheet which collects a card even if none is
     // saved). Free tickets skip straight through.
-    if (grandTotalPence > 0) setConfirming(true);
+    if (grandTotalPence > 0) { void refreshSavedCard(); setConfirming(true); }
     else runPurchase();
   };
 
@@ -171,7 +185,9 @@ export default function EventTicketCheckoutScreen() {
       const result = await purchaseTickets({
         event_id:       event.id,
         line_items:     lineItems,
-        use_saved_card: !!profile.has_payment_method,
+        // Only when the server has confirmed a chargeable card. The confirm sheet
+        // names it, and this runs only after the buyer presses Confirm & pay.
+        use_saved_card: cardState?.state === 'card',
         // The card path omitted this while the wallet path sent it, so the server
         // saw no checkout reference and refused before anything happened. The id is
         // stable across retries of THIS basket — that is what stops a double tap
@@ -217,7 +233,18 @@ export default function EventTicketCheckoutScreen() {
       ticketSuccess();
 
     } catch (e: any) {
-      alert({ title: 'Could not complete booking', message: describeCheckoutError(e) });
+      if (e?.code === 'saved_card_unavailable') {
+        // The card the sheet named is gone (or could not be checked). Re-read the
+        // truth so the next sheet names what will really be charged, and say so —
+        // no quiet switch to another way of paying.
+        await refreshSavedCard();
+        alert({
+          title: 'Saved card unavailable',
+          message: 'Your saved card isn\u2019t available. Review the payment and confirm again to pay another way.',
+        });
+      } else {
+        alert({ title: 'Could not complete booking', message: describeCheckoutError(e) });
+      }
     } finally {
       setBuying(false);
       setConfirming(false);
@@ -450,7 +477,7 @@ export default function EventTicketCheckoutScreen() {
           ...(bookingFeePence > 0 ? [{ label: 'Booking fee', amountPence: bookingFeePence, muted: true }] : []),
         ]}
         totalPence={grandTotalPence}
-        payingWith="Saved card"
+        payingWith={cardState?.state === 'card' ? formatCardLabel(cardState.brand, cardState.last4) : 'Card'}
         policy={{ text: event.refund_policy || 'Tickets are non-refundable unless the event is cancelled.' }}
         loading={buying}
         onConfirm={runPurchase}
