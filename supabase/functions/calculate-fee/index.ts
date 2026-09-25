@@ -38,8 +38,11 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
 
     // A postcode is a postcode or it is refused. Nothing else reaches the URL.
-    const p1 = normaliseUkPostcode(body?.pickup_postcode);
-    const p2 = normaliseUkPostcode(body?.destination_postcode);
+    // The shared validator (also the Gift Aid rule) assumes a string, so the type
+    // and a sane length are checked first; it returns the canonical "ZE1 0AA".
+    const valid = (v: unknown) => (typeof v === 'string' && v.length <= 12 ? normaliseUkPostcode(v) : null);
+    const p1 = valid(body?.pickup_postcode)?.replace(' ', '') ?? null;
+    const p2 = valid(body?.destination_postcode)?.replace(' ', '') ?? null;
     if (!p1 || !p2) {
       return new Response(
         JSON.stringify({ error: 'pickup_postcode and destination_postcode must be valid UK postcodes' }),

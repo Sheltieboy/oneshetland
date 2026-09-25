@@ -167,28 +167,37 @@ describe('notify-hub: the function applies the gate before it does anything', ()
 
 /* ── F5: calculate-fee ────────────────────────────────────────────────── */
 
+// The SHARED validator (also the HMRC Gift Aid rule in create-hub-donation-intent). calculate-fee
+// guards type and length in front of it; this mirrors that exact composition.
+const feeValid = (v: unknown) => (typeof v === 'string' && v.length <= 12 ? Postcode.normaliseUkPostcode(v) : null);
+
 describe('calculate-fee: only a UK postcode reaches the URL', () => {
-  test('real Shetland and UK postcodes, in any spacing or case, are accepted and normalised', () => {
-    for (const [input, out] of [['ZE1 0AA', 'ZE10AA'], ['ze10aa', 'ZE10AA'], [' ZE2  9XX ', 'ZE29XX'], ['AB10 1AA', 'AB101AA'],
-      ['EC1A 1BB', 'EC1A1BB'], ['ZE1 0AA\n', 'ZE10AA'] /* stray whitespace is dropped, leaving a clean canonical value */, ['W1A 0AX', 'W1A0AX'], ['M1 1AE', 'M11AE'], ['GY1 1AA', 'GY11AA']]) {
-      assert.equal(Postcode.normaliseUkPostcode(input), out, input);
+  test('real Shetland and UK postcodes, in any spacing or case, are accepted and canonicalised', () => {
+    for (const [input, out] of [['ZE1 0AA', 'ZE1 0AA'], ['ze10aa', 'ZE1 0AA'], [' ZE2  9XX ', 'ZE2 9XX'], ['AB10 1AA', 'AB10 1AA'],
+      ['EC1A 1BB', 'EC1A 1BB'], ['W1A 0AX', 'W1A 0AX'], ['M1 1AE', 'M1 1AE'], ['GY1 1AA', 'GY1 1AA'], ['ZE1 0AA\n', 'ZE1 0AA'] /* stray whitespace is dropped */]) {
+      assert.equal(feeValid(input), out, input);
     }
+  });
+  test('the shared validator still returns the spaced canonical form Gift Aid depends on, and is still used there', () => {
+    assert.equal(Postcode.normaliseUkPostcode('ze10aa'), 'ZE1 0AA');
+    assert.match(read('supabase/functions/create-hub-donation-intent/index.ts'), /import \{ normaliseUkPostcode \} from '\.\.\/_shared\/uk-postcode\.ts'/);
   });
   test('path traversal, query, fragment, encoding, schemes and control characters are refused', () => {
     for (const bad of ['../../etc', 'ZE1 0AA/../..', 'ZE1 0AA?x=1', 'ZE1 0AA#frag', 'ZE1%200AA', 'http://evil.example',
       'ZE1\t0AA/', '@evil', 'ZE1 0AA;', '', ' ', 'ZE1', 'ZE1 0A', 'AAAAAAAA', '12345', "ZE1 0AA' OR 1=1"]) {
-      assert.equal(Postcode.normaliseUkPostcode(bad), null, JSON.stringify(bad));
+      assert.equal(feeValid(bad), null, JSON.stringify(bad));
     }
   });
   test('oversized and non-string input is refused without throwing', () => {
     for (const bad of ['Z'.repeat(5000), 12345, null, undefined, {}, [], true, ['ZE1 0AA']]) {
-      assert.equal(Postcode.normaliseUkPostcode(bad), null);
+      assert.equal(feeValid(bad), null);
     }
   });
   test('the function sends only the validated, encoded value, follows no redirects, and is bounded', () => {
     const src = strip(read('supabase/functions/calculate-fee/index.ts'));
-    assert.match(src, /normaliseUkPostcode\(body\?\.pickup_postcode\)/);
-    assert.match(src, /normaliseUkPostcode\(body\?\.destination_postcode\)/);
+    assert.match(src, /valid\(body\?\.pickup_postcode\)/);
+    assert.match(src, /valid\(body\?\.destination_postcode\)/);
+    assert.match(src, /typeof v === 'string' && v\.length <= 12 \? normaliseUkPostcode\(v\)/);
     assert.ok(!/pickup_postcode\.replace|destination_postcode\.replace/.test(src), 'no raw string handling of the body values');
     assert.match(src, /encodeURIComponent\(pc\)/);
     assert.match(src, /redirect: 'error'/);
