@@ -249,6 +249,14 @@ describe('the migration', () => {
       assert.match(sql, new RegExp(`alter function public\\.${fn}\\s+set search_path = public, pg_temp;`), fn);
     }
   });
+  test('booking_meter_status is owner / admin / service-role only, and refuses rather than showing zeros', () => {
+    const m = strip(read('supabase/migrations/20261025010000_booking_meter_status_owner_only.sql').replace(/^--.*$/gm, ''));
+    assert.match(m, /public\.is_business_owner\(p_business_id, auth\.uid\(\)\)/);
+    assert.match(m, /or public\.is_admin\(\)/);
+    assert.match(m, /auth\.role\(\), ''\) = 'service_role'/);
+    assert.match(m, /raise exception 'forbidden' using errcode = '42501'/);
+    assert.match(m, /set search_path = public, pg_temp/);
+  });
   test('creates the rate-limit policies the new limits depend on (an unknown action is DENIED)', () => {
     for (const a of ['ai_cover_letter', 'ai_cover_letter_day', 'calculate_fee_global']) assert.match(sql, new RegExp(`'${a}'`), a);
   });
@@ -337,6 +345,40 @@ describe('live (read-only, rolled-back): production honours the fixes', () => {
     const rows = runSql(`select p.proname from pg_proc p where p.prosecdef and p.pronamespace = 'public'::regnamespace
       and (p.proconfig is null or not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')) order by 1`);
     assert.deepEqual(rows.map((r) => r.proname), []);
+  });
+
+  test('booking_meter_status: a stranger is refused, the business owner is served, anon has no EXECUTE (rolled back)', (t) => {
+    if (!sqlOk) return t.skip(skip);
+    const rows = runSql(`
+      begin;
+      create temp table pick as select id as biz, owner_id as owner from public.local_businesses where owner_id is not null limit 1;
+      create temp table res(what text, outcome text);
+      grant all on pick, res to anon, authenticated;
+      do $$ begin
+        insert into res values ('anon_has_execute', has_function_privilege('anon', 'public.booking_meter_status(uuid, date)', 'EXECUTE')::text);
+      end $$;
+      set local role authenticated;
+      select set_config('request.jwt.claims', '{"role":"authenticated","sub":"00000000-0000-4000-8000-000000000001"}', true);
+      do $$ declare p record; begin select * into p from pick;
+        begin perform * from public.booking_meter_status(p.biz); insert into res values ('stranger','SERVED');
+          exception when others then insert into res values ('stranger', case when sqlstate='42501' then 'refused' else 'other:'||sqlerrm end); end;
+      end $$;
+      reset role;
+      do $$ declare p record; begin select * into p from pick;
+        perform set_config('request.jwt.claims', json_build_object('role','authenticated','sub',p.owner)::text, true);
+      end $$;
+      set local role authenticated;
+      do $$ declare p record; begin select * into p from pick;
+        begin perform * from public.booking_meter_status(p.biz); insert into res values ('owner','served');
+          exception when others then insert into res values ('owner','REFUSED:'||sqlerrm); end;
+      end $$;
+      reset role;
+      select what, outcome from res order by what;
+      rollback;`);
+    const got = Object.fromEntries(rows.map((r) => [r.what as string, r.outcome as string]));
+    assert.equal(got.anon_has_execute, 'false');
+    assert.equal(got.stranger, 'refused');
+    assert.equal(got.owner, 'served');
   });
 
   test('the rate-limit policies exist (an unknown action is denied, so the limits would lock the functions)', (t) => {
