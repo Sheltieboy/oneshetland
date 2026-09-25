@@ -8,9 +8,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Share,
+  Share, AppState,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import QRCode from 'react-native-qrcode-svg';
@@ -26,6 +26,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 import { supabase } from '@/lib/supabase';
 import { TicketCelebration } from '@/components/TicketCelebration';
+import { ticketCelebrations } from '@/lib/ticket-celebration-store';
 import {
   fetchTicketWithToken,
   formatEventDate,
@@ -94,12 +95,32 @@ export default function MyEventTicketScreen() {
       ]);
       setTicket(t);
       setRawToken(tok);
+      // Every read is judged the same way, however it arrived (push, focus,
+      // foreground, poll): celebrate only a valid → used change this device saw,
+      // once. A used ticket met fresh never celebrates.
+      if (t && (await ticketCelebrations.observe(t))) setCelebrate(true);
     } finally {
       setLoading(false);
     }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Catch-up. Realtime is only a nudge: a phone that was locked, or showing the
+  // QR, when the door scanned it misses the push. So re-read whenever this screen
+  // is refocused or the app returns to the foreground, and while the ticket is
+  // still unscanned, every 15s. Each read runs through the same once-only rule.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') load(); });
+    return () => sub.remove();
+  }, [load]);
+  const ticketStatus = ticket?.status;
+  useEffect(() => {
+    if (ticketStatus !== 'valid') return;
+    const t = setInterval(() => { load(); }, 15000);
+    return () => clearInterval(t);
+  }, [ticketStatus, load]);
 
   // Live: flip to "Scanned" (with a celebration) the instant this ticket is
   // checked in at the door — no reload needed.
@@ -111,10 +132,12 @@ export default function MyEventTicketScreen() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'event_tickets', filter: `id=eq.${id}` },
         (payload) => {
-          const next = (payload.new as { status?: string } | null)?.status;
           const prev = (payload.old as { status?: string } | null)?.status;
-          if (next === 'used' && prev !== 'used') setCelebrate(true);
-          load();
+          // A live valid → used push proves the "before"; the re-read decides.
+          void (async () => {
+            if (prev === 'valid') await ticketCelebrations.markSeenValid(id);
+            await load();
+          })();
         },
       )
       .subscribe();
