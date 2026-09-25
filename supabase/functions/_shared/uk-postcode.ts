@@ -1,18 +1,19 @@
 /**
- * HMRC requires a valid home address and postcode for a Gift Aid claim, so the
- * postcode is validated rather than stored as typed — and it is REJECTED rather
- * than silently dropped, so the donor learns their Gift Aid did not apply.
+ * uk-postcode.ts — the only shape a postcode may take before it goes anywhere.
  *
- * Lifted out of confirm-hub-donation unchanged when Gift Aid validation moved
- * to the point the donation attempt is created, so that both the browser path
- * and the webhook path judge a postcode by exactly the same rule.
+ * calculate-fee used to strip spaces and paste whatever it was sent straight
+ * into a URL path on postcodes.io. The host was fixed, so this was not a way
+ * to reach other servers, but it was unbounded input from an anonymous caller:
+ * any length, any characters (`/`, `?`, `#`, `..`), and a non-string crashed the
+ * handler. A postcode is 5–7 letters and digits; anything else is refused.
  */
-export function normaliseUkPostcode(raw: string): string | null {
-  const compact = raw.toUpperCase().replace(/\s+/g, '');
-  // Outward (2–4 chars) + inward (digit + 2 letters). Excludes letters that
-  // never appear in those positions, per the official UK pattern.
-  const re = /^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/;
-  const m = compact.match(re);
-  if (!m) return null;
-  return `${m[1]} ${m[2]}`;
+
+// Outward code (A9, A99, A9A, AA9, AA99, AA9A) + inward code (9AA), spaces optional.
+const UK_POSTCODE = /^[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2}$/;
+
+/** Returns the canonical no-space upper-case postcode, or null if it is not one. */
+export function normaliseUkPostcode(input: unknown): string | null {
+  if (typeof input !== 'string' || input.length > 12) return null;
+  const compact = input.replace(/\s+/g, '').toUpperCase();
+  return UK_POSTCODE.test(compact) ? compact : null;
 }

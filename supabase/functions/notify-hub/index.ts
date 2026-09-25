@@ -4,6 +4,7 @@ import { sendUserPushBulk } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { requireCaller } from '../_shared/require-caller.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseHubNotify } from '../_shared/hub-notify-auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -20,6 +21,9 @@ const corsHeaders = {
  *
  * Body: { event: 'join_request' | 'membership_paid' | 'approved', hub_id, user_id }
  * Fire-and-forget — best effort, never blocks the caller.
+ *
+ * Who may raise which notice is decided in _shared/hub-notify-auth.ts, BEFORE
+ * anything is looked up or sent: being signed in is not enough.
  */
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -47,8 +51,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { event, hub_id, user_id } = await req.json();
-    if (!event || !hub_id) return json({ error: 'event and hub_id required' }, 400);
+    const { event, hub_id, user_id } = await req.json().catch(() => ({}));
+
+    // Authorise against the hub itself before touching anything else.
+    const decision = await authoriseHubNotify(svc, caller, { event, hubId: hub_id, userId: user_id });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     const { data: hub } = await svc.from('hubs').select('name').eq('id', hub_id).maybeSingle();
     const hubName = hub?.name ?? 'your hub';
