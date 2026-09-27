@@ -23,6 +23,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
+import { placesRequestUrl, PLACES_QUERY_KEY } from '@/lib/places-proxy';
 import {
   fetchBusiness, createBusiness, updateBusiness,
   CATEGORY_LABELS, TRADE_TAGS,
@@ -38,7 +39,6 @@ import {
 import { hasAnyHours, DAYS, type OpeningHoursMap } from '@/lib/opening-hours';
 
 const S = SECTIONS.local;
-const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 const CATEGORIES: { id: LocalCategory; label: string; icon: string }[] = [
   { id: 'food_drink',    label: 'Food & Drink',  icon: 'utensils' },
@@ -74,7 +74,7 @@ function summariseHours(hours: OpeningHoursMap | null | undefined): string {
 
 export default function BusinessRegisterScreen() {
   const router = useRouter();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { screenWidth } = useAppLayout();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { alert } = useAlert();
@@ -420,46 +420,38 @@ export default function BusinessRegisterScreen() {
 
           <View style={styles.field} onLayout={onLayout('map_pin')}>
             <Text style={styles.fieldLabel}>Address *</Text>
-            {GOOGLE_KEY ? (
-              <View style={{ zIndex: 10 }}>
-                <GooglePlacesAutocomplete
-                  placeholder={address || 'Start typing your address…'}
-                  minLength={3}
-                  onPress={(data, details = null) => {
-                    setAddress(data.description);
-                    if (details?.geometry?.location) {
-                      setLat(details.geometry.location.lat);
-                      setLng(details.geometry.location.lng);
-                    }
-                  }}
-                  query={{
-                    key: GOOGLE_KEY,
-                    language: 'en',
-                    components: 'country:gb',
-                    location: '60.3,-1.2',
-                    radius: '50000',
-                  }}
-                  fetchDetails
-                  textInputProps={{
-                    placeholderTextColor: address ? colors.textPrimary : colors.textLight,
-                  }}
-                  styles={{
-                    container: { flex: 0 },
-                    textInput: styles.input,
-                    listView: { backgroundColor: '#fff', borderRadius: radius.md, marginTop: 4 },
-                  }}
-                  enablePoweredByContainer={false}
-                  debounce={250}
-                />
-              </View>
-            ) : (
-              <TextInput
-                style={styles.input}
-                value={address} onChangeText={setAddress}
-                placeholder="Street, town, postcode"
-                placeholderTextColor={colors.textLight}
+            <View style={{ zIndex: 10 }}>
+              <GooglePlacesAutocomplete
+                placeholder={address || 'Start typing your address…'}
+                minLength={3}
+                onPress={(data, details = null) => {
+                  setAddress(data.description);
+                  if (details?.geometry?.location) {
+                    setLat(details.geometry.location.lat);
+                    setLng(details.geometry.location.lng);
+                  }
+                }}
+                query={{
+                  key: PLACES_QUERY_KEY,
+                  language: 'en',
+                  components: 'country:gb',
+                  location: '60.3,-1.2',
+                  radius: '50000',
+                }}
+                requestUrl={placesRequestUrl(session?.access_token)}
+                fetchDetails
+                textInputProps={{
+                  placeholderTextColor: address ? colors.textPrimary : colors.textLight,
+                }}
+                styles={{
+                  container: { flex: 0 },
+                  textInput: styles.input,
+                  listView: { backgroundColor: '#fff', borderRadius: radius.md, marginTop: 4 },
+                }}
+                enablePoweredByContainer={false}
+                debounce={250}
               />
-            )}
+            </View>
           </View>
 
           {/* Phone, website and email together: NEXT sends people here by

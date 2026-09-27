@@ -13,12 +13,12 @@ import {
 // needed so the results dropdown scrolls correctly inside the form ScrollView).
 const GooglePlacesAutocomplete = GooglePlacesAutocompleteRaw as unknown as React.ComponentType<any>;
 
-const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useRequest } from '@/context/RequestContext';
 import { useAuth } from '@/context/AuthContext';
+import { placesRequestUrl, PLACES_QUERY_KEY } from '@/lib/places-proxy';
 import { supabase } from '@/lib/supabase';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -44,7 +44,7 @@ interface SavedAddress {
 export default function RequestStep3() {
   const router = useRouter();
   const { formData, update } = useRequest();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -174,13 +174,14 @@ export default function RequestStep3() {
               haptic.select();
             }}
             query={{
-              key: GOOGLE_KEY,
+              key: PLACES_QUERY_KEY,
               language: 'en',
               components: 'country:gb',
               location: '60.155,-1.145',
               radius: '50000',
               types: 'address',
             }}
+            requestUrl={placesRequestUrl(session?.access_token)}
             textInputProps={{
               value: formData.destinationAddress,
               onChangeText: (v: string) => {

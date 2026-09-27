@@ -22,6 +22,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import { placesRequestUrl, PLACES_QUERY_KEY } from '@/lib/places-proxy';
 import { useAlert } from '@/components/BrandedAlert';
 import { PeerieFill } from '@/components/ai/PeerieFill';
 import { PEERIE_ENDPOINTS } from '@/constants/peerie';
@@ -65,7 +66,6 @@ const PAY_TYPES = [
   { id: 'volunteer',  label: 'Voluntary / unpaid' },
 ];
 
-const GOOGLE_KEY    = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 const HOUR_ITEM_H   = 52;
 const MINUTE_OPTIONS = [0, 15, 30, 45];
 
@@ -250,7 +250,7 @@ export function BoostSheet({
 // ── Post shift form ────────────────────────────────────────────────────────────
 
 export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => void }) {
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { alert } = useAlert();
   const [submitting, setSubmitting] = useState(false);
 
@@ -673,7 +673,8 @@ export function PostShiftForm({ onSuccess }: { onSuccess: (shiftId: string) => v
             <GooglePlacesAutocomplete
               placeholder="Search for a place or postcode…"
               onPress={(data) => setLocation(data.description)}
-              query={{ key: GOOGLE_KEY, language: 'en', components: 'country:gb' }}
+              query={{ key: PLACES_QUERY_KEY, language: 'en', components: 'country:gb' }}
+              requestUrl={placesRequestUrl(session?.access_token)}
               fetchDetails={false}
               textInputProps={{ placeholderTextColor: colors.textLight }}
               styles={{

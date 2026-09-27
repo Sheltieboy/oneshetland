@@ -20,10 +20,12 @@ import {
 // needed so the results dropdown scrolls correctly inside the form ScrollView).
 const GooglePlacesAutocomplete = GooglePlacesAutocompleteRaw as unknown as React.ComponentType<any>;
 
-const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
+import { placesRequestUrl, PLACES_QUERY_KEY } from '@/lib/places-proxy';
+import { useAuth } from '@/context/AuthContext';
 
 export default function RequestStep2() {
   const router = useRouter();
+  const { session } = useAuth();
   const { formData, update } = useRequest();
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -84,12 +86,13 @@ export default function RequestStep2() {
               haptic.select();
             }}
             query={{
-              key: GOOGLE_KEY,
+              key: PLACES_QUERY_KEY,
               language: 'en',
               components: 'country:gb',
               location: '60.155,-1.145',
               radius: '50000',
             }}
+            requestUrl={placesRequestUrl(session?.access_token)}
             textInputProps={{
               value: formData.pickupLocation,
               onChangeText: (v: string) => {

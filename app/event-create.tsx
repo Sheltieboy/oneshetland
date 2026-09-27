@@ -23,9 +23,9 @@ import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
 import { requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, launchPayoutSetupFromPrompt } from '@/lib/payout-readiness';
 
-const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { placesRequestUrl, PLACES_QUERY_KEY } from '@/lib/places-proxy';
 import {
   fetchEvent,
   createEvent, updateEvent,
@@ -48,7 +48,7 @@ const CATEGORY_OPTIONS = ['', ...EVENT_CATEGORIES];
 function EventCreateBody() {
   const { businessId, hubId, eventId } = useLocalSearchParams<{ businessId?: string; hubId?: string; eventId?: string }>();
   const router  = useRouter();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { screenWidth } = useAppLayout();
   const { alert, hide } = useAlert();
 
@@ -525,12 +525,13 @@ function EventCreateBody() {
                 setPlaceId(pid);
               }}
               query={{
-                key:        GOOGLE_KEY,
+                key:        PLACES_QUERY_KEY,
                 language:   'en',
                 components: 'country:gb',
                 location:   '60.3,-1.2',  // Lerwick — biases results toward Shetland
                 radius:     '80000',
               }}
+              requestUrl={placesRequestUrl(session?.access_token)}
               textInputProps={{
                 placeholderTextColor: colors.textLight,
                 // Show the current saved value as the initial text
