@@ -1,8 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPushBulk } from '../_shared/send-push.ts';
-import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseHubContentNotify } from '../_shared/hub-content-notify-auth.ts';
 
 /**
  * notify-hub-content
@@ -44,33 +45,8 @@ serve(async (req) => {
     const svc = createServiceClient();
 
     // Only the hub's owner or admin may push to its whole membership.
-
-    if (!caller.isServiceRole) {
-
-      const { data: h } = await svc.from('hubs').select('owner_id').eq('id', hub_id).maybeSingle();
-
-      let may = (h as { owner_id?: string } | null)?.owner_id === caller.userId;
-
-      if (!may) {
-
-        const { data: isHubAdmin } = await svc.rpc('is_hub_admin', { p_hub: hub_id, p_user: caller.userId });
-
-        may = isHubAdmin === true;
-
-      }
-
-      if (!may) {
-
-        const { data: me } = await svc.from('profiles').select('role').eq('id', caller.userId).maybeSingle();
-
-        may = (me as { role?: string } | null)?.role === 'admin';
-
-      }
-
-      if (!may) return forbidden(corsHeaders);
-
-    }
-
+    const decision = await authoriseHubContentNotify(svc, caller, { event, hubId: hub_id });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     const { data: hub } = await svc.from('hubs').select('name').eq('id', hub_id).maybeSingle();
     const hubName = (hub as { name?: string } | null)?.name ?? 'your hub';

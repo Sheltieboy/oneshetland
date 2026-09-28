@@ -1,8 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush } from '../_shared/send-push.ts';
-import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseClaimOutcomeNotify } from '../_shared/claim-outcome-notify-auth.ts';
 
 /**
  * notify-claim
@@ -43,18 +44,10 @@ serve(async (req) => {
     if (!claim_id || !outcome) return json({ error: 'claim_id and outcome required' }, 400);
     const svc = createServiceClient();
 
-    // Approving or rejecting a business claim is an admin action, so telling the
-
-    // claimant the outcome is one too.
-
-    if (!caller.isServiceRole) {
-
-      const { data: me } = await svc.from('profiles').select('role').eq('id', caller.userId).maybeSingle();
-
-      if ((me as { role?: string } | null)?.role !== 'admin') return forbidden(corsHeaders);
-
-    }
-
+    // Approving or rejecting a business claim is an admin action, so telling
+    // the claimant the outcome is one too.
+    const decision = await authoriseClaimOutcomeNotify(svc, caller, { claimId: claim_id, outcome });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     const { data: claim } = await svc
       .from('business_claims').select('user_id, business_id').eq('id', claim_id).maybeSingle();
