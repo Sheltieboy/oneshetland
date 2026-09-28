@@ -1,8 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
-import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseJobNotify } from '../_shared/job-notify-auth.ts';
 
 /**
  * notify-job
@@ -76,6 +77,11 @@ serve(async (req) => {
     const { event, application_id, job_id, status } = await req.json();
     if (!event) return json({ error: 'event required' }, 400);
     const svc = createServiceClient();
+
+    // The caller must be the applicant an application belongs to, or the
+    // employer who owns the job — not any signed-in account naming either id.
+    const decision = await authoriseJobNotify(svc, caller, { event, jobId: job_id, applicationId: application_id });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     // ── job_closed: notify everyone still in the running ──
     if (event === 'job_closed') {

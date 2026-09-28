@@ -1,8 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
-import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseShiftStatusNotify } from '../_shared/shift-status-notify-auth.ts';
 
 /**
  * notify-shift-status
@@ -44,6 +45,11 @@ serve(async (req) => {
     const { event, shift_id, application_id } = await req.json();
     if (!event) return json({ error: 'event required' }, 400);
     const svc = createServiceClient();
+
+    // Only the shift's employer may raise a cancellation; only the
+    // withdrawing worker may raise their own withdrawal notice.
+    const decision = await authoriseShiftStatusNotify(svc, caller, { event, shiftId: shift_id, applicationId: application_id });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     if (event === 'cancelled') {
       if (!shift_id) return json({ error: 'shift_id required' }, 400);

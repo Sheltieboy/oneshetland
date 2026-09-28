@@ -1,9 +1,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPushBulk } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
-import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseEventUpdateNotify } from '../_shared/event-update-notify-auth.ts';
 
 /**
  * notify-event-update
@@ -73,6 +74,11 @@ serve(async (req) => {
     if (!update_id) return json({ error: 'update_id required' }, 400);
     const svc = createServiceClient();
 
+    // Only the organiser may notify an event's ticket holders. Without this,
+    // any signed-in account could email every buyer of somebody else's event.
+    const decision = await authoriseEventUpdateNotify(svc, caller, { updateId: update_id });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
+
     const { data: upd } = await svc
       .from('event_updates').select('event_id, title, body, kind').eq('id', update_id).maybeSingle();
     if (!upd) return json({ error: 'update not found' }, 404);
@@ -82,28 +88,6 @@ serve(async (req) => {
       .select('title, starts_at, venue, locality, organiser_user_id, organiser_business_id, organiser_hub_id')
       .eq('id', upd.event_id).maybeSingle();
     const eventTitle = (ev as { title?: string } | null)?.title ?? 'your event';
-
-    // Only the organiser may notify an event's ticket holders. Without this,
-    // any signed-in account could email every buyer of somebody else's event.
-    if (!caller.isServiceRole) {
-      const isOrganiser = ev?.organiser_user_id === caller.userId;
-      let mayNotify = isOrganiser;
-      if (!mayNotify && ev?.organiser_business_id) {
-        const { data: b } = await svc.from('local_businesses')
-          .select('owner_id').eq('id', ev.organiser_business_id).maybeSingle();
-        mayNotify = (b as { owner_id?: string } | null)?.owner_id === caller.userId;
-      }
-      if (!mayNotify && ev?.organiser_hub_id) {
-        const { data: h } = await svc.from('hubs')
-          .select('owner_id').eq('id', ev.organiser_hub_id).maybeSingle();
-        mayNotify = (h as { owner_id?: string } | null)?.owner_id === caller.userId;
-      }
-      if (!mayNotify) {
-        const { data: p } = await svc.from('profiles').select('role').eq('id', caller.userId).maybeSingle();
-        mayNotify = (p as { role?: string } | null)?.role === 'admin';
-      }
-      if (!mayNotify) return forbidden(corsHeaders);
-    }
 
     // Who to name as the organiser in the email. Falls back to OneShetland
     // rather than leaving a blank where a name should be.

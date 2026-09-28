@@ -3,6 +3,7 @@ import { createServiceClient, sendUserPush } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { requireCaller } from '../_shared/require-caller.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseBookingNotify } from '../_shared/booking-notify-auth.ts';
 
 /**
  * notify-booking
@@ -52,6 +53,11 @@ serve(async (req) => {
     if (!booking_id || !event) return json({ error: 'booking_id and event required' }, 400);
 
     const svc = createServiceClient();
+
+    // Only the customer who made this booking, or the business that was
+    // booked, may raise a notice about it — not any other signed-in account.
+    const decision = await authoriseBookingNotify(svc, caller, { event, bookingId: booking_id });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     const { data: b } = await svc
       .from('book_bookings')
