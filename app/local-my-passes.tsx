@@ -101,6 +101,10 @@ export default function MyPassesScreen() {
 }
 
 const STATUS_LABEL: Record<PassStatus, string> = {
+  // A refunded pass keeps its uses, so it would otherwise classify as Active
+  // and offer a "Use at till" button for something already paid back.
+  refunded:       'Refunded',
+  refund_pending: 'Refund in progress',
   active:  'Active',
   used:    'Fully used',
   expired: 'Expired',

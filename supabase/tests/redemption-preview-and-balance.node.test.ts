@@ -127,14 +127,16 @@ describe('Counter mode looks, then spends', () => {
   test('typing the code only looks it up', () => {
     const look = counterUi.match(/async function look\([\s\S]*?\n  \}/)?.[0] ?? '';
     assert.ok(look.length > 0, 'look() not found');
-    assert.match(look, /previewRedemption\(\{ code \}\)/);
+    assert.match(look, /previewRedemption\(\{ code, businessId \}\)/,
+      'the web preview lost its business scope');
     assert.ok(!/verifyRedemption/.test(look), 'looking up still redeems');
   });
 
   test('only confirm() redeems', () => {
     const confirm = counterUi.match(/async function confirm\([\s\S]*?\n  \}/)?.[0] ?? '';
     assert.ok(confirm.length > 0, 'confirm() not found');
-    assert.match(confirm, /verifyRedemption\(\{ code \}\)/);
+    assert.match(confirm, /verifyRedemption\(\{ code, businessId \}\)/,
+      'the web redeem lost its business scope');
     assert.equal((counterUi.match(/verifyRedemption\(/g) ?? []).length, 1, 'more than one call site can redeem');
   });
 

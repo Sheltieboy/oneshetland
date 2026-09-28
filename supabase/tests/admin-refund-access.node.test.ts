@@ -79,7 +79,7 @@ describe('an admin can actually get to the refund control', () => {
 
   test('the whole admin area is behind the admin check', () => {
     assert.match(adminLayout, /await requireAdmin\(\)/);
-    assert.match(adminServer, /if \(a\.profile\?\.role !== "admin"\) redirect\("\/account"\)/);
+    assert.match(adminServer, /if \(access === "deny"\) redirect\("\/account"\)/);
   });
 });
 
@@ -160,8 +160,10 @@ describe('only a platform admin gets in', () => {
   test('the server refuses every non-admin at the layout', () => {
     // Hiding a menu item is not a boundary; this redirects before any data is
     // read, and the Edge Function refuses independently of the UI.
-    assert.match(adminServer, /if \(!a\) redirect\("\/sign-in\?next=\/admin"\)/);
-    assert.match(adminServer, /role !== "admin"/);
+    // The role rule itself lives in lib/admin-access.ts (executed by
+    // launch-readiness-dashboard.node.test.ts); requireAdmin acts on it.
+    assert.match(adminServer, /if \(access === "sign_in"\) redirect\("\/sign-in\?next=\/admin"\)/);
+    assert.match(code(web('lib/admin-access.ts')), /role === "admin" \? "allow" : "deny"/);
   });
 
   test('the purchase read is not service-role — it runs as the admin', () => {

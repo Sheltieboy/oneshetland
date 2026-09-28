@@ -138,12 +138,19 @@ serve(async (req) => {
     const today = londonParts(now);
     const result = { wird_of_day: 0, whats_on_roundup: 0, event_spotlight: 0, jobs_roundup: 0, new_product: 0, errors: [] as string[] };
 
-    type Recipe = { key: string; enabled: boolean; config: Record<string, unknown> };
+    type Recipe = { key: string; enabled: boolean; autopilot: boolean; config: Record<string, unknown> };
     const { data: recipeRows } = await svc.from('social_recipes').select('*');
     const recipes = new Map<string, Recipe>(((recipeRows ?? []) as Recipe[]).map((r) => [r.key, r]));
     const enabled = (k: string) => recipes.get(k)?.enabled === true;
     const cfg = (k: string): Record<string, unknown> => (recipes.get(k)?.config ?? {}) as Record<string, unknown>;
     const touch = (k: string) => svc.from('social_recipes').update({ last_run_at: now.toISOString() }).eq('key', k);
+    // Autopilot removes ONLY the human-approval step — everything else (schedule,
+    // stale-post protection, dedupe, max_per_run, image/caption generation) is
+    // unchanged. 'scheduled' is the pre-existing status the publisher already
+    // treats identically to 'approved' when picking due posts; it was simply
+    // never written by anything until now, which is exactly the distinction
+    // this needs: autopilot-composed, not human-approved.
+    const statusFor = (k: string): 'draft' | 'scheduled' => recipes.get(k)?.autopilot === true ? 'scheduled' : 'draft';
 
     /* ── Wird o' da Day ──────────────────────────────────────────────────── */
     if (enabled('wird_of_day')) {
@@ -176,6 +183,7 @@ serve(async (req) => {
               image_url: `${SITE}/api/social-image?kind=wird&id=${w.id}`,
               link_url: link,
               scheduled_for: jitter(nextLondonHour(Number(cfg('wird_of_day').hour ?? 8))),
+              status: statusFor('wird_of_day'),
             });
             if (!error) result.wird_of_day++; else result.errors.push(`wird insert: ${error.message}`);
           }
@@ -220,6 +228,7 @@ serve(async (req) => {
               image_url: `${SITE}/api/social-image?kind=roundup&start=${today.ymd}&days=${days}`,
               link_url: link,
               scheduled_for: jitter(nextLondonHour(Number(cfg('whats_on_roundup').hour ?? 9))),
+              status: statusFor('whats_on_roundup'),
             });
             if (!error) result.whats_on_roundup++; else result.errors.push(`roundup insert: ${error.message}`);
           }
@@ -259,6 +268,7 @@ serve(async (req) => {
               image_url: `${SITE}/api/social-image?kind=jobs`,
               link_url: link,
               scheduled_for: jitter(nextLondonHour(Number(cfg('jobs_roundup').hour ?? 9))),
+              status: statusFor('jobs_roundup'),
             });
             if (!error) result.jobs_roundup++; else result.errors.push(`jobs insert: ${error.message}`);
           }
@@ -302,6 +312,7 @@ serve(async (req) => {
             image_url: `${SITE}/api/social-image?kind=product&id=${prod.id}`,
             link_url: link,
             scheduled_for: jitter(nextLondonHour(Number(cfg('new_product').hour ?? 11))),
+            status: statusFor('new_product'),
           });
           if (!error) { created++; result.new_product++; }
           else result.errors.push(`new_product insert: ${error.message}`);
@@ -346,6 +357,7 @@ serve(async (req) => {
             image_url: `${SITE}/api/social-image?kind=event&id=${e.id}`,
             link_url: link,
             scheduled_for: jitter(nextLondonHour(Number(cfg('event_spotlight').hour ?? 18))),
+            status: statusFor('event_spotlight'),
           });
           if (!error) { created++; result.event_spotlight++; }
         }

@@ -16,8 +16,11 @@ import { supabase } from '@/lib/supabase';
 const ACCENT = '#7C3AED';
 const money = (p: number) => `£${(p / 100).toFixed(2)}`;
 
+/** EF BB BF. Base64 so the native writer takes it as bytes, never as text. */
+const UTF8_BOM_BASE64 = '77u/';
+
 interface Txn {
-  occurred_at: string; direction: 'in' | 'out'; kind: string; description: string;
+  occurred_at: string; direction: 'in' | 'out' | 'refund'; kind: string; description: string;
   counterparty: string; gross_pence: number; fee_pence: number; cashback_pence: number;
   net_pence: number; status: string; reference: string | null;
 }
@@ -25,6 +28,7 @@ interface Txn {
 const KIND_LABEL: Record<string, string> = {
   wallet_payment: 'Wallet payment', pass_sale: 'Pass / pack', gift_sale: 'Gift',
   booking_deposit: 'Booking deposit', ticket_sale: 'Event tickets', product_sale: 'Shop order', boost: 'Boost',
+  wallet_refund: 'Refund',
 };
 
 type PresetKey = 'this_month' | 'last_month' | 'last_90' | 'this_year' | 'all';
@@ -72,18 +76,23 @@ export default function BusinessTransactionsScreen() {
   useEffect(() => { load(preset); }, [preset, load]);
 
   const totals = useMemo(() => {
-    let grossIn = 0, fees = 0, cashback = 0, netIn = 0, costsOut = 0;
+    // A refund carries the mirror of its sale, so its fee and cashback are
+    // negative and simply add in: the sale stays in Money in where it was
+    // earned, and Refunds shows separately what went back.
+    let grossIn = 0, refunds = 0, fees = 0, cashback = 0, netIn = 0, costsOut = 0;
     for (const r of rows) {
       if (r.direction === 'in') { grossIn += r.gross_pence; fees += r.fee_pence; cashback += r.cashback_pence; netIn += r.net_pence; }
+      else if (r.direction === 'refund') { refunds += Math.abs(r.gross_pence); fees += r.fee_pence; cashback += r.cashback_pence; netIn += r.net_pence; }
       else costsOut += r.gross_pence;
     }
-    return { grossIn, fees, cashback, net: netIn - costsOut };
+    return { grossIn, refunds, fees, cashback, net: netIn - costsOut };
   }, [rows]);
 
   async function exportCsv() {
     try {
       const head = ['Date', 'Type', 'Description', 'Customer', 'Direction', 'Gross', 'Fee', 'Cashback', 'Net', 'Status', 'Reference'];
-      const esc = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      // CR too: a description carrying a bare \r would otherwise split the row.
+      const esc = (v: string) => /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
       const p = (n: number) => (n / 100).toFixed(2);
       const lines = rows.map((r) => [
         new Date(r.occurred_at).toISOString().slice(0, 10), KIND_LABEL[r.kind] ?? r.kind, r.description,
@@ -91,7 +100,23 @@ export default function BusinessTransactionsScreen() {
       ].map((c) => esc(String(c))).join(','));
       const csv = [head.join(','), ...lines].join('\n');
       const uri = `${FileSystem.cacheDirectory}transactions-${preset}.csv`;
-      await FileSystem.writeAsStringAsync(uri, csv);
+      // The mark goes down as BYTES, not as text. Prefixing '\uFEFF' to the
+      // string and writing it as UTF-8 looked right in the bundle and still
+      // arrived on disk as "Date,..." — the character does not survive the trip
+      // from the JS string to the file. Base64 is the one path the native
+      // writer does not convert: it decodes straight to Data and writes it, so
+      // these three bytes are exactly what lands.
+      await FileSystem.writeAsStringAsync(uri, UTF8_BOM_BASE64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      // Then the body, appended as UTF-8 — which was always encoded correctly;
+      // the em dash and × arrived intact even when the mark did not.
+      await FileSystem.writeAsStringAsync(uri, csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+        append: true,
+      });
+      // Shared by URL, so the share sheet sends this file rather than a copy
+      // built from a string.
       await Share.share({ url: uri, title: 'OneShetland transactions' });
     } catch { /* user cancelled or share unavailable */ }
   }
@@ -113,6 +138,7 @@ export default function BusinessTransactionsScreen() {
         {/* Totals */}
         <View style={styles.totalsGrid}>
           <Stat label="Money in" value={money(totals.grossIn)} />
+          {totals.refunds > 0 && <Stat label="Refunds" value={`− ${money(totals.refunds)}`} />}
           <Stat label="Fees" value={`− ${money(totals.fees)}`} />
           <Stat label="Cashback" value={`− ${money(totals.cashback)}`} />
           <Stat label="Net to you" value={money(totals.net)} accent />
@@ -136,9 +162,21 @@ export default function BusinessTransactionsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowType}>{KIND_LABEL[r.kind] ?? r.kind}</Text>
                   <Text style={styles.rowMeta}>{fmtDate(r.occurred_at)} · {r.counterparty}</Text>
+                  {r.direction === 'refund' && (
+                    // What the customer got back, and the fee that came back
+                    // with it — so -£2.85 against the merchant reads as the
+                    // arithmetic it is rather than a number they must guess at.
+                    <Text style={styles.rowMeta}>
+                      {money(Math.abs(r.gross_pence))} returned to customer
+                      {r.fee_pence !== 0 ? ` · ${money(Math.abs(r.fee_pence))} OneShetland fee reversed` : ''}
+                      {r.cashback_pence !== 0 ? ` · ${money(Math.abs(r.cashback_pence))} cashback reversed` : ''}
+                    </Text>
+                  )}
                 </View>
-                <Text style={[styles.rowNet, { color: r.direction === 'out' ? '#dc2626' : '#16a34a' }]}>
-                  {r.direction === 'out' ? `− ${money(r.gross_pence)}` : money(r.net_pence)}
+                <Text style={[styles.rowNet, { color: r.direction === 'in' ? '#16a34a' : '#dc2626' }]}>
+                  {r.direction === 'in' ? money(r.net_pence)
+                    : r.direction === 'refund' ? `− ${money(Math.abs(r.net_pence))}`
+                    : `− ${money(r.gross_pence)}`}
                 </Text>
               </View>
             ))}

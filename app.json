@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.oneshetland.app",
-      "buildNumber": "3",
+      "buildNumber": "38",
       "icon": "./assets/icon.png",
       "associatedDomains": [
         "applinks:oneshetland.com"
@@ -124,10 +124,13 @@
     },
     "owner": "darrenfullerton",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
-      "url": "https://u.expo.dev/505d7724-8b86-493d-973e-45c44011157f"
+      "url": "https://u.expo.dev/505d7724-8b86-493d-973e-45c44011157f",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     }
   }
 }

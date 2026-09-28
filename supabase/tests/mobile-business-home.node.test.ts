@@ -95,9 +95,12 @@ describe('needs you, next, this week', () => {
   test('the hierarchy is exactly the accepted one', () => {
     const headers = [...raw().matchAll(/groupHeader}>([^<]+)/g)].map((m) => m[1]);
     assert.deepEqual(headers,
+      // "Also possible on OneShetland" (Phase 3E) is retired: unused
+      // capabilities now live behind "Add to your business", a compact row
+      // (not its own group header) opening a Sheet — see
+      // business-dashboard-add-capability-chooser.node.test.ts.
       ['Needs you', 'Next', 'This week', 'At the counter', 'Your business',
-       // Phase 3E: quiet, optional, and between the work and the layers.
-       'Also possible on OneShetland', 'Money', 'Grow']);
+       'Money', 'Grow']);
   });
 
   test('needs you renders only when something is genuinely waiting', () => {
@@ -360,30 +363,58 @@ describe('nothing of the old dashboard survives', () => {
 /* ── 6. Phase 3D — one reading of an event, and one card per outcome ─────── */
 
 describe('an event cannot be upcoming and not upcoming at once', () => {
-  test('the contradiction is reproducible from real data', () => {
+  test('the contradiction is reproducible, deterministically — not tied to any one event\'s clock', () => {
     // Anderson & Co: the Home said "No upcoming events" while the card beneath
-    // listed "Folk Festival at Mareel". The festival is CANCELLED and HIDDEN,
+    // listed "Folk Festival at Mareel". The festival was CANCELLED and HIDDEN,
     // and the card filtered on the date alone.
-    // Counted, not totalled. This used to assert date_only = 1 and canonical =
-    // 0, which were Anderson & Co's figures on the day — and went red the
-    // moment a legitimate new event was published there. The contradiction is
-    // a RELATIONSHIP: some event is found by the date alone and not by the
-    // canonical rule. That stays true however many events exist.
+    //
+    // This test used to reproduce that exact contradiction against Anderson &
+    // Co's real production data, pointing at the real Folk Festival row. That
+    // worked only for as long as the festival's own starts_at stayed in the
+    // future — the moment real time caught up with it (its starts_at was
+    // 2026-09-13 18:00 UTC), the row stopped being "future" and the test could
+    // no longer reproduce anything, exactly as its own failure message warned
+    // it would ("no cancelled-or-hidden future event remains at Anderson &
+    // Co..."). That is a live-data clock dependency, not a regression: it
+    // never touched source code, and the actual guard against this class of
+    // bug is the sibling test below, "both sides of the Home now apply the
+    // same rule", which pins the SOURCE query shape in lib/business-home.ts
+    // and the dashboard directly — untouched by what any event's start time
+    // happens to be today, and still green.
+    //
+    // Reproduces the same RELATIONSHIP deterministically instead: plants one
+    // throwaway event — cancelled, and therefore hidden via the table's own
+    // tg_events_sync_hidden trigger (is_hidden := status <> 'published') —
+    // with a start time fixed relative to now() rather than to a calendar
+    // date, inside a transaction that is never committed. It is found by the
+    // date-only filter and excluded by the canonical one, which is the whole
+    // contradiction, scoped to this one marked row so no other business's
+    // real data can mask or fake the result. now() is fixed for the whole
+    // transaction in Postgres, so "now() + 1 day" is always tomorrow relative
+    // to whenever this test runs — it cannot age out the way a specific
+    // event's calendar date eventually will.
     const [row] = sql(`
+      begin;
+
+      insert into public.events (organiser_business_id, title, status, starts_at)
+      select b.id, 'zz-contradiction-probe (rolled back, never committed)', 'cancelled', now() + interval '1 day'
+      from public.local_businesses b limit 1;
+
       select
         count(*) filter (where e.starts_at > now()
                            and (e.status <> 'published' or e.is_hidden))  as hidden_but_future,
         count(*) filter (where e.starts_at > now())                       as date_only,
         count(*) filter (where e.status = 'published' and not e.is_hidden
                            and e.starts_at > now())                       as canonical
-      from public.events e join public.local_businesses b
-        on b.id = e.organiser_business_id
-      where b.name = 'Anderson & Co';`);
+      from public.events e
+      where e.title = 'zz-contradiction-probe (rolled back, never committed)';
+
+      rollback;`);
     const dateOnly = Number(row.date_only);
     const canonical = Number(row.canonical);
     const contradictory = Number(row.hidden_but_future);
     assert.ok(contradictory > 0,
-      'no cancelled-or-hidden future event remains at Anderson & Co, so this test can no longer reproduce anything');
+      'the planted cancelled-but-future probe event did not appear — the fixture insert itself is broken');
     assert.equal(dateOnly - canonical, contradictory,
       'the two filters no longer differ by exactly the events the canonical rule excludes');
     assert.ok(dateOnly > canonical,
@@ -401,9 +432,37 @@ describe('an event cannot be upcoming and not upcoming at once', () => {
       'the date-only filter is what caused the contradiction');
   });
 
-  test('the supporting fact comes from the same filtered list', () => {
-    assert.match(raw(), /fact=\{bizEvents\.length > 0/);
-    assert.match(raw(), /bizEvents\[0\]\.starts_at/);
+  test('the supporting fact and the Scan tickets target are the same single value', () => {
+    // Was bizEvents[0] directly — which meant the "next 10 Sep" text and the
+    // event Scan tickets opened could each read a different index if the
+    // array or its consumers ever drifted. Both now read one derived const,
+    // nextBizEvent, so there is nothing left to drift between what the card
+    // SAYS and what Scan tickets ACTS on.
+    //
+    // UPDATE — the Events management list. Manage events no longer reads
+    // nextBizEvent at all: it always opens the management list
+    // (app/business-events.tsx) unconditionally, with no single event to
+    // drift against. Scan tickets is the one action left here with a
+    // genuine "same value as the fact" property to protect.
+    //
+    // nextBizEvent is deliberately NOT sourced from bizEvents above (whose
+    // future-only filter this test pins two lines up) — an in-progress
+    // event needs to still be reachable here, which bizEvents' filter
+    // excludes by design. See supabase/tests/business-next-event.node.test.ts
+    // for that behaviour in full; this test only pins that the dashboard
+    // uses ONE value for both the fact and Scan tickets.
+    const src = raw();
+    const factIdx = src.indexOf('fact={nextBizEvent');
+    assert.notEqual(factIdx, -1, 'the fact must read the single derived value');
+    const cardEnd = src.indexOf(']}', factIdx);
+    assert.notEqual(cardEnd, -1, 'the actions array for this card has moved');
+    const cardBlock = src.slice(factIdx, cardEnd);
+    // Scan tickets only renders at all once nextBizEvent exists (see
+    // mobile-event-manage-entry.node.test.ts), so inside that guard the
+    // reference is unconditional (nextBizEvent.id, no `?.`) — there is no
+    // other value it could read.
+    const idMatches = cardBlock.match(/nextBizEvent\.id/g) ?? [];
+    assert.equal(idMatches.length, 1, 'Scan tickets must target nextBizEvent, and Manage events must not reference it at all');
   });
 });
 
@@ -425,9 +484,15 @@ describe('one compact card per outcome, and no repeats beneath it', () => {
   });
 
   test('every destination those cards used is still reachable', () => {
+    // UPDATE — the Events management list. /event-manage is no longer a
+    // direct, one-hop destination from this screen — Manage events now
+    // opens /business-events first, exactly the fix this task is (a
+    // stranded draft could not be reached any other way). /event-manage
+    // itself is still genuinely reachable, just one hop further along; see
+    // events-management-index.node.test.ts for that hop proven directly.
     for (const r of ['/business-products', '/business-orders', '/local-book-units',
                      '/local-book-services', '/local-book-schedule', '/local-book-bookings',
-                     '/event-manage', '/event-create', '/event-scanner',
+                     '/business-events', '/event-create', '/event-scanner',
                      '/local-offer-new', '/local-business-detail', '/local-business-register']) {
       assert.match(raw(), new RegExp(`'${r}'`), `${r} must stay reachable`);
     }
@@ -482,29 +547,35 @@ describe('the rest of Home is navigation and status, not the managers', () => {
   });
 });
 
-/* ── 7. Phase 3E — the discovery shelf ────────────────────────────────────── */
+/* ── 7. Phase 3F — Add to your business (replaces the discovery shelf) ─────
+   The discovery shelf ("Also possible on OneShetland") only appeared once Be
+   found reached 'good' — which meant it effectively never appeared for a
+   freshly claimed business, the entire launch cohort. "Add to your business"
+   drops that gate entirely: it shows the moment any capability is
+   `available`, independent of Be found's own state. */
 
-describe('also possible on OneShetland', () => {
+describe('add to your business', () => {
   const src = () => raw();
   /* The rule as the screen expresses it, exercised against the real helpers:
-     a capability is discovery only in the canonical never-configured state, and
-     the shelf waits until the listing is genuinely good. */
+     a capability is discovery only in the canonical never-configured state.
+     Unlike the retired shelf, the trigger no longer consults Be found at all. */
   const GOOD = { phone: '01595', lat: 60.15, lng: -1.15, description: 'x',
                  logo_url: 'u', opening_hours: { mon: '9-5' } as never };
   const READY = { phone: '01595', lat: 60.15, lng: -1.15 };
   const shelfFor = (business: Record<string, unknown>, data: OutcomeData) => {
     const o = businessOutcomes({ ...business, id: 'b', slug: 's' } as never, data, '');
     const discovery = [1, 2, 3, 4].filter((i) => o[i].state === 'available');
-    return { show: o[0].state === 'good' && discovery.length > 0, discovery, outcomes: o };
+    return { show: discovery.length > 0, discovery, outcomes: o };
   };
 
-  test('1. nothing while Be found is incomplete', () =>
-    assert.equal(shelfFor({}, NONE).show, false));
+  test('1. a newly claimed business (Be found incomplete) sees it immediately', () =>
+    assert.equal(shelfFor({}, NONE).show, true,
+      'a freshly claimed business must not have to wait on its profile'));
 
-  test('2. nothing while Be found is only ready', () =>
-    assert.equal(shelfFor(READY, NONE).show, false));
+  test('2. it shows just the same while Be found is only ready', () =>
+    assert.equal(shelfFor(READY, NONE).show, true));
 
-  test('3. it appears once Be found is good and something is unused', () => {
+  test('3. and just the same once Be found is good — Be found never decides this', () => {
     const r = shelfFor(GOOD, NONE);
     assert.equal(r.show, true);
     assert.deepEqual(r.discovery, [1, 2, 3, 4]);
@@ -531,8 +602,12 @@ describe('also possible on OneShetland', () => {
     // move saved, setup and unknown capabilities into discovery unnoticed.
     assert.match(code(DASH), /outcomes\[i\]\?\.state === 'available'/,
       'discovery must select the canonical never-configured state, and only that');
-    assert.match(code(DASH), /const showDiscovery = outcomes\[0\]\?\.state === 'good' && discovery\.length > 0;/,
-      'and it must wait for a genuinely good listing');
+    // The retired shelf gated its own visibility on Be found being 'good' —
+    // exactly the bug this phase removes. The trigger must depend on nothing
+    // but discovery itself.
+    assert.doesNotMatch(code(DASH), /showDiscovery/, 'the Be-found gate must not come back under any name');
+    assert.match(code(DASH), /\{discovery\.length > 0 && \(/,
+      'and the trigger must show for any discovery, waiting on nothing else');
   });
 
   test('5. configured Sell stays a working outcome', () => {
@@ -576,10 +651,16 @@ describe('also possible on OneShetland', () => {
   });
 
   test('13. it does not nag, badge or score', () => {
-    // Comments stripped: the shelf's own comment explains that it carries no
-    // dot, badge or count, which would otherwise trip this.
+    // Comments stripped: the trigger and sheet's own comments explain they
+    // carry no dot, badge or count, which would otherwise trip this. Two
+    // narrow slices, not the whole file between them — the trigger sits right
+    // before the unrelated Money section (which legitimately says "Pro"/
+    // upgrade-adjacent things for Wallet/NFC), and AddCapabilitySheet is a
+    // separate function defined near the end of the file.
     const s2 = code(DASH);
-    const shelf = s2.slice(s2.indexOf('Also possible on OneShetland'), s2.indexOf('>Money<'));
+    const trigger = s2.slice(s2.indexOf('Add to your business'), s2.indexOf('>Money<'));
+    const sheetFn = s2.slice(s2.indexOf('function AddCapabilitySheet'), s2.indexOf('function LoyaltyModal'));
+    const shelf = trigger + '\n' + sheetFn;
     for (const word of ['Upgrade', 'upgrade', 'Unlock', 'unlock', 'incomplete', 'Not set up',
                         'recommended', 'complete', '%']) {
       assert.ok(!shelf.includes(word), `discovery must not say "${word}"`);
@@ -626,15 +707,17 @@ describe('also possible on OneShetland', () => {
 
 describe('what the dashboard actually renders', () => {
   /**
-   * The Phase 3E tests above proved the RULE and then asserted the scenarios
-   * from a reimplementation of it. That is how a real contradiction survived
-   * review: isWorking was coupled to showDiscovery, so with the shelf hidden
-   * the exclusion switched off and all four never-used cards came back — the
-   * exact wall the phase existed to remove — while the tests, which never
-   * touched isWorking, stayed green.
+   * A prior Phase 3E contradiction survived review because these tests only
+   * proved the RULE, from a reimplementation of it, never the screen's own
+   * expressions: isWorking was coupled to showDiscovery, so with the shelf
+   * hidden the exclusion switched off and all four never-used cards came
+   * back — while the tests, which never touched isWorking, stayed green.
    *
-   * So these lift the three expressions out of the source and run them. A
-   * mutation to the screen changes what executes here.
+   * So these lift the real expressions out of the source and run them. A
+   * mutation to the screen changes what executes here. showDiscovery itself
+   * is gone (Phase 3F retired the Be-found gate along with the shelf), so
+   * what these now prove is that discovery — and therefore the trigger,
+   * which is just `discovery.length > 0` — never reads outcomes[0] at all.
    */
   function screenLogic() {
     const src = read(DASH);
@@ -645,20 +728,20 @@ describe('what the dashboard actually renders', () => {
     };
     const discoverable = grab(/const DISCOVERABLE = (\[[^\]]*\])/, 'DISCOVERABLE');
     const discoveryExpr = grab(/const discovery = home\s*\n\s*\?\s*([\s\S]*?)\n\s*: \[\];/, 'discovery');
-    const showExpr = grab(/const showDiscovery = ([^;]+);/, 'showDiscovery');
     const workingExpr = grab(/const isWorking = \(i: number\) => ([^;]+);/, 'isWorking');
+    assert.doesNotMatch(src, /const showDiscovery/, 'showDiscovery must stay retired');
 
     return (outcomes: { state: string }[]) => {
       const body = `
         const DISCOVERABLE = ${discoverable};
         const home = true;
         const discovery = ${discoveryExpr.replace(/ as const/g, '')};
-        const showDiscovery = ${showExpr};
+        const showAddToYourBusiness = discovery.length > 0;
         const isWorking = (i) => ${workingExpr.replace(/ as 1/g, '')};
-        return { discovery, showDiscovery, working: [0,1,2,3,4].filter(isWorking) };
+        return { discovery, showAddToYourBusiness, working: [0,1,2,3,4].filter(isWorking) };
       `;
       return new Function('outcomes', body)(outcomes) as
-        { discovery: number[]; showDiscovery: boolean; working: number[] };
+        { discovery: number[]; showAddToYourBusiness: boolean; working: number[] };
     };
   }
 
@@ -667,22 +750,23 @@ describe('what the dashboard actually renders', () => {
     run([{ state: found }, ...rest.map((state) => ({ state }))]);
   const FOUR_UNUSED = ['available', 'available', 'available', 'available'];
 
-  test('1. incomplete + four never used → Be found alone, no shelf', () => {
+  test('1. incomplete + four never used → Be found alone works, but Add to your business shows immediately', () => {
     const r = scene('incomplete', FOUR_UNUSED);
     assert.deepEqual(r.working, [0], 'only Be found may render as a working card');
-    assert.equal(r.showDiscovery, false, 'and the shelf waits');
+    assert.equal(r.showAddToYourBusiness, true, 'a freshly claimed business must see it right away');
+    assert.deepEqual(r.discovery, [1, 2, 3, 4]);
   });
 
-  test('2. ready + four never used → Be found alone, no shelf', () => {
+  test('2. ready + four never used → identical: the trigger does not wait for a better profile', () => {
     const r = scene('ready', FOUR_UNUSED);
     assert.deepEqual(r.working, [0]);
-    assert.equal(r.showDiscovery, false, 'ready is not good enough');
+    assert.equal(r.showAddToYourBusiness, true);
   });
 
-  test('3. good + four never used → Be found working, four in discovery', () => {
+  test('3. good + four never used → identical again: Be found\'s own state never changes this', () => {
     const r = scene('good', FOUR_UNUSED);
     assert.deepEqual(r.working, [0]);
-    assert.equal(r.showDiscovery, true);
+    assert.equal(r.showAddToYourBusiness, true);
     assert.deepEqual(r.discovery, [1, 2, 3, 4]);
   });
 
@@ -694,11 +778,11 @@ describe('what the dashboard actually renders', () => {
     }
   });
 
-  test('5. history-bearing states stay working too', () => {
+  test('5. history-bearing states stay working too, and the trigger disappears', () => {
     const r = scene('good', ['live', 'setup', 'none_upcoming', 'saved']);
     assert.deepEqual(r.working, [0, 1, 2, 3, 4]);
     assert.deepEqual(r.discovery, []);
-    assert.equal(r.showDiscovery, false, 'nothing left to discover');
+    assert.equal(r.showAddToYourBusiness, false, 'nothing left to add');
   });
 
   test('6. unknown is never discovery, and is not hidden from the working area', () => {
@@ -817,10 +901,10 @@ describe('the rest of Home did not move', () => {
   test('outcomes, discovery and the spine are all still there', () => {
     const d = raw();
     assert.equal((d.match(/<OutcomeCard/g) ?? []).length, 5);
-    assert.match(d, /Also possible on OneShetland/);
+    assert.match(d, /Add to your business/);
     const headers = [...d.matchAll(/groupHeader}>([^<]+)/g)].map((m) => m[1]);
     assert.deepEqual(headers,
       ['Needs you', 'Next', 'This week', 'At the counter', 'Your business',
-       'Also possible on OneShetland', 'Money', 'Grow']);
+       'Money', 'Grow']);
   });
 });

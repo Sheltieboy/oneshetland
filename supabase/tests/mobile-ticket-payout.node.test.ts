@@ -77,7 +77,9 @@ describe('Get tickets opens a route that exists', () => {
 
   test('a navigation failure is reported, not swallowed and not fatal', () => {
     const src = detail();
-    assert.match(src, /const openTicketCheckout = \(\) => \{/);
+    // Now a useCallback (so the business-profile auto-open intent can list it
+    // as a stable effect dependency), same body otherwise.
+    assert.match(src, /const openTicketCheckout = useCallback\(\(\) => \{/);
     assert.match(src, /console\.error\('\[events\/\[id\]\] could not open ticket checkout:'/,
       'the real error must reach the log');
     assert.match(src, /alert\(\{/, 'and the user must be told something rather than losing the app');
@@ -90,7 +92,10 @@ describe('Get tickets opens a route that exists', () => {
     assert.match(src, /if \(loading\)/, 'loading');
     assert.match(src, /if \(!event\)/, 'missing event');
     assert.match(src, /ticketTypes\.length === 0/, 'no active ticket types');
-    assert.match(src, /use_saved_card: !!profile\.has_payment_method/,
+    // UPDATE — see event-discovery.node.test.ts: the screen now asks the server what card is
+    // really chargeable instead of trusting the profile flag. Same protection: no saved card
+    // (none / unknown / not yet answered) → use_saved_card:false → the payment sheet.
+    assert.match(src, /use_saved_card: cardState\?\.state === 'card'/,
       'a buyer with no saved card falls through to the payment sheet');
   });
 

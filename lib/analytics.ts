@@ -6,8 +6,18 @@
  * scrubs PII). NEVER put money amounts or PII in props — revenue lives in the
  * ledgers; transaction events are fired server-side from the edge functions.
  *
- * Consent model (app): default ON, with an opt-out toggle in Settings. Flip
- * DEFAULT_CONSENT to false for strict opt-in. See web lib for the opt-in banner.
+ * Consent model (app): strict opt-in, matching the website. A device that has
+ * never made a choice is OFF — no identifier is created, none is persisted,
+ * nothing is queued or sent. The Settings toggle (setAnalyticsConsent) is the
+ * ONLY thing that ever writes CONSENT_KEY, so a stored 'true' can only mean a
+ * real person switched it on; a missing value always means "never asked",
+ * never "the old default". That is what makes it safe to flip DEFAULT_CONSENT
+ * here without a migration: nothing before this change ever wrote 'true' on a
+ * user's behalf, so no stored consent needs reinterpreting — see
+ * supabase/tests/mobile-analytics-consent.node.test.ts.
+ *
+ * 25 Sep→28 Sep 2026: this used to default to true (opt-out) and create +
+ * persist an anon id on every launch regardless of consent — fixed here.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -46,7 +56,7 @@ interface QueuedEvent {
 
 const ANON_KEY    = 'os_analytics_anon_id';
 const CONSENT_KEY = 'os_analytics_consent';
-const DEFAULT_CONSENT = true;            // app: opt-out model
+const DEFAULT_CONSENT = false;           // app: opt-in, matching the website
 const FLUSH_MS    = 5000;
 const MAX_BATCH   = 25;
 
@@ -69,15 +79,34 @@ function uuid(): string {
   });
 }
 
-/** Load persisted anon id + consent. Safe to call multiple times. */
+/**
+ * Creates and persists the anon id if consent is on and none exists yet; if
+ * consent is off, makes sure none lingers on disk (a device that ran the old
+ * default-on code may still have one from before it ever asked).
+ */
+async function syncAnonId(): Promise<void> {
+  if (consent) {
+    if (!anonId) {
+      anonId = await AsyncStorage.getItem(ANON_KEY);
+      if (!anonId) { anonId = uuid(); await AsyncStorage.setItem(ANON_KEY, anonId); }
+    }
+  } else {
+    anonId = null;
+    await AsyncStorage.removeItem(ANON_KEY);
+  }
+}
+
+/** Load persisted consent, and the anon id only if that consent is on. Safe to call multiple times. */
 export async function initAnalytics(): Promise<void> {
   if (ready) return;
   try {
-    anonId = await AsyncStorage.getItem(ANON_KEY);
-    if (!anonId) { anonId = uuid(); await AsyncStorage.setItem(ANON_KEY, anonId); }
+    // No stored value ever means "the old default" — CONSENT_KEY is written
+    // ONLY by setAnalyticsConsent, below, so a missing value always and only
+    // means this device has never been asked.
     const c = await AsyncStorage.getItem(CONSENT_KEY);
     consent = c === null ? DEFAULT_CONSENT : c === 'true';
-  } catch { anonId = anonId ?? uuid(); }
+    await syncAnonId();
+  } catch { /* stay opted out; nothing to create or persist */ }
   ready = true;
 }
 
@@ -88,6 +117,7 @@ export async function setAnalyticsConsent(on: boolean): Promise<void> {
   consent = on;
   try { await AsyncStorage.setItem(CONSENT_KEY, String(on)); } catch { /* ignore */ }
   if (!on) queue = [];                    // drop anything pending
+  await syncAnonId();
 }
 export function getAnalyticsConsent(): boolean { return consent; }
 

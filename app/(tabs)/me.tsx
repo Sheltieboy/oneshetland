@@ -13,8 +13,10 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { supabase } from '@/lib/supabase';
+import { useSavedCard } from '@/hooks/useSavedCard';
+import { formatCardLabel } from '@/lib/card-label';
 import { useAlert } from '@/components/BrandedAlert';
-import { fetchBusinessPrivate } from '@/lib/local-api';
+import { fetchBusinessPrivate, fetchBusinessPayoutReady } from '@/lib/local-api';
 
 // ── Reusable components ───────────────────────────────────────────────────────
 
@@ -71,11 +73,21 @@ type MyBusiness = {
   use_business_payout: boolean;
   business_stripe_onboarding_complete: boolean;
   business_stripe_payouts_enabled: boolean;
+  /**
+   * The canonical business_payout_ready() answer — the business's own
+   * Connect account, or a valid fallback to its owner's central account.
+   * Not business_stripe_payouts_enabled, which is populated on no business
+   * at all and would show every business using its own account as
+   * permanently "Setup needed".
+   */
+  payout_ready: boolean;
 };
 
 export default function MeTab() {
   const router = useRouter();
   const { session, profile, signOut, refreshProfile, isDriver, hasAppliedToDrive } = useAuth();
+  const savedCard = useSavedCard(profile?.id, profile?.has_payment_method);
+  const hasCard = savedCard?.state === 'card';
   const { alert } = useAlert();
   const { isTablet } = useAppLayout();
   const goToSignIn = useGoToSignIn();
@@ -102,10 +114,16 @@ export default function MeTab() {
         .eq('owner_id', profile.id)
         .eq('is_active', true);
       const rows = (biz ?? []) as { id: string; name: string }[];
-      const withPrivate = await Promise.all(rows.map(async (b) => ({
-        ...b,
-        ...(await fetchBusinessPrivate(b.id)),
-      })));
+      // One payout_ready fetch per business per load, alongside the existing
+      // private-fields fetch — reused from state for every render of this
+      // screen rather than re-asked.
+      const withPrivate = await Promise.all(rows.map(async (b) => {
+        const [priv, payoutReady] = await Promise.all([
+          fetchBusinessPrivate(b.id),
+          fetchBusinessPayoutReady(b.id),
+        ]);
+        return { ...b, ...priv, payout_ready: payoutReady };
+      }));
       setMyBusinesses(withPrivate as MyBusiness[]);
     } catch { /* silent */ }
   }, [profile?.id]);
@@ -330,20 +348,20 @@ export default function MeTab() {
 
             {/* Payment card status */}
             <View style={[styles.statusBanner, {
-              backgroundColor: profile?.has_payment_method ? colors.jobsLight : '#FEF3C7',
+              backgroundColor: hasCard ? colors.jobsLight : '#FEF3C7',
             }]}>
               <FontAwesome5
-                name={profile?.has_payment_method ? 'check-circle' : 'exclamation-circle'}
+                name={hasCard ? 'check-circle' : 'exclamation-circle'}
                 size={13}
-                color={profile?.has_payment_method ? colors.jobs : '#D97706'}
+                color={hasCard ? colors.jobs : '#D97706'}
                 solid
               />
               <Text style={[styles.statusText, {
-                color: profile?.has_payment_method ? colors.jobs : '#92400E',
+                color: hasCard ? colors.jobs : '#92400E',
               }]}>
-                {profile?.has_payment_method ? 'Payment card added' : 'No payment card yet'}
+                {savedCard?.state === 'card' ? `Payment card added · ${formatCardLabel(savedCard.brand, savedCard.last4)}` : savedCard === null ? 'Checking payment card…' : savedCard.state === 'unknown' ? 'Couldn\u2019t check payment card' : 'No payment card yet'}
               </Text>
-              {!profile?.has_payment_method && (
+              {!hasCard && savedCard !== null && (
                 <TouchableOpacity
                   style={[styles.statusBtn, { backgroundColor: '#D97706' }]}
                   onPress={() => { Haptics.selectionAsync(); router.push('/payment-setup'); }}
@@ -356,7 +374,7 @@ export default function MeTab() {
             <MenuRow
               icon="credit-card"
               iconColor={colors.jobs}
-              label={profile?.has_payment_method ? 'Update payment card' : 'Add a payment card'}
+              label={hasCard ? 'Update payment card' : 'Add a payment card'}
               sublabel="Used for Fetch, Shifts, Local, bookings and boosts across the whole app"
               onPress={() => { Haptics.selectionAsync(); router.push('/payment-setup'); }}
               last={!isSeller && myBusinesses.length === 0}
@@ -451,19 +469,20 @@ export default function MeTab() {
                     <FontAwesome5 name="university" size={11} color={colors.textMuted} />
                     <Text style={styles.bizPaymentRowLabel}>Payout bank</Text>
                   </View>
+                  {/* payout_ready (business_payout_ready()) decides ready vs
+                      not — the canonical answer, covering both the business's
+                      own account and a valid owner-central-account fallback.
+                      use_business_payout only picks which account NAME to
+                      show once ready; it is not itself a readiness signal. */}
                   <View style={[styles.bizPaymentPill, {
-                    backgroundColor: biz.use_business_payout
-                      ? (biz.business_stripe_payouts_enabled ? colors.jobsLight : '#FEF3C7')
-                      : colors.accentLight,
+                    backgroundColor: biz.payout_ready ? colors.jobsLight : '#FEF3C7',
                   }]}>
                     <Text style={[styles.bizPaymentPillText, {
-                      color: biz.use_business_payout
-                        ? (biz.business_stripe_payouts_enabled ? colors.jobs : '#92400E')
-                        : colors.accentDark,
+                      color: biz.payout_ready ? colors.jobs : '#92400E',
                     }]}>
-                      {biz.use_business_payout
-                        ? (biz.business_stripe_payouts_enabled ? 'Business bank' : 'Setup needed')
-                        : 'Central bank'}
+                      {biz.payout_ready
+                        ? (biz.use_business_payout ? 'Business bank' : 'Central bank')
+                        : 'Setup needed'}
                     </Text>
                   </View>
                   <FontAwesome5 name="chevron-right" size={9} color={colors.textLight} />

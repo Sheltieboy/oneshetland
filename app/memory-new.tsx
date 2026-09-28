@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation, Stack } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { track } from '@/lib/analytics';
 import { SECTIONS } from '@/constants/sections';
@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import {
   createMemory, updateMemory, fetchMemoryDetail, uploadMemoryMedia, requestTranscription,
-  MediaKind, MemoryVisibility,
+  MediaKind, MemoryVisibility, MediaUploadError,
 } from '@/lib/memories-api';
 import { PickedFile } from '@/lib/image-upload';
 import { MEMORY_CATEGORIES } from '@/constants/memory-categories';
@@ -59,6 +59,18 @@ interface DraftMedia {
   durationSeconds?: number;
   /** Preview URI used by the local UI before upload. */
   previewUri:       string;
+  /**
+   * Set once this draft's upload has actually succeeded. Lets a retry after
+   * a later file's upload failure skip files that already made it, instead
+   * of re-uploading (and duplicating) them.
+   */
+  uploaded?:        boolean;
+}
+
+/** Plain-English name for a media kind, used only in user-facing copy —
+ * never the raw `kind` value, and never any backend detail alongside it. */
+function mediaKindLabel(kind: MediaKind | null): string {
+  return kind === 'photo' ? 'photo' : kind === 'audio' ? 'voice note' : kind === 'video' ? 'video' : 'file';
 }
 
 const ERA_SUGGESTIONS = [
@@ -95,9 +107,14 @@ const VISIBILITY_OPTIONS: { value: MemoryVisibility; label: string; sub: string 
 
 export default function MemoryNewScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { profile } = useAuth();
   const { alert } = useAlert();
-  const { screenWidth } = useAppLayout();
+  const { screenWidth, screenHeight } = useAppLayout();
+  // A useful working map, not a preview strip — but still responsive on a
+  // short phone screen. Clamped between "always genuinely usable" and
+  // "never swallows the whole screen".
+  const mapHeight = Math.round(Math.max(400, Math.min(560, screenHeight * 0.5)));
   const { lat: latParam, lng: lngParam, parent_id: parentIdParam, memory_id: memoryIdParam } =
     useLocalSearchParams<{ lat?: string; lng?: string; parent_id?: string; memory_id?: string }>();
 
@@ -133,10 +150,41 @@ export default function MemoryNewScreen() {
   // A recovered draft, offered for one-tap restore. Only ever set for a
   // brand-new story (we never autosave over an edit or a threaded reply).
   const [recoverable, setRecoverable] = useState<SavedDraft | null>(null);
+  // Whether a finger is currently down on the map. While true the outer
+  // ScrollView's own scrolling is suspended so react-native-maps' pan/pinch
+  // recognizers get the touch stream uncontested — see mapPane below.
+  const [mapInteracting, setMapInteracting] = useState(false);
+  // Set when the memory itself saved but at least one media file didn't.
+  // Rendered as a PERSISTENT banner near the Save button — deliberately not
+  // just an Alert, which is easy to dismiss/miss without reading (a real
+  // physical-device attempt showed exactly that: the failure was real, the
+  // memory row was genuinely safe, but nothing on screen kept saying so
+  // after the alert closed).
+  const [partialSaveNotice, setPartialSaveNotice] = useState<string | null>(null);
 
   // Drafts are only for the plain "new story" flow — not edits, not sub-
   // memories (those carry their own context we don't want to mix up).
   const draftEligible = !isEditing && !isChild;
+
+  // True once this attempt has already created the memory row (a later
+  // media upload then failed and the user retried) — Save must reuse it
+  // rather than creating a second story from one tap-turned-two-taps.
+  const createdMemoryIdRef = useRef<string | null>(null);
+  // Set right before the post-save navigation so the unsaved-changes guard
+  // below doesn't mistake a successful save's own redirect for the user
+  // abandoning their story.
+  const justSavedRef = useRef(false);
+  // Synchronous re-entrancy guard, checked and set BEFORE any await. React's
+  // own `saving` state disables the button too, but that disabling only
+  // takes effect after a re-render — a fast second tap can land inside that
+  // window. This ref closes it deterministically, with no render in between.
+  const savingRef = useRef(false);
+
+  // Same threshold the autosave effect already used, hoisted so the
+  // leave-without-saving guard can reuse the exact same definition of
+  // "there's something here worth protecting."
+  const hasMeaningfulContent =
+    !!(title.trim() || body.trim() || drafts.length > 0 || point);
 
   const clearDraft = useCallback(async () => {
     try { await AsyncStorage.removeItem(DRAFT_KEY); } catch { /* non-fatal */ }
@@ -213,10 +261,9 @@ export default function MemoryNewScreen() {
   const hadContent = useRef(false);
   useEffect(() => {
     if (!draftEligible || saving) return;
-    const anyContent = !!(title.trim() || body.trim() || drafts.length > 0 || point);
     // Don't write an empty draft on first paint; but once there's been
     // content, keep saving (so clearing a field still persists).
-    if (!anyContent && !hadContent.current) return;
+    if (!hasMeaningfulContent && !hadContent.current) return;
     hadContent.current = true;
     const t = setTimeout(() => {
       const payload: SavedDraft = {
@@ -229,6 +276,34 @@ export default function MemoryNewScreen() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, body, era, tags, placeName, visibility, point, drafts.length, draftEligible, saving]);
+
+  // Leaving with a composed-but-unsaved story (back gesture, hardware back,
+  // or the header's close button — all of these remove this screen the same
+  // way) asks first instead of silently discarding it. New stories only
+  // (draftEligible): an edit screen starts pre-filled from the existing
+  // memory, so "meaningful content" would be true from the first frame and
+  // this would fire on every untouched visit — that's a separate, later
+  // concern, not this slice's. Suspended for the screen's own successful
+  // save (justSavedRef) and while a save is actively in flight (saving),
+  // so this never contests a save this screen itself just asked for.
+  useEffect(() => {
+    if (!draftEligible) return;
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      if (justSavedRef.current || saving || !hasMeaningfulContent) return;
+      e.preventDefault();
+      alert({
+        title: 'Discard this story?',
+        message: 'You have unsaved changes. If you leave now they will be lost.',
+        icon: 'exclamation-triangle',
+        accent: colors.error,
+        actions: [
+          { label: 'Keep editing', style: 'cancel' },
+          { label: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
+        ],
+      });
+    });
+    return unsubscribe;
+  }, [navigation, draftEligible, saving, hasMeaningfulContent, alert]);
 
   // ── Attach media ─────────────────────────────────────────────────────────
 
@@ -244,6 +319,16 @@ export default function MemoryNewScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions?.Images ?? ['images'],
       quality: 0.85,
       allowsMultipleSelection: false,
+      // Without this, iOS hands back the library asset in its OWN native
+      // format — HEIC for most photos on a real iPhone, since that's the
+      // device default. memories-media's Storage bucket only allows
+      // jpeg/jpg/png/webp; HEIC isn't in that list, so an unconverted photo
+      // is rejected by Storage before it ever reaches memory_media (proven
+      // directly against the live bucket: image/heic -> 400 invalid_mime_type,
+      // image/jpeg -> passes that check). "Compatible" asks the OS's own
+      // picker to hand back JPEG (Apple's documented PHPicker behaviour for
+      // this exact case) instead of re-encoding client-side ourselves.
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode?.Compatible,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
@@ -293,6 +378,10 @@ export default function MemoryNewScreen() {
     && !saving;
 
   const handleSave = async () => {
+    // Synchronous re-entrancy guard — set before any await, so a second tap
+    // landing before the button visually disables still can't start a
+    // second attempt. Cleared in `finally`, same as `saving`.
+    if (savingRef.current) return;
     if (!profile?.id) {
       alert({ title: 'Sign in first', message: 'You need to be signed in to add a story.' });
       return;
@@ -302,9 +391,19 @@ export default function MemoryNewScreen() {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
+    setPartialSaveNotice(null);
+    // Tracks which draft is being uploaded RIGHT NOW, so the catch block
+    // below can say which kind of file failed even though the thrown error
+    // itself doesn't carry that context.
+    let attemptingKind: MediaKind | null = null;
     try {
-      // 1. Create the memory shell — or, in edit mode, update the existing one.
+      // 1. Create the memory shell — or, in edit mode, update the existing
+      //    one. If a PREVIOUS tap already got as far as creating the row and
+      //    then failed on a media upload, createdMemoryIdRef already holds
+      //    its id — reuse it rather than creating a second story, so a user
+      //    retrying after a failed upload can never end up with a duplicate.
       let memoryId: string;
       if (isEditing && memoryIdParam) {
         await updateMemory(memoryIdParam, {
@@ -318,6 +417,8 @@ export default function MemoryNewScreen() {
           visibility,
         });
         memoryId = memoryIdParam;
+      } else if (createdMemoryIdRef.current) {
+        memoryId = createdMemoryIdRef.current;
       } else {
         const memory = await createMemory({
           author_id:  profile.id,
@@ -332,17 +433,23 @@ export default function MemoryNewScreen() {
           visibility,
         });
         memoryId = memory.id;
+        createdMemoryIdRef.current = memoryId;
         track('memory_created', { props: { has_media: drafts.length > 0 } });
       }
 
-      // 2. Upload any newly-added media sequentially (small N — keeps UI
-      //    predictable, and keeps display_order stable). We surface
-      //    "Uploading N of M…" as each file completes so a slow upload reads
-      //    as progress, not a hang. (The REST/FormData uploader doesn't
-      //    expose per-byte progress, so we advance per finished file.)
-      for (let i = 0; i < drafts.length; i++) {
-        const d = drafts[i];
-        setUploadProg({ current: i + 1, total: drafts.length });
+      // 2. Upload whichever media hasn't already made it up (skips anything
+      //    an earlier, partially-failed attempt already uploaded — see the
+      //    `uploaded` flag on DraftMedia). Sequential (small N) keeps UI
+      //    predictable and display_order stable; "Uploading N of M…"
+      //    advances per finished file since the REST/FormData uploader
+      //    doesn't expose per-byte progress.
+      const pending = drafts
+        .map((d, i) => ({ d, i }))
+        .filter(({ d }) => !d.uploaded);
+      for (let n = 0; n < pending.length; n++) {
+        const { d, i } = pending[n];
+        attemptingKind = d.kind;
+        setUploadProg({ current: n + 1, total: pending.length });
         const media = await uploadMemoryMedia({
           memoryId,
           uploaderId:      profile.id,
@@ -352,23 +459,87 @@ export default function MemoryNewScreen() {
           durationSeconds: d.durationSeconds,
           displayOrder:    i,
         });
-        // Fire-and-forget transcription for voice notes.
+        setDrafts(prev => prev.map((dd, ii) => (ii === i ? { ...dd, uploaded: true } : dd)));
+        // Fire-and-forget transcription for voice notes. Never let this
+        // reject unhandled, and never let a transcription failure (missing
+        // key, rate limit, Whisper error, network) touch the save itself —
+        // the memory and its audio are already safely persisted by this
+        // point regardless of what transcription does next.
         if (d.kind === 'audio') {
-          void requestTranscription(media.id);
+          requestTranscription(media.id).catch(err => {
+            console.warn('[memory-new] transcription request failed (non-blocking):', err?.message ?? err);
+            // Privacy-safe: which memory/media, and that a request failed —
+            // never the audio itself, never the transcript, never a URL.
+            track('memory_transcription_request_failed', {
+              objectType: 'memory',
+              objectId: memoryId,
+              props: { media_id: media.id, message: String(err?.message ?? err).slice(0, 200) },
+            });
+          });
         }
       }
       setUploadProg(null);
 
-      // Story saved cleanly — drop any recovered draft so we don't offer to
-      // resume something that's already published.
+      // Story (and all its media) saved cleanly — drop any recovered draft
+      // so we don't offer to resume something that's already published.
       void clearDraft();
 
-      // 3. Off to the detail screen — pin will be visible on next focus
-      //    of the map screen too (it reloads on focus).
-      router.replace(`/memory/${memoryId}`);
+      // 3. Off to the detail screen, with a one-time flag the detail screen
+      //    reads to show a brief "Story saved" confirmation — Save alone
+      //    (a spinner, then a screen change) wasn't unambiguous enough.
+      //    Pin will be visible on next focus of the map screen too (it
+      //    reloads on focus). justSavedRef is flagged first so the
+      //    unsaved-changes guard doesn't mistake this screen's own redirect
+      //    for the user abandoning their story.
+      justSavedRef.current = true;
+      router.replace(`/memory/${memoryId}?justSaved=1`);
     } catch (err: any) {
-      alert({ title: 'Could not save', message: err?.message ?? 'Please try again.' });
+      // If the memory row already exists (this attempt or an earlier one),
+      // it and any media that already uploaded are genuinely safe — only
+      // the failing file is missing. Say so honestly instead of a blanket
+      // "could not save" that would invite a retry that recreates the story.
+      const alreadySaved = !isEditing && !!createdMemoryIdRef.current;
+      const stage = err instanceof MediaUploadError ? err.stage : 'unknown';
+      const kindLabel = mediaKindLabel(attemptingKind);
+
+      // User-facing copy is deliberately plain English only — no HTTP
+      // status, no backend JSON, no MIME string, no Supabase error code.
+      // A real physical-device failure (Storage's 400/InvalidMimeType body)
+      // was previously interpolated straight into this message; that raw
+      // text is now confined to the track() call below, never shown here.
+      // "Safe" is only ever said about a file that genuinely uploaded —
+      // built from the drafts actually marked `uploaded`, not assumed.
+      const safeKinds = [...new Set(
+        drafts.filter(d => d.uploaded).map(d => mediaKindLabel(d.kind)),
+      )];
+      const storyAnd = safeKinds.length ? ` and ${safeKinds.join(' and ')}` : '';
+      const verb = safeKinds.length ? 'are' : 'is';
+      const message = alreadySaved
+        ? `Your story${storyAnd} ${verb} safe, but we couldn't upload the ${kindLabel}. Tap Retry upload to try again.`
+        : 'We couldn’t save your story. Please check your connection and try again.';
+
+      // Privacy-safe diagnostics: which stage failed and for which media
+      // kind, and the real backend detail — never the file itself, the
+      // story text, or any token/URL. This is exactly the signal a real
+      // incident (a HEIC photo, then an audio/x-m4a alias, both silently
+      // rejected by Storage's MIME allowlist) needed and didn't have; it is
+      // deliberately kept OUT of the user-facing message above.
+      track('memory_media_upload_failed', {
+        objectType: 'memory',
+        objectId: createdMemoryIdRef.current ?? undefined,
+        props: { stage, kind: attemptingKind, already_saved: alreadySaved, detail: String(err?.message ?? err).slice(0, 200) },
+      });
+
+      alert({
+        title: alreadySaved ? 'Story saved — one file needs retrying' : 'Could not save',
+        message,
+      });
+      // Persistent, not transient — stays on screen (next to Save) until a
+      // retry succeeds or the user removes the failing draft, unlike the
+      // alert above which is easy to dismiss without fully reading.
+      if (alreadySaved) setPartialSaveNotice(message);
     } finally {
+      savingRef.current = false;
       setSaving(false);
       setUploadProg(null);
     }
@@ -394,7 +565,11 @@ export default function MemoryNewScreen() {
           <Text style={[styles.sectionHint, { marginTop: spacing.md }]}>Loading story…</Text>
         </View>
       ) : (
-      <ScrollView contentContainerStyle={[styles.scroll, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.scroll, contentContainer(screenWidth)]}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled={!mapInteracting}
+      >
         {/* Resume-your-draft affordance */}
         {recoverable ? (
           <View style={styles.draftBanner}>
@@ -425,7 +600,7 @@ export default function MemoryNewScreen() {
           <View style={styles.cardSection}>
             <Text style={styles.sectionLabel}>Where</Text>
             <Text style={styles.sectionHint}>
-              Type a place in the map's search box (like Lerwick) and pick it from the list — or tap the map to drop a pin, then drag to refine.
+              Type a place in the map's search box (like Lerwick) and pick it from the list, or tap the map to choose where this memory happened. You can move and zoom the map to find the right spot.
             </Text>
             {!point ? (
               <View style={styles.pinNotice}>
@@ -435,7 +610,23 @@ export default function MemoryNewScreen() {
                 </Text>
               </View>
             ) : null}
-            <View style={{ marginTop: spacing.sm }}>
+            {/*
+              Suspends the outer ScrollView's own scrolling for the duration
+              of any touch that starts here, so react-native-maps' pan/pinch
+              recognizers get the touch stream uncontested instead of racing
+              the ScrollView's pan responder for it. onTouchEnd only re-arms
+              scrolling once every finger is up (touches.length === 0), so a
+              two-finger pinch surviving one finger lifting doesn't get cut
+              off mid-gesture.
+            */}
+            <View
+              style={{ marginTop: spacing.sm }}
+              onTouchStart={() => setMapInteracting(true)}
+              onTouchEnd={e => {
+                if (!e.nativeEvent.touches || e.nativeEvent.touches.length === 0) setMapInteracting(false);
+              }}
+              onTouchCancel={() => setMapInteracting(false)}
+            >
               <MemoryMapNative
                 pins={[]}
                 pendingPoint={point}
@@ -448,7 +639,8 @@ export default function MemoryNewScreen() {
                   setPoint({ lat: Number(p.lat), lng: Number(p.lng) });
                   if (!placeName.trim()) setPlaceName(p.name);
                 }}
-                height={300}
+                height={mapHeight}
+                picker
               />
             </View>
             <View style={styles.coordsRow}>
@@ -610,6 +802,21 @@ export default function MemoryNewScreen() {
               ))}
             </View>
           ) : null}
+
+          {/* Compact, one-time guidance — never repeated per attached item,
+              and deliberately careful not to imply either thing happens
+              before Save: photo annotation and transcription both only
+              start once the story is actually saved. */}
+          {drafts.some(d => d.kind === 'photo') ? (
+            <Text style={styles.mediaGuidance}>
+              After you save, you can tap a spot in the photo to ask who or what it is.
+            </Text>
+          ) : null}
+          {drafts.some(d => d.kind === 'audio') ? (
+            <Text style={styles.mediaGuidance}>
+              After you save, we'll upload your voice note and transcribe it automatically. The transcript may take a moment to appear.
+            </Text>
+          ) : null}
         </View>
 
         {/* Visibility */}
@@ -669,11 +876,23 @@ export default function MemoryNewScreen() {
           </View>
         ) : null}
 
+        {/* Partial-save notice — the memory itself is genuinely saved, but a
+            media file isn't. Stays visible (not an Alert that closes and is
+            gone) until a retry succeeds or the failing draft is removed. */}
+        {partialSaveNotice ? (
+          <View style={styles.partialSaveCard}>
+            <FontAwesome5 name="exclamation-circle" size={14} color={colors.warningDark} />
+            <Text style={styles.partialSaveText}>{partialSaveNotice}</Text>
+          </View>
+        ) : null}
+
         {/* Save */}
         <Button
           label={
             uploadProg
               ? `Uploading ${uploadProg.current}/${uploadProg.total}…`
+              : partialSaveNotice
+              ? 'Retry upload'
               : isEditing ? 'Save changes' : isChild ? 'Add to story' : 'Save story'
           }
           icon="check"
@@ -877,6 +1096,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textMuted,
   },
+  mediaGuidance: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    lineHeight: 16,
+  },
   visRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -991,5 +1216,24 @@ const styles = StyleSheet.create({
   uploadHint: {
     fontSize: fontSize.xs,
     color: colors.textMuted,
+  },
+  partialSaveCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: colors.warningLight,
+  },
+  partialSaveText: {
+    flex: 1,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.warningDark,
+    lineHeight: 18,
   },
 });

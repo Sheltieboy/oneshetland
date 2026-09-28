@@ -22,6 +22,8 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { haptic } from '@/lib/haptics';
 import { useAlert } from '@/components/BrandedAlert';
 import * as WebBrowser from 'expo-web-browser';
+import { useSavedCard } from '@/hooks/useSavedCard';
+import { formatCardLabel } from '@/lib/card-label';
 import { fetchPaymentState, startPayoutOnboarding, NO_PAYMENT_STATE, type PaymentState } from '@/lib/payment-state';
 
 interface DriverProfile {
@@ -77,6 +79,8 @@ function LinkRow({
 export default function AccountScreen() {
   const router = useRouter();
   const { session, profile, signOut, refreshProfile, hasAppliedToDrive } = useAuth();
+  const savedCard = useSavedCard(profile?.id, profile?.has_payment_method);
+  const hasCard = savedCard?.state === 'card';
   const { alert } = useAlert();
   const { screenWidth } = useAppLayout();
 
@@ -457,28 +461,28 @@ export default function AccountScreen() {
             {/* Payment method status */}
             <View style={[
               styles.statusBanner,
-              profile?.has_payment_method ? styles.statusBannerGreen : styles.statusBannerAmber,
+              hasCard ? styles.statusBannerGreen : styles.statusBannerAmber,
             ]}>
               <Text style={styles.statusBannerIcon}>
-                {profile?.has_payment_method ? '✓' : '!'}
+                {hasCard ? '✓' : '!'}
               </Text>
               <View style={{ flex: 1 }}>
                 <Text style={[
                   styles.statusBannerTitle,
-                  { color: profile?.has_payment_method ? '#166534' : '#92400E' },
+                  { color: hasCard ? '#166534' : '#92400E' },
                 ]}>
-                  {profile?.has_payment_method ? 'Payment method set up' : 'No payment method'}
+                  {hasCard ? 'Payment method set up' : savedCard === null ? 'Checking payment method…' : savedCard.state === 'unknown' ? 'Couldn\u2019t check payment method' : 'No payment method'}
                 </Text>
                 <Text style={[
                   styles.statusBannerBody,
-                  { color: profile?.has_payment_method ? '#4ADE80' : '#B45309' },
+                  { color: hasCard ? '#4ADE80' : '#B45309' },
                 ]}>
-                  {profile?.has_payment_method
-                    ? 'You can request deliveries'
+                  {hasCard
+                    ? formatCardLabel(savedCard?.state === 'card' ? savedCard.brand : null, savedCard?.state === 'card' ? savedCard.last4 : null)
                     : 'Required before you can request a delivery'}
                 </Text>
               </View>
-              {!profile?.has_payment_method && (
+              {!hasCard && savedCard !== null && (
                 <Pressable
                   style={styles.statusBannerAction}
                   onPress={() => { haptic.light(); router.push('/payment-setup'); }}
@@ -535,10 +539,10 @@ export default function AccountScreen() {
             <View style={styles.linkGroup}>
               <LinkRow
                 icon="💳"
-                label={profile?.has_payment_method ? 'Update payment method' : 'Set up payment method'}
+                label={hasCard ? 'Update payment method' : 'Set up payment method'}
                 onPress={() => { haptic.light(); router.push('/payment-setup'); }}
               />
-              {profile?.has_payment_method && (
+              {hasCard && (
                 <LinkRow
                   icon="🗑️"
                   label={removingCard ? 'Removing…' : 'Remove payment method'}

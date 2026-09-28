@@ -6,19 +6,26 @@
 
 import { supabase } from './supabase';
 import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
+import { retryAfterSecsFrom } from './retry-after';
 
 /**
  * Decode the real error from a supabase.functions.invoke failure.
  * invoke() returns a generic "Edge Function returned a non-2xx status code";
  * the real reason is in error.context.json() → { error: "..." }.
  */
-async function fnErr(error: any, fallback: string): Promise<Error> {
+async function fnErr(error: any, fallback: string): Promise<Error & { status?: number; retryAfterSecs?: number }> {
   let msg = error?.message ?? fallback;
+  let status: number | undefined;
+  let retryAfterSecs: number | undefined;
   try {
     const c = error?.context;
+    if (c) { status = c.status; retryAfterSecs = retryAfterSecsFrom(c); }
     if (c?.json) { const b = await c.json(); if (b?.error) msg = b.error; }
   } catch { /* keep generic */ }
-  return new Error(msg);
+  const err = new Error(msg) as Error & { status?: number; retryAfterSecs?: number };
+  if (status !== undefined) err.status = status;
+  if (retryAfterSecs !== undefined) err.retryAfterSecs = retryAfterSecs;
+  return err;
 }
 
 // ---------------------------------------------------------------------------
@@ -752,9 +759,35 @@ export async function startRedemption(kind: RedeemKind, refId: string, amount?: 
   return data as RedemptionTicket;
 }
 
+/**
+ * READ-ONLY look-up of a pending code. Consumes nothing — the merchant sees what
+ * they are about to redeem before they redeem it.
+ *
+ * The backend has supported this since the redemption-preview migration and the
+ * website has used it since; the app's Confirm-a-redemption screen was the last
+ * surface still calling the mutating verify the instant a QR came into frame.
+ * Backed by preview_redemption(), which is declared STABLE and writes nothing.
+ */
+export async function previewRedemption(input: { code?: string; token?: string; businessId: string }): Promise<{
+  kind: RedeemKind;
+  detail: { title?: string; subtitle?: string };
+  uses_remaining?: number;
+  business_id?: string;
+}> {
+  const { code, token, businessId } = input;
+  const { data, error } = await supabase.functions.invoke('local-redeem-verify', {
+    body: { code, token, business_id: businessId, preview: true },
+  });
+  if (error) throw await fnErr(error, 'Could not look that code up.');
+  return data as { kind: RedeemKind; detail: { title?: string; subtitle?: string }; uses_remaining?: number; business_id?: string };
+}
+
 /** Staff confirm a customer's code or scanned QR token → applies the effect. */
-export async function verifyRedemption(input: { code?: string; token?: string }): Promise<{ ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } }> {
-  const { data, error } = await supabase.functions.invoke('local-redeem-verify', { body: input });
+export async function verifyRedemption(input: { code?: string; token?: string; businessId: string }): Promise<{ ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } }> {
+  const { code, token, businessId } = input;
+  const { data, error } = await supabase.functions.invoke('local-redeem-verify', {
+    body: { code, token, business_id: businessId },
+  });
   if (error) throw await fnErr(error, 'Could not verify.');
   return data as { ok: boolean; kind: RedeemKind; detail: { title?: string; subtitle?: string } };
 }
@@ -941,6 +974,17 @@ export interface BusinessWalletReceipt {
   net_pence:           number | null;
   customer_first_name: string | null;
   stripe_transfer_id:  string | null;
+  /**
+   * 'refunded' once a Wallet reversal row names this payment; 'none' otherwise.
+   * Derived in the RPC from the ledger, never from anything the client holds.
+   * A refund that has frozen its source but not yet credited the wallet is
+   * still 'none', so the merchant keeps the Refund button they need to retry.
+   */
+  refund_state:        'none' | 'refunded';
+  /** When the money went back. NULL unless refund_state is 'refunded'. */
+  refunded_at:         string | null;
+  /** The Wallet row that returned the money. NULL until it exists. */
+  refund_transaction_id: string | null;
 }
 
 export async function fetchBusinessWalletReceipts(
@@ -952,7 +996,33 @@ export async function fetchBusinessWalletReceipts(
     p_limit:       limit,
   });
   if (error) throw error;
-  return (data ?? []) as BusinessWalletReceipt[];
+  // A build talking to a backend without the refund columns yet reads them as
+  // undefined; default to 'none' so an older app never claims a live payment
+  // was refunded.
+  return ((data ?? []) as BusinessWalletReceipt[]).map((r) => ({
+    ...r,
+    refund_state:          r.refund_state === 'refunded' ? 'refunded' : 'none',
+    refunded_at:           r.refunded_at ?? null,
+    refund_transaction_id: r.refund_transaction_id ?? null,
+  }));
+}
+
+/**
+ * Give a business Wallet payment back, in full.
+ *
+ * The only thing sent is the ledger row's id. Business, customer, Stripe
+ * account and the purchase to void are all resolved server-side — a caller
+ * cannot name the business whose money this is, because it is never asked.
+ */
+export async function refundBusinessWalletPayment(
+  transactionId: string,
+  reason?: string,
+): Promise<{ ok: boolean; already_complete: boolean; amount_pence: number }> {
+  const { data, error } = await supabase.functions.invoke('wallet-refund-business', {
+    body: { transaction_id: transactionId, reason },
+  });
+  if (error) throw await fnErr(error, 'Could not refund that payment.');
+  return data as { ok: boolean; already_complete: boolean; amount_pence: number };
 }
 
 // ── Business owner: rotating code ─────────────────────────────────────────────
@@ -1575,9 +1645,21 @@ export async function fetchActiveDiscount(businessId: string): Promise<DiscountG
  * an unexpired filter — so a pass vanished from the customer's account the
  * moment they finished using it.
  */
-export type PassStatus = 'active' | 'used' | 'expired';
+export type PassStatus = 'active' | 'used' | 'expired' | 'refund_pending' | 'refunded';
 
-export function classifyPass(usesRemaining: number, expiresAt: string | null): PassStatus {
+/**
+ * A refunded pass keeps its uses on purpose: "three bought, none used, refunded"
+ * is the truth, and zeroing them would read as exhaustion. So refund state has
+ * to be asked about FIRST — otherwise a refunded pass with uses left classifies
+ * as `active` and the customer is shown something they cannot redeem.
+ */
+export function classifyPass(
+  usesRemaining: number,
+  expiresAt: string | null,
+  refundState: string | null = 'none',
+): PassStatus {
+  if (refundState === 'refunded') return 'refunded';
+  if (refundState === 'pending') return 'refund_pending';
   if (usesRemaining <= 0) return 'used';
   if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) return 'expired';
   return 'active';
@@ -1596,6 +1678,8 @@ export interface MyPass {
   /** True if this purchase was acquired by claiming a gift. */
   from_gift:         boolean;
   fully_used_at:     string | null;
+  /** none | pending | refunded — server-managed; see the refund migration. */
+  refund_state:      string;
   status:            PassStatus;
 }
 
@@ -1607,7 +1691,7 @@ export async function fetchMyPasses(userId: string): Promise<MyPass[]> {
     .from('book_unit_purchases')
     .select(`
       id, item_id, business_id, uses_remaining, paid_amount_pence,
-      expires_at, created_at, gift_id, fully_used_at,
+      expires_at, created_at, gift_id, fully_used_at, refund_state,
       item:book_unit_items ( name ),
       business:local_businesses ( name )
     `)
@@ -1627,7 +1711,8 @@ export async function fetchMyPasses(userId: string): Promise<MyPass[]> {
     business_name:     r.business?.name ?? null,
     from_gift:         !!r.gift_id,
     fully_used_at:     r.fully_used_at ?? null,
-    status:            classifyPass(r.uses_remaining, r.expires_at ?? null),
+    refund_state:      r.refund_state ?? 'none',
+    status:            classifyPass(r.uses_remaining, r.expires_at ?? null, r.refund_state ?? 'none'),
   }));
 }
 
@@ -1898,4 +1983,20 @@ export async function fetchBusinessPrivate(businessId: string): Promise<Partial<
   // about — it simply has no private fields to show.
   if (error || !data) return {};
   return data as Partial<LocalBusiness>;
+}
+
+/**
+ * Can OneShetland currently route money to this business? The canonical
+ * answer — the business's own Connect account, or a valid fallback to its
+ * owner's central account — from business_payout_ready(), the same function
+ * every payment path (event tickets, products, passes, gifts, Wallet) asks
+ * before routing money. Not reconstructed from payout_enabled /
+ * use_business_payout / business_stripe_payouts_enabled here: that
+ * reconstruction is exactly how a dashboard ends up disagreeing with the
+ * server about whether a business can be paid. Fails closed: an unreadable
+ * answer is "not ready", never a guess that it is.
+ */
+export async function fetchBusinessPayoutReady(businessId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('business_payout_ready', { p_business: businessId });
+  return !error && data === true;
 }

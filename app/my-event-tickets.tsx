@@ -2,7 +2,7 @@
  * my-event-tickets.tsx — Wallet: list of the user's event tickets
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, Image,
@@ -15,6 +15,7 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { TicketCelebration } from '@/components/TicketCelebration';
+import { ticketCelebrations } from '@/lib/ticket-celebration-store';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -52,6 +53,14 @@ export default function MyEventTicketsScreen() {
     try {
       const data = await fetchMyEventTickets(profile.id);
       setTickets(data);
+      // Same once-only rule as the ticket screen: a valid → used change this
+      // device saw celebrates once; a ticket met already used never does.
+      // Only while focused: when a ticket is open on top of this list, THAT screen
+      // must be the one to claim the celebration, or it would play unseen down here.
+      const wins = await Promise.all(data
+        .filter((t) => t.status === 'valid' || focusedRef.current)
+        .map((t) => ticketCelebrations.observe(t)));
+      if (wins.some(Boolean)) setCelebrate(true);
     } catch {}
     setLoading(false);
     setRefreshing(false);
@@ -59,7 +68,12 @@ export default function MyEventTicketsScreen() {
 
   // Refetch whenever the screen regains focus, so a ticket that was just checked
   // in at the door shows as "Used" when the holder returns to this screen.
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const focusedRef = useRef(false);
+  useFocusEffect(useCallback(() => {
+    focusedRef.current = true;
+    load();
+    return () => { focusedRef.current = false; };
+  }, [load]));
 
   // Live update: the moment one of the holder's tickets changes (e.g. scanned →
   // 'used'), the DB pushes it here and the list refreshes on its own.
@@ -71,10 +85,12 @@ export default function MyEventTicketsScreen() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'event_tickets', filter: `holder_id=eq.${profile.id}` },
         (payload) => {
-          const next = (payload.new as { status?: string } | null)?.status;
           const prev = (payload.old as { status?: string } | null)?.status;
-          if (next === 'used' && prev !== 'used') setCelebrate(true);
-          load();
+          const rowId = (payload.new as { id?: string } | null)?.id;
+          void (async () => {
+            if (prev === 'valid' && rowId) await ticketCelebrations.markSeenValid(rowId);
+            await load();
+          })();
         },
       )
       .subscribe();

@@ -32,7 +32,7 @@ import {
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { SECTIONS } from '@/constants/sections';
-import { colors } from '@/constants/theme';
+import { colors, fontSize, spacing } from '@/constants/theme';
 import { MemoryPin } from '@/lib/memories-api';
 import { MEMORY_CATEGORY_BY_SLUG } from '@/constants/memory-categories';
 import {
@@ -133,6 +133,15 @@ interface MemoryMapNativeProps {
   /** Fixed height for the map. Default 420. */
   height?:        number;
   style?:         ViewStyle;
+  /**
+   * True when this map IS the location picker for a story being composed
+   * (as opposed to the browse tab's map of everyone's pins). Turns on the
+   * quiet "tap to choose a spot" in-map hint (replacing the old dark
+   * empty-state banner, which only ever made sense for a genuinely empty
+   * browse map) and the first-tap assisted zoom below. Default false —
+   * the browse map's own behaviour is untouched by this prop existing.
+   */
+  picker?:        boolean;
 }
 
 export function MemoryMapNative({
@@ -144,6 +153,7 @@ export function MemoryMapNative({
   onPlacePicked,
   height = 420,
   style,
+  picker = false,
 }: MemoryMapNativeProps) {
 
   // If react-native-maps isn't installed, render a friendly placeholder
@@ -236,12 +246,39 @@ export function MemoryMapNative({
     }, 450);
   };
 
+  // ── Picker mode: general area → closer view → exact spot ────────────────
+  //
+  // CLOSE_DELTA is the "you can now see streets and hamlets" zoom level —
+  // also what flyToPlace below lands a search result at, deliberately the
+  // same number, so tapping the map and picking a search result feel like
+  // one interaction, not two.
+  //
+  // ASSIST_ZOOM_THRESHOLD marks "still looking at a wide area" — a first
+  // tap while the view is wider than this gets an assisted zoom-in; a
+  // first tap once the view is already this close or closer doesn't need
+  // one. Only the FIRST point of a story gets this treatment (pendingPoint
+  // is still null at tap time): every tap after that just moves the pin —
+  // no forced re-zoom, no recentring, the user owns the camera from here.
+  const CLOSE_DELTA = 0.06;
+  const ASSIST_ZOOM_THRESHOLD = 0.15;
+
   const handleMapPress = (e: any) => {
     if (Date.now() - markerTouchedAt.current < 450) return;
     if (!onDropPin) return;
     const { latitude, longitude } = e?.nativeEvent?.coordinate ?? {};
     if (typeof latitude !== 'number' || typeof longitude !== 'number') return;
+
+    const isFirstPick = picker && !pendingPoint;
     onDropPin({ lat: latitude, lng: longitude });
+
+    if (isFirstPick && latDelta > ASSIST_ZOOM_THRESHOLD) {
+      mapRef.current?.animateToRegion?.({
+        latitude,
+        longitude,
+        latitudeDelta:  CLOSE_DELTA,
+        longitudeDelta: CLOSE_DELTA,
+      }, 600);
+    }
   };
 
   // ── Place search ─────────────────────────────────────────────────────────
@@ -279,10 +316,11 @@ export function MemoryMapNative({
     mapRef.current?.animateToRegion?.({
       latitude:       Number(place.lat),
       longitude:      Number(place.lng),
-      // Roughly 6 km on a side — close enough to see streets / hamlets,
-      // wide enough to see neighbouring places.
-      latitudeDelta:  0.06,
-      longitudeDelta: 0.06,
+      // Same CLOSE_DELTA the first-tap assisted zoom lands on (below) —
+      // picking a place from search and tapping the map should feel like
+      // one interaction, not two different ones.
+      latitudeDelta:  CLOSE_DELTA,
+      longitudeDelta: CLOSE_DELTA,
     }, 600);
     // Persist for the recents chip row, then bubble up so the screen can
     // show "Memories near {name}" cards beside the map.
@@ -435,11 +473,25 @@ export function MemoryMapNative({
         ) : null}
       </View>
 
-      {/* Helper hint when the map is empty AND we're in drop mode */}
-      {pins.length === 0 && onDropPin ? (
+      {/* Browse map's own empty state (genuinely zero pins in view) is
+          untouched — the dark banner only ever belonged here, never on the
+          picker, where pins is always []. */}
+      {!picker && pins.length === 0 && onDropPin ? (
         <View pointerEvents="none" style={styles.emptyHint}>
           <FontAwesome5 name="hand-pointer" size={12} color="#fff" solid />
           <Text style={styles.emptyHintText}>Tap a place to drop the first story</Text>
+        </View>
+      ) : null}
+
+      {/* Picker mode: a quiet, subordinate hint below the search bar — not
+          a banner/card/alert — that changes once a point is chosen.
+          Hidden while the search dropdown is open so it never overlaps
+          the results/recents list sitting in the same spot. */}
+      {picker && !searchOpen ? (
+        <View pointerEvents="none" style={styles.pickerHint}>
+          <Text style={styles.pickerHintText}>
+            {pendingPoint ? 'Tap again to refine the exact spot' : 'Tap the map to choose a spot'}
+          </Text>
         </View>
       ) : null}
     </View>
@@ -757,6 +809,22 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 20,
     gap: 10,
+  },
+
+  pickerHint: {
+    position: 'absolute',
+    left: 10,
+    top: 62,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  pickerHintText: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 
   searchOverlay: {

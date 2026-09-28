@@ -19,24 +19,29 @@ import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { getTurnstileToken } from '@/lib/turnstile';
+import { emailConfirmationRedirectTo, sanitizeNext } from '@/lib/auth-redirect';
 
 export default function SignUpScreen() {
   const router = useRouter();
   const { next } = useLocalSearchParams<{ next?: string }>();
   const signInTarget = { pathname: '/(auth)/sign-in' as const, params: next ? { next } : {} };
-  const { signUp } = useAuth();
+  const { signUp, signIn } = useAuth();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [agree, setAgree] = useState(false); // 18+ / Terms / Privacy — required, unticked by default
   const [marketingOptIn, setMarketingOptIn] = useState(false); // GDPR: unticked by default
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
+  const [checkingConfirm, setCheckingConfirm] = useState(false);
+  const [confirmCheckMsg, setConfirmCheckMsg] = useState<string | null>(null);
 
   async function handleSignUp() {
     setError(null);
@@ -49,12 +54,30 @@ export default function SignUpScreen() {
     if (!email.trim()) { setError('Please enter your email address.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
+    if (!agree) { setError("Please confirm you're 18+ and accept the Terms and Privacy Policy."); return; }
 
     setLoading(true);
+
+    // A verification check runs before any account is created — there is no
+    // path below that calls signUp without a fresh token. Cancelling or
+    // failing the check simply stops here with a clear message; it never
+    // silently proceeds unprotected.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setLoading(false);
+      setError(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again to create your account.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      return;
+    }
+
     const { error: authError } = await signUp(
       email.trim().toLowerCase(),
       password,
       fullName.trim(),
+      turnstile.token,
       phone.trim() || undefined,
       marketingOptIn,
       next,
@@ -64,9 +87,12 @@ export default function SignUpScreen() {
     if (authError) {
       setError(authError);
     } else {
-      // Log compliance events — fire and forget, non-blocking. (Marketing
-      // consent is also stored in the sign-up metadata so it survives email
-      // confirmation even if there's no session yet to write the log.)
+      // Log compliance events — fire and forget, non-blocking. Reached only
+      // when `agree` was true (the validation above returns before this
+      // point otherwise) — these events now record a real affirmative
+      // action, not an assumption. (Marketing consent is also stored in the
+      // sign-up metadata so it survives email confirmation even if there's
+      // no session yet to write the log.)
       logCompliance({ eventType: 'terms.accepted',   documentVersion: '1.0', description: 'Accepted OneShetland Terms of Service at sign-up', metadata: { screen: 'sign-up' } });
       logCompliance({ eventType: 'privacy.accepted', documentVersion: '1.0', description: 'Accepted OneShetland Privacy Policy at sign-up',   metadata: { screen: 'sign-up' } });
       logCompliance({ eventType: 'age.confirmed',                             description: 'Confirmed 18 or over at account creation',         metadata: { screen: 'sign-up' } });
@@ -91,13 +117,26 @@ export default function SignUpScreen() {
     }
 
     setResending(true);
+
+    // A fresh token per resend — never the token the original signUp() call
+    // used (that one is already spent), and no fallback that skips this.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setResendMsg(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      setResending(false);
+      return;
+    }
+
     const { error: resendError } = await supabase.auth.resend({
       type: 'signup',
       email: email.trim().toLowerCase(),
       options: {
-        emailRedirectTo: next
-          ? `oneshetland-fetch://auth/confirm?next=${encodeURIComponent(next)}`
-          : 'oneshetland-fetch://auth/confirm',
+        captchaToken: turnstile.token,
+        emailRedirectTo: emailConfirmationRedirectTo(next),
       },
     });
 
@@ -109,6 +148,44 @@ export default function SignUpScreen() {
       // Keep the button disabled briefly so people don't fire off a burst.
       setTimeout(() => setResending(false), 30000);
     }
+  }
+
+  // Confirmation may have happened on a different device (laptop, another
+  // phone) — this screen has no way to be told that automatically. Rather
+  // than leave the user guessing, offer to check using credentials they
+  // already just typed: a normal sign-in attempt IS the safe verification —
+  // no privileged access, no polling, just the same call "Go to sign in"
+  // would need them to make manually anyway. A confirmed account signs in
+  // immediately; an unconfirmed one returns Supabase's own clear error.
+  async function handleCheckConfirmed() {
+    if (checkingConfirm) return;
+    setConfirmCheckMsg(null);
+    setCheckingConfirm(true);
+
+    // This is a real sign-in attempt (signIn() calls signInWithPassword under
+    // the hood) — it needs a fresh token the same as the sign-in screen does.
+    const turnstile = await getTurnstileToken();
+    if (!turnstile.ok) {
+      setCheckingConfirm(false);
+      setConfirmCheckMsg(
+        turnstile.reason === 'cancelled'
+          ? 'Verification was cancelled. Please try again.'
+          : "Couldn't complete the verification check. Please try again.",
+      );
+      return;
+    }
+
+    const { error: signInError } = await signIn(email.trim().toLowerCase(), password, turnstile.token);
+    setCheckingConfirm(false);
+    if (!signInError) {
+      router.replace((sanitizeNext(next) ?? '/(tabs)') as never);
+      return;
+    }
+    setConfirmCheckMsg(
+      /confirm/i.test(signInError)
+        ? "Not confirmed yet — tap the link in the email first, then try again."
+        : signInError,
+    );
   }
 
   // ── Success state ──────────────────────────────────────────────────────────
@@ -130,16 +207,22 @@ export default function SignUpScreen() {
             We've sent a confirmation link to{'\n'}
             <Text style={styles.successEmail}>{email}</Text>
             {'\n\n'}
-            Click the link to activate your account, then come back and sign in.
+            Click the link — on this phone or any other device — to activate your account.
           </Text>
           <Button
-            label="Go to sign in"
-            onPress={() => router.replace(signInTarget)}
+            label="I've confirmed my email"
+            onPress={handleCheckConfirmed}
+            loading={checkingConfirm}
             variant="primary"
             size="lg"
             fullWidth
             style={styles.successBtn}
           />
+          {confirmCheckMsg && <Text style={styles.resendMsg}>{confirmCheckMsg}</Text>}
+
+          <TouchableOpacity onPress={() => router.replace(signInTarget)} style={styles.resendLink}>
+            <Text style={styles.resendText}>Or go to sign in manually</Text>
+          </TouchableOpacity>
 
           <Text style={styles.resendPrompt}>Didn't get the email?</Text>
 
@@ -265,6 +348,32 @@ export default function SignUpScreen() {
               />
             </View>
 
+            {/* 18+ / Terms / Privacy — required, unticked by default. Matches
+                the web sign-up form's checkbox exactly; the same tick is what
+                the terms.accepted/privacy.accepted/age.confirmed compliance
+                events now depend on being true before they're ever logged. */}
+            <TouchableOpacity
+              style={styles.optInRow}
+              onPress={() => setAgree(v => !v)}
+              activeOpacity={0.7}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: agree }}
+            >
+              <View style={[styles.checkbox, agree && styles.checkboxOn]}>
+                {agree && <FontAwesome5 name="check" size={11} color="#fff" solid />}
+              </View>
+              <Text style={styles.optInText}>
+                I'm 18 or over and accept the{' '}
+                <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/terms')}>
+                  Terms
+                </Text>{' '}
+                and{' '}
+                <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/privacy')}>
+                  Privacy Policy
+                </Text>.
+              </Text>
+            </TouchableOpacity>
+
             {/* GDPR marketing opt-in — explicit, unticked by default */}
             <TouchableOpacity
               style={styles.optInRow}
@@ -286,6 +395,7 @@ export default function SignUpScreen() {
               label="Create account"
               onPress={handleSignUp}
               loading={loading}
+              disabled={!agree}
               fullWidth
               size="lg"
               style={styles.submitBtn}
@@ -306,14 +416,6 @@ export default function SignUpScreen() {
           </View>
 
           <Text style={styles.legal}>
-            By creating an account you agree to our{' '}
-            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/terms')}>
-              Terms of Service
-            </Text>{' '}
-            and{' '}
-            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/privacy')}>
-              Privacy Policy
-            </Text>. You must be 18 or over.
             Fetch is for goods only — no alcohol, tobacco, vapes, cash, or passengers.
           </Text>
         </ScrollView>

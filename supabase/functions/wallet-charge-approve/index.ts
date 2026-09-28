@@ -103,6 +103,16 @@ serve(async (req) => {
       .update({ status: 'paid', stripe_transfer_id: result.transfer_id, resolved_at: new Date().toISOString() })
       .eq('id', reqRow.id);
 
+
+    // Loyalty is awarded HERE, at completion — not at the debit. The retired
+    // trigger fired on the wallet insert, before the merchant was paid and
+    // before this purchase existed, so three later events could undo the spend
+    // and none of them gave the points back. Best-effort: a loyalty failure
+    // must never fail a purchase that has already been paid for.
+    try {
+      await svc.rpc('loyalty_award_for_wallet_spend', { p_wallet_txn: result.transactionId });
+    } catch (e) { console.error('[wallet-charge-approve] loyalty award failed', e); }
+
     return json({ ok: true, balance_pence: result.balance_pence, cashback_pence: result.cashback_pence });
   } catch (err) {
     console.error('[wallet-charge-approve]', err);

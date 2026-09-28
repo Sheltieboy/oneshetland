@@ -160,87 +160,18 @@ const TT_B = 'a5000004-0000-4000-8000-0000000000eb';
 const OR_A = 'a5000004-0000-4000-8000-0000000000fa';
 const OR_B = 'a5000004-0000-4000-8000-0000000000fb';
 
-// ── 1. Concurrency: the whole point of Step 4 ───────────────────────────────
-
-describe('two simultaneous scans of one ticket', () => {
-  const TOKEN = `__S4TEST__${RACE_LABEL}`;
-  let ticketId = '';
-  let scannerA = '';
-  let scannerB = '';
-
-  const cleanup = () => query(`
-    delete from public.event_checkins
-      where event_id in ('${EV_A}','${EV_B}')
-         or ticket_id in (select id from public.event_tickets where backup_code like 'S4T-%');
-    delete from public.event_tickets where backup_code like 'S4T-%';
-    delete from public.event_ticket_orders where id in ('${OR_A}','${OR_B}');
-    delete from public.event_ticket_types where id in ('${TT_A}','${TT_B}');
-    delete from public.events where id in ('${EV_A}','${EV_B}');
-    select 1;`);
-
-  before(() => {
-    cleanup();                                   // heal anything an interrupted run left
-    const r = query(`${FIXTURE}
-${mintTickets([[RACE_LABEL, EV_A, TT_A, OR_A, 'valid']])}
-select (select id from public.event_tickets where backup_code='S4T-${RACE_LABEL}')::text as ticket_id,
-       (select u_org::text from people)   as scanner_a,
-       (select u_admin::text from people) as scanner_b;`);
-    ticketId = String(r.ticket_id);
-    scannerA = String(r.scanner_a);
-    scannerB = String(r.scanner_b);
-    assert.match(ticketId, /^[0-9a-f-]{36}$/, 'fixture ticket was not created');
-    assert.notEqual(scannerA, scannerB, 'the two entrances must be two different people');
-  });
-
-  after(cleanup);
-
-  test('exactly one entrance admits the attendee', async () => {
-    // A redeems and then holds its transaction open. B starts while A is still
-    // uncommitted, so B is GUARANTEED to read the pre-commit row — the exact
-    // interleaving the old code lost. B's conditional UPDATE blocks on A's row
-    // lock and, once released, re-tests status against the committed row.
-    const a = queryAsync(`begin;
-create temp table ra as select public.validate_and_checkin_ticket('${TOKEN}','${EV_A}','${scannerA}') r;
-select pg_sleep(6);
-select r->>'result' as res from ra;
-commit;`);
-    const b = queryAsync(`select pg_sleep(3);
-select public.validate_and_checkin_ticket('${TOKEN}','${EV_A}','${scannerB}')->>'result' as res;`);
-
-    const [ra, rb] = await Promise.all([a, b]);
-    const results = [String(ra.res), String(rb.res)];
-    const wins = results.filter((x) => x === 'valid').length;
-
-    assert.equal(wins, 1,
-      `TICKET REDEEMED ${wins} TIMES by simultaneous scans — expected exactly one. Got ${JSON.stringify(results)}`);
-    assert.ok(results.includes('already_used'),
-      `the losing entrance must be told the ticket is already used, got ${JSON.stringify(results)}`);
-
-    const state = query(`select t.status,
-      (t.checked_in_by is not null) as scanner_recorded,
-      (select count(*) from public.event_checkins c where c.ticket_id=t.id and c.result='valid')::int  as valid_rows,
-      (select count(*) from public.event_checkins c where c.ticket_id=t.id and c.result='already_used')::int as already_rows,
-      (select count(distinct c.scanner_id) from public.event_checkins c where c.ticket_id=t.id and c.result='valid')::int as winners
-      from public.event_tickets t where t.id='${ticketId}';`);
-
-    assert.equal(state.status, 'used', 'the ticket should end up spent exactly once');
-    assert.equal(state.scanner_recorded, true, 'no scanner was recorded against the redemption');
-    assert.equal(state.valid_rows, 1,
-      `AUDIT TRAIL WRONG: ${state.valid_rows} result=valid rows for one ticket — a redemption was logged twice`);
-    assert.equal(state.winners, 1, 'more than one scanner is recorded as having admitted this ticket');
-    assert.equal(state.already_rows, 1, 'the losing scan should be recorded as already_used');
-  });
-
-  test('a third, later scan is still refused', () => {
-    const r = query(`select public.validate_and_checkin_ticket('${TOKEN}','${EV_A}','${scannerA}')->>'result' as res;`);
-    assert.equal(r.res, 'already_used', 'a ticket became redeemable again after being spent');
-  });
-
-  test('the winning redemption is still the only one in the audit trail', () => {
-    const r = query(`select (select count(*) from public.event_checkins where ticket_id='${ticketId}' and result='valid')::int as n;`);
-    assert.equal(r.n, 1, 'repeat scans added further result=valid rows');
-  });
-});
+// ── 1. Concurrency — MOVED ──────────────────────────────────────────────────
+//
+// The proof that used to live here raced two COMMITTED connections against
+// production. It could not roll itself back, so it seeded real rows and relied
+// on an after() hook to remove them — the assumption that failed on 2026-09-08
+// and left fabricated money on a real customer account.
+//
+// It is unchanged and now lives in the isolated lane, where the identities are
+// invented and the cluster is destroyed in a finally:
+//
+//     supabase/tests/production-concurrency-proofs.node.test.ts
+//     (npm run test:isolated)
 
 // ── 2. Everything else, inside one rolled-back transaction ──────────────────
 

@@ -65,8 +65,13 @@ const DEPLOYED_WITHOUT_SOURCE_ALLOWED: string[] = [];
 /**
  * Source directories deliberately not deployed. Also empty today. Adding one is
  * a normal thing to do — the test names it so the choice is visible.
+ *
+ * wallet-charge-cancel: lets a merchant cancel a still-pending Wallet charge
+ * request server-side (till "Cancel" only cleared local UI state before this —
+ * real money risk). Committed to a side branch, deliberately not deployed by
+ * this session per its own constraints (no deploy, no production migration).
  */
-const SOURCE_ONLY_ALLOWED: string[] = [];
+const SOURCE_ONLY_ALLOWED: string[] = ['wallet-charge-cancel'];
 
 /** Removed in Step 10D. These must not come back without a deliberate decision. */
 const DELETED_IN_10D = [

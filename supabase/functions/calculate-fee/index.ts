@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
+import { normaliseUkPostcode } from '../_shared/uk-postcode.ts';
+import { enforceRateLimit, GLOBAL_SUBJECT } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,25 +26,37 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  try {
-    const { pickup_postcode, destination_postcode } = await req.json();
+  // Public by design (the app quotes with the anon key), and every request makes
+  // this function call postcodes.io twice. One ceiling for the whole endpoint, for
+  // the same reason as oneshetland-feed: a per-IP bucket would key on a header the
+  // caller can forge. Generous for real use, and it stops an abuser getting our
+  // shared egress address rate-limited by postcodes.io.
+  const limited = await enforceRateLimit('calculate-fee', GLOBAL_SUBJECT, ['calculate_fee_global'], corsHeaders);
+  if ('denied' in limited) return limited.denied;
 
-    if (!pickup_postcode || !destination_postcode) {
+  try {
+    const body = await req.json().catch(() => ({}));
+
+    // A postcode is a postcode or it is refused. Nothing else reaches the URL.
+    // The shared validator (also the Gift Aid rule) assumes a string, so the type
+    // and a sane length are checked first; it returns the canonical "ZE1 0AA".
+    const valid = (v: unknown) => (typeof v === 'string' && v.length <= 12 ? normaliseUkPostcode(v) : null);
+    const p1 = valid(body?.pickup_postcode)?.replace(' ', '') ?? null;
+    const p2 = valid(body?.destination_postcode)?.replace(' ', '') ?? null;
+    if (!p1 || !p2) {
       return new Response(
-        JSON.stringify({ error: 'pickup_postcode and destination_postcode are required' }),
+        JSON.stringify({ error: 'pickup_postcode and destination_postcode must be valid UK postcodes' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    // Normalise postcodes — strip spaces, uppercase
-    const p1 = pickup_postcode.replace(/\s/g, '').toUpperCase();
-    const p2 = destination_postcode.replace(/\s/g, '').toUpperCase();
-
-    // Look up both postcodes in parallel via postcodes.io (free, no key required)
-    const [r1, r2] = await Promise.all([
-      fetch(`https://api.postcodes.io/postcodes/${p1}`),
-      fetch(`https://api.postcodes.io/postcodes/${p2}`),
-    ]);
+    // Look up both postcodes in parallel via postcodes.io (free, no key required).
+    // Encoded, no redirects followed, and bounded in time.
+    const lookup = (pc: string) => fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(6000),
+    });
+    const [r1, r2] = await Promise.all([lookup(p1), lookup(p2)]);
 
     if (!r1.ok || !r2.ok) {
       return new Response(

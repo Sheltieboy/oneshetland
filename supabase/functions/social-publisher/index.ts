@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
+import { getConfig } from '../_shared/admin-config.ts';
 
 /**
  * social-publisher — posts due, human-approved social_posts to the OneShetland
@@ -18,9 +19,20 @@ import { requireCronSecret } from '../_shared/cron-auth.ts';
  *   META_PAGE_TOKEN  — a long-lived Page access token
  * Until both are set the function is a safe no-op that reports what's due.
  *
+ * Global pause: admin_config['social.publishing_paused'] = 'true' stops this
+ * function from touching ANY row or calling Meta at all — it returns before
+ * even selecting due posts, so queued/approved/scheduled posts are left
+ * exactly as they are (no skip, no stale marking, nothing). The composer is
+ * unaffected and keeps queueing content normally. Flip it back at
+ * /admin/social — resuming just lets the next 15-min run pick up where it
+ * would have been; the existing stale-post guard below still applies, so a
+ * long pause correctly skips backlog on wake-up rather than flooding the page.
+ *
  * Invoke every ~15 min (see DEPLOY-SOCIAL.md). Auth: matching `x-cron-secret`;
  * fails closed if CRON_SECRET is unset. Body (optional): { "post_id": "<uuid>" } publishes
- * that single post immediately, ignoring its schedule (admin "post now").
+ * that single post immediately, ignoring its schedule (admin "post now") —
+ * also blocked while paused, deliberately: paused must mean nothing leaves,
+ * with no manual-override carve-out.
  */
 
 const GRAPH = 'https://graph.facebook.com/v23.0';
@@ -76,6 +88,16 @@ serve(async (req) => {
 
   try {
     const svc = createServiceClient();
+
+    // Global pause — checked before anything else touches a row or Meta.
+    // A missing config row (not yet migrated) reads as 'false' via the
+    // fallback, so this is additive: it can only ever make the publisher do
+    // LESS than before, never more.
+    const paused = (await getConfig(svc, 'social.publishing_paused', 'false')) === 'true';
+    if (paused) {
+      return json({ ok: true, configured: !!(Deno.env.get('META_PAGE_ID') && Deno.env.get('META_PAGE_TOKEN')), paused: true, posted: 0, failed: 0, skipped: 0 });
+    }
+
     const now = new Date();
     const nowIso = now.toISOString();
 

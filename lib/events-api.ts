@@ -191,6 +191,43 @@ export function ticketTypeRemaining(tt: EventTicketType): number | null {
   return Math.max(0, tt.quantity_available - tt.quantity_sold);
 }
 
+/**
+ * Does this event have at least one active, free ticket type? A mixed
+ * free+paid event whose organiser is not payout-ready still has something
+ * genuinely obtainable — the buy flow must stay reachable, not be hidden
+ * behind "Tickets coming soon" the way a wholly-paid event correctly is.
+ * Mirrors the server's own all_free computation (see
+ * _event_payout_resolve in supabase/migrations/20260822120000_effective_event_payout.sql)
+ * at the opposite extreme: that asks "are ALL active types free"; this asks
+ * "is ANY active type free".
+ */
+export function eventHasFreeActiveTicket(types: EventTicketType[]): boolean {
+  return types.some(t => t.is_active && t.price_pence === 0);
+}
+
+/**
+ * Does this event have at least one active ticket type priced above zero?
+ * The saved-event counterpart to event-create.tsx's own inline paid-draft
+ * check (which additionally filters on a non-blank name, since that screen
+ * works from in-progress draft rows before they're saved — a fully saved
+ * event's ticket_types never have that concern, so this is the plain rule).
+ * Used to decide whether Event Manage's publish action needs a payout
+ * route at all.
+ */
+export function eventHasActivePaidTicket(types: EventTicketType[]): boolean {
+  return types.some(t => t.is_active && t.price_pence > 0);
+}
+
+/**
+ * Can THIS ticket type actually be bought right now, payout-wise? A free
+ * type never needs a payout route. A paid type needs the event's resolved
+ * payout_ready — the one place per-ticket-type gating and event-level
+ * payout readiness meet; nowhere else re-derives readiness itself.
+ */
+export function ticketTypePurchasable(tt: EventTicketType, eventPayoutReady: boolean): boolean {
+  return eventPayoutReady || tt.price_pence === 0;
+}
+
 export interface EventScarcity {
   measurable: boolean;
   totalCap:   number;
@@ -256,8 +293,40 @@ export function lowestTicketPrice(types: EventTicketType[]): number | null {
   return Math.min(...active.map(t => t.price_pence));
 }
 
+// True when a customer can actually get in for nothing: at least one ticket
+// type that is on sale costs £0. Mixed free+paid events count — the free ticket
+// is real, so "From £1.00" would have been a lie. Inactive types are ignored,
+// which is the same rule lowestTicketPrice() applies.
 export function isFreeEvent(types: EventTicketType[]): boolean {
-  return types.length > 0 && types.every(t => t.price_pence === 0);
+  const active = types.filter(t => t.is_active);
+  return active.length > 0 && active.some(t => t.price_pence === 0);
+}
+
+/**
+ * The one place the price label shown on every public surface (What's On
+ * cards, the event detail CTA) is derived, so the three call sites that used
+ * to each re-run the same "free or from £X" ternary can't drift from one
+ * another or from the Free-only filter.
+ *
+ * Built entirely from the two existing predicates rather than a third pass
+ * over `types`: hasFree is isFreeEvent() itself (at least one active ticket
+ * costs nothing — the same fact the Free-only filter reads), and hasPaid is
+ * lowestTicketPrice() !== null (that helper already answers "is there an
+ * active ticket priced above zero"; asking with a second, separately
+ * written filter would be the duplication this function exists to remove).
+ *
+ * Free and paid are not exclusive — a mixed event has both, and saying only
+ * "Free" would hide that some tickets cost money, while "From £1.00" was the
+ * original bug: a genuinely free ticket priced out of the label entirely.
+ */
+export function eventPriceLabel(types: EventTicketType[]): string | null {
+  const hasFree = isFreeEvent(types);
+  const cheapestPaid = lowestTicketPrice(types);
+  const hasPaid = cheapestPaid !== null;
+  if (hasFree && hasPaid) return 'Free + paid tickets';
+  if (hasFree) return 'Free';
+  if (hasPaid) return `From £${(cheapestPaid / 100).toFixed(2)}`;
+  return null;
 }
 
 export const UPDATE_KIND_LABELS: Record<UpdateKind, string> = {
@@ -356,6 +425,73 @@ export async function fetchBusinessEvents(businessId: string): Promise<OsEvent[]
     .order('starts_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as OsEvent[];
+}
+
+/**
+ * Every event this business organises, for the Events management list
+ * (app/business-events.tsx) — deliberately a SEPARATE query from
+ * fetchBusinessEvents above, not an extension of it: that one has exactly
+ * one call site (the dashboard's bizEvents/bizEventsRaw/nextBizEvent
+ * pipeline) and its own doc comment says it is left untouched. This embeds
+ * ticket_types, which that one does not, so the management list can decide
+ * per draft whether it has an active paid ticket without a second query.
+ */
+export async function fetchBusinessEventsForManagement(businessId: string): Promise<OsEvent[]> {
+  const { data, error } = await supabase
+    .from('events')
+    .select('*, ticket_types:event_ticket_types(*)')
+    .eq('organiser_business_id', businessId)
+    .order('starts_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as OsEvent[];
+}
+
+export interface ManagedEventGroups<T> {
+  drafts:   T[];
+  upcoming: T[];
+  past:     T[];
+}
+
+/**
+ * Groups a business's events for the management list: drafts/needs-attention
+ * first, then upcoming published, then past/cancelled — the same three
+ * buckets on both platforms (see oneshetland-web's lib/events-manage.ts).
+ *
+ * The 6-hour grace window on "upcoming" mirrors the web events list's
+ * existing upcoming/past split — an event that started minutes ago is still
+ * genuinely upcoming for a merchant glancing at this list, not yet history.
+ * This is a different, simpler question than lib/business-next-event.ts's
+ * "which one event is most relevant right now" (which reads ends_at and the
+ * event's own calendar day) — this just buckets a whole list for browsing,
+ * and does not replace or feed that selection.
+ *
+ * A cancelled, postponed or archived event — and a published one whose date
+ * has passed the grace window — all land in `past`, never hidden: "do not
+ * hide historic events simply because they are no longer upcoming."
+ */
+export function groupEventsForManagement<T extends { status: EventStatus; starts_at: string }>(
+  events: readonly T[],
+  now: Date = new Date(),
+): ManagedEventGroups<T> {
+  const nowMs = now.getTime();
+  const UPCOMING_GRACE_MS = 6 * 3600_000;
+  const drafts: T[] = [];
+  const upcoming: T[] = [];
+  const past: T[] = [];
+  for (const e of events) {
+    if (e.status === 'draft') { drafts.push(e); continue; }
+    if (e.status === 'published' && new Date(e.starts_at).getTime() >= nowMs - UPCOMING_GRACE_MS) {
+      upcoming.push(e);
+      continue;
+    }
+    past.push(e);
+  }
+  const byStartAsc  = (a: T, b: T) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
+  const byStartDesc = (a: T, b: T) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime();
+  drafts.sort(byStartAsc);
+  upcoming.sort(byStartAsc);
+  past.sort(byStartDesc);
+  return { drafts, upcoming, past };
 }
 
 /**
@@ -595,16 +731,21 @@ export async function purchaseTickets(params: {
   charged?:       boolean;
   free?:          boolean;
 }> {
+  // The server answers `saved_card_unavailable` / `saved_card_declined` with a
+  // machine-readable `code` next to the message. Carry it on the error so the
+  // screen can react to it instead of pattern-matching English.
+  const withCode = (message: string, code?: unknown) =>
+    Object.assign(new Error(message), typeof code === 'string' ? { code } : {});
   const { data, error } = await supabase.functions.invoke('create-event-ticket-intent', { body: params });
   // Supabase wraps HTTP errors as FunctionsHttpError — the real message is in data.error
-  if (data?.error) throw new Error(data.error);
+  if (data?.error) throw withCode(data.error, data.code);
   if (error) {
     // Try to extract the JSON body Supabase wraps in context
     const ctx = (error as any)?.context;
     if (ctx) {
       try {
         const body = typeof ctx === 'string' ? JSON.parse(ctx) : await ctx.json?.();
-        if (body?.error) throw new Error(body.error);
+        if (body?.error) throw withCode(body.error, body.code);
       } catch (inner) {
         if ((inner as Error).message !== ctx) throw inner;
       }

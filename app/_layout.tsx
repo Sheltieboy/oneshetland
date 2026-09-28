@@ -176,17 +176,48 @@ function RootNavigator() {
     const inDriverGroup   = segments[0] === '(driver)';
     const inAdminGroup    = segments[0] === '(admin)';
     const inAccountScreen = (segments as string[])[0] === 'account';
+    const onOnboardingScreen = (segments as string[])[0] === 'onboarding';
 
     // Only genuinely-private routes are protected. Tabs, Spik detail,
     // Local browsing, etc. are all open — each screen prompts for sign-in
-    // when the user tries to do something that needs an account.
-    const inProtected = inCustomerGroup || inDriverGroup || inAdminGroup || inAccountScreen;
+    // when the user tries to do something that needs an account. Onboarding
+    // is included here too: it has its own sign-out escape hatch (a user
+    // must never be trapped inside an account), and the moment session
+    // clears, this is what sends them back into the open app rather than
+    // leaving them stranded on a now-signed-out onboarding screen.
+    const inProtected = inCustomerGroup || inDriverGroup || inAdminGroup || inAccountScreen || onOnboardingScreen;
 
     if (!session) {
       // Not signed in — bounce off the genuinely-protected routes into the open app
       if (inProtected) {
         router.replace('/(tabs)');
       }
+      return;
+    }
+
+    // Mandatory account onboarding (display name, resident/visitor, area if
+    // resident — app/onboarding.tsx). Runs for EVERY authenticated route, not
+    // only the auth-group → tabs handoff below: a new user must not reach
+    // Home, More, a business, an event, a job, or any other ordinary content
+    // by any path while this is outstanding. `profile` is checked (not just
+    // `session`) so this never fires before the profile fetch has actually
+    // resolved — same "don't decide before you know" convention the driver
+    // gate further down already uses.
+    //
+    // Only genuine infrastructure/callback routes are exempt — ones that must
+    // themselves resolve before any further navigation can happen at all
+    // (email-confirmation handoff, the Turnstile challenge return, Stripe's
+    // payment-return landing pad). Ordinary content deep links (tickets,
+    // gifts, NFC) are deliberately NOT exempt — their destination is instead
+    // preserved via the same `next` mechanism sign-in already uses, and
+    // honoured once onboarding finishes.
+    const isInfrastructureRoute =
+      (segments as string[])[0] === 'auth' ||              // auth/confirm
+      (segments as string[])[0] === 'turnstile-callback' ||
+      (segments as string[])[0] === 'payment-return';
+    if (profile && !profile.onboarding_completed_at && !onOnboardingScreen && !isInfrastructureRoute) {
+      const dest = sanitizeNext(pathname);
+      router.replace((dest ? `/onboarding?next=${encodeURIComponent(dest)}` : '/onboarding') as never);
       return;
     }
 
@@ -218,7 +249,7 @@ function RootNavigator() {
     if (inDriverGroup && !canAccessDriver) {
       router.replace('/(tabs)');
     }
-  }, [session, profile, hasAppliedToDrive, loading, segments, linkCheckDone, introCheckDone, introSeen, navParams?.next]);
+  }, [session, profile, hasAppliedToDrive, loading, segments, linkCheckDone, introCheckDone, introSeen, navParams?.next, pathname]);
 
   // The Stack renders behind the splash overlay so we get a true cross-fade
   // when the splash dissolves at the end of its animation.
@@ -228,6 +259,8 @@ function RootNavigator() {
         <Stack screenOptions={{ headerShown: false, ...SCREEN_PUSH }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="intro" />
+          <Stack.Screen name="onboarding" />
+          <Stack.Screen name="+not-found" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="auth/confirm" />
           <Stack.Screen name="(customer)" />
@@ -384,6 +417,7 @@ export default function RootLayout() {
             <StripeProvider
               publishableKey={STRIPE_KEY}
               merchantIdentifier="merchant.com.oneshetland.app"
+              urlScheme="oneshetland-fetch"
             >
               {content}
             </StripeProvider>

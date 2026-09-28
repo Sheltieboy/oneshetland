@@ -95,10 +95,21 @@ describe('products and passes can be prepared before paying', () => {
   test('so the managers create drafts rather than being refused on save', () => {
     // This was the real blocker: both created with is_active: true, so opening
     // the door alone would have produced a 42501 on the first save.
+    //
+    // UPDATE — the canonical payout-readiness work, Phase 3 (paid-activation
+    // gating). is_active is no longer written as the literal `canPublish`
+    // value: canPublish still decides PLAN intent, but a payout-readiness
+    // check can additionally downgrade it to false before the value actually
+    // reaches the payload (now named `activeToSave`). The invariant this
+    // test guards — a business below Premium (canPublish=false) still gets a
+    // draft, never a 42501 — holds exactly as before, since activeToSave can
+    // only ever be false when canPublish is false, never the reverse. See
+    // payout-activation-gate.node.test.ts for the added payout half.
     for (const c of ['ProductsManager', 'UnitItemsManager']) {
       const src = code(`components/business/${c}.tsx`);
       assert.doesNotMatch(src, /is_active: true/, `${c} must not publish on create`);
-      assert.match(src, /is_active: canPublish/, `${c} must create a draft below Premium`);
+      assert.match(src, /is_active: activeToSave/, `${c} must create a draft below Premium`);
+      assert.match(src, /let activeToSave = canPublish;/, `${c} must still start from the plan's own answer`);
     }
   });
 
@@ -251,8 +262,20 @@ describe('enforcement is untouched', () => {
        order by c.relname;`);
     assert.deepEqual(rows.map((r) => r.tbl),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
-       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
-       'local_wallet_transactions', 'products']);
+       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers', 'products']);
+    // local_wallet_transactions left this list when 20261006120000 retired
+    // tg_loyalty_earn_points. The gate did not leave with it: the tier check
+    // moved into loyalty_award_for_wallet_spend, which the four fulfilment
+    // callers invoke once the merchant has actually been paid. Asserted here so
+    // shrinking the list above can never quietly mean losing enforcement.
+    const [movedGate] = sql(`select pg_get_functiondef('public.loyalty_award_for_wallet_spend'::regproc) as d;`);
+    assert.match(String(movedGate.d), /business_meets_tier\(v_txn\.business_id, 'pro'\)/,
+      'the wallet-points tier gate vanished along with the trigger');
+    const [retired] = sql(`select count(*)::int as n from pg_proc p
+       join pg_namespace n2 on n2.oid = p.pronamespace
+      where n2.nspname='public' and p.proname='tg_loyalty_earn_points';`);
+    assert.equal(Number(retired.n), 0, 'the retired award trigger is back');
+
   });
 
   test('business_meets_tier itself was not touched', () => {

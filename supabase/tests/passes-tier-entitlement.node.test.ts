@@ -49,6 +49,8 @@ const B = {
 const LIVE = 'e2e2000a-0000-0000-0000-00000000000a';
 const DRAFT = 'e2e2000b-0000-0000-0000-00000000000b';
 const BOUGHT = 'e2e2000c-0000-0000-0000-00000000000c';
+const REDID  = 'e2e2000d-0000-0000-0000-00000000000d';
+const REDTOK = 'e2e2000e-0000-0000-0000-00000000000e';
 
 const FIXTURE = `
 begin;
@@ -140,23 +142,64 @@ describe('selling passes is Premium', () => {
 /* ── 2. What a customer already bought is theirs ────────────────────────── */
 
 describe('a lapsed seller keeps its promises', () => {
-  const rows = sql(FIXTURE + asUser(OWNER) + acceptAll + asOwnerRole + lapse + asUser(OWNER) +
-    attempt('redeem a use after lapsing',
+  // This used to prove the promise by having the merchant UPDATE uses_remaining
+  // straight off the table. Migration 20261007120000 made that column
+  // server-managed — a refunded pass keeps its uses on purpose, so nothing but
+  // the redemption RPC may move them — and the direct write is now refused.
+  //
+  // The promise is unchanged and is asserted here through the path every real
+  // caller actually uses: redeem_pass_atomic, which is SECURITY DEFINER and asks
+  // nothing about the seller's plan. The old direct write is kept below as the
+  // thing that must STAY refused.
+  const rows = sql(FIXTURE + asUser(OWNER) + acceptAll + asOwnerRole + lapse +
+    `insert into public.local_redemptions (id,user_id,business_id,kind,ref_id,status,code,token,expires_at)
+       values ('${REDID}','${CUST}','${B.lapsing}','pass','${BOUGHT}','pending','PK01','${REDTOK}',
+               now()+interval '15 minutes');
+     insert into r select 'seller still meets Premium',
+       public.business_meets_tier('${B.lapsing}','premium')::text;
+     insert into r select 'redeem through the supported path',
+       coalesce(public.redeem_pass_atomic('${OWNER}', null, '${REDTOK}') ->> 'ok', 'null');
+     insert into r select 'units left', uses_remaining::text from public.book_unit_purchases where id='${BOUGHT}';
+     insert into r select 'redemption consumed', status from public.local_redemptions where id='${REDID}';
+     insert into r select 'purchase still exists', count(*)::text from public.book_unit_purchases where id='${BOUGHT}';` +
+    asUser(OWNER) +
+    attempt('merchant edits the balance directly',
       `update public.book_unit_purchases set uses_remaining=uses_remaining-1 where id='${BOUGHT}'`) +
     asOwnerRole +
-    `insert into r select 'units left', uses_remaining::text from public.book_unit_purchases where id='${BOUGHT}';
-     insert into r select 'purchase still exists', count(*)::text from public.book_unit_purchases where id='${BOUGHT}';` +
+    `insert into r select 'units after the refused edit', uses_remaining::text
+       from public.book_unit_purchases where id='${BOUGHT}';` +
     asUser(CUST) +
     `insert into r select 'customer still sees it', count(*)::text from public.book_unit_purchases where id='${BOUGHT}';` +
     END);
 
+  test('the seller really has lapsed, or the rest proves nothing', () => {
+    assert.equal(outcome(rows, 'seller still meets Premium'), 'false');
+  });
+
   test('the business can still redeem units somebody paid for', () => {
-    assert.equal(outcome(rows, 'redeem a use after lapsing'), 'ALLOWED',
+    assert.equal(outcome(rows, 'redeem through the supported path'), 'true',
       'a subscription ending does not cancel a promise already made');
   });
 
   test('the remaining units are decremented normally, not wiped', () => {
     assert.equal(outcome(rows, 'units left'), '2');
+  });
+
+  test('and the redemption itself is consumed exactly once', () => {
+    assert.equal(outcome(rows, 'redemption consumed'), 'consumed');
+  });
+
+  test('redemption never learned to ask about the plan', () => {
+    const [row] = sql(`select pg_get_functiondef('public.redeem_pass_atomic'::regproc) as d;`);
+    assert.ok(!/business_meets_tier/.test(String(row.d)),
+      'a tier gate was introduced into redemption — a lapsed seller could no longer honour what it sold');
+  });
+
+  test('the merchant still cannot edit the balance by hand', () => {
+    assert.equal(outcome(rows, 'merchant edits the balance directly'), 'refused',
+      'uses_remaining is server-managed; only redeem_pass_atomic may move it');
+    assert.equal(outcome(rows, 'units after the refused edit'), '2',
+      'the refused edit changed the balance anyway');
   });
 
   test('the purchase record survives', () => {
@@ -358,9 +401,21 @@ describe('no way round, and nothing else disturbed', () => {
        order by c.relname;`);
     assert.deepEqual(rows.map((r) => r.tbl).sort(),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
-       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
-       'local_wallet_transactions', 'products'],
+       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers', 'products'],
       'this is the complete set of tier-enforced tables');
+    // local_wallet_transactions left this list when 20261006120000 retired
+    // tg_loyalty_earn_points. The gate did not leave with it: the tier check
+    // moved into loyalty_award_for_wallet_spend, which the four fulfilment
+    // callers invoke once the merchant has actually been paid. Asserted here so
+    // shrinking the list above can never quietly mean losing enforcement.
+    const [movedGate] = sql(`select pg_get_functiondef('public.loyalty_award_for_wallet_spend'::regproc) as d;`);
+    assert.match(String(movedGate.d), /business_meets_tier\(v_txn\.business_id, 'pro'\)/,
+      'the wallet-points tier gate vanished along with the trigger');
+    const [retired] = sql(`select count(*)::int as n from pg_proc p
+       join pg_namespace n2 on n2.oid = p.pronamespace
+      where n2.nspname='public' and p.proname='tg_loyalty_earn_points';`);
+    assert.equal(Number(retired.n), 0, 'the retired award trigger is back');
+
   });
 
   test('the existing Premium navigation gate is untouched', () => {

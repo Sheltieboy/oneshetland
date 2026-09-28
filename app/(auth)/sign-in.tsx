@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,22 +11,44 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input, KeyboardDoneBar } from '@/components/ui/Input';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { getTurnstileToken } from '@/lib/turnstile';
+import { useAlert } from '@/components/BrandedAlert';
+import { logAuthStage } from '@/lib/auth-diagnostics';
+import { passwordVisibility } from '@/lib/password-visibility';
+
+// One wording for every "an auth stage ran out of time" outcome — the challenge
+// deadline and the Supabase deadline alike.
+const TIMEOUT_ALERT = {
+  title: 'Sign in is taking too long',
+  message: 'Please check your connection and try again. If the problem continues, close and reopen OneShetland.',
+};
 
 export default function SignInScreen() {
   const router = useRouter();
   const { next } = useLocalSearchParams<{ next?: string }>();
   const { signIn } = useAuth();
+  const { alert } = useAlert();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Hidden by default, never persisted: a remount always starts hidden again.
+  const [showPassword, setShowPassword] = useState(false);
+  const pw = passwordVisibility(showPassword);
+  const submitting = useRef(false);
+
+  // Only flips the mask. It never reads, writes or copies the password value.
+  function togglePasswordVisibility() {
+    setShowPassword((visible) => !visible);
+  }
 
   async function handleSignIn() {
     setError(null);
@@ -40,18 +62,56 @@ export default function SignInScreen() {
       return;
     }
 
+    // The keyboard's "done" key and the button both land here; a second
+    // submit while one is pending would dismiss the first one's challenge.
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
-    const { error: authError } = await signIn(email.trim().toLowerCase(), password);
-    setLoading(false);
+    logAuthStage('auth_submit_started');
 
-    if (authError) {
-      if (authError.includes('Invalid login credentials')) {
-        setError('Email address or password is incorrect. Please try again.');
-      } else if (authError.includes('Email not confirmed')) {
-        setError('Please confirm your email address first. Check your inbox for a verification link.');
-      } else {
-        setError(authError);
+    // `finally` is what guarantees the spinner clears: every await below is
+    // bounded, but nothing here may ever leave `loading` set on a throw.
+    try {
+      // A verification check runs before every sign-in attempt — there is no
+      // path below that calls signIn without a fresh token. Cancelling or
+      // failing the check simply stops here with a clear message; it never
+      // silently falls back to an unprotected sign-in.
+      const turnstile = await getTurnstileToken();
+      if (!turnstile.ok) {
+        if (turnstile.reason === 'timeout') {
+          // The button is restored by `finally` in the same tick this returns.
+          logAuthStage('auth_timed_out', { reason: 'captcha' });
+          alert(TIMEOUT_ALERT);
+        } else {
+          setError(
+            turnstile.reason === 'cancelled'
+              ? 'Verification was cancelled. Please try again to sign in.'
+              : "Couldn't complete the verification check. Please try again.",
+          );
+        }
+        return;
       }
+
+      const { error: authError, timedOut } = await signIn(email.trim().toLowerCase(), password, turnstile.token);
+
+      if (timedOut) {
+        alert(TIMEOUT_ALERT);
+      } else if (authError) {
+        if (authError.includes('Invalid login credentials')) {
+          setError('Email address or password is incorrect. Please try again.');
+        } else if (authError.includes('Email not confirmed')) {
+          setError('Please confirm your email address first. Check your inbox for a verification link.');
+        } else {
+          setError(authError);
+        }
+      }
+    } catch (err) {
+      console.warn('[OneShetland] Sign-in failed unexpectedly:', err);
+      logAuthStage('auth_failed', { reason: 'exception' });
+      setError('Something went wrong signing in. Please try again.');
+    } finally {
+      submitting.current = false;
+      setLoading(false);
     }
   }
 
@@ -116,10 +176,21 @@ export default function SignInScreen() {
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Your password"
-                secureTextEntry
+                secureTextEntry={pw.secureTextEntry}
                 autoComplete="password"
                 returnKeyType="done"
                 onSubmitEditing={handleSignIn}
+                rightElement={
+                  <TouchableOpacity
+                    onPress={togglePasswordVisibility}
+                    style={styles.passwordToggle}
+                    accessibilityRole="button"
+                    accessibilityLabel={pw.accessibilityLabel}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <FontAwesome5 name={pw.icon} size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                }
               />
             </View>
 
@@ -240,6 +311,8 @@ const styles = StyleSheet.create({
   fields: { gap: spacing.xs, marginBottom: spacing.sm },
 
   submitBtn: { marginTop: spacing.md },
+  // 48pt wide, full field height: a comfortable target, and it sits inside the field.
+  passwordToggle: { width: 48, height: '100%', alignItems: 'center', justifyContent: 'center' },
   forgotBtn: { alignSelf: 'center', paddingVertical: spacing.md },
   forgotText: { color: colors.navy, fontSize: fontSize.sm, fontWeight: '600' },
 

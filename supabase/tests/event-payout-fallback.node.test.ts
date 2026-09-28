@@ -179,7 +179,10 @@ describe('a business inherits its owner’s bank unless given its own', () => {
 describe('the ticket gate and the charge agree', () => {
   test('the mobile gate asks the resolver, not the business row', () => {
     const src = read(join(REPO_ROOT, 'app', 'events', '[id].tsx'));
-    assert.match(src, /event\.payout_ready === true/, 'the gate must use the resolved flag');
+    // event?. rather than event. since this is now computed unconditionally,
+    // before the loading/not-found early returns, so the business-profile
+    // auto-open-tickets intent can read it too — same resolved flag either way.
+    assert.match(src, /event\?\.payout_ready === true/, 'the gate must use the resolved flag');
     assert.ok(!/business as any\)\?\.payout_enabled/.test(src),
       'the old business-only check must be gone, not merely supplemented');
   });
@@ -244,7 +247,8 @@ describe('My Account and Manage report the same state', () => {
 
   test('the account screens consume booleans, not Stripe identifiers', () => {
     const src = read(join(WEB_ROOT, 'lib', 'payment-state.ts'));
-    const returned = src.slice(src.indexOf('return {'));
+    // UPDATE — resolveCardState has its own early returns; the state handed to a screen is the LAST return.
+    const returned = src.slice(src.lastIndexOf('return {'));
     for (const leak of ['stripe_account_id', 'stripe_customer_id', 'acct_', 'cus_']) {
       assert.ok(!returned.includes(leak), `payment state must not hand ${leak} to a screen`);
     }
@@ -256,9 +260,13 @@ describe('My Account and Manage report the same state', () => {
 describe('the buyer pays with their own card', () => {
   test('the buyer’s Stripe customer comes from the authenticated buyer', () => {
     const src = read(join(REPO_ROOT, 'supabase', 'functions', 'create-event-ticket-intent', 'index.ts'));
-    // The customer is read from the buyer's own profile row, keyed on the JWT
-    // user — never from the organiser, the business, or anything in the body.
-    assert.match(src, /profile\?\.stripe_customer_id/);
+    // UPDATE — the customer is no longer read inline from `profile?.stripe_customer_id`.
+    // It is resolved by the canonical helpers (_shared/saved-card-state.ts), which read
+    // the buyer's OWN profile / claim row keyed on the id passed in — and that id is the
+    // authenticated JWT user here. Never the organiser, the business, or the body.
+    assert.match(src, /resolveSavedCard\(\{[\s\S]*?userId: user\.id,?\s*\}\)/);
+    assert.match(src, /boundCustomerFor\(supabase, user\.id\)/);
+    assert.ok(!/body\.(customer|stripe_customer_id|payment_method)/.test(src), 'nothing customer-shaped comes from the request');
     assert.ok(!/organiser[^\n]*stripe_customer_id/i.test(src),
       'the organiser must never be the payer');
   });

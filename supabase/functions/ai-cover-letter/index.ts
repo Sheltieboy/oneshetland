@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { safeError } from '../_shared/safe-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -30,8 +32,16 @@ serve(async (req) => {
     const { data: { user } } = await auth.auth.getUser();
     if (!user) return json({ error: 'Not signed in' }, 401);
 
-    const { job_id } = await req.json();
-    if (!job_id) return json({ error: 'job_id required' }, 400);
+    // Every call is a paid model request on OUR key. Being signed in is free, so
+    // it is not a limit: cap each account per hour and per day before spending
+    // anything (same shape as `transcribe`).
+    const limited = await enforceRateLimit('ai-cover-letter', userSubject(user.id), ['ai_cover_letter', 'ai_cover_letter_day'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
+
+    const { job_id } = await req.json().catch(() => ({}));
+    if (typeof job_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(job_id)) {
+      return json({ error: 'job_id required' }, 400);
+    }
 
     const svc = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -90,6 +100,6 @@ serve(async (req) => {
     ].filter(Boolean);
     return json({ cover_letter: bits.join('\n\n') });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    return json({ error: safeError('ai-cover-letter', e) }, 500);
   }
 });

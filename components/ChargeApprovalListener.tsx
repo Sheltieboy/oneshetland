@@ -4,7 +4,7 @@
  * INSERT), this pops the consent prompt so they can Approve or Decline. No money
  * moves without their tap. Renders nothing until a request arrives.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { colors, radius, fontSize } from '@/constants/theme';
@@ -36,6 +36,29 @@ export function ChargeApprovalListener() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
   }, []);
 
+  // Read inside the long-lived subscription callback below without making it
+  // resubscribe every time phase/req change.
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const reqRef = useRef(req);
+  useEffect(() => { reqRef.current = req; }, [req]);
+
+  /**
+   * The merchant cancelled (or the request otherwise left 'pending' — expired,
+   * for instance) while this customer had the "Approve payment?" prompt open.
+   * Money safety does not depend on this: the customer's own Approve tap
+   * always gets a definitive answer from wallet-charge-approve regardless of
+   * whether this fires. This only closes a prompt that can no longer be
+   * approved, so nobody sits looking at a dead ask. Left alone mid-tap
+   * ('working') — their own in-flight respond() call resolves it instead.
+   */
+  const dismissIfSettledElsewhere = useCallback((row: Row) => {
+    if (row.status === 'pending') return;
+    if (phaseRef.current === 'working') return;
+    if (reqRef.current?.id !== row.id) return;
+    setReq(null);
+  }, []);
+
   // Subscribe to new requests aimed at me + catch any already pending on load.
   useEffect(() => {
     if (!userId) return;
@@ -55,10 +78,13 @@ export function ChargeApprovalListener() {
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'wallet_charge_requests', filter: `customer_id=eq.${userId}` },
         (payload) => activate(payload.new as Row))
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'wallet_charge_requests', filter: `customer_id=eq.${userId}` },
+        (payload) => dismissIfSettledElsewhere(payload.new as Row))
       .subscribe();
 
     return () => { cancelled = true; supabase.removeChannel(channel); };
-  }, [userId, activate]);
+  }, [userId, activate, dismissIfSettledElsewhere]);
 
   // Countdown; auto-dismiss when the request lapses.
   useEffect(() => {

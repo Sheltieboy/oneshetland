@@ -16,3 +16,22 @@ export function sanitizeNext(next?: string | string[] | null): string | null {
   if (!s.startsWith('/') || s.startsWith('//')) return null;
   return s;
 }
+
+/**
+ * emailRedirectTo for signup/resend confirmation — the HTTPS web callback,
+ * not a bare oneshetland-fetch:// scheme.
+ *
+ * A bare custom scheme has no fallback on any device that isn't running this
+ * app: opened on a laptop or another phone it dead-ends (about:blank), even
+ * though Supabase confirms the account correctly server-side regardless.
+ * oneshetland.com/auth/callback already works from any device (verifies via
+ * token_hash server-side, no browser-held PKCE verifier needed) and lands on
+ * /auth/confirmed, which offers "Open OneShetland" — a plain link carrying no
+ * session credentials. app/auth/confirm.tsx already handles that token-less
+ * deep link correctly (routes to sign-in), so same-device confirmation still
+ * works exactly as before.
+ */
+export function emailConfirmationRedirectTo(next?: string | null): string {
+  const confirmedPage = `/auth/confirmed${next ? `?next=${encodeURIComponent(next)}` : ''}`;
+  return `https://oneshetland.com/auth/callback?next=${encodeURIComponent(confirmedPage)}`;
+}

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
+import { createChunkedSecureStorage } from './secure-store-adapter';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -16,8 +17,8 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
  * expo-secure-store.
  *
  * SecureStore has a ~2KB per-value limit and Supabase sessions can exceed that,
- * so this adapter transparently splits large values into numbered chunks and
- * records the count in the primary key as "__chunks__:N".
+ * so the adapter (lib/secure-store-adapter.ts) transparently splits large values
+ * into numbered chunks.
  *
  * On web (where SecureStore is unavailable) we fall back to AsyncStorage.
  *
@@ -25,53 +26,7 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
  * live in AsyncStorage and won't be found here — they'll simply be asked to
  * sign in once more. That is expected and harmless.
  */
-const CHUNK_SIZE = 1800; // comfortably under SecureStore's limit
-const sanitize = (key: string) => key.replace(/[^A-Za-z0-9._-]/g, '_');
-
-async function clearChunks(k: string): Promise<void> {
-  const head = await SecureStore.getItemAsync(k);
-  const m = head?.match(/^__chunks__:(\d+)$/);
-  if (m) {
-    const n = parseInt(m[1], 10);
-    for (let i = 0; i < n; i++) await SecureStore.deleteItemAsync(`${k}.${i}`);
-  }
-}
-
-const SecureStoreAdapter = {
-  async getItem(key: string): Promise<string | null> {
-    const k = sanitize(key);
-    const head = await SecureStore.getItemAsync(k);
-    if (head == null) return null;
-    const m = head.match(/^__chunks__:(\d+)$/);
-    if (!m) return head;
-    const n = parseInt(m[1], 10);
-    let out = '';
-    for (let i = 0; i < n; i++) {
-      const part = await SecureStore.getItemAsync(`${k}.${i}`);
-      if (part == null) return null; // a chunk is missing → treat as no session
-      out += part;
-    }
-    return out;
-  },
-  async setItem(key: string, value: string): Promise<void> {
-    const k = sanitize(key);
-    await clearChunks(k); // remove any stale chunks from a previous, larger value
-    if (value.length <= CHUNK_SIZE) {
-      await SecureStore.setItemAsync(k, value);
-      return;
-    }
-    const n = Math.ceil(value.length / CHUNK_SIZE);
-    for (let i = 0; i < n; i++) {
-      await SecureStore.setItemAsync(`${k}.${i}`, value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
-    }
-    await SecureStore.setItemAsync(k, `__chunks__:${n}`);
-  },
-  async removeItem(key: string): Promise<void> {
-    const k = sanitize(key);
-    await clearChunks(k);
-    await SecureStore.deleteItemAsync(k);
-  },
-};
+const SecureStoreAdapter = createChunkedSecureStorage(SecureStore);
 
 // SecureStore is native-only; AsyncStorage is the web fallback.
 const authStorage = Platform.OS === 'web' ? AsyncStorage : SecureStoreAdapter;

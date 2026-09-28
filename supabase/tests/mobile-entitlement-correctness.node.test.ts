@@ -123,8 +123,18 @@ describe('products and passes can be prepared before paying', () => {
   });
 
   test('a new product is a draft unless the plan can publish it', () => {
+    // UPDATE — the canonical payout-readiness work, Phase 3 (paid-activation
+    // gating). The plan-based decision (editingId ? (editingActive ?? true) :
+    // eff.premium) still exists byte-for-byte, but is no longer written
+    // directly into the is_active payload: it now feeds `wantsActive`, which
+    // a payout-readiness check can additionally downgrade to false before
+    // `activeToSave` reaches the payload. The plan-only half of the rule
+    // asserted here is unchanged; the added payout half is covered by
+    // payout-activation-gate.node.test.ts, which is where "attempting to
+    // activate while not payout-ready is blocked" and "payout-ready →
+    // activation works" now live.
     const s = code('app/business-products.tsx');
-    assert.match(s, /is_active: editingId \? \(editingActive \?\? true\) : eff\.premium/);
+    assert.match(s, /const wantsActive = editingId \? \(editingActive \?\? true\) : eff\.premium/);
     assert.doesNotMatch(s, /is_active: true,/, 'creating must not publish unconditionally');
   });
 
@@ -135,8 +145,14 @@ describe('products and passes can be prepared before paying', () => {
   });
 
   test('a new pass is a draft unless the plan can publish it', () => {
+    // UPDATE — same Phase 3 change as the product test above: isNew &&
+    // eff.premium still decides intent (now named `activateNow`), but a
+    // payout-readiness check can additionally downgrade it before it reaches
+    // the is_active payload. See payout-activation-gate.node.test.ts for the
+    // payout half.
     const s = code('app/local-book-units.tsx');
-    assert.match(s, /\.\.\.\(isNew \? \{ is_active: eff\.premium \} : \{\}\)/);
+    assert.match(s, /let activateNow = isNew && eff\.premium;/);
+    assert.match(s, /\.\.\.\(isNew \? \{ is_active: activateNow \} : \{\}\)/);
     assert.doesNotMatch(s, /is_active:\s+true,/, 'creating must not publish unconditionally');
   });
 
@@ -296,10 +312,79 @@ describe('nothing outside correctness moved', () => {
     assert.match(d, /\{attention\.length > 0 && \(/);
   });
 
-  test('no web source was changed', () => {
+  test('web changes stay inside the approved refund-parity files', () => {
+    // Phase 3B was mobile-only and this guard existed to keep it that way. The
+    // business Wallet refund work is the one approved exception: a merchant who
+    // manages money in the web Business Suite has to be able to refund there
+    // too, and a refunded pass has to read truthfully on both clients. So the
+    // guard is NARROWED to exactly those files rather than dropped — anything
+    // else appearing in the web tree still fails here.
+    const APPROVED_WEB = [
+      'components/business/WalletManager.tsx',   // merchant Refund action
+      'lib/business-data.ts',                    // merchant receipt refund_state model
+      'components/business/TransactionsLedger.tsx', // statement refund accounting
+      'lib/passes-data.ts',                      // pass refund_state model
+      'app/account/passes/PassesClient.tsx',     // pass refund_state on screen
+      // The redemption business scope. The same merchant redemption workflow is
+      // exposed on both clients, and the web one carried the identical defect:
+      // RedeemVerify took no businessId while every sibling on its page did, so
+      // an owner of two businesses could redeem one business's reward while
+      // managing the other. Fixing mobile alone would have left the blocker
+      // live on web, so these three are approved on the same ticket.
+      'app/business/[id]/manage/loyalty/page.tsx', // passes businessId down
+      'components/business/RedeemVerify.tsx',      // scopes preview and redeem
+      'lib/loyalty-redeem-client.ts',              // sends business_id
+      // UPDATE — the canonical payout-readiness work, Phase 3 (paid-activation
+      // gating; a wholly separate initiative from Phase 3B above, sharing a
+      // number by coincidence, not scope). That work is explicitly
+      // cross-platform by requirement ("Mobile and web must implement the
+      // same product rule") — see payout-activation-gate.node.test.ts for its
+      // own coverage. These are its web-side footprint: the new
+      // requirePayoutReadyForPaidActivation helper, its three activation
+      // call sites, the event fetch that now resolves payout_ready, and the
+      // buyer-side ticket page + modal that gate on it (TicketModal.tsx
+      // added by the follow-up mixed-event fix — a mixed free+paid event's
+      // free ticket must stay reachable and completable even when the
+      // organiser is not payout-ready, gated per ticket type instead of at
+      // the whole event).
+      'lib/payout-readiness.ts',
+      'components/business/ProductsManager.tsx',
+      'components/business/UnitItemsManager.tsx',
+      'components/business/BusinessEventForm.tsx',
+      'lib/events-data.ts',
+      'app/whats-on/[id]/page.tsx',
+      'components/events/TicketModal.tsx',
+      // UPDATE — the paid-ticket saved-card fix (cross-platform by requirement: the web
+      // modal must show the buyer's REAL saved card, and mobile consumes the same server
+      // state). TicketModal.tsx above is the modal itself; these are its client plumbing:
+      // the events client (no implicit saved-card charge), the saved-card state client
+      // (brand + last4 only) and the pure card-label helper.
+      'lib/events-client.ts',
+      'lib/saved-card-client.ts',
+      'lib/card-label.ts',
+      // Added by the "make the payout gate unmistakable" UX follow-up:
+      // Event Manage's own not-published banner and publish-button state,
+      // plus the event_payout_ready fetch it reads (getBusinessEvent) and
+      // the client-safe eventHasActivePaidTicket helper it needs
+      // (events-manage.ts reaches next/headers, so BusinessEventManage.tsx
+      // — "use client" — imports the helper from events-manage-client.ts
+      // instead, to avoid pulling the server-only import chain into the
+      // client bundle).
+      'components/business/BusinessEventManage.tsx',
+      'lib/events-manage.ts',
+      'lib/events-manage-client.ts',
+      // Added by the Events management list follow-up: the web events list
+      // page already existed and was already the dashboard's own primary
+      // action for Manage events — this only adds the draft-first grouping
+      // and not-payout-ready indication to it, reusing the two files above.
+      'app/business/[id]/manage/events/page.tsx',
+    ];
     const out = execFileSync('git', ['status', '--porcelain'],
       { cwd: join(REPO_ROOT, '..', 'oneshetland-web'), encoding: 'utf8' });
-    assert.equal(out.trim(), '', 'Phase 3B is mobile-only');
+    const changed = out.split('\n').map((l) => l.trim()).filter(Boolean)
+      .map((l) => l.replace(/^\S+\s+/, '').replace(/^"|"$/g, ''));
+    assert.deepEqual(changed.filter((f) => !APPROVED_WEB.includes(f)), [],
+      'Phase 3B is mobile-only apart from the approved business Wallet refund parity files');
   });
 
   test('backend enforcement is exactly where it was', () => {
@@ -309,7 +394,226 @@ describe('nothing outside correctness moved', () => {
        order by c.relname;`);
     assert.deepEqual(rows.map((r) => r.tbl),
       ['book_bookings', 'book_unit_items', 'local_businesses', 'local_loyalty_cards',
-       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers',
-       'local_wallet_transactions', 'products']);
+       'local_loyalty_programs', 'local_loyalty_transactions', 'local_offers', 'products']);
+    // local_wallet_transactions left this list when 20261006120000 retired
+    // tg_loyalty_earn_points. The gate did not leave with it: the tier check
+    // moved into loyalty_award_for_wallet_spend, which the four fulfilment
+    // callers invoke once the merchant has actually been paid. Asserted here so
+    // shrinking the list above can never quietly mean losing enforcement.
+    const [movedGate] = sql(`select pg_get_functiondef('public.loyalty_award_for_wallet_spend'::regproc) as d;`);
+    assert.match(String(movedGate.d), /business_meets_tier\(v_txn\.business_id, 'pro'\)/,
+      'the wallet-points tier gate vanished along with the trigger');
+    const [retired] = sql(`select count(*)::int as n from pg_proc p
+       join pg_namespace n2 on n2.oid = p.pronamespace
+      where n2.nspname='public' and p.proname='tg_loyalty_earn_points';`);
+    assert.equal(Number(retired.n), 0, 'the retired award trigger is back');
+
+  });
+});
+
+/* ── Selected-business context ────────────────────────────────────────────── */
+
+describe('the dashboard opens the business the user actually tapped', () => {
+  // Tapping Anderson & Co opened DEMO — Subscription Test Co. The dashboard
+  // never read its route parameter: it took bizList[0], and fetchMyBusinesses
+  // orders by created_at desc, so the newest business always won. On a screen
+  // carrying refunds, payouts and till access, that is the wrong business.
+  const dashSrc = () => read('app/local-business-dashboard.tsx');
+  const detailSrc = () => read('app/local-business-detail.tsx');
+
+  type Biz = { id: string; name: string };
+  const ANDERSON: Biz = { id: 'and-1', name: 'Anderson & Co' };
+  const DEMO: Biz = { id: 'demo-1', name: 'DEMO — Subscription Test Co' };
+  /** created_at desc, exactly as fetchMyBusinesses returns them. */
+  const OWNED: Biz[] = [DEMO, ANDERSON];
+
+  /** The shipped precedence, lifted out of the source and executed. */
+  function pick(biz: Biz | undefined, routeBusinessId: string | undefined, withPrivate: Biz[]): Biz | undefined {
+    const s = dashSrc();
+    const m = s.match(/const requested = routeBusinessId\s*\n?\s*\?([\s\S]*?);\n\s*const target = ([^;]+);/);
+    assert.ok(m, 'the dashboard no longer selects its business the way this test reads it');
+    const body = `const requested = routeBusinessId ? ${m![1].trim()}; const target = ${m![2].trim()}; return target;`;
+    return new Function('biz', 'routeBusinessId', 'withPrivate', body)(biz, routeBusinessId, withPrivate) as Biz | undefined;
+  }
+
+  test('the dashboard reads the business id from the route', () => {
+    assert.match(dashSrc(), /useLocalSearchParams<\{ id\?: string(?:; tab\?: string)? \}>\(\)/,
+      'the dashboard is not reading its route parameter');
+    assert.match(dashSrc(), /\}, \[profile\?\.id, routeBusinessId\]\);/,
+      'loadAll would not re-run when the route business changes');
+  });
+
+  test('an explicit Anderson id opens Anderson', () => {
+    assert.deepEqual(pick(undefined, ANDERSON.id, OWNED), ANDERSON);
+  });
+
+  test('the explicit id beats the default, which is the newest business', () => {
+    // Without the fix this returned DEMO, because DEMO is OWNED[0].
+    assert.notDeepEqual(pick(undefined, ANDERSON.id, OWNED), DEMO);
+    assert.deepEqual(pick(undefined, undefined, OWNED), DEMO, 'the fallback itself changed');
+  });
+
+  test('opening with no id keeps the existing fallback', () => {
+    assert.deepEqual(pick(undefined, undefined, OWNED), OWNED[0]);
+    assert.equal(pick(undefined, undefined, []), undefined, 'no businesses must not throw');
+  });
+
+  test('switching business on the screen still wins over the route', () => {
+    // loadAll(biz) is how the switcher reloads; an explicit argument outranks
+    // the route, or the user could never move off the business they arrived on.
+    assert.deepEqual(pick(DEMO, ANDERSON.id, OWNED), DEMO);
+  });
+
+  test('a reload cannot quietly revert to the default', () => {
+    // The selection is a pure function of (argument, route, list), so a second
+    // or third load — a refresh, a late effect — resolves the same way rather
+    // than falling back to OWNED[0].
+    for (let i = 0; i < 3; i++) {
+      assert.deepEqual(pick(undefined, ANDERSON.id, OWNED), ANDERSON, `load ${i + 1} drifted`);
+    }
+  });
+
+  test('an id the user does not own falls back rather than selecting it', () => {
+    // The list is built from fetchMyBusinesses(profile.id), so a foreign id
+    // simply finds nothing. It can never select someone else's business.
+    assert.deepEqual(pick(undefined, 'someone-elses-business', OWNED), DEMO);
+    assert.equal(pick(undefined, 'someone-elses-business', []), undefined);
+  });
+
+  test('every owner entry point names the business it came from', () => {
+    // me.tsx already passed { id }. The business page did not, so "Manage
+    // business" on Anderson & Co opened whichever business was newest.
+    const detail = detailSrc();
+    const bare = detail.match(/router\.push\('\/local-business-dashboard'\)/g) ?? [];
+    assert.equal(bare.length, 0, 'an owner entry still opens the dashboard with no business');
+    assert.match(detail, /pathname: '\/local-business-dashboard', params: \{ id \}/);
+    assert.match(read('app/(tabs)/me.tsx'), /pathname: '\/local-business-dashboard', params: \{ id: biz\.id/);
+  });
+
+  test('financial child screens are handed the business on screen', () => {
+    const s = dashSrc();
+    // Every push out of the dashboard carries activeBusiness.id — never
+    // businesses[0], never the route id, so a child can only ever act on the
+    // business the merchant can see. event-manage/event-scanner carry an
+    // EVENT id instead (they're per-event screens, not per-business), but
+    // nextBizEvent is itself derived from data fetched for activeBusiness.id
+    // (fetchBusinessEvents(target.id) — see business-next-event.node.test.ts
+    // and the "the dashboard actually uses the fix" checks there), so it is
+    // still transitively business-scoped, not a stray index or route id.
+    const pushes = s.match(/pathname: '\/[a-z-]+', params: \{ (?:businessId|id): ([^,}]+)/g) ?? [];
+    assert.ok(pushes.length >= 10, `expected the dashboard to route to its sections, found ${pushes.length}`);
+    for (const p of pushes) {
+      assert.ok(/activeBusiness|nextBizEvent/.test(p),
+        `a child screen is handed something other than the visible business: ${p}`);
+    }
+    assert.ok(!/params: \{ businessId: routeBusinessId/.test(s),
+      'a child screen is handed the route id instead of the visible business');
+  });
+
+  test('money screens in particular follow the visible business', () => {
+    const s = dashSrc();
+    for (const screen of ['local-till', 'local-counter', 'payment-setup', 'business-orders']) {
+      const m = s.match(new RegExp(`pathname: '/${screen}', params: \\{ businessId: ([^,}]+)`));
+      assert.ok(m, `the dashboard no longer routes to ${screen}`);
+      assert.match(m![1], /activeBusiness/, `${screen} is not given the visible business`);
+    }
+  });
+});
+
+/* ── Payments-section targeting ───────────────────────────────────────────── */
+
+describe('tab=payments lands the merchant on the payments section', () => {
+  // "Payment card" and "Payout bank" in the Me tab already pushed
+  // tab: 'payments'. The dashboard read neither, so both dropped the merchant
+  // at the top of a long screen to hunt for the section they had just tapped.
+  const dashSrc = () => read('app/local-business-dashboard.tsx');
+
+  /** The shipped guard, lifted out of the source and executed. */
+  function attempt(opts: {
+    routeTab?: string; activeBusiness: unknown; planCardY: number | null; alreadyJumped?: boolean;
+  }) {
+    const s = dashSrc();
+    const m = s.match(/const jumpToPaymentsIfRequested = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[routeTab, activeBusiness\]\);/);
+    assert.ok(m, 'the payments jump is no longer written the way this test reads it');
+    const body = m![1]
+      .replace(/didJumpToPayments\.current/g, 'state.jumped')
+      .replace(/planCardY\.current/g, 'planCardY')
+      .replace(/setExpanded\(\(prev\) => \(\{ \.\.\.prev, plan: true \}\)\);/, 'state.expandedPlan = true;')
+      .replace(/scrollRef\.current\?\.scrollTo\(\{ y: ([\s\S]+?), animated: true \}\);/, 'state.scrolledTo = $1;');
+    const state = { jumped: opts.alreadyJumped ?? false, expandedPlan: false, scrolledTo: null as number | null };
+    new Function('routeTab', 'activeBusiness', 'planCardY', 'state', 'Math', body)(
+      opts.routeTab, opts.activeBusiness, opts.planCardY, state, Math);
+    return state;
+  }
+
+  const BIZ = { id: 'and-1', name: 'Anderson & Co' };
+
+  test('the dashboard reads the tab parameter alongside the id', () => {
+    assert.match(dashSrc(), /useLocalSearchParams<\{ id\?: string; tab\?: string \}>\(\)/,
+      'the dashboard is not reading the tab parameter');
+  });
+
+  test('tab=payments opens the section and scrolls to it', () => {
+    const r = attempt({ routeTab: 'payments', activeBusiness: BIZ, planCardY: 420 });
+    assert.equal(r.jumped, true);
+    assert.equal(r.expandedPlan, true, 'the card was left collapsed, so there is nothing to see');
+    assert.equal(r.scrolledTo, 412, 'did not scroll to the payments card');
+  });
+
+  test('no tab does nothing at all', () => {
+    const r = attempt({ activeBusiness: BIZ, planCardY: 420 });
+    assert.deepEqual(r, { jumped: false, expandedPlan: false, scrolledTo: null });
+  });
+
+  test('an unknown tab does nothing at all', () => {
+    const r = attempt({ routeTab: 'loyalty', activeBusiness: BIZ, planCardY: 420 });
+    assert.deepEqual(r, { jumped: false, expandedPlan: false, scrolledTo: null });
+  });
+
+  test('it waits for the business rather than scrolling an empty screen', () => {
+    const r = attempt({ routeTab: 'payments', activeBusiness: null, planCardY: 420 });
+    assert.equal(r.jumped, false, 'jumped before the business had loaded');
+    assert.equal(r.scrolledTo, null);
+  });
+
+  test('it waits for the card to be laid out', () => {
+    const r = attempt({ routeTab: 'payments', activeBusiness: BIZ, planCardY: null });
+    assert.equal(r.jumped, false, 'scrolled to a position it had not measured');
+  });
+
+  test('it fires once, and never again', () => {
+    // The guard is a ref, so re-renders, a refresh, or the card re-laying out
+    // must not drag the merchant back down the screen.
+    const r = attempt({ routeTab: 'payments', activeBusiness: BIZ, planCardY: 900, alreadyJumped: true });
+    assert.equal(r.scrolledTo, null, 'scrolled a second time');
+    assert.equal(r.expandedPlan, false, 'reopened a card the merchant may have closed');
+  });
+
+  test('both the effect and the layout attempt it, so neither has to win the race', () => {
+    const s = dashSrc();
+    assert.match(s, /useEffect\(\(\) => \{ jumpToPaymentsIfRequested\(\); \}, \[jumpToPaymentsIfRequested, loading\]\);/);
+    assert.match(s, /onLayout=\{\(e\) => \{ planCardY\.current = e\.nativeEvent\.layout\.y; jumpToPaymentsIfRequested\(\); \}\}/);
+    assert.ok(!/setTimeout|setInterval/.test(s.slice(s.indexOf('jumpToPaymentsIfRequested'), s.indexOf('jumpToPaymentsIfRequested') + 900)),
+      'a timer was added to paper over the race');
+  });
+
+  test('business selection is untouched by any of this', () => {
+    const s = dashSrc();
+    // The tab must never influence which business is chosen.
+    assert.match(s, /const target = biz \?\? requested \?\? withPrivate\[0\];/);
+    assert.ok(!/routeTab.*withPrivate|withPrivate.*routeTab/.test(s),
+      'the tab parameter leaked into business selection');
+    assert.match(s, /withPrivate\.find\(\(b\) => b\.id === routeBusinessId\)/,
+      'the owned-business check was lost');
+  });
+
+  test('manual switching and child routing still stand', () => {
+    const s = dashSrc();
+    assert.match(s, /loadAll\(b\)|loadAll\(activeBusiness\)/, 'the switcher no longer reloads a chosen business');
+    const pushes = s.match(/pathname: '\/[a-z-]+', params: \{ (?:businessId|id): ([^,}]+)/g) ?? [];
+    assert.ok(pushes.length >= 10);
+    for (const p of pushes) {
+      assert.ok(/activeBusiness|nextBizEvent/.test(p), `a child screen is no longer given the visible business: ${p}`);
+    }
   });
 });

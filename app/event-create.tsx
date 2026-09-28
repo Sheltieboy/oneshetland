@@ -21,10 +21,11 @@ import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { Button } from '@/components/ui/Button';
 import { useAlert } from '@/components/BrandedAlert';
+import { requirePayoutReadyForPaidActivation, eventSavedAsDraftPrompt, launchPayoutSetupFromPrompt } from '@/lib/payout-readiness';
 
-const GOOGLE_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
+import { placesRequestUrl, PLACES_QUERY_KEY } from '@/lib/places-proxy';
 import {
   fetchEvent,
   createEvent, updateEvent,
@@ -33,6 +34,8 @@ import {
   EVENT_CATEGORIES, AGE_RESTRICTIONS,
   type EventUpsertInput, type EventTicketType, type HubEventVisibility,
 } from '@/lib/events-api';
+import { ticketTypesToDeactivate } from '@/lib/ticket-type-save';
+import { DEFAULT_PER_ORDER_MAX, parsePerOrderMax, normalisePerOrderMax, type PerOrderMaxDraft } from '@/lib/event-ticket-utils';
 import { fetchHub, createHubNotice } from '@/lib/hubs-api';
 import { track } from '@/lib/analytics';
 import { PeerieFill } from '@/components/ai/PeerieFill';
@@ -45,9 +48,9 @@ const CATEGORY_OPTIONS = ['', ...EVENT_CATEGORIES];
 function EventCreateBody() {
   const { businessId, hubId, eventId } = useLocalSearchParams<{ businessId?: string; hubId?: string; eventId?: string }>();
   const router  = useRouter();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { screenWidth } = useAppLayout();
-  const { alert } = useAlert();
+  const { alert, hide } = useAlert();
 
   const isEdit = !!eventId;
   const isHub  = !!hubId;
@@ -86,8 +89,21 @@ function EventCreateBody() {
 
   // Tickets
   const [ticketMode,  setTicketMode]  = useState<'none' | 'oneshetland' | 'external'>('none');
-  const [ticketTypes, setTicketTypes] = useState<(Partial<EventTicketType> & { _local?: boolean })[]>([]);
+  /**
+   * per_order_max is widened to PerOrderMaxDraft (number | "") here, same as
+   * web's EditableTicketType — "" is a legitimate mid-edit state for the
+   * Max per order box (see lib/event-ticket-utils.ts), and is normalised
+   * back to a real number on blur and again on save, never reaching
+   * EventTicketType (per_order_max: number) directly.
+   */
+  const [ticketTypes, setTicketTypes] = useState<
+    (Partial<Omit<EventTicketType, 'per_order_max'>> & { per_order_max?: PerOrderMaxDraft; _local?: boolean })[]
+  >([]);
   const [ticketUrl,   setTicketUrl]   = useState('');
+  // Ticket-type ids the event was loaded with. Used on Save to work out which
+  // existing types the owner removed (they're no longer in `ticketTypes`) so
+  // they can be taken off sale — see lib/ticket-type-save.ts.
+  const [originalTicketTypeIds, setOriginalTicketTypeIds] = useState<string[]>([]);
 
   // Misc
   const [refundPolicy, setRefundPolicy] = useState('');
@@ -116,7 +132,10 @@ function EventCreateBody() {
       setTicketUrl(ev.ticket_url);
     } else if (ev.has_tickets || (ev.ticket_types && ev.ticket_types.length > 0)) {
       setTicketMode('oneshetland');
-      if (ev.ticket_types) setTicketTypes(ev.ticket_types);
+      if (ev.ticket_types) {
+        setTicketTypes(ev.ticket_types);
+        setOriginalTicketTypeIds(ev.ticket_types.map(t => t.id).filter((id): id is string => !!id));
+      }
     } else {
       setTicketMode('none');
     }
@@ -167,7 +186,7 @@ function EventCreateBody() {
       name: '',
       price_pence: 0,
       quantity_available: null,
-      per_order_max: 10,
+      per_order_max: DEFAULT_PER_ORDER_MAX,
       is_active: true,
       requires_attendee_details: false,
     }]);
@@ -216,7 +235,7 @@ function EventCreateBody() {
         name: typeof t.name === 'string' ? t.name : '',
         price_pence: typeof t.price_gbp === 'number' ? Math.round(t.price_gbp * 100) : 0,
         quantity_available: null,
-        per_order_max: 10,
+        per_order_max: DEFAULT_PER_ORDER_MAX,
         is_active: true,
         requires_attendee_details: false,
       })));
@@ -226,6 +245,19 @@ function EventCreateBody() {
   const handleSave = async (publish = false) => {
     if (!title.trim()) { alert({ title: 'Title required' }); return; }
     if (!profile) return;
+
+    // Any active ticket type priced above zero makes this a paid event for
+    // activation purposes, mixed free+paid included — a free-only event
+    // never needs a payout route to publish. Hub events aren't gated here:
+    // hubs don't use the business-owner payout model this check resolves.
+    const hasActivePaidTicket = ticketMode === 'oneshetland'
+      && ticketTypes.some(tt => tt.name?.trim() && (tt.is_active ?? true) && (tt.price_pence ?? 0) > 0);
+    const wantsPaidPublish = publish && !isHub && !!businessId && hasActivePaidTicket;
+    let effectivePublish = publish;
+    if (wantsPaidPublish && !(await requirePayoutReadyForPaidActivation(businessId!))) {
+      effectivePublish = false;
+    }
+
     setSaving(true);
     try {
       const finalCover = await uploadCover();
@@ -237,7 +269,7 @@ function EventCreateBody() {
         title:              title.trim(),
         description:        description.trim() || null,
         category:           category || null,
-        status:             publish ? 'published' : 'draft',
+        status:             effectivePublish ? 'published' : 'draft',
         venue:              venue.trim() || null,
         formatted_address:  address.trim() || null,
         lat,
@@ -264,34 +296,67 @@ function EventCreateBody() {
         targetId = ev.id;
         track('event_created', { objectType: 'event', objectId: ev.id, businessId: businessId ?? null });
       }
-      if (publish) {
+      if (effectivePublish) {
         track('event_published', { objectType: 'event', objectId: targetId });
       }
 
-      // Upsert ticket types (only when using OneShetland ticketing)
+      // Which originally-loaded ticket types the owner removed (or the event
+      // left OneShetland ticketing entirely) — computed BEFORE the array
+      // below is truncated, from the ids the event was loaded with, so a
+      // removal is judged against what actually existed, not against itself.
+      const idsToDeactivate = ticketTypesToDeactivate(originalTicketTypeIds, ticketTypes, ticketMode);
+
+      // Upsert ticket types (only when using OneShetland ticketing). A type
+      // with a blank name is left exactly as it was — same as before this
+      // fix — rather than dropped from the visible list, since nothing was
+      // actually saved for it.
       if (ticketMode !== 'oneshetland') ticketTypes.length = 0;
+      const updatedTicketTypes: (Partial<Omit<EventTicketType, 'per_order_max'>> & { per_order_max?: PerOrderMaxDraft; _local?: boolean })[] = [];
       for (const tt of ticketTypes) {
-        if (!tt.name?.trim()) continue;
-        await upsertTicketType({
+        if (!tt.name?.trim()) { updatedTicketTypes.push(tt); continue; }
+        const saved = await upsertTicketType({
           id:                       tt._local ? undefined : tt.id,
           event_id:                 targetId,
           name:                     tt.name!,
           description:              tt.description ?? null,
           price_pence:              tt.price_pence ?? 0,
           quantity_available:       tt.quantity_available ?? null,
-          per_order_max:            tt.per_order_max ?? 10,
+          // normalisePerOrderMax, not `?? 10`: same as web, so a box left
+          // mid-edit (e.g. "") or never touched at all still cannot reach
+          // the database as anything but a real per-order integer >= 1.
+          per_order_max:            normalisePerOrderMax(tt.per_order_max),
           is_active:                tt.is_active ?? true,
           requires_attendee_details:tt.requires_attendee_details ?? false,
           sale_starts_at:           tt.sale_starts_at ?? null,
           sale_ends_at:             tt.sale_ends_at ?? null,
           display_order:            tt.display_order ?? 0,
         } as any);
+        // Carry the real id back onto local state so a second Save (without a
+        // reload) updates this row instead of inserting a duplicate.
+        updatedTicketTypes.push(saved);
+      }
+
+      // Take removed existing types off sale. Soft delete (is_active: false)
+      // — see lib/ticket-type-save.ts for why this is the safe operation:
+      // existing tickets/orders for the type are untouched, only future sale
+      // stops. Runs before the success path below, so a failure here surfaces
+      // as the same "Error" alert as any other save failure, not a silent
+      // partial success.
+      for (const id of idsToDeactivate) {
+        await deleteTicketType(id);
+      }
+
+      if (ticketMode === 'oneshetland') {
+        setTicketTypes(updatedTicketTypes);
+        setOriginalTicketTypeIds(updatedTicketTypes.map(t => t.id).filter((id): id is string => !!id));
+      } else {
+        setOriginalTicketTypeIds([]);
       }
 
       // For a freshly-published hub event, optionally announce it as a notice.
       // members → members-only notice; hub/islands → public notice (the home
       // feed only surfaces it islands-wide once the event is calendar-approved).
-      if (isHub && hubId && publish && !isEdit && postNotice) {
+      if (isHub && hubId && effectivePublish && !isEdit && postNotice) {
         try {
           await createHubNotice(hubId, {
             title:      `New event: ${title.trim()}`,
@@ -304,6 +369,15 @@ function EventCreateBody() {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (wantsPaidPublish && !effectivePublish) {
+        // The event this created is where the merchant already lands next
+        // (the router.replace below) — Connect Stripe opens directly on top
+        // of it rather than detouring through the dashboard's Money tab.
+        // BrandedAlert dismisses this prompt before onConnectStripe fires,
+        // so launchPayoutSetupFromPrompt shows its own loading alert for
+        // immediate feedback — see lib/payout-readiness.ts.
+        alert(eventSavedAsDraftPrompt(() => launchPayoutSetupFromPrompt(businessId!, { alert, hide })));
+      }
       router.replace({ pathname: '/event-manage', params: { id: targetId } });
     } catch (e: any) {
       alert({ title: 'Error', message: e.message ?? 'Please try again' });
@@ -451,12 +525,13 @@ function EventCreateBody() {
                 setPlaceId(pid);
               }}
               query={{
-                key:        GOOGLE_KEY,
+                key:        PLACES_QUERY_KEY,
                 language:   'en',
                 components: 'country:gb',
                 location:   '60.3,-1.2',  // Lerwick — biases results toward Shetland
                 radius:     '80000',
               }}
+              requestUrl={placesRequestUrl(session?.access_token)}
               textInputProps={{
                 placeholderTextColor: colors.textLight,
                 // Show the current saved value as the initial text
@@ -601,6 +676,34 @@ function EventCreateBody() {
                         placeholderTextColor={colors.textLight}
                       />
                     </View>
+                  </View>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.fieldLabel}>Max per order</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={tt.per_order_max === undefined ? '' : String(tt.per_order_max)}
+                        onChangeText={v => {
+                          const draft = parsePerOrderMax(v);
+                          setTicketTypes(prev => { const n = [...prev]; n[i] = { ...n[i], per_order_max: draft }; return n; });
+                        }}
+                        onBlur={() => {
+                          setTicketTypes(prev => {
+                            const n = [...prev];
+                            n[i] = { ...n[i], per_order_max: normalisePerOrderMax(n[i].per_order_max) };
+                            return n;
+                          });
+                        }}
+                        keyboardType="number-pad"
+                        placeholder={String(DEFAULT_PER_ORDER_MAX)}
+                        placeholderTextColor={colors.textLight}
+                      />
+                    </View>
+                    {/* Empty second column: Max per order is a single value, not a
+                        pair, but the row's flex:1 columns keep it visually
+                        consistent with Price/Quantity above rather than
+                        stretching one input across the full card width. */}
+                    <View style={{ flex: 1 }} />
                   </View>
                   <TouchableOpacity onPress={() => setTicketTypes(prev => prev.filter((_, j) => j !== i))} style={styles.removeLink}>
                     <Text style={styles.removeLinkText}>Remove</Text>

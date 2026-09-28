@@ -200,39 +200,18 @@ rollback;`);
   test('claim, replay, failure and staleness all behave', () => assertAllPass(rows, 'ledger'));
 });
 
-// ── 2. Concurrent delivery of the same event ────────────────────────────────
-
-describe('two deliveries of one event arriving together', () => {
-  const EVT = 'evt_t_concurrent';
-  const cleanup = () => query(`delete from public.stripe_webhook_events where stripe_event_id like 'evt_t_%'; select 1;`);
-
-  before(cleanup);
-  after(cleanup);
-
-  test('exactly one delivery may proceed', async () => {
-    // A claims and holds its transaction open. B's INSERT contends on the
-    // primary key, blocks until A commits, then finds the row already there.
-    const a = queryAsync(`begin;
-create temp table ca as select public.claim_stripe_event('${EVT}','payment_intent.succeeded','pi_x') r;
-select pg_sleep(6);
-select r from ca;
-commit;`);
-    const b = queryAsync(`select pg_sleep(3);
-select public.claim_stripe_event('${EVT}','payment_intent.succeeded','pi_x') as r;`);
-
-    const [ra, rb] = await Promise.all([a, b]);
-    const results = [String(ra.r), String(rb.r)];
-    const claims = results.filter((x) => x === 'claimed').length;
-
-    assert.equal(claims, 1,
-      `${claims} deliveries were allowed to fulfil the same Stripe event — expected exactly one. Got ${JSON.stringify(results)}`);
-    assert.ok(results.includes('in_progress'),
-      `the losing delivery should be told to retry, got ${JSON.stringify(results)}`);
-
-    const state = query(`select count(*)::int as n from public.stripe_webhook_events where stripe_event_id='${EVT}';`);
-    assert.equal(state.n, 1, 'the ledger holds more than one row for a single event id');
-  });
-});
+// ── Two deliveries of one event arriving together — MOVED ──────────────────
+//
+// The proof that used to live here raced two COMMITTED connections against
+// production. It could not roll itself back, so it seeded real rows and relied
+// on an after() hook to remove them — the assumption that failed on 2026-09-08
+// and left fabricated money on a real customer account.
+//
+// It is unchanged and now lives in the isolated lane, where the identities are
+// invented and the cluster is destroyed in a finally:
+//
+//     supabase/tests/production-concurrency-proofs.node.test.ts
+//     (npm run test:isolated)
 
 // ── 3. Boost, refunds and capacity ──────────────────────────────────────────
 
@@ -390,96 +369,14 @@ rollback;`);
   test('capacity is never adjusted by a refund', () => assertAllPass(rows, 'capacity'));
 });
 
-// ── 4. A refund racing a scan ───────────────────────────────────────────────
-
-describe('a refund and a scan arriving together', () => {
-  let scanner = '';
-
-  const cleanup = () => query(`
-    delete from public.event_checkins where event_id='${EV_RACE}'
-       or ticket_id in (select id from public.event_tickets where backup_code like 'T5R-%');
-    delete from public.event_tickets where backup_code like 'T5R-%';
-    delete from public.event_ticket_orders where id='${OR_RACE}';
-    delete from public.event_ticket_types where id='${TT_RACE}';
-    delete from public.events where id='${EV_RACE}';
-    select 1;`);
-
-  const seed = (suffix: string) => query(`
-    delete from public.event_checkins where ticket_id in (select id from public.event_tickets where backup_code like 'T5R-%');
-    delete from public.event_tickets where backup_code like 'T5R-%';
-    update public.event_ticket_orders set status='paid', refunded_at=null,
-           stripe_payment_intent_id='pi_t_race_${suffix}' where id='${OR_RACE}';
-    insert into public.event_tickets (order_id,event_id,ticket_type_id,holder_id,validation_token_hash,backup_code,status,price_pence)
-    select '${OR_RACE}','${EV_RACE}','${TT_RACE}','${scanner}',
-           encode(sha256('__T5R__tok${suffix}'::bytea),'hex'),'T5R-${suffix}','valid',1000;
-    select 1;`);
-
-  before(() => {
-    cleanup();
-    const r = query(`
-      insert into public.events (id,title,starts_at,organiser_user_id)
-      select '${EV_RACE}','__T5R__ race', now()+interval '7 days',
-             (select id from public.profiles where coalesce(role,'')<>'admin' and coalesce(is_platform_owner,false)=false order by id limit 1);
-      insert into public.event_ticket_types (id,event_id,name,price_pence,quantity_available,quantity_sold,is_active,per_order_max)
-      values ('${TT_RACE}','${EV_RACE}','__T5R__ tt',1000,100,1,true,10);
-      insert into public.event_ticket_orders (id,event_id,buyer_id,status,total_pence,platform_fee_pence,tickets_count,stripe_payment_intent_id,client_request_id,paid_at)
-      select '${OR_RACE}','${EV_RACE}',
-             (select id from public.profiles where coalesce(role,'')<>'admin' and coalesce(is_platform_owner,false)=false order by id limit 1),
-             'paid',1000,0,1,'pi_t_race_seed','__T5R__seed',now();
-      select (select id::text from public.profiles where coalesce(role,'')<>'admin' and coalesce(is_platform_owner,false)=false order by id limit 1) as scanner;`);
-    scanner = String(r.scanner);
-    assert.match(scanner, /^[0-9a-f-]{36}$/, 'no scanner profile was found for the race fixture');
-  });
-
-  after(cleanup);
-
-  test('when the door wins, attendance stands and nothing is voided', async () => {
-    seed('A');
-    const scan = queryAsync(`begin;
-create temp table x as select public.validate_and_checkin_ticket('__T5R__tokA','${EV_RACE}','${scanner}')->>'result' r;
-select pg_sleep(6); select r from x; commit;`);
-    const refund = queryAsync(`select pg_sleep(3);
-select public.refund_event_tickets_for_payment('pi_t_race_A', true)::text as r;`);
-    const [s, f] = await Promise.all([scan, refund]);
-
-    assert.equal(s.r, 'valid', 'the scan that started first should have admitted the holder');
-    const res = JSON.parse(String(f.r)) as Record<string, unknown>;
-    assert.equal(res.tickets_voided, 0, 'the refund voided a ticket that had already been used');
-    assert.equal(res.tickets_kept_used, 1, 'the refund did not notice the ticket had been used');
-
-    const st = query(`select t.status, o.status ord,
-      (select count(*)::int from public.event_checkins c where c.ticket_id=t.id and c.result='valid') ck,
-      (select quantity_sold::int from public.event_ticket_types where id='${TT_RACE}') cap
-      from public.event_tickets t join public.event_ticket_orders o on o.id=t.order_id where t.backup_code='T5R-A';`);
-    assert.equal(st.status, 'used', 'the admitted ticket should stay used');
-    assert.equal(st.ord, 'refunded', 'the money was refunded, so the order should say so');
-    assert.equal(st.ck, 1, 'the attendance record was destroyed by the refund');
-    assert.equal(st.cap, 1, 'capacity moved during a refund');
-  });
-
-  test('when the refund wins, the door is closed', async () => {
-    seed('B');
-    const refund = queryAsync(`begin;
-create temp table y as select public.refund_event_tickets_for_payment('pi_t_race_B', true)::text r;
-select pg_sleep(6); select r from y; commit;`);
-    const scan = queryAsync(`select pg_sleep(3);
-select public.validate_and_checkin_ticket('__T5R__tokB','${EV_RACE}','${scanner}')->>'result' as r;`);
-    const [f, s] = await Promise.all([refund, scan]);
-
-    const res = JSON.parse(String(f.r)) as Record<string, unknown>;
-    assert.equal(res.tickets_voided, 1, 'the refund should have voided the unused ticket');
-    assert.equal(s.r, 'refunded',
-      `SPLIT BRAIN: the refund voided the ticket but the scanner answered "${s.r}"`);
-
-    const st = query(`select t.status,
-      (select count(*)::int from public.event_checkins c where c.ticket_id=t.id and c.result='valid') ck,
-      (select quantity_sold::int from public.event_ticket_types where id='${TT_RACE}') cap
-      from public.event_tickets t where t.backup_code='T5R-B';`);
-    assert.equal(st.status, 'refunded');
-    assert.equal(st.ck, 0, 'a refunded ticket was recorded as having been admitted');
-    assert.equal(st.cap, 1, 'capacity moved during a refund');
-  });
-});
+// ── 4. A refund racing a scan — MOVED ───────────────────────────────────────
+//
+// The proof that used to live here raced two COMMITTED connections against
+// production, seeding real events and tickets and relying on an after() hook to
+// remove them. It is unchanged and now lives in the isolated lane:
+//
+//     supabase/tests/production-concurrency-proofs.node.test.ts
+//     (npm run test:isolated)
 
 // ── 5. None of it is reachable, and unsigned events are refused ─────────────
 

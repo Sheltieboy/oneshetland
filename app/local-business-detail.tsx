@@ -634,7 +634,19 @@ export default function BusinessDetailScreen() {
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                                backgroundColor: SECTIONS.events.color, borderRadius: 999,
                                paddingHorizontal: 10, paddingVertical: 5 }}
-                      onPress={e => { e.stopPropagation?.(); router.push({ pathname: '/event-ticket-checkout', params: { id: ev.id } }); }}
+                      onPress={e => {
+                        e.stopPropagation?.();
+                        // Still the event detail page, not checkout directly — the
+                        // organiser payout-readiness gate (working buy CTA vs "Tickets
+                        // coming soon") always runs there first. autoOpenTickets=1 asks
+                        // that page, once it has loaded canonically and the gate has
+                        // run, to continue straight to ticket selection on our behalf —
+                        // it is a continuation of the same gated flow, not a bypass of
+                        // it. The event card/title above intentionally carries no such
+                        // param: tapping the card is "show me this event", tapping this
+                        // button is "I want a ticket".
+                        router.push({ pathname: '/events/[id]', params: { id: ev.id, autoOpenTickets: '1' } });
+                      }}
                       hitSlop={8}
                     >
                       <FontAwesome5 name="ticket-alt" size={9} color="#fff" solid />
@@ -857,7 +869,9 @@ export default function BusinessDetailScreen() {
           <View style={styles.section}>
             <TouchableOpacity
               style={[styles.ownerBtn, { backgroundColor: accent }]}
-              onPress={() => router.push('/local-business-dashboard')}
+              // This page IS a business, so say which one. Without the id the
+              // dashboard falls back to the newest business the owner has.
+              onPress={() => router.push({ pathname: '/local-business-dashboard', params: { id } })}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="cog" size={13} color="#fff" solid />
@@ -871,7 +885,7 @@ export default function BusinessDetailScreen() {
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.upgradeHint}
-              onPress={() => router.push('/local-business-dashboard')}
+              onPress={() => router.push({ pathname: '/local-business-dashboard', params: { id } })}
               activeOpacity={0.85}
             >
               <FontAwesome5 name="unlock-alt" size={13} color={accent} solid />

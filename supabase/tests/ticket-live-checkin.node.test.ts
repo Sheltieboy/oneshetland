@@ -375,7 +375,11 @@ describe('the page hands over the starting truth and nothing else', () => {
 
   test('the server query still returns the fields the card depends on', () => {
     assert.match(p, /checked_in_at/);
-    assert.match(p, /\.in\("status", \["valid", "used"\]\)/);
+    // UPDATE — the page no longer restates the list: it takes the ONE shared definition
+    // of an owned ticket (OWNED_TICKET_STATUSES = valid, used), which the For You strip
+    // now uses too. Its value is pinned in ticket-ownership-display.node.test.ts. The
+    // protection here is unchanged: the query still constrains status to genuine tickets.
+    assert.match(p, /\.in\("status", \[\.\.\.OWNED_TICKET_STATUSES\]\)/);
     assert.match(p, /eq\("holder_id", account\.id\)/);
   });
 

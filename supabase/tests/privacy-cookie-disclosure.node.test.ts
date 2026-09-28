@@ -47,13 +47,22 @@ describe('the page says our analytics is optional', () => {
     assert.match(prose, /consent banner/i);
   });
 
-  test('it states that nothing is created before consent', () => {
+  test('it states that nothing is created before consent, on either platform', () => {
+    // UPDATE 28 Sep — the app moved from opt-out to opt-in (mobile-analytics-consent.node.test.ts
+    // pins the code); the page now describes ONE opt-in model for both platforms, not a
+    // browser-only guarantee, so the wording is platform-neutral rather than browser-specific.
     assert.match(prose, /no analytics identifier is created/i);
-    assert.match(prose, /nothing is stored in your browser and nothing is sent/i);
+    assert.match(prose, /nothing is stored on your device and nothing is sent/i);
   });
 
-  test('and that declining keeps it off', () => {
-    assert.match(prose, /if you decline, it stays off/i);
+  test('and that declining, or never choosing, keeps it off', () => {
+    assert.match(prose, /if you decline, or simply never choose, it stays off/i);
+  });
+
+  test('the app is opt-in too, not on by default', () => {
+    assert.match(prose, /opt-in, on the website and in the app alike/i);
+    assert.ok(!/analytics runs by default/i.test(prose), 'the app must not be described as on-by-default any more');
+    assert.ok(!/on by default but easy to turn off/i.test(prose));
   });
 });
 

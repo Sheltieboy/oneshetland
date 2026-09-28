@@ -22,6 +22,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { retryAfterSecsFrom } from '@/lib/retry-after';
 
 export type PaymentState = {
   /** A card is saved with Stripe and can be charged. */
@@ -74,11 +75,19 @@ export async function startPayoutOnboarding(): Promise<{ url: string | null; alr
   const { data, error } = await supabase.functions.invoke('create-connect-account');
   if (error) {
     let msg = error.message ?? 'Could not open Stripe.';
+    let status: number | undefined;
+    let retryAfterSecs: number | undefined;
     try {
-      const body = await (error as { context?: { json?: () => Promise<{ error?: string }> } }).context?.json?.();
+      const ctx = (error as { context?: { status?: number; json?: () => Promise<{ error?: string }> } }).context;
+      status = ctx?.status;
+      retryAfterSecs = retryAfterSecsFrom(ctx);
+      const body = await ctx?.json?.();
       if (body?.error) msg = body.error;
     } catch { /* keep the generic message */ }
-    throw new Error(msg);
+    const err = new Error(msg) as Error & { status?: number; retryAfterSecs?: number };
+    if (status !== undefined) err.status = status;
+    if (retryAfterSecs !== undefined) err.retryAfterSecs = retryAfterSecs;
+    throw err;
   }
   const res = data as { url?: string; already_complete?: boolean } | null;
   if (res?.already_complete) return { url: null, alreadyComplete: true };

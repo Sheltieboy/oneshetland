@@ -11,11 +11,15 @@ import {
   ActivityIndicator, Switch, Linking, RefreshControl, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { useAlert } from '@/components/BrandedAlert';
+import {
+  requirePayoutReadyForPaidActivation, payoutNotReadyPrompt, startOrResumePayoutSetup,
+  guardPayoutOnboardingLaunch, payoutOnboardingErrorAlert,
+} from '@/lib/payout-readiness';
 import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { fetchCommercialTermsStatus } from '@/lib/commercial-terms';
 import { colors, fontSize, spacing, radius, SIDEBAR_WIDTH } from '@/constants/theme';
@@ -30,7 +34,7 @@ import { nextAction, hasOperationalAttention } from '@/lib/business-next-action'
 import { availabilityIsFresh } from '@/constants/trades';
 import { useAuth } from '@/context/AuthContext';
 import {
-  fetchMyBusinesses, fetchBusinessPrivate, updateBusiness,
+  fetchMyBusinesses, fetchBusinessPrivate, fetchBusinessPayoutReady, updateBusiness,
   fetchLoyaltyProgram, upsertLoyaltyProgram,
   fetchBusinessOffers, deactivateOffer,
   fetchBusinessCode, refreshBusinessCode,
@@ -39,6 +43,7 @@ import {
   requestNfcTile, NFC_TILE_URL_PREFIX,
   isBusinessFeatured, TIER_LABELS, TIER_PRICE,
   fetchBusinessWalletReceipts,
+  refundBusinessWalletPayment,
   normalizeTiers,
   type LocalBusiness, type LoyaltyProgram, type LocalOffer, type BusinessCode, type LoyaltyType, type RewardTier,
   type BusinessWalletReceipt,
@@ -47,6 +52,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { track } from '@/lib/analytics';
 import { setAcceptsBookings, fetchBusinessServices } from '@/lib/book-api';
 import { fetchBusinessEvents, type OsEvent } from '@/lib/events-api';
+import { selectNextBusinessEvent } from '@/lib/business-next-event';
 import {
   fetchMyAlertAccess, requestAlertAccess,
   sendAlert, cancelAlert, fetchMyBusinessAlerts, acceptAlertPolicy,
@@ -122,11 +128,31 @@ const PLAN_FEATURES: { label: string; req: TierLevel }[] = [
 
 export default function BusinessDashboardScreen() {
   const router = useRouter();
+  /**
+   * The business the user actually tapped. Every caller that knows which one it
+   * means passes it; the dashboard used to ignore the parameter entirely and
+   * open bizList[0] — the NEWEST business, since fetchMyBusinesses orders by
+   * created_at desc. So tapping Anderson & Co opened DEMO — Subscription Test
+   * Co, and the merchant had to switch by hand on a screen full of money.
+   */
+  const { id: routeBusinessId, tab: routeTab } = useLocalSearchParams<{ id?: string; tab?: string }>();
   const { profile } = useAuth();
   const { sidePadding, isTablet } = useAppLayout();
 
   const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
   const [activeBusiness, setActiveBusiness] = useState<LocalBusiness | null>(null);
+  /**
+   * Mirrors activeBusiness for the focus refetch below, without being a
+   * dependency of it. loadAll sets activeBusiness on every call, so if the
+   * focus effect closed over activeBusiness directly (or listed it as a
+   * dependency), each refetch would produce a new callback identity while
+   * the screen is still focused, which would re-run the effect immediately
+   * and refetch again — a self-sustaining loop. A ref sidesteps that: it
+   * always holds the latest value, but writing to it triggers no re-render
+   * and is not a dependency of anything.
+   */
+  const activeBusinessRef = useRef<LocalBusiness | null>(null);
+  activeBusinessRef.current = activeBusiness;
   const [program, setProgram] = useState<LoyaltyProgram | null>(null);
   const [offers, setOffers]   = useState<LocalOffer[]>([]);
   const [code, setCode]       = useState<BusinessCode | null>(null);
@@ -134,6 +160,7 @@ export default function BusinessDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
+  const [showAddCapability, setShowAddCapability] = useState(false);
   const [bookServiceCount, setBookServiceCount] = useState(0);
   /**
    * What the plan actually allows, from the server. Every paid action on this
@@ -141,6 +168,13 @@ export default function BusinessDashboardScreen() {
    * bought and not whether it is still in date.
    */
   const [eff, setEff] = useState<Effective>(NO_ENTITLEMENT);
+  /**
+   * Can OneShetland currently route money to this business — the canonical
+   * business_payout_ready() answer, fetched once per business load (see
+   * loadAll below) and reused everywhere this screen shows payout status,
+   * rather than each spot re-deriving it from raw Stripe columns.
+   */
+  const [payoutReady, setPayoutReady] = useState(false);
   /** Attention, the week and the five outcome states — all derived, none stored. */
   const [home, setHome] = useState<BusinessHome | null>(null);
   const [savingPaymentToggle, setSavingPaymentToggle] = useState(false);
@@ -154,6 +188,13 @@ export default function BusinessDashboardScreen() {
   const [backfilling,        setBackfilling]        = useState(false);
 
   const [bizEvents, setBizEvents] = useState<OsEvent[]>([]);
+  // Unlike bizEvents (which excludes anything already started, to match
+  // lib/business-home.ts's "upcoming" count exactly — see the comment at its
+  // setBizEvents call), the Scan tickets / Manage events shortcut needs an
+  // event that is currently IN PROGRESS too: that's the one staff are at the
+  // door for right now. Kept separate so bizEvents' own filter — pinned
+  // against lib/business-home.ts's count query — is untouched.
+  const [bizEventsRaw, setBizEventsRaw] = useState<OsEvent[]>([]);
 
   // Urgent alert state
   const [alertAccess,      setAlertAccess]      = useState<AlertAccess | null>(null);
@@ -168,6 +209,20 @@ export default function BusinessDashboardScreen() {
 
   const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /**
+   * Landing on Payments when the route asked for it.
+   *
+   * "Payment card" and "Payout bank" in the Me tab already pushed
+   * tab: 'payments'; the dashboard read neither, so both dropped the merchant at
+   * the top of a long screen to hunt for the section they had just tapped.
+   *
+   * One shot, guarded by a ref rather than state so it neither re-renders nor
+   * fires again: once the merchant is there, the screen is theirs to scroll.
+   */
+  const scrollRef = useRef<ScrollView | null>(null);
+  const planCardY = useRef<number | null>(null);
+  const didJumpToPayments = useRef(false);
+
   const loadAll = useCallback(async (biz?: LocalBusiness) => {
     if (!profile) return;
     const bizList = await fetchMyBusinesses(profile.id);
@@ -178,13 +233,21 @@ export default function BusinessDashboardScreen() {
       bizList.map(async (b) => ({ ...b, ...(await fetchBusinessPrivate(b.id)) })),
     );
     setBusinesses(withPrivate);
-    const target = biz ?? bizList[0];
+    // An explicit choice wins: the one passed in (a switch made on this screen),
+    // then the one the route named, and only then the fallback. A route id
+    // naming a business this user does not own finds nothing here and falls
+    // through — ownership is what the list is built from, so it can never
+    // select someone else's business.
+    const requested = routeBusinessId
+      ? withPrivate.find((b) => b.id === routeBusinessId)
+      : undefined;
+    const target = biz ?? requested ?? withPrivate[0];
     setActiveBusiness(target ?? null);
     if (!target) {
       setLoading(false);
       return;
     }
-    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, homeData] = await Promise.all([
+    const [prog, ofs, cd, bookSvcs, orphanCount, receipts, evRows, alertAcc, alertRows, homeData, payoutIsReady] = await Promise.all([
       fetchLoyaltyProgram(target.id),
       fetchBusinessOffers(target.id, true),
       fetchBusinessCode(target.id),
@@ -206,11 +269,17 @@ export default function BusinessDashboardScreen() {
       fetchBusinessHome(target.id, profile!.id,
         target as { trade_availability?: string | null; trade_availability_set_at?: string | null },
         (setAt) => !availabilityIsFresh(setAt)).catch(() => null),
+      // The canonical payout answer, fetched once per business load and
+      // reused everywhere this screen shows payout status — not the raw
+      // stripe_account_id/payout_enabled columns, which say nothing about a
+      // valid owner-central-account fallback.
+      fetchBusinessPayoutReady(target.id).catch(() => false),
     ]);
     setProgram(prog);
     setOffers(ofs);
     setCode(cd);
     setBookServiceCount(bookSvcs.length);
+    setPayoutReady(payoutIsReady);
     // One question, one answer. fetchBusinessHome already asked the server what
     // this plan allows; asking again beside it was two identical RPC pairs for
     // the same business. Unreadable still means not entitled, exactly as before.
@@ -234,11 +303,58 @@ export default function BusinessDashboardScreen() {
         .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
         .slice(0, 5),
     );
+    setBizEventsRaw(evRows as OsEvent[]);
     setLoading(false);
     setRefreshing(false);
-  }, [profile?.id]);
+  }, [profile?.id, routeBusinessId]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  /**
+   * Loads on initial focus and every time the screen regains focus after
+   * that — the same useFocusEffect(useCallback(...)) idiom already used by
+   * business-orders.tsx, business-alerts.tsx, business-jobs.tsx and others.
+   * One fetch path, not two: this replaces the previous mount-only
+   * useEffect(() => { loadAll(); }, [loadAll]) rather than sitting beside
+   * it, because useFocusEffect already runs its callback once on the
+   * initial mount (a freshly mounted screen is focused), so a separate
+   * mount effect would have fired a second, redundant load every time this
+   * screen first opens.
+   *
+   * Without this, entering a capability flow (add a product, create an
+   * event, set up bookings) and returning left the dashboard showing
+   * whatever outcomes were true before that flow ran — e.g. Run events
+   * stayed in "Add to your business" after an event had actually been
+   * created, because nothing had told the dashboard to ask again.
+   *
+   * activeBusinessRef.current, not activeBusiness: see the ref's own
+   * comment above for why. Passing it through as `biz` preserves whichever
+   * business is currently active (including one chosen via the switcher,
+   * which the route's own businessId param does not track) rather than
+   * resetting to the route-requested or first business on every return.
+   */
+  useFocusEffect(useCallback(() => {
+    loadAll(activeBusinessRef.current ?? undefined);
+  }, [loadAll]));
+
+  /**
+   * Both the data and the layout have to be ready, and neither reliably arrives
+   * last — a ref cannot re-run an effect, so the effect alone would race the
+   * card's onLayout. Both call this instead, and the guard makes the second
+   * caller a no-op. No timers, no retry loop.
+   */
+  const jumpToPaymentsIfRequested = useCallback(() => {
+    if (routeTab !== 'payments') return;          // any other value opens normally
+    if (didJumpToPayments.current) return;        // once, however many renders follow
+    if (!activeBusiness) return;                  // wait for the business, or the section is empty
+    const y = planCardY.current;
+    if (y == null) return;                        // and for the card to have been laid out
+    didJumpToPayments.current = true;
+    // Open it: a collapsed card would show the merchant a header and none of
+    // what they tapped for.
+    setExpanded((prev) => ({ ...prev, plan: true }));
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+  }, [routeTab, activeBusiness]);
+
+  useEffect(() => { jumpToPaymentsIfRequested(); }, [jumpToPaymentsIfRequested, loading]);
 
   // Auto-refresh code every 60s while screen is open
   useEffect(() => {
@@ -343,6 +459,7 @@ export default function BusinessDashboardScreen() {
    * gate, calls nothing at Stripe.
    */
   const [termsGateFor, setTermsGateFor] = useState<string | null>(null);
+  const [connectingStripeContextual, setConnectingStripeContextual] = useState(false);
 
   const requireCommercialTerms = useCallback(async (feature: string): Promise<boolean> => {
     if (!activeBusiness) return false;
@@ -357,7 +474,10 @@ export default function BusinessDashboardScreen() {
     // Before the account link exists, not after.
     if (!(await requireCommercialTerms('Business bank account'))) return;
     try {
-      const { url } = await createBusinessOnboardingLink(activeBusiness.id);
+      // Shares the same short cooldown as every contextual launcher (see
+      // guardPayoutOnboardingLaunch's own doc comment) — this is the
+      // explicit Plan & payouts control, not a separate allowance.
+      const { url } = await guardPayoutOnboardingLaunch(activeBusiness.id, () => createBusinessOnboardingLink(activeBusiness.id));
       // Present Stripe Connect onboarding as an in-app SFSafariViewController
       // modal — slides up like the billing portal, doesn't launch full Safari.
       await WebBrowser.openBrowserAsync(url, {
@@ -370,15 +490,45 @@ export default function BusinessDashboardScreen() {
       // when the sheet closes so payout_enabled flips to true if Stripe
       // approved the account.
       loadAll(activeBusiness);
-    } catch (e: any) {
-      brandedAlert({ title: 'Stripe onboarding failed', message: e?.message ?? 'Try again later' });
+    } catch (e) {
+      brandedAlert(payoutOnboardingErrorAlert(e));
+    }
+  };
+
+  /**
+   * The CONTEXTUAL "Connect Stripe" action — Wallet activation's own
+   * recovery, distinct from handleConnectStripe above. handleConnectStripe
+   * is unconditionally business-specific because its only caller is the
+   * explicit "use my own business bank" toggle row, where that is exactly
+   * what was asked for. Wallet's blocker can be either account depending on
+   * use_business_payout, so this goes through the shared
+   * startOrResumePayoutSetup instead, which resolves the right one — see its
+   * own doc comment in lib/payout-readiness.ts.
+   */
+  const handleConnectStripeContextual = async () => {
+    if (!activeBusiness || connectingStripeContextual) return;
+    // Set before anything else, including the commercial-terms check — the
+    // merchant needs to see the tap registered before ANY network call, not
+    // just before the Stripe-specific ones.
+    setConnectingStripeContextual(true);
+    try {
+      if (!(await requireCommercialTerms('Local Wallet'))) return;
+      await startOrResumePayoutSetup(activeBusiness.id);
+    } catch (e) {
+      brandedAlert(payoutOnboardingErrorAlert(e));
+    } finally {
+      setConnectingStripeContextual(false);
+      loadAll(activeBusiness);
     }
   };
 
   const toggleAcceptWallet = async (value: boolean) => {
     if (!activeBusiness) return;
-    if (value && !activeBusiness.payout_enabled) {
-      return brandedAlert({ title: 'Complete Stripe first', message: 'Connect your Stripe account before accepting wallet payments.' });
+    // Fresh canonical check at the activation moment — payoutReady (state,
+    // Phase 2) drives the card's display and can go stale between loads;
+    // this is the actual gate and must not trust a cached value.
+    if (value && !(await requirePayoutReadyForPaidActivation(activeBusiness.id))) {
+      return brandedAlert(payoutNotReadyPrompt(handleConnectStripeContextual));
     }
     // Switching OFF is always allowed. Switching ON is the paid boundary, and
     // is what the server refuses too.
@@ -438,33 +588,25 @@ export default function BusinessDashboardScreen() {
      A capability nobody has ever touched is not unfinished work sitting in the
      owner's way; it is something OneShetland can do that they may not know
      about. So `available` — the canonical never-configured state — moves out of
-     the working area and into a quiet shelf, and anything with real
-     configuration or history behind it stays where the work is.
+     the working area and into "Add to your business" (a single row that opens
+     a chooser), and anything with real configuration or history behind it
+     stays where the work is.
 
      `unknown` is deliberately NOT discovery: a read we could not make is not
      proof that nothing exists.
 
-     And the shelf waits. While the listing is still incomplete the owner's job
-     is to be findable, and inviting them to build a loyalty card instead would
-     be the product talking over them. */
+     Shown independent of Be found's own state: a freshly claimed business
+     (every business at launch) has never used anything yet, so gating this
+     on the listing being "good" would hide it from exactly the businesses
+     that need it most. */
   const DISCOVERABLE = [1, 2, 3, 4] as const;
   const discovery = home
     ? DISCOVERABLE.filter((i) => outcomes[i]?.state === 'available')
     : [];
-  const showDiscovery = outcomes[0]?.state === 'good' && discovery.length > 0;
   /**
-   * A never-used capability is not working area, full stop — whether or not the
-   * shelf is showing.
-   *
-   * This was previously coupled to showDiscovery, which quietly meant the
-   * opposite of the intent: with the shelf hidden (Be found not yet good) the
-   * exclusion switched off, so the four cards an owner has never touched came
-   * straight back and the newly-claimed business got exactly the wall of empty
-   * capabilities this phase existed to remove.
-   *
-   * `available` decides membership of the working area. Be found being good
-   * decides only whether the excluded ones are shown in discovery. Two separate
-   * questions.
+   * A never-used capability is not working area, full stop — whether or not
+   * "Add to your business" is showing. `available` alone decides membership
+   * of the working area.
    */
   const isWorking = (i: number) => !!outcomes[i] && outcomes[i].state !== 'available';
 
@@ -599,6 +741,15 @@ export default function BusinessDashboardScreen() {
   if (!activeBusiness) return null;
 
   const stamps = program?.type === 'stamps';
+  // The nearest relevant event — in progress, else soonest upcoming; never a
+  // past one. See lib/business-next-event.ts. Sourced from bizEventsRaw, not
+  // bizEvents: bizEvents deliberately excludes anything already started (to
+  // match lib/business-home.ts's "upcoming" count), which would silently
+  // drop the one event staff most need to find — the one happening right
+  // now. Still published-and-not-hidden only, same as bizEvents.
+  const nextBizEvent = selectNextBusinessEvent(
+    bizEventsRaw.filter(e => e.status === 'published' && !e.is_hidden),
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -624,6 +775,7 @@ export default function BusinessDashboardScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingHorizontal: Math.max(spacing.lg, sidePadding) }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(activeBusiness); }} tintColor={S.color} />}
@@ -738,34 +890,36 @@ export default function BusinessDashboardScreen() {
           </View>
         </View>
 
-        {/* ── Loyalty till (scan the member's one card) ── */}
+        {/* ── Add loyalty: scan the member's ONE card, then choose an action ── */}
         <TouchableOpacity
           style={[styles.backfillBanner, { backgroundColor: S.color, borderColor: S.color }]}
           onPress={() => router.push({ pathname: '/local-till', params: { businessId: activeBusiness.id } })}
           activeOpacity={0.85}
         >
           <View style={[styles.backfillIcon, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-            <FontAwesome5 name="qrcode" size={11} color="#fff" solid />
+            <FontAwesome5 name="stamp" size={11} color="#fff" solid />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.backfillTitle, { color: '#fff' }]}>Loyalty till</Text>
-            <Text style={[styles.backfillSub, { color: 'rgba(255,255,255,0.9)' }]}>Scan a customer’s card to add a stamp, add points or give a reward.</Text>
+            <Text style={[styles.backfillTitle, { color: '#fff' }]}>Add loyalty</Text>
+            <Text style={[styles.backfillSub, { color: 'rgba(255,255,255,0.9)' }]}>Scan the customer’s member card, then add a stamp, add points or give a ready reward.</Text>
           </View>
           <FontAwesome5 name="chevron-right" size={11} color="rgba(255,255,255,0.8)" />
         </TouchableOpacity>
 
-        {/* ── Confirm a redemption (customer-generated code / passes) ── */}
+        {/* ── Redeem a reward: a one-time code the CUSTOMER generated. A
+             different job from the one above, and it used to be titled
+             "Confirm a redemption", which read like a second step of it. ── */}
         <TouchableOpacity
           style={styles.backfillBanner}
-          onPress={() => router.push('/local-verify')}
+          onPress={() => router.push({ pathname: '/local-verify', params: { businessId: activeBusiness.id } })}
           activeOpacity={0.85}
         >
           <View style={styles.backfillIcon}>
-            <FontAwesome5 name="qrcode" size={11} color={S.color} solid />
+            <FontAwesome5 name="gift" size={11} color={S.color} solid />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.backfillTitle}>Confirm a redemption</Text>
-            <Text style={styles.backfillSub}>Scan or enter a customer’s one-time code (passes &amp; app redemptions).</Text>
+            <Text style={styles.backfillTitle}>Redeem a reward</Text>
+            <Text style={styles.backfillSub}>Scan the customer’s reward QR — passes, vouchers, rewards and offers. Nothing is used until you confirm.</Text>
           </View>
           <FontAwesome5 name="chevron-right" size={11} color={S.color} />
         </TouchableOpacity>
@@ -824,18 +978,26 @@ export default function BusinessDashboardScreen() {
         {isWorking(3) && (
         <OutcomeCard
           outcome={outcomes[3]} accent={S.color}
-          fact={bizEvents.length > 0
-            ? `next ${new Date(bizEvents[0].starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+          fact={nextBizEvent
+            ? `next ${new Date(nextBizEvent.starts_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
             : null}
           actions={[
-            // event-manage and event-scanner are per-EVENT screens: they read
-            // `id`. This passed businessId, so both arrived with nothing to
-            // work on — Manage events hung on a spinner and the scanner
-            // ignored every code it read. The card already speaks about the
-            // next event ("next 10 Sep"), so its buttons act on that one.
-            { label: 'Manage events', onPress: () => router.push({ pathname: '/event-manage', params: { id: bizEvents[0]?.id ?? '' } }) },
+            // Manage events means manage ALL of this business's events, not
+            // whichever one is "next" — it always opens the management list
+            // (app/business-events.tsx), never a single event directly. The
+            // card only renders once isWorking(3) is true, which needs at
+            // least one event to exist at all (see eventsOutcome), so this
+            // never opens on a business with nothing to manage.
+            { label: 'Manage events', onPress: () => router.push({ pathname: '/business-events', params: { businessId: activeBusiness.id } }) },
             { label: 'New event', onPress: () => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } }) },
-            { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { id: bizEvents[0]?.id ?? '' } }) },
+            // event-scanner is a per-EVENT screen: it reads `id`, and genuinely
+            // needs the nearest in-progress-or-upcoming event (never a past one
+            // that merely happens to have the latest starts_at) — unlike Manage
+            // events above, there is no id-less form of this to fall back to,
+            // so it only renders once nextBizEvent exists.
+            ...(nextBizEvent ? [
+              { label: 'Scan tickets', onPress: () => router.push({ pathname: '/event-scanner', params: { id: nextBizEvent.id } }) },
+            ] : []),
           ]}
         />
         )}
@@ -887,42 +1049,40 @@ export default function BusinessDashboardScreen() {
         )}
 
 
-        {/* ── Also possible on OneShetland ───────────────────────────────
-             Quiet on purpose. No dot, no badge, no count, no "not set up" —
-             none of these is a task the owner has failed to do. It only appears
-             once the listing is genuinely good, and each item leaves the shelf
-             by itself the moment anything is configured, because the state that
-             put it here stops being true. Nothing is stored. */}
-        {showDiscovery && (
-          <>
-            <Text style={styles.groupHeader}>Also possible on OneShetland</Text>
-            <View style={styles.shelf}>
-              {discovery.map((i) => {
-                const it = DISCOVERY_ITEMS[i];
-                return (
-                  <TouchableOpacity key={it.title} style={styles.shelfItem} activeOpacity={0.7}
-                    onPress={it.onPress}>
-                    <View style={[styles.shelfIcon, { backgroundColor: S.color + '14' }]}>
-                      <FontAwesome5 name={it.icon} size={13} color={S.color} solid />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.shelfTitle}>{it.title}</Text>
-                      <Text style={styles.shelfBlurb}>{it.blurb}</Text>
-                    </View>
-                    {/* The plan is a fact about the capability, not a pitch. */}
-                    <Text style={styles.shelfPlan}>{it.plan}</Text>
-                    <FontAwesome5 name="chevron-right" size={11} color={S.color} />
-                  </TouchableOpacity>
-                );
-              })}
+        {/* ── Add to your business ────────────────────────────────────────
+             A capability nobody has ever touched is not unfinished work
+             sitting in the owner's way; it is something OneShetland can do
+             that they may not know about yet — so it lives behind one tap,
+             not as a permanent card. Shown the moment any capability is
+             `available`, independent of Be found's own state: a freshly
+             claimed business (every business at launch) must see this
+             immediately, not once its profile happens to be 'good'. */}
+        {discovery.length > 0 && (
+          <TouchableOpacity
+            style={styles.backfillBanner}
+            onPress={() => setShowAddCapability(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.backfillIcon}>
+              <FontAwesome5 name="plus" size={11} color={S.color} solid />
             </View>
-          </>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.backfillTitle}>Add to your business</Text>
+              <Text style={styles.backfillSub}>
+                {discovery.length === 1 ? DISCOVERY_ITEMS[discovery[0]].title : `${discovery.length} more things you can do on OneShetland`}
+              </Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={11} color={S.color} />
+          </TouchableOpacity>
         )}
 
         <Text style={styles.groupHeader}>Money</Text>
 
         {/* ── Plan, payments & payouts (merged) ── */}
-        <View style={styles.card}>
+        <View
+          style={styles.card}
+          onLayout={(e) => { planCardY.current = e.nativeEvent.layout.y; jumpToPaymentsIfRequested(); }}
+        >
           <TouchableOpacity style={styles.cardHeader} onPress={() => toggleCard('plan')} activeOpacity={0.7}>
             <View style={[styles.cardIcon, { backgroundColor: S.color + '18' }]}>
               <FontAwesome5 name="cog" size={13} color={S.color} solid />
@@ -976,10 +1136,18 @@ export default function BusinessDashboardScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.payToggleLabel}>Payout bank account</Text>
               <Text style={styles.payToggleSub}>
+                {/* payout_enabled / stripe_connected are the maintained pair —
+                    the same ones actual payment routing and the Accept Local
+                    Wallet card below use. business_stripe_payouts_enabled /
+                    business_stripe_onboarding_complete are a parallel column
+                    pair nothing ever populates (see
+                    20260822160000_business_payout_and_product_read.sql), so
+                    a business whose bank really is connected was shown
+                    "setup needed" forever. Do not revert to those columns. */}
                 {(activeBusiness as any).use_business_payout
-                  ? (activeBusiness as any).business_stripe_payouts_enabled
+                  ? activeBusiness.payout_enabled
                     ? '✓ Business bank connected'
-                    : (activeBusiness as any).business_stripe_onboarding_complete
+                    : (activeBusiness as any).stripe_connected
                       ? 'Verification in progress'
                       : 'Business bank — setup needed'
                   : 'Using your central OneShetland bank'}
@@ -995,7 +1163,7 @@ export default function BusinessDashboardScreen() {
           </View>
 
           {/* If business bank is ON and not yet connected, show Connect CTA */}
-          {(activeBusiness as any).use_business_payout && !(activeBusiness as any).business_stripe_payouts_enabled && (
+          {(activeBusiness as any).use_business_payout && !activeBusiness.payout_enabled && (
             <TouchableOpacity
               style={[styles.paySetupBtn, { borderColor: colors.jobs, marginTop: 4 }]}
               onPress={handleConnectStripe}
@@ -1003,7 +1171,7 @@ export default function BusinessDashboardScreen() {
             >
               <FontAwesome5 name="university" size={11} color={colors.jobs} />
               <Text style={[styles.paySetupBtnText, { color: colors.jobs }]}>
-                {(activeBusiness as any).business_stripe_onboarding_complete
+                {(activeBusiness as any).stripe_connected
                   ? 'Check verification status'
                   : 'Connect business bank account'}
               </Text>
@@ -1164,28 +1332,32 @@ export default function BusinessDashboardScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Accept Local Wallet</Text>
               <Text style={styles.cardSub}>
-                {activeBusiness.payout_enabled
+                {payoutReady
                   ? 'Stripe connected · ready for payouts'
                   : 'Connect Stripe to accept wallet payments'}
               </Text>
             </View>
-            {activeBusiness.payout_enabled && (
+            {payoutReady && (
               <Switch
                 value={activeBusiness.accepts_wallet}
                 onValueChange={toggleAcceptWallet}
+                disabled={connectingStripeContextual}
                 trackColor={{ false: colors.border, true: S.color }}
               />
             )}
           </View>
 
-          {!activeBusiness.payout_enabled ? (
+          {!payoutReady ? (
             <TouchableOpacity
-              style={[styles.primaryBtn, { backgroundColor: S.color, marginTop: 8 }]}
-              onPress={handleConnectStripe}
+              style={[styles.primaryBtn, { backgroundColor: S.color, marginTop: 8 }, connectingStripeContextual && styles.disabledBtn]}
+              onPress={handleConnectStripeContextual}
+              disabled={connectingStripeContextual}
               activeOpacity={0.85}
             >
-              <FontAwesome5 name="external-link-alt" size={11} color="#fff" />
-              <Text style={styles.primaryBtnText}>Connect Stripe</Text>
+              {connectingStripeContextual
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <FontAwesome5 name="external-link-alt" size={11} color="#fff" />}
+              <Text style={styles.primaryBtnText}>{connectingStripeContextual ? 'Opening Stripe…' : 'Connect Stripe'}</Text>
             </TouchableOpacity>
           ) : activeBusiness.accepts_wallet ? (
             <>
@@ -1226,7 +1398,7 @@ export default function BusinessDashboardScreen() {
             plan nor switching Wallet off makes that money un-taken, so this is
             shown whenever there is anything to show. */}
         {walletReceipts.length > 0 && (
-          <WalletReceiptsCard receipts={walletReceipts} accentColor={S.color} />
+          <WalletReceiptsCard receipts={walletReceipts} accentColor={S.color} onRefunded={() => loadAll(activeBusiness)} />
         )}
 
         {/* ── Money & transactions — full statement + CSV export ── */}
@@ -1334,6 +1506,13 @@ export default function BusinessDashboardScreen() {
         onSaved={() => { setShowLoyaltyModal(false); loadAll(activeBusiness); }}
       />
 
+      <AddCapabilitySheet
+        visible={showAddCapability}
+        items={discovery.map((i) => DISCOVERY_ITEMS[i])}
+        accent={S.color}
+        onClose={() => setShowAddCapability(false)}
+      />
+
       {/*
         The same acceptance experience the commercial screens use, shown over
         the dashboard instead of instead of it. No second checkbox, no second
@@ -1406,11 +1585,47 @@ function CommercialTermsAccepted({ feature, onDone }: { feature: string; onDone:
 // because their fee_pence is NULL.
 
 function WalletReceiptsCard({
-  receipts, accentColor,
+  receipts, accentColor, onRefunded,
 }: {
   receipts: BusinessWalletReceipt[];
   accentColor: string;
+  onRefunded: () => void;
 }) {
+  const [refunding, setRefunding] = useState<string | null>(null);
+
+  // Full only. wallet_reverse_debit returns the whole original spend and records
+  // exactly one reversal linked to it; a partial would have to be a loose credit
+  // with no link back to what it reverses.
+  function confirmRefund(r: BusinessWalletReceipt) {
+    Alert.alert(
+      'Refund this payment?',
+      `\u00A3${(r.gross_pence / 100).toFixed(2)} goes back to ${r.customer_first_name ?? 'the customer'}, `
+        + `and \u00A3${((r.net_pence ?? r.gross_pence) / 100).toFixed(2)} comes back off your payout. `
+        + 'Refunds are for the full amount and cannot be undone.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Refund in full',
+          style: 'destructive',
+          onPress: async () => {
+            setRefunding(r.id);
+            try {
+              await refundBusinessWalletPayment(r.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Refunded', 'The money is back in the customer\u2019s wallet.');
+              onRefunded();
+            } catch (e) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert('Not refunded', e instanceof Error ? e.message : 'Please try again.');
+            } finally {
+              setRefunding(null);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   // Week total = sum of net amounts for receipts in the last 7 days.
   // We sum gross when net is unknown (legacy rows) so the headline is
   // not artificially low — but flag it visually.
@@ -1472,6 +1687,26 @@ function WalletReceiptsCard({
                   </>
                 )}
               </View>
+              {r.refund_state === 'refunded' ? (
+                // Kept in history, because the money did come in before it went
+                // back out — but stated plainly, and with nothing to press. The
+                // Refund button used to reappear here after a reload and hand
+                // back a second "Refunded" for a payment already returned.
+                <View style={styles.receiptRefundedPill}>
+                  <Text style={styles.receiptRefundedText}>Refunded</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.receiptRefundBtn}
+                  disabled={refunding !== null}
+                  onPress={() => confirmRefund(r)}
+                  activeOpacity={0.8}
+                >
+                  {refunding === r.id
+                    ? <ActivityIndicator size="small" color={colors.textLight} />
+                    : <Text style={styles.receiptRefundText}>Refund</Text>}
+                </TouchableOpacity>
+              )}
             </View>
           ))}
         </View>
@@ -1504,6 +1739,47 @@ function formatReceiptTime(iso: string): string {
 }
 
 // ── Loyalty editor modal ─────────────────────────────────────────────────────
+
+/**
+ * The chooser behind "Add to your business" — one row per capability the
+ * business has never used, using the same title/blurb/plan/icon/route already
+ * defined in DISCOVERY_ITEMS. Nothing new is decided here: an item's presence
+ * in `items` is entirely the caller's `discovery` list, so an already-active
+ * capability (or one whose state is `unknown`) never reaches this component
+ * at all.
+ */
+function AddCapabilitySheet({ visible, items, accent, onClose }: {
+  visible: boolean;
+  items: { title: string; blurb: string; plan: string; icon: string; onPress: () => void }[];
+  accent: string;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet visible={visible} onClose={onClose} title="Add to your business">
+      <View style={styles.shelf}>
+        {items.map((it) => (
+          <TouchableOpacity
+            key={it.title}
+            style={styles.shelfItem}
+            activeOpacity={0.7}
+            onPress={() => { onClose(); it.onPress(); }}
+          >
+            <View style={[styles.shelfIcon, { backgroundColor: accent + '14' }]}>
+              <FontAwesome5 name={it.icon} size={13} color={accent} solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.shelfTitle}>{it.title}</Text>
+              <Text style={styles.shelfBlurb}>{it.blurb}</Text>
+            </View>
+            {/* The plan is a fact about the capability, not a pitch. */}
+            <Text style={styles.shelfPlan}>{it.plan}</Text>
+            <FontAwesome5 name="chevron-right" size={11} color={accent} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </Sheet>
+  );
+}
 
 function LoyaltyModal({
   visible, program, businessId, onClose, onSaved,
@@ -1827,6 +2103,12 @@ const styles = StyleSheet.create({
   // Wallet receipts list
   receiptList:       { marginTop: 12 },
   receiptRow:        { paddingVertical: 10, gap: 4 },
+  receiptRefundBtn:  { alignSelf: 'flex-start', marginTop: 6, paddingVertical: 5, paddingHorizontal: 10,
+                       borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border },
+  receiptRefundText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textLight },
+  receiptRefundedPill: { alignSelf: 'flex-start', marginTop: 6, paddingVertical: 5, paddingHorizontal: 10,
+                         borderRadius: 999, backgroundColor: colors.border },
+  receiptRefundedText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted },
   receiptRowBorder:  { borderBottomWidth: 1, borderBottomColor: colors.border },
   receiptTopLine:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   receiptWho:        { flex: 1, fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
@@ -1857,6 +2139,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12, borderRadius: radius.md,
   },
   primaryBtnText: { color: '#fff', fontSize: fontSize.sm, fontWeight: '800' },
+  disabledBtn: { opacity: 0.6 },
 
   emptyIcon:  { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },

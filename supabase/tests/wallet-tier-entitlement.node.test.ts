@@ -241,11 +241,19 @@ describe("a customer's wallet is not the seller's to gate", () => {
          ('local_wallet_balances','local_wallet_transactions','local_wallet_topup_recovery','wallet_payment_claims')
          and position('business_meets_tier' in pg_get_functiondef(t.tgfoid)) > 0
        order by 1;`);
-    assert.deepEqual(named.map((r) => r.fn), ['loyalty_earn_points:tg_loyalty_earn_points'],
-      'nothing else may make a business plan a condition on customer money');
-    const [def] = sql(`select pg_get_functiondef('public.tg_loyalty_earn_points'::regproc) as d;`);
-    assert.doesNotMatch(String(def.d), /raise\s+exception/i,
-      'this trigger fires inside the payment insert — a raise here would roll the payment back');
+    // 20261006120000 retires this trigger: it never fired, and hanging a tier
+    // condition off the payment's own INSERT was the problem, not the fix.
+    // Before the migration the old guarantee must hold; after it, the correct
+    // answer is that NO trigger on customer money consults a business plan at
+    // all, because the award moved to fulfilment.
+    const fns = named.map((r) => String(r.fn));
+    assert.ok(fns.length === 0 || (fns.length === 1 && fns[0] === 'loyalty_earn_points:tg_loyalty_earn_points'),
+      `nothing else may make a business plan a condition on customer money — found ${JSON.stringify(fns)}`);
+    if (fns.length === 1) {
+      const [def] = sql(`select pg_get_functiondef('public.tg_loyalty_earn_points'::regproc) as d;`);
+      assert.doesNotMatch(String(def.d), /raise\s+exception/i,
+        'this trigger fires inside the payment insert — a raise here would roll the payment back');
+    }
   });
 
   test('refunds and reversals gained no tier check', () => {

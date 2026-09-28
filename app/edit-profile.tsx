@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   TextInput, ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -19,6 +19,8 @@ import {
   validateHandle, isHandleAvailable, HANDLE_MAX,
 } from '@/lib/games-handle';
 import { uploadAvatar, deleteUploadedImage, pathFromPublicUrl } from '@/lib/image-upload';
+import { Sheet } from '@/components/ui/Sheet';
+import { SHETLAND_AREAS } from '@/constants/shetland-areas';
 
 // expo-image-picker is loaded lazily so the screen never hard-crashes if the
 // native module is unavailable in a given build (mirrors memory-new.tsx).
@@ -29,15 +31,6 @@ try {
 } catch {
   ImagePicker = null;
 }
-
-const SHETLAND_AREAS = [
-  'Lerwick', 'Scalloway', 'Brae', 'Voe', 'Vidlin', 'Laxo',
-  'Mossbank', 'Sullom', 'Hillswick', 'Walls', 'Sandness', 'Bixter',
-  'Tingwall', 'Whiteness', 'Weisdale', 'Cunningsburgh', 'Sandwick',
-  'Bigton', 'Levenwick', 'Sumburgh', 'Boddam',
-  'Yell', 'Unst', 'Fetlar', 'Whalsay', 'Skerries', 'Bressay',
-  'Fair Isle', 'Foula', 'Papa Stour',
-];
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
@@ -66,6 +59,24 @@ export default function EditProfileScreen() {
   const [phone,        setPhone]        = useState(profile?.phone         ?? '');
   const [saving,       setSaving]       = useState(false);
   const [showAreaPicker, setShowAreaPicker] = useState(false);
+  const [areaSearch, setAreaSearch] = useState('');
+
+  // Case-insensitive, partial, local — same shared list every other area
+  // lookup already uses. "Other / elsewhere in Shetland" is just another
+  // entry here, matched (or not) like any place name.
+  const filteredAreas = useMemo(() => {
+    const q = areaSearch.trim().toLowerCase();
+    if (!q) return SHETLAND_AREAS;
+    return SHETLAND_AREAS.filter(a => a.toLowerCase().includes(q));
+  }, [areaSearch]);
+
+  // One place to close the sheet from — selecting an area and dismissing it
+  // both go through this, so the search term never survives into the next
+  // time it's opened.
+  const closeAreaPicker = () => {
+    setShowAreaPicker(false);
+    setAreaSearch('');
+  };
 
   // Games-handle live check: 'idle' before user touches, 'checking' while
   // debounced lookup is in flight, then 'free' | 'taken' | 'invalid'.
@@ -230,6 +241,7 @@ export default function EditProfileScreen() {
   };
 
   return (
+    <>
     <ScreenScaffold
       header={<ScreenHeader title="Edit profile" accent={colors.accent} onBack={() => router.back()} />}
     >
@@ -368,48 +380,14 @@ export default function EditProfileScreen() {
           <Field label="Area">
             <TouchableOpacity
               style={styles.inputWrap}
-              onPress={() => { Haptics.selectionAsync(); setShowAreaPicker(!showAreaPicker); }}
+              onPress={() => { Haptics.selectionAsync(); setShowAreaPicker(true); }}
               activeOpacity={0.8}
             >
               <Text style={[styles.input, !locationArea && { color: colors.textLight }]}>
                 {locationArea || 'Select your area…'}
               </Text>
-              <FontAwesome5
-                name={showAreaPicker ? 'chevron-up' : 'chevron-down'}
-                size={11}
-                color={colors.textLight}
-              />
+              <FontAwesome5 name="chevron-down" size={11} color={colors.textLight} />
             </TouchableOpacity>
-
-            {showAreaPicker && (
-              <View style={styles.areaPicker}>
-                {SHETLAND_AREAS.map(area => (
-                  <TouchableOpacity
-                    key={area}
-                    style={[
-                      styles.areaOption,
-                      locationArea === area && { backgroundColor: colors.shifts + '18' },
-                    ]}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setLocationArea(area);
-                      setShowAreaPicker(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    {locationArea === area && (
-                      <FontAwesome5 name="check" size={10} color={colors.shifts} style={{ marginRight: 6 }} />
-                    )}
-                    <Text style={[
-                      styles.areaOptionText,
-                      locationArea === area && { color: colors.shifts, fontWeight: '700' },
-                    ]}>
-                      {area}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </Field>
 
           <Field label="Phone number">
@@ -440,6 +418,49 @@ export default function EditProfileScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenScaffold>
+
+    {/* Its own Modal layer — scrolls independently of the form above. */}
+    <Sheet visible={showAreaPicker} onClose={closeAreaPicker} title="Area" scroll>
+      <TextInput
+        value={areaSearch}
+        onChangeText={setAreaSearch}
+        placeholder="Search areas..."
+        placeholderTextColor={colors.textLight}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={styles.areaSearchInput}
+      />
+      {filteredAreas.length === 0 ? (
+        <Text style={styles.areaNoResults}>No areas found</Text>
+      ) : (
+        filteredAreas.map(area => (
+          <TouchableOpacity
+            key={area}
+            style={[
+              styles.areaOption,
+              locationArea === area && { backgroundColor: colors.shifts + '18' },
+            ]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setLocationArea(area);
+              closeAreaPicker();
+            }}
+            activeOpacity={0.7}
+          >
+            {locationArea === area && (
+              <FontAwesome5 name="check" size={10} color={colors.shifts} style={{ marginRight: 6 }} />
+            )}
+            <Text style={[
+              styles.areaOptionText,
+              locationArea === area && { color: colors.shifts, fontWeight: '700' },
+            ]}>
+              {area}
+            </Text>
+          </TouchableOpacity>
+        ))
+      )}
+    </Sheet>
+    </>
   );
 }
 
@@ -487,11 +508,17 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, color: colors.textPrimary, fontSize: fontSize.sm, paddingVertical: 12 },
 
-  // Area picker
-  areaPicker: {
-    backgroundColor: '#fff', borderRadius: radius.md,
+  // Search field + rows rendered inside the Sheet area chooser (its own scroll, not this page's).
+  areaSearchInput: {
+    backgroundColor: colors.screenBackground, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,
-    marginTop: 4, overflow: 'hidden',
+    paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: fontSize.sm, color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  areaNoResults: {
+    fontSize: fontSize.sm, color: colors.textMuted,
+    textAlign: 'center', paddingVertical: spacing.lg,
   },
   areaOption: {
     flexDirection: 'row', alignItems: 'center',

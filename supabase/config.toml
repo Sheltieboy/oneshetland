@@ -67,6 +67,11 @@ verify_jwt = false
 [functions.sync-council-jobs]
 verify_jwt = false
 
+# Card-state reconciler. Scheduled by pg_cron through pg_net with x-cron-secret
+# (requireCronSecret is the whole boundary, like the four above).
+[functions.reconcile-saved-cards]
+verify_jwt = false
+
 
 # ── Webhook ──────────────────────────────────────────────────────────────────
 #

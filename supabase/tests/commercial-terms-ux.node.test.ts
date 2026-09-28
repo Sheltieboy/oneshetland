@@ -123,9 +123,13 @@ describe('one shared gate, in front of every commercial screen', () => {
   });
 
   test('the app wraps its commercial screens with the same gate', () => {
+    // UPDATE — business-events (the mobile Events management list) is added: the
+    // web equivalent, app/business/[id]/manage/events/page.tsx, is in COMMERCIAL
+    // above and sits behind the same gate, so leaving mobile ungated was parity
+    // drift, not a considered exclusion.
     for (const f of ['business-products', 'local-offer-new', 'local-book-services',
                      'local-book-units', 'local-book-schedule', 'local-till', 'local-counter',
-                     'event-create', 'payment-setup']) {
+                     'event-create', 'business-events', 'payment-setup']) {
       assert.match(read(`app/${f}.tsx`), /<CommercialTermsGate businessId=/, f);
     }
   });

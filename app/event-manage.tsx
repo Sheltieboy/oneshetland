@@ -4,13 +4,13 @@
  * Params: id (event ID)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
@@ -19,9 +19,11 @@ import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import {
   fetchEvent, updateEvent, postEventUpdate, fetchScannerStats,
-  formatEventDate, UPDATE_KIND_LABELS,
+  formatEventDate, UPDATE_KIND_LABELS, eventHasActivePaidTicket,
   type OsEvent, type EventStatus, type UpdateKind, type ScannerStats,
 } from '@/lib/events-api';
+import { ticketCapacity } from '@/lib/event-ticket-utils';
+import { startOrResumePayoutSetup, payoutOnboardingErrorAlert } from '@/lib/payout-readiness';
 
 const S  = SECTIONS.events;
 const SE = SECTIONS.local;
@@ -48,6 +50,7 @@ export default function EventManageScreen() {
   const [postingUpdate,  setPostingUpdate]  = useState(false);
 
   const [statusBusy, setStatusBusy] = useState(false);
+  const [connectingStripe, setConnectingStripe] = useState(false);
 
   const load = useCallback(async () => {
     // `finally`, not a trailing call. This returned early when `id` was
@@ -69,7 +72,23 @@ export default function EventManageScreen() {
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  /**
+   * Loads on initial focus and every time this screen regains focus after
+   * that — the same useFocusEffect(useCallback(...)) idiom used for the
+   * Business Dashboard's own focus-refresh fix. One fetch path, not two:
+   * this replaces the previous mount-only useEffect(() => { load(); },
+   * [load]) rather than sitting beside it, since useFocusEffect already
+   * runs its callback once on the initial mount (a freshly mounted screen
+   * is focused) — a separate mount effect would have fired a second,
+   * redundant load every time this screen first opens.
+   *
+   * Without this, Scan tickets → check a ticket in → back left Event
+   * Manage showing whatever Sold/Checked in were before scanning, because
+   * nothing told the still-mounted screen to ask again. Unlike the
+   * dashboard's loadAll, load() here takes no argument and depends only on
+   * the stable route id, so no ref is needed to avoid a refetch loop.
+   */
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const handleStatusChange = async (newStatus: EventStatus) => {
     if (!event) return;
@@ -157,6 +176,43 @@ export default function EventManageScreen() {
     ? { hubId: event.organiser_hub_id, eventId: event.id }
     : { businessId: event.organiser_business_id ?? '', eventId: event.id };
 
+  // A draft with an active paid (or mixed) ticket type can't actually go
+  // live until the organiser has a working payout route — the same rule
+  // event-create.tsx's Save & publish already enforces. Hub events are
+  // excluded: hubs don't use the business-owner payout model this reads
+  // (event.payout_ready, already resolved server-side by fetchEvent — see
+  // Phase 1/2 of the canonical payout-readiness work). This only changes
+  // what Event Manage SHOWS; it is a display/UX read of the same signal,
+  // not a new gate — publishing itself is stopped by not offering the
+  // action, and money still can't move without a real payout route
+  // regardless of what this screen shows.
+  const notReadyPaidDraft = status === 'draft'
+    && !event.organiser_hub_id
+    && eventHasActivePaidTicket(event.ticket_types ?? [])
+    && event.payout_ready !== true;
+
+  // Launches the correct Stripe onboarding flow directly (central or the
+  // business's own, whichever business_payout_ready actually uses — see
+  // startOrResumePayoutSetup) instead of sending the merchant to the
+  // dashboard's Money tab to find the same control a second time. The sheet
+  // this opens is modal, not a navigation, so dismissing it already leaves
+  // the merchant on this exact screen; load() picks up the fresh answer.
+  const goConnectStripe = async () => {
+    // Duplicate-tap guard: connectingStripe also disables both buttons that
+    // call this, but the disabled prop only takes effect after the next
+    // render, so this checks the value directly too.
+    if (connectingStripe) return;
+    setConnectingStripe(true);
+    try {
+      await startOrResumePayoutSetup(event.organiser_business_id ?? '');
+    } catch (e: any) {
+      alert(payoutOnboardingErrorAlert(e));
+    } finally {
+      setConnectingStripe(false);
+      load();
+    }
+  };
+
   const hubReach = event.organiser_hub_id ? (
     event.hub_visibility === 'members' ? { label: 'Members only', icon: 'user-friends', color: '#6D28D9', bg: '#F3E8FF' }
     : event.hub_visibility === 'hub'   ? { label: 'On the hub page only', icon: 'store', color: S.color, bg: S.light }
@@ -186,7 +242,38 @@ export default function EventManageScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
       >
         {/* Status strip */}
-        <StatusStrip status={status} isBusy={statusBusy} onChangeStatus={handleStatusChange} />
+        <StatusStrip
+          status={status}
+          isBusy={statusBusy}
+          onChangeStatus={handleStatusChange}
+          notReadyPaidDraft={notReadyPaidDraft}
+          onConnectStripe={goConnectStripe}
+          connectingStripe={connectingStripe}
+        />
+
+        {/* Not published: paid/mixed draft, organiser not payout-ready. The
+            small status dot above says "Draft" either way — this is the
+            unmissable version, with the actual next step attached. */}
+        {notReadyPaidDraft && (
+          <View style={styles.payoutBanner}>
+            <FontAwesome5 name="university" size={13} color={colors.jobs} solid />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.payoutBannerTitle}>Not published</Text>
+              <Text style={styles.payoutBannerText}>
+                Connect Stripe to publish this event and start selling paid tickets.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.payoutBannerBtn, connectingStripe && styles.disabledBtn]}
+              onPress={goConnectStripe}
+              disabled={connectingStripe}
+              activeOpacity={0.85}
+            >
+              {connectingStripe && <ActivityIndicator size="small" color="#fff" style={styles.btnSpinner} />}
+              <Text style={styles.payoutBannerBtnText}>{connectingStripe ? 'Opening Stripe…' : 'Connect Stripe'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Hub event reach */}
         {hubReach ? (
@@ -203,15 +290,24 @@ export default function EventManageScreen() {
         </View>
 
         {/* Stats */}
-        {isPublished && stats && (
-          <View style={styles.statsCard}>
-            <StatBox label="Sold"       value={stats.tickets_sold}  color={S.color} />
-            <View style={styles.statsDivider} />
-            <StatBox label="Checked in" value={stats.checked_in}   color={colors.success} />
-            <View style={styles.statsDivider} />
-            <StatBox label="Capacity"   value={event.capacity ?? '∞'} color={colors.textMuted} />
-          </View>
-        )}
+        {isPublished && stats && (() => {
+          // ticketCapacity(), not event.capacity directly: capacity is a
+          // venue headcount nobody fills in on mobile's own create form, so
+          // an organiser who had just set a ticket quantity of 5 was told
+          // "∞" here and reasonably concluded it had not saved — the exact
+          // bug web already fixed. See lib/event-ticket-utils.ts.
+          const cap = ticketCapacity(event.ticket_types ?? [], event.capacity);
+          return (
+            <View style={styles.statsCard}>
+              <StatBox label="Sold"       value={stats.tickets_sold}  color={S.color} />
+              <View style={styles.statsDivider} />
+              <StatBox label="Checked in" value={stats.checked_in}   color={colors.success} />
+              <View style={styles.statsDivider} />
+              <StatBox label={cap.source === 'tickets' ? 'Ticket capacity' : 'Capacity'}
+                       value={cap.label} color={colors.textMuted} />
+            </View>
+          );
+        })()}
 
         {/* Quick actions */}
         <View style={styles.section}>
@@ -224,7 +320,12 @@ export default function EventManageScreen() {
               disabled={!isPublished}
             />
             <ActionBtn
-              icon="eye" label="View public page"
+              icon="eye"
+              // A draft isn't publicly visible (see events_public_read — a
+              // non-published event is is_hidden, readable only by its
+              // owner/admin), so what this opens for the organiser here is
+              // a preview only they can see, not what a customer sees.
+              label={isPublished ? 'View public page' : 'Preview public page'}
               color={S.color}
               onPress={() => router.push({ pathname: '/events/[id]', params: { id: event.id } })}
             />
@@ -339,9 +440,14 @@ export default function EventManageScreen() {
   );
 }
 
-function StatusStrip({ status, isBusy, onChangeStatus }: {
+function StatusStrip({ status, isBusy, onChangeStatus, notReadyPaidDraft, onConnectStripe, connectingStripe }: {
   status: EventStatus; isBusy: boolean;
   onChangeStatus: (s: EventStatus) => void;
+  /** True for a draft, paid/mixed event whose organiser isn't payout-ready
+   *  yet — see the comment on its computation above. */
+  notReadyPaidDraft: boolean;
+  onConnectStripe: () => void;
+  connectingStripe: boolean;
 }) {
   const config: Record<EventStatus, { label: string; color: string }> = {
     draft:     { label: 'Draft',     color: colors.textMuted  },
@@ -356,9 +462,28 @@ function StatusStrip({ status, isBusy, onChangeStatus }: {
       <View style={[styles.statusDot, { backgroundColor: cfg.color }]} />
       <Text style={[styles.statusLabel, { color: cfg.color }]}>{cfg.label}</Text>
       {status === 'draft' && !isBusy && (
-        <TouchableOpacity style={styles.publishNowBtn} onPress={() => onChangeStatus('published')} activeOpacity={0.85}>
-          <Text style={styles.publishNowText}>Publish now</Text>
-        </TouchableOpacity>
+        notReadyPaidDraft ? (
+          // Publishing cannot succeed yet, so this never attempts it —
+          // it goes straight to the one place that actually unblocks it.
+          // Reverts to the normal green "Publish now" the moment
+          // event.payout_ready reads true (a free-only draft never sets
+          // notReadyPaidDraft in the first place — see its computation).
+          <TouchableOpacity
+            style={[styles.connectToPublishBtn, connectingStripe && styles.disabledBtn]}
+            onPress={onConnectStripe}
+            disabled={connectingStripe}
+            activeOpacity={0.85}
+          >
+            {connectingStripe
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <FontAwesome5 name="university" size={10} color="#fff" solid />}
+            <Text style={styles.publishNowText}>{connectingStripe ? 'Opening Stripe…' : 'Connect Stripe to publish'}</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.publishNowBtn} onPress={() => onChangeStatus('published')} activeOpacity={0.85}>
+            <Text style={styles.publishNowText}>Publish now</Text>
+          </TouchableOpacity>
+        )
       )}
       {status === 'published' && !isBusy && (
         <TouchableOpacity style={styles.unpublishBtn} onPress={() => onChangeStatus('draft')} activeOpacity={0.85}>
@@ -424,8 +549,29 @@ const styles = StyleSheet.create({
   reachBannerText: { fontSize: fontSize.sm, fontWeight: '800' },
   publishNowBtn: { backgroundColor: colors.success, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
   publishNowText:{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
+  connectToPublishBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.warningDark, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full,
+  },
   unpublishBtn:  { borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
   unpublishText: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '700' },
+
+  payoutBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: colors.warningLight,
+    marginHorizontal: spacing.md, marginTop: spacing.md,
+    padding: spacing.md, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.warning + '60',
+  },
+  payoutBannerTitle: { fontSize: fontSize.sm, fontWeight: '900', color: colors.warningDark },
+  payoutBannerText:  { fontSize: fontSize.xs, color: colors.warningDark, marginTop: 2, lineHeight: 16 },
+  payoutBannerBtn:   {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.warningDark, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md,
+  },
+  payoutBannerBtnText:{ color: '#fff', fontSize: fontSize.xs, fontWeight: '800' },
+  disabledBtn: { opacity: 0.6 },
+  btnSpinner: { marginRight: 2 },
 
   dateSummary: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

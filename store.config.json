@@ -1,0 +1,77 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "release": {
+      "automaticRelease": true
+    },
+    "copyright": "OneShetland",
+    "categories": [
+      "SOCIAL_NETWORKING",
+      "LIFESTYLE"
+    ],
+    "review": {
+      "firstName": "Darren",
+      "lastName": "Fullerton",
+      "email": "darren@darrenfullerton.com",
+      "phone": "REPLACE — a UK number Apple can reach you on if review has a question",
+      "demoAccountName": "REPLACE — reviewer@oneshetland.com or similar, once created (see the runbook this ships with)",
+      "demoAccountPassword": "REPLACE — set once, never in this file's git history: paste it into App Store Connect directly, not here",
+      "demoAccountRequired": true,
+      "notes": "OneShetland is a community platform for Shetland (a Scottish island group): local businesses, deliveries, events, jobs and community groups in one app. Sign in with the reviewer account above — no extra setup needed.\n\nWhat to expect: it's a real, live community, so most content reflects real local businesses and real events, not filler. A couple of clearly-labelled 'ZZ TEST' items may still be visible; ignore them, they're internal fixtures, not live listings.\n\nPayments: the app takes real payments via Stripe for real-world goods and services only — event tickets, marketplace purchases, delivery fees, local business bookings, and community-group membership dues (the digital equivalent of paying a club subscription in person). Nothing purchasable in this app is digital content or an app-exclusive perk; there is no in-app purchase flow because none of what's sold needs one. The reviewer account has no saved card, so nothing will actually charge unless a card is deliberately added — no payment attempt is required to review any screen.\n\nAccount deletion: Account (bottom tab) → Delete account. Two confirmation steps, then it's immediate and permanent — the reviewer account can be recreated afterwards if needed.\n\nLocation: used only to match nearby delivery drivers and to confirm you're at a business when tapping a physical NFC point-of-interest tile — both optional, both explained in-app before the permission prompt.\n\nCommunity content: users can report content and block other users from Account → Blocked users, or from any post/comment's own menu."
+    },
+    "info": {
+      "en-GB": {
+        "title": "OneShetland",
+        "subtitle": "Local life for Shetland",
+        "promoText": "Community-run and built in Shetland: find local businesses, book a delivery, grab event tickets, and join the groups that make the isles tick.",
+        "description": "OneShetland brings the everyday life of Shetland — the local businesses, the deliveries, the events, the community groups — into one place.\n\nLOCAL\nBrowse and support real Shetland businesses: shops, trades, services and more, with the details you actually need — opening hours, contact, what they offer — and a straightforward way to book where that's on offer.\n\nFETCH\nRequest a local collection or delivery and get matched with a nearby driver. Built for how Shetland actually works: island-to-island, town-to-township, not a city courier model bolted on.\n\nEVENTS\nFind out what's on and get your ticket in the app — a QR code at the door, no printing, no faff.\n\nJOBS & SHIFTS\nLocal jobs and one-off shifts, posted by Shetland employers, applied for from your phone.\n\nCOMMUNITY HUBS\nClubs, associations and community groups can run their membership, share updates and take dues through the app — the paperwork a committee used to chase down, handled properly.\n\nWALLET\nOne balance, topped up once, spent across deliveries, tickets, bookings and more — no re-entering a card every time.\n\nAnd a few things because Shetland is Shetland: a living Shetland dialect dictionary (Spik), and a bit of daily fun besides.\n\nOneShetland is built and run in Shetland, for Shetland.",
+        "keywords": [
+          "Shetland",
+          "local",
+          "community",
+          "delivery",
+          "marketplace",
+          "events",
+          "tickets",
+          "jobs",
+          "hub",
+          "wallet"
+        ],
+        "releaseNotes": "First release.",
+        "marketingUrl": "https://oneshetland.com",
+        "supportUrl": "https://oneshetland.com/support",
+        "privacyPolicyUrl": "https://oneshetland.com/privacy"
+      }
+    },
+    "advisory": {
+      "ageRatingOverride": "NONE",
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gambling": false,
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "kidsAgeBand": null,
+      "koreaAgeRatingOverride": "NONE",
+      "lootBox": false,
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "unrestrictedWebAccess": false,
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "advertising": false,
+      "ageAssurance": false,
+      "ageRatingOverrideV2": "NONE",
+      "developerAgeRatingInfoUrl": null,
+      "gunsOrOtherWeapons": "NONE",
+      "healthOrWellnessTopics": false,
+      "messagingAndChat": false,
+      "parentalControls": false,
+      "userGeneratedContent": true
+    }
+  }
+}

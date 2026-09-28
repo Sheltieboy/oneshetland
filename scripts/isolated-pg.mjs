@@ -31,6 +31,15 @@ const SUITES = [
   'supabase/tests/my-unclaimed-gifts.node.test.ts',
   'supabase/tests/gift-claim-concurrency.node.test.ts',
   'supabase/tests/wallet-reversal-integrity.node.test.ts',
+  'supabase/tests/loyalty-redemption-atomicity.node.test.ts',
+  'supabase/tests/loyalty-earning-atomicity.node.test.ts',
+  'supabase/tests/wallet-loyalty-points.node.test.ts',
+  'supabase/tests/business-wallet-refunds.node.test.ts',
+  'supabase/tests/wallet-concurrency.node.test.ts',
+  'supabase/tests/production-concurrency-proofs.node.test.ts',
+  'supabase/tests/statement-refund-accounting.node.test.ts',
+  'supabase/tests/redemption-business-scope.node.test.ts',
+  'supabase/tests/wallet-charge-cancel-concurrency.node.test.ts',
 ];
 
 // macOS ships a locale that makes the postmaster multithread during startup

@@ -73,7 +73,7 @@ export function SplashAnimation({ ready, onDone }: Props) {
         <Animated.View style={[styles.center, { opacity: fallbackOpacity }]}>
           <RingLoader size={132} strokeWidth={3.2} />
           <DisplayText weight="black" style={styles.wordmark}>OneShetland</DisplayText>
-          <Text style={styles.tagline}>Everything Shetland, in one place</Text>
+          <Text style={styles.tagline}>Shop Shetland. Discover Shetland. OneShetland.</Text>
         </Animated.View>
       )}
     </Animated.View>
