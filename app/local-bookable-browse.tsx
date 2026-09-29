@@ -10,7 +10,7 @@
  * booking a slot.
  *
  * - Lists every active service at a business where isBookableLive() returns
- *   true (accepts_bookings AND tier === 'premium' AND is_active) — the same
+ *   true (accepts_bookings AND tier Pro-or-above AND is_active) — the same
  *   eligibility rule the business-detail page's own "Book online" section
  *   already uses, not a new one.
  * - Category filter chips (food_drink / retail / services / tourism / etc),

@@ -11,6 +11,7 @@
 
 import { supabase } from './supabase';
 import { fetchActiveBusinesses, type LocalCategory } from './local-api';
+import { tierUnlocks } from './listing-tiers';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -486,12 +487,24 @@ export async function updateBookingStatus(
  * flips accepts_bookings on, customers shouldn't see them as bookable unless
  * their subscription is currently Premium.
  */
+/**
+ * Bookings is a Pro-and-above feature (TIER_FEATURES.bookable in
+ * listing-tiers.ts, the same map the server-side business_meets_tier(id,
+ * 'pro') trigger on accepts_bookings enforces). This used to compare
+ * subscription_tier to the literal string 'premium', which meant a
+ * legitimate Pro business could turn bookings on server-side — the trigger
+ * would let it — and then find itself invisible everywhere this function
+ * gated: not on business detail's own "Book now" CTA, not in Local's "Book
+ * now" section, not on the "Book in Shetland" browse page. Delegating to
+ * tierUnlocks() instead of hand-rolling the comparison is what keeps this
+ * agreeing with the server rather than needing to be told about it by hand.
+ */
 export function isBookableLive(b: {
   accepts_bookings?: boolean | null;
   subscription_tier?: 'free' | 'pro' | 'premium' | null;
   is_active?: boolean | null;
 }): boolean {
-  return Boolean(b.accepts_bookings) && b.subscription_tier === 'premium' && b.is_active !== false;
+  return Boolean(b.accepts_bookings) && tierUnlocks(b.subscription_tier, 'bookable') && b.is_active !== false;
 }
 
 export interface BookableServiceCard {

@@ -64,7 +64,9 @@ describe('Local surfaces active, eligible bookable services — not businesses, 
     const data = readWeb('lib/local-data.ts');
     const fn = functionBody(data, 'getBookableServices');
     assert.match(fn, /eq\("accepts_bookings", true\)/);
-    assert.match(fn, /eq\("subscription_tier", "premium"\)/);
+    // Pro-or-above, not exactly Premium — see book-discovery-tier-entitlement
+    // .node.test.ts for the full story of why this changed.
+    assert.match(fn, /in\("subscription_tier", \["pro", "premium"\]\)/);
     assert.match(fn, /eq\("is_active", true\)/);
   });
 
