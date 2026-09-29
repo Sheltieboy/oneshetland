@@ -750,8 +750,21 @@ export type RedemptionTicket = {
   detail: { title?: string; subtitle?: string }; expires_at: string;
 };
 
-/** Customer starts a redemption → short code + QR token for staff to verify. */
+/**
+ * Customer starts a redemption → short code + QR token for staff to verify.
+ *
+ * supabase-js falls back to the plain anon key when getSession() cannot
+ * produce a live access token (expired session, dead refresh token) — a
+ * stale session would then call local-redeem-start with no real identity
+ * attached, and its own auth check correctly, safely refuses it as
+ * "Unauthorised". That is accurate but unhelpful: it reads as a permissions
+ * problem on the pass itself, not a signed-out session. Checked here first
+ * so it reads as what it is — same fix applied to the web client.
+ */
 export async function startRedemption(kind: RedeemKind, refId: string, amount?: number): Promise<RedemptionTicket> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Your session has expired — sign in again to redeem this.');
+
   const { data, error } = await supabase.functions.invoke('local-redeem-start', {
     body: { kind, ref_id: refId, amount },
   });
