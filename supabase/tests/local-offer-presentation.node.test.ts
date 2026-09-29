@@ -48,25 +48,25 @@ function arrayLiteralAt(src: string, marker: string): string {
 
 /**
  * Evaluate one of the page's arrays with a chosen offer count. Passes,
- * bookable spots and cashback partners default to present (matching this
+ * bookable services and cashback partners default to present (matching this
  * suite's original assumption that those two are "always there" while only
  * offers vary) — pass `opts` to isolate one of the others instead.
  */
-function evalWith<T>(literal: string, offerCount: number, opts?: { passCount?: number; bookableCount?: number; cashbackCount?: number }): T[] {
+function evalWith<T>(literal: string, offerCount: number, opts?: { passCount?: number; serviceCount?: number; cashbackCount?: number }): T[] {
   const offers = Array.from({ length: offerCount }, (_, i) => ({ id: `o${i}` }));
   const passes = Array.from({ length: opts?.passCount ?? 0 }, (_, i) => ({ id: `p${i}` }));
-  const bookableCount = opts?.bookableCount ?? 4;
+  const bookableServices = Array.from({ length: opts?.serviceCount ?? 4 }, (_, i) => ({ id: `s${i}` }));
   const cashbackCount = opts?.cashbackCount ?? 2;
   const hasOffers   = offers.length > 0;
   const hasPasses   = passes.length > 0;
-  const hasBookable = bookableCount > 0;
+  const hasBookable = bookableServices.length > 0;
   const hasCashback = cashbackCount > 0;
   return new Function(
-    'offers', 'passes', 'hasOffers', 'hasPasses', 'hasBookable', 'hasCashback',
-    'bookableCount', 'cashbackCount', 'OFFERS_COLOR', 'PASSES_COLOR', 'LOCAL',
+    'offers', 'passes', 'bookableServices', 'hasOffers', 'hasPasses', 'hasBookable', 'hasCashback',
+    'cashbackCount', 'OFFERS_COLOR', 'PASSES_COLOR', 'BOOK_COLOR', 'LOCAL',
     `return ${literal};`,
-  )(offers, passes, hasOffers, hasPasses, hasBookable, hasCashback,
-    bookableCount, cashbackCount, '#d97706', '#7c3aed', '#7c3aed') as T[];
+  )(offers, passes, bookableServices, hasOffers, hasPasses, hasBookable, hasCashback,
+    cashbackCount, '#d97706', '#7c3aed', '#059669', '#7c3aed') as T[];
 }
 
 const PILLARS = arrayLiteralAt(localPage, 'const pillars =');
@@ -92,10 +92,10 @@ describe('with no live offers the page says nothing about them', () => {
 
   test('the other statistics and tiles are untouched', () => {
     const stats = evalWith<Stat>(STATS, 0).map((s) => s.label);
-    assert.deepEqual(stats, ['bookable spots', 'cashback partners']);
+    assert.deepEqual(stats, ['bookable services', 'cashback partners']);
     const tiles = evalWith<Tile>(PILLARS, 0);
-    assert.deepEqual(tiles.map((t) => t.title), ['Bookable experiences', 'Cashback partners']);
-    assert.deepEqual(tiles.map((t) => t.href), ['/directory/bookable', '/directory']);
+    assert.deepEqual(tiles.map((t) => t.title), ['Book now', 'Cashback partners']);
+    assert.deepEqual(tiles.map((t) => t.href), ['#book', '/directory']);
   });
 
   test('the row still fills its width rather than leaving a hole', () => {

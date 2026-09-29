@@ -129,7 +129,7 @@ describe('empty sections do not advertise zero content', () => {
     const stripStart = page.indexOf('Stats strip');
     assert.ok(stripStart >= 0);
     const strip = page.slice(stripStart, stripStart + 1500);
-    assert.match(strip, /hasBookable \? \[\{ n: bookableCount/);
+    assert.match(strip, /hasBookable \? \[\{ n: bookableServices\.length/);
     assert.match(strip, /hasCashback \? \[\{ n: cashbackCount/);
   });
 });

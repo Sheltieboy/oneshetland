@@ -177,7 +177,7 @@ describe('a failed Directory fetch must not look like an empty Shetland', () => 
   test('9. the loader no longer discards the error it was handed', () => {
     const src = readWeb('lib/local-data.ts');
     const fn = src.slice(src.indexOf('export async function getAllBusinesses'),
-                         src.indexOf('export async function getBookableBusinesses'));
+                         src.indexOf('export type BookableService'));
     assert.ok(fn.includes('.from(PUBLIC_BUSINESS)'), 'the slice must be the Directory loader');
     // This is what hid a platform-wide 401 for days: `const { data } = await q`
     // throws the error away, and `data ?? []` then reads as "no businesses".
