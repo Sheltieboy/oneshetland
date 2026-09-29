@@ -1943,7 +1943,11 @@ export async function fetchLocalFeed(area?: string): Promise<{
     .order('is_verified', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(20);
-  if (area) bizQ = bizQ.ilike('locality', `%${area}%`);
+  // BUSINESS_PUBLIC_SOURCE has no `locality` column — only `address`. Filtering
+  // on a column the view doesn't have fails the whole query, which the caller
+  // swallows as an empty businesses list: picking any area silently emptied
+  // the Local feed's business grid, on every area, every time.
+  if (area) bizQ = bizQ.ilike('address', `%${area}%`);
 
   let jobQ = supabase
     .from('jobs')
@@ -1965,6 +1969,64 @@ export async function fetchLocalFeed(area?: string): Promise<{
   };
 }
 
+export interface LocalFeedPass {
+  id:                string;
+  business_id:       string;
+  name:              string;
+  price_pence:       number;
+  uses_per_purchase: number;
+  valid_days:        number | null;
+  image_url:         string | null;
+  business_name:     string;
+  business_logo_url: string | null;
+  business_category: LocalCategory;
+}
+
+/**
+ * Passes / multi-use unit items available to buy right now, across every
+ * eligible business — the thing Local had no discovery surface for at all.
+ * A business's own listing (local-business-detail) already shows this
+ * correctly; this is the same question asked across every business at once.
+ *
+ * RLS on book_unit_items already refuses a row unless the business currently,
+ * live, meets Premium (`business_meets_tier(business_id, 'premium')`) — the
+ * same rule the checkout itself enforces — so this can never surface a pass
+ * a customer couldn't actually buy. It additionally drops a business that has
+ * been deactivated, which that RLS rule does not check.
+ */
+export async function fetchActiveLocalPasses(limit = 12): Promise<LocalFeedPass[]> {
+  const { data: items, error } = await supabase
+    .from('book_unit_items')
+    .select('id, business_id, name, price_pence, uses_per_purchase, valid_days, image_url, stock')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(limit * 3); // over-fetch: some will drop out on the business join below
+  if (error) throw error;
+
+  const available = (items ?? []).filter(i => i.stock === null || i.stock > 0);
+  const bizIds = [...new Set(available.map(i => i.business_id))];
+  if (bizIds.length === 0) return [];
+
+  const { data: bizRows } = await supabase
+    .from(BUSINESS_PUBLIC_SOURCE)
+    .select('id, name, logo_url, category, is_active')
+    .in('id', bizIds);
+  const bizMap = new Map((bizRows ?? []).map(b => [b.id, b]));
+
+  const out: LocalFeedPass[] = [];
+  for (const it of available) {
+    const b = bizMap.get(it.business_id);
+    if (!b || !b.is_active) continue;
+    out.push({
+      id: it.id, business_id: it.business_id, name: it.name,
+      price_pence: it.price_pence, uses_per_purchase: it.uses_per_purchase,
+      valid_days: it.valid_days, image_url: it.image_url,
+      business_name: b.name, business_logo_url: b.logo_url, business_category: b.category,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
 
 /**
  * Owner-private business fields.

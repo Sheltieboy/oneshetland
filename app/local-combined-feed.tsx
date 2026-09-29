@@ -1,13 +1,17 @@
 /**
- * Local combined feed — events carousel, business grid, jobs, notices.
+ * Local combined feed — passes carousel, business grid, jobs, notices.
  * Designed to feel like a living local magazine, not a data table.
+ *
+ * Events are deliberately NOT duplicated here — What's On already owns
+ * event discovery; the Local landing page pointing at the same content
+ * twice, under two different section designs, was confusing rather than
+ * helpful.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
   Image, ActivityIndicator, RefreshControl, useWindowDimensions,
-  ImageBackground,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -19,25 +23,17 @@ import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import {
-  fetchLocalFeed, fetchActiveOffersForBusinesses, formatOfferDiscount, formatValidUntil,
-  isBusinessFeatured, SHETLAND_AREAS,
-  type LocalBusiness, type LocalFeedEvent, type LocalFeedJob, type LocalOffer,
+  fetchLocalFeed, fetchActiveOffersForBusinesses, fetchActiveLocalPasses, formatOfferDiscount, formatValidUntil,
+  formatPence, isBusinessFeatured, SHETLAND_AREAS,
+  type LocalBusiness, type LocalFeedJob, type LocalFeedPass, type LocalOffer,
 } from '@/lib/local-api';
 import { fetchPublicNotices, type HubNotice } from '@/lib/hubs-api';
 import { isBookableLive } from '@/lib/book-api';
 
 const S = SECTIONS.local;
-const EVENTS_COLOR  = '#d4921a';
 const JOBS_COLOR    = '#0ea5e9';
 const NOTICES_COLOR = '#10b981';
-
-const EVENT_FALLBACK_GRADIENTS: [string, string][] = [
-  ['#d4921a', '#b87317'],
-  ['#7c3aed', '#5b21b6'],
-  ['#0ea5e9', '#0369a1'],
-  ['#10b981', '#047857'],
-  ['#ef4444', '#b91c1c'],
-];
+const PASSES_COLOR  = '#7c3aed';
 
 const CATEGORY_EMOJI: Record<string, string> = {
   food_drink: '🍽', retail: '🛍', services: '🔧',
@@ -61,7 +57,7 @@ export default function LocalCombinedFeed() {
   const isTablet = width >= 768;
 
   const [area, setArea]             = useState<AreaKey>('');
-  const [events, setEvents]         = useState<LocalFeedEvent[]>([]);
+  const [passes, setPasses]         = useState<LocalFeedPass[]>([]);
   const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
   const [jobs, setJobs]             = useState<LocalFeedJob[]>([]);
   const [notices, setNotices]       = useState<HubNotice[]>([]);
@@ -71,14 +67,17 @@ export default function LocalCombinedFeed() {
 
   const load = useCallback(async (a: AreaKey) => {
     try {
-      const [feed, pub] = await Promise.all([
+      // Events are What's On's job now — Local no longer duplicates its own
+      // carousel of them, so this feed is not asked for them.
+      const [feed, pub, activePasses] = await Promise.all([
         fetchLocalFeed(a || undefined),
         fetchPublicNotices(6),
+        fetchActiveLocalPasses(10).catch(() => [] as LocalFeedPass[]),
       ]);
-      setEvents(feed.events);
       setBusinesses(feed.businesses);
       setJobs(feed.jobs);
       setNotices(pub);
+      setPasses(activePasses);
       // Fetch live offers for every business in the feed, build id→offer map (first offer wins)
       const offers = await fetchActiveOffersForBusinesses(feed.businesses.map(b => b.id));
       const map = new Map<string, LocalOffer>();
@@ -199,25 +198,6 @@ export default function LocalCombinedFeed() {
             <FontAwesome5 name="chevron-right" size={13} color={colors.textLight} />
           </TouchableOpacity>
 
-          {/* EVENTS */}
-          <SectionHeader label={areaLabel ? `Events in ${areaLabel}` : "What's on"} title="Upcoming events"
-            color={EVENTS_COLOR} onSeeAll={() => router.push('/(tabs)/whats-on' as any)} />
-          {events.length === 0 ? (
-            <EmptyCard icon="📅" message="No upcoming events — check back soon." />
-          ) : (
-            <FlatList
-              horizontal data={events} keyExtractor={e => e.id}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.carousel}
-              snapToInterval={isTablet ? 302 : 242}
-              decelerationRate="fast"
-              renderItem={({ item: ev, index }) => (
-                <EventCard event={ev} index={index} cardWidth={isTablet ? 290 : 230}
-                  onPress={() => router.push({ pathname: '/events/[id]', params: { id: ev.id } })} />
-              )}
-            />
-          )}
-
           {/* OFFERS & DEALS */}
           {activeOffers.length > 0 && (
             <>
@@ -255,6 +235,30 @@ export default function LocalCombinedFeed() {
                   <BookNowCard
                     business={b}
                     onPress={() => router.push({ pathname: '/local-business-detail', params: { id: b.id } })}
+                  />
+                )}
+              />
+            </>
+          )}
+
+          {/* PASSES & EXPERIENCES — the thing Local had no discovery path for at
+              all: multi-use passes (class packs, day passes) bought once and
+              spent down over several visits, distinct from a timed booking. */}
+          {passes.length > 0 && (
+            <>
+              <SectionHeader label="Buy once, use more than once" title="Passes & experiences"
+                color={PASSES_COLOR} onSeeAll={() => router.push('/local-businesses-browse' as any)} />
+              <FlatList
+                horizontal data={passes} keyExtractor={p => p.id}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.carousel}
+                snapToInterval={isTablet ? 302 : 242}
+                decelerationRate="fast"
+                renderItem={({ item: p }) => (
+                  <PassCard
+                    pass={p}
+                    cardWidth={isTablet ? 290 : 230}
+                    onPress={() => router.push({ pathname: '/local-business-detail', params: { id: p.business_id } })}
                   />
                 )}
               />
@@ -364,46 +368,47 @@ function AreaChip({ active, label, onPress }: { active: boolean; label: string; 
   );
 }
 
-// ── Event card (carousel) ─────────────────────────────────────────────────────
+// ── Pass card (carousel) ──────────────────────────────────────────────────────
 
-function EventCard({ event, index, cardWidth, onPress }: {
-  event: LocalFeedEvent; index: number; cardWidth: number; onPress: () => void;
+function PassCard({ pass, cardWidth, onPress }: {
+  pass: LocalFeedPass; cardWidth: number; onPress: () => void;
 }) {
-  const d = new Date(event.starts_at);
-  const day = d.toLocaleDateString('en-GB', { day: 'numeric' });
-  const mon = d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase();
-  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  const [g1, g2] = EVENT_FALLBACK_GRADIENTS[index % EVENT_FALLBACK_GRADIENTS.length];
+  const cat      = pass.business_category ?? 'other';
+  const catColor = CATEGORY_COLOR[cat] ?? '#6b7280';
+  const emoji    = CATEGORY_EMOJI[cat] ?? '🎫';
+  const coverUri = pass.image_url ?? null;
 
   return (
-    <TouchableOpacity style={[styles.eventCard, { width: cardWidth }]} onPress={onPress} activeOpacity={0.9}>
-      <View style={styles.eventImg}>
-        {event.cover_url ? (
-          <>
-            <ImageBackground source={{ uri: event.cover_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            {/* Dark scrim so date/title stay readable over images */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.30)' }]} />
-          </>
-        ) : (
-          /* Solid brand colour when no cover image */
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: g1 }]} />
-        )}
-        {/* Date */}
-        <View style={styles.dateBadge}>
-          <Text style={styles.dateMon}>{mon}</Text>
-          <Text style={styles.dateDay}>{day}</Text>
+    <TouchableOpacity style={[styles.offerCard, { width: cardWidth }]} onPress={onPress} activeOpacity={0.85}>
+      {coverUri ? (
+        <Image source={{ uri: coverUri }} style={styles.offerCardImage} />
+      ) : (
+        <View style={[styles.offerCardPlaceholder, { backgroundColor: catColor + '18' }]}>
+          <Text style={styles.offerCardEmoji}>{emoji}</Text>
         </View>
-        {/* Ticket */}
-        {event.has_tickets && (
-          <View style={styles.ticketBadge}>
-            <FontAwesome5 name="ticket-alt" size={8} color={EVENTS_COLOR} solid />
-            <Text style={styles.ticketText}>Get tickets</Text>
-          </View>
-        )}
+      )}
+
+      {/* Price badge — mirrors the discount badge on offer cards */}
+      <View style={styles.discountBadge}>
+        <FontAwesome5 name="ticket-alt" size={9} color={PASSES_COLOR} solid />
+        <Text style={[styles.discountBadgeText, { color: PASSES_COLOR }]}>{formatPence(pass.price_pence)}</Text>
       </View>
-      <View style={styles.eventBody}>
-        <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
-        <Text style={styles.eventMeta}>{time}{event.venue ? ` · ${event.venue}` : ''}</Text>
+
+      <View style={styles.offerCardBody}>
+        <View style={[styles.bizLogoPill, { backgroundColor: catColor + '18' }]}>
+          {pass.business_logo_url
+            ? <Image source={{ uri: pass.business_logo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            : <Text style={{ fontSize: 16 }}>{emoji}</Text>}
+        </View>
+        <View style={styles.bizMeta}>
+          <Text style={[styles.bizCategory, { color: catColor }]}>{CATEGORY_LABEL[cat] ?? cat}</Text>
+          <Text style={styles.offerCardTitle} numberOfLines={2}>{pass.name}</Text>
+          <Text style={styles.offerCardBusiness} numberOfLines={1}>{pass.business_name}</Text>
+          <Text style={[styles.offerCardExpiry, { color: PASSES_COLOR }]}>
+            {pass.uses_per_purchase > 1 ? `${pass.uses_per_purchase} uses` : '1 use'}
+            {pass.valid_days !== null ? ` · ${pass.valid_days}d valid` : ''}
+          </Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -494,7 +499,7 @@ function BookNowCard({ business, onPress }: { business: LocalBusiness; onPress: 
   );
 }
 
-// ── Business tile — EventCard style ──────────────────────────────────────────
+// ── Business tile ──────────────────────────────────────────
 
 function BusinessTile({ business, offer, onPress }: {
   business: LocalBusiness; offer?: LocalOffer; onPress: () => void;
@@ -524,7 +529,7 @@ function BusinessTile({ business, offer, onPress }: {
         </View>
       )}
 
-      {/* Card body: logo pill + meta (mirrors EventCard exactly) */}
+      {/* Card body: logo pill + meta (mirrors the pass/offer card layout) */}
       <View style={styles.bizCardBody}>
         {/* Logo pill */}
         <View style={[styles.bizLogoPill, { backgroundColor: catColor + '18' }]}>
@@ -720,32 +725,6 @@ const styles = StyleSheet.create({
 
   carousel: { paddingHorizontal: spacing.md, gap: 12, paddingBottom: 4 },
 
-  // Event card
-  eventCard: {
-    borderRadius: 18, overflow: 'hidden', backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.13, shadowRadius: 10, elevation: 4,
-  },
-  eventImg:    { height: 170, position: 'relative' },
-  dateBadge:   {
-    position: 'absolute', top: 10, left: 10,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5,
-    alignItems: 'center', minWidth: 40,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 3,
-  },
-  dateMon:     { fontSize: 9, fontWeight: '900', color: EVENTS_COLOR, letterSpacing: 1 },
-  dateDay:     { fontSize: 22, fontWeight: '900', color: colors.textPrimary, lineHeight: 24 },
-  ticketBadge: {
-    position: 'absolute', bottom: 10, right: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full,
-  },
-  ticketText:  { fontSize: 10, fontWeight: '800', color: EVENTS_COLOR },
-  eventBody:   { padding: 14 },
-  eventTitle:  { fontSize: 15, fontWeight: '800', color: colors.textPrimary, lineHeight: 20 },
-  eventMeta:   { fontSize: 12, color: colors.textMuted, marginTop: 5, fontWeight: '600' },
-
   // Offer card
   offerCard: {
     backgroundColor: '#fff', borderRadius: radius.lg, overflow: 'hidden',
@@ -784,7 +763,7 @@ const styles = StyleSheet.create({
   },
   bookCardBtn: { fontSize: 11, fontWeight: '800', color: '#fff' },
 
-  // Business tile — EventCard style
+  // Business tile
   bizCard: {
     flex: 1, backgroundColor: '#fff', borderRadius: radius.lg, overflow: 'hidden',
     borderWidth: 1, borderColor: colors.border,

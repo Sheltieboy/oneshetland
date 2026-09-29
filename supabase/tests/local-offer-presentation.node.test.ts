@@ -46,14 +46,27 @@ function arrayLiteralAt(src: string, marker: string): string {
   throw new Error(`unbalanced array literal at ${marker}`);
 }
 
-/** Evaluate one of the page's arrays with a chosen offer count. */
-function evalWith<T>(literal: string, offerCount: number): T[] {
+/**
+ * Evaluate one of the page's arrays with a chosen offer count. Passes,
+ * bookable spots and cashback partners default to present (matching this
+ * suite's original assumption that those two are "always there" while only
+ * offers vary) — pass `opts` to isolate one of the others instead.
+ */
+function evalWith<T>(literal: string, offerCount: number, opts?: { passCount?: number; bookableCount?: number; cashbackCount?: number }): T[] {
   const offers = Array.from({ length: offerCount }, (_, i) => ({ id: `o${i}` }));
-  const hasOffers = offers.length > 0;
+  const passes = Array.from({ length: opts?.passCount ?? 0 }, (_, i) => ({ id: `p${i}` }));
+  const bookableCount = opts?.bookableCount ?? 4;
+  const cashbackCount = opts?.cashbackCount ?? 2;
+  const hasOffers   = offers.length > 0;
+  const hasPasses   = passes.length > 0;
+  const hasBookable = bookableCount > 0;
+  const hasCashback = cashbackCount > 0;
   return new Function(
-    'offers', 'hasOffers', 'bookableCount', 'cashbackCount', 'OFFERS_COLOR', 'LOCAL',
+    'offers', 'passes', 'hasOffers', 'hasPasses', 'hasBookable', 'hasCashback',
+    'bookableCount', 'cashbackCount', 'OFFERS_COLOR', 'PASSES_COLOR', 'LOCAL',
     `return ${literal};`,
-  )(offers, hasOffers, 4, 2, '#2a8b5c', '#7c3aed') as T[];
+  )(offers, passes, hasOffers, hasPasses, hasBookable, hasCashback,
+    bookableCount, cashbackCount, '#d97706', '#7c3aed', '#7c3aed') as T[];
 }
 
 const PILLARS = arrayLiteralAt(localPage, 'const pillars =');
@@ -86,7 +99,7 @@ describe('with no live offers the page says nothing about them', () => {
   });
 
   test('the row still fills its width rather than leaving a hole', () => {
-    assert.match(localPage, /pillars\.length === 3 \? "sm:grid-cols-3" : "sm:grid-cols-2"/);
+    assert.match(localPage, /pillars\.length >= 4 \? "lg:grid-cols-4" : pillars\.length === 3 \? "lg:grid-cols-3" : ""/);
   });
 });
 
