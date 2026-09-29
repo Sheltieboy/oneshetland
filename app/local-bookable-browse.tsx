@@ -1,23 +1,31 @@
 /**
  * app/local-bookable-browse.tsx
  *
- * Discovery screen for "what can I book in Shetland right now?"
+ * Discovery screen for "what can I book in Shetland right now?" — a list of
+ * bookable SERVICES, not a list of businesses to open and search through.
+ * Finding a service used to mean picking a business off a generic list, then
+ * scrolling to "Book online" and choosing among whatever it offered. The
+ * business is still shown and still tappable for people who want that
+ * context, but it is no longer the thing standing between a customer and
+ * booking a slot.
  *
- * - Lists every business where isBookableLive() returns true (accepts_bookings
- *   AND tier === 'premium' AND is_active).
- * - Shows service count per business so users get a feel for what's on offer.
- * - Category filter chips (food_drink / retail / services / tourism / etc).
+ * - Lists every active service at a business where isBookableLive() returns
+ *   true (accepts_bookings AND tier === 'premium' AND is_active) — the same
+ *   eligibility rule the business-detail page's own "Book online" section
+ *   already uses, not a new one.
+ * - Category filter chips (food_drink / retail / services / tourism / etc),
+ *   filtering on the owning business's category, same as before.
  * - "My bookings →" link in the header for users who want to manage existing
  *   bookings instead.
- * - Tap a business row → goes to /local-business-detail (where the "Book a slot"
- *   CTA lives) — gives them context (description, offers, loyalty) before they
- *   commit to a slot picker.
+ * - Tap the business name → /local-business-detail (context, offers,
+ *   loyalty) for anyone who wants it; tap Book → straight into the slot
+ *   picker for that exact service, pre-selected.
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
-  Image, ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -25,12 +33,11 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { CATEGORY_LABELS, CATEGORY_ICONS, type LocalCategory } from '@/lib/local-api';
 import {
-  fetchActiveBusinesses, CATEGORY_LABELS, CATEGORY_ICONS,
-  type LocalBusiness, type LocalCategory,
-} from '@/lib/local-api';
-import { isBookableLive } from '@/lib/book-api';
-import { supabase } from '@/lib/supabase';
+  fetchActiveBookableServices, formatPence, formatDuration,
+  type BookableServiceCard,
+} from '@/lib/book-api';
 
 const S = SECTIONS.local;
 
@@ -46,46 +53,34 @@ const FILTERS: { id: LocalCategory | ''; label: string }[] = [
 export default function BookableBrowseScreen() {
   const router = useRouter();
 
-  const [businesses, setBusinesses]       = useState<LocalBusiness[]>([]);
-  const [serviceCounts, setServiceCounts] = useState<Record<string, number>>({});
-  const [filter, setFilter]               = useState<LocalCategory | ''>('');
-  const [loading, setLoading]             = useState(true);
-  const [refreshing, setRefreshing]       = useState(false);
+  const [services, setServices]     = useState<BookableServiceCard[]>([]);
+  const [filter, setFilter]         = useState<LocalCategory | ''>('');
+  const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cat: LocalCategory | '') => {
     try {
-      const all = await fetchActiveBusinesses();
-      const bookable = all.filter(isBookableLive);
-      setBusinesses(bookable);
-
-      // Fetch service counts in one go for the bookable businesses
-      const ids = bookable.map(b => b.id);
-      if (ids.length > 0) {
-        const { data } = await supabase
-          .from('book_services')
-          .select('business_id')
-          .eq('is_active', true)
-          .in('business_id', ids);
-        const counts: Record<string, number> = {};
-        for (const row of (data ?? []) as Array<{ business_id: string }>) {
-          counts[row.business_id] = (counts[row.business_id] ?? 0) + 1;
-        }
-        setServiceCounts(counts);
-      } else {
-        setServiceCounts({});
-      }
+      const rows = await fetchActiveBookableServices(200, cat || undefined);
+      setServices(rows);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(filter); }, [filter, load]);
 
-  const filtered = useMemo(
-    () => filter ? businesses.filter(b => b.category === filter) : businesses,
-    [businesses, filter],
-  );
+  const grouped = useMemo(() => {
+    // Services from the same business stay together, in the order they
+    // already came back (display_order within a business, newest business
+    // first) — reads like "here's what Anderson & Co offers", not shuffled.
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const s of services) {
+      if (!seen.has(s.business_id)) { seen.add(s.business_id); order.push(s.business_id); }
+    }
+    return order.map(id => services.filter(s => s.business_id === id));
+  }, [services]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -98,7 +93,7 @@ export default function BookableBrowseScreen() {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Book in Shetland</Text>
           <Text style={styles.headerSub}>
-            {filtered.length} bookable place{filtered.length !== 1 ? 's' : ''}
+            {services.length} bookable service{services.length !== 1 ? 's' : ''}
           </Text>
         </View>
         <TouchableOpacity
@@ -130,21 +125,19 @@ export default function BookableBrowseScreen() {
         })}
       </ScrollView>
 
-      {/* List */}
+      {/* List — grouped by business, service is the unit */}
       {loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={S.color} /></View>
       ) : (
         <FlatList
-          data={filtered}
-          keyExtractor={b => b.id}
-          renderItem={({ item }) => (
-            <BookableRow business={item} serviceCount={serviceCounts[item.id] ?? 0} />
-          )}
+          data={grouped}
+          keyExtractor={group => group[0].business_id}
+          renderItem={({ item: group }) => <BusinessGroup services={group} />}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); load(); }}
+              onRefresh={() => { setRefreshing(true); load(filter); }}
               tintColor={S.color}
             />
           }
@@ -167,51 +160,52 @@ export default function BookableBrowseScreen() {
   );
 }
 
-// ── Row ──────────────────────────────────────────────────────────────────────
+// ── Business group (a small header row, then its bookable services) ────────
 
-function BookableRow({ business, serviceCount }: { business: LocalBusiness; serviceCount: number }) {
+function BusinessGroup({ services }: { services: BookableServiceCard[] }) {
+  const router = useRouter();
+  const first = services[0];
+  return (
+    <View style={styles.group}>
+      <TouchableOpacity
+        style={styles.groupHeader}
+        onPress={() => router.push({ pathname: '/local-business-detail', params: { id: first.business_id } })}
+        activeOpacity={0.75}
+      >
+        <FontAwesome5 name={CATEGORY_ICONS[first.business_category] as any} size={12} color={S.color} solid />
+        <Text style={styles.groupHeaderText} numberOfLines={1}>{first.business_name}</Text>
+        <Text style={styles.groupHeaderCat}>{CATEGORY_LABELS[first.business_category]}</Text>
+        <FontAwesome5 name="chevron-right" size={10} color={colors.textLight} />
+      </TouchableOpacity>
+      {services.map(s => <ServiceRow key={s.id} service={s} />)}
+    </View>
+  );
+}
+
+// ── Service row — the thing you actually book ───────────────────────────────
+
+function ServiceRow({ service }: { service: BookableServiceCard }) {
   const router = useRouter();
   return (
     <TouchableOpacity
       style={styles.row}
-      onPress={() => router.push({ pathname: '/local-business-detail', params: { id: business.id } })}
+      onPress={() => router.push({ pathname: '/local-book-business', params: { businessId: service.business_id, serviceId: service.id } })}
       activeOpacity={0.85}
     >
-      {business.logo_url ? (
-        <Image source={{ uri: business.logo_url }} style={styles.rowLogo} />
-      ) : (
-        <View style={[styles.rowLogo, { backgroundColor: S.light, alignItems: 'center', justifyContent: 'center' }]}>
-          <FontAwesome5 name={CATEGORY_ICONS[business.category] as any} size={20} color={S.color} solid />
-        </View>
-      )}
-      <View style={{ flex: 1 }}>
-        <View style={styles.rowNameRow}>
-          <Text style={styles.rowName} numberOfLines={1}>{business.name}</Text>
-          {business.is_verified && (
-            <FontAwesome5 name="check-circle" size={11} color={S.color} solid />
-          )}
-        </View>
-        <Text style={[styles.rowCategory, { color: S.color }]}>{CATEGORY_LABELS[business.category]}</Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.rowName} numberOfLines={1}>{service.name}</Text>
+        {service.description ? (
+          <Text style={styles.rowDesc} numberOfLines={1}>{service.description}</Text>
+        ) : null}
         <View style={styles.rowMeta}>
-          <View style={styles.rowMetaItem}>
-            <FontAwesome5 name="calendar-check" size={10} color={colors.textMuted} solid />
-            <Text style={styles.rowMetaText}>
-              {serviceCount === 0
-                ? 'No services yet'
-                : `${serviceCount} service${serviceCount === 1 ? '' : 's'}`}
-            </Text>
-          </View>
-          {business.address && (
-            <View style={styles.rowMetaItem}>
-              <FontAwesome5 name="map-marker-alt" size={10} color={colors.textMuted} />
-              <Text style={styles.rowMetaText} numberOfLines={1}>
-                {business.address.split(',').slice(0, 2).join(',')}
-              </Text>
-            </View>
-          )}
+          <Text style={styles.rowMetaText}>{formatDuration(service.duration_minutes)}</Text>
+          <View style={styles.rowMetaDot} />
+          <Text style={[styles.rowMetaText, { fontWeight: '800', color: S.color }]}>{formatPence(service.price_pence)}</Text>
         </View>
       </View>
-      <FontAwesome5 name="chevron-right" size={12} color={colors.textLight} />
+      <View style={[styles.bookBtn, { backgroundColor: S.color }]}>
+        <Text style={styles.bookBtnText}>Book</Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -246,20 +240,31 @@ const styles = StyleSheet.create({
   },
   filterChipText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.textMuted },
 
-  listContent: { padding: spacing.md, gap: 10, paddingBottom: 100 },
+  listContent: { padding: spacing.md, gap: 16, paddingBottom: 100 },
+
+  group: {
+    backgroundColor: '#fff', borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  groupHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: colors.screenBackground, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  groupHeaderText: { flex: 1, fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  groupHeaderCat:  { fontSize: 10, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' },
 
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: radius.lg,
-    padding: 12, borderWidth: 1, borderColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  rowLogo:    { width: 56, height: 56, borderRadius: radius.md },
-  rowNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowName:    { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 },
-  rowCategory:{ fontSize: 10, fontWeight: '700', marginTop: 1 },
-  rowMeta:    { flexDirection: 'row', gap: 12, marginTop: 6, flexWrap: 'wrap' },
-  rowMetaItem:{ flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rowName:    { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  rowDesc:    { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  rowMeta:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 },
   rowMetaText:{ fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
+  rowMetaDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.border },
+  bookBtn:    { paddingHorizontal: 16, paddingVertical: 9, borderRadius: radius.full },
+  bookBtnText:{ color: '#fff', fontWeight: '800', fontSize: fontSize.xs },
 
   empty:      { alignItems: 'center', padding: spacing.xl, gap: 10, marginTop: spacing.xl },
   emptyIcon:  { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },

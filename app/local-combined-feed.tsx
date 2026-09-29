@@ -28,12 +28,13 @@ import {
   type LocalBusiness, type LocalFeedJob, type LocalFeedPass, type LocalOffer,
 } from '@/lib/local-api';
 import { fetchPublicNotices, type HubNotice } from '@/lib/hubs-api';
-import { isBookableLive } from '@/lib/book-api';
+import { fetchActiveBookableServices, formatDuration, isBookableLive, type BookableServiceCard } from '@/lib/book-api';
 
 const S = SECTIONS.local;
 const JOBS_COLOR    = '#0ea5e9';
 const NOTICES_COLOR = '#10b981';
 const PASSES_COLOR  = '#7c3aed';
+const BOOK_COLOR    = '#059669';
 
 const CATEGORY_EMOJI: Record<string, string> = {
   food_drink: '🍽', retail: '🛍', services: '🔧',
@@ -58,6 +59,7 @@ export default function LocalCombinedFeed() {
 
   const [area, setArea]             = useState<AreaKey>('');
   const [passes, setPasses]         = useState<LocalFeedPass[]>([]);
+  const [services, setServices]     = useState<BookableServiceCard[]>([]);
   const [businesses, setBusinesses] = useState<LocalBusiness[]>([]);
   const [jobs, setJobs]             = useState<LocalFeedJob[]>([]);
   const [notices, setNotices]       = useState<HubNotice[]>([]);
@@ -69,15 +71,17 @@ export default function LocalCombinedFeed() {
     try {
       // Events are What's On's job now — Local no longer duplicates its own
       // carousel of them, so this feed is not asked for them.
-      const [feed, pub, activePasses] = await Promise.all([
+      const [feed, pub, activePasses, activeServices] = await Promise.all([
         fetchLocalFeed(a || undefined),
         fetchPublicNotices(6),
         fetchActiveLocalPasses(10).catch(() => [] as LocalFeedPass[]),
+        fetchActiveBookableServices(10).catch(() => [] as BookableServiceCard[]),
       ]);
       setBusinesses(feed.businesses);
       setJobs(feed.jobs);
       setNotices(pub);
       setPasses(activePasses);
+      setServices(activeServices);
       // Fetch live offers for every business in the feed, build id→offer map (first offer wins)
       const offers = await fetchActiveOffersForBusinesses(feed.businesses.map(b => b.id));
       const map = new Map<string, LocalOffer>();
@@ -103,7 +107,6 @@ export default function LocalCombinedFeed() {
   const activeOffers = businesses
     .filter(b => offersMap.has(b.id))
     .map(b => ({ business: b, offer: offersMap.get(b.id)! }));
-  const bookableBusinesses = businesses.filter(b => isBookableLive(b));
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
@@ -220,21 +223,26 @@ export default function LocalCombinedFeed() {
             </>
           )}
 
-          {/* BOOK NOW */}
-          {bookableBusinesses.length > 0 && (
+          {/* BOOK NOW — service-first, not business-first: a card is a thing
+              you can actually book, and its own CTA drops straight into that
+              service's slot picker (local-book-business, which already
+              supports a serviceId param — the same mechanism the gift-claim
+              flow uses). Finding a service used to mean opening a business
+              from a list and scrolling to "Book online" yourself. */}
+          {services.length > 0 && (
             <>
-              <SectionHeader label="Reserve your spot" title="Book now"
-                color="#059669" onSeeAll={() => router.push('/local-bookable-browse' as any)} />
+              <SectionHeader label="Pick a slot" title="Book now"
+                color={BOOK_COLOR} onSeeAll={() => router.push('/local-bookable-browse' as any)} />
               <FlatList
-                horizontal data={bookableBusinesses} keyExtractor={b => b.id}
+                horizontal data={services} keyExtractor={s => s.id}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.carousel}
                 snapToInterval={172}
                 decelerationRate="fast"
-                renderItem={({ item: b }) => (
+                renderItem={({ item: s }) => (
                   <BookNowCard
-                    business={b}
-                    onPress={() => router.push({ pathname: '/local-business-detail', params: { id: b.id } })}
+                    service={s}
+                    onPress={() => router.push({ pathname: '/local-book-business', params: { businessId: s.business_id, serviceId: s.id } })}
                   />
                 )}
               />
@@ -463,37 +471,37 @@ function OfferCard({ business, offer, cardWidth, onPress }: {
 
 // ── Book now card ─────────────────────────────────────────────────────────────
 
-function BookNowCard({ business, onPress }: { business: LocalBusiness; onPress: () => void }) {
-  const cat      = business.category ?? 'other';
+function BookNowCard({ service, onPress }: { service: BookableServiceCard; onPress: () => void }) {
+  const cat      = service.business_category ?? 'other';
   const catColor = CATEGORY_COLOR[cat] ?? '#6b7280';
-  const emoji    = CATEGORY_EMOJI[cat] ?? '🏪';
+  const emoji    = CATEGORY_EMOJI[cat] ?? '📅';
 
   return (
     <TouchableOpacity style={styles.bookCard} onPress={onPress} activeOpacity={0.85}>
-      {/* Cover or placeholder */}
-      {business.cover_url ? (
-        <Image source={{ uri: business.cover_url }} style={styles.bookCardImage} />
-      ) : (
-        <View style={[styles.bookCardPlaceholder, { backgroundColor: catColor + '18' }]}>
-          <Text style={{ fontSize: 36, opacity: 0.4 }}>{emoji}</Text>
-        </View>
-      )}
+      {/* Services carry no image of their own — the category placeholder
+          leads instead, same as offers/passes cards without a cover. */}
+      <View style={[styles.bookCardPlaceholder, { backgroundColor: catColor + '18' }]}>
+        <Text style={{ fontSize: 36, opacity: 0.4 }}>{emoji}</Text>
+      </View>
 
       <View style={styles.bookCardBody}>
         <View style={[styles.bizLogoPill, { backgroundColor: catColor + '18', width: 34, height: 34 }]}>
-          {business.logo_url
-            ? <Image source={{ uri: business.logo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          {service.business_logo_url
+            ? <Image source={{ uri: service.business_logo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
             : <Text style={{ fontSize: 16 }}>{emoji}</Text>}
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[styles.bizCategory, { color: catColor }]}>{CATEGORY_LABEL[cat] ?? cat}</Text>
-          <Text style={styles.bookCardName} numberOfLines={2}>{business.name}</Text>
+          <Text style={styles.bookCardName} numberOfLines={1}>{service.name}</Text>
+          <Text style={styles.bookCardBiz} numberOfLines={1}>{service.business_name}</Text>
+          <Text style={[styles.bookCardMeta, { color: BOOK_COLOR }]}>
+            {formatPence(service.price_pence)} · {formatDuration(service.duration_minutes)}
+          </Text>
         </View>
       </View>
 
       <View style={styles.bookCardFooter}>
         <FontAwesome5 name="calendar-check" size={10} color="#fff" solid />
-        <Text style={styles.bookCardBtn}>Book now</Text>
+        <Text style={styles.bookCardBtn}>Book</Text>
       </View>
     </TouchableOpacity>
   );
@@ -749,14 +757,15 @@ const styles = StyleSheet.create({
 
   // Book now card
   bookCard: {
-    width: 160, backgroundColor: '#fff', borderRadius: radius.lg, overflow: 'hidden',
+    width: 172, backgroundColor: '#fff', borderRadius: radius.lg, overflow: 'hidden',
     borderWidth: 1, borderColor: colors.border,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
   },
-  bookCardImage:       { width: '100%', height: 90, resizeMode: 'cover' },
   bookCardPlaceholder: { width: '100%', height: 70, alignItems: 'center', justifyContent: 'center' },
   bookCardBody:        { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, paddingBottom: 6 },
   bookCardName:        { fontSize: 12, fontWeight: '800', color: colors.textPrimary, lineHeight: 15 },
+  bookCardBiz:         { fontSize: 10, color: colors.textMuted, marginTop: 1 },
+  bookCardMeta:        { fontSize: 10, fontWeight: '800', marginTop: 3 },
   bookCardFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: '#059669', paddingVertical: 8, marginHorizontal: 10, marginBottom: 10, borderRadius: radius.full,

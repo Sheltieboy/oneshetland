@@ -10,6 +10,7 @@
  */
 
 import { supabase } from './supabase';
+import { fetchActiveBusinesses, type LocalCategory } from './local-api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -493,6 +494,64 @@ export function isBookableLive(b: {
   return Boolean(b.accepts_bookings) && b.subscription_tier === 'premium' && b.is_active !== false;
 }
 
+export interface BookableServiceCard {
+  id:                 string;
+  business_id:        string;
+  name:               string;
+  description:        string | null;
+  duration_minutes:   number;
+  price_pence:        number;
+  category:           string | null;
+  business_name:      string;
+  business_logo_url:  string | null;
+  business_category:  LocalCategory;
+  business_address:   string;
+}
+
+/**
+ * Active services at businesses that are actually live for bookings right
+ * now — the thing "Book" pointed customers at a business LIST to find,
+ * making them open a business, scroll to "Book online" and pick a service
+ * themselves, when the destination they actually wanted was the service.
+ *
+ * Same eligibility join local-bookable-browse.tsx already used for its
+ * per-business service counts: book_services' own RLS only checks
+ * is_active, not the business's booking eligibility, so that is enforced
+ * here exactly as it already was there — via isBookableLive() on the
+ * business, not assumed from the service row alone.
+ */
+export async function fetchActiveBookableServices(
+  limit = 12,
+  category?: LocalCategory,
+): Promise<BookableServiceCard[]> {
+  const businesses = await fetchActiveBusinesses();
+  const bookable = businesses.filter(b => isBookableLive(b) && (!category || b.category === category));
+  if (bookable.length === 0) return [];
+  const bizMap = new Map(bookable.map(b => [b.id, b]));
+
+  const { data, error } = await supabase
+    .from('book_services')
+    .select('id, business_id, name, description, duration_minutes, price_pence, category, display_order, created_at')
+    .eq('is_active', true)
+    .in('business_id', bookable.map(b => b.id))
+    .order('display_order', { ascending: true })
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  const out: BookableServiceCard[] = [];
+  for (const s of (data ?? []) as Array<{ id: string; business_id: string; name: string; description: string | null; duration_minutes: number; price_pence: number; category: string | null }>) {
+    const b = bizMap.get(s.business_id);
+    if (!b) continue;
+    out.push({
+      id: s.id, business_id: s.business_id, name: s.name, description: s.description,
+      duration_minutes: s.duration_minutes, price_pence: s.price_pence, category: s.category,
+      business_name: b.name, business_logo_url: b.logo_url,
+      business_category: b.category, business_address: b.address,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
 
 export async function setAcceptsBookings(
   businessId: string,
