@@ -9,7 +9,7 @@ import {
   Image, ActivityIndicator, RefreshControl, useWindowDimensions,
   ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -56,6 +56,7 @@ type AreaKey = typeof SHETLAND_AREAS[number]['key'] | '';
 
 export default function LocalCombinedFeed() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
@@ -115,7 +116,7 @@ export default function LocalCombinedFeed() {
           eyebrow={areaLabel ?? 'All Shetland'}
         />
         {router.canGoBack() && (
-          <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+          <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
             <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
           </View>
         )}

@@ -9,7 +9,7 @@ import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity, TextInput,
   Image, ActivityIndicator, RefreshControl, useWindowDimensions, StyleSheet as RN,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -57,6 +57,7 @@ const FILTERS: { id: LocalCategory | ''; label: string }[] = [
 
 export default function BrowseBusinessesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
   const numCols  = isTablet ? 2 : 1;
@@ -131,7 +132,7 @@ export default function BrowseBusinessesScreen() {
           }
         />
         {router.canGoBack() ? (
-          <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+          <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
             <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
           </View>
         ) : null}

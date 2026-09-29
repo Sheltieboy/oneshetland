@@ -15,7 +15,7 @@ import {
   ActivityIndicator, FlatList, Image, RefreshControl, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -42,6 +42,7 @@ const money = (pence: number) => `£${(pence / 100).toFixed(2)}`;
 
 export default function ShopScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const numCols = width >= 900 ? 4 : width >= 620 ? 3 : 2;
 
@@ -111,7 +112,7 @@ export default function ShopScreen() {
           }
         />
         {router.canGoBack() ? (
-          <View style={{ position: 'absolute', top: 12, left: spacing.md }}>
+          <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
             <HeroBackPill variant="overlay" label="Back" onPress={() => router.back()} />
           </View>
         ) : null}
