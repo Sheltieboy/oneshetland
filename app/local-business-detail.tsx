@@ -9,7 +9,7 @@ import {
   ActivityIndicator, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { track } from '@/lib/analytics';
 import { formatDay, hoursExpired } from '@/lib/opening-hours';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -151,7 +151,13 @@ export default function BusinessDetailScreen() {
     }
   }, [id, profile?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refresh on focus, not just on mount — this screen is also where offer,
+  // loyalty reward and points redemption are started (local-redeem), and it
+  // stays mounted underneath that screen. Without this, tapping Done after a
+  // till confirms a redemption landed back here still showing the pre-
+  // redemption offer/stamp/points state until a manual pull-to-refresh —
+  // the same stale-state bug fixed on Passes & vouchers.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Analytics: business profile view (powers the seller dashboard's view count).
   useEffect(() => {

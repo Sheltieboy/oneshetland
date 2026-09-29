@@ -9,11 +9,11 @@
  * verification flow is a separate feature (see Big-scope notes in the plan).
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity,
 } from 'react-native';
-import { router, useRouter } from 'expo-router';
+import { router, useRouter, useFocusEffect } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
@@ -49,7 +49,10 @@ export default function MyPassesScreen() {
     }
   }, [profile?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refresh on focus so a redemption at the till shows its final state the
+  // moment you land back here from local-redeem, with no pull-to-refresh
+  // needed — the same fix already applied to My cards for the scanner.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // "Nothing yet" now means exactly that: never bought one. Somebody who has
   // used theirs up sees their history instead of being told it never happened.
