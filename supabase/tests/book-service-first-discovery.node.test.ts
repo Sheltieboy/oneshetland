@@ -42,7 +42,11 @@ function functionBody(src: string, name: string): string {
   const start = src.indexOf(`function ${name}`);
   assert.ok(start >= 0, `function ${name} not found`);
   const rest = src.slice(start);
-  const next = rest.slice(1).search(/\nexport (async function|function|const|type|interface) /);
+  // Stops at the next top-level function/const/type/interface, exported or
+  // not — local-combined-feed.tsx's own helper components (BusinessTile,
+  // JobCard, ...) are plain `function Name(...)`, unlike the exported
+  // top-level functions in the lib files this helper was first written for.
+  const next = rest.slice(1).search(/\n(export )?(async function|function|const|type|interface) /);
   return next === -1 ? rest : rest.slice(0, next + 1);
 }
 
@@ -174,5 +178,60 @@ describe('counters and copy reflect what a customer can actually do, not a raw b
     const page = readWeb('app/local/page.tsx');
     const pillars = page.slice(page.indexOf('const pillars ='), page.indexOf('];') + 2);
     assert.match(pillars, /hasBookable\s*\n\s*\? \[\{ emoji: "📅", title: "Book now"/);
+  });
+});
+
+/* ── 6. Mobile Local's Book now CARD, specifically ────────────────────────
+   A real acceptance test reported the mobile flow still going through
+   business detail. Traced and found already fixed in this same file — this
+   pins the exact card contract (service name first, not business name; the
+   card's own onPress, not a business tap target, carries both IDs into
+   local-book-business directly) so a regression back to a business-shaped
+   card fails loudly instead of needing a physical retest to notice. */
+
+describe('the Book now CARD on mobile Local is unambiguously a service, not a business, and its own tap goes straight to booking', () => {
+  test('BookNowCard takes a `service` prop (BookableServiceCard), not a `business` prop', () => {
+    const screen = read('app/local-combined-feed.tsx');
+    const fn = functionBody(screen, 'BookNowCard');
+    assert.match(fn, /function BookNowCard\(\{ service, onPress \}: \{ service: BookableServiceCard/);
+    assert.doesNotMatch(fn, /business: LocalBusiness/);
+  });
+
+  test('the service NAME renders as the card\'s primary line, before the business name', () => {
+    const screen = read('app/local-combined-feed.tsx');
+    const fn = functionBody(screen, 'BookNowCard');
+    const nameIdx = fn.indexOf('service.name');
+    const bizIdx  = fn.indexOf('service.business_name');
+    assert.ok(nameIdx >= 0 && bizIdx >= 0 && nameIdx < bizIdx,
+      'the thing you can book must read first, the business it belongs to second');
+  });
+
+  test('the card shows duration, price, and — where the business has one — a location line', () => {
+    const screen = read('app/local-combined-feed.tsx');
+    const fn = functionBody(screen, 'BookNowCard');
+    assert.match(fn, /formatPence\(service\.price_pence\)/);
+    assert.match(fn, /formatDuration\(service\.duration_minutes\)/);
+    assert.match(fn, /service\.business_address/);
+  });
+
+  test('the ENTIRE card is one TouchableOpacity whose onPress is the direct-booking handler — there is no separate business-detail tap target on this card', () => {
+    const screen = read('app/local-combined-feed.tsx');
+    const fn = functionBody(screen, 'BookNowCard');
+    assert.match(fn, /<TouchableOpacity style=\{styles\.bookCard\} onPress=\{onPress\}/);
+    assert.doesNotMatch(fn, /local-business-detail/, 'this card must not offer a path to business detail at all');
+  });
+
+  test('the carousel wires that onPress to local-book-business with businessId AND serviceId, from the services list — not the businesses list', () => {
+    const screen = read('app/local-combined-feed.tsx');
+    const bookNowSection = screen.slice(screen.indexOf('{/* BOOK NOW'), screen.indexOf('{/* PASSES & EXPERIENCES'));
+    assert.match(bookNowSection, /data=\{services\}/);
+    assert.match(bookNowSection, /<BookNowCard\s*\n\s*service=\{s\}/);
+    assert.match(bookNowSection, /pathname: '\/local-book-business', params: \{ businessId: s\.business_id, serviceId: s\.id \}/);
+  });
+
+  test('"See all" on this exact section goes to the service-first browse screen, not a business list', () => {
+    const screen = read('app/local-combined-feed.tsx');
+    const bookNowSection = screen.slice(screen.indexOf('{/* BOOK NOW'), screen.indexOf('{/* PASSES & EXPERIENCES'));
+    assert.match(bookNowSection, /onSeeAll=\{\(\) => router\.push\('\/local-bookable-browse'/);
   });
 });

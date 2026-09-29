@@ -496,6 +496,14 @@ function BookNowCard({ service, onPress }: { service: BookableServiceCard; onPre
           <Text style={[styles.bookCardMeta, { color: BOOK_COLOR }]}>
             {formatPence(service.price_pence)} · {formatDuration(service.duration_minutes)}
           </Text>
+          {service.business_address ? (
+            <View style={styles.bookCardLocRow}>
+              <FontAwesome5 name="map-marker-alt" size={8} color={colors.textMuted} />
+              <Text style={styles.bookCardLocText} numberOfLines={1}>
+                {service.business_address.split(',')[0]}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -766,6 +774,8 @@ const styles = StyleSheet.create({
   bookCardName:        { fontSize: 12, fontWeight: '800', color: colors.textPrimary, lineHeight: 15 },
   bookCardBiz:         { fontSize: 10, color: colors.textMuted, marginTop: 1 },
   bookCardMeta:        { fontSize: 10, fontWeight: '800', marginTop: 3 },
+  bookCardLocRow:      { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  bookCardLocText:     { fontSize: 9, color: colors.textMuted, fontWeight: '600', flexShrink: 1 },
   bookCardFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: '#059669', paddingVertical: 8, marginHorizontal: 10, marginBottom: 10, borderRadius: radius.full,
