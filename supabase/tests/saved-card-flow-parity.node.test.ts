@@ -3,17 +3,19 @@
  *
  * The paid-ticket saved-card fix was released on its own. Separately, the raw
  * first-card lookup (`payment_methods?type=card&limit=1`) was replaced by the
- * canonical chargeableCardFor() in four other flows — boost, hub donation, hub
- * membership and product orders. Gift, unit-purchase and wallet top-up still
- * use the raw lookup (audit-only — each carries other unrelated work, or an
- * inline lookup, not touched here).
+ * canonical chargeableCardFor() in five other flows — boost, hub donation, hub
+ * membership, product orders and unit purchases (passes). Gift and wallet
+ * top-up still use the raw lookup (audit-only — gift carries other unrelated
+ * work in the same file, and the top-up inlines its own lookup — not touched
+ * here).
  *
- * DEPLOYMENT STATUS (29 Sep 2026): create-product-order-intent is committed and
- * deployed (readiness item commerce-products). create-boost-intent,
- * create-hub-donation-intent and create-hub-membership-intent are committed
- * here (so this test proves their source is correct) but were found still
- * undeployed during the commerce-products audit — out of that task's scope,
- * so left as-is; a live diff against production would confirm this if revisited.
+ * DEPLOYMENT STATUS (29 Sep 2026): create-product-order-intent, create-boost-intent,
+ * create-hub-donation-intent and create-hub-membership-intent are all committed and
+ * deployed (readiness item commerce-products). create-unit-purchase-intent's
+ * canonical fix is committed and deployed here too (readiness item
+ * commerce-passes) — its file also carries an unrelated, already-deployed
+ * business_payout_destination change, reconciled into this same commit rather
+ * than blended silently.
  */
 
 import { test, describe } from 'node:test';
@@ -30,11 +32,11 @@ const code = (src: string) =>
 /* ── 4. parity across flows ────────────────────────────────────────────── */
 
 describe('one interpretation of "has a usable saved card" across flows', () => {
-  const MIGRATED = ['create-boost-intent', 'create-hub-donation-intent', 'create-hub-membership-intent', 'create-product-order-intent'];
-  // Still on the raw lookup, deliberately untouched here: gift and unit purchase
-  // carry other uncommitted work in the same file, and the wallet top-up inlines
-  // its own lookup. Any NEW flow using the raw pattern fails this test.
-  const AUDIT_ONLY = ['create-gift-intent', 'create-unit-purchase-intent', 'local-wallet-topup-intent'];
+  const MIGRATED = ['create-boost-intent', 'create-hub-donation-intent', 'create-hub-membership-intent', 'create-product-order-intent', 'create-unit-purchase-intent'];
+  // Still on the raw lookup, deliberately untouched here: gift carries other
+  // uncommitted work in the same file, and the wallet top-up inlines its own
+  // lookup. Any NEW flow using the raw pattern fails this test.
+  const AUDIT_ONLY = ['create-gift-intent', 'local-wallet-topup-intent'];
 
   test('the migrated flows pick the card by the canonical rule and keep "outage ≠ no card"', () => {
     for (const fn of MIGRATED) {

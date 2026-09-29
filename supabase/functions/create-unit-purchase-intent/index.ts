@@ -5,6 +5,7 @@ import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { chargeableCardFor } from '../_shared/saved-card.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -23,14 +24,11 @@ function stripeHeaders(): HeadersInit {
   };
 }
 
+// Which card, by the ONE canonical rule (the Customer's default when it is really
+// attached, else the newest) rather than "whatever Stripe listed first". Throws
+// when Stripe cannot be asked, so an outage never reads as "no saved card".
 async function listSavedCard(customerId: string): Promise<string | null> {
-  const res = await fetch(
-    `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-    { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } },
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message ?? `Stripe payment_methods list failed (HTTP ${res.status})`);
-  return data.data?.[0]?.id ?? null;
+  return chargeableCardFor(Deno.env.get('STRIPE_SECRET_KEY') ?? '', customerId);
 }
 
 async function createPaymentIntent(params: Record<string, string>, idempotencyKey?: string): Promise<any> {
@@ -161,17 +159,28 @@ serve(async (req) => {
       });
     }
 
-    // The business must be set up for payouts before we take money.
-    const { data: unitBiz } = await supabase
-      .from('local_businesses')
-      .select('stripe_account_id, payout_enabled, slug')
-      .eq('id', item.business_id)
-      .single();
-    // Demo businesses (slug 'demo-…') exist only for testing and have no real
-    // Stripe Connect account — in test mode we charge the platform directly
-    // (no destination transfer). Real businesses must be payout-ready.
-    const isDemoBiz = (unitBiz?.slug ?? '').startsWith('demo-');
-    if (!isDemoBiz && (!unitBiz?.stripe_account_id || !unitBiz.payout_enabled)) {
+    // Where does this business's money go? The same rule products and event
+    // tickets already use: the business's own Connect account when it has
+    // one, otherwise the owner's central account. This used to read
+    // stripe_account_id/payout_enabled directly, which has no such fallback
+    // and wrongly refused a business that only sells through its owner's
+    // central account — payable everywhere else on the platform, refused
+    // only here. business_payout_destination is that one rule, shared with
+    // events and products.
+    const { data: payoutRows, error: payoutErr } = await supabase.rpc('business_payout_destination', { p_business: item.business_id });
+    if (payoutErr) {
+      return new Response(JSON.stringify({ error: 'Could not check this business’s payment setup. Please try again.' }), {
+        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const unitPayout = Array.isArray(payoutRows) ? payoutRows[0] : payoutRows;
+    const unitSellerAccountId: string | null = unitPayout?.account_id ?? null;
+    // Demo businesses (slug 'demo-…') exist only for testing and may have no
+    // real Stripe Connect account or owner account either — in test mode we
+    // charge the platform directly (no destination transfer). Real
+    // businesses must resolve to a real payout destination.
+    const isDemoBiz = unitPayout?.is_demo === true;
+    if (!isDemoBiz && !unitSellerAccountId) {
       return new Response(JSON.stringify({ error: "This business isn't set up to take payments yet." }), {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -190,10 +199,11 @@ serve(async (req) => {
       'metadata[business_id]':  item.business_id,
       'metadata[buyer_id]':     user.id,
     };
-    // Route to the business's Connect account only when it has one (a real,
-    // payout-ready business). Demo businesses have none → charge the platform.
-    if (unitBiz?.stripe_account_id && unitBiz.payout_enabled) {
-      baseParams['transfer_data[destination]'] = unitBiz.stripe_account_id;
+    // Route to the resolved payout destination only when there is one (a
+    // real, payout-ready business — its own account or its owner's central
+    // one). Demo businesses with no resolved account → charge the platform.
+    if (unitSellerAccountId) {
+      baseParams['transfer_data[destination]'] = unitSellerAccountId;
       baseParams['application_fee_amount']      = String(unitPlatformFee);
     }
 
