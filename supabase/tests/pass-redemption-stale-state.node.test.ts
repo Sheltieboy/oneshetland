@@ -125,13 +125,21 @@ describe('screens this defect does not reach', () => {
     }
   });
 
-  test('the web customer Passes page has no equivalent redeem-then-return navigation loop to go stale', () => {
-    // Merchant redemption happens in a completely separate web session (the
-    // business owner's own login), not reachable from the customer's own
-    // /account/passes page the way local-redeem is reachable from — and
-    // returns to — the mobile screens above.
-    const passesPage = read('../oneshetland-web/app/account/passes/page.tsx');
-    assert.doesNotMatch(passesPage, /local-redeem|"use client"/,
-      'the web passes page is a server component with no client-side redeem-and-return loop');
+  test('CORRECTION (found during the follow-up web-redemption-auth investigation): web DOES have a client-side redeem flow, via RedeemDialog inside PassesClient.tsx — it just is not the mount-vs-focus bug fixed here', () => {
+    // The original version of this test checked app/account/passes/page.tsx
+    // (correctly a server component) and wrongly concluded from that alone
+    // that web has no client-side redeem loop at all. It does — RedeemDialog,
+    // rendered inline inside PassesClient.tsx (also "use client") — this
+    // assertion was wrong about WHERE the client code lives, though the
+    // conclusion (web does not have THIS bug) still held, for a different
+    // reason: the dialog is a modal opened by state inside the still-mounted
+    // list, not a separate route pushed and popped, so there is no
+    // navigate-away-and-back to go stale. It updates its own state directly
+    // from the server's returned balance (onDone), never from a focus event.
+    const passesClientSrc = read('../oneshetland-web/app/account/passes/PassesClient.tsx');
+    assert.match(passesClientSrc, /"use client"/);
+    assert.match(passesClientSrc, /<RedeemDialog/);
+    assert.match(passesClientSrc, /onDone=\{\(remaining\) => setUsesLeft/,
+      'the server\'s own post-redemption number is applied directly to state — no refetch, no navigation, nothing to go stale');
   });
 });
