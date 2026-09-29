@@ -8,6 +8,7 @@ import { spawnFetchRequest } from '../_shared/fulfilment.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { chargeableCardFor } from '../_shared/saved-card.ts';
 
 /**
  * create-product-order-intent — Shop Shetland checkout.
@@ -64,14 +65,11 @@ async function createPaymentIntent(params: Record<string, string>, idempotencyKe
   return json;
 }
 
+// Which card, by the ONE canonical rule (the Customer's default when it is really
+// attached, else the newest) rather than "whatever Stripe listed first". Throws
+// when Stripe cannot be asked, so an outage never reads as "no saved card".
 async function listSavedCard(customerId: string): Promise<string | null> {
-  const res = await fetch(
-    `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-    { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } },
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message ?? 'Stripe payment_methods list failed');
-  return data.data?.[0]?.id ?? null;
+  return chargeableCardFor(Deno.env.get('STRIPE_SECRET_KEY') ?? '', customerId);
 }
 
 type Item = { product_id: string; variant_id?: string | null; qty: number };
