@@ -6,6 +6,7 @@ import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { chargeableCardFor } from '../_shared/saved-card.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -21,20 +22,12 @@ function stripePostHeaders(): HeadersInit {
     'Stripe-Version': STRIPE_API_VERSION,
   };
 }
-function stripeGetHeaders(): HeadersInit {
-  return {
-    'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-    'Stripe-Version': STRIPE_API_VERSION,
-  };
-}
+// Which card, by the ONE canonical rule (the Customer's default when it is
+// really attached, else the newest) rather than "whatever Stripe listed
+// first". Throws when Stripe cannot be asked, so an outage never reads as
+// "no saved card".
 async function listSavedCard(customerId: string): Promise<string | null> {
-  const res = await fetch(
-    `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-    { headers: stripeGetHeaders() },
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message ?? `Stripe payment_methods list failed (HTTP ${res.status})`);
-  return data.data?.[0]?.id ?? null;
+  return chargeableCardFor(Deno.env.get('STRIPE_SECRET_KEY') ?? '', customerId);
 }
 async function createPaymentIntent(params: Record<string, string>, idempotencyKey?: string): Promise<any> {
   const headers: Record<string, string> = { ...stripePostHeaders() };
@@ -171,17 +164,27 @@ serve(async (req) => {
       itemLabel  = svc.name;
     }
 
-    // The business must be set up for payouts before we take money for a gift.
-    const { data: giftBiz } = await supabase
-      .from('local_businesses')
-      .select('stripe_account_id, payout_enabled, slug')
-      .eq('id', businessId)
-      .single();
-    // Demo businesses (slug 'demo-…') exist only for testing and have no real
-    // Stripe Connect account — in test mode we charge the platform directly
-    // (no destination transfer). Real businesses must be payout-ready.
-    const isDemoBiz = (giftBiz?.slug ?? '').startsWith('demo-');
-    const giftHasAccount = !!(giftBiz?.stripe_account_id && giftBiz.payout_enabled);
+    // Where does this business's money go for a gift? The same rule products
+    // and event tickets already use: the business's own Connect account when
+    // it has one, otherwise the owner's central account. This used to read
+    // stripe_account_id/payout_enabled directly, which has no such fallback
+    // and wrongly refused a business that only sells through its owner's
+    // central account. business_payout_destination is that one rule, shared
+    // with events and products.
+    const { data: payoutRows, error: payoutErr } = await supabase.rpc('business_payout_destination', { p_business: businessId });
+    if (payoutErr) {
+      return new Response(JSON.stringify({ error: 'Could not check this business’s payment setup. Please try again.' }), {
+        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const giftPayout = Array.isArray(payoutRows) ? payoutRows[0] : payoutRows;
+    const giftSellerAccountId: string | null = giftPayout?.account_id ?? null;
+    // Demo businesses (slug 'demo-…') exist only for testing and may have no
+    // real Stripe Connect account or owner account either — in test mode we
+    // charge the platform directly (no destination transfer). Real
+    // businesses must resolve to a real payout destination.
+    const isDemoBiz = giftPayout?.is_demo === true;
+    const giftHasAccount = !!giftSellerAccountId;
     if (!isDemoBiz && !giftHasAccount) {
       return new Response(JSON.stringify({ error: "This business isn't set up to take payments yet." }), {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -233,7 +236,7 @@ serve(async (req) => {
         idempotencyKey:   `gift:${gift.id}`,
         platformFeePence: giftPlatformFee,
         transfer: giftHasAccount ? {
-          destination: giftBiz.stripe_account_id,
+          destination: giftSellerAccountId!,
           amountPence: pricePence! - giftPlatformFee,
           description: `OneShetland wallet gift — ${itemLabel}`,
           metadata: { type: 'gift_purchase_wallet', gift_id: gift.id, buyer_id: user.id },
@@ -263,10 +266,11 @@ serve(async (req) => {
       'metadata[business_id]': businessId!,
       'metadata[buyer_id]':    user.id,
     };
-    // Route to the business's Connect account only when it has one (a real,
-    // payout-ready business). Demo businesses have none → charge the platform.
+    // Route to the resolved payout destination only when there is one (a
+    // real, payout-ready business — its own account or its owner's central
+    // one). Demo businesses with no resolved account → charge the platform.
     if (giftHasAccount) {
-      baseParams['transfer_data[destination]'] = giftBiz!.stripe_account_id;
+      baseParams['transfer_data[destination]'] = giftSellerAccountId!;
       baseParams['application_fee_amount']      = String(giftPlatformFee);
     }
 

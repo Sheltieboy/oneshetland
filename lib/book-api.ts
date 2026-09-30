@@ -433,13 +433,10 @@ export async function createBooking(input: CreateBookingInput): Promise<BookBook
     throw error;
   }
 
-  // If this booking was paid by a gift, mark the gift as used.
-  if (input.giftId) {
-    await supabase
-      .from('book_gifts')
-      .update({ status: 'used', used_at: new Date().toISOString() })
-      .eq('id', input.giftId);
-  }
+  // If this booking was paid by a gift, the sync_gift_status_with_booking
+  // trigger has already moved it to 'used' server-side, atomically with the
+  // insert above — book_gifts has no UPDATE policy for the customer, so a
+  // client-side update here would silently affect zero rows.
 
   // Notify the business owner of the new booking (fire-and-forget).
   supabase.functions

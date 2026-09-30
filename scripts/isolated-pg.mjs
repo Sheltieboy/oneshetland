@@ -30,6 +30,7 @@ const SUITES = [
   'supabase/tests/hub-member-number-concurrency.node.test.ts',
   'supabase/tests/my-unclaimed-gifts.node.test.ts',
   'supabase/tests/gift-claim-concurrency.node.test.ts',
+  'supabase/tests/gift-funded-booking-status-sync.node.test.ts',
   'supabase/tests/wallet-reversal-integrity.node.test.ts',
   'supabase/tests/loyalty-redemption-atomicity.node.test.ts',
   'supabase/tests/loyalty-earning-atomicity.node.test.ts',
