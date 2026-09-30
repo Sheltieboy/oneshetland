@@ -24,6 +24,7 @@ import {
   formatPence, formatDuration,
   type BookBooking,
 } from '@/lib/book-api';
+import { fetchMyGiftsReceived, type MyGiftReceived } from '@/lib/local-api';
 import { SHETLAND_TZ } from '@/lib/shetland-time';
 
 const S = SECTIONS.local;
@@ -37,6 +38,7 @@ export default function MyBookingsScreen() {
   const goToSignIn = useGoToSignIn();
 
   const [bookings, setBookings] = useState<BookBooking[]>([]);
+  const [gifts, setGifts]       = useState<MyGiftReceived[]>([]);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<Tab>('upcoming');
@@ -47,8 +49,12 @@ export default function MyBookingsScreen() {
       return;
     }
     try {
-      const rows = await fetchMyBookings(profile.id);
+      const [rows, giftRows] = await Promise.all([
+        fetchMyBookings(profile.id),
+        fetchMyGiftsReceived(profile.id).catch(() => [] as MyGiftReceived[]),
+      ]);
       setBookings(rows);
+      setGifts(giftRows);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -82,6 +88,29 @@ export default function MyBookingsScreen() {
   }, [bookings]);
 
   const list = tab === 'upcoming' ? upcoming : past;
+
+  // Claimed booking gifts with nowhere to go yet — no live booking currently
+  // consumes them. `booked` is a live join against book_bookings (excluding
+  // cancelled), the same derivation local-my-gifts.tsx already uses, so a
+  // cancelled gift-funded booking reverting the gift to 'claimed' makes it
+  // reappear here automatically, and a real rebooking removes it again —
+  // no separate refresh logic needed beyond the existing useFocusEffect load.
+  const giftsToBook = useMemo(
+    () => gifts.filter(g => g.kind === 'booking' && g.status === 'claimed' && !g.booked),
+    [gifts],
+  );
+
+  const goBookGift = useCallback((g: MyGiftReceived) => {
+    if (!g.business_id) return;
+    router.push({
+      pathname: '/local-book-business',
+      params: {
+        businessId: g.business_id,
+        ...(g.service_id ? { serviceId: g.service_id } : {}),
+        giftId: g.id,
+      },
+    });
+  }, [router]);
 
   const handleCancel = (booking: BookBooking) => {
     alert({
@@ -143,6 +172,17 @@ export default function MyBookingsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Header onBack={() => router.back()} />
+
+      {giftsToBook.length > 0 && (
+        <View style={styles.giftsSection}>
+          <Text style={styles.giftsSectionLabel}>Gifts to book</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.giftsScroll}>
+            {giftsToBook.map(g => (
+              <GiftToBookCard key={g.id} gift={g} onPress={() => goBookGift(g)} />
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Tabs */}
       <View style={styles.tabs}>
@@ -320,6 +360,30 @@ const STATUS_COLOR: Record<BookBooking['status'], string> = {
   completed:       colors.textMuted,
 };
 
+// ── Gift-to-book card ────────────────────────────────────────────────────────
+// A claimed booking gift with no live booking against it yet. Same "pick a
+// slot" entry point as local-my-gifts.tsx's GiftCard, so the recipient never
+// has to go dig out the original email to use an entitlement already on
+// their account.
+
+function GiftToBookCard({ gift, onPress }: { gift: MyGiftReceived; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.giftCard} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.giftCardIcon, { backgroundColor: S.color + '18' }]}>
+        <FontAwesome5 name="gift" size={13} color={S.color} solid />
+      </View>
+      <Text style={styles.giftCardSvc} numberOfLines={1}>{gift.service_name ?? 'Booking'}</Text>
+      {gift.business_name && (
+        <Text style={styles.giftCardBiz} numberOfLines={1}>{gift.business_name}</Text>
+      )}
+      <View style={[styles.giftCardCta, { backgroundColor: S.color }]}>
+        <FontAwesome5 name="calendar-plus" size={10} color="#fff" solid />
+        <Text style={styles.giftCardCtaText}>Book now</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 // ── Header ───────────────────────────────────────────────────────────────────
 
 function Header({ onBack }: { onBack: () => void }) {
@@ -361,6 +425,19 @@ const styles = StyleSheet.create({
   backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, width: 70 },
   backText:    { fontSize: fontSize.sm, fontWeight: '700' },
   headerTitle: { color: '#fff', fontSize: fontSize.md, fontWeight: '800', flex: 1, textAlign: 'center' },
+
+  giftsSection:      { backgroundColor: '#fff', paddingTop: 12, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
+  giftsSectionLabel: { fontSize: 11, fontWeight: '900', color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase', paddingHorizontal: spacing.md, marginBottom: 8 },
+  giftsScroll:       { gap: 10, paddingHorizontal: spacing.md, paddingBottom: 12 },
+  giftCard: {
+    width: 160, backgroundColor: colors.screenBackground, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: 12, gap: 4,
+  },
+  giftCardIcon:   { width: 30, height: 30, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  giftCardSvc:    { fontSize: fontSize.sm, fontWeight: '900', color: colors.textPrimary },
+  giftCardBiz:    { fontSize: fontSize.xs, color: colors.textMuted },
+  giftCardCta:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: radius.md, paddingVertical: 8, marginTop: 8 },
+  giftCardCtaText:{ color: '#fff', fontWeight: '900', fontSize: 12 },
 
   tabs:    { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: colors.border },
   tabBtn:  { flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 3, borderBottomColor: 'transparent' },

@@ -1537,9 +1537,9 @@ export default function HomeScreen() {
       out.push({
         id: 'my-gift',
         iconKey: 'local',
-        tag: 'A GIFT FOR YOU',
-        headline: "You've a gift to use",
-        detail: 'Pick a time to book it in',
+        tag: 'GIFT TO BOOK',
+        headline: 'You have a gift to book',
+        detail: 'Pick a time — no need to find the email',
         onPress: () => router.push('/local-my-gifts'),
       });
     }
