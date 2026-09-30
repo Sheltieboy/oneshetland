@@ -154,6 +154,65 @@ describe('the percentage is a transparent weighted mean', () => {
   });
 });
 
+/* ── 4b. per-area percentages ─────────────────────────────────────────────── */
+
+describe('area percentages use the headline scoring, not a second formula', () => {
+  test('an area scores exactly what computeReadiness gives its items', () => {
+    // Area a: (10·1 + 4·0.75 + 2·0.5 + 3·0) / 19 = 14/19 = 73.68 → 73
+    // Area b: (1·0.75 + 3·0) / 4 = 18.75 → 18, post-launch excluded
+    const items = [
+      item({ id: 'a1', status: 'complete', weight: 10 }),
+      item({ id: 'a2', status: 'needs_verification', weight: 4 }),
+      item({ id: 'a3', status: 'in_progress', weight: 2 }),
+      item({ id: 'a4', status: 'blocked', weight: 3, criticality: 'launch_blocker' }),
+      item({ id: 'b1', area: 'b', status: 'needs_verification', weight: 1 }),
+      item({ id: 'b2', area: 'b', status: 'not_started', weight: 3 }),
+      item({ id: 'b3', area: 'b', status: 'complete', weight: 10, scope: 'post_launch' }),
+    ];
+    const byArea = M.computeAreaReadiness(ds(items));
+    assert.equal(byArea.a?.percent, 73);
+    assert.equal(byArea.b?.percent, 18);
+    assert.equal(byArea.a?.openBlockers, 1);
+    for (const c of CATS) {
+      assert.deepEqual(byArea[c.id], M.computeReadiness(ds(items.filter((i) => i.area === c.id))), c.id);
+    }
+  });
+
+  test('needs_verification earns the same partial credit per area as overall', () => {
+    const one = [item({ id: 'v', status: 'needs_verification', weight: 7 })];
+    assert.equal(M.computeAreaReadiness(ds(one)).a?.percent, M.STATUS_CONTRIBUTION.needs_verification * 100);
+    assert.equal(M.computeAreaReadiness(ds(one)).a?.percent, M.computeReadiness(ds(one)).percent);
+  });
+
+  test('an area with no launch items is null, never NaN or a fake 0%', () => {
+    const byArea = M.computeAreaReadiness(ds([
+      item({ id: 'a1', status: 'complete' }),
+      item({ id: 'b1', area: 'b', status: 'complete', scope: 'post_launch' }),
+    ]));
+    assert.equal(byArea.a?.percent, 100);
+    assert.equal(byArea.b, null);
+  });
+
+  test('on the real dataset, every area matches computeReadiness over its items', () => {
+    const byArea = M.computeAreaReadiness(LAUNCH_READINESS);
+    for (const c of LAUNCH_READINESS.categories) {
+      const own = LAUNCH_READINESS.items.filter((i) => i.area === c.id);
+      const expected = own.some(M.inLaunchScope) ? M.computeReadiness({ ...LAUNCH_READINESS, items: own }) : null;
+      assert.deepEqual(byArea[c.id], expected, c.id);
+      if (expected) assert.ok(Number.isInteger(expected.percent) && expected.percent >= 0 && expected.percent <= 100, c.id);
+    }
+  });
+
+  test('the area pills and area headings both render from computeAreaReadiness', () => {
+    const ui = web('components/admin/LaunchReadiness.tsx');
+    assert.match(ui, /const byArea = computeAreaReadiness\(data\);/);
+    assert.match(ui, /const pct = byArea\[c\.id\]\?\.percent;/);
+    assert.match(ui, /\{pct != null && <span/);
+    assert.match(ui, /const areaSummary = byArea\[c\.id\];/);
+    assert.doesNotMatch(ui, /STATUS_CONTRIBUTION\[/, 'the component must not score items itself');
+  });
+});
+
 /* ── 5–6. blockers ────────────────────────────────────────────────────────── */
 
 describe('the percentage never hides a blocker', () => {
