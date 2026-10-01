@@ -24,6 +24,16 @@ interface Txn {
   occurred_at: string; direction: 'in' | 'out' | 'refund'; kind: string; description: string;
   counterparty: string; gross_pence: number; fee_pence: number; cashback_pence: number;
   net_pence: number; status: string; reference: string | null;
+  /**
+   * The literal transfer_state of the underlying Wallet spend (null for
+   * every non-Wallet rail — the concept doesn't apply to them). 'failed' is
+   * the only value ever synchronously paired with an automatic reversal in
+   * the same request — Stripe rejected the transfer outright and it never
+   * reached this business, however this row's own fee/net figures read.
+   * 'reversed' means it genuinely reached them before a later, separate
+   * refund clawed it back.
+   */
+  transfer_state: string | null;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -139,13 +149,19 @@ export default function BusinessTransactionsScreen() {
 
   async function exportCsv() {
     try {
-      const head = ['Date', 'Type', 'Description', 'Customer', 'Direction', 'Gross', 'Fee', 'Cashback', 'Net', 'Status', 'Reference'];
+      const head = ['Date', 'Type', 'Description', 'Customer', 'Direction', 'Gross', 'Fee', 'Cashback', 'Net', 'Status', 'Reference', 'Merchant paid'];
       // CR too: a description carrying a bare \r would otherwise split the row.
       const esc = (v: string) => /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
       const p = (n: number) => (n / 100).toFixed(2);
+      // "Merchant paid" distinguishes a failed, auto-reversed transfer (No —
+      // the stored fee/net figures never actually moved) from a genuine
+      // sale, refunded or not (Yes — gross/fee/net are what really happened,
+      // even if later reversed). Never inferred from amounts; read straight
+      // off the RPC's own merchant_was_paid.
       const lines = rows.map((r) => [
         new Date(r.occurred_at).toISOString().slice(0, 10), KIND_LABEL[r.kind] ?? r.kind, r.description,
         r.counterparty, r.direction, p(r.gross_pence), p(r.fee_pence), p(r.cashback_pence), p(r.net_pence), r.status, r.reference ?? '',
+        r.transfer_state === 'failed' ? 'No' : 'Yes',
       ].map((c) => esc(String(c))).join(','));
       const csv = [head.join(','), ...lines].join('\n');
       const uri = `${FileSystem.cacheDirectory}transactions-${preset}.csv`;
@@ -227,6 +243,32 @@ export default function BusinessTransactionsScreen() {
         ) : (
           <View style={styles.list}>
             {rows.map((r, i) => {
+              // transfer_state === 'failed' is the only state EVER
+              // synchronously paired with an automatic reversal — Stripe
+              // rejected this transfer outright and the business never
+              // received the money, however this row's own fee/net figures
+              // read (kept, immutable). 'pending'/'unresolved' are awaiting
+              // resolution and render normally below, unchanged. This must
+              // never say "to you", show a fee, or claim the money passed
+              // through this business.
+              if (r.transfer_state === 'failed') {
+                return (
+                  <View key={i} style={styles.rowItem}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowType}>Failed wallet payment</Text>
+                      <Text style={styles.rowMeta}>{fmtDate(r.occurred_at)} · {r.counterparty}</Text>
+                      <Text style={styles.rowMeta}>
+                        {r.direction === 'in'
+                          ? `${money(r.gross_pence)} attempted · customer automatically refunded`
+                          : `${money(Math.abs(r.gross_pence))} automatically refunded · no fee was ever charged`}
+                      </Text>
+                      <Text style={[styles.rowMeta, styles.rowNoPayout]}>No payout to business</Text>
+                    </View>
+                    <Text style={[styles.rowNet, styles.rowNeutral]}>{money(0)}</Text>
+                  </View>
+                );
+              }
+
               // A sale's own amount is what the CUSTOMER paid — the gross —
               // never the net the merchant actually receives. Showing net as
               // the headline (as this used to) reads as though the customer
@@ -318,7 +360,9 @@ const styles = StyleSheet.create({
   rowItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   rowType: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  rowNoPayout: { color: '#991b1b', fontWeight: '700' },
   rowNet: { fontSize: fontSize.md, fontWeight: '900' },
+  rowNeutral: { color: colors.textMuted },
   empty: { textAlign: 'center', color: colors.textMuted, fontSize: fontSize.sm, marginTop: 30 },
   footnote: { fontSize: 11, color: colors.textLight, lineHeight: 16 },
 });

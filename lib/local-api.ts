@@ -1016,6 +1016,16 @@ export interface BusinessWalletReceipt {
   refunded_at:         string | null;
   /** The Wallet row that returned the money. NULL until it exists. */
   refund_transaction_id: string | null;
+  /**
+   * The literal transfer_state of this spend. 'failed' is the only value
+   * ever synchronously paired with an automatic reversal in the same
+   * request (wallet-ledger.ts) — Stripe rejected the transfer outright and
+   * it never reached this business. 'reversed' means it genuinely reached
+   * them ('sent') before a later, separate refund clawed it back.
+   * 'pending'/'unresolved' are awaiting resolution and must not be read
+   * either way. Never inferred client-side — read straight off the column.
+   */
+  transfer_state: string | null;
 }
 
 export async function fetchBusinessWalletReceipts(
@@ -1035,6 +1045,10 @@ export async function fetchBusinessWalletReceipts(
     refund_state:          r.refund_state === 'refunded' ? 'refunded' : 'none',
     refunded_at:           r.refunded_at ?? null,
     refund_transaction_id: r.refund_transaction_id ?? null,
+    // A backend without this column yet reads it as undefined; default to
+    // null (the pre-existing, normal display) rather than ever rendering a
+    // genuine payment as failed because of a stale deployment mismatch.
+    transfer_state:        r.transfer_state ?? null,
   }));
 }
 

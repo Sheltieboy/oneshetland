@@ -1691,26 +1691,43 @@ function WalletReceiptsCard({
                   {formatReceiptTime(r.created_at)}
                 </Text>
               </View>
-              <View style={styles.receiptBreakdown}>
-                <Text style={styles.receiptGross}>£{(r.gross_pence / 100).toFixed(2)} paid</Text>
-                <Text style={styles.receiptSep}>·</Text>
-                <Text style={[styles.receiptNet, { color: accentColor }]}>
-                  {r.net_pence === null ? 'breakdown not recorded' : `£${(r.net_pence / 100).toFixed(2)} to you`}
-                </Text>
-                {r.fee_pence !== null && (
-                  <>
+              {r.transfer_state === 'failed' ? (
+                // The Connect transfer was REJECTED outright and never
+                // reached this business — the reversal below is automatic
+                // recovery from that failure, not a refund of money the
+                // merchant actually received. Must never say "to you", never
+                // show a fee, never imply the money passed through here.
+                <>
+                  <Text style={styles.receiptFailedLabel}>Failed wallet payment</Text>
+                  <Text style={styles.receiptFailedMeta}>
+                    £{(r.gross_pence / 100).toFixed(2)} attempted · customer automatically refunded
+                  </Text>
+                  <View style={styles.receiptNoPayoutPill}>
+                    <Text style={styles.receiptNoPayoutText}>No payout to business</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.receiptBreakdown}>
+                    <Text style={styles.receiptGross}>£{(r.gross_pence / 100).toFixed(2)} paid</Text>
                     <Text style={styles.receiptSep}>·</Text>
-                    <Text style={styles.receiptFee}>£{(r.fee_pence / 100).toFixed(2)} fee</Text>
-                  </>
-                )}
-                {r.cashback_pence !== null && r.cashback_pence > 0 && (
-                  <>
-                    <Text style={styles.receiptSep}>·</Text>
-                    <Text style={styles.receiptCashback}>£{(r.cashback_pence / 100).toFixed(2)} cashback</Text>
-                  </>
-                )}
-              </View>
-              {r.refund_state === 'refunded' ? (
+                    <Text style={[styles.receiptNet, { color: accentColor }]}>
+                      {r.net_pence === null ? 'breakdown not recorded' : `£${(r.net_pence / 100).toFixed(2)} to you`}
+                    </Text>
+                    {r.fee_pence !== null && (
+                      <>
+                        <Text style={styles.receiptSep}>·</Text>
+                        <Text style={styles.receiptFee}>£{(r.fee_pence / 100).toFixed(2)} fee</Text>
+                      </>
+                    )}
+                    {r.cashback_pence !== null && r.cashback_pence > 0 && (
+                      <>
+                        <Text style={styles.receiptSep}>·</Text>
+                        <Text style={styles.receiptCashback}>£{(r.cashback_pence / 100).toFixed(2)} cashback</Text>
+                      </>
+                    )}
+                  </View>
+                  {r.refund_state === 'refunded' ? (
                 // Kept in history, because the money did come in before it went
                 // back out — but stated plainly, and with nothing to press. The
                 // Refund button used to reappear here after a reload and hand
@@ -1729,6 +1746,8 @@ function WalletReceiptsCard({
                     ? <ActivityIndicator size="small" color={colors.textLight} />
                     : <Text style={styles.receiptRefundText}>Refund</Text>}
                 </TouchableOpacity>
+                  )}
+                </>
               )}
             </View>
           ))}
@@ -2142,6 +2161,11 @@ const styles = StyleSheet.create({
   receiptFee:        { fontSize: fontSize.xs, color: colors.textLight },
   receiptCashback:   { fontSize: fontSize.xs, color: colors.textLight },
   receiptSep:        { fontSize: fontSize.xs, color: colors.textLight },
+  receiptFailedLabel: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  receiptFailedMeta:  { fontSize: fontSize.xs, color: colors.textMuted },
+  receiptNoPayoutPill: { alignSelf: 'flex-start', marginTop: 4, paddingVertical: 5, paddingHorizontal: 10,
+                         borderRadius: 999, backgroundColor: '#fee2e2' },
+  receiptNoPayoutText: { fontSize: fontSize.xs, fontWeight: '700', color: '#991b1b' },
 
   // 2×2 grid — four buttons don't fit on one row without the labels overflowing the borders
   bookActionBtn:  { flexGrow: 1, flexBasis: '47%', minWidth: 130, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 8, borderRadius: radius.md, borderWidth: 1.5, backgroundColor: '#fff' },

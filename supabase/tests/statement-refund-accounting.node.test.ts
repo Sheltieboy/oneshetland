@@ -38,6 +38,7 @@ const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const COMMERCE = join(MIG, '20260801130000_commerce_engine.sql');
 const STATEMENT = join(MIG, '20261010120000_statement_one_event_one_row.sql');
 const REFUND_KIND = join(MIG, '20261025040000_wallet_refund_kind_disambiguation.sql');
+const MERCHANT_PAID = join(MIG, '20261025060000_wallet_merchant_paid_flag.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -120,6 +121,7 @@ function schema() {
     'grant execute on function auth.uid() to anon, authenticated, service_role;',
     src(STATEMENT),
     src(REFUND_KIND),
+    src(MERCHANT_PAID),
   ].join('\n'));
   assert.doesNotMatch(out, /ERROR/i, `schema failed:\n${out.slice(0, 1600)}`);
 }
@@ -161,7 +163,7 @@ const refundAugustSaleInSeptember = () => raw(`insert into public.local_wallet_t
 interface Row {
   occurred_at: string; direction: string; kind: string; description: string; counterparty: string;
   gross_pence: number; fee_pence: number; cashback_pence: number; net_pence: number;
-  status: string; reference: string | null;
+  status: string; reference: string | null; transfer_state: string | null;
 }
 function statement(from: string | null, to: string | null, biz = BIZ, uid = OWNER): Row[] {
   const f = from ? `'${from}'::timestamptz` : 'null';
@@ -1030,6 +1032,106 @@ describe('"Saved with Wallet" nets a refund against its own sale, never overstat
     assert.equal(whole.walletFees, 30);
     assert.equal(whole.cardFees, 35);
     assert.equal(whole.estimatedSaved, 5);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe('transfer_state distinguishes "paid, then refunded" from "transfer failed, never reached the merchant"', () => {
+  // Case A: a genuine till payment, sent, later refunded — transfer_state
+  // ends 'reversed' (reached the merchant, then clawed back).
+  const PAID_THEN_REFUNDED = 'f0000000-0000-4000-8000-0000000000a9';
+  const PAID_REFUND        = 'f0000000-0000-4000-8000-0000000000a8';
+  // Case B: a till payment Stripe rejected outright, auto-reversed in the
+  // SAME request — transfer_state ends 'failed'. Mirrors the real £5.00
+  // Premium incident exactly: gross 500, fee 5 (1% Premium), never sent.
+  const FAILED_TRANSFER   = 'f0000000-0000-4000-8000-0000000000b9';
+  const FAILED_REVERSAL   = 'f0000000-0000-4000-8000-0000000000b8';
+
+  function bothCasesFixtures() {
+    const o = raw(`
+      delete from public.local_wallet_transactions;
+      delete from public.local_businesses;
+      delete from public.profiles;
+      delete from auth.users;
+      insert into auth.users(id) values ('${OWNER}'),('${CUST}');
+      insert into public.profiles(id, full_name) values ('${OWNER}','Owner One'),('${CUST}','Darren Fullerton');
+      insert into public.local_businesses (id, owner_id, name, category, address)
+        values ('${BIZ}','${OWNER}','Anderson & Co','retail','Lerwick');
+
+      -- Case A: £10.00 sent, merchant received £9.75, later refunded in full.
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,platform_fee_pence,cashback_pence,idempotency_key,transfer_state,stripe_transfer_id,created_at)
+        values ('${PAID_THEN_REFUNDED}','${CUST}','${BIZ}','spend',-1000,25,0,'case-a','reversed','tr_case_a','2026-09-05 10:00:00+00');
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,reverses_transaction_id,idempotency_key,created_at)
+        values ('${PAID_REFUND}','${CUST}','${BIZ}','refund',1000,'${PAID_THEN_REFUNDED}','case-a:reversal','2026-09-06 10:00:00+00');
+
+      -- Case B: £5.00 attempted, 1% Premium fee (5p) calculated, Stripe
+      -- REJECTED the £4.95 transfer outright — never 'sent' — and the
+      -- automatic reversal ran in the same request, seconds later.
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,platform_fee_pence,cashback_pence,idempotency_key,transfer_state,stripe_transfer_id,created_at)
+        values ('${FAILED_TRANSFER}','${CUST}','${BIZ}','spend',-500,5,0,'case-b','failed',null,'2026-10-01 13:40:51+00');
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,reverses_transaction_id,idempotency_key,created_at)
+        values ('${FAILED_REVERSAL}','${CUST}','${BIZ}','refund',500,'${FAILED_TRANSFER}','case-b:reversal','2026-10-01 13:40:52+00');
+    `);
+    assert.doesNotMatch(o, /ERROR/i, o.slice(0, 1200));
+  }
+
+  before(() => { schema(); bothCasesFixtures(); });
+
+  test('case A: the sale reports transfer_state "reversed" — the merchant genuinely received the money before it was clawed back', () => {
+    const sale = statement(SEPT, OCT).find((r) => r.reference === 'tr_case_a')!;
+    assert.ok(sale, 'case A sale is missing');
+    assert.equal(sale.transfer_state, 'reversed');
+    assert.equal(sale.gross_pence, 1000);
+    assert.equal(sale.fee_pence, 25);
+    assert.equal(sale.net_pence, 975);
+  });
+
+  test('case A: the refund mirrors transfer_state "reversed" from the original it reverses', () => {
+    const ref = statement(SEPT, OCT).find((r) => r.reference === PAID_THEN_REFUNDED)!;
+    assert.ok(ref, 'case A refund is missing');
+    assert.equal(ref.transfer_state, 'reversed');
+  });
+
+  test('case B: the sale reports transfer_state "failed" — exactly the real £5.00 Premium incident (gross 500, fee 5, never sent)', () => {
+    const sale = statement(OCT, '2026-10-02T00:00:00Z').find((r) => r.gross_pence === 500 && r.direction === 'in')!;
+    assert.ok(sale, 'case B sale is missing');
+    assert.equal(sale.transfer_state, 'failed');
+    assert.equal(sale.fee_pence, 5, 'the stored fee is the real, immutable historical figure — still 1% of 500 — even though it was never actually retained');
+    assert.equal(sale.net_pence, 495, 'the stored net is still gross − fee — the CLIENT must suppress reading this as "to you" for a failed transfer, not the SQL');
+  });
+
+  test('case B: the refund mirrors transfer_state "failed" from the original it reverses', () => {
+    const ref = statement(OCT, '2026-10-02T00:00:00Z').find((r) => r.reference === FAILED_TRANSFER)!;
+    assert.ok(ref, 'case B refund is missing');
+    assert.equal(ref.transfer_state, 'failed');
+  });
+
+  test('every non-Wallet rail reports transfer_state null — the concept does not apply', () => {
+    // Reuses the "shop order paid from the Wallet" business' card-funded
+    // sibling from an earlier describe block would require its own schema;
+    // simplest direct proof: a boost purchase, which has no Wallet rail at all.
+    raw(`insert into public.local_boost_purchases
+      (id, business_id, owner_id, weeks, amount_pence, status, stripe_payment_intent_id, created_at)
+      values ('aaaa2222-0000-4000-8000-00000000aaaa','${BIZ}','${OWNER}',1,500,'succeeded','pi_boost','2026-09-10 10:00:00+00');`);
+    const boost = statement(SEPT, OCT).find((r) => r.kind === 'boost')!;
+    assert.ok(boost, 'boost row is missing');
+    assert.equal(boost.transfer_state, null);
+  });
+
+  test('BOTH cases net to exactly zero in Money in / Fees / Net — the audit\'s own required verification', () => {
+    const caseARows = statement(SEPT, OCT).filter((r) => r.reference === 'tr_case_a' || r.reference === PAID_THEN_REFUNDED);
+    const caseBRows = statement(OCT, '2026-10-02T00:00:00Z').filter((r) => r.gross_pence === 500 || r.reference === FAILED_TRANSFER);
+    for (const [label, rows] of [['case A', caseARows], ['case B', caseBRows]] as const) {
+      assert.equal(rows.length, 2, `${label}: expected exactly the sale + its reversal`);
+      const fees = rows.reduce((s, r) => s + r.fee_pence, 0);
+      const net  = rows.reduce((s, r) => s + r.net_pence, 0);
+      assert.equal(fees, 0, `${label}: fees do not net to zero`);
+      assert.equal(net, 0, `${label}: net does not net to zero`);
+    }
   });
 });
 
