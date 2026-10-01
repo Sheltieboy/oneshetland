@@ -15,6 +15,7 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from './commission.ts';
 import { debitAndTransfer, selfPaymentBlock } from './wallet-ledger.ts';
 import { getWalletCommissionConfig } from './commission-config.ts';
+import { getWalletLiquiditySnapshot, reserveWalletLiquidity, releaseWalletLiquidity } from './wallet-liquidity.ts';
 import { sendUserPush } from './send-push.ts';
 
 export interface PayBusiness {
@@ -112,6 +113,47 @@ export async function executeWalletPayment(
     return { ok: false, status: 400, error: "This payment can't be processed — the business's cashback rate and platform fee together exceed the payment amount.", reason: 'ineligible' };
   }
 
+  // ── Liquidity preflight — BEFORE the customer is ever debited ────────────
+  //
+  // A real £5.00 Premium payment was correctly debited, then Stripe refused
+  // the £4.95 merchant transfer for insufficient platform funds. The
+  // automatic reversal caught it safely, but the customer should never have
+  // been debited for a transfer we could already see we might not be able to
+  // settle. This asks first.
+  //
+  // Disabled (wallet.liquidity.enabled = false) is an explicit, safe
+  // fallback: it skips straight to the original behaviour below — debit,
+  // attempt the transfer, rely on the existing automatic reversal if Stripe
+  // refuses it. Nothing about disabling this makes anything unsafe; it only
+  // removes the early check.
+  //
+  // An unreadable Stripe balance (status 'unknown') fails CLOSED — we decline
+  // the spend rather than guess. The whole point of this gate is "do we know
+  // we can settle this?", and "we don't know" is not an answer to proceed on.
+  let reservationId: string | null = null;
+  const liquidity = await getWalletLiquiditySnapshot(svc);
+  if (liquidity.status === 'unknown') {
+    console.error(`[wallet-liquidity] preflight could not read Stripe balance for a ${transferAmount}p transfer — declining, not guessing: ${liquidity.error}`);
+    return {
+      ok: false, status: 503, reason: 'ineligible',
+      error: 'Wallet payments are temporarily unavailable. Please use another payment method.',
+    };
+  }
+  if (liquidity.status !== 'disabled') {
+    const reservation = await reserveWalletLiquidity(svc, transferAmount, liquidity.available_pence, liquidity.reserve_pence);
+    if (!reservation.ok) {
+      console.warn(
+        `[wallet-liquidity] preflight declined for business ${business.id}: needs ${transferAmount}p, ` +
+        `available ${liquidity.available_pence}p, reserve ${liquidity.reserve_pence}p, already held ${reservation.heldPence}p`,
+      );
+      return {
+        ok: false, status: 503, reason: 'ineligible',
+        error: 'Wallet payments are temporarily unavailable. Please use another payment method.',
+      };
+    }
+    reservationId = reservation.reservationId;
+  }
+
   // ── Debit, transfer, settle ────────────────────────────────────────────
   //
   // This used to be three separate steps: an RPC that committed the balance, a
@@ -122,27 +164,37 @@ export async function executeWalletPayment(
   // Now the debit and its accounting entry are one transaction, the transfer is
   // keyed on that transaction's id, and the row records where the transfer got
   // to. Cashback is written as its own positive entry by the same call.
-  const result = await debitAndTransfer(svc, {
-    userId,
-    spendPence:       amountPence,
-    cashbackPence,
-    businessId:       business.id,
-    description:      args.label ?? `Payment at ${business.name}`,
-    idempotencyKey:   args.idempotencyKey ?? null,
-    platformFeePence: platformFee,
-    transfer: {
-      destination: sellerAccountId!,
-      amountPence: transferAmount,
-      description: `OneShetland Marketplace payment from ${userId.slice(0, 8)} (£${(platformFee / 100).toFixed(2)} platform fee${cashbackPence > 0 ? ` + £${(cashbackPence / 100).toFixed(2)} cashback to customer` : ''})`,
-      metadata: {
-        user_id:                    userId,
-        business_id:                business.id,
-        application_fee_label:      'OneShetland platform fee',
-        application_fee_pence:      String(platformFee),
-        cashback_to_customer_pence: String(cashbackPence),
+  //
+  // The liquidity reservation above is held only across THIS call — once
+  // Stripe has told us the outcome (or we've given up trying to find out),
+  // the next balance read reflects the truth and the reservation has done its
+  // job. Released in finally so an unexpected throw cannot leak it.
+  let result: Awaited<ReturnType<typeof debitAndTransfer>>;
+  try {
+    result = await debitAndTransfer(svc, {
+      userId,
+      spendPence:       amountPence,
+      cashbackPence,
+      businessId:       business.id,
+      description:      args.label ?? `Payment at ${business.name}`,
+      idempotencyKey:   args.idempotencyKey ?? null,
+      platformFeePence: platformFee,
+      transfer: {
+        destination: sellerAccountId!,
+        amountPence: transferAmount,
+        description: `OneShetland Marketplace payment from ${userId.slice(0, 8)} (£${(platformFee / 100).toFixed(2)} platform fee${cashbackPence > 0 ? ` + £${(cashbackPence / 100).toFixed(2)} cashback to customer` : ''})`,
+        metadata: {
+          user_id:                    userId,
+          business_id:                business.id,
+          application_fee_label:      'OneShetland platform fee',
+          application_fee_pence:      String(platformFee),
+          cashback_to_customer_pence: String(cashbackPence),
+        },
       },
-    },
-  });
+    });
+  } finally {
+    await releaseWalletLiquidity(svc, reservationId);
+  }
 
   if (!result.ok) {
     return { ok: false, status: result.status, error: result.error, reason: result.reason, transactionId: result.transactionId };

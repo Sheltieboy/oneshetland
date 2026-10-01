@@ -72,6 +72,11 @@ verify_jwt = false
 [functions.reconcile-saved-cards]
 verify_jwt = false
 
+# Local Wallet liquidity monitor. Scheduled by pg_cron through pg_net with
+# x-cron-secret, same boundary as reconcile-saved-cards above.
+[functions.wallet-liquidity-monitor]
+verify_jwt = false
+
 
 # ── Webhook ──────────────────────────────────────────────────────────────────
 #
@@ -169,10 +174,27 @@ verify_jwt = true
 [functions.create-product-order-intent]
 verify_jwt = true
 
+# Takes money for a Book pass/class-pack/day-pass purchase on behalf of the
+# signed-in buyer. Pinned true after the exact same mistake the note above
+# confirm-hub-membership describes happened again here: a payout-resolver fix
+# deploy on 2026-09-17 (correcting business_payout_destination() usage — see
+# supabase/functions/create-unit-purchase-intent/index.ts) was run once with
+# --no-verify-jwt by accident, and a follow-up redeploy without the flag did
+# not put it back, for the same reason recorded above. Written down here so
+# it cannot happen a third time.
+[functions.create-unit-purchase-intent]
+verify_jwt = true
+
 [functions.confirm-event-tickets]
 verify_jwt = true
 
 # Admin-only: issues Stripe refunds and reverses Connect transfers. Behind the
 # gateway as well as its own profiles admin check.
 [functions.refund-payment]
+verify_jwt = true
+
+# Admin-only: reads live Wallet liquidity (Stripe balance totals, Wallet
+# liability, coverage). Behind the gateway as well as its own profiles admin
+# check. Read-only — moves nothing.
+[functions.wallet-liquidity-snapshot]
 verify_jwt = true
