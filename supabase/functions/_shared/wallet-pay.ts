@@ -104,8 +104,9 @@ export async function executeWalletPayment(
 
   // Cashback is BUSINESS-FUNDED — comes out of the merchant's transfer.
   const cashbackPence = Math.floor(amountPence * (business.cashback_percent ?? 0) / 100);
-  // Tier-aware and resolved server-side, from the business's own current
-  // subscription_tier column — never from anything the caller passed in.
+  // Tier-aware and resolved server-side, inside getWalletCommissionConfig
+  // itself, from the business's own current record — never from anything
+  // the caller passed in.
   const walletCfg = await getWalletCommissionConfig(svc, business.id);
   const platformFee = calculateCommission(amountPence, walletCfg, 'wallet').fee_pence;
   const transferAmount = amountPence - platformFee - cashbackPence;
