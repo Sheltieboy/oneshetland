@@ -62,6 +62,27 @@ export interface WalletLiquiditySnapshot {
   coverage_bps: number | null;
   low_coverage_bps: number;
   critical_coverage_bps: number;
+  /**
+   * Spendable headroom OneShetland aims to keep funded ABOVE the reserve —
+   * a configured operating target, not merely "reach the reserve". Pure
+   * config; always a real number, never null.
+   */
+  desired_headroom_pence: number;
+  /**
+   * max(0, reserve + desired_headroom − available) — the admin panel's
+   * "recommended funding amount". Deliberately NOT "what closes the gap to
+   * the reserve" (that leaves zero spendable headroom) — it targets reserve
+   * + headroom together. null when available itself is unknown (status
+   * 'disabled' or 'unknown'), same reasoning as gap_to_reserve_pence.
+   */
+  recommended_funding_pence: number | null;
+  /**
+   * wallet.liquidity.funding_enabled — whether the admin "Fund Wallet
+   * reserve" action may call Stripe at all. Pure config; always a real
+   * boolean. False means Admin shows Stripe Dashboard funding instructions
+   * instead of a live action.
+   */
+  funding_enabled: boolean;
   status: WalletLiquidityStatus;
   /** Set only when status is 'unknown' — Stripe's balance could not be read. */
   error?: string;
@@ -83,11 +104,15 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
     'wallet.liquidity.reserve_pence',
     'wallet.liquidity.low_coverage_bps',
     'wallet.liquidity.critical_coverage_bps',
+    'wallet.liquidity.desired_headroom_pence',
+    'wallet.liquidity.funding_enabled',
   ]);
   const enabled = cfg.get('wallet.liquidity.enabled') === 'true';
   const reserve_pence = parseIntOr(cfg.get('wallet.liquidity.reserve_pence'), 10_000);
   const low_coverage_bps = parseIntOr(cfg.get('wallet.liquidity.low_coverage_bps'), 15_000);
   const critical_coverage_bps = parseIntOr(cfg.get('wallet.liquidity.critical_coverage_bps'), 10_000);
+  const desired_headroom_pence = parseIntOr(cfg.get('wallet.liquidity.desired_headroom_pence'), 5_000);
+  const funding_enabled = cfg.get('wallet.liquidity.funding_enabled') === 'true';
 
   const { data: liabilityRows, error: liabilityErr } = await svc
     .from('local_wallet_balances')
@@ -98,15 +123,16 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
   }
   const liability_pence = (liabilityRows ?? []).reduce((sum, r) => sum + (Number(r.balance_pence) || 0), 0);
 
-  const base: Omit<WalletLiquiditySnapshot, 'available_pence' | 'pending_pence' | 'headroom_pence' | 'gap_to_reserve_pence' | 'coverage_bps' | 'status' | 'error'> = {
+  const base: Omit<WalletLiquiditySnapshot, 'available_pence' | 'pending_pence' | 'headroom_pence' | 'gap_to_reserve_pence' | 'recommended_funding_pence' | 'coverage_bps' | 'status' | 'error'> = {
     enabled, liability_pence, reserve_pence, low_coverage_bps, critical_coverage_bps,
+    desired_headroom_pence, funding_enabled,
   };
 
-  // available is unknown in both branches below — gap_to_reserve_pence stays
-  // null rather than computed against a placeholder 0, same reasoning as
-  // coverage_bps staying null.
+  // available is unknown in both branches below — gap_to_reserve_pence and
+  // recommended_funding_pence stay null rather than computed against a
+  // placeholder 0, same reasoning as coverage_bps staying null.
   if (!enabled) {
-    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'disabled' };
+    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, recommended_funding_pence: null, coverage_bps: null, status: 'disabled' };
   }
 
   let balanceRes: Response;
@@ -120,12 +146,12 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'network error';
     console.error('[wallet-liquidity] Stripe balance fetch threw:', msg);
-    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'unknown', error: msg };
+    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, recommended_funding_pence: null, coverage_bps: null, status: 'unknown', error: msg };
   }
   if (!balanceRes.ok) {
     const msg = `Stripe balance read failed (HTTP ${balanceRes.status})`;
     console.error('[wallet-liquidity]', msg);
-    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'unknown', error: msg };
+    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, recommended_funding_pence: null, coverage_bps: null, status: 'unknown', error: msg };
   }
   const balance = await balanceRes.json();
   const gbp = (bucket: unknown): number =>
@@ -138,6 +164,10 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
   // (which stays negative until available exceeds reserve by the transfer
   // amount itself).
   const gap_to_reserve_pence = Math.max(0, reserve_pence - available_pence);
+  // The admin panel's "recommended funding" — targets reserve + desired
+  // headroom TOGETHER, not merely the reserve. Example: reserve £100,
+  // desired headroom £50, available £5.55 → recommended £144.45, not £94.45.
+  const recommended_funding_pence = Math.max(0, reserve_pence + desired_headroom_pence - available_pence);
 
   let coverage_bps: number | null = null;
   let status: WalletLiquidityStatus;
@@ -150,7 +180,7 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
       : 'healthy';
   }
 
-  return { ...base, available_pence, pending_pence, headroom_pence, gap_to_reserve_pence, coverage_bps, status };
+  return { ...base, available_pence, pending_pence, headroom_pence, gap_to_reserve_pence, recommended_funding_pence, coverage_bps, status };
 }
 
 export interface LiquidityReservation {
@@ -188,4 +218,69 @@ export async function releaseWalletLiquidity(svc: SupabaseClient, reservationId:
   if (!reservationId) return;
   const { error } = await svc.rpc('wallet_liquidity_release', { p_reservation_id: reservationId });
   if (error) console.error('[wallet-liquidity] failed to release reservation', reservationId, error);
+}
+
+export interface WalletLiquidityTopup {
+  id: string;
+  stripe_topup_id: string | null;
+  amount_pence: number;
+  status: string;
+  reserve_target_pence: number;
+  desired_headroom_pence: number;
+  failure_message: string | null;
+  expected_availability_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * The admin panel's "pending funding" list. A row still 'creating' or
+ * 'pending' is refreshed live from Stripe (GET only — never a mutating
+ * call) before being returned, so a Topup that has since settled is shown
+ * as settled rather than stale. Pending amounts are NEVER folded into
+ * available_pence/headroom_pence above — that figure comes only from
+ * Stripe's own /v1/balance, which already excludes anything not genuinely
+ * available.
+ */
+export async function getRecentWalletTopups(svc: SupabaseClient, limit = 10): Promise<WalletLiquidityTopup[]> {
+  const { data, error } = await svc
+    .from('wallet_liquidity_topups')
+    .select('id, stripe_topup_id, amount_pence, status, reserve_target_pence, desired_headroom_pence, failure_message, expected_availability_date, created_at, updated_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error('[wallet-liquidity] could not read recent topups:', error);
+    return [];
+  }
+  const rows = (data ?? []) as WalletLiquidityTopup[];
+
+  const refreshed = await Promise.all(rows.map(async (row) => {
+    if (row.status !== 'creating' && row.status !== 'pending') return row;
+    if (!row.stripe_topup_id) return row;
+    try {
+      const res = await fetch(`https://api.stripe.com/v1/topups/${row.stripe_topup_id}`, {
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
+          'Stripe-Version': STRIPE_API_VERSION,
+        },
+      });
+      if (!res.ok) return row;
+      const topup = await res.json();
+      if (topup.status === row.status) return row;
+      const update = {
+        status: topup.status as string,
+        failure_message: topup.failure_message ?? null,
+        expected_availability_date: topup.expected_availability_date
+          ? new Date(topup.expected_availability_date * 1000).toISOString().slice(0, 10)
+          : null,
+        updated_at: new Date().toISOString(),
+      };
+      await svc.from('wallet_liquidity_topups').update(update).eq('id', row.id);
+      return { ...row, ...update };
+    } catch (e) {
+      console.error('[wallet-liquidity] could not refresh topup status for', row.stripe_topup_id, e);
+      return row;
+    }
+  }));
+  return refreshed;
 }

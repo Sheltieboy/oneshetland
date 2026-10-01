@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getWalletLiquiditySnapshot } from '../_shared/wallet-liquidity.ts';
+import { getWalletLiquiditySnapshot, getRecentWalletTopups } from '../_shared/wallet-liquidity.ts';
 import { safeError } from '../_shared/safe-error.ts';
 
 /**
@@ -40,8 +40,11 @@ serve(async (req) => {
     const isAdmin = me?.role === 'admin' || me?.is_platform_owner === true;
     if (!isAdmin) return json({ error: 'Admin only' }, 403);
 
-    const snapshot = await getWalletLiquiditySnapshot(svc);
-    return json(snapshot);
+    const [snapshot, recentTopups] = await Promise.all([
+      getWalletLiquiditySnapshot(svc),
+      getRecentWalletTopups(svc),
+    ]);
+    return json({ ...snapshot, recent_topups: recentTopups });
   } catch (err) {
     console.error('[wallet-liquidity-snapshot]', err);
     return json({ error: safeError('wallet-liquidity-snapshot', err) }, 500);

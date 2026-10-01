@@ -142,7 +142,7 @@ describe('getWalletLiquiditySnapshot: the one canonical liquidity read', () => {
     const disabledAt = wl.indexOf("if (!enabled)");
     const fetchAt = wl.indexOf("fetch('https://api.stripe.com/v1/balance'");
     assert.ok(disabledAt > 0 && disabledAt < fetchAt);
-    assert.match(wl, /return \{ \.\.\.base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'disabled' \};/);
+    assert.match(wl, /return \{ \.\.\.base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, recommended_funding_pence: null, coverage_bps: null, status: 'disabled' \};/);
   });
 
   test('a network error or non-OK Stripe response returns status "unknown" with the error recorded, never thrown uncaught', () => {
@@ -182,7 +182,7 @@ describe('getWalletLiquiditySnapshot: the one canonical liquidity read', () => {
   test('disabled and unreadable snapshots report gap_to_reserve_pence as null, never computed against the 0 placeholder used for available_pence', () => {
     const disabledReturn = wl.slice(wl.indexOf("if (!enabled)"), wl.indexOf("let balanceRes"));
     assert.match(disabledReturn, /gap_to_reserve_pence: null/);
-    const unknownReturns = wl.match(/gap_to_reserve_pence: null, coverage_bps: null, status: 'unknown'/g) ?? [];
+    const unknownReturns = wl.match(/gap_to_reserve_pence: null, recommended_funding_pence: null, coverage_bps: null, status: 'unknown'/g) ?? [];
     assert.equal(unknownReturns.length, 2, 'both the network-error and non-OK-response branches must report gap_to_reserve_pence: null');
   });
 

@@ -198,3 +198,10 @@ verify_jwt = true
 # check. Read-only — moves nothing.
 [functions.wallet-liquidity-snapshot]
 verify_jwt = true
+
+# Admin-only: creates a real Stripe Topup to fund the platform's Wallet
+# liquidity reserve. Behind the gateway as well as its own profiles admin
+# check and wallet.liquidity.funding_enabled. Platform working capital
+# only — never touches a customer's Wallet balance.
+[functions.wallet-liquidity-fund]
+verify_jwt = true
