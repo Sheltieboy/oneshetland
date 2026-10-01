@@ -157,29 +157,44 @@ export default function BusinessTransactionsScreen() {
           <Text style={styles.empty}>No transactions in this period.</Text>
         ) : (
           <View style={styles.list}>
-            {rows.map((r, i) => (
-              <View key={i} style={styles.rowItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowType}>{KIND_LABEL[r.kind] ?? r.kind}</Text>
-                  <Text style={styles.rowMeta}>{fmtDate(r.occurred_at)} · {r.counterparty}</Text>
-                  {r.direction === 'refund' && (
-                    // What the customer got back, and the fee that came back
-                    // with it — so -£2.85 against the merchant reads as the
-                    // arithmetic it is rather than a number they must guess at.
-                    <Text style={styles.rowMeta}>
-                      {money(Math.abs(r.gross_pence))} returned to customer
-                      {r.fee_pence !== 0 ? ` · ${money(Math.abs(r.fee_pence))} OneShetland fee reversed` : ''}
-                      {r.cashback_pence !== 0 ? ` · ${money(Math.abs(r.cashback_pence))} cashback reversed` : ''}
-                    </Text>
-                  )}
+            {rows.map((r, i) => {
+              // A sale's own amount is what the CUSTOMER paid — the gross —
+              // never the net the merchant actually receives. Showing net as
+              // the headline (as this used to) reads as though the customer
+              // paid £0.73 when they paid £1.00; the fee is real but it is
+              // OneShetland's cut of the sale, not a smaller sale.
+              const hasDeduction = r.direction === 'in' && (r.fee_pence !== 0 || r.cashback_pence !== 0);
+              const breakdown: string[] = [];
+              if (hasDeduction) {
+                if (r.fee_pence !== 0) breakdown.push(`Fee -${money(r.fee_pence)}`);
+                if (r.cashback_pence !== 0) breakdown.push(`Cashback -${money(r.cashback_pence)}`);
+                breakdown.push(`Net to you ${money(r.net_pence)}`);
+              }
+              return (
+                <View key={i} style={styles.rowItem}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowType}>{KIND_LABEL[r.kind] ?? r.kind}</Text>
+                    <Text style={styles.rowMeta}>{fmtDate(r.occurred_at)} · {r.counterparty}</Text>
+                    {r.direction === 'refund' && (
+                      // What the customer got back, and the fee that came back
+                      // with it — so -£2.85 against the merchant reads as the
+                      // arithmetic it is rather than a number they must guess at.
+                      <Text style={styles.rowMeta}>
+                        {money(Math.abs(r.gross_pence))} returned to customer
+                        {r.fee_pence !== 0 ? ` · ${money(Math.abs(r.fee_pence))} OneShetland fee reversed` : ''}
+                        {r.cashback_pence !== 0 ? ` · ${money(Math.abs(r.cashback_pence))} cashback reversed` : ''}
+                      </Text>
+                    )}
+                    {hasDeduction && <Text style={styles.rowMeta}>{breakdown.join(' · ')}</Text>}
+                  </View>
+                  <Text style={[styles.rowNet, { color: r.direction === 'in' ? '#16a34a' : '#dc2626' }]}>
+                    {r.direction === 'in' ? money(r.gross_pence)
+                      : r.direction === 'refund' ? `− ${money(Math.abs(r.net_pence))}`
+                      : `− ${money(r.gross_pence)}`}
+                  </Text>
                 </View>
-                <Text style={[styles.rowNet, { color: r.direction === 'in' ? '#16a34a' : '#dc2626' }]}>
-                  {r.direction === 'in' ? money(r.net_pence)
-                    : r.direction === 'refund' ? `− ${money(Math.abs(r.net_pence))}`
-                    : `− ${money(r.gross_pence)}`}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
