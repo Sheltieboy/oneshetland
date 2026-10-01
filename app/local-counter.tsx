@@ -212,12 +212,12 @@ function LocalCounterBody() {
           activeOpacity={0.88}
           onPress={() => router.push(`/local-till?businessId=${business.id}`)}
           accessibilityRole="button"
-          accessibilityLabel="Add loyalty — scan the customer's member card"
+          accessibilityLabel="Scan customer — loyalty, points and wallet payments"
         >
-          <FontAwesome5 name="stamp" size={20} color="#fff" solid />
-          <Text style={styles.scanText}>Add loyalty</Text>
+          <FontAwesome5 name="qrcode" size={20} color="#fff" solid />
+          <Text style={styles.scanText}>Scan customer</Text>
         </TouchableOpacity>
-        <Text style={styles.scanHint}>Scan their member card · stamps, points and card payments</Text>
+        <Text style={styles.scanHint}>Scan their member card · loyalty, points and wallet payments</Text>
 
         <TouchableOpacity
           style={styles.redeemBtn}

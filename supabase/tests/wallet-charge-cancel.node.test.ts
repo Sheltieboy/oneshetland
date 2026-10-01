@@ -216,8 +216,12 @@ describe('app/local-till.tsx — Cancel actually cancels', () => {
   test('the Cancel button, while pending/charging, calls the server — it no longer just clears local state', () => {
     const anchor = src.indexOf('async function cancelCharge()');
     assert.notEqual(anchor, -1, 'cancelCharge() is gone');
-    const onPressAnchor = src.indexOf("onPress={() => {\n                      if (charge.status === 'pending' || charge.status === 'charging') cancelCharge();");
-    assert.notEqual(onPressAnchor, -1, 'the Cancel/New-charge button no longer branches on status to call cancelCharge()');
+    // Indentation-independent: the wallet-take-payment-discoverability change
+    // moved this JSX into a `const chargeBox = data && (...)` so it can
+    // render either before or after the loyalty actions, which reindented it
+    // without changing the logic itself.
+    assert.match(src, /onPress=\{\(\) => \{\s*if \(charge\.status === 'pending' \|\| charge\.status === 'charging'\) cancelCharge\(\);\s*else setCharge\(null\);\s*\}\}/,
+      'the Cancel/New-charge button no longer branches on status to call cancelCharge()');
   });
 
   test('on success the result is reflected from the server response, not assumed', () => {
@@ -243,8 +247,7 @@ describe('app/local-till.tsx — Cancel actually cancels', () => {
   });
 
   test('the button is disabled while a cancel is in flight, so a double-tap cannot fire two requests', () => {
-    const btnAnchor = src.indexOf("{charge.status === 'pending' || charge.status === 'charging'\n                        ? (cancelling ? 'Cancelling…' : 'Cancel')");
-    assert.notEqual(btnAnchor, -1);
+    assert.match(src, /\{charge\.status === 'pending' \|\| charge\.status === 'charging'\s*\? \(cancelling \? 'Cancelling…' : 'Cancel'\)/);
     assert.match(src, /disabled=\{cancelling\}/);
   });
 

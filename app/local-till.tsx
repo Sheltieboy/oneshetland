@@ -2,8 +2,17 @@
  * local-till.tsx — the unified "one member card" till (business side).
  *
  * Staff scan the customer's ONE member code (or type it), see their status at
- * THIS business, then act: add a stamp, add points, redeem a ready reward, or
- * apply an offer. Backed by the loyalty-till edge function.
+ * THIS business, then act: add a stamp, add points, redeem a ready reward,
+ * apply an offer, or take a wallet payment. Backed by the loyalty-till edge
+ * function and wallet-charge-request/approve — one screen, one till, same
+ * lookup and same charge logic regardless of how it was opened.
+ *
+ * `intent` (from the dashboard button that opened it) only changes what
+ * leads: opened as "Take payment" (intent=wallet), the wallet-charge box
+ * renders first and the heading/copy are payment-first; opened as "Add
+ * loyalty" (the default), the loyalty actions lead and wallet charging sits
+ * where it always did, last. Nothing about the lookup, the charge request,
+ * the customer's approval, or any loyalty action changes either way.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
@@ -33,7 +42,8 @@ const CAMERA_AVAILABLE = _CameraView !== View;
 const ACCENT = '#7C3AED';
 
 function LocalTillBody() {
-  const { businessId } = useLocalSearchParams<{ businessId?: string }>();
+  const { businessId, intent } = useLocalSearchParams<{ businessId?: string; intent?: string }>();
+  const walletFirst = intent === 'wallet';
   const [permission, requestPermission] = useCameraPermissions();
   const [manual, setManual] = useState('');
   const [busy, setBusy] = useState(false);
@@ -159,9 +169,88 @@ function LocalTillBody() {
   const program = data?.program;
   const card = data?.card;
 
+  // Loyalty actions — unchanged from before this change, just named so it
+  // can render either before or after the charge box.
+  const loyaltyActions = data && (
+    <>
+      {program?.type === 'stamps' && (
+        <TouchableOpacity style={[styles.action, { backgroundColor: ACCENT }]} disabled={busy} onPress={() => act('stamp')}>
+          <FontAwesome5 name="stamp" size={14} color="#fff" solid /><Text style={styles.actionText}>Add a stamp</Text>
+        </TouchableOpacity>
+      )}
+
+      {program?.type === 'points' && (
+        <View style={styles.pointsRow}>
+          <TextInput style={styles.amountInput} value={amount} onChangeText={(t) => setAmount(t.replace(/[^0-9.]/g, ''))} placeholder="£ spent" placeholderTextColor={colors.textLight} keyboardType="decimal-pad" />
+          <TouchableOpacity style={[styles.action, { backgroundColor: ACCENT, flex: 1, opacity: parseFloat(amount) > 0 && !busy ? 1 : 0.4 }]}
+            disabled={!(parseFloat(amount) > 0) || busy} onPress={() => act('points', { amountPence: Math.round(parseFloat(amount) * 100) })}>
+            <FontAwesome5 name="coins" size={14} color="#fff" solid /><Text style={styles.actionText}>Add points</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {data.ready_reward && (
+        <TouchableOpacity style={[styles.action, { backgroundColor: '#16a34a' }]} disabled={busy} onPress={() => act('redeem_reward')}>
+          <FontAwesome5 name="gift" size={14} color="#fff" solid /><Text style={styles.actionText}>Give reward: {data.ready_reward.reward}</Text>
+        </TouchableOpacity>
+      )}
+
+      {data.offers.filter((o) => !o.claimed).map((o) => (
+        <TouchableOpacity key={o.id} style={[styles.action, { backgroundColor: '#D97706' }]} disabled={busy} onPress={() => act('redeem_offer', { offerId: o.id })}>
+          <FontAwesome5 name="tag" size={13} color="#fff" solid /><Text style={styles.actionText}>Apply offer: {o.title} ({o.badge})</Text>
+        </TouchableOpacity>
+      ))}
+    </>
+  );
+
+  // Charge by scan — unchanged logic (requestCharge/cancelCharge/charge state
+  // are all defined above, untouched); only its POSITION relative to
+  // loyaltyActions depends on intent.
+  const chargeBox = data && (
+    <View style={styles.chargeBox}>
+      {!charge ? (
+        <>
+          <Text style={styles.chargeLabel}>Take a wallet payment</Text>
+          <View style={styles.pointsRow}>
+            <TextInput style={styles.amountInput} value={chargeAmount} onChangeText={(t) => setChargeAmount(t.replace(/[^0-9.]/g, ''))} placeholder="£ amount" placeholderTextColor={colors.textLight} keyboardType="decimal-pad" />
+            <TouchableOpacity style={[styles.action, { backgroundColor: '#0E7490', flex: 1, opacity: parseFloat(chargeAmount) > 0 && !busy ? 1 : 0.4 }]}
+              disabled={!(parseFloat(chargeAmount) > 0) || busy} onPress={requestCharge}>
+              <FontAwesome5 name="wallet" size={13} color="#fff" solid /><Text style={styles.actionText}>Request £{(parseFloat(chargeAmount) > 0 ? parseFloat(chargeAmount) : 0).toFixed(2)}</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.chargeHint}>The customer approves it on their own phone before you&apos;re paid.</Text>
+        </>
+      ) : (
+        <View style={{ alignItems: 'center', gap: 6 }}>
+          {(charge.status === 'pending' || charge.status === 'charging') && (
+            <><ActivityIndicator color="#0E7490" /><Text style={styles.chargeWait}>Waiting for {data.customer.name} to approve £{(charge.amountPence / 100).toFixed(2)}…</Text></>
+          )}
+          {charge.status === 'paid' && <Text style={[styles.chargeResult, { color: '#16a34a' }]}>✓ Paid £{(charge.amountPence / 100).toFixed(2)}</Text>}
+          {charge.status === 'declined' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Customer declined</Text>}
+          {charge.status === 'expired' && <Text style={[styles.chargeResult, { color: '#d97706' }]}>Request expired — try again</Text>}
+          {charge.status === 'failed' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Payment failed (not charged)</Text>}
+          {charge.status === 'cancelled' && <Text style={[styles.chargeResult, { color: colors.textMuted }]}>Cancelled</Text>}
+          <TouchableOpacity
+            disabled={cancelling}
+            onPress={() => {
+              if (charge.status === 'pending' || charge.status === 'charging') cancelCharge();
+              else setCharge(null);
+            }}
+          >
+            <Text style={styles.chargeCancel}>
+              {charge.status === 'pending' || charge.status === 'charging'
+                ? (cancelling ? 'Cancelling…' : 'Cancel')
+                : 'New charge'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Add loyalty" subtitle={data ? data.business.name : 'Scan the customer’s member card'} onClose={() => router.back()} accent={ACCENT} />
+      <ScreenHeader title={walletFirst ? 'Take payment' : 'Add loyalty'} subtitle={data ? data.business.name : 'Scan the customer’s member card'} onClose={() => router.back()} accent={walletFirst ? '#0E7490' : ACCENT} />
       <ScrollView contentContainerStyle={styles.body}>
         {!data ? (
           <>
@@ -194,8 +283,9 @@ function LocalTillBody() {
               </View>
             ) : (
               <Text style={styles.leadIn}>
-                Add a stamp, add points, give a ready reward or take a card payment. To redeem a
-                reward the customer is already showing, use “Redeem a reward” instead.
+                {walletFirst
+                  ? 'Take a wallet payment, add a stamp, add points or give a ready reward. To redeem a reward the customer is already showing, use “Redeem a reward” instead.'
+                  : 'Add a stamp, add points, give a ready reward or take a wallet payment. To redeem a reward the customer is already showing, use “Redeem a reward” instead.'}
               </Text>
             )}
             <Text style={styles.manualLabel}>…or type their member code</Text>
@@ -230,75 +320,13 @@ function LocalTillBody() {
 
             {toast && <Text style={[styles.toast, { color: toast.ok ? '#16a34a' : '#dc2626' }]}>{toast.text}</Text>}
 
-            {/* Actions */}
-            {program?.type === 'stamps' && (
-              <TouchableOpacity style={[styles.action, { backgroundColor: ACCENT }]} disabled={busy} onPress={() => act('stamp')}>
-                <FontAwesome5 name="stamp" size={14} color="#fff" solid /><Text style={styles.actionText}>Add a stamp</Text>
-              </TouchableOpacity>
-            )}
+            {/* One lookup, one set of actions — intent only reorders which
+                group renders first; neither group's own logic changes. */}
+            {walletFirst && chargeBox}
 
-            {program?.type === 'points' && (
-              <View style={styles.pointsRow}>
-                <TextInput style={styles.amountInput} value={amount} onChangeText={(t) => setAmount(t.replace(/[^0-9.]/g, ''))} placeholder="£ spent" placeholderTextColor={colors.textLight} keyboardType="decimal-pad" />
-                <TouchableOpacity style={[styles.action, { backgroundColor: ACCENT, flex: 1, opacity: parseFloat(amount) > 0 && !busy ? 1 : 0.4 }]}
-                  disabled={!(parseFloat(amount) > 0) || busy} onPress={() => act('points', { amountPence: Math.round(parseFloat(amount) * 100) })}>
-                  <FontAwesome5 name="coins" size={14} color="#fff" solid /><Text style={styles.actionText}>Add points</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            {loyaltyActions}
 
-            {data.ready_reward && (
-              <TouchableOpacity style={[styles.action, { backgroundColor: '#16a34a' }]} disabled={busy} onPress={() => act('redeem_reward')}>
-                <FontAwesome5 name="gift" size={14} color="#fff" solid /><Text style={styles.actionText}>Give reward: {data.ready_reward.reward}</Text>
-              </TouchableOpacity>
-            )}
-
-            {data.offers.filter((o) => !o.claimed).map((o) => (
-              <TouchableOpacity key={o.id} style={[styles.action, { backgroundColor: '#D97706' }]} disabled={busy} onPress={() => act('redeem_offer', { offerId: o.id })}>
-                <FontAwesome5 name="tag" size={13} color="#fff" solid /><Text style={styles.actionText}>Apply offer: {o.title} ({o.badge})</Text>
-              </TouchableOpacity>
-            ))}
-
-            {/* ── Charge by scan ─────────────────────────────────────────────── */}
-            <View style={styles.chargeBox}>
-              {!charge ? (
-                <>
-                  <Text style={styles.chargeLabel}>Take a wallet payment</Text>
-                  <View style={styles.pointsRow}>
-                    <TextInput style={styles.amountInput} value={chargeAmount} onChangeText={(t) => setChargeAmount(t.replace(/[^0-9.]/g, ''))} placeholder="£ amount" placeholderTextColor={colors.textLight} keyboardType="decimal-pad" />
-                    <TouchableOpacity style={[styles.action, { backgroundColor: '#0E7490', flex: 1, opacity: parseFloat(chargeAmount) > 0 && !busy ? 1 : 0.4 }]}
-                      disabled={!(parseFloat(chargeAmount) > 0) || busy} onPress={requestCharge}>
-                      <FontAwesome5 name="wallet" size={13} color="#fff" solid /><Text style={styles.actionText}>Request £{(parseFloat(chargeAmount) > 0 ? parseFloat(chargeAmount) : 0).toFixed(2)}</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.chargeHint}>The customer approves it on their own phone before you&apos;re paid.</Text>
-                </>
-              ) : (
-                <View style={{ alignItems: 'center', gap: 6 }}>
-                  {(charge.status === 'pending' || charge.status === 'charging') && (
-                    <><ActivityIndicator color="#0E7490" /><Text style={styles.chargeWait}>Waiting for {data.customer.name} to approve £{(charge.amountPence / 100).toFixed(2)}…</Text></>
-                  )}
-                  {charge.status === 'paid' && <Text style={[styles.chargeResult, { color: '#16a34a' }]}>✓ Paid £{(charge.amountPence / 100).toFixed(2)}</Text>}
-                  {charge.status === 'declined' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Customer declined</Text>}
-                  {charge.status === 'expired' && <Text style={[styles.chargeResult, { color: '#d97706' }]}>Request expired — try again</Text>}
-                  {charge.status === 'failed' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Payment failed (not charged)</Text>}
-                  {charge.status === 'cancelled' && <Text style={[styles.chargeResult, { color: colors.textMuted }]}>Cancelled</Text>}
-                  <TouchableOpacity
-                    disabled={cancelling}
-                    onPress={() => {
-                      if (charge.status === 'pending' || charge.status === 'charging') cancelCharge();
-                      else setCharge(null);
-                    }}
-                  >
-                    <Text style={styles.chargeCancel}>
-                      {charge.status === 'pending' || charge.status === 'charging'
-                        ? (cancelling ? 'Cancelling…' : 'Cancel')
-                        : 'New charge'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+            {!walletFirst && chargeBox}
 
             {busy && <ActivityIndicator color={ACCENT} style={{ marginTop: 8 }} />}
 

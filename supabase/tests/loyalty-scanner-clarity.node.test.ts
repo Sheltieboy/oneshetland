@@ -126,7 +126,10 @@ describe('the stamp scanner and the reward scanner are distinct', () => {
     assert.match(code(read(VERIFY_SRC)), /title="Redeem a reward"/);
     // The subtitle is the business once one is resolved, and the instruction until then.
     assert.match(code(read(VERIFY_SRC)), /subtitle=\{business && business !== 'none' \? business\.name : 'Scan the customer’s reward QR'\}/);
-    assert.match(code(read(TILL_SRC)), /title="Add loyalty"/);
+    // The till now opens two ways — "Add loyalty" or "Take payment" (see
+    // wallet-take-payment-discoverability.node.test.ts) — but each still
+    // says its own job before scanning, same as the reward scanner above.
+    assert.match(code(read(TILL_SRC)), /title=\{walletFirst \? 'Take payment' : 'Add loyalty'\}/);
     assert.match(code(read(TILL_SRC)), /subtitle=\{data \? data\.business\.name : 'Scan the customer’s member card'\}/);
   });
 

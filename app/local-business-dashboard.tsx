@@ -890,6 +890,29 @@ export default function BusinessDashboardScreen() {
           </View>
         </View>
 
+        {/* ── Two jobs, two banners. Wallet charging already lived inside this
+             same till screen, reachable only by tapping "Add loyalty" — a
+             merchant wanting to take a payment had no reason to tap
+             something labelled loyalty. Both open the one till screen
+             (no second payment implementation); the intent param only
+             changes what it leads with. ── */}
+        {activeBusiness.accepts_wallet && (
+          <TouchableOpacity
+            style={[styles.backfillBanner, { backgroundColor: '#0E7490', borderColor: '#0E7490' }]}
+            onPress={() => router.push({ pathname: '/local-till', params: { businessId: activeBusiness.id, intent: 'wallet' } })}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.backfillIcon, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+              <FontAwesome5 name="wallet" size={11} color="#fff" solid />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.backfillTitle, { color: '#fff' }]}>Take payment</Text>
+              <Text style={[styles.backfillSub, { color: 'rgba(255,255,255,0.9)' }]}>Scan the customer’s member card to charge their OneShetland wallet.</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={11} color="rgba(255,255,255,0.8)" />
+          </TouchableOpacity>
+        )}
+
         {/* ── Add loyalty: scan the member's ONE card, then choose an action ── */}
         <TouchableOpacity
           style={[styles.backfillBanner, { backgroundColor: S.color, borderColor: S.color }]}
