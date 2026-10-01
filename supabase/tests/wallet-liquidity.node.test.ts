@@ -142,7 +142,7 @@ describe('getWalletLiquiditySnapshot: the one canonical liquidity read', () => {
     const disabledAt = wl.indexOf("if (!enabled)");
     const fetchAt = wl.indexOf("fetch('https://api.stripe.com/v1/balance'");
     assert.ok(disabledAt > 0 && disabledAt < fetchAt);
-    assert.match(wl, /return \{ \.\.\.base, available_pence: 0, pending_pence: 0, headroom_pence: 0, coverage_bps: null, status: 'disabled' \};/);
+    assert.match(wl, /return \{ \.\.\.base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'disabled' \};/);
   });
 
   test('a network error or non-OK Stripe response returns status "unknown" with the error recorded, never thrown uncaught', () => {
@@ -170,6 +170,20 @@ describe('getWalletLiquiditySnapshot: the one canonical liquidity read', () => {
   test('liability is summed only from positive customer Wallet balances — never a negative/deficit row', () => {
     assert.match(wl, /\.from\('local_wallet_balances'\)/);
     assert.match(wl, /\.gt\('balance_pence', 0\)/);
+  });
+
+  test('gap_to_reserve_pence (how far below the reserve) and headroom_pence (what is left to spend) are two distinct, independently documented fields — never collapsed into one', () => {
+    assert.match(wl, /gap_to_reserve_pence: number \| null;/);
+    assert.match(wl, /headroom_pence: number;/);
+    const raw = read('supabase/functions/_shared/wallet-liquidity.ts');
+    assert.match(raw, /Closing this gap only brings headroom up\s*\n\s*\* to exactly 0, which still permits NO transfer at all\./);
+  });
+
+  test('disabled and unreadable snapshots report gap_to_reserve_pence as null, never computed against the 0 placeholder used for available_pence', () => {
+    const disabledReturn = wl.slice(wl.indexOf("if (!enabled)"), wl.indexOf("let balanceRes"));
+    assert.match(disabledReturn, /gap_to_reserve_pence: null/);
+    const unknownReturns = wl.match(/gap_to_reserve_pence: null, coverage_bps: null, status: 'unknown'/g) ?? [];
+    assert.equal(unknownReturns.length, 2, 'both the network-error and non-OK-response branches must report gap_to_reserve_pence: null');
   });
 
   test('the reservation RPC call is a single round trip — the check and the claim happen together, not as two separate reads compared in application code', () => {
@@ -277,23 +291,89 @@ describe('the admin liquidity panel and its edge function', () => {
     assert.equal(m![1], 'true');
   });
 
-  test('the web admin panel renders Healthy/Low/Critical, the liability/available/pending/reserve/headroom/coverage figures, and the required explanatory copy', () => {
+  test('the web admin panel renders Healthy/Low/Critical, the liability/available/pending/reserve/gap/headroom/coverage figures, and the required explanatory copy', () => {
     const panel = readWeb('components/admin/WalletLiquidityPanel.tsx');
-    for (const label of ['Customer Wallet liability', 'Stripe available', 'Stripe pending', 'Reserve target', 'Spendable headroom', 'Coverage']) {
+    for (const label of ['Customer Wallet liability', 'Stripe available', 'Stripe pending', 'Reserve target', 'Gap to reserve', 'Spendable headroom', 'Coverage']) {
       assert.ok(panel.includes(label), `panel is missing the "${label}" figure`);
     }
     assert.match(panel, /Wallet balances are customer liabilities\. OneShetland keeps transferable Stripe funds available so merchants\s*\n?\s*can be settled immediately\./);
   });
 
-  test('the panel surfaces the initial-float gap explicitly when available balance is below the reserve', () => {
+  test('the panel surfaces the gap to the reserve floor when available balance sits below it', () => {
     const panel = readWeb('components/admin/WalletLiquidityPanel.tsx');
     assert.match(panel, /Initial Wallet float required before launch/);
-    assert.match(panel, /snapshot\.available_pence < snapshot\.reserve_pence/);
+    assert.match(panel, /snapshot\.gap_to_reserve_pence !== null && snapshot\.gap_to_reserve_pence > 0/);
   });
 
   test('the panel never renders a Stripe account id, key, or any field beyond the snapshot shape', () => {
     const panel = readWeb('components/admin/WalletLiquidityPanel.tsx');
     assert.doesNotMatch(panel, /acct_|sk_|pk_|stripe_account_id/);
+  });
+});
+
+/* ── 5b. Gap-to-reserve vs. spendable headroom — the exact distinction the
+ * audit's own report got wrong once: reaching the reserve (gap = £0) still
+ * leaves headroom at exactly £0, which permits NO transfer. A £5.00 Premium
+ * payment needs a £4.95 transfer, so "available reaches the £100 reserve" is
+ * NOT "Wallet is ready" — available must reach £104.95 for THAT payment. ── */
+
+describe('gap to reserve and spendable headroom are reported as two distinct, non-interchangeable numbers', () => {
+  const wl = code(read('supabase/functions/_shared/wallet-liquidity.ts'));
+  const panel = readWeb('components/admin/WalletLiquidityPanel.tsx');
+
+  test('gap_to_reserve_pence is max(0, reserve − available) — a different quantity from headroom_pence (available − reserve), never the same formula', () => {
+    assert.match(wl, /const gap_to_reserve_pence = Math\.max\(0, reserve_pence - available_pence\);/);
+    assert.match(wl, /const headroom_pence = available_pence - reserve_pence;/);
+  });
+
+  test('live: reaching the reserve exactly (available = reserve) gives gap 0 but headroom 0, not a positive, spendable figure', () => {
+    const reserve = 10_000;
+    const available = reserve; // exactly at the reserve floor
+    const gap = Math.max(0, reserve - available);
+    const headroom = available - reserve;
+    assert.equal(gap, 0);
+    assert.equal(headroom, 0, 'at exactly the reserve, headroom must be 0, not positive — no transfer fits');
+  });
+
+  test('a representative £5.00 transfer needs available to reach reserve + £5.00, not merely the reserve — matching the real incident (£4.95 transfer, £100 reserve)', () => {
+    const reserve = 10_000; // £100
+    const transfer = 495; // the real incident's merchant transfer
+    const minimumAvailableToPermitIt = reserve + transfer;
+    assert.equal(minimumAvailableToPermitIt, 10_495, 'available must reach £104.95, not £100, to permit a £4.95 transfer');
+  });
+
+  test('neither the shared module nor the panel ever claims readiness from the reserve alone — no "ready" or "sufficient" copy keyed only on gap_to_reserve', () => {
+    for (const src of [wl, panel]) {
+      assert.doesNotMatch(src, /ready to spend|sufficient (for|to) spend/i);
+    }
+  });
+
+  test('the panel\'s "blocked" warning is keyed on headroom_pence <= 0, never on gap_to_reserve_pence alone — reaching the reserve must not silence it', () => {
+    assert.match(panel, /snapshot\.headroom_pence <= 0 && \(/s);
+    const blockedBanner = panel.slice(panel.indexOf('Wallet transfers are currently blocked'), panel.indexOf('Wallet transfers are currently blocked') + 400);
+    assert.match(blockedBanner, /spendable headroom is/);
+  });
+
+  test('the blocked warning, when shown, explicitly says closing the reserve gap alone is not enough', () => {
+    assert.match(panel, /closing\s*\n?\s*that gap alone would only bring headroom to exactly £0\.00, still not enough to permit a transfer\./);
+  });
+
+  test('the worked examples compute additional float needed as reserve + transfer − available, clamped at zero, never claiming "ready" below that', () => {
+    assert.match(panel, /const needed = Math\.max\(0, snapshot\.reserve_pence \+ transferPence - snapshot\.available_pence\);/);
+    assert.match(panel, /needed > 0 \? `\+\$\{gbp\(needed\)\} needed` : "Already covered"/);
+  });
+
+  test('the worked examples are explicit that their amounts are transfer amounts, not gross payment amounts', () => {
+    assert.match(panel, /illustrative transfer amounts, not gross payment amounts/);
+  });
+
+  test('live: the real £5.00 Premium incident is reproduced exactly by the worked-example formula', () => {
+    const [row] = sql(`select value from public.admin_config where key = 'wallet.liquidity.reserve_pence';`);
+    const reserve = Number(row.value);
+    const available = 555; // the real balance at the time of the original report
+    const transfer = 495;  // the real incident's merchant transfer (gross 500 − 5p Premium fee)
+    const needed = Math.max(0, reserve + transfer - available);
+    assert.equal(needed, 9940, 'the real incident needed £99.40 more, not the £94.45 gap-to-reserve figure first reported');
   });
 });
 

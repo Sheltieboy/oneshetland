@@ -40,7 +40,24 @@ export interface WalletLiquiditySnapshot {
   pending_pence: number;
   liability_pence: number;
   reserve_pence: number;
+  /**
+   * available − reserve. This is SPENDABLE HEADROOM — what is left to permit
+   * a transfer AFTER the reserve is protected. It can be negative. Reaching
+   * a headroom of exactly 0 means the reserve is intact but there is nothing
+   * left over for even a 1p transfer — see gap_to_reserve_pence below for
+   * the different, smaller question of "how far below the reserve are we".
+   */
   headroom_pence: number;
+  /**
+   * max(0, reserve − available). How far available balance sits BELOW the
+   * reserve floor — nothing more. Closing this gap only brings headroom up
+   * to exactly 0, which still permits NO transfer at all. Never read this as
+   * "what Wallet needs to become spendable" — that question needs a
+   * specific transfer amount, which is reserve + that amount − available
+   * (see the admin panel's worked examples). null when available itself is
+   * unknown (status 'disabled' or 'unknown') — there is nothing to compare.
+   */
+  gap_to_reserve_pence: number | null;
   /** null when there is no live liability — coverage is undefined, not zero. */
   coverage_bps: number | null;
   low_coverage_bps: number;
@@ -81,12 +98,15 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
   }
   const liability_pence = (liabilityRows ?? []).reduce((sum, r) => sum + (Number(r.balance_pence) || 0), 0);
 
-  const base: Omit<WalletLiquiditySnapshot, 'available_pence' | 'pending_pence' | 'headroom_pence' | 'coverage_bps' | 'status' | 'error'> = {
+  const base: Omit<WalletLiquiditySnapshot, 'available_pence' | 'pending_pence' | 'headroom_pence' | 'gap_to_reserve_pence' | 'coverage_bps' | 'status' | 'error'> = {
     enabled, liability_pence, reserve_pence, low_coverage_bps, critical_coverage_bps,
   };
 
+  // available is unknown in both branches below — gap_to_reserve_pence stays
+  // null rather than computed against a placeholder 0, same reasoning as
+  // coverage_bps staying null.
   if (!enabled) {
-    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, coverage_bps: null, status: 'disabled' };
+    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'disabled' };
   }
 
   let balanceRes: Response;
@@ -100,12 +120,12 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'network error';
     console.error('[wallet-liquidity] Stripe balance fetch threw:', msg);
-    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, coverage_bps: null, status: 'unknown', error: msg };
+    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'unknown', error: msg };
   }
   if (!balanceRes.ok) {
     const msg = `Stripe balance read failed (HTTP ${balanceRes.status})`;
     console.error('[wallet-liquidity]', msg);
-    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, coverage_bps: null, status: 'unknown', error: msg };
+    return { ...base, available_pence: 0, pending_pence: 0, headroom_pence: 0, gap_to_reserve_pence: null, coverage_bps: null, status: 'unknown', error: msg };
   }
   const balance = await balanceRes.json();
   const gbp = (bucket: unknown): number =>
@@ -113,6 +133,11 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
   const available_pence = gbp(balance.available);
   const pending_pence = gbp(balance.pending);
   const headroom_pence = available_pence - reserve_pence;
+  // Reaching this at exactly 0 means the reserve is intact — it does NOT
+  // mean any transfer is permitted. That still needs headroom_pence above
+  // (which stays negative until available exceeds reserve by the transfer
+  // amount itself).
+  const gap_to_reserve_pence = Math.max(0, reserve_pence - available_pence);
 
   let coverage_bps: number | null = null;
   let status: WalletLiquidityStatus;
@@ -125,7 +150,7 @@ export async function getWalletLiquiditySnapshot(svc: SupabaseClient): Promise<W
       : 'healthy';
   }
 
-  return { ...base, available_pence, pending_pence, headroom_pence, coverage_bps, status };
+  return { ...base, available_pence, pending_pence, headroom_pence, gap_to_reserve_pence, coverage_bps, status };
 }
 
 export interface LiquidityReservation {
