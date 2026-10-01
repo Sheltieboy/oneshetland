@@ -201,6 +201,31 @@ describe('a transaction\'s fee is written once and never recalculated from curre
   });
 });
 
+/* ── 4b. A refund's kind names what it reverses, live ─────────────────────── */
+
+describe('get_business_transactions disambiguates a refund\'s kind by what it reverses, live', () => {
+  test('branch 8 resolves kind against the ORIGINAL ("o") row, the same way branch 1 resolves a sale\'s kind, and no longer emits the generic "wallet_refund"', () => {
+    const [row] = sql(`select pg_get_functiondef('public.get_business_transactions'::regproc) as d;`);
+    const d = String(row.d);
+    assert.match(d, /\(coalesce\(funded\.kind, 'wallet_payment'\) \|\| '_refund'\)::text/);
+    assert.doesNotMatch(d, /'wallet_refund'/, 'the undisambiguated generic kind must be gone from the live function');
+  });
+
+  test('wallet_reverse_debit takes no amount parameter — every reversal is a full reversal of the original spend, so a partial refund is not a row this calculator will ever see', () => {
+    const [row] = sql(`select pg_get_functiondef('public.wallet_reverse_debit'::regproc) as d;`);
+    const d = String(row.d);
+    assert.match(d, /CREATE OR REPLACE FUNCTION public\.wallet_reverse_debit\(p_transaction_id uuid, p_reason text DEFAULT NULL::text, p_merchant text DEFAULT NULL::text\)/);
+    assert.doesNotMatch(d, /p_amount/, 'a reversal must not take a caller-chosen amount — partial refunds are not supported');
+  });
+
+  test('a second reversal of the same spend is refused as already-done, not accepted as a further partial credit', () => {
+    const [row] = sql(`select pg_get_functiondef('public.wallet_reverse_debit'::regproc) as d;`);
+    const d = String(row.d);
+    assert.match(d, /already_reversed/);
+    assert.match(d, /select id into v_existing from public\.local_wallet_transactions\s+where reverses_transaction_id = p_transaction_id/);
+  });
+});
+
 /* ── 5. The savings calculator — client-side formula, both platforms ─────── */
 
 describe('the savings calculator: scoped correctly, clamped correctly, gated correctly', () => {
@@ -210,9 +235,46 @@ describe('the savings calculator: scoped correctly, clamped correctly, gated cor
     }
   });
 
-  test('both compute the benchmark fee with the same formula calculateCommission itself uses: floor(gross*bps/10000) + fixed', () => {
+  test('both compute the benchmark fee with the same formula calculateCommission itself uses: floor(abs(gross)*bps/10000) + fixed, signed back onto the row\'s own sign', () => {
     for (const src of [code(read('app/local-business-transactions.tsx')), code(readWeb('components/business/TransactionsLedger.tsx'))]) {
-      assert.match(src, /Math\.floor\(\(r\.gross_pence \* benchmark[!?.]?\.?card_percent_bps\) \/ 10_000\) \+ benchmark[!?.]?\.?card_fixed_pence/);
+      assert.match(src, /const sign = r\.gross_pence < 0 \? -1 : 1;/);
+      assert.match(src, /sign \* \(Math\.floor\(\(Math\.abs\(r\.gross_pence\) \* benchmark[!?.]?\.?card_percent_bps\) \/ 10_000\) \+ benchmark[!?.]?\.?card_fixed_pence\)/);
+    }
+  });
+
+  test('a refund\'s benchmark fee is the exact negative of its sale\'s, never off by a penny from floor() rounding a negative number the wrong way', () => {
+    // floor(-x) rounds further from zero than floor(x) rounds toward it for
+    // any x with a non-zero fractional part, so computing the benchmark fee
+    // directly on a signed (possibly negative) gross_pence would make a
+    // refund's contribution one penny MORE negative than its sale's was
+    // positive — the pair would no longer cancel exactly. Deriving the
+    // magnitude from Math.abs() first, then reapplying the row's own sign,
+    // is what keeps a sale and its full refund exact mirrors of each other.
+    const saleGross = 2050, bps = 175, fixed = 0;
+    const naiveRefund = Math.floor((-saleGross * bps) / 10_000) + fixed;
+    const saleFee = Math.floor((saleGross * bps) / 10_000) + fixed;
+    assert.notEqual(-saleFee, naiveRefund, 'this fixture no longer demonstrates the rounding trap — pick another amount');
+    const signAwareRefund = (-1) * (Math.floor((Math.abs(-saleGross) * bps) / 10_000) + fixed);
+    assert.equal(signAwareRefund, -saleFee, 'the sign-aware formula must exactly mirror the sale');
+  });
+
+  test('both platforms also include a genuine till payment\'s own refund (kind "wallet_payment_refund") in the comparison, so a refunded sale nets to zero rather than continuing to count as a saving', () => {
+    for (const src of [code(read('app/local-business-transactions.tsx')), code(readWeb('components/business/TransactionsLedger.tsx'))]) {
+      assert.match(src, /r\.direction === ["']refund["'] && r\.kind === ["']wallet_payment_refund["']/);
+    }
+  });
+
+  test('a refund of something wallet-FUNDED (gift/pass/product/ticket) is excluded by the same kind check — only "wallet_payment_refund" qualifies, not the generic retired "wallet_refund"', () => {
+    for (const src of [code(read('app/local-business-transactions.tsx')), code(readWeb('components/business/TransactionsLedger.tsx'))]) {
+      assert.doesNotMatch(src, /kind === ["']wallet_refund["']/, 'the generic, undisambiguated refund kind must no longer be matched anywhere');
+    }
+  });
+
+  test('both KIND_LABEL maps still show every refund as plain "Refund", regardless of what it reversed', () => {
+    for (const src of [read('app/local-business-transactions.tsx'), readWeb('components/business/TransactionsLedger.tsx')]) {
+      for (const kind of ['wallet_payment_refund', 'product_sale_refund', 'pass_sale_refund', 'gift_sale_refund', 'ticket_sale_refund']) {
+        assert.match(src, new RegExp(`${kind}:\\s*['"]Refund['"]`), `${kind} is missing from KIND_LABEL — it would display as the raw kind string`);
+      }
     }
   });
 

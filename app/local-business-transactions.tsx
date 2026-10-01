@@ -29,7 +29,12 @@ interface Txn {
 const KIND_LABEL: Record<string, string> = {
   wallet_payment: 'Wallet payment', pass_sale: 'Pass / pack', gift_sale: 'Gift',
   booking_deposit: 'Booking deposit', ticket_sale: 'Event tickets', product_sale: 'Shop order', boost: 'Boost',
-  wallet_refund: 'Refund',
+  // A refund's kind names what it reverses (wallet_payment_refund vs.
+  // gift_sale_refund etc.), so the savings calculator below can tell a
+  // genuine till-payment refund apart from a refund of something wallet-
+  // FUNDED — every one of them still just reads "Refund" here.
+  wallet_payment_refund: 'Refund', product_sale_refund: 'Refund', pass_sale_refund: 'Refund',
+  gift_sale_refund: 'Refund', ticket_sale_refund: 'Refund',
 };
 
 type PresetKey = 'this_month' | 'last_month' | 'last_90' | 'this_year' | 'all';
@@ -95,23 +100,39 @@ export default function BusinessTransactionsScreen() {
 
   // Estimated against the configured benchmark — a comparison, never an
   // assertion about this merchant's real card-processing contract. Scoped to
-  // genuine pay-at-till Wallet payments (kind "wallet_payment") only: a
-  // wallet-funded gift, pass or shop order is charged at THAT rail's own
-  // commission, not the wallet rate, so comparing it against a card
+  // genuine pay-at-till Wallet payments (kind "wallet_payment") AND their own
+  // refunds (kind "wallet_payment_refund") only: a wallet-funded gift, pass
+  // or shop order — and ITS refund — is charged at THAT rail's own
+  // commission, not the wallet rate, so comparing either against a card
   // benchmark here would compare the wrong fee to the wrong thing.
+  //
+  // A refund row already carries the exact negative mirror of its sale
+  // (gross_pence, fee_pence — see get_business_transactions), so summing
+  // both kinds together nets a refunded payment to zero by construction:
+  // "Saved with Wallet" must represent retained Wallet sales, not a gross
+  // historical payment that has since been given back. The benchmark fee is
+  // computed from the UNSIGNED gross and then given the row's own sign,
+  // rather than floored on a negative number directly — floor() rounds a
+  // negative amount further FROM zero, which would make a refund's benchmark
+  // fee one penny more negative than its sale's was positive, and the pair
+  // would no longer cancel exactly.
   const savings = useMemo(() => {
     if (!benchmark || !benchmark.enabled) return null;
-    const walletRows = rows.filter(r => r.direction === 'in' && r.kind === 'wallet_payment');
+    const walletRows = rows.filter(r =>
+      (r.direction === 'in' && r.kind === 'wallet_payment') ||
+      (r.direction === 'refund' && r.kind === 'wallet_payment_refund'));
     if (walletRows.length === 0) return null;
     let sales = 0, walletFees = 0, cardFees = 0;
     for (const r of walletRows) {
       sales += r.gross_pence;
       walletFees += r.fee_pence;
-      cardFees += Math.floor((r.gross_pence * benchmark.card_percent_bps) / 10_000) + benchmark.card_fixed_pence;
+      const sign = r.gross_pence < 0 ? -1 : 1;
+      cardFees += sign * (Math.floor((Math.abs(r.gross_pence) * benchmark.card_percent_bps) / 10_000) + benchmark.card_fixed_pence);
     }
     // Never shown as a misleading negative "saved" figure — if a
-    // misconfigured benchmark ever sits below the wallet rate, the honest
-    // commercial answer is "nothing to show", not "minus three pounds".
+    // misconfigured benchmark ever sits below the wallet rate, or a period
+    // holds only a refund with no sale of its own, the honest commercial
+    // answer is "nothing to show", not a negative figure.
     const estimatedSaved = Math.max(0, cardFees - walletFees);
     return { sales, walletFees, cardFees, estimatedSaved };
   }, [rows, benchmark]);

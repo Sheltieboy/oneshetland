@@ -37,6 +37,7 @@ const MIG = join(REPO_ROOT, 'supabase/migrations');
 const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const COMMERCE = join(MIG, '20260801130000_commerce_engine.sql');
 const STATEMENT = join(MIG, '20261010120000_statement_one_event_one_row.sql');
+const REFUND_KIND = join(MIG, '20261025040000_wallet_refund_kind_disambiguation.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -118,6 +119,7 @@ function schema() {
     'grant usage on schema public, auth to anon, authenticated, service_role;',
     'grant execute on function auth.uid() to anon, authenticated, service_role;',
     src(STATEMENT),
+    src(REFUND_KIND),
   ].join('\n'));
   assert.doesNotMatch(out, /ERROR/i, `schema failed:\n${out.slice(0, 1600)}`);
 }
@@ -230,7 +232,10 @@ describe('a Wallet sale refunded in full', () => {
   test('a separate refund row appears, on the date the money went back', () => {
     const ref = statement(SEPT, OCT).find((r) => r.direction === 'refund')!;
     assert.ok(ref, 'no refund row on the statement');
-    assert.equal(ref.kind, 'wallet_refund');
+    // Not the generic 'wallet_refund': SPEND funded nothing else, so its
+    // reversal is disambiguated as a genuine till-payment refund — the kind
+    // the savings calculator matches to net it against its sale.
+    assert.equal(ref.kind, 'wallet_payment_refund');
     assert.match(ref.occurred_at, /^2026-09-09/, 'the refund did not take the refund date');
     assert.equal(ref.counterparty, 'Darren Fullerton');
     assert.equal(ref.reference, SPEND, 'the refund does not name the sale it reverses');
@@ -244,7 +249,7 @@ describe('a Wallet sale refunded in full', () => {
   });
 
   test('the pair nets to exactly nothing', () => {
-    const rows = statement(SEPT, OCT).filter((r) => r.kind === 'wallet_payment' || r.kind === 'wallet_refund');
+    const rows = statement(SEPT, OCT).filter((r) => r.kind === 'wallet_payment' || r.kind === 'wallet_payment_refund');
     assert.equal(rows.reduce((s, r) => s + r.gross_pence, 0), 0, 'customer gross does not net to 0');
     assert.equal(rows.reduce((s, r) => s + r.fee_pence, 0), 0, 'platform fee does not net to 0');
     assert.equal(rows.reduce((s, r) => s + r.net_pence, 0), 0, 'merchant net does not net to 0');
@@ -456,6 +461,10 @@ describe('a shop order paid from the Wallet is reported once, not twice', () => 
     assert.equal(refs[0].gross_pence, -5000);
     assert.equal(refs[0].fee_pence, -250);
     assert.equal(refs[0].net_pence, -4750);
+    // Disambiguated from a genuine till-payment refund: this reverses a
+    // wallet-FUNDED shop order, not a wallet payment, so the savings
+    // calculator (kind === 'wallet_payment_refund' only) must never net it.
+    assert.equal(refs[0].kind, 'product_sale_refund');
   });
 
   test('and that pair nets to zero, leaving the other sales untouched', () => {
@@ -891,6 +900,136 @@ describe('the mobile CSV reaches disk with its byte-order mark', () => {
     const shareAt = s.indexOf('Share.share({ url: uri');
     assert.ok(shareAt > writeAt, 'the share happens before the body is written');
     assert.ok(!/Share\.share\(\{\s*message:/.test(s), 'the share sends a rebuilt string rather than the file');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe('"Saved with Wallet" nets a refund against its own sale, never overstating', () => {
+  // A: kept, never refunded. B: refunded the same period. C: sold in August,
+  // refunded in September — the one case a same-period test cannot reach.
+  const PAY_A = 'f0000000-0000-4000-8000-0000000000a1';
+  const PAY_B = 'f0000000-0000-4000-8000-0000000000b1';
+  const REF_B = 'f0000000-0000-4000-8000-0000000000b2';
+  const PAY_C = 'f0000000-0000-4000-8000-0000000000c1';
+  const REF_C = 'f0000000-0000-4000-8000-0000000000c2';
+  const BENCH = { card_percent_bps: 175, card_fixed_pence: 0 };
+
+  function savingsFixtures() {
+    const o = raw(`
+      delete from public.local_wallet_transactions;
+      delete from public.local_businesses;
+      delete from public.profiles;
+      delete from auth.users;
+      insert into auth.users(id) values ('${OWNER}'),('${CUST}');
+      insert into public.profiles(id, full_name) values ('${OWNER}','Owner One'),('${CUST}','Darren Fullerton');
+      insert into public.local_businesses (id, owner_id, name, category, address)
+        values ('${BIZ}','${OWNER}','Anderson & Co','retail','Lerwick');
+
+      -- A: £20.00 at 1.5% (30p), kept.
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,platform_fee_pence,cashback_pence,idempotency_key,transfer_state,created_at)
+        values ('${PAY_A}','${CUST}','${BIZ}','spend',-2000,30,0,'sav-a','sent','2026-09-05 10:00:00+00');
+
+      -- B: £50.00 at 1.5% (75p), refunded the same day — same period as its sale.
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,platform_fee_pence,cashback_pence,idempotency_key,transfer_state,created_at)
+        values ('${PAY_B}','${CUST}','${BIZ}','spend',-5000,75,0,'sav-b','sent','2026-09-06 10:00:00+00');
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,reverses_transaction_id,idempotency_key,created_at)
+        values ('${REF_B}','${CUST}','${BIZ}','refund',5000,'${PAY_B}','sav-b:reversal','2026-09-07 10:00:00+00');
+
+      -- C: £30.00 at 1.5% (45p), sold in August, refunded in September.
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,platform_fee_pence,cashback_pence,idempotency_key,transfer_state,created_at)
+        values ('${PAY_C}','${CUST}','${BIZ}','spend',-3000,45,0,'sav-c','sent','2026-08-20 10:00:00+00');
+      insert into public.local_wallet_transactions
+        (id,user_id,business_id,type,amount_pence,reverses_transaction_id,idempotency_key,created_at)
+        values ('${REF_C}','${CUST}','${BIZ}','refund',3000,'${PAY_C}','sav-c:reversal','2026-09-03 10:00:00+00');
+    `);
+    assert.doesNotMatch(o, /ERROR/i, o.slice(0, 1200));
+  }
+
+  before(() => { schema(); savingsFixtures(); });
+
+  // The exact formula both clients implement, reproduced here so the proof is
+  // against the real RPC's rows, not against invented client state.
+  function savingsFor(rows: Row[]) {
+    const walletRows = rows.filter((r) =>
+      (r.direction === 'in' && r.kind === 'wallet_payment') ||
+      (r.direction === 'refund' && r.kind === 'wallet_payment_refund'));
+    if (walletRows.length === 0) return null;
+    let sales = 0, walletFees = 0, cardFees = 0;
+    for (const r of walletRows) {
+      sales += r.gross_pence;
+      walletFees += r.fee_pence;
+      const sign = r.gross_pence < 0 ? -1 : 1;
+      cardFees += sign * (Math.floor((Math.abs(r.gross_pence) * BENCH.card_percent_bps) / 10_000) + BENCH.card_fixed_pence);
+    }
+    return { sales, walletFees, cardFees, estimatedSaved: Math.max(0, cardFees - walletFees) };
+  }
+
+  test('1. a payment that is never refunded contributes its full saving', () => {
+    // Isolate A by removing B and C's rows from the row set; A alone is the
+    // baseline every other test below is checked against.
+    const aOnly = savingsFor(statement(AUG, OCT).filter((r) => r.reference === PAY_A || (r.direction === 'in' && r.gross_pence === 2000)))!;
+    assert.equal(aOnly.sales, 2000);
+    assert.equal(aOnly.walletFees, 30);
+    assert.equal(aOnly.cardFees, 35); // floor(2000 * 175 / 10000)
+    assert.equal(aOnly.estimatedSaved, 5);
+  });
+
+  test('2. a payment refunded in full, same period, contributes nothing — removing the pair changes nothing', () => {
+    const withB = savingsFor(statement(SEPT, OCT))!;
+    const withoutB = savingsFor(statement(SEPT, OCT).filter((r) =>
+      r.reference !== PAY_B && !(r.direction === 'in' && r.gross_pence === 5000)))!;
+    assert.deepEqual(withB, withoutB, 'B and its same-period refund were not fully netted to zero');
+  });
+
+  test('3. of two payments, only the unrefunded one is retained', () => {
+    // September holds A (kept) and B + its refund (netted) and C's refund
+    // alone (its sale was in August). The period total must equal A's own
+    // figure exactly — B contributes nothing, and C's refund alone must not
+    // drag the period negative beyond the clamp.
+    const s = savingsFor(statement(SEPT, OCT))!;
+    assert.equal(s.sales, 2000 + 5000 - 5000 - 3000);
+    assert.equal(s.walletFees, 30 + 75 - 75 - 45);
+    assert.equal(s.estimatedSaved, 0, 'a refund-heavy period must clamp to zero, never show as negative');
+  });
+
+  test('4. partial refunds: not a case the calculator needs to handle', () => {
+    // wallet_reverse_debit (the only way a wallet spend is ever reversed)
+    // takes no amount — it always returns the whole original spend, and a
+    // second reversal of the same transaction is refused as already-done.
+    // There is no partial-refund row this calculator could ever see.
+    const o = raw(`insert into public.local_wallet_transactions
+      (id,user_id,business_id,type,amount_pence,reverses_transaction_id,idempotency_key,created_at)
+      values ('aaaa1111-0000-4000-8000-0000000000aa','${CUST}','${BIZ}','refund',2500,'${PAY_B}','sav-b:reversal','2026-09-08 10:00:00+00');`);
+    // The SAME idempotency key as REF_B's reversal, exactly as the real
+    // derived key would be for any further attempt to reverse PAY_B, so a
+    // second "partial" reversal collides with the first and is refused.
+    assert.match(o, /duplicate key|unique/i, 'a second reversal of the same spend was accepted — partial refunds would double-count');
+  });
+
+  test('5. a payment kept in its own period, refunded in a later one: each period is correct on its own terms', () => {
+    // August reports C exactly as it was earned that month — unaffected by a
+    // refund that has not happened yet from August's point of view.
+    const aug = savingsFor(statement(AUG, SEPT))!;
+    assert.equal(aug.sales, 3000);
+    assert.equal(aug.walletFees, 45);
+    assert.equal(aug.cardFees, 52); // floor(3000 * 175 / 10000)
+    assert.equal(aug.estimatedSaved, 7);
+  });
+
+  test('across the whole lifecycle, only the kept payment survives', () => {
+    // A full range spanning every sale and every refund must equal exactly
+    // what a single never-refunded payment of A's size would show — B and C
+    // cancel completely, regardless of which side of a month boundary their
+    // refund fell on.
+    const whole = savingsFor(statement(AUG, OCT))!;
+    assert.equal(whole.sales, 2000);
+    assert.equal(whole.walletFees, 30);
+    assert.equal(whole.cardFees, 35);
+    assert.equal(whole.estimatedSaved, 5);
   });
 });
 
