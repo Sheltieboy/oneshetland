@@ -10,20 +10,28 @@ import * as Haptics from 'expo-haptics';
 import { colors, radius, fontSize } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
-import { respondToCharge, businessName } from '@/lib/member-card';
+import { respondToCharge, businessName, type WalletInvokeError } from '@/lib/member-card';
 
 const ACCENT = '#0E7490';
+// Neutral/warning — never the destructive red below. The liquidity preflight
+// is an intentional operational refusal before any debit, not a failure.
+const NEUTRAL = '#92400E';
+const FAILURE = '#e11d48';
 const money = (p: number) => `£${(p / 100).toFixed(2)}`;
 
 interface ActiveRequest { id: string; businessName: string; amountPence: number; expiresAt: number; }
 type Row = { id: string; business_id: string; amount_pence: number; expires_at: string; status: string };
+// 'neutral' is its own kind, deliberately distinct from 'failure': a
+// liquidity preflight refusal, never collapsed into the same badge/colour a
+// genuine payment failure gets.
+type ResultKind = 'success' | 'neutral' | 'failure';
 
 export function ChargeApprovalListener() {
   const { session } = useAuth();
   const userId = session?.user?.id;
   const [req, setReq] = useState<ActiveRequest | null>(null);
   const [phase, setPhase] = useState<'ask' | 'working' | 'done'>('ask');
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [result, setResult] = useState<{ kind: ResultKind; text: string; detail?: string } | null>(null);
   const [secsLeft, setSecsLeft] = useState(0);
 
   const activate = useCallback(async (row: Row) => {
@@ -104,14 +112,25 @@ export function ChargeApprovalListener() {
     setPhase('working');
     try {
       const r = await respondToCharge(req.id, decision);
-      if (decision === 'decline') setResult({ ok: true, text: 'Declined — nothing was charged.' });
+      if (decision === 'decline') setResult({ kind: 'success', text: 'Declined — nothing was charged.' });
       else {
-        setResult({ ok: true, text: `Paid ${money(req.amountPence)} to ${req.businessName}.${r.cashback_pence ? ` You earned ${money(r.cashback_pence)} cashback.` : ''}` });
+        setResult({ kind: 'success', text: `Paid ${money(req.amountPence)} to ${req.businessName}.${r.cashback_pence ? ` You earned ${money(r.cashback_pence)} cashback.` : ''}` });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       }
       setPhase('done');
     } catch (e) {
-      setResult({ ok: false, text: e instanceof Error ? e.message : 'Something went wrong.' });
+      // 'liquidity_unavailable' is an intentional operational refusal, before
+      // any debit — the customer's wallet is untouched. Never the same red
+      // failure badge a genuine declined/failed payment gets.
+      const reason = (e as WalletInvokeError)?.reason;
+      if (reason === 'liquidity_unavailable') {
+        setResult({
+          kind: 'neutral', text: 'Wallet temporarily unavailable',
+          detail: 'No money has been taken. Please use another payment method.',
+        });
+      } else {
+        setResult({ kind: 'failure', text: e instanceof Error ? e.message : 'Something went wrong.' });
+      }
       setPhase('done');
     }
   }
@@ -124,10 +143,11 @@ export function ChargeApprovalListener() {
         <View style={styles.card}>
           {phase === 'done' ? (
             <>
-              <View style={[styles.badge, { backgroundColor: result?.ok ? ACCENT : '#e11d48' }]}>
-                <Text style={styles.badgeText}>{result?.ok ? '✓' : '!'}</Text>
+              <View style={[styles.badge, { backgroundColor: result?.kind === 'success' ? ACCENT : result?.kind === 'neutral' ? NEUTRAL : FAILURE }]}>
+                <Text style={styles.badgeText}>{result?.kind === 'success' ? '✓' : result?.kind === 'neutral' ? 'i' : '!'}</Text>
               </View>
               <Text style={styles.body}>{result?.text}</Text>
+              {result?.detail && <Text style={styles.detail}>{result.detail}</Text>}
               <TouchableOpacity style={[styles.btn, { backgroundColor: ACCENT }]} onPress={() => setReq(null)}>
                 <Text style={styles.btnText}>Done</Text>
               </TouchableOpacity>
@@ -159,6 +179,7 @@ const styles = StyleSheet.create({
   card: { width: '100%', maxWidth: 380, backgroundColor: '#fff', borderRadius: radius.lg, padding: 24, alignItems: 'center', gap: 6 },
   title: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
   body: { fontSize: fontSize.md, color: colors.textSecondary, textAlign: 'center' },
+  detail: { fontSize: fontSize.sm, color: colors.textLight, textAlign: 'center', marginTop: 2 },
   amount: { fontSize: 44, fontWeight: '900', color: colors.textPrimary, marginVertical: 4 },
   expiry: { fontSize: fontSize.sm, color: colors.textLight },
   badge: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },

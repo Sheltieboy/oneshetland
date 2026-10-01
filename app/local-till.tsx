@@ -229,6 +229,15 @@ function LocalTillBody() {
           {charge.status === 'declined' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Customer declined</Text>}
           {charge.status === 'expired' && <Text style={[styles.chargeResult, { color: '#d97706' }]}>Request expired — try again</Text>}
           {charge.status === 'failed' && <Text style={[styles.chargeResult, { color: '#dc2626' }]}>Payment failed (not charged)</Text>}
+          {charge.status === 'liquidity_unavailable' && (
+            // An intentional operational refusal, before any debit — never
+            // the same red "Payment failed" a genuine Stripe rejection gets.
+            // Nothing is wrong with this customer or this payment.
+            <>
+              <Text style={[styles.chargeResult, { color: '#92400E' }]}>Wallet temporarily unavailable</Text>
+              <Text style={styles.chargeHint}>No money was taken. Ask the customer to use another payment method.</Text>
+            </>
+          )}
           {charge.status === 'cancelled' && <Text style={[styles.chargeResult, { color: colors.textMuted }]}>Cancelled</Text>}
           <TouchableOpacity
             disabled={cancelling}

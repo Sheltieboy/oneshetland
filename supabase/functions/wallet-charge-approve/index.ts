@@ -94,9 +94,13 @@ serve(async (req) => {
     });
 
     if (!result.ok) {
-      // executeWalletPayment already refunded the wallet if the transfer failed.
-      await svc.from('wallet_charge_requests').update({ status: 'failed', resolved_at: new Date().toISOString() }).eq('id', reqRow.id);
-      return json({ error: result.error }, result.status);
+      // 'liquidity_unavailable' is an intentional operational refusal, BEFORE
+      // any debit — never collapsed into the same 'failed' a genuine Stripe
+      // transfer rejection gets. The till and the approval prompt each read
+      // this to show a calm, neutral state instead of a destructive one.
+      const settledStatus = result.reason === 'liquidity_unavailable' ? 'liquidity_unavailable' : 'failed';
+      await svc.from('wallet_charge_requests').update({ status: settledStatus, resolved_at: new Date().toISOString() }).eq('id', reqRow.id);
+      return json({ error: result.error, reason: result.reason }, result.status);
     }
 
     await svc.from('wallet_charge_requests')

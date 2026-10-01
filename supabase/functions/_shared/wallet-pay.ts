@@ -38,7 +38,15 @@ export type WalletPayResult =
   // resumable.
   // 'blocked' is a wallet under refund or chargeback recovery — the debit
   // primitive refuses before anything is claimed.
-  | { ok: false; status: number; error: string; reason: 'ineligible' | 'insufficient' | 'blocked' | 'rejected' | 'unresolved'; transactionId?: string };
+  // 'liquidity_unavailable' is its own reason, deliberately distinct from
+  // 'ineligible': the liquidity preflight is an intentional OPERATIONAL
+  // refusal (we can see we may not be able to settle this transfer, or we
+  // cannot even check) — nothing about the customer or the business is
+  // wrong, unlike every other 'ineligible' cause above it. A caller must
+  // never collapse this into a generic "payment failed" — see
+  // wallet-charge-approve's dedicated wallet_charge_requests status and
+  // the till/approval UIs' dedicated neutral treatment.
+  | { ok: false; status: number; error: string; reason: 'ineligible' | 'insufficient' | 'blocked' | 'rejected' | 'unresolved' | 'liquidity_unavailable'; transactionId?: string };
 
 /**
  * Debit the customer's wallet and pay the business, atomically and idempotently.
@@ -136,7 +144,7 @@ export async function executeWalletPayment(
   if (liquidity.status === 'unknown') {
     console.error(`[wallet-liquidity] preflight could not read Stripe balance for a ${transferAmount}p transfer — declining, not guessing: ${liquidity.error}`);
     return {
-      ok: false, status: 503, reason: 'ineligible',
+      ok: false, status: 503, reason: 'liquidity_unavailable',
       error: 'Wallet payments are temporarily unavailable. Please use another payment method.',
     };
   }
@@ -148,7 +156,7 @@ export async function executeWalletPayment(
         `available ${liquidity.available_pence}p, reserve ${liquidity.reserve_pence}p, already held ${reservation.heldPence}p`,
       );
       return {
-        ok: false, status: 503, reason: 'ineligible',
+        ok: false, status: 503, reason: 'liquidity_unavailable',
         error: 'Wallet payments are temporarily unavailable. Please use another payment method.',
       };
     }
