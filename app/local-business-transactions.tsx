@@ -12,6 +12,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { colors, spacing, radius, fontSize } from '@/constants/theme';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { supabase } from '@/lib/supabase';
+import { fetchWalletSavingsBenchmark, type WalletSavingsBenchmark } from '@/lib/local-api';
 
 const ACCENT = '#7C3AED';
 const money = (p: number) => `£${(p / 100).toFixed(2)}`;
@@ -56,6 +57,10 @@ export default function BusinessTransactionsScreen() {
   const [rows, setRows] = useState<Txn[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [benchmark, setBenchmark] = useState<WalletSavingsBenchmark | null>(null);
+
+  // Loaded once — the benchmark rarely changes and isn't period-dependent.
+  useEffect(() => { fetchWalletSavingsBenchmark().then(setBenchmark).catch(() => {}); }, []);
 
   const load = useCallback(async (key: PresetKey) => {
     if (!businessId) return;
@@ -87,6 +92,29 @@ export default function BusinessTransactionsScreen() {
     }
     return { grossIn, refunds, fees, cashback, net: netIn - costsOut };
   }, [rows]);
+
+  // Estimated against the configured benchmark — a comparison, never an
+  // assertion about this merchant's real card-processing contract. Scoped to
+  // genuine pay-at-till Wallet payments (kind "wallet_payment") only: a
+  // wallet-funded gift, pass or shop order is charged at THAT rail's own
+  // commission, not the wallet rate, so comparing it against a card
+  // benchmark here would compare the wrong fee to the wrong thing.
+  const savings = useMemo(() => {
+    if (!benchmark || !benchmark.enabled) return null;
+    const walletRows = rows.filter(r => r.direction === 'in' && r.kind === 'wallet_payment');
+    if (walletRows.length === 0) return null;
+    let sales = 0, walletFees = 0, cardFees = 0;
+    for (const r of walletRows) {
+      sales += r.gross_pence;
+      walletFees += r.fee_pence;
+      cardFees += Math.floor((r.gross_pence * benchmark.card_percent_bps) / 10_000) + benchmark.card_fixed_pence;
+    }
+    // Never shown as a misleading negative "saved" figure — if a
+    // misconfigured benchmark ever sits below the wallet rate, the honest
+    // commercial answer is "nothing to show", not "minus three pounds".
+    const estimatedSaved = Math.max(0, cardFees - walletFees);
+    return { sales, walletFees, cardFees, estimatedSaved };
+  }, [rows, benchmark]);
 
   async function exportCsv() {
     try {
@@ -144,6 +172,26 @@ export default function BusinessTransactionsScreen() {
           <Stat label="Net to you" value={money(totals.net)} accent />
         </View>
 
+        {/* Saved with Wallet — commercial, not accounting-heavy. Hidden
+            entirely when the benchmark is disabled or there's nothing to
+            compare yet, rather than showing a £0.00 that reads as a bug. */}
+        {savings && (
+          <View style={styles.savingsCard}>
+            <Text style={styles.savingsLabel}>Saved with Wallet</Text>
+            <Text style={styles.savingsValue}>{money(savings.estimatedSaved)} this period</Text>
+            <Text style={styles.savingsNote}>
+              Estimated against a {(benchmark!.card_percent_bps / 100).toFixed(2)}% card-payment benchmark
+              {benchmark!.card_fixed_pence > 0 ? ` + ${money(benchmark!.card_fixed_pence)}` : ''} — a configured
+              comparison, not your actual card-processing rate.
+            </Text>
+            <View style={styles.savingsBreakdown}>
+              <View style={styles.savingsCol}><Text style={styles.savingsColLabel}>Wallet sales</Text><Text style={styles.savingsColValue}>{money(savings.sales)}</Text></View>
+              <View style={styles.savingsCol}><Text style={styles.savingsColLabel}>Wallet fees</Text><Text style={styles.savingsColValue}>{money(savings.walletFees)}</Text></View>
+              <View style={styles.savingsCol}><Text style={styles.savingsColLabel}>Benchmark fees</Text><Text style={styles.savingsColValue}>{money(savings.cardFees)}</Text></View>
+            </View>
+          </View>
+        )}
+
         <TouchableOpacity style={[styles.exportBtn, rows.length === 0 && { opacity: 0.4 }]} disabled={rows.length === 0} onPress={exportCsv}>
           <Text style={styles.exportText}>⬇  Export CSV</Text>
         </TouchableOpacity>
@@ -170,6 +218,15 @@ export default function BusinessTransactionsScreen() {
                 if (r.cashback_pence !== 0) breakdown.push(`Cashback -${money(r.cashback_pence)}`);
                 breakdown.push(`Net to you ${money(r.net_pence)}`);
               }
+              // A subtle per-row proof, only for genuine Wallet payments, only
+              // when there's something positive to show — the period summary
+              // above is the real metric; this is corroboration, not a second
+              // thing to read on every row.
+              if (r.direction === 'in' && r.kind === 'wallet_payment' && benchmark?.enabled) {
+                const cardFee = Math.floor((r.gross_pence * benchmark.card_percent_bps) / 10_000) + benchmark.card_fixed_pence;
+                const saved = cardFee - r.fee_pence;
+                if (saved > 0) breakdown.push(`saved ${money(saved)} vs card`);
+              }
               return (
                 <View key={i} style={styles.rowItem}>
                   <View style={{ flex: 1 }}>
@@ -185,7 +242,7 @@ export default function BusinessTransactionsScreen() {
                         {r.cashback_pence !== 0 ? ` · ${money(Math.abs(r.cashback_pence))} cashback reversed` : ''}
                       </Text>
                     )}
-                    {hasDeduction && <Text style={styles.rowMeta}>{breakdown.join(' · ')}</Text>}
+                    {breakdown.length > 0 && <Text style={styles.rowMeta}>{breakdown.join(' · ')}</Text>}
                   </View>
                   <Text style={[styles.rowNet, { color: r.direction === 'in' ? '#16a34a' : '#dc2626' }]}>
                     {r.direction === 'in' ? money(r.gross_pence)
@@ -228,6 +285,14 @@ const styles = StyleSheet.create({
   statValue: { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary, marginTop: 2 },
   exportBtn: { alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: 16, paddingVertical: 9, backgroundColor: '#fff' },
   exportText: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
+  savingsCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 14 },
+  savingsLabel: { fontSize: 11, fontWeight: '800', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  savingsValue: { fontSize: fontSize.xl, fontWeight: '900', color: ACCENT, marginTop: 2 },
+  savingsNote: { fontSize: 11, color: colors.textLight, marginTop: 4, lineHeight: 15 },
+  savingsBreakdown: { flexDirection: 'row', marginTop: 10, gap: 12 },
+  savingsCol: { flex: 1 },
+  savingsColLabel: { fontSize: 10, color: colors.textMuted, fontWeight: '700' },
+  savingsColValue: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, marginTop: 1 },
   list: { backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   rowItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   rowType: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },

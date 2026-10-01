@@ -14,7 +14,7 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from './commission.ts';
 import { debitAndTransfer, selfPaymentBlock } from './wallet-ledger.ts';
-import { getCommissionConfig } from './commission-config.ts';
+import { getWalletCommissionConfig } from './commission-config.ts';
 import { sendUserPush } from './send-push.ts';
 
 export interface PayBusiness {
@@ -53,14 +53,31 @@ export async function executeWalletPayment(
 
   if (business.owner_id === userId) return { ok: false, status: 403, error: "Can't pay yourself", reason: 'ineligible' };
 
+  // Where does this business's money actually go? The same rule products and
+  // event tickets already use: the business's own Connect account when it
+  // has one, otherwise the owner's central account. Resolved once, here, and
+  // used for both the self-payment check below and the transfer destination
+  // further down, so neither can disagree with the other about which
+  // account is actually being paid. This replaces a direct read of
+  // business.stripe_account_id/payout_enabled, which had no such fallback
+  // and wrongly refused a business that only sells through its owner's
+  // central account — payable everywhere else on the platform (products,
+  // event tickets), refused only here.
+  const { data: payoutRows, error: payoutErr } = await svc.rpc('business_payout_destination', { p_business: business.id });
+  if (payoutErr) {
+    return { ok: false, status: 503, error: 'Could not check this business’s payment setup. Please try again.', reason: 'ineligible' };
+  }
+  const payout = Array.isArray(payoutRows) ? payoutRows[0] : payoutRows;
+  const sellerAccountId: string | null = payout?.account_id ?? null;
+
   // The same question the wallet-checkout routes ask, and a broader one than
   // the line above: a connected account can be attached to more than one
   // resource, so owning THIS business is not the only way to end up with the
-  // money. One definition, asked of the destination account.
-  const selfPay = await selfPaymentBlock(svc, userId, business.stripe_account_id);
+  // money. One definition, asked of the resolved destination account.
+  const selfPay = await selfPaymentBlock(svc, userId, sellerAccountId);
   if (selfPay) return { ok: false, status: 403, error: selfPay.body.error, reason: 'ineligible' };
   if (!business.accepts_wallet) return { ok: false, status: 400, error: "This business doesn't accept wallet payments yet", reason: 'ineligible' };
-  if (!business.stripe_account_id || !business.payout_enabled) {
+  if (!sellerAccountId) {
     return { ok: false, status: 400, error: "Business hasn't finished Stripe onboarding", reason: 'ineligible' };
   }
 
@@ -86,7 +103,9 @@ export async function executeWalletPayment(
 
   // Cashback is BUSINESS-FUNDED — comes out of the merchant's transfer.
   const cashbackPence = Math.floor(amountPence * (business.cashback_percent ?? 0) / 100);
-  const walletCfg = await getCommissionConfig(svc, 'wallet');
+  // Tier-aware and resolved server-side, from the business's own current
+  // subscription_tier column — never from anything the caller passed in.
+  const walletCfg = await getWalletCommissionConfig(svc, business.id);
   const platformFee = calculateCommission(amountPence, walletCfg, 'wallet').fee_pence;
   const transferAmount = amountPence - platformFee - cashbackPence;
   if (transferAmount < 1) {
@@ -112,7 +131,7 @@ export async function executeWalletPayment(
     idempotencyKey:   args.idempotencyKey ?? null,
     platformFeePence: platformFee,
     transfer: {
-      destination: business.stripe_account_id!,
+      destination: sellerAccountId!,
       amountPence: transferAmount,
       description: `OneShetland Marketplace payment from ${userId.slice(0, 8)} (£${(platformFee / 100).toFixed(2)} platform fee${cashbackPence > 0 ? ` + £${(cashbackPence / 100).toFixed(2)} cashback to customer` : ''})`,
       metadata: {

@@ -874,6 +874,24 @@ export async function fetchWalletTransactions(userId: string, limit = 50): Promi
   return txs.map(t => ({ ...t, business: t.business_id ? (bizMap[t.business_id] ?? null) : null }));
 }
 
+export interface WalletSavingsBenchmark {
+  card_percent_bps: number;
+  card_fixed_pence: number;
+  enabled: boolean;
+}
+
+/**
+ * The admin-configured "what a normal card payment would have cost"
+ * comparison benchmark — a deliberately configurable estimate, never a real
+ * processor's contract. admin_config itself is admin-only; this RPC hands
+ * over exactly these three values and nothing else from that table.
+ */
+export async function fetchWalletSavingsBenchmark(): Promise<WalletSavingsBenchmark> {
+  const { data, error } = await supabase.rpc('get_wallet_savings_benchmark').maybeSingle();
+  if (error || !data) return { card_percent_bps: 175, card_fixed_pence: 0, enabled: true };
+  return data as WalletSavingsBenchmark;
+}
+
 /**
  * Start a top-up.
  *
