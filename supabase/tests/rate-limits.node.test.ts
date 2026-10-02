@@ -220,6 +220,9 @@ const EXEMPT: Record<string, string> = {
   'social-publisher':            'cron secret (Step 10B)',
   'sync-council-jobs':           'cron secret (Step 10B)',
   'notify-hub':                  'limited, but exempt from the source scan because its guard is inside the try block',
+  'wallet-liquidity-monitor':    'cron secret (fails closed); pages admins only when the Wallet liquidity status WORSENS, keyed on a single-row alert-state table',
+  'wallet-liquidity-fund':       'admin-only (gateway JWT + profiles check) and disabled by wallet.liquidity.funding_enabled; idempotent by a unique client_request_id and Stripe\'s Idempotency-Key',
+  'refund-reconcile-sweep':      'cron secret (fails closed); flag-only, never moves money — the push match is only the shared service-client helper',
   // Post-payment fulfilment. Money has already moved; refusing these strands a
   // paid order, which is a worse outcome than the abuse a ceiling would stop.
   // Each verifies the caller owns the intent, so spamming re-reads only your own.
