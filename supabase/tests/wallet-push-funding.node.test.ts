@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import {
   candidateFromTopup, candidateFromBalanceTransaction, pickFundingMatch, nextSessionState,
-  isEligibleCandidate, CLOCK_SLACK_SECONDS,
+  isEligibleCandidate, CLOCK_SLACK_SECONDS, OPEN_SESSION_STATUSES,
   type FundingCandidate, type MatchableSession,
 } from '../functions/_shared/wallet-funding-match.ts';
 
@@ -418,6 +418,8 @@ describe('a funding session records intent only: no Stripe write, no Topup, no c
     sql(ins('a'));
     assert.throws(() => sql(ins('a')), /duplicate key|unique/i, 'same client_request_id must be rejected');
     assert.throws(() => sql(ins('b')), /duplicate key|unique/i, 'a second OPEN session must be rejected');
+    sql(`update public.wallet_liquidity_funding_sessions set status = 'pending_at_stripe' where client_request_id = '${TEST_PREFIX}a';`);
+    assert.throws(() => sql(ins('c')), /duplicate key|unique/i, 'a session RECEIVED but not yet available still blocks a second one');
     sql(`update public.wallet_liquidity_funding_sessions set status = 'available' where client_request_id = '${TEST_PREFIX}a';`);
     sql(ins('b'));
     const [n] = sql(`select count(*)::int as n from public.wallet_liquidity_funding_sessions where client_request_id like '${TEST_PREFIX}%';`);
@@ -487,7 +489,7 @@ describe('the Admin funding experience', () => {
 
   test('state copy: awaiting / received-pending / funded', () => {
     assert.match(panel, /funding transfer awaiting Stripe/);
-    assert.match(panel, /Received by Stripe — pending availability/);
+    assert.match(panel, /Funding received by Stripe/);
     assert.match(panel, /Reserve funded/);
     assert.match(panel, /Spendable headroom: \{gbp\(snapshot\.headroom_pence\)\}/);
     assert.match(panel, /Wallet status: \{STATUS_STYLE\[snapshot\.status\]\.label\}/);
@@ -555,12 +557,11 @@ describe('the funding order is unambiguous: the session exists BEFORE any instru
   });
 
   test('the send instruction appears ONLY in the awaiting_funds branch of the active view — never once Stripe has the money', () => {
-    const awaitingAt = after.indexOf('session.status === "awaiting_funds"');
+    const awaitingAt = after.lastIndexOf('session.status === "awaiting_funds"');
     const sendAt = after.indexOf('Now send exactly');
     const elseAt = after.indexOf(') : (', awaitingAt);
-    const receivedAt = after.indexOf('Do not send it');
-    assert.ok(awaitingAt >= 0 && sendAt > awaitingAt && sendAt < elseAt && receivedAt > elseAt);
-    assert.doesNotMatch(after.slice(elseAt), /Now send|<CopyButton|FundingDetailsBlock/);
+    assert.ok(awaitingAt >= 0 && sendAt > awaitingAt && sendAt < elseAt);
+    assert.doesNotMatch(after.slice(elseAt), /Now send|<CopyButton|FundingDetailsBlock|Create funding instructions/);
   });
 
   test('an open session shows ITS OWN frozen amount, never a freshly recalculated recommendation', () => {
@@ -664,7 +665,7 @@ describe('copy: the button creates funding instructions and never reads as OneSh
     assert.match(after, /<CopyButton label="Copy amount"/);
     const banner = view(panel, 'SessionBanner');
     assert.match(banner, /funding transfer awaiting Stripe/);
-    assert.match(banner, /Received by Stripe — pending availability/);
+    assert.match(banner, /Funding received by Stripe/);
     assert.match(banner, /Reserve funded/);
   });
 
@@ -677,6 +678,81 @@ describe('copy: the button creates funding instructions and never reads as OneSh
   test('copy-only change: the request ids and server calls are untouched', () => {
     assert.match(before, /invokeAdmin\("wallet-liquidity-funding-session", \{\s*action: "start", requested_amount_pence: amountPence, client_request_id: requestId,/);
     assert.match(after, /action: "cancel", session_id: session\.id/);
+  });
+});
+
+/* ── 6d. Received is not available; pending funding cannot trigger duplicate instructions ─────── */
+
+describe('pending funds are never presented as available, and never invite a second transfer', () => {
+  const raw = readWeb('components/admin/WalletLiquidityPanel.tsx');
+  const panel = code(raw);
+  const banner = view(panel, 'SessionBanner');
+  const pendingBanner = banner.slice(banner.indexOf('session.status === "pending_at_stripe"'), banner.indexOf('session.status === "available"'));
+  const availableBanner = banner.slice(banner.indexOf('session.status === "available"'), banner.indexOf('session.status === "expired"'));
+  const active = view(panel, 'ActiveSessionView');
+  const pendingActive = active.slice(active.lastIndexOf('session.status === "awaiting_funds"'));
+
+  test('both awaiting_funds AND pending_at_stripe count as an open session, which mounts the active view — not the start view', () => {
+    const pf = view(panel, 'PushFunding');
+    assert.match(pf, /s\.status === "awaiting_funds" \|\| s\.status === "pending_at_stripe"/);
+    assert.match(pf, /\{open \? \(\s*<ActiveSessionView[\s\S]*?\) : \(\s*<StartSessionView/);
+    assert.equal((panel.match(/<StartSessionView/g) ?? []).length, 1, 'the start view is mounted in exactly one place');
+    assert.ok(OPEN_SESSION_STATUSES.includes('awaiting_funds') && OPEN_SESSION_STATUSES.includes('pending_at_stripe'));
+  });
+
+  test('pending_at_stripe is shown prominently as "Funding received by Stripe … waiting to become available … Do not send this transfer again."', () => {
+    assert.match(pendingBanner, /Funding received by Stripe/);
+    assert.match(pendingBanner, /has been received and is waiting to\s+become available\./);
+    assert.match(pendingBanner, /Do not send this transfer again\./);
+    assert.match(pendingBanner, /No action is needed right now/);
+  });
+
+  test('the pending state never says funded / complete / restored, and never shows Reserve funded', () => {
+    const pendingUi = pendingBanner + pendingActive;
+    assert.doesNotMatch(pendingUi, /Reserve funded|Funding complete|funded|Funding available|restored|Healthy now/i);
+  });
+
+  test('"Reserve funded" appears once, only for an available session, and only when the live Wallet status is healthy', () => {
+    assert.equal((panel.match(/Reserve funded/g) ?? []).length, 1);
+    assert.match(availableBanner, /snapshot\.status === "healthy" \? "Reserve funded" : "Funding available"/);
+    assert.doesNotMatch(raw, /Funding complete/);
+  });
+
+  test('the pending view offers no way to create instructions, no send instruction, no bank details and no copy buttons', () => {
+    assert.doesNotMatch(pendingActive.slice(pendingActive.indexOf(') : (')), /Create funding instructions|Create instructions|Now send|<CopyButton|FundingDetailsBlock|startSession/);
+    assert.doesNotMatch(active, /Create funding instructions|startSession/);
+    assert.match(pendingActive, /No action is needed\. A new funding transfer can be created only after this one becomes available\./);
+  });
+
+  test('the pending view shows received amount, Stripe pending balance, current available, target, status and expected availability', () => {
+    for (const s of ['Received by Stripe', 'Stripe pending balance', 'Current available', 'Target available balance', 'Wallet status', 'Expected available']) {
+      assert.ok(active.includes(s), `missing ${s}`);
+    }
+    assert.match(active, /gbp\(snapshot\.pending_pence\)/);
+  });
+
+  test('history labels distinguish Awaiting funds / Received by Stripe / Pending / Available', () => {
+    assert.match(panel, /awaiting_funds: "Awaiting funds"/);
+    assert.match(panel, /pending_at_stripe: "Received by Stripe \/ Pending"/);
+    assert.match(panel, /available: "Available"/);
+    assert.doesNotMatch(panel, /available: "Funded"/);
+  });
+
+  test('server side: the database permits only ONE open session, and "open" includes pending_at_stripe', () => {
+    const mig = read('supabase/migrations/20261026000000_wallet_push_funding.sql');
+    assert.match(mig, /idx_wallet_funding_sessions_one_open[\s\S]*?where status in \('awaiting_funds', 'pending_at_stripe'\)/);
+    const fn = code(read('supabase/functions/wallet-liquidity-funding-session/index.ts'));
+    assert.match(fn, /already being tracked/);
+  });
+
+  test('the live shape (Topup succeeded, balance transaction pending) leaves the session OPEN, so no second session can be started', () => {
+    const c = candidateFromTopup(
+      { id: 'tu_live', amount: 14507, currency: 'gbp', created: t0Unix + 3600, status: 'succeeded' },
+      { id: 'txn_live', type: 'topup', status: 'pending', available_on: t0Unix + 5 * 86400 },
+    )!;
+    const next = nextSessionState(session(), c, new Date((t0Unix + 7200) * 1000), 168)!;
+    assert.equal(next.status, 'pending_at_stripe');
+    assert.ok(OPEN_SESSION_STATUSES.includes(next.status));
   });
 });
 
