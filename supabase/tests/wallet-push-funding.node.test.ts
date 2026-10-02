@@ -75,9 +75,12 @@ const t0Unix = Math.floor(new Date(T0).getTime() / 1000);
 const session = (over: Partial<MatchableSession> = {}): MatchableSession => ({
   status: 'awaiting_funds', requested_amount_pence: 14507, created_at: T0, matched_ref: null, ...over,
 });
-const topup = (over: Record<string, unknown> = {}) => candidateFromTopup({
+const topup = (over: Record<string, unknown> = {}, bt?: Record<string, unknown> | null) => candidateFromTopup({
   id: 'tu_1', amount: 14507, currency: 'gbp', created: t0Unix + 3600, status: 'pending', ...over,
-});
+}, bt);
+// The balance transaction of a Topup — the ONLY thing that says whether the money is available.
+const btPending = { id: 'txn_1', type: 'topup', status: 'pending', available_on: t0Unix + 5 * 86400 };
+const btAvailable = { id: 'txn_1', type: 'topup', status: 'available', available_on: t0Unix + 3600 };
 
 /* ── 1. Matching rules ────────────────────────────────────────────────────── */
 
@@ -162,10 +165,10 @@ describe('session states: awaiting_funds → pending_at_stripe → available (an
     assert.equal(nextSessionState(session(), topup({ status: 'pending' })!, now, 168)?.status, 'pending_at_stripe');
   });
 
-  test('a succeeded Topup moves straight to available, or pending_at_stripe → available', () => {
-    assert.equal(nextSessionState(session(), topup({ status: 'succeeded' })!, now, 168)?.status, 'available');
+  test('a succeeded Topup whose balance transaction is AVAILABLE becomes available', () => {
+    assert.equal(nextSessionState(session(), topup({ status: 'succeeded' }, btAvailable)!, now, 168)?.status, 'available');
     assert.equal(
-      nextSessionState(session({ status: 'pending_at_stripe', matched_ref: 'tu_1' }), topup({ status: 'succeeded' })!, now, 168)?.status,
+      nextSessionState(session({ status: 'pending_at_stripe', matched_ref: 'tu_1' }), topup({ status: 'succeeded' }, btAvailable)!, now, 168)?.status,
       'available',
     );
   });
@@ -194,6 +197,59 @@ describe('session states: awaiting_funds → pending_at_stripe → available (an
   test('money already seen at Stripe never expires', () => {
     const past = new Date(t0Unix * 1000 + 999 * 3600_000);
     assert.equal(nextSessionState(session({ status: 'pending_at_stripe', matched_ref: 'tu_1' }), null, past, 168), null);
+  });
+});
+
+describe('received is NOT available: a succeeded Topup whose money is still in Stripe\'s pending balance', () => {
+  const now = new Date(t0Unix * 1000 + 2 * 3600_000);
+  // The exact live shape observed: Topup 'succeeded', balance transaction 'pending', available_on ~5 days out.
+  const liveShape = { id: 'tu_live', amount: 14507, currency: 'gbp', created: t0Unix + 3600, status: 'succeeded', expected_availability_date: t0Unix + 5 * 86400 };
+
+  test('succeeded Topup + PENDING balance transaction → pending_at_stripe, never available', () => {
+    const c = candidateFromTopup(liveShape, btPending)!;
+    assert.equal(c.state, 'pending');
+    assert.equal(nextSessionState(session(), c, now, 168)?.status, 'pending_at_stripe');
+  });
+
+  test('succeeded Topup with NO balance transaction evidence is conservatively pending, never available', () => {
+    assert.equal(candidateFromTopup(liveShape, null)!.state, 'pending');
+    assert.equal(candidateFromTopup(liveShape)!.state, 'pending');
+  });
+
+  test('a balance transaction with any non-"available" status is never treated as available', () => {
+    for (const status of ['pending', undefined, 'weird']) {
+      assert.equal(candidateFromTopup(liveShape, { ...btPending, status })!.state, 'pending');
+    }
+  });
+
+  test('the expected availability date is carried through for display (balance txn first, Topup field as fallback)', () => {
+    assert.equal(candidateFromTopup(liveShape, btPending)!.available_on_unix, btPending.available_on);
+    assert.equal(candidateFromTopup(liveShape, null)!.available_on_unix, liveShape.expected_availability_date);
+  });
+
+  test('a session already pending_at_stripe stays pending (no transition) while the balance transaction is pending', () => {
+    const open = session({ status: 'pending_at_stripe', matched_ref: 'tu_live' });
+    const c = pickFundingMatch(open, [candidateFromTopup(liveShape, btPending)!], new Set());
+    assert.equal(nextSessionState(open, c, now, 168), null);
+  });
+
+  test('it becomes available only once the balance transaction itself becomes available', () => {
+    const open = session({ status: 'pending_at_stripe', matched_ref: 'tu_live' });
+    const c = pickFundingMatch(open, [candidateFromTopup(liveShape, { ...btPending, status: 'available' })!], new Set());
+    assert.equal(nextSessionState(open, c, now, 168)?.status, 'available');
+  });
+
+  test('a raw balance transaction candidate is available only when its status is "available"', () => {
+    const mk = (status: string) => candidateFromBalanceTransaction({ id: 'txn_a', amount: 14507, currency: 'gbp', created: t0Unix + 60, type: 'adjustment', status, available_on: t0Unix + 9e5 })!;
+    assert.equal(mk('pending').state, 'pending');
+    assert.equal(mk('available').state, 'available');
+  });
+
+  test('the reconciler resolves a succeeded Topup\'s balance transaction (list, else GET) and passes it to the matcher', () => {
+    const rec = code(read('supabase/functions/_shared/wallet-funding-sessions.ts'));
+    assert.match(rec, /candidateFromTopup\(t, bt\)/);
+    assert.match(rec, /btById\.get\(t\.balance_transaction\) \?\? await stripeGet\(`\/balance_transactions\/\$\{t\.balance_transaction\}`\)/);
+    assert.doesNotMatch(rec, /candidateFromTopup\(t\)/, 'a Topup must never be judged without its balance transaction');
   });
 });
 
@@ -311,8 +367,8 @@ describe('a funding session records intent only: no Stripe write, no Topup, no c
   test('the reconciler only ever GETs from Stripe — never a POST/DELETE, and only the topups / balance_transactions endpoints', () => {
     assert.doesNotMatch(sessions, /method: 'POST'|method: 'DELETE'|method: 'PUT'|URLSearchParams|body:/);
     const paths = sessions.match(/stripeGet\(`[^`]+`\)/g) ?? [];
-    assert.ok(paths.length >= 3);
-    for (const p of paths) assert.match(p, /\/topups\?|\/balance_transactions\?/);
+    assert.ok(paths.length >= 4);
+    for (const p of paths) assert.match(p, /\/topups\?|\/balance_transactions[?/]/);
   });
 
   test('the reconciler does nothing (and calls Stripe not at all) when no session is open', () => {
@@ -541,7 +597,7 @@ describe('regression: session created → bank transfer initiated → Stripe arr
     const m1 = pickFundingMatch(s(), [arrived], new Set());
     assert.equal(m1?.ref, 'tu_ok');
     assert.equal(nextSessionState(s(), m1, new Date((sentAt + 3700) * 1000), 168)?.status, 'pending_at_stripe');
-    const settled = candidateFromTopup({ id: 'tu_ok', amount: 14507, currency: 'gbp', created: sentAt + 3600, status: 'succeeded' })!;
+    const settled = candidateFromTopup({ id: 'tu_ok', amount: 14507, currency: 'gbp', created: sentAt + 3600, status: 'succeeded' }, btAvailable)!;
     const open = s({ status: 'pending_at_stripe', matched_ref: 'tu_ok' });
     assert.equal(nextSessionState(open, pickFundingMatch(open, [settled], new Set()), new Date((sentAt + 7200) * 1000), 168)?.status, 'available');
   });

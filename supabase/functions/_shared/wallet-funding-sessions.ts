@@ -33,6 +33,7 @@ export interface WalletFundingSession {
   received_amount_pence: number | null;
   received_at: string | null;
   available_at: string | null;
+  expected_available_at: string | null;
   resolution_note: string | null;
   created_at: string;
   updated_at: string;
@@ -41,7 +42,7 @@ export interface WalletFundingSession {
 const SESSION_COLUMNS =
   'id, requested_amount_pence, target_available_pence, baseline_available_pence, baseline_pending_pence, ' +
   'reserve_target_pence, desired_headroom_pence, status, matched_ref, received_amount_pence, received_at, ' +
-  'available_at, resolution_note, created_at, updated_at';
+  'available_at, expected_available_at, resolution_note, created_at, updated_at';
 
 async function stripeGet(path: string): Promise<Record<string, unknown> | null> {
   try {
@@ -89,10 +90,21 @@ export async function reconcileFundingSessions(svc: SupabaseClient): Promise<Rec
     // If Stripe could not be read at all, change nothing (and do not expire).
     if (!topups && !bts && !adjustments) return result;
 
+    // A succeeded Topup is only "received"; whether it is AVAILABLE is told by
+    // its balance transaction. Take it from the list we already have, or GET it.
+    const btById = new Map<string, Record<string, unknown>>();
+    for (const bt of ((bts?.data ?? []) as Record<string, unknown>[])) {
+      if (typeof bt.id === 'string') btById.set(bt.id, bt);
+    }
+
     const candidates: FundingCandidate[] = [];
     const topupRefs = new Set<string>();
     for (const t of ((topups?.data ?? []) as Record<string, unknown>[])) {
-      const c = candidateFromTopup(t);
+      let bt: Record<string, unknown> | null = null;
+      if (t.status === 'succeeded' && typeof t.balance_transaction === 'string') {
+        bt = btById.get(t.balance_transaction) ?? await stripeGet(`/balance_transactions/${t.balance_transaction}`);
+      }
+      const c = candidateFromTopup(t, bt);
       if (c) { candidates.push(c); topupRefs.add(c.ref); }
     }
     for (const bt of [...((bts?.data ?? []) as Record<string, unknown>[]), ...((adjustments?.data ?? []) as Record<string, unknown>[])]) {
@@ -121,7 +133,9 @@ export async function reconcileFundingSessions(svc: SupabaseClient): Promise<Rec
       }
       const match = pickFundingMatch(s, candidates, claimed);
       const next = nextSessionState(s, match, now, expiryHours);
-      if (!next && !(match && s.matched_ref !== match.ref)) continue;
+      const expectedIso = match?.available_on_unix ? new Date(match.available_on_unix * 1000).toISOString() : null;
+      const expectedChanged = !!expectedIso && new Date(s.expected_available_at ?? 0).getTime() !== new Date(expectedIso).getTime();
+      if (!next && !(match && s.matched_ref !== match.ref) && !expectedChanged) continue;
 
       const status = next?.status ?? s.status;
       const update: Record<string, unknown> = { status, updated_at: now.toISOString() };
@@ -131,6 +145,7 @@ export async function reconcileFundingSessions(svc: SupabaseClient): Promise<Rec
         update.matched_kind = match.kind;
         update.received_amount_pence = match.amount_pence;
         if (!s.received_at) update.received_at = new Date(match.created_unix * 1000).toISOString();
+        if (expectedIso) update.expected_available_at = expectedIso;
         if (status === 'available') update.available_at = now.toISOString();
       }
       const { error } = await svc.from('wallet_liquidity_funding_sessions')
