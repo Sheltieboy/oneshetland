@@ -709,6 +709,81 @@ export async function fetchEventOrders(eventId: string): Promise<EventTicketOrde
   return (data ?? []) as EventTicketOrder[];
 }
 
+// ── Organiser ticket-order management ──────────────────────────────────────────
+//
+// Who bought tickets, and refunding an order. Both are SERVER decisions: the
+// list comes from get_event_orders (which refuses anyone who may not manage the
+// event and is the only way purchaser emails reach a client), and a refund is
+// the existing refund-payment function addressed by the ORDER's id. No Stripe
+// reference is ever sent from, or returned to, an organiser's phone.
+
+export interface OrganiserOrderTicket {
+  id:             string;
+  ticket_type:    string | null;
+  status:         TicketStatus;
+  price_pence:    number;
+  checked_in_at:  string | null;
+  attendee_name:  string | null;
+  attendee_email: string | null;
+}
+
+export interface OrganiserOrder {
+  id:                    string;
+  status:                OrderStatus;
+  created_at:            string;
+  paid_at:               string | null;
+  refunded_at:           string | null;
+  total_pence:           number;
+  booking_fee_pence:     number;
+  ticket_subtotal_pence: number;
+  tickets_count:         number;
+  purchaser:             { id: string; name: string | null; email: string | null };
+  tickets:               OrganiserOrderTicket[];
+  checked_in_count:      number;
+  /** True only when THIS viewer may refund THIS order right now (server-computed). */
+  refundable:            boolean;
+  /** Admins only — null for everyone else. */
+  payment_intent_id:     string | null;
+  reconciliation_state:  string | null;
+}
+
+export interface OrganiserOrders {
+  can_refund:   boolean;
+  is_admin:     boolean;
+  total_orders: number;
+  orders:       OrganiserOrder[];
+}
+
+export async function fetchOrganiserOrders(eventId: string): Promise<OrganiserOrders> {
+  const { data, error } = await supabase.rpc('get_event_orders', { p_event_id: eventId });
+  if (error) throw error;
+  const d = (data ?? {}) as Partial<OrganiserOrders>;
+  return {
+    can_refund:   d.can_refund === true,
+    is_admin:     d.is_admin === true,
+    total_orders: d.total_orders ?? 0,
+    orders:       d.orders ?? [],
+  };
+}
+
+/** Refunds a paid ticket order IN FULL through the canonical refund-payment function. */
+export async function refundEventOrder(orderId: string): Promise<{ ok: true }> {
+  const { data, error } = await supabase.functions.invoke('refund-payment', {
+    body: { event_order_id: orderId },
+  });
+  const bodyError = (data as { error?: string } | null)?.error;
+  if (error || bodyError) {
+    let msg = bodyError ?? error?.message ?? 'The refund could not be completed.';
+    try {
+      const ctx = (error as { context?: { json?: () => Promise<{ error?: string }> } } | null)?.context;
+      const body = await ctx?.json?.();
+      if (body?.error) msg = body.error;
+    } catch { /* keep the generic message */ }
+    throw new Error(msg);
+  }
+  return { ok: true };
+}
+
 // ── Ticket purchase (client-side orchestration) ────────────────────────────────
 
 export async function purchaseTickets(params: {

@@ -320,6 +320,11 @@ export default function EventManageScreen() {
               disabled={!isPublished}
             />
             <ActionBtn
+              icon="ticket-alt" label="Ticket orders"
+              color={S.color}
+              onPress={() => router.push({ pathname: '/event-orders', params: { id: event.id } })}
+            />
+            <ActionBtn
               icon="eye"
               // A draft isn't publicly visible (see events_public_read — a
               // non-published event is is_hidden, readable only by its
