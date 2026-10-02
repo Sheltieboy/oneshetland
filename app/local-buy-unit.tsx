@@ -9,7 +9,7 @@
  * book_unit_purchases row via the confirm-unit-purchase edge function.
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator,
@@ -24,7 +24,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
-import { fetchWalletBalance, walletCheckout, walletFailureAlert } from '@/lib/local-api';
+import { fetchWalletBalance, walletCheckout, walletFailureNotice, type PaymentNotice } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
 import { supabase } from '@/lib/supabase';
 import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
@@ -45,6 +45,10 @@ export default function BuyUnitScreen() {
   const [loading, setLoading]   = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // A failed Wallet payment is shown INSIDE the confirm sheet, never with the root alert: both are
+  // Modals and iOS cannot present one over (or while dismissing) the other — that froze the app.
+  const [payNotice, setPayNotice] = useState<PaymentNotice | null>(null);
+  const walletInFlight = useRef(false);
   const [done, setDone] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const attemptId = useAttemptId(item?.id ?? null);   // one reference per item
@@ -90,6 +94,7 @@ export default function BuyUnitScreen() {
       });
       return;
     }
+    setPayNotice(null);
     setConfirming(true);
   }, [session, profile, item, walletBalance, alert, router]);
 
@@ -181,20 +186,25 @@ export default function BuyUnitScreen() {
 
   // Pay from wallet (debits balance, transfers to the business — no card).
   const runBuyWallet = useCallback(async () => {
-    if (!profile || !item) return;
+    if (!profile || !item || walletInFlight.current) return;      // a second tap is not a second payment
+    walletInFlight.current = true;
     setSubmitting(true);
+    setPayNotice(null);
     try {
       const res = await walletCheckout({ type: 'unit_purchase', unit_item_id: item.id }, attemptId());
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setConfirming(false);
       setDone(true);
     } catch (e: any) {
-      alert(walletFailureAlert(e, 'Purchase failed'));
+      // Declined by the liquidity gate (nothing taken) or any other failure: say so INSIDE the
+      // sheet and leave it open, so the buyer can dismiss it, close the sheet, or pay another way.
+      setPayNotice(walletFailureNotice(e, 'Purchase failed'));
     } finally {
+      walletInFlight.current = false;
       setSubmitting(false);
-      setConfirming(false);
     }
-  }, [profile, item, alert]);
+  }, [profile, item, attemptId]);
 
   if (loading) {
     return (
@@ -320,7 +330,9 @@ export default function BuyUnitScreen() {
         policy={{ text: 'Passes and tickets are non-refundable once purchased.' }}
         loading={submitting}
         onConfirm={runBuy}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => { setPayNotice(null); setConfirming(false); }}
+        notice={payNotice}
+        onDismissNotice={() => setPayNotice(null)}
         walletBalancePence={walletBalance}
         onConfirmWallet={runBuyWallet}
         onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}

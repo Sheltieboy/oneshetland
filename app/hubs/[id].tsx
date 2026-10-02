@@ -4,7 +4,7 @@
  * member-only for members), and admin entry points for committee/owners.
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   ActivityIndicator, Linking,
@@ -21,7 +21,7 @@ import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
-import { fetchWalletBalance, walletCheckout, walletFailureAlert } from '@/lib/local-api';
+import { fetchWalletBalance, walletCheckout, walletFailureNotice, type PaymentNotice } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
 import {
   fetchHub, fetchMyMembership, joinHub, leaveHub, rejoinHub, fetchMemberCount, fetchHubNotices,
@@ -65,6 +65,10 @@ export default function HubDetailScreen() {
   const [events, setEvents] = useState<OsEvent[]>([]);
   const [types, setTypes] = useState<HubMembershipType[]>([]);
   const [payingType, setPayingType] = useState<HubMembershipType | null>(null);
+  // A failed Wallet payment is shown INSIDE the confirm sheet, never with the root alert: both are
+  // Modals and iOS cannot present one over (or while dismissing) the other — that froze the app.
+  const [payNotice, setPayNotice] = useState<PaymentNotice | null>(null);
+  const walletInFlight = useRef(false);
   useEffect(() => {
     if (!payingType) { setQuote(null); return; }
     let live = true;
@@ -160,21 +164,30 @@ export default function HubDetailScreen() {
     // Always open the confirm sheet — it offers wallet AND card. The card path
     // uses Stripe's Payment Sheet (collects a card even if none is saved), so a
     // card-less but wallet-funded member is no longer shut out.
+    setPayNotice(null);
     setPayingType(type);
   };
 
   const runMembershipWallet = async (type: HubMembershipType) => {
-    if (!hub || !profile) return;
+    if (!hub || !profile || walletInFlight.current) return;        // a second tap is not a second payment
+    walletInFlight.current = true;
     setActing(true);
+    setPayNotice(null);
     try {
       const res = await walletCheckout({ type: 'hub_membership', membership_type_id: type.id }, attemptId());
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setPayingType(null);
       setJoinSuccess({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
       load();
     } catch (e: any) {
-      alert(walletFailureAlert(e, 'Payment failed'));
-    } finally { setActing(false); }
+      // Declined by the liquidity gate (nothing taken) or any other failure: say so INSIDE the
+      // sheet and leave it open, so the member can dismiss it, close the sheet, or pay another way.
+      setPayNotice(walletFailureNotice(e, 'Payment failed'));
+    } finally {
+      walletInFlight.current = false;
+      setActing(false);
+    }
   };
 
   const runMembershipPayment = async (type: HubMembershipType) => {
@@ -635,9 +648,11 @@ export default function HubDetailScreen() {
         policy={{ text: `Membership ${payingType?.period === 'once' ? 'is a one-off payment' : `lasts ${payingType?.period === 'month' ? 'a month' : 'a year'} and does not renew automatically`}. Paid memberships are non-refundable.` }}
         loading={acting}
         onConfirm={() => { const t = payingType; setPayingType(null); if (t) runMembershipPayment(t); }}
-        onCancel={() => setPayingType(null)}
+        onCancel={() => { setPayNotice(null); setPayingType(null); }}
+        notice={payNotice}
+        onDismissNotice={() => setPayNotice(null)}
         walletBalancePence={walletBalance}
-        onConfirmWallet={() => { const t = payingType; setPayingType(null); if (t) runMembershipWallet(t); }}
+        onConfirmWallet={() => { if (payingType) runMembershipWallet(payingType); }}
         onTopUp={() => { setPayingType(null); router.push('/local-wallet'); }}
       />
     </SafeAreaView>

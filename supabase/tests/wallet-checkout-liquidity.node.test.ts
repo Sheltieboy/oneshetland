@@ -606,22 +606,15 @@ describe('the real wiring: one implementation, final resolved amount, always rel
     assert.doesNotMatch(WALLET_UNAVAILABLE_RESUMING, /No money has been taken/);
   });
 
-  test('mobile shows a decline as "Wallet temporarily unavailable", not as a failed payment, on all three screens', () => {
+  test('mobile shows a decline as "Wallet temporarily unavailable", not as a failed payment — inside the sheet (see wallet-sheet-failure.node.test.ts)', () => {
     const api = code(read('lib/local-api.ts'));
-    assert.match(api, /class WalletUnavailableError extends Error/);
-    assert.match(api, /title: 'Wallet temporarily unavailable', message: 'No money has been taken\. Please use another payment method\.'/);
-    // Only the WALLET runner changes: the card path's own "failed" titles are legitimate (a card really can fail).
-    for (const [f, runner, title] of [
-      ['app/hub-donate.tsx', 'const runDonationWallet', 'Donation failed'],
-      ['app/hubs/[id].tsx', 'const runMembershipWallet', 'Payment failed'],
-      ['app/local-buy-unit.tsx', 'const runBuyWallet', 'Purchase failed'],
-    ] as const) {
-      const s = code(read(f));
-      const start = s.indexOf(runner);
-      assert.notEqual(start, -1, `${f}: ${runner} is gone`);
-      const body = s.slice(start, s.indexOf('catch (e', start) + 220);
-      assert.match(body, new RegExp(`alert\\(walletFailureAlert\\(e, '${title}'\\)\\)`), f);
-      assert.doesNotMatch(body, new RegExp(`alert\\(\\{ title: '${title}'`), `${f} still titles a Wallet decline as a failure`);
+    assert.match(api, /export \{ WalletUnavailableError, walletFailureNotice \} from '\.\/wallet-outcome'/);
+    assert.match(api, /b\?\.reason === 'liquidity_unavailable'\) throw new WalletUnavailableError\(msg, b\.no_charge !== false\)/);
+    const outcome = code(read('lib/wallet-outcome.ts'));
+    assert.match(outcome, /title: 'Wallet temporarily unavailable',\s*message: 'No money has been taken\. Please use another payment method\.'/);
+    for (const f of ['app/hub-donate.tsx', 'app/hubs/[id].tsx', 'app/local-buy-unit.tsx']) {
+      assert.match(code(read(f)), /setPayNotice\(walletFailureNotice\(e, '/, f);
     }
   });
+
 });

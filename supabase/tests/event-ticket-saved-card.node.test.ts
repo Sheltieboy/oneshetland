@@ -555,7 +555,7 @@ describe('mobile event checkout', () => {
 
   test('14. the confirm sheet is still shown before any paid purchase, and Confirm still runs the purchase', () => {
     assert.match(screen, /<ConfirmPaymentSheet/);
-    assert.match(screen, /if \(grandTotalPence > 0\) \{ void refreshSavedCard\(\); setConfirming\(true\); \}/);
+    assert.match(screen, /if \(grandTotalPence > 0\) \{ void refreshSavedCard\(\); setPayNotice\(null\); setConfirming\(true\); \}/);
     assert.match(screen, /onConfirm=\{runPurchase\}/);
     assert.match(screen, /onConfirmWallet=\{runPurchaseWallet\}/);
   });

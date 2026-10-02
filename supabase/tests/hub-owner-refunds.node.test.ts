@@ -66,7 +66,9 @@ const runSql = (sql: string) => rowsOf(execFileSync('npx',
 describe('refund authority follows the money', () => {
   test('a platform admin may still refund anything', () => {
     assert.match(refundFn, /const isAdmin = me\?\.role === 'admin' \|\| me\?\.is_platform_owner === true/);
-    assert.match(refundFn, /if \(!isAdmin && !ownsThisHub\)/);
+    // A ticket refund reaches this gate through event_order_id, authorised by the organiser's own authority
+    // (ownsThisEvent), so the refusal is for anyone who is none of admin, hub owner or event organiser.
+    assert.match(refundFn, /if \(!isAdmin && !ownsThisHub && !ownsThisEvent\)/);
   });
 
   test('a hub owner may refund a membership their own hub sold', () => {

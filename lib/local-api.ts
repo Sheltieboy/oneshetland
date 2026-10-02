@@ -5,6 +5,9 @@
  */
 
 import { supabase } from './supabase';
+import { WalletUnavailableError } from './wallet-outcome';
+export { WalletUnavailableError, walletFailureNotice } from './wallet-outcome';
+export type { PaymentNotice } from './wallet-outcome';
 import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
 import { retryAfterSecsFrom } from './retry-after';
 
@@ -826,32 +829,6 @@ export async function fetchMyRedeemedOfferIds(userId: string): Promise<string[]>
  * wallet-checkout edge function. Surfaces the server's error message. Returns
  * the function's JSON (incl. the new balance_pence) on success.
  */
-/**
- * The server declined a Wallet payment BEFORE debiting it, because the platform
- * could not fund the merchant transfer right now (the liquidity gate). It is an
- * operational pause, not a failed payment: `noCharge` is true when nothing was
- * taken. The screens say so calmly instead of titling it "Payment failed".
- */
-export class WalletUnavailableError extends Error {
-  readonly reason = 'liquidity_unavailable' as const;
-  readonly noCharge: boolean;
-  constructor(message: string, noCharge: boolean) {
-    super(message);
-    this.name = 'WalletUnavailableError';
-    this.noCharge = noCharge;
-  }
-}
-
-/** The alert for a failed Wallet payment: calm for an unavailable Wallet, the screen's own wording otherwise. */
-export function walletFailureAlert(e: unknown, failedTitle: string): { title: string; message: string } {
-  if (e instanceof WalletUnavailableError) {
-    return e.noCharge
-      ? { title: 'Wallet temporarily unavailable', message: 'No money has been taken. Please use another payment method.' }
-      : { title: 'Payment still being completed', message: e.message };
-  }
-  return { title: failedTitle, message: (e as { message?: string } | null)?.message ?? 'Please try again.' };
-}
-
 export async function walletCheckout(body: Record<string, unknown>, attemptId: string): Promise<any> {
   // The attempt id is a PARAMETER, minted by the screen when the customer
   // commits. Minting it here would give every retry a fresh one, which is

@@ -31,6 +31,7 @@ import {
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { formatPence } from '@/lib/local-api';
+import type { PaymentNotice } from '@/lib/wallet-outcome';
 
 export interface PayLineItem {
   label: string;
@@ -63,13 +64,22 @@ interface Props {
   hasCard?: boolean;
   /** Called when a card-less user taps the card button (route to card setup). */
   onAddCard?: () => void;
+  /**
+   * What happened to the last attempt, shown INSIDE this sheet. The sheet is a Modal and so
+   * is the root alert, and iOS cannot present one over (or while dismissing) the other — a
+   * failure shown with the alert while this sheet was open froze the app. Callers put a
+   * failed payment here instead and leave the sheet open, so there is only ever one modal.
+   */
+  notice?: PaymentNotice | null;
+  /** Dismiss the notice, leaving the sheet open so another payment method can be chosen. */
+  onDismissNotice?: () => void;
 }
 
 export function ConfirmPaymentSheet({
   visible, title = 'Confirm payment', itemName, lineItems, totalPence,
   payingWith, policy, confirmLabel, loading = false, onConfirm, onCancel,
   walletBalancePence = null, onConfirmWallet, onTopUp,
-  hasCard = true, onAddCard,
+  hasCard = true, onAddCard, notice = null, onDismissNotice,
 }: Props) {
   // Card button: pay if they have a card, otherwise route to add one.
   const cardPress = hasCard ? onConfirm : (onAddCard ?? onConfirm);
@@ -114,6 +124,26 @@ export function ConfirmPaymentSheet({
             <View style={styles.payingWith}>
               <FontAwesome5 name="credit-card" size={12} color={colors.textMuted} solid />
               <Text style={styles.payingWithText}>Paying with {payingWith}</Text>
+            </View>
+          ) : null}
+
+          {notice ? (
+            <View
+              style={[styles.notice, notice.tone === 'calm' ? styles.noticeCalm : styles.noticeError]}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.noticeTitle, notice.tone === 'calm' ? styles.noticeTitleCalm : styles.noticeTitleError]}>
+                  {notice.title}
+                </Text>
+                <Text style={styles.noticeMessage}>{notice.message}</Text>
+              </View>
+              {onDismissNotice ? (
+                <TouchableOpacity onPress={onDismissNotice} hitSlop={10} accessibilityLabel="Dismiss message">
+                  <FontAwesome5 name="times" size={14} color={colors.textMuted} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : null}
 
@@ -229,6 +259,17 @@ const styles = StyleSheet.create({
 
   policy: { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 18, marginTop: spacing.md },
   policyLink: { color: colors.accent, fontWeight: '700', textDecorationLine: 'underline' },
+
+  notice: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    marginTop: spacing.md, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1,
+  },
+  noticeCalm: { backgroundColor: '#FFFBEB', borderColor: '#FCD34D' },
+  noticeError: { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
+  noticeTitle: { fontSize: fontSize.sm, fontWeight: '800' },
+  noticeTitleCalm: { color: '#92400E' },
+  noticeTitleError: { color: '#991B1B' },
+  noticeMessage: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 19, marginTop: 3 },
 
   payBtn: {
     marginTop: spacing.lg, backgroundColor: colors.navy, borderRadius: radius.lg,

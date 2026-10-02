@@ -21,7 +21,7 @@ import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { newCheckoutAttemptId } from '@/lib/checkout-attempt';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
-import { fetchWalletBalance } from '@/lib/local-api';
+import { fetchWalletBalance, walletFailureNotice, type PaymentNotice } from '@/lib/local-api';
 import { describeCheckoutError } from '@/lib/checkout-errors';
 import { fetchSavedCardState, type SavedCardState } from '@/lib/saved-card-state';
 import { formatCardLabel } from '@/lib/card-label';
@@ -58,6 +58,10 @@ export default function EventTicketCheckoutScreen() {
   const [loading, setLoading] = useState(true);
   const [buying,  setBuying]  = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // A failed Wallet payment is shown INSIDE the confirm sheet, never with the root alert: both are
+  // Modals and iOS cannot present one over (or while dismissing) the other — that froze the app.
+  const [payNotice, setPayNotice] = useState<PaymentNotice | null>(null);
+  const walletInFlight = useRef(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   // What the saved card REALLY is, from the server — not `profile.has_payment_method`,
   // which says a card was added once and was true for accounts with no Customer.
@@ -153,7 +157,7 @@ export default function EventTicketCheckoutScreen() {
     // Paid tickets always open the confirm sheet (wallet AND card; the card
     // path uses Stripe's Payment Sheet which collects a card even if none is
     // saved). Free tickets skip straight through.
-    if (grandTotalPence > 0) { void refreshSavedCard(); setConfirming(true); }
+    if (grandTotalPence > 0) { void refreshSavedCard(); setPayNotice(null); setConfirming(true); }
     else runPurchase();
   };
 
@@ -253,8 +257,10 @@ export default function EventTicketCheckoutScreen() {
 
   // Pay for tickets from the wallet (debits balance, transfers to the organiser).
   const runPurchaseWallet = async () => {
-    if (!profile || !event || lineItems.length === 0) return;
+    if (!profile || !event || lineItems.length === 0 || walletInFlight.current) return;   // a second tap is not a second payment
+    walletInFlight.current = true;
     setBuying(true);
+    setPayNotice(null);
     try {
       const result = await purchaseTickets({ event_id: event.id, line_items: lineItems, pay_with_wallet: true, client_request_id: attemptId() });
       await persistTokens(result.ticket_ids ?? [], result.tokens ?? []);
@@ -262,10 +268,11 @@ export default function EventTicketCheckoutScreen() {
       setConfirming(false);
       ticketSuccess();
     } catch (e: any) {
-      alert({ title: 'Could not complete booking', message: describeCheckoutError(e) });
+      // Shown INSIDE the sheet, which stays open: the buyer can dismiss it, close the sheet or pay another way.
+      setPayNotice(walletFailureNotice(new Error(describeCheckoutError(e)), 'Could not complete booking'));
     } finally {
+      walletInFlight.current = false;
       setBuying(false);
-      setConfirming(false);
     }
   };
 
@@ -481,7 +488,9 @@ export default function EventTicketCheckoutScreen() {
         policy={{ text: event.refund_policy || 'Tickets are non-refundable unless the event is cancelled.' }}
         loading={buying}
         onConfirm={runPurchase}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => { setPayNotice(null); setConfirming(false); }}
+        notice={payNotice}
+        onDismissNotice={() => setPayNotice(null)}
         walletBalancePence={walletBalance}
         onConfirmWallet={runPurchaseWallet}
         onTopUp={() => { setConfirming(false); router.push('/local-wallet' as any); }}

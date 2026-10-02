@@ -5,7 +5,7 @@
  * Pass ?campaign=<id>.
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, KeyboardAvoidingView, Platform, Switch,
@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { useAlert } from '@/components/BrandedAlert';
-import { formatPence, fetchWalletBalance, walletCheckout, walletFailureAlert } from '@/lib/local-api';
+import { formatPence, fetchWalletBalance, walletCheckout, walletFailureNotice, type PaymentNotice } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
 import {
   fetchCampaign, fetchHub, startHubDonation, confirmHubDonation,
@@ -66,6 +66,10 @@ export default function HubDonateScreen() {
   const [gaPostcode, setGaPostcode] = useState('');
 
   const [confirming, setConfirming] = useState(false);
+  // A failed Wallet payment is shown INSIDE the confirm sheet, never with the root alert: both are
+  // Modals and iOS cannot present one over (or while dismissing) the other — that froze the app.
+  const [payNotice, setPayNotice] = useState<PaymentNotice | null>(null);
+  const walletInFlight = useRef(false);
   const [paying, setPaying] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [donated, setDonated] = useState<number | null>(null);   // inline success: amount given
@@ -129,13 +133,16 @@ export default function HubDonateScreen() {
     // Always open the confirm sheet — it offers wallet AND card. The card path
     // uses Stripe's Payment Sheet, which collects a card even when none is
     // saved, so a card-less but wallet-funded donor is no longer shut out.
+    setPayNotice(null);
     setConfirming(true);
   };
 
   // Pay the donation from the wallet (no card, no fee — hub gets the full amount).
   const runDonationWallet = async () => {
-    if (!campaign || !profile) return;
+    if (!campaign || !profile || walletInFlight.current) return;   // a second tap is not a second payment
+    walletInFlight.current = true;
     setPaying(true);
+    setPayNotice(null);
     try {
       const res = await walletCheckout({
         type: 'hub_donation',
@@ -147,17 +154,16 @@ export default function HubDonateScreen() {
       }, attemptId());
       if (typeof res?.balance_pence === 'number') setWalletBalance(res.balance_pence);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Show success INLINE — this modal screen can't present the root alert over
-      // itself on iOS (it gets swallowed).
+      // Show success INLINE — this modal screen can't present the root alert over itself on iOS.
       setConfirming(false);
-      // The ConfirmPaymentSheet stays mounted (just hidden) in the same tree, so
-      // it animates closed cleanly — no unmount-while-visible, no frozen screen.
       setDonated(effectiveAmount);
     } catch (e: any) {
-      alert(walletFailureAlert(e, 'Donation failed'));
+      // Declined by the liquidity gate (nothing taken) or any other failure: say so INSIDE the
+      // sheet and leave it open, so the donor can dismiss it, close the sheet, or pay another way.
+      setPayNotice(walletFailureNotice(e, 'Donation failed'));
     } finally {
+      walletInFlight.current = false;
       setPaying(false);
-      setConfirming(false);
     }
   };
 
@@ -301,7 +307,9 @@ export default function HubDonateScreen() {
         policy={{ text: giftAidOn && isCharity ? 'Gift Aid adds 25% at no cost to you. Donations are non-refundable.' : 'Donations are non-refundable.' }}
         loading={paying}
         onConfirm={() => { setConfirming(false); runDonation(); }}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => { setPayNotice(null); setConfirming(false); }}
+        notice={payNotice}
+        onDismissNotice={() => setPayNotice(null)}
         walletBalancePence={coverFees ? null : walletBalance}
         onConfirmWallet={runDonationWallet}
         onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}

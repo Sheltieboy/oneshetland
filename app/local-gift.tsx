@@ -11,7 +11,7 @@
  *   serviceId   — when kind = 'booking'
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -27,7 +27,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { supabase } from '@/lib/supabase';
-import { fetchBusiness, fetchWalletBalance, type LocalBusiness } from '@/lib/local-api';
+import { fetchBusiness, fetchWalletBalance, walletFailureNotice, type LocalBusiness, type PaymentNotice } from '@/lib/local-api';
 import { formatPence, type BookUnitItem, type BookService } from '@/lib/book-api';
 import { settleSavedCardPayment, type PaymentStart } from '@/lib/stripe-sca';
 
@@ -54,6 +54,10 @@ export default function GiftScreen() {
   const [message, setMessage]               = useState('');
   const [submitting, setSubmitting]         = useState(false);
   const [confirming, setConfirming]         = useState(false);
+  // A failed Wallet payment is shown INSIDE the confirm sheet, never with the root alert: both are
+  // Modals and iOS cannot present one over (or while dismissing) the other — that froze the app.
+  const [payNotice, setPayNotice]            = useState<PaymentNotice | null>(null);
+  const walletInFlight = useRef(false);
   const [walletBalance, setWalletBalance]   = useState<number | null>(null);
 
   useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
@@ -110,6 +114,7 @@ export default function GiftScreen() {
       return;
     }
 
+    setPayNotice(null);
     setConfirming(true);
   }, [session, profile, item, kind, targetId, recipientEmail, router, alert]);
 
@@ -117,7 +122,11 @@ export default function GiftScreen() {
     if (!session || !profile || !item || !kind || !targetId) return;
     const emailTrim = recipientEmail.trim().toLowerCase();
 
+    if (viaWallet && walletInFlight.current) return;               // a second tap is not a second payment
+    if (viaWallet) walletInFlight.current = true;
+    let walletFailed = false;
     setSubmitting(true);
+    setPayNotice(null);
     try {
       const body: Record<string, unknown> = {
         kind,
@@ -199,10 +208,17 @@ export default function GiftScreen() {
       const emailed = confirm.email_sent === true;
       setDoneState({ code: confirm.code, recipientEmail: emailTrim, emailed });
     } catch (e: any) {
-      alert({ title: 'Gift failed', message: e?.message ?? 'Please try again.' });
+      if (viaWallet) {
+        // Shown INSIDE the sheet, which stays open: the sender can dismiss it, close the sheet or pay another way.
+        walletFailed = true;
+        setPayNotice(walletFailureNotice(e, 'Gift failed'));
+      } else {
+        alert({ title: 'Gift failed', message: e?.message ?? 'Please try again.' });
+      }
     } finally {
+      if (viaWallet) walletInFlight.current = false;
       setSubmitting(false);
-      setConfirming(false);
+      if (!walletFailed) setConfirming(false);
     }
   }, [
     session, profile, item, kind, targetId, recipientEmail, recipientName, message,
@@ -348,7 +364,9 @@ export default function GiftScreen() {
         policy={{ text: 'Gifts are non-refundable once sent.' }}
         loading={submitting}
         onConfirm={() => runGift(false)}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => { setPayNotice(null); setConfirming(false); }}
+        notice={payNotice}
+        onDismissNotice={() => setPayNotice(null)}
         walletBalancePence={walletBalance}
         onConfirmWallet={() => runGift(true)}
         onTopUp={() => { setConfirming(false); router.push('/local-wallet'); }}
