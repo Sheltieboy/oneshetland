@@ -617,8 +617,11 @@ describe('live (read-only): schema, config and the historical refunds are visibl
   });
 
   test('both historical refunded event orders are visible to operations and NOT presented as reconciled', () => {
-    const rows = sql(`select order_id::text, reconciliation_state from public.event_refund_reconciliation order by refunded_at;`);
-    assert.ok(rows.length >= 2);
+    // Exactly the two 25 Sep card refunds that left the merchant paid. (Other refunded orders — the
+    // Wallet-funded one reconciled on 2 Oct — are legitimately reconciled and are not these.)
+    const rows = sql(`select order_id::text, reconciliation_state from public.event_refund_reconciliation
+                       where order_id in ('abcc7c92-cab4-4d2c-bd1f-d428de211e3b','245bd018-1db8-4846-9619-def95a162ac0');`);
+    assert.equal(rows.length, 2, 'both historical orders must be visible to operations');
     for (const r of rows) assert.notEqual(r.reconciliation_state, 'reconciled', 'the two live orphans must not look reconciled');
   });
 });
