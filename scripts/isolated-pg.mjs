@@ -43,6 +43,7 @@ const SUITES = [
   'supabase/tests/wallet-charge-cancel-concurrency.node.test.ts',
   'supabase/tests/wallet-liquidity-concurrency.node.test.ts',
   'supabase/tests/product-order-immutability.node.test.ts',
+  'supabase/tests/pass-immutability.node.test.ts',
 ];
 
 // macOS ships a locale that makes the postmaster multithread during startup

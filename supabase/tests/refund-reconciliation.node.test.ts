@@ -600,6 +600,22 @@ describe('live (read-only): schema, config and the historical refunds are visibl
     }
   });
 
+  test('the book_unit_purchases financial lock is installed and enabled in production, with an EMPTY client allowlist', () => {
+    const [t] = sql(`select t.tgenabled::text as enabled, pg_get_functiondef(t.tgfoid) as def
+                       from pg_trigger t
+                      where t.tgrelid = 'public.book_unit_purchases'::regclass and t.tgname = 'tg_zz_lock_pass_financial_columns';`);
+    assert.ok(t, 'trigger missing from production');
+    assert.equal(t.enabled, 'O');
+    const def = String(t.def);
+    assert.match(def, /lifecycle text\[\] := ARRAY\[\]::text\[\]|lifecycle text\[\] := array\[\]::text\[\]/i);
+    assert.match(def, /tg_is_server_write\(\)/);
+    assert.match(def, /to_jsonb\(new\) - lifecycle/);
+    assert.match(def, /server-managed/);
+    // The pre-existing refund / use-balance lock is still in place beside it.
+    const [r] = sql(`select count(*)::int as n from pg_trigger where tgrelid = 'public.book_unit_purchases'::regclass and tgname = 'tg_zz_lock_pass_refund_columns' and tgenabled = 'O';`);
+    assert.equal(r.n, 1);
+  });
+
   test('both historical refunded event orders are visible to operations and NOT presented as reconciled', () => {
     const rows = sql(`select order_id::text, reconciliation_state from public.event_refund_reconciliation order by refunded_at;`);
     assert.ok(rows.length >= 2);
