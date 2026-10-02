@@ -105,6 +105,11 @@ serve(async (req) => {
           .select('*')
           .eq('client_request_id', clientRequestId)
           .maybeSingle();
+        // A failed attempt is dead: report it as a failure rather than a
+        // successful replay, so the caller starts a fresh attempt.
+        if (existing?.status === 'error') {
+          return json({ error: existing.failure_message ?? 'The previous funding attempt failed.' }, 409);
+        }
         return json({ ok: true, topup: existing, replay: true });
       }
       console.error('[wallet-liquidity-fund] could not claim request:', insertErr);

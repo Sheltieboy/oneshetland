@@ -164,6 +164,12 @@ describe('wallet-liquidity-fund: admin-only, bounded amount, idempotent, never t
     assert.doesNotMatch(dupBlock, /fetch\(/, 'a duplicate submission must return before ever calling Stripe again');
   });
 
+  test('replaying a request id whose attempt FAILED reports the failure, never ok:true', () => {
+    const fn = read('supabase/functions/wallet-liquidity-fund/index.ts');
+    assert.match(fn, /existing\?\.status === 'error'[\s\S]{0,200}409\)/);
+    assert.ok(fn.indexOf("existing?.status === 'error'") < fn.indexOf('replay: true'));
+  });
+
   test('the Stripe call carries Idempotency-Key = client_request_id, so even a lost response replays to the same Topup', () => {
     assert.match(fn, /'Idempotency-Key': clientRequestId,/);
   });
@@ -270,7 +276,8 @@ describe('the admin panel never fakes the funding action, and renders the fallba
   });
 
   test('the live action generates ONE client_request_id per component instance, not per click — a double-tap reuses it, which is the idempotency protection', () => {
-    assert.match(panel, /const \[requestId\] = useState\(\(\) => crypto\.randomUUID\(\)\);/);
+    assert.match(panel, /const \[requestId, setRequestId\] = useState\(\(\) => crypto\.randomUUID\(\)\);/);
+    assert.match(panel, /if \(refused\) setRequestId\(crypto\.randomUUID\(\)\);/, 'a definitively refused attempt must not poison the next retry');
   });
 
   test('the recommended-funding stat and the pending/recent topups list are both rendered', () => {
