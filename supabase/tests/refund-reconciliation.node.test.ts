@@ -583,6 +583,23 @@ describe('live (read-only): schema, config and the historical refunds are visibl
     assert.equal(j.schedule, '*/30 * * * *');
   });
 
+  test('the product_orders financial lock is installed and enabled in production, with the allowlist from the migration', () => {
+    const [t] = sql(`select t.tgenabled::text as enabled, pg_get_functiondef(t.tgfoid) as def
+                       from pg_trigger t
+                      where t.tgrelid = 'public.product_orders'::regclass and t.tgname = 'tg_zz_lock_order_financial_columns';`);
+    assert.ok(t, 'trigger missing from production');
+    assert.equal(t.enabled, 'O');
+    const def = String(t.def);
+    assert.match(def, /tg_is_server_write\(\)/);
+    assert.match(def, /to_jsonb\(new\) - lifecycle/);
+    for (const col of ['status', 'tracking_ref', 'accepted_at', 'ready_at', 'posted_at', 'completed_at', 'cancelled_at', 'updated_at']) {
+      assert.ok(def.includes(`'${col}'`), `${col} missing from the live allowlist`);
+    }
+    for (const money of ['total_pence', 'commission_pence', 'payment_intent_id', 'buyer_id', 'business_id']) {
+      assert.ok(!def.includes(`'${money}'`), `${money} must not be in the live allowlist`);
+    }
+  });
+
   test('both historical refunded event orders are visible to operations and NOT presented as reconciled', () => {
     const rows = sql(`select order_id::text, reconciliation_state from public.event_refund_reconciliation order by refunded_at;`);
     assert.ok(rows.length >= 2);
