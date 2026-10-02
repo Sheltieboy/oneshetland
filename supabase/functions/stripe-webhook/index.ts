@@ -4,6 +4,7 @@ import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
+import { reconcileCharge } from '../_shared/refund-reconcile.ts';
 import { parseReconciledSubscription, ReconcileFailed, type ReconciledSubscription } from '../_shared/subscription-reconcile.ts';
 
 /**
@@ -1016,6 +1017,32 @@ serve(async (req) => {
               );
             }
           }
+          // ── Merchant-side reconciliation ──────────────────────────────────
+          //
+          // Everything above proves the CUSTOMER was refunded. It says nothing
+          // about the merchant: a refund issued without reverse_transfer and
+          // refund_application_fee (the Stripe Dashboard's default) leaves the
+          // connected account holding the money while OneShetland pays the
+          // customer from its own balance — and the order row still reads
+          // "refunded". So whatever initiated this refund, check the transfer
+          // and the application fee against Stripe, record the verdict, and
+          // (event tickets, full and recent only) complete the missing legs.
+          //
+          // It is a safety net, not part of fulfilment: a failure here is
+          // logged and left for the scheduled sweep, never allowed to fail the
+          // event and re-run everything above.
+          if (eventData.transfer && typeof eventData.id === 'string') {
+            try {
+              const rr = await reconcileCharge(supabase, eventData.id, { actor: 'webhook', allowRepair: true });
+              console.log(`[stripe-webhook] refund reconciliation ${eventData.id}: ${rr.state} ${JSON.stringify(rr.steps_run)} ${rr.note}`);
+              if (rr.state === 'needs_repair' || rr.state === 'needs_review' || rr.state === 'repair_failed') {
+                console.error(`[stripe-webhook] REFUND NOT RECONCILED ${eventData.id}: ${rr.state} — ${rr.note}`);
+              }
+            } catch (e) {
+              console.error('[stripe-webhook] refund reconciliation failed (sweep will retry):', e instanceof Error ? e.message : 'error');
+            }
+          }
+
           // Notify the customer a refund was issued.
           const meta = (eventData.metadata ?? {}) as Record<string, string>;
           const customerId = meta.customer_id || '';

@@ -216,3 +216,13 @@ verify_jwt = true
 # fund the Wallet reserve. Moves no money and makes no Stripe write.
 [functions.wallet-liquidity-funding-session]
 verify_jwt = true
+
+# Scheduled by pg_cron through pg_net with x-cron-secret (requireCronSecret is
+# the whole boundary, like the other schedulers). FLAG ONLY — never moves money.
+[functions.refund-reconcile-sweep]
+verify_jwt = false
+
+# Admin-only: lists refund reconciliation state, re-scans Stripe, and — on an
+# explicit confirmed request — completes a missing merchant transfer reversal.
+[functions.refund-reconcile]
+verify_jwt = true

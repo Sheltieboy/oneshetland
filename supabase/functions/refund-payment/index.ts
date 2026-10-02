@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
+import { reconcileCharge } from '../_shared/refund-reconcile.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -402,6 +403,21 @@ serve(async (req) => {
     const refund = await refRes.json();
     if (!refRes.ok) return json({ error: refund.error?.message ?? `Refund failed (HTTP ${refRes.status})` }, 502);
 
+    // Do not trust that the flags above did what they were meant to: check the
+    // merchant's side of this refund against Stripe now. The same check runs
+    // again from charge.refunded, so this is for an immediate verdict, and a
+    // failure here never changes the refund that has already happened.
+    let reconciliation: { state: string; note: string } | null = null;
+    try {
+      const chargeId = typeof charge?.id === 'string' ? charge.id : null;
+      if (chargeId) {
+        const rr = await reconcileCharge(svc, chargeId, { actor: `refund-payment:${user.id}`, allowRepair: true });
+        reconciliation = { state: rr.state, note: rr.note };
+      }
+    } catch (e) {
+      console.error('[refund-payment] reconciliation check failed', e instanceof Error ? e.message : 'error');
+    }
+
     // Best-effort app-state update for Fetch deliveries (other flows are handled
     // by the charge.refunded webhook). Full vs partial.
     // Record it against the membership straight away rather than waiting for
@@ -439,6 +455,7 @@ serve(async (req) => {
       refund_id: refund.id,
       amount_pence: refund.amount,
       reversed_transfer: hasTransfer,
+      reconciliation,
     });
   } catch (err) {
     console.error('[refund-payment]', err);
