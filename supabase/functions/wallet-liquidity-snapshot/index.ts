@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getWalletLiquiditySnapshot, getRecentWalletTopups } from '../_shared/wallet-liquidity.ts';
+import { reconcileFundingSessions, getRecentFundingSessions } from '../_shared/wallet-funding-sessions.ts';
 import { safeError } from '../_shared/safe-error.ts';
 
 /**
@@ -12,7 +13,10 @@ import { safeError } from '../_shared/safe-error.ts';
  * can never disagree about what "available" means.
  *
  * Returns Stripe's GBP available/pending TOTALS only — never account ids,
- * keys, or anything else from the Stripe response.
+ * keys, or anything else from the Stripe response. It also returns the
+ * funding sessions (reconciled first, so the panel never shows a stale
+ * "awaiting funds"). It never returns the Stripe push-funding bank details —
+ * those come only from wallet-funding-details, on request.
  */
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -40,11 +44,12 @@ serve(async (req) => {
     const isAdmin = me?.role === 'admin' || me?.is_platform_owner === true;
     if (!isAdmin) return json({ error: 'Admin only' }, 403);
 
-    const [snapshot, recentTopups] = await Promise.all([
+    const [snapshot, recentTopups, fundingSessions] = await Promise.all([
       getWalletLiquiditySnapshot(svc),
       getRecentWalletTopups(svc),
+      reconcileFundingSessions(svc).then(() => getRecentFundingSessions(svc)),
     ]);
-    return json({ ...snapshot, recent_topups: recentTopups });
+    return json({ ...snapshot, recent_topups: recentTopups, funding_sessions: fundingSessions });
   } catch (err) {
     console.error('[wallet-liquidity-snapshot]', err);
     return json({ error: safeError('wallet-liquidity-snapshot', err) }, 500);

@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendPush } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
 import { getWalletLiquiditySnapshot } from '../_shared/wallet-liquidity.ts';
+import { reconcileFundingSessions } from '../_shared/wallet-funding-sessions.ts';
 
 /**
  * wallet-liquidity-monitor
@@ -37,6 +38,10 @@ serve(async (req) => {
 
   const svc = createServiceClient();
   const snapshot = await getWalletLiquiditySnapshot(svc);
+
+  // Recognise an operator's push bank transfer when it reaches Stripe. Reads
+  // Stripe only when a funding session is open; never throws.
+  const funding = await reconcileFundingSessions(svc);
 
   const { data: state } = await svc
     .from('local_wallet_liquidity_alert_state')
@@ -77,5 +82,5 @@ serve(async (req) => {
       .eq('id', true);
   }
 
-  return json({ ok: true, status: snapshot.status, previous: lastStatus, worsened, notified });
+  return json({ ok: true, status: snapshot.status, previous: lastStatus, worsened, notified, funding_open: funding.open, funding_changed: funding.changed.length });
 });

@@ -251,21 +251,17 @@ describe('the admin panel never fakes the funding action, and renders the fallba
     assert.match(panel, /\{snapshot\.funding_enabled \? \(/);
   });
 
-  test('the fallback states the required facts: must be done in Stripe, the exact amount, why, and a Dashboard link', () => {
-    const start = panelRaw.indexOf('Funding must currently be completed in Stripe');
-    assert.ok(start > 0);
-    const block = code(panelRaw.slice(start - 50, start + 1200));
-    assert.match(block, /Funding must currently be completed in Stripe/);
-    assert.match(block, /recommended_funding_pence/);
-    assert.match(block, /dashboard\.stripe\.com/);
-    assert.match(block, /Connect transfers/);
+  test('the old "complete it in Stripe" fallback is gone: the not-enabled branch renders the in-app push-transfer workflow', () => {
+    assert.doesNotMatch(panelRaw, /Funding must currently be completed in Stripe/);
+    assert.doesNotMatch(panelRaw, /Open Stripe Dashboard/);
+    assert.match(panel, /<PushFunding snapshot=\{snapshot\} onChanged=\{onFunded\} \/>/);
   });
 
-  test('the fallback never attaches an onClick that calls wallet-liquidity-fund — it is informational only, never a disguised live action', () => {
-    const start = panelRaw.indexOf('Funding must currently be completed in Stripe');
-    const end = panelRaw.indexOf('{snapshot.recent_topups.length', start);
-    const block = panelRaw.slice(start - 50, end);
-    assert.doesNotMatch(block, /onClick/);
+  test('the push workflow never calls the programmatic Topup function (wallet-liquidity-fund) — it is the disabled-flag path only', () => {
+    const start = panelRaw.indexOf('function PushFunding(');
+    const end = panelRaw.indexOf('function Stat(');
+    assert.ok(start > 0 && end > start);
+    assert.doesNotMatch(panelRaw.slice(start, end), /wallet-liquidity-fund"/);
   });
 
   test('the live action requires explicit confirmation (useConfirm) before calling the edge function, and the confirmation names the real amount and that it is platform capital, not customer credit', () => {
@@ -305,7 +301,7 @@ describe('the existing liquidity preflight (wallet-pay.ts) is unchanged by this 
   });
 
   test('wallet-pay.ts has no new reference to the funding workflow\'s own concepts', () => {
-    assert.doesNotMatch(wp, /wallet_liquidity_topups|wallet-liquidity-fund|recommended_funding/);
+    assert.doesNotMatch(wp, /wallet_liquidity_topups|wallet-liquidity-fund|recommended_funding|funding_sessions|wallet-funding/);
   });
 
   test('wallet-liquidity.ts\'s reservation functions (reserveWalletLiquidity/releaseWalletLiquidity) are byte-for-byte unchanged in their own logic', () => {

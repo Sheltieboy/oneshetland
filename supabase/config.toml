@@ -205,3 +205,14 @@ verify_jwt = true
 # only — never touches a customer's Wallet balance.
 [functions.wallet-liquidity-fund]
 verify_jwt = true
+
+# Admin-only: the Stripe push-funding bank details (beneficiary / account
+# number / sort code). Behind the gateway as well as its own profiles admin
+# check; edits are audited. Never exposed to business users.
+[functions.wallet-funding-details]
+verify_jwt = true
+
+# Admin-only: records that the operator is sending a push bank transfer to
+# fund the Wallet reserve. Moves no money and makes no Stripe write.
+[functions.wallet-liquidity-funding-session]
+verify_jwt = true
