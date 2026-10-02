@@ -10,7 +10,8 @@ import { safeError } from '../_shared/safe-error.ts';
  * opens https://pay.google.com/gp/v/save/<jwt>.
  *
  * PUBLIC (safe in code):
- *   Issuer ID : 338800000023174515
+ *   Issuer ID : 3388000000023174515   (19 digits — it was 18 for a while, one zero short, and Google
+ *               answered "Issuer not found"; the class and object lived under an issuer that did not exist)
  * SECRET (set with `supabase secrets set`, never committed):
  *   GOOGLE_WALLET_SA_JSON — the full service-account JSON key (client_email + private_key)
  *
@@ -18,9 +19,18 @@ import { safeError } from '../_shared/safe-error.ts';
  * Returns { saveUrl }. Add `debug=1` for a plain-text error while wiring up.
  */
 
-const ISSUER_ID = '338800000023174515';
+const ISSUER_ID = '3388000000023174515';
 const ORG = 'OneShetland';
 const BG = '#7c3aed';
+/**
+ * A loyalty class cannot be created without a program logo ("LoyaltyClass cannot be created
+ * without a program logo"). The save link embeds the class, so a class without one made Google's
+ * save page answer "Something went wrong". Must be a public https image; this is the current
+ * OneShetland mark (white, transparent) — it reads cleanly on the purple card.
+ */
+const LOGO_URL = 'https://oneshetland.com/brand/mark-white.png';
+/** Sites the "Add to Google Wallet" button may be shown on. */
+const ORIGINS = ['https://oneshetland.com', 'https://www.oneshetland.com'];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -85,6 +95,10 @@ serve(async (req) => {
       programName: 'Shop Local Shetland',
       reviewStatus: 'UNDER_REVIEW',
       hexBackgroundColor: BG,
+      programLogo: {
+        sourceUri: { uri: LOGO_URL },
+        contentDescription: { defaultValue: { language: 'en-GB', value: ORG } },
+      },
     };
 
     const loyaltyObject = {
@@ -108,7 +122,7 @@ serve(async (req) => {
       aud: 'google',
       typ: 'savetowallet',
       iat: Math.floor(Date.now() / 1000),
-      origins: ['https://oneshetland.netlify.app'],
+      origins: ORIGINS,
       payload: { loyaltyClasses: [loyaltyClass], loyaltyObjects: [loyaltyObject] },
     };
     const header = { alg: 'RS256', typ: 'JWT' };
