@@ -10,13 +10,21 @@
  * refuses anyone who may not manage the event; whether the Refund button
  * appears is the server's `refundable` flag for this viewer and this order; and
  * the refund itself is the existing refund-payment function, addressed by the
- * ORDER id, which re-checks authority, refunds the customer, reverses the
- * merchant transfer, refunds the platform fee and voids the tickets.
+ * ORDER id, which re-checks authority and picks the right rail (card, or the
+ * customer's OneShetland Wallet).
+ *
+ * NO React Native <Modal> AND NO ROOT ALERT HERE, on purpose. The first version
+ * opened the order in a Modal and confirmed through the app-root alert (also a
+ * Modal). iOS cannot present a second modal over a presented one, so the alert
+ * was silently swallowed: tapping "Refund order" did nothing at all, with no
+ * error. This codebase documents the same trap in hub-broadcast, hub-donate and
+ * event-ticket-checkout. The order sheet is an in-screen overlay, and the
+ * confirmation, progress and result are all shown INLINE in it.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,14 +33,13 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius, shadow } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
-import { useAlert } from '@/components/BrandedAlert';
 import {
   fetchOrganiserOrders, refundEventOrder, formatEventDate,
   type OrganiserOrder, type OrganiserOrders,
 } from '@/lib/events-api';
 import {
   pounds, purchaserLabel, ticketSummary, orderStatusBadge, checkedInLabel,
-  ticketStatusLabel, refundConfirmation,
+  ticketStatusLabel, paymentMethodLabel, refundConfirmation,
 } from '@/lib/event-orders-utils';
 
 const S = SECTIONS.events;
@@ -44,17 +51,21 @@ const TONE: Record<'ok' | 'warn' | 'muted' | 'danger', { fg: string; bg: string 
   danger: { fg: '#991B1B',          bg: '#FEE2E2' },
 };
 
+type Step = 'detail' | 'confirm' | 'working' | 'done' | 'error';
+
 export default function EventOrdersScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { alert } = useAlert();
 
   const [data, setData]             = useState<OrganiserOrders | null>(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [refunding, setRefunding]   = useState(false);
+  const [step, setStep]             = useState<Step>('detail');
+  const [message, setMessage]       = useState<string | null>(null);
+  // A ref, not state: two taps in the same frame both see `false` in state.
+  const refundingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -73,39 +84,30 @@ export default function EventOrdersScreen() {
 
   const selected = data?.orders.find((o) => o.id === selectedId) ?? null;
 
-  const confirmRefund = (order: OrganiserOrder) => {
-    if (refunding) return;
-    const c = refundConfirmation(order);
-    alert({
-      title: c.title,
-      message: c.message,
-      icon: 'undo',
-      accent: '#991B1B',
-      dismissible: false,
-      actions: [
-        { label: 'Cancel', style: 'cancel' },
-        {
-          label: c.confirmLabel, style: 'destructive',
-          onPress: async () => {
-            setRefunding(true);
-            try {
-              await refundEventOrder(order.id);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-              await load();
-              alert({
-                title: 'Refunded',
-                message: `${pounds(order.total_pence)} has been refunded to ${purchaserLabel(order)}. Their ${order.tickets_count === 1 ? 'ticket is' : 'tickets are'} no longer valid.`,
-              });
-            } catch (e) {
-              alert({ title: 'Refund failed', message: e instanceof Error ? e.message : 'The refund could not be completed.' });
-              await load();
-            } finally {
-              setRefunding(false);
-            }
-          },
-        },
-      ],
-    });
+  const open = (orderId: string) => { setSelectedId(orderId); setStep('detail'); setMessage(null); };
+  const close = () => { if (!refundingRef.current) { setSelectedId(null); setStep('detail'); setMessage(null); } };
+
+  const doRefund = async (order: OrganiserOrder) => {
+    if (refundingRef.current) return;
+    refundingRef.current = true;
+    setStep('working'); setMessage(null);
+    try {
+      await refundEventOrder(order.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      await load();
+      setMessage(
+        order.payment_method === 'wallet'
+          ? `${pounds(order.total_pence)} has been returned to ${purchaserLabel(order)}'s OneShetland Wallet. ${order.tickets_count === 1 ? 'Their ticket is' : 'Their tickets are'} no longer valid.`
+          : `${pounds(order.total_pence)} has been refunded to ${purchaserLabel(order)}. ${order.tickets_count === 1 ? 'Their ticket is' : 'Their tickets are'} no longer valid.`,
+      );
+      setStep('done');
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'The refund could not be completed.');
+      await load();
+      setStep('error');
+    } finally {
+      refundingRef.current = false;
+    }
   };
 
   if (loading) {
@@ -149,7 +151,7 @@ export default function EventOrdersScreen() {
               const badge = orderStatusBadge(o);
               const checked = checkedInLabel(o);
               return (
-                <TouchableOpacity key={o.id} style={styles.card} activeOpacity={0.85} onPress={() => setSelectedId(o.id)}>
+                <TouchableOpacity key={o.id} style={styles.card} activeOpacity={0.85} onPress={() => open(o.id)}>
                   <View style={styles.cardTop}>
                     <Text style={styles.name} numberOfLines={1}>{purchaserLabel(o)}</Text>
                     <View style={[styles.badge, { backgroundColor: TONE[badge.tone].bg }]}>
@@ -175,38 +177,47 @@ export default function EventOrdersScreen() {
         ) : null}
       </ScrollView>
 
-      <Modal visible={!!selected} animationType="slide" transparent onRequestClose={() => setSelectedId(null)}>
-        <View style={styles.sheetBackdrop}>
+      {selected ? (
+        <View style={styles.overlay}>
           <View style={styles.sheet}>
-            {selected ? (
-              <OrderDetail
-                order={selected}
-                canRefundAny={!!data?.can_refund}
-                isAdmin={!!data?.is_admin}
-                refunding={refunding}
-                onClose={() => setSelectedId(null)}
-                onRefund={() => confirmRefund(selected)}
-              />
-            ) : null}
+            <OrderDetail
+              order={selected}
+              canRefundAny={!!data?.can_refund}
+              isAdmin={!!data?.is_admin}
+              step={step}
+              message={message}
+              onClose={close}
+              onAskRefund={() => { setMessage(null); setStep('confirm'); }}
+              onCancelConfirm={() => setStep('detail')}
+              onConfirmRefund={() => doRefund(selected)}
+              onBackToDetail={() => { setMessage(null); setStep('detail'); }}
+            />
           </View>
         </View>
-      </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
 
-function OrderDetail({ order, canRefundAny, isAdmin, refunding, onClose, onRefund }: {
-  order: OrganiserOrder; canRefundAny: boolean; isAdmin: boolean; refunding: boolean;
-  onClose: () => void; onRefund: () => void;
+function OrderDetail({
+  order, canRefundAny, isAdmin, step, message, onClose, onAskRefund, onCancelConfirm, onConfirmRefund, onBackToDetail,
+}: {
+  order: OrganiserOrder; canRefundAny: boolean; isAdmin: boolean; step: Step; message: string | null;
+  onClose: () => void; onAskRefund: () => void; onCancelConfirm: () => void; onConfirmRefund: () => void; onBackToDetail: () => void;
 }) {
   const badge = orderStatusBadge(order);
+  const working = step === 'working';
+
   return (
     <>
       <View style={styles.sheetHeader}>
         <Text style={styles.sheetTitle}>Order</Text>
-        <TouchableOpacity onPress={onClose} hitSlop={12}><FontAwesome5 name="times" size={18} color={colors.textMuted} /></TouchableOpacity>
+        <TouchableOpacity onPress={onClose} hitSlop={12} disabled={working}>
+          <FontAwesome5 name="times" size={18} color={working ? colors.border : colors.textMuted} />
+        </TouchableOpacity>
       </View>
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+
+      <ScrollView contentContainerStyle={{ paddingBottom: 16 }}>
         <View style={styles.rowBetween}>
           <Text style={styles.name}>{purchaserLabel(order)}</Text>
           <View style={[styles.badge, { backgroundColor: TONE[badge.tone].bg }]}>
@@ -217,6 +228,7 @@ function OrderDetail({ order, canRefundAny, isAdmin, refunding, onClose, onRefun
 
         <Text style={styles.sectionLabel}>Payment</Text>
         <Row label="Paid" value={pounds(order.total_pence)} strong />
+        <Row label="Paid with" value={paymentMethodLabel(order)} />
         {order.total_pence > 0 ? <Row label="Tickets" value={pounds(order.ticket_subtotal_pence)} /> : null}
         {order.booking_fee_pence > 0 ? <Row label="Booking fee" value={pounds(order.booking_fee_pence)} /> : null}
         <Row label="Purchased" value={formatEventDate(order.paid_at ?? order.created_at)} />
@@ -242,19 +254,49 @@ function OrderDetail({ order, canRefundAny, isAdmin, refunding, onClose, onRefun
         ))}
       </ScrollView>
 
-      {order.refundable ? (
-        <TouchableOpacity
-          style={[styles.refundBtn, refunding && { opacity: 0.5 }]}
-          disabled={refunding}
-          activeOpacity={0.85}
-          onPress={onRefund}
-        >
-          {refunding ? <ActivityIndicator color="#fff" /> : <Text style={styles.refundBtnText}>Refund order</Text>}
+      {step === 'confirm' || working ? (
+        <ConfirmPanel order={order} working={working} onCancel={onCancelConfirm} onConfirm={onConfirmRefund} />
+      ) : step === 'done' ? (
+        <View style={[styles.resultPanel, { backgroundColor: colors.successLight }]}>
+          <Text style={[styles.resultTitle, { color: colors.successDark }]}>Refunded</Text>
+          <Text style={[styles.resultText, { color: colors.successDark }]}>{message}</Text>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={onClose}><Text style={styles.secondaryBtnText}>Done</Text></TouchableOpacity>
+        </View>
+      ) : step === 'error' ? (
+        <View style={[styles.resultPanel, { backgroundColor: '#FEE2E2' }]}>
+          <Text style={[styles.resultTitle, { color: '#991B1B' }]}>Refund not completed</Text>
+          <Text style={[styles.resultText, { color: '#991B1B' }]}>{message}</Text>
+          <TouchableOpacity style={styles.secondaryBtn} onPress={onBackToDetail}><Text style={styles.secondaryBtnText}>Back to order</Text></TouchableOpacity>
+        </View>
+      ) : order.refundable ? (
+        <TouchableOpacity style={styles.refundBtn} activeOpacity={0.85} onPress={onAskRefund}>
+          <Text style={styles.refundBtnText}>Refund order</Text>
         </TouchableOpacity>
       ) : order.status === 'paid' && order.total_pence > 0 && !canRefundAny ? (
         <Text style={styles.noRefundNote}>Only the business owner, or OneShetland, can refund this order.</Text>
       ) : null}
     </>
+  );
+}
+
+/** The confirmation, shown INLINE: amount, purchaser, tickets, where the money goes, and that the tickets stop working. */
+function ConfirmPanel({ order, working, onCancel, onConfirm }: {
+  order: OrganiserOrder; working: boolean; onCancel: () => void; onConfirm: () => void;
+}) {
+  const c = refundConfirmation(order);
+  return (
+    <View style={styles.confirmPanel}>
+      <Text style={styles.confirmTitle}>{c.title}</Text>
+      <Text style={styles.confirmText}>{c.message}</Text>
+      <View style={styles.confirmButtons}>
+        <TouchableOpacity style={[styles.secondaryBtn, { flex: 1 }, working && { opacity: 0.4 }]} disabled={working} onPress={onCancel}>
+          <Text style={styles.secondaryBtnText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.refundBtn, { flex: 1.4, marginTop: 0 }, working && { opacity: 0.6 }]} disabled={working} activeOpacity={0.85} onPress={onConfirm}>
+          {working ? <ActivityIndicator color="#fff" /> : <Text style={styles.refundBtnText}>{c.confirmLabel}</Text>}
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -304,11 +346,20 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: fontSize.md, fontWeight: '900', color: colors.textPrimary },
   emptyText:  { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
 
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: spacing.md, maxHeight: '85%',
+    padding: spacing.md, maxHeight: '90%',
   },
+  confirmPanel: { marginTop: 8, borderWidth: 2, borderColor: '#991B1B', borderRadius: radius.lg, padding: 14, gap: 8, backgroundColor: '#FFF7F7' },
+  confirmTitle: { fontSize: fontSize.md, fontWeight: '900', color: '#991B1B' },
+  confirmText:  { fontSize: fontSize.sm, color: colors.textPrimary, lineHeight: 20 },
+  confirmButtons: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  resultPanel:  { marginTop: 8, borderRadius: radius.lg, padding: 14, gap: 6 },
+  resultTitle:  { fontSize: fontSize.md, fontWeight: '900' },
+  resultText:   { fontSize: fontSize.sm, lineHeight: 20 },
+  secondaryBtn: { marginTop: 4, borderWidth: 1, borderColor: colors.border, backgroundColor: '#fff', borderRadius: radius.lg, paddingVertical: 12, alignItems: 'center' },
+  secondaryBtnText: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   sheetTitle:  { fontSize: fontSize.lg, fontWeight: '900', color: colors.textPrimary },
   sectionLabel: { marginTop: 16, marginBottom: 6, fontSize: fontSize.xs, fontWeight: '900', color: colors.textMuted, textTransform: 'uppercase' },

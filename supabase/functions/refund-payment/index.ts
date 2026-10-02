@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { reconcileCharge } from '../_shared/refund-reconcile.ts';
+import { isWalletRef, refundWalletEventOrder, type WalletRefundDeps } from '../_shared/event-wallet-refund-core.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -97,7 +98,7 @@ async function chargeAmountRefunded(
  * operator took to press the button again. A transfer we cannot read falls
  * through to the POST, so nothing that worked before behaves differently.
  */
-async function reverseTransfer(transferId: string): Promise<void> {
+async function reverseTransfer(transferId: string, description = 'OneShetland: membership refunded'): Promise<void> {
   const look = await fetch(`${STRIPE}/transfers/${transferId}`, {
     headers: {
       'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
@@ -118,7 +119,7 @@ async function reverseTransfer(transferId: string): Promise<void> {
       'Stripe-Version': STRIPE_API_VERSION,
       'Idempotency-Key': `reverse_${transferId}`,
     },
-    body: new URLSearchParams({ description: 'OneShetland: membership refunded' }),
+    body: new URLSearchParams({ description }),
   });
   const j = await res.json();
   if (!res.ok) throw new Error(j.error?.message ?? `Transfer reversal failed (HTTP ${res.status})`);
@@ -226,6 +227,42 @@ async function refundWalletMembership(
   });
 }
 
+/**
+ * The canonical Wallet primitives behind a Wallet-funded event ticket refund:
+ * the same transfer clawback and wallet_reverse_debit the Wallet membership
+ * refund uses, plus the idempotent ticket void the webhook uses.
+ */
+// deno-lint-ignore no-explicit-any
+function walletEventRefundDeps(svc: any): WalletRefundDeps {
+  return {
+    async loadLedgerRow(txId) {
+      const { data } = await svc.from('local_wallet_transactions')
+        .select('id, user_id, type, amount_pence, stripe_transfer_id, transfer_state, idempotency_key')
+        .eq('id', txId).maybeSingle();
+      return data ?? null;
+    },
+    async reverseTransfer(transferId) { await reverseTransfer(transferId, 'OneShetland: event ticket refunded'); },
+    async reverseDebit(txId, reason, merchant) {
+      const { data, error } = await svc.rpc('wallet_reverse_debit',
+        { p_transaction_id: txId, p_reason: reason, p_merchant: merchant }).maybeSingle();
+      if (error || !data) {
+        console.error('[refund-payment] wallet event reversal failed', error?.code ?? 'no row');
+        return { ok: false as const, message: 'reversal failed' };
+      }
+      return {
+        ok: true as const, reversalId: data.reversal_id as string,
+        alreadyReversed: data.already_reversed === true, balancePence: data.balance_pence as number,
+      };
+    },
+    async voidTickets(ref) {
+      const { data, error } = await svc.rpc('refund_event_tickets_for_payment',
+        { p_payment_intent_id: ref, p_fully_refunded: true });
+      if (error) { console.error('[refund-payment] wallet event ticket void failed', error.code); return { ok: false as const, message: 'void failed' }; }
+      return { ok: true as const, action: String((data as { action?: string } | null)?.action ?? 'refunded') };
+    },
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   const json = (b: unknown, s = 200) =>
@@ -319,6 +356,29 @@ serve(async (req) => {
         return json({ error: 'Only a paid ticket order can be refunded.' }, 400);
       }
       payment_intent_id = eventOrder.stripe_payment_intent_id;
+
+      // ── Paid from the customer's OneShetland WALLET ────────────────────────
+      //
+      // There is no PaymentIntent behind a Wallet order — its reference is the
+      // synthetic wallet_<ledger id> — so a Stripe card refund is the wrong rail
+      // and would only fail on a payment that does not exist. The Wallet refund
+      // claws back the organiser's Connect transfer, credits the customer's
+      // Wallet once through wallet_reverse_debit, and voids the tickets.
+      if (isWalletRef(eventOrder.stripe_payment_intent_id)) {
+        const { data: ev } = await svc.from('events').select('title').eq('id', eventOrder.event_id).maybeSingle();
+        const out = await refundWalletEventOrder(
+          walletEventRefundDeps(svc),
+          { id: eventOrder.id, buyer_id: eventOrder.buyer_id, total_pence: eventOrder.total_pence, stripe_payment_intent_id: eventOrder.stripe_payment_intent_id },
+          (ev as { title?: string } | null)?.title ?? 'event', user.id,
+        );
+        if (!out.ok) return json({ error: out.error, stage: out.stage, retry_safe: out.retry_safe }, out.status);
+        console.log(`[refund-payment] wallet event order ${eventOrder.id} refunded by ${user.id}: ${JSON.stringify({ merchant_reversed: out.merchant_reversed, already: out.already_reversed })}`);
+        return json({
+          ok: true, rail: 'wallet', amount_pence: out.amount_pence,
+          reversed_transfer: out.merchant_reversed, already_reversed: out.already_reversed,
+          tickets: { action: out.tickets_action },
+        });
+      }
     }
 
     if (!payment_intent_id || typeof payment_intent_id !== 'string') {

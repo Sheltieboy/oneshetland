@@ -26,7 +26,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import {
-  pounds, purchaserLabel, ticketSummary, orderStatusBadge, checkedInLabel, ticketStatusLabel, refundConfirmation,
+  pounds, purchaserLabel, ticketSummary, orderStatusBadge, checkedInLabel, ticketStatusLabel, refundConfirmation, paymentMethodLabel,
   type OrderLike,
 } from '../../lib/event-orders-utils.ts';
 import * as webUtils from '../../../oneshetland-web/lib/event-orders-utils.ts';
@@ -108,7 +108,8 @@ describe('refunds use the canonical server path, not a second system', () => {
   test('after the refund the SAME idempotent ticket-void the webhook uses is applied, so the order is right immediately', () => {
     assert.match(fn, /svc\.rpc\('refund_event_tickets_for_payment',\s*\{ p_payment_intent_id: payment_intent_id, p_fully_refunded: true \}\)/);
     const refundAt = fn.indexOf("fetch(`${STRIPE}/refunds`");
-    const voidAt = fn.indexOf("svc.rpc('refund_event_tickets_for_payment'");
+    // The CARD path's own void call (the last one); the Wallet deps above serve() are a different rail.
+    const voidAt = fn.lastIndexOf("svc.rpc('refund_event_tickets_for_payment'");
     assert.ok(refundAt > 0 && voidAt > refundAt, 'tickets are voided only AFTER Stripe accepted the refund');
   });
 
@@ -170,7 +171,7 @@ describe('Refund is gated by the server flag and confirmed before money moves', 
   const webComp = code(readWeb('components/events/EventOrders.tsx'));
 
   test('mobile: the Refund button renders only when order.refundable; otherwise a note or nothing', () => {
-    assert.match(screen, /\{order\.refundable \? \(\s*<TouchableOpacity/);
+    assert.match(screen, /: order\.refundable \? \(\s*<TouchableOpacity/);
     assert.match(screen, /Refund order/);
     assert.match(screen, /Only the business owner, or OneShetland, can refund this order\./);
     assert.doesNotMatch(screen, /canRefundAny \?[\s\S]{0,80}Refund order/, 'the button must hang off the per-order flag, not the viewer flag');
@@ -181,14 +182,51 @@ describe('Refund is gated by the server flag and confirmed before money moves', 
     assert.match(webComp, /Refund order/);
   });
 
-  test('mobile: confirmation comes first, is not dismissible by a stray tap, and the refund runs only from its destructive button', () => {
-    const c = screen.indexOf('refundConfirmation(order)');
-    const call = screen.indexOf('await refundEventOrder(order.id)');
-    assert.ok(c > 0 && call > c);
-    assert.match(screen, /dismissible: false/);
-    assert.match(screen, /style: 'destructive'/);
-    assert.match(screen, /if \(refunding\) return;/, 'a second tap must not start a second refund');
-    assert.match(screen, /disabled=\{refunding\}/);
+  test('mobile: tapping "Refund order" only OPENS the inline confirmation; the refund runs only from the confirmation\'s own button', () => {
+    // Refund order -> onAskRefund -> step 'confirm'. It must not call the server itself.
+    assert.match(screen, /onAskRefund=\{\(\) => \{ setMessage\(null\); setStep\('confirm'\); \}\}/);
+    const askFn = screen.slice(screen.indexOf('onAskRefund={'), screen.indexOf('onAskRefund={') + 120);
+    assert.doesNotMatch(askFn, /refundEventOrder|doRefund/);
+    // The ONLY caller of doRefund is the confirmation's confirm handler.
+    assert.match(screen, /const doRefund = async \(order: OrganiserOrder\)/);
+    assert.equal((screen.match(/doRefund\(/g) ?? []).length, 1, 'called from exactly one place');
+    assert.match(screen, /onConfirmRefund=\{\(\) => doRefund\(selected\)\}/);
+    assert.match(screen, /onPress=\{onConfirm\}/);
+  });
+
+  test('mobile: the confirmation is shown INLINE and carries the exact refundConfirmation wording', () => {
+    const panel = screen.slice(screen.indexOf('function ConfirmPanel'), screen.indexOf('function Row('));
+    assert.match(panel, /const c = refundConfirmation\(order\);/);
+    assert.match(panel, /\{c\.title\}/); assert.match(panel, /\{c\.message\}/); assert.match(panel, /\{c\.confirmLabel\}/);
+    assert.match(screen, /step === 'confirm' \|\| working \? \(\s*<ConfirmPanel/);
+  });
+
+  test('mobile: ROOT CAUSE REGRESSION — the screen uses no React Native Modal and no root alert, which iOS silently swallows over a modal', () => {
+    // The first version opened the order in a <Modal> and confirmed via the app-root alert (also a Modal).
+    // iOS cannot present a second modal over a presented one, so "Refund order" did nothing at all.
+    assert.doesNotMatch(screen, /<Modal\b/);
+    assert.doesNotMatch(screen, /\bModal\b/);
+    assert.doesNotMatch(screen, /useAlert|\balert\(/);
+    assert.doesNotMatch(screen, /Alert\.alert/);
+    assert.match(screen, /\.\.\.StyleSheet\.absoluteFillObject/, 'the order sheet is an in-screen overlay');
+    // The documented trap, so the next person finds it.
+    assert.match(read('app/event-orders.tsx'), /iOS cannot present a second modal over a presented one/);
+  });
+
+  test('mobile: the result and any error are shown INLINE too, and a repeated tap cannot start a second refund', () => {
+    assert.match(screen, /step === 'done' \? \(/);
+    assert.match(screen, /step === 'error' \? \(/);
+    assert.match(screen, /Refund not completed/);
+    // A ref guard (state would let two taps in the same frame through) plus disabled controls.
+    assert.match(screen, /const refundingRef = useRef\(false\);/);
+    assert.match(screen, /if \(refundingRef\.current\) return;\s*refundingRef\.current = true;/);
+    assert.match(screen, /finally \{\s*refundingRef\.current = false;/);
+    assert.match(screen, /disabled=\{working\}/);
+    assert.match(screen, /disabled=\{working\} onPress=\{onCancel\}|disabled=\{working\} activeOpacity/);
+  });
+
+  test('mobile: the sheet cannot be dismissed while a refund is in flight', () => {
+    assert.match(screen, /const close = \(\) => \{ if \(!refundingRef\.current\)/);
   });
 
   test('web: confirmation first (danger), and a busy guard against a second click', () => {
@@ -223,6 +261,47 @@ describe('Refund is gated by the server flag and confirmed before money moves', 
     const c = refundConfirmation(order({ tickets_count: 2, checked_in_count: 1 }));
     assert.match(c.message, /1 ticket has already been checked in; that attendance stays on record, but the money for the whole order is still refunded\./);
     assert.match(refundConfirmation(order({ tickets_count: 3, checked_in_count: 2 })).message, /2 tickets have already been checked in/);
+  });
+});
+
+/* ── 3b. A Wallet-funded order's confirmation says where the money goes ───── */
+
+describe('Wallet-funded orders: the confirmation names the Wallet, the card wording is unchanged', () => {
+  const wallet = (over: Partial<OrderLike> = {}) => order({ payment_method: 'wallet', ...over });
+
+  test('the exact Wallet confirmation: £ amount, purchaser, ticket, money returns to their OneShetland Wallet, ticket no longer valid', () => {
+    const c = refundConfirmation(wallet({
+      purchaser: { name: 'James Fullerton', email: 'darren@oneshetland.com' },
+      tickets: [{ ticket_type: 'TEST — Paid Entry', status: 'valid', checked_in_at: null }],
+    }));
+    assert.equal(c.title, 'Refund this order?');
+    assert.match(c.message, /refund £1\.96 to James Fullerton \(darren@oneshetland\.com\)/);
+    assert.match(c.message, /Tickets: 1 × TEST — Paid Entry\./);
+    assert.match(c.message, /They paid with their OneShetland Wallet, so the £1\.96 goes back into their Wallet balance — not to a card\./);
+    assert.match(c.message, /The ticket will no longer be valid and cannot be used to enter\./);
+    assert.equal(c.confirmLabel, 'Refund £1.96');
+  });
+
+  test('a card order does NOT mention a Wallet, and a Wallet order is the only one that does', () => {
+    assert.doesNotMatch(refundConfirmation(order({ payment_method: 'card' })).message, /Wallet/);
+    assert.doesNotMatch(refundConfirmation(order()).message, /Wallet/, 'an order with no stated rail reads as the card wording');
+    assert.match(refundConfirmation(wallet()).message, /Wallet/);
+  });
+
+  test('how it was paid is shown to the organiser', () => {
+    assert.equal(paymentMethodLabel({ payment_method: 'wallet', total_pence: 196 }), 'OneShetland Wallet');
+    assert.equal(paymentMethodLabel({ payment_method: 'card', total_pence: 196 }), 'Card');
+    assert.equal(paymentMethodLabel({ payment_method: 'free', total_pence: 0 }), 'Free');
+  });
+
+  test('both clients carry payment_method from the server and show it; the success message is Wallet-aware', () => {
+    assert.match(read('lib/events-api.ts'), /payment_method:\s+'wallet' \| 'card' \| 'free';/);
+    const screen = code(read('app/event-orders.tsx'));
+    assert.match(screen, /Row label="Paid with" value=\{paymentMethodLabel\(order\)\}/);
+    assert.match(screen, /order\.payment_method === 'wallet'\s*\? `\$\{pounds\(order\.total_pence\)\} has been returned to \$\{purchaserLabel\(order\)\}'s OneShetland Wallet/);
+    const web = code(readWeb('components/events/EventOrders.tsx'));
+    assert.match(web, /Row k="Paid with" v=\{paymentMethodLabel\(o\)\}/);
+    assert.match(web, /order\.payment_method === "wallet"/);
   });
 });
 
@@ -270,7 +349,7 @@ describe('discoverable from the existing organiser screens', () => {
       'orderStatusBadge(o)', 'checkedInLabel(o)', 'Refunded {formatEventDate(o.refunded_at)}']) {
       assert.ok(screen.includes(needle), `missing ${needle}`);
     }
-    assert.match(screen, /setSelectedId\(o\.id\)/);   // selecting an order opens its detail
+    assert.match(screen, /onPress=\{\(\) => open\(o\.id\)\}/);   // selecting an order opens its detail
     assert.match(screen, /ticketStatusLabel\(t\.status\)/);
   });
 

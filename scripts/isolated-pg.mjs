@@ -45,6 +45,7 @@ const SUITES = [
   'supabase/tests/product-order-immutability.node.test.ts',
   'supabase/tests/pass-immutability.node.test.ts',
   'supabase/tests/event-orders-access.node.test.ts',
+  'supabase/tests/event-wallet-refund.node.test.ts',
 ];
 
 // macOS ships a locale that makes the postmaster multithread during startup

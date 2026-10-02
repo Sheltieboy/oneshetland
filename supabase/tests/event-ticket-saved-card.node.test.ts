@@ -306,6 +306,7 @@ async function runTicket(sc: Scenario = {}) {
     '../_shared/ticket-receipt.ts': { sendTicketReceipt: async () => {} },
     '../_shared/ticket-quantities.ts': TicketQuantities,
     '../_shared/wallet-ledger.ts': { debitAndTransfer: async () => ({ ok: false, reason: 'x', status: 500, error: 'x' }) },
+    '../_shared/wallet-liquidity-gate.ts': { withWalletLiquidityGate: async (_svc: unknown, _amount: number, settle: () => Promise<unknown>) => ({ ok: true, value: await settle(), gated: true }) },
     '../_shared/safe-error.ts': SafeError,
     '../_shared/rate-limit.ts': { enforceRateLimit: async () => ({ ok: true }), userSubject: (u: string) => `user:${u}` },
     '../_shared/stripe-sca.ts': Sca,

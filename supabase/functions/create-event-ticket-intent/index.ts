@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
 import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
+import { withWalletLiquidityGate } from '../_shared/wallet-liquidity-gate.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
@@ -369,7 +370,7 @@ serve(async (req) => {
       // A throw there left the wallet down, the order paid, and no accounting
       // entry — which is exactly the £8.95 ticket order sitting unledgered in
       // production today.
-      const paid = await debitAndTransfer(supabase, {
+      const settleWallet = () => debitAndTransfer(supabase, {
         userId:         user.id,
         spendPence:     chargeTotalPence,
         description:    `Tickets — ${event.title}`,
@@ -381,6 +382,26 @@ serve(async (req) => {
           metadata: { type: 'event_tickets_wallet', order_id: order.id, buyer_id: user.id },
         } : undefined,
       });
+
+      // ── Liquidity gate — BEFORE the customer is debited ──────────────────────
+      //
+      // This path debits the Wallet and (for any organiser with a connected
+      // account) sends the face value to them as a real Connect transfer. That
+      // transfer is paid out of the SAME pooled Stripe balance as every other
+      // Wallet merchant payment, so it must pass the SAME check. It did not: on
+      // 2 Oct 2026 a £1.96 Wallet ticket sent a real £1.00 transfer while Local
+      // Wallet liquidity read Critical. The amount asked for is what actually
+      // leaves Stripe — the face value — not the customer's total (the booking
+      // fee never leaves). A refusal happens before settleWallet() runs, so the
+      // buyer is not debited; the seats held for this checkout are given back.
+      const gate = await withWalletLiquidityGate(supabase, stripeAccountId ? totalPence : 0, settleWallet);
+      if (!gate.ok) {
+        await releaseHeldSeats();
+        return new Response(JSON.stringify({ error: gate.error, reason: gate.reason }), {
+          status: gate.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const paid = gate.value;
 
       if (!paid.ok) {
         await releaseHeldSeats();

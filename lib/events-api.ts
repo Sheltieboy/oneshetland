@@ -730,6 +730,8 @@ export interface OrganiserOrderTicket {
 export interface OrganiserOrder {
   id:                    string;
   status:                OrderStatus;
+  /** Which rail paid: 'wallet' (refund goes back to their Wallet), 'card', or 'free'. */
+  payment_method:        'wallet' | 'card' | 'free';
   created_at:            string;
   paid_at:               string | null;
   refunded_at:           string | null;

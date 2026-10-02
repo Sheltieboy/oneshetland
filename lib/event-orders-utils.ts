@@ -18,6 +18,8 @@ export interface OrderTicketLike {
 export interface OrderLike {
   id: string;
   status: string;
+  /** 'wallet' | 'card' | 'free' — which rail paid. Decides where a refund goes. */
+  payment_method?: string;
   total_pence: number;
   tickets_count: number;
   checked_in_count: number;
@@ -52,6 +54,13 @@ export function orderStatusBadge(o: Pick<OrderLike, 'status' | 'total_pence'>): 
   return { label: o.status, tone: 'muted' };
 }
 
+/** How the purchaser paid, in the organiser's words. */
+export function paymentMethodLabel(o: Pick<OrderLike, 'payment_method' | 'total_pence'>): string {
+  if (o.payment_method === 'wallet') return 'OneShetland Wallet';
+  if (o.payment_method === 'free' || o.total_pence <= 0) return 'Free';
+  return 'Card';
+}
+
 export function checkedInLabel(o: Pick<OrderLike, 'checked_in_count' | 'tickets_count'>): string | null {
   if (o.checked_in_count <= 0) return null;
   return `${o.checked_in_count} of ${o.tickets_count} checked in`;
@@ -83,6 +92,11 @@ export function refundConfirmation(o: OrderLike): { title: string; message: stri
   const lines = [
     `You are about to refund ${amount} to ${who}.`,
     `Tickets: ${ticketSummary(o)}.`,
+    // Where the money lands depends on how they paid. A Wallet purchase has no card
+    // to return to, so say plainly that it goes back into the Wallet.
+    ...(o.payment_method === 'wallet'
+      ? [`They paid with their OneShetland Wallet, so the ${amount} goes back into their Wallet balance — not to a card.`]
+      : []),
     o.tickets_count === 1
       ? 'The ticket will no longer be valid and cannot be used to enter.'
       : `All ${o.tickets_count} tickets in this order will no longer be valid and cannot be used to enter.`,

@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
+import { withWalletLiquidityGate } from '../_shared/wallet-liquidity-gate.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
@@ -228,7 +229,7 @@ serve(async (req) => {
       // Debit and ledger in one transaction, keyed on the gift row that was just
       // created. Demo businesses have no connected account, so the transfer is
       // skipped and the wallet debit alone funds the platform.
-      const paid = await debitAndTransfer(supabase, {
+      const settleWallet = () => debitAndTransfer(supabase, {
         userId:           user.id,
         spendPence:       pricePence!,
         businessId,
@@ -242,6 +243,18 @@ serve(async (req) => {
           metadata: { type: 'gift_purchase_wallet', gift_id: gift.id, buyer_id: user.id },
         } : undefined,
       });
+
+      // Same liquidity gate as every Wallet merchant payment: the transfer to the
+      // business comes out of the pooled Stripe balance. Refused BEFORE the
+      // debit, so the buyer is not charged; the half-created gift row goes too.
+      const gate = await withWalletLiquidityGate(supabase, giftHasAccount ? pricePence! - giftPlatformFee : 0, settleWallet);
+      if (!gate.ok) {
+        await supabase.from('book_gifts').delete().eq('id', gift.id);
+        return new Response(JSON.stringify({ error: gate.error, reason: gate.reason }), {
+          status: gate.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const paid = gate.value;
 
       if (!paid.ok) {
         await supabase.from('book_gifts').delete().eq('id', gift.id);
