@@ -315,6 +315,19 @@ describe('server-side writes and the refund rules are unaffected', () => {
     assert.equal(field('commission_pence'), '14');
   });
 
+  test('a SECURITY DEFINER function (how the real refund RPCs work) called BY a merchant can still write refund and money fields', () => {
+    fixtures();
+    raw(`create or replace function public._test_definer_write(p_id uuid) returns void language plpgsql security definer set search_path = public as $$
+           begin update public.product_orders set refund_state = 'pending', commission_pence = commission_pence where id = p_id; end; $$;
+         grant execute on function public._test_definer_write(uuid) to authenticated;`);
+    const o = asUser(OWNER, `select public._test_definer_write('${ORDER}');`);
+    assert.doesNotMatch(o, /ERROR/, o);
+    assert.equal(field('refund_state'), 'pending');
+    // ...while the same merchant writing the column directly is still refused.
+    assert.match(asUser(OWNER, `update public.product_orders set refund_state = 'none' where id='${ORDER}';`), /server-managed/);
+    assert.equal(field('refund_state'), 'pending');
+  });
+
   test('refund-state rules still apply on top: no status change while a refund is pending or after it completed', () => {
     fixtures();
     asServer(`update public.product_orders set refund_state='pending' where id='${ORDER}';`);
