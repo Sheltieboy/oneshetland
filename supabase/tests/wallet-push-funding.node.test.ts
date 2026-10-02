@@ -4,7 +4,7 @@
  * Stripe offers this platform only a PUSH bank transfer for the Payments
  * balance (FPS / BACS), so Wallet reserve funding is: OneShetland calculates
  * the amount, shows the beneficiary details to platform admins, records the
- * operator's intent ("Start funding transfer" — BEFORE any money is sent), and recognises the money
+ * operator's intent ("Create funding instructions" — BEFORE any money is sent), and recognises the money
  * when it reaches Stripe. This proves:
  *
  *   1. the arrival-matching rules — exact amount, GBP, not before the session,
@@ -475,15 +475,15 @@ describe('the funding order is unambiguous: the session exists BEFORE any instru
   });
 
   test('before the session: no "send" instruction of any kind, no copy buttons, and an explicit "do not send yet"', () => {
-    assert.doesNotMatch(before, /Now send|send exactly|FPS\/BACS|Copy amount|<CopyButton/);
+    assert.doesNotMatch(before, /Now send|send exactly|FPS or BACS|Copy amount|<CopyButton/);
     assert.match(before, /Do not send any money yet/);
-    assert.match(before, /Start the funding transfer first/);
+    assert.match(before, /Create the funding\s+instructions first/);
     assert.match(before, /<FundingDetailsBlock copyable=\{false\}/, 'details may be reviewed but not copied before a session exists');
   });
 
-  test('the start action is "Start funding transfer" and its confirmation says nothing is moved yet', () => {
-    assert.match(before, /Start funding transfer/);
-    assert.match(before, /This records the transfer in OneShetland\. No money is moved yet\./);
+  test('the start action is "Create funding instructions" and its confirmation says nothing is moved', () => {
+    assert.match(before, /Create funding instructions/);
+    assert.match(before, /This does not move any money\. OneShetland will record the amount you intend to send and then show you the bank details to use\./);
     assert.doesNotMatch(raw, /I'm sending this transfer/);
   });
 
@@ -492,8 +492,8 @@ describe('the funding order is unambiguous: the session exists BEFORE any instru
     assert.match(before, /onConfiguredChange=\{setDetailsConfigured\}/);
   });
 
-  test('after the session: "Now send exactly £X … using FPS/BACS" is shown, with the exact amount and copy buttons', () => {
-    assert.match(after, /Now send exactly \{gbp\(session\.requested_amount_pence\)\} from the OneShetland business bank using FPS\/BACS\./);
+  test('after the session: "Now send exactly £X … using FPS or BACS" is shown, with the exact amount and copy buttons', () => {
+    assert.match(after, /Now send exactly \{gbp\(session\.requested_amount_pence\)\} from the OneShetland business bank using FPS or BACS\./);
     assert.match(after, /<CopyButton label="Copy amount"/);
     assert.match(after, /<FundingDetailsBlock copyable canEdit=\{false\} \/>/);
   });
@@ -558,6 +558,69 @@ describe('regression: session created → bank transfer initiated → Stripe arr
     assert.match(src, /c\.amount_pence !== session\.requested_amount_pence/);
     assert.match(src, /c\.created_unix >= sessionUnix - CLOCK_SLACK_SECONDS/);
     assert.match(src, /claimedByOthers\.has\(c\.ref\)/);
+  });
+});
+
+/* ── 6c. Copy: the action creates INSTRUCTIONS; it does not sound like a bank pull ─────── */
+
+describe('copy: the button creates funding instructions and never reads as OneShetland pulling money', () => {
+  const raw = readWeb('components/admin/WalletLiquidityPanel.tsx');
+  const panel = code(raw);
+  const before = view(panel, 'StartSessionView');
+  const after = view(panel, 'ActiveSessionView');
+
+  test('before a session: button, confirmation title, body and confirm label use the agreed wording exactly', () => {
+    assert.match(before, /\{busy \? "Creating…" : "Create funding instructions"\}/);
+    assert.match(before, /title: "Create funding instructions\?"/);
+    assert.match(before, /body: "This does not move any money\. OneShetland will record the amount you intend to send and then show you the bank details to use\."/);
+    assert.match(before, /confirmLabel: "Create instructions"/);
+  });
+
+  test('after a session: heading, primary message and supporting text use the agreed wording exactly', () => {
+    assert.match(after, />Funding instructions ready</);
+    assert.match(after, /Now send exactly \{gbp\(session\.requested_amount_pence\)\} from the OneShetland business bank using FPS or BACS\./);
+    assert.match(after, /OneShetland will watch Stripe and update this page when the funds arrive\./);
+  });
+
+  test('the primary message comes after the heading, and the supporting text after the primary message', () => {
+    const h = after.indexOf('Funding instructions ready');
+    const p = after.indexOf('Now send exactly');
+    const sup = after.indexOf('OneShetland will watch Stripe');
+    assert.ok(h >= 0 && p > h && sup > p);
+  });
+
+  test('the "start" wording that sounds like a bank pull is gone from the whole panel (button, dialogs, stats, history)', () => {
+    assert.doesNotMatch(raw, /Start funding transfer|Start the funding transfer|Transfer started|Available when started|FPS\/BACS/);
+    // "Starting…" legitimately remains on the dormant programmatic Topup button; it must not appear in the push-funding views.
+    assert.doesNotMatch(view(panel, 'PushFunding') + before + after, /Starting…/);
+    assert.doesNotMatch(raw, /Cancel this funding transfer|Cancel funding transfer/);
+  });
+
+  test('the "Create…" wording appears only in the pre-session view; the heading and send message only after a session', () => {
+    assert.doesNotMatch(after, /Create funding instructions|Create instructions/);
+    assert.doesNotMatch(before, /Funding instructions ready|Now send exactly/);
+  });
+
+  test('the active view keeps the frozen amount, session time, bank details, copy buttons and the awaiting / pending / available states', () => {
+    assert.match(after, /Exact amount to send/);
+    assert.match(after, /<MiniStat label="Instructions created" value=\{new Date\(session\.created_at\)/);
+    assert.match(after, /<FundingDetailsBlock copyable canEdit=\{false\} \/>/);
+    assert.match(after, /<CopyButton label="Copy amount"/);
+    const banner = view(panel, 'SessionBanner');
+    assert.match(banner, /funding transfer awaiting Stripe/);
+    assert.match(banner, /Received by Stripe — pending availability/);
+    assert.match(banner, /Reserve funded/);
+  });
+
+  test('cancelling is worded as cancelling the instructions, and only offered before any money is seen', () => {
+    assert.match(after, /title: "Cancel these funding instructions\?"/);
+    assert.match(after, /confirmLabel: "Cancel instructions"/);
+    assert.match(after, /I haven't sent it — cancel these funding instructions/);
+  });
+
+  test('copy-only change: the request ids and server calls are untouched', () => {
+    assert.match(before, /invokeAdmin\("wallet-liquidity-funding-session", \{\s*action: "start", requested_amount_pence: amountPence, client_request_id: requestId,/);
+    assert.match(after, /action: "cancel", session_id: session\.id/);
   });
 });
 
