@@ -4,7 +4,7 @@
  * Stripe offers this platform only a PUSH bank transfer for the Payments
  * balance (FPS / BACS), so Wallet reserve funding is: OneShetland calculates
  * the amount, shows the beneficiary details to platform admins, records the
- * operator's intent ("I'm sending this transfer"), and recognises the money
+ * operator's intent ("Start funding transfer" — BEFORE any money is sent), and recognises the money
  * when it reaches Stripe. This proves:
  *
  *   1. the arrival-matching rules — exact amount, GBP, not before the session,
@@ -59,6 +59,15 @@ function sql(body: string): Record<string, unknown>[] {
     throw new Error(`supabase db query returned an error: ${JSON.stringify(parsed.error).slice(0, 400)}`);
   }
   return parsed.rows ?? [];
+}
+
+
+/** Source of one top-level component function in the panel (up to the next top-level function). */
+function view(src: string, name: string): string {
+  const start = src.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `component ${name} not found`);
+  const next = src.indexOf('\nfunction ', start + 10);
+  return src.slice(start, next === -1 ? undefined : next);
 }
 
 const T0 = '2026-10-10T12:00:00.000Z';
@@ -407,25 +416,17 @@ describe('the Admin funding experience', () => {
   const raw = readWeb('components/admin/WalletLiquidityPanel.tsx');
   const panel = code(raw);
 
-  test('shows recommended amount, target, available, reserve, headroom and status, with the FPS/BACS explanation', () => {
+  test('before a session: shows recommended amount, target, available, reserve, headroom and status', () => {
+    const v = view(panel, 'StartSessionView');
     for (const s of ['Recommended transfer', 'Target available balance', 'Current available', 'Reserve', 'Desired headroom', 'Wallet status']) {
-      assert.ok(panel.includes(s), `missing ${s}`);
-    }
-    assert.match(panel, /Transfer this amount from the OneShetland business bank to the Stripe Payments balance/);
-    assert.match(panel, /FPS normally arrives\s+faster/);
-    assert.match(panel, /BACS may take 2–3 business days/);
-  });
-
-  test('has copy buttons for amount, account number, sort code and beneficiary', () => {
-    for (const s of ['Copy amount', 'Copy account number', 'Copy sort code', 'Copy beneficiary']) {
-      assert.ok(panel.includes(s), `missing ${s}`);
+      assert.ok(v.includes(s), `missing ${s}`);
     }
   });
 
-  test('"I\'m sending this transfer" asks for confirmation that says no money moves, and uses a per-attempt request id', () => {
-    assert.match(panel, /I'm sending this transfer/);
-    assert.match(panel, /It does not move any money and does not touch any customer's Wallet balance/);
-    assert.match(panel, /const \[requestId, setRequestId\] = useState\(\(\) => crypto\.randomUUID\(\)\)/);
+  test('the active session offers copy buttons for amount, account number, sort code and beneficiary', () => {
+    assert.ok(view(panel, 'ActiveSessionView').includes('Copy amount'));
+    for (const s of ['Copy beneficiary', 'Copy account number', 'Copy sort code']) assert.ok(panel.includes(s), `missing ${s}`);
+    assert.match(panel, /\{copyable && <CopyButton label=\{copyLabel\}/);
   });
 
   test('state copy: awaiting / received-pending / funded', () => {
@@ -457,6 +458,106 @@ describe('the Admin funding experience', () => {
     const [row] = sql(`select value from public.admin_config where key = 'wallet.liquidity.funding_enabled';`);
     assert.equal(row.value, 'false');
     assert.match(panel, /snapshot\.funding_enabled \? \(/);
+  });
+});
+
+/* ── 6b. ORDER: session created → bank transfer sent → Stripe arrival reconciled ─────── */
+
+describe('the funding order is unambiguous: the session exists BEFORE any instruction to send money', () => {
+  const panel = code(readWeb('components/admin/WalletLiquidityPanel.tsx'));
+  const raw = readWeb('components/admin/WalletLiquidityPanel.tsx');
+  const before = view(panel, 'StartSessionView');
+  const after = view(panel, 'ActiveSessionView');
+
+  test('PushFunding renders the start view when there is no open session, the active view when there is one', () => {
+    const pf = view(panel, 'PushFunding');
+    assert.match(pf, /\{open \? \(\s*<ActiveSessionView[\s\S]*?\) : \(\s*<StartSessionView/);
+  });
+
+  test('before the session: no "send" instruction of any kind, no copy buttons, and an explicit "do not send yet"', () => {
+    assert.doesNotMatch(before, /Now send|send exactly|FPS\/BACS|Copy amount|<CopyButton/);
+    assert.match(before, /Do not send any money yet/);
+    assert.match(before, /Start the funding transfer first/);
+    assert.match(before, /<FundingDetailsBlock copyable=\{false\}/, 'details may be reviewed but not copied before a session exists');
+  });
+
+  test('the start action is "Start funding transfer" and its confirmation says nothing is moved yet', () => {
+    assert.match(before, /Start funding transfer/);
+    assert.match(before, /This records the transfer in OneShetland\. No money is moved yet\./);
+    assert.doesNotMatch(raw, /I'm sending this transfer/);
+  });
+
+  test('the start button is disabled until the bank details are configured', () => {
+    assert.match(before, /detailsConfigured === false/);
+    assert.match(before, /onConfiguredChange=\{setDetailsConfigured\}/);
+  });
+
+  test('after the session: "Now send exactly £X … using FPS/BACS" is shown, with the exact amount and copy buttons', () => {
+    assert.match(after, /Now send exactly \{gbp\(session\.requested_amount_pence\)\} from the OneShetland business bank using FPS\/BACS\./);
+    assert.match(after, /<CopyButton label="Copy amount"/);
+    assert.match(after, /<FundingDetailsBlock copyable canEdit=\{false\} \/>/);
+  });
+
+  test('the send instruction appears ONLY in the awaiting_funds branch of the active view — never once Stripe has the money', () => {
+    const awaitingAt = after.indexOf('session.status === "awaiting_funds"');
+    const sendAt = after.indexOf('Now send exactly');
+    const elseAt = after.indexOf(') : (', awaitingAt);
+    const receivedAt = after.indexOf('Do not send it');
+    assert.ok(awaitingAt >= 0 && sendAt > awaitingAt && sendAt < elseAt && receivedAt > elseAt);
+    assert.doesNotMatch(after.slice(elseAt), /Now send|<CopyButton|FundingDetailsBlock/);
+  });
+
+  test('an open session shows ITS OWN frozen amount, never a freshly recalculated recommendation', () => {
+    assert.match(after, /Exact amount to send/);
+    assert.match(after, /gbp\(session\.requested_amount_pence\)/);
+    assert.match(after, /gbp\(session\.target_available_pence\)/);
+    assert.doesNotMatch(after, /recommended_funding_pence|recommended\b/);
+  });
+
+  test('bank details cannot be edited while a session is open (frozen), but can before one', () => {
+    assert.match(after, /canEdit=\{false\}/);
+    assert.match(before, /<FundingDetailsBlock copyable=\{false\} canEdit /);
+    assert.match(panel, /\{canEdit && <button onClick=\{startEdit\}/);
+  });
+
+  test('server side: the session is created (INSERT) before anything can be matched, and reconciliation reads only a session that already exists', () => {
+    const fn = code(read('supabase/functions/wallet-liquidity-funding-session/index.ts'));
+    assert.match(fn, /status: 'awaiting_funds'/);
+    const rec = code(read('supabase/functions/_shared/wallet-funding-sessions.ts'));
+    assert.match(rec, /\.from\('wallet_liquidity_funding_sessions'\)\s*\.select\(SESSION_COLUMNS\)\.in\('status', OPEN_SESSION_STATUSES\)/);
+    assert.ok(rec.indexOf('if (open.length === 0) return result;') < rec.indexOf('pickFundingMatch(s, candidates'));
+  });
+});
+
+describe('regression: session created → bank transfer initiated → Stripe arrival reconciliation', () => {
+  const sessionCreated = '2026-10-10T12:00:00.000Z';
+  const created = Math.floor(new Date(sessionCreated).getTime() / 1000);
+  const s = (over: Partial<MatchableSession> = {}): MatchableSession =>
+    ({ status: 'awaiting_funds', requested_amount_pence: 14507, created_at: sessionCreated, matched_ref: null, ...over });
+
+  test('the correct order reconciles: transfer sent AFTER the session → Stripe credit AFTER the session → pending then available', () => {
+    const sentAt = created + 600; // operator follows "Now send exactly £X"
+    const arrived = candidateFromTopup({ id: 'tu_ok', amount: 14507, currency: 'gbp', created: sentAt + 3600, status: 'pending' })!;
+    const m1 = pickFundingMatch(s(), [arrived], new Set());
+    assert.equal(m1?.ref, 'tu_ok');
+    assert.equal(nextSessionState(s(), m1, new Date((sentAt + 3700) * 1000), 168)?.status, 'pending_at_stripe');
+    const settled = candidateFromTopup({ id: 'tu_ok', amount: 14507, currency: 'gbp', created: sentAt + 3600, status: 'succeeded' })!;
+    const open = s({ status: 'pending_at_stripe', matched_ref: 'tu_ok' });
+    assert.equal(nextSessionState(open, pickFundingMatch(open, [settled], new Set()), new Date((sentAt + 7200) * 1000), 168)?.status, 'available');
+  });
+
+  test('the WRONG order is exactly what the UI now prevents: money that reached Stripe before the session was started is not recognised', () => {
+    const sentTooEarly = candidateFromTopup({ id: 'tu_early', amount: 14507, currency: 'gbp', created: created - 3600, status: 'succeeded' })!;
+    assert.equal(pickFundingMatch(s(), [sentTooEarly], new Set()), null);
+    assert.equal(nextSessionState(s(), null, new Date((created + 60) * 1000), 168), null, 'session stays awaiting_funds');
+  });
+
+  test('the matching rules themselves are unchanged (slack, exact amount, claim-once)', () => {
+    assert.equal(CLOCK_SLACK_SECONDS, 120);
+    const src = code(read('supabase/functions/_shared/wallet-funding-match.ts'));
+    assert.match(src, /c\.amount_pence !== session\.requested_amount_pence/);
+    assert.match(src, /c\.created_unix >= sessionUnix - CLOCK_SLACK_SECONDS/);
+    assert.match(src, /claimedByOthers\.has\(c\.ref\)/);
   });
 });
 
