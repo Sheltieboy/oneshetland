@@ -437,6 +437,34 @@ export async function settleAttempt(
 }
 
 /** Map a non-claimed attempt outcome onto the response the customer should see. */
+/**
+ * Give back an attempt that never started: nothing was debited under it, so it
+ * can leave no trace. Used when the liquidity gate refuses a fresh attempt
+ * BEFORE the debit — the same reference can then be paid once the Wallet is
+ * available again, instead of being stuck as a terminal "failed" payment that
+ * never was one.
+ *
+ * Deliberately narrow: only this user's own claim, only while it is still
+ * in_flight, and only if no wallet transaction was ever linked to it. An attempt
+ * that has moved money (or might have) is never touched.
+ */
+export async function releaseUnstartedAttempt(
+  svc: SupabaseClient, requestId: string, userId: string,
+): Promise<boolean> {
+  const { data, error } = await svc.from('wallet_payment_claims')
+    .delete()
+    .eq('client_request_id', requestId)
+    .eq('user_id', userId)
+    .eq('status', 'in_flight')
+    .is('wallet_transaction_id', null)
+    .select('client_request_id');
+  if (error) {
+    console.error('[wallet-ledger] could not release an unstarted attempt:', error);
+    return false;
+  }
+  return (data ?? []).length === 1;
+}
+
 export function attemptBlockedResponse(a: WalletAttempt): { status: number; body: Record<string, unknown> } | null {
   switch (a.outcome) {
     case 'replay':

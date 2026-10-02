@@ -18,8 +18,10 @@
  *      the headroom, unreadable balance fails closed, healthy liquidity allows
  *   2. event tickets and gifts now go through it, BEFORE any debit
  *   3. a STRUCTURAL audit of every Wallet-funded rail, so a future rail cannot
- *      create merchant settlement without the gate unnoticed — and the three
- *      wallet-checkout routes that still bypass it are named, not hidden
+ *      create merchant settlement without the gate unnoticed. The three wallet-checkout
+ *      routes that used to bypass it (hub donation, hub membership, pass purchase) now
+ *      spend through the gated helper, so the audit finds ZERO bypasses; the behavioural
+ *      proof for those routes is wallet-checkout-liquidity.node.test.ts
  *
  * No Stripe, no database, no money.
  */
@@ -209,23 +211,24 @@ describe('AUDIT: every Wallet-funded rail that creates merchant settlement is ga
     return s.slice(at);
   };
 
-  const calls: Call[] = files(FN_DIR).flatMap((f) => {
-    const s = code(readFileSync(f, 'utf8'));
-    if (f.endsWith('_shared/wallet-ledger.ts')) return [];     // the primitive itself
+  /** Every debitAndTransfer( call in `src`: does it carry a merchant transfer, and is it awaited directly? */
+  const scanSource = (file: string, src: string): Call[] => {
+    const s = code(src);
     return [...s.matchAll(/debitAndTransfer\(/g)].map((m) => {
       const before = s.slice(Math.max(0, m.index! - 18), m.index!);
       const open = m.index! + 'debitAndTransfer'.length;
-      return {
-        file: f.replace(FN_DIR + '/', ''),
-        settlement: /\btransfer\s*:/.test(args(s, open)),
-        direct: /await\s*$/.test(before),
-      };
+      return { file, settlement: /\btransfer\s*:/.test(args(s, open)), direct: /await\s*$/.test(before) };
     });
+  };
+
+  const calls: Call[] = files(FN_DIR).flatMap((f) => {
+    if (f.endsWith('_shared/wallet-ledger.ts')) return [];     // the primitive itself
+    return scanSource(f.replace(FN_DIR + '/', ''), readFileSync(f, 'utf8'));
   });
 
   test('the audit actually finds the rails (guards against the scan silently matching nothing)', () => {
     const names = new Set(calls.map((c) => c.file));
-    for (const f of ['_shared/wallet-pay.ts', 'create-event-ticket-intent/index.ts', 'create-gift-intent/index.ts', 'wallet-checkout/index.ts']) {
+    for (const f of ['_shared/wallet-pay.ts', 'create-event-ticket-intent/index.ts', 'create-gift-intent/index.ts', '_shared/wallet-settlement.ts']) {
       assert.ok(names.has(f), `${f} not found by the audit`);
     }
   });
@@ -241,16 +244,44 @@ describe('AUDIT: every Wallet-funded rail that creates merchant settlement is ga
     }
   });
 
-  test('every settlement-creating debit OUTSIDE executeWalletPayment is gated by the shared gate', () => {
+  test('every settlement-creating debit OUTSIDE executeWalletPayment is gated by the shared gate — ZERO bypasses', () => {
     const ungated = calls.filter((c) => c.settlement && c.direct && c.file !== '_shared/wallet-pay.ts');
-    const byFile: Record<string, number> = {};
-    for (const u of ungated) byFile[u.file] = (byFile[u.file] ?? 0) + 1;
-    // Named, not hidden. These three wallet-checkout routes (hub donation, hub membership, pass purchase)
-    // still debit and transfer without the gate; the file currently carries uncommitted work of its own,
-    // so it is reported rather than edited here. When it is gated this must become {} — and it will fail
-    // until the exemption is removed.
-    assert.deepEqual(byFile, { 'wallet-checkout/index.ts': 3 },
-      'a Wallet rail creates merchant settlement without the liquidity gate (or an exemption went stale)');
+    assert.deepEqual(ungated, [], 'a Wallet rail creates merchant settlement without the liquidity gate');
+  });
+
+  test('only these files may call debitAndTransfer at all; a new caller must be added here deliberately, with its gate', () => {
+    const callers = [...new Set(calls.map((c) => c.file))].sort();
+    assert.deepEqual(callers, [
+      '_shared/wallet-pay.ts',                 // executeWalletPayment: gates inline
+      '_shared/wallet-settlement.ts',          // the one gated closure every wallet-checkout route spends through
+      'create-event-ticket-intent/index.ts',   // gated by withWalletLiquidityGate
+      'create-gift-intent/index.ts',           // gated by withWalletLiquidityGate
+    ]);
+  });
+
+  test('wallet-checkout cannot spend any other way: no direct debitAndTransfer, four routes through the gated helper', () => {
+    const wc = code(read('supabase/functions/wallet-checkout/index.ts'));
+    assert.ok(!calls.some((c) => c.file === 'wallet-checkout/index.ts'), 'wallet-checkout calls debitAndTransfer itself');
+    assert.equal((wc.match(/await settleMerchantWalletPayment\(svc,/g) ?? []).length, 4);
+  });
+
+  test('the helper puts the gate in front of the debit, and decides the exemption from the arguments, never from the caller', () => {
+    const w = code(read('supabase/functions/_shared/wallet-settlement.ts'));
+    assert.match(w, /withWalletLiquidityGate\(svc, transferPence, run\)/);
+    assert.match(w, /debit: \(\) => debitAndTransfer\(svc, o\.debit\)/);          // only ever inside the gated closure
+    assert.match(w, /transfer: o\.debit\.transfer \? \{ amountPence: o\.debit\.transfer\.amountPence \} : undefined/);
+    const core = code(read('supabase/functions/_shared/wallet-settlement-core.ts'));
+    assert.match(core, /const transferPence = a\.transfer\?\.amountPence \?\? 0;/);
+  });
+
+  test('the audit itself works: a NEW route that awaits an ungated merchant debit is caught', () => {
+    const rogue = `const paid = await debitAndTransfer(svc, { userId, spendPence: 500,
+      transfer: { destination: acct, amountPence: 450, description: 'x' } });`;
+    const found = scanSource('some-new-route/index.ts', rogue);
+    assert.deepEqual(found, [{ file: 'some-new-route/index.ts', settlement: true, direct: true }]);
+    // and one inside a gate closure is not "direct"
+    const gated = `const gate = await withWalletLiquidityGate(svc, 450, () => debitAndTransfer(svc, { transfer: { amountPence: 450 } }));`;
+    assert.equal(scanSource('ok/index.ts', gated)[0].direct, false);
   });
 
   test('gated callers never ALSO call the debit directly (the closure is the only way in)', () => {
@@ -260,11 +291,15 @@ describe('AUDIT: every Wallet-funded rail that creates merchant settlement is ga
     }
   });
 
-  test('the platform-funded shift boost has no merchant transfer, so it does not consume pooled funds', () => {
+  test('the platform-funded shift boost has no merchant transfer, so it does not consume pooled funds — the ONE exempt wallet-checkout flow', () => {
     const wc = code(read('supabase/functions/wallet-checkout/index.ts'));
-    const shift = wc.slice(wc.indexOf('async function shiftBoost'), wc.indexOf('async function reverseTransfer'));
-    const call = shift.slice(shift.indexOf('debitAndTransfer('));
-    assert.doesNotMatch(args(call, call.indexOf('(')), /\btransfer\s*:/);
+    const bodies = [...wc.matchAll(/await settleMerchantWalletPayment\(/g)].map((m) => args(wc, m.index! + 'await settleMerchantWalletPayment'.length));
+    assert.equal(bodies.length, 4);
+    const withTransfer = bodies.filter((b) => /\btransfer\s*:/.test(b));
+    assert.equal(withTransfer.length, 3, 'hub donation, hub membership and pass purchase carry a merchant transfer');
+    const exempt = bodies.filter((b) => !/\btransfer\s*:/.test(b));
+    assert.equal(exempt.length, 1);
+    assert.match(exempt[0], /Shift boost \(24h\)/);
   });
 
   test('only the ledger primitive (and one unused helper) can create a Stripe transfer — a new file that does fails here', () => {

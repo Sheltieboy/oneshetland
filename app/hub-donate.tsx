@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { useAlert } from '@/components/BrandedAlert';
-import { formatPence, fetchWalletBalance, walletCheckout } from '@/lib/local-api';
+import { formatPence, fetchWalletBalance, walletCheckout, walletFailureAlert } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
 import {
   fetchCampaign, fetchHub, startHubDonation, confirmHubDonation,
@@ -154,7 +154,7 @@ export default function HubDonateScreen() {
       // it animates closed cleanly — no unmount-while-visible, no frozen screen.
       setDonated(effectiveAmount);
     } catch (e: any) {
-      alert({ title: 'Donation failed', message: e?.message ?? 'Please try again.' });
+      alert(walletFailureAlert(e, 'Donation failed'));
     } finally {
       setPaying(false);
       setConfirming(false);

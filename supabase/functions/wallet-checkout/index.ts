@@ -3,8 +3,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
-import { debitAndTransfer, walletReverse, claimAttempt, settleAttempt,
+import { walletReverse, claimAttempt, settleAttempt,
          attemptFingerprint, attemptBlockedResponse, selfPaymentBlock } from '../_shared/wallet-ledger.ts';
+// Every route spends through this — never debitAndTransfer directly. It puts the shared Wallet
+// liquidity gate in front of the debit, on the final resolved transfer amount. A structural
+// test (wallet-liquidity-gate.node.test.ts) fails if a route here bypasses it.
+import { settleMerchantWalletPayment } from '../_shared/wallet-settlement.ts';
 
 const STRIPE_API_VERSION = '2023-10-16';
 const corsHeaders = {
@@ -149,7 +153,7 @@ async function hubDonation(svc: any, userId: string, body: any, rid: string): Pr
   // Debit + ledger in one transaction, then transfer keyed on that ledger row.
   // No platform fee on wallet donations — the money is already on the platform
   // from the top-up.
-  const paid = await debitAndTransfer(svc, {
+  const settled = await settleMerchantWalletPayment(svc, { requestId: rid, userId, attempt, debit: {
     userId, spendPence: amount,
     description: `Donation to ${hub.name}`,
     idempotencyKey: `wallet-attempt:${rid}`,
@@ -159,7 +163,10 @@ async function hubDonation(svc: any, userId: string, body: any, rid: string): Pr
       description: `OneShetland wallet donation to ${hub.name}`,
       metadata: { type: 'hub_donation_wallet', user_id: userId, campaign_id: campaignId },
     },
-  });
+  }});
+  // Refused by the liquidity gate BEFORE anything was debited or transferred.
+  if (settled.kind === 'declined') return json(settled.body, settled.status);
+  const paid = settled.paid;
   if (!paid.ok) {
     // 'unresolved' keeps the attempt alive and pointing at the transaction, so a
     // retry resumes THAT transfer. It is never released — Stripe may have moved
@@ -243,7 +250,7 @@ async function hubMembership(svc: any, userId: string, body: any, rid: string): 
   const blocked = attemptBlockedResponse(attempt);
   if (blocked) return json(blocked.body, blocked.status);
 
-  const paid = await debitAndTransfer(svc, {
+  const settled = await settleMerchantWalletPayment(svc, { requestId: rid, userId, attempt, debit: {
     userId, spendPence: debitTotal,
     description: `Membership · ${hub.name}`,
     idempotencyKey: `wallet-attempt:${rid}`,
@@ -254,7 +261,9 @@ async function hubMembership(svc: any, userId: string, body: any, rid: string): 
       description: `OneShetland wallet membership · ${hub.name}`,
       metadata: { type: 'hub_membership_wallet', user_id: userId, hub_id: hub.id, membership_type_id: t.id },
     },
-  });
+  }});
+  if (settled.kind === 'declined') return json(settled.body, settled.status);
+  const paid = settled.paid;
   if (!paid.ok) {
     await settleAttempt(svc, rid, paid.reason === 'unresolved' ? 'unresolved' : 'failed', paid.transactionId ?? null);
     return json({ error: paid.error }, paid.status);
@@ -316,7 +325,7 @@ async function unitPurchase(svc: any, userId: string, body: any, rid: string): P
   const blocked = attemptBlockedResponse(attempt);
   if (blocked) return json(blocked.body, blocked.status);
 
-  const paid = await debitAndTransfer(svc, {
+  const settled = await settleMerchantWalletPayment(svc, { requestId: rid, userId, attempt, debit: {
     userId, spendPence: item.price_pence,
     businessId: biz.id,
     description: `${item.name} · ${biz.name}`,
@@ -328,7 +337,9 @@ async function unitPurchase(svc: any, userId: string, body: any, rid: string): P
       description: `OneShetland wallet purchase · ${item.name}`,
       metadata: { type: 'unit_purchase_wallet', user_id: userId, business_id: biz.id, unit_item_id: item.id, fee_pence: String(fee) },
     },
-  });
+  }});
+  if (settled.kind === 'declined') return json(settled.body, settled.status);
+  const paid = settled.paid;
   if (!paid.ok) {
     await settleAttempt(svc, rid, paid.reason === 'unresolved' ? 'unresolved' : 'failed', paid.transactionId ?? null);
     return json({ error: paid.error }, paid.status);
@@ -388,12 +399,15 @@ async function shiftBoost(svc: any, userId: string, body: any, rid: string): Pro
   const blocked = attemptBlockedResponse(attempt);
   if (blocked) return json(blocked.body, blocked.status);
 
-  const paid = await debitAndTransfer(svc, {
+  const settled = await settleMerchantWalletPayment(svc, { requestId: rid, userId, attempt, debit: {
     userId, spendPence: PRICE,
     description: 'Shift boost (24h)',
     idempotencyKey: `wallet-attempt:${rid}`,
     platformFeePence: PRICE,
-  });
+  }});
+  // No transfer, so the gate is a no-op here and this can never decline.
+  if (settled.kind === 'declined') return json(settled.body, settled.status);
+  const paid = settled.paid;
   if (!paid.ok) {
     await settleAttempt(svc, rid, paid.reason === 'unresolved' ? 'unresolved' : 'failed', paid.transactionId ?? null);
     return json({ error: paid.error }, paid.status);

@@ -24,7 +24,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
-import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
+import { fetchWalletBalance, walletCheckout, walletFailureAlert } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
 import { supabase } from '@/lib/supabase';
 import { fetchBusiness, type LocalBusiness } from '@/lib/local-api';
@@ -189,7 +189,7 @@ export default function BuyUnitScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDone(true);
     } catch (e: any) {
-      alert({ title: 'Purchase failed', message: e?.message ?? 'Please try again.' });
+      alert(walletFailureAlert(e, 'Purchase failed'));
     } finally {
       setSubmitting(false);
       setConfirming(false);

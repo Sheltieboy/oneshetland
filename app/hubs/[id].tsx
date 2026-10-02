@@ -21,7 +21,7 @@ import { useGoToSignIn } from '@/hooks/useGoToSignIn';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { useAuth } from '@/context/AuthContext';
 import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
-import { fetchWalletBalance, walletCheckout } from '@/lib/local-api';
+import { fetchWalletBalance, walletCheckout, walletFailureAlert } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
 import {
   fetchHub, fetchMyMembership, joinHub, leaveHub, rejoinHub, fetchMemberCount, fetchHubNotices,
@@ -173,7 +173,7 @@ export default function HubDetailScreen() {
       setJoinSuccess({ title: 'You\'re in 🎉', message: `You're now a member of ${hub.name}.` });
       load();
     } catch (e: any) {
-      alert({ title: 'Payment failed', message: e?.message ?? 'Please try again.' });
+      alert(walletFailureAlert(e, 'Payment failed'));
     } finally { setActing(false); }
   };
 

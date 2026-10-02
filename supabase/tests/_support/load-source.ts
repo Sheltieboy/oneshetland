@@ -46,8 +46,14 @@ function importToStub(clause: string, mod: string): string {
   return parts.join(' ');
 }
 
-export function loadModule(rel: string, stubs: Record<string, unknown> = {}): Record<string, any> {
-  let js = strip(readRepo(rel));
+/**
+ * `transform` runs on the raw source BEFORE types are stripped — for the rare line the loader
+ * cannot evaluate on its own, such as a bare `export { x } from './y.ts'` re-export.
+ */
+export function loadModule(
+  rel: string, stubs: Record<string, unknown> = {}, transform?: (src: string) => string,
+): Record<string, any> {
+  let js = strip(transform ? transform(readRepo(rel)) : readRepo(rel));
   const missing: string[] = [];
 
   js = js.replace(/^import\s+['"][^'"]+['"];?\s*$/gm, ''); // side-effect imports
