@@ -48,6 +48,12 @@ const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const AIQUOTA = join(MIG, '20260820200000_ai_request_quota.sql');
 const RATELIMITS = join(MIG, '20260821280000_rate_limits.sql');
 const STRIPEIDEM = join(MIG, '20260820140000_stripe_event_idempotency_and_ticket_refunds.sql');
+
+/** The refund function now releases seats and uses the held-seat helper: install the whole migration (minus its cron line). */
+const capacityMigration = () => {
+  const m = readFileSync(join(MIG, '20261030000000_refund_releases_capacity.sql'), 'utf8');
+  return m.slice(0, m.indexOf('-- Self-heal.'));
+};
 const METERING = join(MIG, '20260821180000_booking_metering_claims.sql');
 // The cap only counts work in flight from this migration onwards; installing the
 // earlier definition would prove a rule production no longer has.
@@ -596,7 +602,7 @@ describe('a refund and a scan arriving together', () => {
     const out = raw([
       ...ticketSchema(),
       slice(STRIPEIDEM, 'alter table public.event_ticket_orders\n  add column if not exists refunded_at', ';'),
-      slice(STRIPEIDEM, 'create or replace function public.refund_event_tickets_for_payment', '$$;'),
+      capacityMigration(),
     ].join('\n'));
     assert.doesNotMatch(out, /ERROR/i, `refund-race schema failed:\n${out.slice(0, 1200)}`);
 

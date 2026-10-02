@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
-import { listRefundedChargeIds, reconcileCharge } from '../_shared/refund-reconcile.ts';
+import { listRefundedChargeIds, listWalletOrdersToCheck, reconcileCharge, reconcileWalletOrder } from '../_shared/refund-reconcile.ts';
 
 /**
  * refund-reconcile — ADMIN ONLY.
@@ -9,6 +9,10 @@ import { listRefundedChargeIds, reconcileCharge } from '../_shared/refund-reconc
  *   { action: 'list' }                       reconciliation rows, open ones first (read-only)
  *   { action: 'scan' }                       re-check every refunded charge in Stripe (read-only, flags only)
  *   { action: 'repair', charge_id, confirm } complete a missing transfer reversal / fee refund
+ *
+ * Wallet-funded event orders appear in the same list (rail event_ticket_wallet) and are
+ * checked by 'scan', but are never repaired here: a Wallet refund is completed by running
+ * the refund again, and 'repair' only accepts a card charge (ch_…).
  *
  * 'repair' MOVES MONEY (it debits the merchant's connected account and
  * returns the platform fee to it). It runs only on an explicit admin request
@@ -62,7 +66,12 @@ serve(async (req) => {
       const ids = await listRefundedChargeIds();
       const results = [];
       for (const id of ids.slice(0, 60)) results.push(await reconcileCharge(svc, id, { actor: `admin:${user.id}`, allowRepair: false }));
-      return json({ ok: true, checked: results.length, results });
+      // Wallet-funded event orders: verified from the ledger and the Connect transfer (read-only).
+      const walletResults = [];
+      for (const id of await listWalletOrdersToCheck(svc, 36500, 60)) {
+        walletResults.push(await reconcileWalletOrder(svc, id, `admin:${user.id}`));
+      }
+      return json({ ok: true, checked: results.length + walletResults.length, results, wallet_results: walletResults });
     }
 
     const [{ data: rows }, { data: unverified }] = await Promise.all([

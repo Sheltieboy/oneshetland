@@ -47,7 +47,11 @@ const SUITES = [
   'supabase/tests/event-orders-access.node.test.ts',
   'supabase/tests/event-wallet-refund.node.test.ts',
   'supabase/tests/my-tickets-privacy.node.test.ts',
+  'supabase/tests/ticket-capacity-release.node.test.ts',
 ];
+
+// ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
+const selected = process.env.ISOLATED_ONLY ? SUITES.filter((s) => s.includes(process.env.ISOLATED_ONLY)) : SUITES;
 
 // macOS ships a locale that makes the postmaster multithread during startup
 // ("postmaster became multithreaded during startup"), so pin a plain one for
@@ -79,7 +83,7 @@ try {
   const dsn = `postgresql://proof@/proof?host=${dataDir}`;
   console.log('[isolated-pg] cluster up, running isolated suites\n');
 
-  const r = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...SUITES], {
+  const r = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...selected], {
     stdio: 'inherit',
     env: { ...process.env, PASS_PROOF_DSN: dsn, PASS_PROOF_PSQL: bin('psql') },
   });

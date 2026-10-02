@@ -1,11 +1,14 @@
 /**
- * refund-reconcile.ts — production wiring for refund-reconcile-core.ts.
+ * refund-reconcile.ts — production wiring for refund-reconcile-core.ts and
+ * wallet-event-reconcile-core.ts.
  *
- * The ONLY Stripe writes in this file are the two in repairOps below
+ * The ONLY Stripe writes in this file are the two in stripeOps below
  * (a transfer reversal carrying refund_application_fee, and an application-fee
  * refund). Everything else is a GET. Both writes are idempotent by key and by
  * recomputed gap, and are reached only through reconcileRefundedCharge's
- * policy gates (see autoRepairVerdict).
+ * policy gates (see autoRepairVerdict). The Wallet reconciliation at the bottom
+ * of this file reads the ledger and Stripe and writes only its own verdict row:
+ * it can never move money.
  */
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -14,6 +17,11 @@ import {
   reconcileRefundedCharge,
   type AutoRepairPolicy, type ReconStore, type ReconcileResult, type RefundFacts, type StripeOps,
 } from './refund-reconcile-core.ts';
+import {
+  reconcileWalletEventOrder,
+  type WalletEventFacts, type WalletFactsSource, type WalletReconcileResult, type WalletReconStore,
+} from './wallet-event-reconcile-core.ts';
+import { isWalletRef, walletTxId } from './event-wallet-refund-core.ts';
 
 const STRIPE = 'https://api.stripe.com/v1';
 const STRIPE_API_VERSION = '2023-10-16';
@@ -189,4 +197,146 @@ export async function listRefundedChargeIds(sinceUnix?: number): Promise<string[
     after = data[data.length - 1].id;
   }
   return ids;
+}
+
+
+/* ── Wallet-funded event orders ─────────────────────────────────────────────
+ * No PaymentIntent, no charge, no application fee: the facts are the Wallet
+ * ledger and the one Connect transfer. One verdict row per order, in the same
+ * table the card verdicts live in, keyed `wallet:order:<order id>` with
+ * rail = 'event_ticket_wallet' and NO payment_intent_id (none exists). */
+
+export const WALLET_RAIL = 'event_ticket_wallet';
+export const walletReconKey = (orderId: string) => `wallet:order:${orderId}`;
+
+export function walletFactsSource(svc: SupabaseClient): WalletFactsSource {
+  return {
+    async loadFacts(orderId): Promise<WalletEventFacts | null> {
+      const { data: o } = await svc.from('event_ticket_orders')
+        .select('id, buyer_id, status, total_pence, platform_fee_pence, refunded_at, stripe_payment_intent_id')
+        .eq('id', orderId).maybeSingle();
+      if (!o) return null;
+      const order = o as {
+        id: string; buyer_id: string; status: string; total_pence: number; platform_fee_pence: number;
+        refunded_at: string | null; stripe_payment_intent_id: string | null;
+      };
+      if (!isWalletRef(order.stripe_payment_intent_id)) throw new Error('not a wallet-funded order');
+
+      const txId = walletTxId(order.stripe_payment_intent_id);
+      let spend: WalletEventFacts['spend'] = null;
+      let reversals: WalletEventFacts['reversals'] = [];
+      if (txId) {
+        const { data: row } = await svc.from('local_wallet_transactions')
+          .select('id, user_id, type, amount_pence, stripe_transfer_id, transfer_state, idempotency_key')
+          .eq('id', txId).maybeSingle();
+        spend = (row as WalletEventFacts['spend']) ?? null;
+        if (spend) {
+          const { data: rev } = await svc.from('local_wallet_transactions')
+            .select('id, user_id, type, amount_pence').eq('reverses_transaction_id', spend.id);
+          reversals = (rev ?? []) as WalletEventFacts['reversals'];
+        }
+      }
+
+      let transfer: WalletEventFacts['transfer'] = null;
+      if (spend?.stripe_transfer_id) {
+        const t = await stripeGet(`/transfers/${spend.stripe_transfer_id}`);
+        const rv = t.reversals as { data?: unknown[]; has_more?: boolean } | undefined;
+        transfer = {
+          id: t.id as string,
+          amount: t.amount as number,
+          amount_reversed: (t.amount_reversed as number) ?? 0,
+          reversal_count: (rv?.data?.length ?? 0) + (rv?.has_more ? 1 : 0),
+        };
+      }
+      return {
+        order: {
+          id: order.id, buyer_id: order.buyer_id, status: order.status, total_pence: order.total_pence,
+          platform_fee_pence: order.platform_fee_pence, refunded_at: order.refunded_at,
+        },
+        spend, reversals, transfer,
+      };
+    },
+  };
+}
+
+export function walletReconStore(svc: SupabaseClient): WalletReconStore {
+  return {
+    async load(orderId) {
+      const { data } = await svc.from('refund_reconciliation')
+        .select('state, first_flagged_at').eq('charge_id', walletReconKey(orderId)).maybeSingle();
+      return (data as { state: string; first_flagged_at: string | null } | null) ?? null;
+    },
+
+    async save({ order_id, state, facts, assessment }) {
+      const key = walletReconKey(order_id);
+      const now = new Date().toISOString();
+      const { data: existing } = await svc.from('refund_reconciliation')
+        .select('first_flagged_at').eq('charge_id', key).maybeSingle();
+      const row = {
+        charge_id: key,
+        payment_intent_id: null,                 // there is none — never invented
+        rail: WALLET_RAIL,
+        order_id,
+        state,
+        charge_amount_pence: assessment.debited,
+        amount_refunded_pence: assessment.credited,
+        transfer_id: facts.transfer?.id ?? null,
+        transfer_amount_pence: facts.transfer?.amount ?? null,
+        transfer_reversed_pence: facts.transfer?.amount_reversed ?? null,
+        transfer_reversal_count: facts.transfer?.reversal_count ?? null,
+        fee_id: null, fee_amount_pence: null, fee_refunded_pence: null,   // a Wallet order has no application fee
+        transfer_gap_pence: assessment.transfer_gap,
+        fee_gap_pence: 0,
+        wallet_gap_pence: assessment.wallet_gap,
+        wallet_debit_pence: assessment.debited,
+        wallet_credit_pence: assessment.credited,
+        ledger_tx_id: facts.spend?.id ?? null,
+        ledger_reversal_count: assessment.reversal_count,
+        last_error: null,
+        last_refund_at: facts.order.refunded_at,
+        first_flagged_at: existing?.first_flagged_at ?? (state === 'reconciled' ? null : now),
+        last_checked_at: now,
+        updated_at: now,
+      };
+      const { error } = await svc.from('refund_reconciliation').upsert(row, { onConflict: 'charge_id' });
+      if (error) throw new Error(`could not save wallet reconciliation: ${error.code}`);
+    },
+
+    async event(orderId, kind, actor, detail) {
+      const { error } = await svc.from('refund_reconciliation_events')
+        .insert({ charge_id: walletReconKey(orderId), kind, actor, detail });
+      if (error) console.error('[refund-reconcile] wallet audit write failed:', error.code);
+    },
+  };
+}
+
+/** Re-derive and record the verdict for one Wallet-funded event order. Never moves money. */
+export async function reconcileWalletOrder(svc: SupabaseClient, orderId: string, actor: string): Promise<WalletReconcileResult> {
+  return reconcileWalletEventOrder(walletFactsSource(svc), walletReconStore(svc), orderId, actor);
+}
+
+/**
+ * Refunded Wallet event orders worth (re)checking now: any with no verdict yet,
+ * any whose verdict is not 'reconciled', and any refunded in the last `days`.
+ * Newest first, capped.
+ */
+export async function listWalletOrdersToCheck(svc: SupabaseClient, days: number, cap: number): Promise<string[]> {
+  const { data: orders } = await svc.from('event_ticket_orders')
+    .select('id, refunded_at, stripe_payment_intent_id')
+    .eq('status', 'refunded').like('stripe_payment_intent_id', 'wallet_%')
+    .order('refunded_at', { ascending: false, nullsFirst: false }).limit(200);
+  const mine = ((orders ?? []) as { id: string; refunded_at: string | null; stripe_payment_intent_id: string }[])
+    .filter((o) => isWalletRef(o.stripe_payment_intent_id));
+  if (mine.length === 0) return [];
+  const { data: rows } = await svc.from('refund_reconciliation')
+    .select('order_id, state').eq('rail', WALLET_RAIL);
+  const stateByOrder = new Map(((rows ?? []) as { order_id: string; state: string }[]).map((r) => [r.order_id, r.state]));
+  const since = Date.now() - days * 86400_000;
+  return mine
+    .filter((o) => {
+      const st = stateByOrder.get(o.id);
+      return st === undefined || st !== 'reconciled' || (o.refunded_at !== null && new Date(o.refunded_at).getTime() >= since);
+    })
+    .slice(0, cap)
+    .map((o) => o.id);
 }

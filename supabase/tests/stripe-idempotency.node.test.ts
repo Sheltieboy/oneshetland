@@ -330,12 +330,15 @@ select 'refund', 'a duplicate refund voids nothing further', '0',
 
 create temp table c2 as select quantity_sold s from public.event_ticket_types where id='e5000004-0000-4000-8000-00000000ab02';
 
+-- A full refund now returns the seats it voided (20261030000000): 2 of the 3, because the third
+-- ticket was already used — the person attended and keeps their seat. The count is a recount, so
+-- the duplicate deliveries above cannot return anything more.
 insert into res (area, case_name, expected, actual)
-select 'capacity', 'a refund never returns a sold seat', '0',
+select 'capacity', 'a refund returns exactly the seats it voided, and not the one already used', '-2',
        ((select s from c1) - (select s from c0))::text;
 
 insert into res (area, case_name, expected, actual)
-select 'capacity', 'and three refund deliveries cannot return it either', '0',
+select 'capacity', 'and three refund deliveries cannot return any more', '-2',
        ((select s from c2) - (select s from c0))::text;
 
 -- Partial refunds must be reported, never guessed at.
@@ -366,7 +369,7 @@ rollback;`);
 
   test('a boost is granted exactly once', () => assertAllPass(rows, 'boost'));
   test('refunds map to tickets correctly', () => assertAllPass(rows, 'refund'));
-  test('capacity is never adjusted by a refund', () => assertAllPass(rows, 'capacity'));
+  test('a refund returns exactly the seats it voided, once', () => assertAllPass(rows, 'capacity'));
 });
 
 // ── 4. A refund racing a scan — MOVED ───────────────────────────────────────

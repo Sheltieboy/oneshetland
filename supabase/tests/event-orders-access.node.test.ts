@@ -35,6 +35,10 @@ const MIG = join(REPO_ROOT, 'supabase/migrations');
 const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const TICKETS = join(MIG, '20260820120000_atomic_ticket_redemption.sql');
 const REFUNDS = join(MIG, '20260820140000_stripe_event_idempotency_and_ticket_refunds.sql');
+
+/** The refund function now releases seats and uses the held-seat helper: install the whole migration (minus its cron line). */
+const CAPACITY_MIGRATION = join(MIG, '20261030000000_refund_releases_capacity.sql');
+const capacityMigration = () => { const s = readFileSync(CAPACITY_MIGRATION, 'utf8'); return s.slice(0, s.indexOf('-- Self-heal.')); };
 const RECON = join(MIG, '20261028000000_refund_reconciliation.sql');
 const UNDER_TEST = join(MIG, '20261029000000_event_orders_for_organisers.sql');
 
@@ -122,7 +126,7 @@ function schema() {
     createTable(RECON, 'create table if not exists public.refund_reconciliation ('),
     // The REAL authority predicate and the REAL ticket-void function.
     slice(TICKETS, 'create or replace function public.can_scan_event', '$$;'),
-    slice(REFUNDS, 'create or replace function public.refund_event_tickets_for_payment', '$$;'),
+    capacityMigration(),
     'grant usage on schema public, auth to anon, authenticated, service_role;',
     'grant execute on function auth.uid() to anon, authenticated, service_role;',
     // The migration under test, verbatim.

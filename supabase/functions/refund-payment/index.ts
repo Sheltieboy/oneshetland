@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
-import { reconcileCharge } from '../_shared/refund-reconcile.ts';
+import { reconcileCharge, reconcileWalletOrder } from '../_shared/refund-reconcile.ts';
 import { isWalletRef, refundWalletEventOrder, type WalletRefundDeps } from '../_shared/event-wallet-refund-core.ts';
 
 const corsHeaders = {
@@ -373,10 +373,20 @@ serve(async (req) => {
         );
         if (!out.ok) return json({ error: out.error, stage: out.stage, retry_safe: out.retry_safe }, out.status);
         console.log(`[refund-payment] wallet event order ${eventOrder.id} refunded by ${user.id}: ${JSON.stringify({ merchant_reversed: out.merchant_reversed, already: out.already_reversed })}`);
+        // Judge it from the ledger and the Connect transfer now. Reading only: a failure here
+        // never changes the refund that has already happened.
+        let reconciliation: { state: string; note: string } | null = null;
+        try {
+          const rr = await reconcileWalletOrder(svc, eventOrder.id, `refund-payment:${user.id}`);
+          reconciliation = { state: rr.state, note: rr.note };
+        } catch (e) {
+          console.error('[refund-payment] wallet reconciliation check failed', e instanceof Error ? e.message : 'error');
+        }
         return json({
           ok: true, rail: 'wallet', amount_pence: out.amount_pence,
           reversed_transfer: out.merchant_reversed, already_reversed: out.already_reversed,
           tickets: { action: out.tickets_action },
+          reconciliation,
         });
       }
     }

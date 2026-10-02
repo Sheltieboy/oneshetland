@@ -40,6 +40,10 @@ const LEDGER = join(MIG, '20260820160000_wallet_atomic_ledger.sql');
 const POINTS = join(MIG, '20261006120000_wallet_loyalty_points.sql');
 const TICKETS = join(MIG, '20260820120000_atomic_ticket_redemption.sql');
 const REFUNDS = join(MIG, '20260820140000_stripe_event_idempotency_and_ticket_refunds.sql');
+
+/** The refund function now releases seats and uses the held-seat helper: install the whole migration (minus its cron line). */
+const CAPACITY_MIGRATION = join(MIG, '20261030000000_refund_releases_capacity.sql');
+const capacityMigration = () => { const s = readFileSync(CAPACITY_MIGRATION, 'utf8'); return s.slice(0, s.indexOf('-- Self-heal.')); };
 const RECON = join(MIG, '20261028000000_refund_reconciliation.sql');
 const ORDERS_1 = join(MIG, '20261029000000_event_orders_for_organisers.sql');
 const ORDERS_2 = join(MIG, '20261029000100_event_orders_payment_method.sql');
@@ -138,7 +142,7 @@ function schema() {
     slice(LEDGER, 'create or replace function public.wallet_credit_with_ledger', '$$;'),
     slice(POINTS, 'create or replace function public.wallet_reverse_debit', '$$;'),
     slice(TICKETS, 'create or replace function public.can_scan_event', '$$;'),
-    slice(REFUNDS, 'create or replace function public.refund_event_tickets_for_payment', '$$;'),
+    capacityMigration(),
     'grant usage on schema public, auth to anon, authenticated, service_role;',
     'grant execute on function auth.uid() to anon, authenticated, service_role;',
     // The migrations under test, in order.
