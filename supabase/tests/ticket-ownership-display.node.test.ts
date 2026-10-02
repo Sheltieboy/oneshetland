@@ -190,7 +190,10 @@ describe('one shared definition of "owned"', () => {
 
   test('For You and My Tickets both use it, rather than restating a list', () => {
     assert.match(code(web('lib/for-you.server.ts')), /\.in\("status", \[\.\.\.OWNED_TICKET_STATUSES\]\)/);
-    assert.match(code(web('app/account/tickets/page.tsx')), /\.in\("status", \[\.\.\.OWNED_TICKET_STATUSES\]\)/);
+    // My Tickets is HISTORY (valid/used/refunded) so a refunded ticket stays visible in Past.
+    // That is a deliberately separate constant: ownership above is untouched.
+    assert.match(code(web('app/account/tickets/page.tsx')), /\.in\("status", \[\.\.\.HISTORY_TICKET_STATUSES\]\)/);
+    assert.doesNotMatch(code(web('app/account/tickets/page.tsx')), /OWNED_TICKET_STATUSES/);
     assert.match(code(web('lib/for-you.server.ts')), /import \{ OWNED_TICKET_STATUSES \} from "@\/lib\/event-ticket-utils";/);
   });
 
@@ -247,7 +250,7 @@ describe('no client can infer ownership from holder_id alone', () => {
 
   /** A holder-keyed read must constrain status to the owned set, or be scoped to explicit ticket ids. */
   const constrained = (stmt: string) =>
-    /OWNED_TICKET_STATUSES/.test(stmt)
+    /OWNED_TICKET_STATUSES|HISTORY_TICKET_STATUSES/.test(stmt)
     || /\.in\((["'])status\1,\s*\[\s*(["'])valid\2\s*,\s*(["'])used\3\s*\]\)/.test(stmt)
     || /\.eq\((["'])status\1,\s*(["'])valid\2\)/.test(stmt)
     || /\.in\((["'])id\1,/.test(stmt);          // re-reads tickets the server already filtered, by id
@@ -258,7 +261,7 @@ describe('no client can infer ownership from holder_id alone', () => {
     assert.ok(holderReads.length >= 3, `expected to find the holder reads, found ${holderReads.length}`);
     for (const r of holderReads) assert.ok(constrained(r.stmt), `${r.file}: reads event_tickets by holder_id without a valid/used status condition`);
     // and the one id-scoped exception is exactly the live refresh
-    const idScoped = holderReads.filter((r) => !/OWNED_TICKET_STATUSES|'valid'|"valid"/.test(r.stmt)).map((r) => r.file);
+    const idScoped = holderReads.filter((r) => !/OWNED_TICKET_STATUSES|HISTORY_TICKET_STATUSES|'valid'|"valid"/.test(r.stmt)).map((r) => r.file);
     assert.deepEqual(idScoped, ['components/account/TicketsLive.tsx']);
   });
 

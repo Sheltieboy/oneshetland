@@ -149,7 +149,9 @@ describe('the screen wires the decision in, and keeps the code readable', () => 
   test('the QR renders from the credential, never from rawToken directly', () => {
     assert.match(c, /value=\{credential\.value\}/);
     assert.doesNotMatch(c, /value=\{rawToken\}/, 'the raw token must not bypass the gate');
-    assert.match(c, /const credential\s+= ticketQrCredential\(ticket\.status, rawToken, ticket\.backup_code\)/);
+    // The credential is chosen by ticketQrCredential, and only for a ticket the shared lifecycle
+    // (lib/ticket-lifecycle.ts) says is live — so a cancelled event or a finished one shows none either.
+    assert.match(c, /const credential\s+= isLive \? ticketQrCredential\(ticket\.status, rawToken, ticket\.backup_code\) : null/);
   });
 
   test('the human-readable backup code is still shown', () => {
@@ -158,7 +160,7 @@ describe('the screen wires the decision in, and keeps the code readable', () => 
   });
 
   test('a used ticket says so instead of showing a code', () => {
-    assert.match(c, /isUsed \? \(\s*<View style=\{styles\.qrPending\}>/);
+    assert.match(c, /state === 'checked_in' \? \(\s*<View style=\{styles\.qrPending\}>/);
     assert.match(c, /Already used at entry/);
   });
 

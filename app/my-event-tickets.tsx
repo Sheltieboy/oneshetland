@@ -25,16 +25,27 @@ import {
   formatShortDate, formatTime,
   type EventTicket,
 } from '@/lib/events-api';
+import {
+  splitTickets, ticketLifecycle, ticketHistoryLines,
+  type TicketLifecycle, type TicketState,
+} from '@/lib/ticket-lifecycle';
 
 const S = SECTIONS.events;
 
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  valid:           { label: 'Valid',            color: colors.success },
-  used:            { label: 'Used',             color: colors.textMuted },
-  pending_payment: { label: 'Awaiting payment', color: colors.warning },
-  cancelled:       { label: 'Cancelled',        color: colors.error },
-  refunded:        { label: 'Refunded',         color: colors.textMuted },
+// The pill colour for each lifecycle state. The WORDS come from ticketLifecycle()
+// so web and mobile cannot drift; only the colour is this screen's.
+const STATE_COLOR: Record<TicketState, string> = {
+  valid:           colors.success,
+  postponed:       colors.warning,
+  checked_in:      colors.success,
+  refunded:        colors.textMuted,
+  void:            colors.error,
+  event_cancelled: colors.error,
+  event_ended:     colors.textMuted,
 };
+
+const longDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' });
 
 export default function MyEventTicketsScreen() {
   const router    = useRouter();
@@ -97,11 +108,19 @@ export default function MyEventTicketsScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [profile?.id, load]);
 
-  const now = new Date().toISOString();
-  const filtered = tickets.filter(t => {
-    const starts = t.event?.starts_at ?? '';
-    return tab === 'upcoming' ? starts >= now : starts < now;
-  });
+  // "Has the event ended?" is a question about the clock, so re-ask it: a screen
+  // left open across the end of an event moves the ticket to Past by itself.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // One rule for both tabs (ticketLifecycle): a refunded, void or checked-in ticket,
+  // or one for a cancelled/ended event, is Past — a refunded ticket for a FUTURE
+  // event included. Tickets are never dropped for being refunded.
+  const { upcoming, past } = splitTickets(tickets, (t) => t, nowMs);
+  const filtered = tab === 'upcoming' ? upcoming : past;
 
   return (
     <ScreenScaffold header={<ScreenHeader title="My Tickets" accent={S.color} />}>
@@ -140,7 +159,12 @@ export default function MyEventTicketsScreen() {
           contentContainerStyle={[styles.list, contentContainer(screenWidth)]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={S.color} />}
           renderItem={({ item }) => (
-            <TicketRow ticket={item} onPress={() => router.push({ pathname: '/my-event-ticket', params: { id: item.id } })} />
+            <TicketRow
+              ticket={item}
+              nowMs={nowMs}
+              viewerId={profile?.id ?? ''}
+              onPress={() => router.push({ pathname: '/my-event-ticket', params: { id: item.id } })}
+            />
           )}
         />
       )}
@@ -148,10 +172,14 @@ export default function MyEventTicketsScreen() {
   );
 }
 
-function TicketRow({ ticket, onPress }: { ticket: EventTicket; onPress: () => void }) {
-  const event     = ticket.event;
-  const statusCfg = STATUS_CONFIG[ticket.status] ?? { label: ticket.status, color: colors.textMuted };
-  const isPast    = event?.starts_at && event.starts_at < new Date().toISOString();
+function TicketRow({ ticket, nowMs, viewerId, onPress }: { ticket: EventTicket; nowMs: number; viewerId: string; onPress: () => void }) {
+  const event = ticket.event;
+  const life  = ticketLifecycle(ticket, nowMs) as TicketLifecycle;
+  const isPast = life.bucket === 'past';
+  const color = STATE_COLOR[life.state];
+  // Money lines belong to Past: that is where the customer comes to ask "what
+  // happened to my money". Built from the buyer's own order; absent for a gifted ticket.
+  const lines = isPast ? ticketHistoryLines(ticket.order, viewerId, longDate) : null;
 
   return (
     <TouchableOpacity style={[styles.ticketRow, isPast && styles.ticketRowPast]} onPress={onPress} activeOpacity={0.85}>
@@ -171,11 +199,15 @@ function TicketRow({ ticket, onPress }: { ticket: EventTicket; onPress: () => vo
         )}
         {event?.venue && <Text style={styles.ticketVenue} numberOfLines={1}>{event.venue}</Text>}
         <View style={styles.ticketMeta}>
-          <Text style={styles.ticketTypeName}>{ticket.ticket_type?.name}</Text>
-          <View style={[styles.statusPill, { backgroundColor: statusCfg.color + '20' }]}>
-            <Text style={[styles.statusPillText, { color: statusCfg.color }]}>{statusCfg.label}</Text>
+          <Text style={styles.ticketTypeName} numberOfLines={1}>
+            {[ticket.ticket_type?.name, lines?.quantity].filter(Boolean).join(' · ')}
+          </Text>
+          <View style={[styles.statusPill, { backgroundColor: color + '20' }]}>
+            <Text style={[styles.statusPillText, { color }]}>{life.label}</Text>
           </View>
         </View>
+        {lines?.paid ? <Text style={styles.historyLine}>{lines.paid}</Text> : null}
+        {lines?.refund ? <Text style={[styles.historyLine, styles.historyRefund]}>{lines.refund}</Text> : null}
       </View>
       <FontAwesome5 name="chevron-right" size={11} color={colors.textLight} />
     </TouchableOpacity>
@@ -205,4 +237,6 @@ const styles = StyleSheet.create({
   ticketTypeName: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
   statusPill:     { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full },
   statusPillText: { fontSize: 10, fontWeight: '800' },
+  historyLine:    { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 3 },
+  historyRefund:  { color: colors.textPrimary, fontWeight: '700' },
 });

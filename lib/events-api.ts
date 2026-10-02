@@ -6,6 +6,7 @@
 import { uploadAsync as fsUploadAsync } from 'expo-file-system/legacy';
 import { supabase, SUPABASE_URL } from './supabase';
 import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
+import { HISTORY_TICKET_STATUSES, type HistoryOrder } from './ticket-lifecycle';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -126,8 +127,10 @@ export interface EventTicket {
   created_at:     string;
   // Joins
   ticket_type?:   Pick<EventTicketType, 'id' | 'name' | 'price_pence'> | null;
-  event?:         Pick<OsEvent, 'id' | 'title' | 'starts_at' | 'venue' | 'cover_url' | 'status'> | null;
+  event?:         Pick<OsEvent, 'id' | 'title' | 'starts_at' | 'ends_at' | 'venue' | 'cover_url' | 'status'> | null;
   business?:      { id: string; name: string; logo_url: string | null } | null;
+  /** The buyer's own order, for the money lines on a Past ticket. Null for a holder who was gifted the ticket (RLS). */
+  order?:         HistoryOrder | null;
   // In-memory only — never stored
   raw_token?:     string;
 }
@@ -612,23 +615,45 @@ export async function deleteTicketType(id: string): Promise<void> {
 
 // ── My tickets (wallet) ───────────────────────────────────────────────────────
 
+/**
+ * Every ticket the customer has ever held: paid (valid), used, and REFUNDED.
+ *
+ * The screen splits these into Upcoming and Past with ticketLifecycle() — this
+ * query does not decide that, so a refunded ticket is fetched and lands in Past
+ * rather than vanishing. This is HISTORY, not ownership: a refunded ticket is
+ * still not owned (OWNED_TICKET_STATUSES / holds_ticket_for are unchanged).
+ * 'pending_payment' rows are created the moment checkout starts, so they stay
+ * excluded — a customer who backed out before paying never held a ticket.
+ *
+ * Privacy: holder_id = the caller, enforced by RLS (event_tickets_holder_read).
+ * The embedded order is the caller's own, by ticket_orders_buyer_read; a ticket
+ * someone else bought for them simply has no order here.
+ */
 export async function fetchMyEventTickets(userId: string): Promise<EventTicket[]> {
-  const { data, error } = await supabase
-    .from('event_tickets')
-    .select(`
+  const base = `
       *,
       ticket_type:event_ticket_types(id, name, price_pence),
-      event:events(id, title, starts_at, venue, cover_url, status),
-      business:events(business:local_businesses(id, name, logo_url))
-    `)
+      event:events(id, title, starts_at, ends_at, venue, cover_url, status),
+      business:events(business:local_businesses(id, name, logo_url))`;
+  const query = (select: string) => supabase
+    .from('event_tickets')
+    .select(select)
     .eq('holder_id', userId)
-    // Only PAID tickets ('valid'/'used'). 'pending_payment' rows are created the
-    // moment checkout starts, so including them showed tickets to a customer who
-    // backed out before paying.
-    .in('status', ['valid', 'used'])
+    .in('status', [...HISTORY_TICKET_STATUSES])
     .order('created_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as any[];
+
+  const full = await query(`${base},
+      order:event_ticket_orders(buyer_id, status, total_pence, tickets_count, paid_at, refunded_at, stripe_payment_intent_id)
+    `);
+  if (!full.error) return (full.data ?? []) as any[];
+
+  // The money lines are an enhancement. If reading the order fails for any reason the
+  // customer must still see their tickets — a refunded one included — just without
+  // the amounts, rather than an empty list.
+  console.warn('[fetchMyEventTickets] order embed failed, retrying without it:', full.error.message);
+  const bare = await query(base);
+  if (bare.error) throw bare.error;
+  return (bare.data ?? []) as any[];
 }
 
 export async function fetchMyUpcomingEventTickets(userId: string): Promise<EventTicket[]> {
@@ -654,8 +679,9 @@ export async function fetchTicketWithToken(ticketId: string): Promise<EventTicke
     .select(`
       *,
       ticket_type:event_ticket_types(id, name, price_pence),
-      event:events(id, title, starts_at, venue, formatted_address, cover_url, status, organiser_business_id),
-      business:events(organiser_business_id, business:local_businesses(id, name, logo_url))
+      event:events(id, title, starts_at, ends_at, venue, formatted_address, cover_url, status, organiser_business_id),
+      business:events(organiser_business_id, business:local_businesses(id, name, logo_url)),
+      order:event_ticket_orders(buyer_id, status, total_pence, tickets_count, paid_at, refunded_at, stripe_payment_intent_id)
     `)
     .eq('id', ticketId)
     .maybeSingle();

@@ -252,7 +252,9 @@ describe('SUBSCRIBED is not evidence', () => {
   });
 
   test('and it is the delivery, not the subscription, that backs the poll off', () => {
-    assert.match(c, /pollIntervalMs\(realtimeProven, live\)/);
+    // The poll watches the UPCOMING tickets (the only ones a scan can still change), so a page of
+    // only Past tickets stops polling instead of pinging forever.
+    assert.match(c, /pollIntervalMs\(realtimeProven, upcoming\)/);
   });
 
   test('a delivered event still triggers the authoritative re-read', () => {
@@ -310,7 +312,8 @@ describe('the component reads the table rather than trusting the wire', () => {
   test('a Realtime event triggers an authoritative re-read', () => {
     assert.match(c, /postgres_changes/);
     assert.match(c, /from\(["']event_tickets["']\)/);
-    assert.match(c, /select\(["']id, status, checked_in_at["']\)/);
+    // The order rides along so a refund that lands while the page is open shows its amount and date.
+    assert.match(c, /select\(\s*["']id, status, checked_in_at, order:event_ticket_orders\(/);
     assert.match(c, /\(\)\s*=>\s*\{ setRealtimeProven\(true\); void refresh\(\); \}/, 'the subscription handler must call refresh()');
   });
 
@@ -325,7 +328,7 @@ describe('the component reads the table rather than trusting the wire', () => {
   });
 
   test('the poll, visibility and focus backstops are all wired', () => {
-    assert.match(c, /pollIntervalMs\(realtimeProven, live\)/);
+    assert.match(c, /pollIntervalMs\(realtimeProven, upcoming\)/);
     assert.match(c, /document\.addEventListener\(["']visibilitychange["'], onVisible\)/);
     assert.match(c, /window\.addEventListener\(["']focus["'], onVisible\)/);
     assert.match(c, /visibilityState === ["']visible["']/);
@@ -375,20 +378,22 @@ describe('the page hands over the starting truth and nothing else', () => {
 
   test('the server query still returns the fields the card depends on', () => {
     assert.match(p, /checked_in_at/);
-    // UPDATE — the page no longer restates the list: it takes the ONE shared definition
-    // of an owned ticket (OWNED_TICKET_STATUSES = valid, used), which the For You strip
-    // now uses too. Its value is pinned in ticket-ownership-display.node.test.ts. The
-    // protection here is unchanged: the query still constrains status to genuine tickets.
-    assert.match(p, /\.in\("status", \[\.\.\.OWNED_TICKET_STATUSES\]\)/);
+    // UPDATE — My Tickets reads HISTORY (HISTORY_TICKET_STATUSES = valid, used, refunded) so a refunded
+    // ticket stays visible in the Past tab; ownership (OWNED_TICKET_STATUSES) is unchanged for For You.
+    // Both are pinned in ticket-ownership-display / ticket-lifecycle. The protection here is unchanged:
+    // the query still constrains status to genuine tickets — never a reservation or an abandoned row.
+    assert.match(p, /\.in\("status", \[\.\.\.HISTORY_TICKET_STATUSES\]\)/);
     assert.match(p, /eq\("holder_id", account\.id\)/);
   });
 
-  test('the live list is given the holder and the grouped tickets', () => {
-    assert.match(p, /<TicketsLive userId=\{account\.id\} groups=\{\[\.\.\.byEvent\.values\(\)\]\}/);
+  test('the live list is given the holder and the tickets (it splits them into Upcoming and Past itself)', () => {
+    assert.match(p, /<TicketsLive userId=\{account\.id\} tickets=\{tickets\} \/>/);
   });
 
-  test('the empty state is untouched', () => {
-    assert.match(p, /No tickets yet/);
-    assert.match(p, /Browse What&apos;s On/);
+  test('each tab has its own empty state, and Upcoming still offers What\'s On', () => {
+    const c = code(COMPONENT);
+    assert.match(c, /No upcoming tickets/);
+    assert.match(c, /No past tickets/);
+    assert.match(c, /Browse What&apos;s On/);
   });
 });

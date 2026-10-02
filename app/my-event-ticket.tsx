@@ -32,11 +32,15 @@ import {
   formatEventDate,
   type EventTicket,
 } from '@/lib/events-api';
+import { ticketLifecycle, ticketHistoryLines } from '@/lib/ticket-lifecycle';
 
 const S  = SECTIONS.events;
 const SE = SECTIONS.local;
 
 function ticketTokenKey(ticketId: string) { return `event_ticket_token_${ticketId}`; }
+
+const longDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' });
 
 export type TicketQrCredential =
   | { kind: 'token'; value: string }
@@ -56,7 +60,9 @@ export type TicketQrCredential =
  *
  * Only a live ticket gets one. A used, refunded or cancelled ticket shows no
  * scannable code at all — the backend would refuse it, and presenting one at a
- * door invites an argument that the screen has already lost.
+ * door invites an argument that the screen has already lost. The screen then
+ * also asks ticketLifecycle() whether the EVENT is cancelled or over, which this
+ * status-only check cannot know.
  */
 export function ticketQrCredential(
   status: string | null | undefined,
@@ -169,10 +175,31 @@ export default function MyEventTicketScreen() {
 
   const event        = ticket.event;
   const ticketType   = ticket.ticket_type;
-  const isUsed       = ticket.status === 'used';
-  const isCancelled  = ticket.status === 'cancelled' || ticket.status === 'refunded';
+  // The lifecycle (shared with the list and the web) decides what this ticket IS:
+  // refunded, void, checked in, event cancelled/ended, postponed or live. Only a
+  // live one shows a scannable code.
+  const life         = ticketLifecycle(ticket);
+  const state        = life?.state;
   const isPending    = ticket.status === 'pending_payment';
-  const credential   = ticketQrCredential(ticket.status, rawToken, ticket.backup_code);
+  const isLive       = life?.showCode === true;
+  const isPast       = life?.bucket === 'past';
+  const isDimmed     = isPast;
+  const credential   = isLive ? ticketQrCredential(ticket.status, rawToken, ticket.backup_code) : null;
+  const history      = isPast ? ticketHistoryLines(ticket.order, ticket.holder_id, longDate) : null;
+
+  const deadBanner: Record<string, string> = {
+    refunded:        'This ticket was refunded and is no longer valid',
+    void:            'This ticket has been cancelled and is no longer valid',
+    event_cancelled: 'This event has been cancelled — this ticket is no longer valid',
+    event_ended:     'This event has ended — this ticket can no longer be used',
+  };
+  const deadPlaceholder: Record<string, { icon: string; text: string }> = {
+    refunded:        { icon: 'undo',        text: 'Refunded\nNo longer valid' },
+    void:            { icon: 'times-circle', text: 'Cancelled\nNo longer valid' },
+    event_cancelled: { icon: 'calendar-times', text: 'Event cancelled\nNo longer valid' },
+    event_ended:     { icon: 'calendar-check', text: 'Event ended\nNo longer valid' },
+  };
+  const placeholder = state ? deadPlaceholder[state] : undefined;
 
   return (
     <ScreenScaffold
@@ -180,14 +207,14 @@ export default function MyEventTicketScreen() {
         <ScreenHeader
           title="My Ticket"
           accent={S.color}
-          rightElement={
+          rightElement={isLive ? (
             <IconButton
               icon="share-alt"
               color={S.color}
               onPress={() => Share.share({ message: `My ticket for ${event?.title ?? 'an event'}. Backup code: ${ticket.backup_code}` })}
               accessibilityLabel="Share ticket"
             />
-          }
+          ) : undefined}
         />
       }
     >
@@ -203,7 +230,7 @@ export default function MyEventTicketScreen() {
             </Text>
           </View>
         )}
-        {isUsed && (
+        {state === 'checked_in' && (
           <View style={[styles.banner, { backgroundColor: colors.border }]}>
             <FontAwesome5 name="check-circle" size={13} color={colors.textMuted} />
             <Text style={[styles.bannerText, { color: colors.textMuted }]}>
@@ -214,18 +241,24 @@ export default function MyEventTicketScreen() {
             </Text>
           </View>
         )}
-        {isCancelled && (
+        {state === 'postponed' && (
+          <View style={[styles.banner, { backgroundColor: colors.warningLight }]}>
+            <FontAwesome5 name="clock" size={13} color={colors.warning} />
+            <Text style={[styles.bannerText, { color: colors.warning }]}>
+              This event has been postponed — the organiser will confirm a new date
+            </Text>
+          </View>
+        )}
+        {state && deadBanner[state] && (
           <View style={[styles.banner, { backgroundColor: colors.errorLight }]}>
             <FontAwesome5 name="times-circle" size={13} color={colors.error} />
-            <Text style={[styles.bannerText, { color: colors.error }]}>
-              This ticket has been {ticket.status}
-            </Text>
+            <Text style={[styles.bannerText, { color: colors.error }]}>{deadBanner[state]}</Text>
           </View>
         )}
 
         {/* QR code */}
         <View style={styles.qrSection}>
-          <View style={[styles.qrCard, (isUsed || isCancelled) && styles.qrCardDimmed]}>
+          <View style={[styles.qrCard, isDimmed && styles.qrCardDimmed]}>
             {credential ? (
               <QRCode
                 value={credential.value}
@@ -238,10 +271,15 @@ export default function MyEventTicketScreen() {
                 <FontAwesome5 name="lock" size={40} color={colors.textLight} />
                 <Text style={styles.qrPendingText}>Awaiting payment</Text>
               </View>
-            ) : isUsed ? (
+            ) : state === 'checked_in' ? (
               <View style={styles.qrPending}>
                 <FontAwesome5 name="check-circle" size={40} color={colors.success} solid />
                 <Text style={styles.qrPendingText}>Scanned{'\n'}Already used at entry</Text>
+              </View>
+            ) : placeholder ? (
+              <View style={styles.qrPending}>
+                <FontAwesome5 name={placeholder.icon} size={40} color={colors.textLight} solid />
+                <Text style={styles.qrPendingText}>{placeholder.text}</Text>
               </View>
             ) : (
               <View style={styles.qrPending}>
@@ -251,9 +289,9 @@ export default function MyEventTicketScreen() {
             )}
           </View>
 
-          {!isCancelled && !isPending && (
+          {(isLive || state === 'checked_in') && (
             <Text style={styles.qrHint}>
-              {isUsed
+              {state === 'checked_in'
                 ? 'Already scanned at entry'
                 : credential?.kind === 'backup'
                   ? 'Show QR code to staff at entry — it carries your backup code'
@@ -263,7 +301,7 @@ export default function MyEventTicketScreen() {
         </View>
 
         {/* Backup code */}
-        {!isCancelled && !isPending && (
+        {isLive && (
           <View style={styles.backupSection}>
             <Text style={styles.backupLabel}>Backup code</Text>
             <TouchableOpacity
@@ -307,7 +345,7 @@ export default function MyEventTicketScreen() {
             </View>
           )}
           <View style={styles.ticketDetailRow}>
-            <Text style={styles.ticketDetailLabel}>Price paid</Text>
+            <Text style={styles.ticketDetailLabel}>Ticket price</Text>
             <Text style={styles.ticketDetailValue}>
               {ticket.price_pence === 0 ? 'Free' : `£${(ticket.price_pence / 100).toFixed(2)}`}
             </Text>
@@ -319,6 +357,31 @@ export default function MyEventTicketScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Payment history — Past tickets only, from the buyer's own order */}
+        {isPast && (history?.paid || history?.refund) ? (
+          <View style={styles.eventInfoCard}>
+            <Text style={styles.eventTitle}>Payment</Text>
+            {history.quantity ? (
+              <View style={styles.ticketDetailRow}>
+                <Text style={styles.ticketDetailLabel}>Order</Text>
+                <Text style={styles.ticketDetailValue}>{history.quantity}</Text>
+              </View>
+            ) : null}
+            {history.paid ? (
+              <View style={styles.ticketDetailRow}>
+                <Text style={styles.ticketDetailLabel}>Paid</Text>
+                <Text style={styles.ticketDetailValue}>{history.paid}</Text>
+              </View>
+            ) : null}
+            {history.refund ? (
+              <View style={styles.ticketDetailRow}>
+                <Text style={styles.ticketDetailLabel}>Refund</Text>
+                <Text style={styles.ticketDetailValue}>{history.refund}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* View event button */}
         {event && (
