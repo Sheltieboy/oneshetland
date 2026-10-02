@@ -507,6 +507,53 @@ describe('wiring', () => {
   });
 });
 
+describe('admin visibility: an order marked refunded is never presented as reconciled', () => {
+  const WEB = join(REPO_ROOT, '..', 'oneshetland-web');
+  const panel = code(readFileSync(join(WEB, 'components/admin/RefundReconciliationPanel.tsx'), 'utf8'));
+  const page = readFileSync(join(WEB, 'app/admin/payments/page.tsx'), 'utf8');
+
+  test('the panel is mounted on the admin Payments page and reads only through the admin Edge Function', () => {
+    assert.match(page, /<RefundReconciliationPanel \/>/);
+    assert.match(panel, /functions\.invoke\("refund-reconcile"/);
+    assert.doesNotMatch(panel, /\.from\(["']refund_reconciliation/);
+    assert.doesNotMatch(panel, /console\.|localStorage|sessionStorage/);
+  });
+
+  test('it distinguishes the three legs: customer refunded, merchant transfer, platform fee', () => {
+    assert.match(panel, /Customer/);
+    assert.match(panel, /transfer not reversed/);
+    assert.match(panel, /not refunded/);
+    assert.match(panel, /An order marked “refunded” does not prove the merchant's money came back\./);
+  });
+
+  test('every state has a label and the open ones are separated from the settled ones', () => {
+    for (const st of ['reconciled', 'repaired', 'needs_repair', 'needs_review', 'repair_failed']) assert.ok(panel.includes(`${st}:`), st);
+    assert.match(panel, /r\.state !== "reconciled" && r\.state !== "repaired"/);
+  });
+
+  test('refunded-but-unchecked orders are surfaced as a warning, never as "all reconciled"', () => {
+    assert.match(panel, /unverified\.length > 0/);
+    assert.match(panel, /not been checked against/);
+    const warn = panel.indexOf('unverified.length > 0 ?');
+    const allGood = panel.indexOf('Every refund checked so far is reconciled.');
+    assert.ok(warn > 0 && allGood > warn);
+  });
+
+  test('checking is read-only; repair needs an explicit confirmation that says exactly what moves, then sends confirm:true', () => {
+    assert.match(panel, /action: "scan"/);
+    const repairFn = panel.slice(panel.indexOf('async function repair('), panel.indexOf('const open ='));
+    assert.ok(repairFn.indexOf('await confirm(') > 0 && repairFn.indexOf('await confirm(') < repairFn.indexOf('action: "repair"'));
+    assert.match(repairFn, /This moves real money/);
+    assert.match(repairFn, /Stripe may refuse if the merchant's balance is too low/);
+    assert.match(repairFn, /confirm: true/);
+    assert.match(repairFn, /danger: true/);
+  });
+
+  test('a partial refund offers no repair button — a person decides', () => {
+    assert.match(panel, /r\.state === "needs_review" \? \(/);
+  });
+});
+
 /* ── 4. Live, read-only ───────────────────────────────────────────────────── */
 
 describe('live (read-only): schema, config and the historical refunds are visible', () => {
