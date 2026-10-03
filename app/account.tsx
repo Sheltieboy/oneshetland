@@ -766,7 +766,7 @@ export default function AccountScreen() {
 
           {/* ── Legal ─────────────────────────────────────────────────── */}
           <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Legal</Text>
+            <Text style={styles.sectionTitle}>Help & legal</Text>
             <View style={styles.linkGroup}>
               <LinkRow
                 icon="🔒"
@@ -777,6 +777,11 @@ export default function AccountScreen() {
                 icon="📄"
                 label="Terms of Service"
                 onPress={() => { haptic.light(); Linking.openURL('https://oneshetland.com/terms'); }}
+              />
+              <LinkRow
+                icon="💬"
+                label="Help & support"
+                onPress={() => { haptic.light(); Linking.openURL('https://oneshetland.com/support'); }}
                 last
               />
             </View>

@@ -629,6 +629,13 @@ export default function MeTab() {
               sublabel="The rules for using OneShetland"
               onPress={() => { Haptics.selectionAsync(); Linking.openURL('https://oneshetland.com/terms'); }}
             />
+            <MenuRow
+              icon="life-ring"
+              iconColor={colors.textMuted}
+              label="Help & support"
+              sublabel="Payments, refunds, your account and more"
+              onPress={() => { Haptics.selectionAsync(); Linking.openURL('https://oneshetland.com/support'); }}
+            />
 
             {/* Account deletion (Apple 5.1.1(v) / Google Play). Routes to the
                 canonical /account screen, whose two-step confirm flow calls

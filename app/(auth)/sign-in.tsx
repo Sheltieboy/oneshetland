@@ -230,6 +230,10 @@ export default function SignInScreen() {
             ·{' '}
             <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/privacy')}>
               Privacy Policy
+            </Text>{' '}
+            ·{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://oneshetland.com/support')}>
+              Help
             </Text>
           </Text>
         </ScrollView>
