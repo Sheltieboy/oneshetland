@@ -199,13 +199,16 @@ function buildFooter(settings: Record<string, unknown> | null): string {
   return parts.join('\n');
 }
 
+/** `subject` is built from {{variables}} that can be user- or organiser-supplied (an event title, a shift
+ *  title), and interpolate() does not escape. It is plain text in the Subject header, but here it lands in
+ *  HTML, so it must be escaped or a title can inject markup into the header of an official email. */
 function wrapEmail(fromName: string, subject: string, body: string, footer: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${subject}</title>
+  <title>${escapeHtml(subject)}</title>
 </head>
 <body style="margin:0;padding:0;background:#F0F2F5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F0F2F5;padding:32px 16px">
@@ -216,7 +219,7 @@ function wrapEmail(fromName: string, subject: string, body: string, footer: stri
         <tr>
           <td style="background:#032F4C;padding:24px 32px;border-radius:12px 12px 0 0">
             <p style="margin:0;color:#12B3D6;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase">ONESHETLAND</p>
-            <p style="margin:4px 0 0;color:#fff;font-size:20px;font-weight:800">${subject}</p>
+            <p style="margin:4px 0 0;color:#fff;font-size:20px;font-weight:800">${escapeHtml(subject)}</p>
           </td>
         </tr>
 

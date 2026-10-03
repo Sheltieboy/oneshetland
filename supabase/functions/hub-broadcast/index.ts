@@ -96,10 +96,18 @@ serve(async (req) => {
           `<h2 style="color:#0F1C26">${escapeHtml(title)}</h2>` +
           `<p style="color:#374151;line-height:1.6;white-space:pre-wrap">${escapeHtml(message)}</p>` +
           `<p style="color:#9CA3AF;font-size:12px;margin-top:24px">Sent to members of ${escapeHtml(hubName)} via OneShetland Hubs.</p></div>`;
+        // Replies go to the real support inbox, not the send-only orders@ address.
+        const { data: es } = await svc.from('email_settings').select('reply_to').maybeSingle();
+        const replyTo = es?.reply_to ?? 'hello@oneshetland.com';
+        const subject = `${hubName}: ${title}`;
         await Promise.all(ids.map(async (uid) => {
+          let email: string | undefined;
+          let status: 'sent' | 'failed' = 'failed';
+          let postmarkId: string | null = null;
+          let errorMessage: string | null = null;
           try {
             const { data: u } = await svc.auth.admin.getUserById(uid);
-            const email = u?.user?.email;
+            email = u?.user?.email ?? undefined;
             if (!email) return;
             const res = await fetch('https://api.postmarkapp.com/email', {
               method: 'POST',
@@ -107,13 +115,28 @@ serve(async (req) => {
               body: JSON.stringify({
                 From: 'OneShetland <orders@oneshetland.com>',
                 To: email,
-                Subject: `${hubName}: ${title}`,
+                ReplyTo: replyTo,
+                Subject: subject,
                 HtmlBody: html,
                 MessageStream: 'outbound',
+                Metadata: { template_key: 'hub.broadcast', hub_id },
               }),
             });
-            if (res.ok) emailCount++;
-          } catch { /* skip this recipient */ }
+            const out = await res.json().catch(() => ({})) as { MessageID?: string; Message?: string };
+            if (res.ok) { emailCount++; status = 'sent'; postmarkId = out.MessageID ?? null; }
+            else errorMessage = out.Message ?? `Postmark HTTP ${res.status}`;
+          } catch (e) {
+            errorMessage = e instanceof Error ? e.message : 'send failed';
+          }
+          // Record every attempt like every other email, so a failure is visible in the Email centre.
+          if (email) {
+            try {
+              await svc.from('email_log').insert({
+                template_key: 'hub.broadcast', recipient_id: uid, recipient_email: email, subject,
+                status, postmark_id: postmarkId, error_message: errorMessage, metadata: { hub_id },
+              });
+            } catch { /* logging must never break the broadcast */ }
+          }
         }));
       }
     }
