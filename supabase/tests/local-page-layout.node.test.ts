@@ -21,7 +21,7 @@ const src = () => readFileSync(join(WEB, 'app/local/page.tsx'), 'utf8').replace(
 
 describe('every card grid on /local starts from a shrinkable column', opts, () => {
   test('THE DEFECT: no grid is left with an implicit auto column', () => {
-    const grids = src().match(/className=(?:"|\{")grid [^"]*"/g) ?? [];
+    const grids = (src().match(/className=(?:"|\{")grid [^"]*"/g) ?? []).filter((g) => /sm:grid-cols-/.test(g));   // the responsive card grids (not small icon boxes)
     assert.ok(grids.length >= 7, `expected the page's card grids, found ${grids.length}`);
     for (const g of grids) assert.match(g, /grid grid-cols-1 /, g);
   });
