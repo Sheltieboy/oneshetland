@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { notifyRefund } from '../_shared/refund-notice.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -243,6 +244,13 @@ serve(async (req) => {
       console.error('[wallet-refund-business] finalise refused', d?.error);
       return json({ error: 'That payment cannot be refunded.' }, 409);
     }
+
+    // Tell the customer their money is back. A repeat (already_complete) is safe: the notice is keyed on the
+    // payment, so it is announced once — and a crash between "money moved" and here is repaired by a retry.
+    await notifyRefund(svc, {
+      userId: txn.user_id, refundKey: `wallet_txn:${txn.id}`, amountPence: Math.abs(txn.amount_pence ?? 0),
+      what: `Your payment to ${biz.name}`, destination: 'wallet', data: { screen: 'local-wallet' },
+    });
 
     return json({
       ok: true,

@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { reconcileCharge, reconcileWalletOrder } from '../_shared/refund-reconcile.ts';
 import { isWalletRef, refundWalletEventOrder, type WalletRefundDeps } from '../_shared/event-wallet-refund-core.ts';
+import { notifyRefund } from '../_shared/refund-notice.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -216,6 +217,10 @@ async function refundWalletMembership(
   }
 
   console.log(`[refund-payment] wallet membership ${m.id} refunded by ${adminId}: ${JSON.stringify(rec)}`);
+  await notifyRefund(svc, {
+    userId: m.user_id, refundKey: `membership:${m.id}`, amountPence: total,
+    what: `Your ${m.hub_name} membership`, destination: 'wallet', data: { screen: 'local-wallet' },
+  });
   return jsonResponse({
     ok: true,
     rail: 'wallet',
@@ -373,6 +378,12 @@ serve(async (req) => {
         );
         if (!out.ok) return json({ error: out.error, stage: out.stage, retry_safe: out.retry_safe }, out.status);
         console.log(`[refund-payment] wallet event order ${eventOrder.id} refunded by ${user.id}: ${JSON.stringify({ merchant_reversed: out.merchant_reversed, already: out.already_reversed })}`);
+        // Tell the buyer the money is back in their Wallet. Never throws, never blocks the refund.
+        await notifyRefund(svc, {
+          userId: eventOrder.buyer_id, refundKey: `event_order:${eventOrder.id}`, amountPence: out.amount_pence,
+          what: `Your tickets for ${(ev as { title?: string } | null)?.title ?? 'the event'}`, destination: 'wallet',
+          data: { screen: 'my-event-tickets', order_id: eventOrder.id },
+        });
         // Judge it from the ledger and the Connect transfer now. Reading only: a failure here
         // never changes the refund that has already happened.
         let reconciliation: { state: string; note: string } | null = null;
@@ -587,6 +598,14 @@ serve(async (req) => {
         { p_payment_intent_id: payment_intent_id, p_fully_refunded: true });
       if (tErr) console.error('[refund-payment] ticket void failed (webhook will retry)', tErr.code);
       else ticketOutcome = t as Record<string, unknown>;
+
+      // The card refund has been issued: tell the buyer, and say it takes days to show.
+      const { data: evCard } = await svc.from('events').select('title').eq('id', eventOrder.event_id).maybeSingle();
+      await notifyRefund(svc, {
+        userId: eventOrder.buyer_id, refundKey: `event_order:${eventOrder.id}`, amountPence: Number(refund.amount),
+        what: `Your tickets for ${(evCard as { title?: string } | null)?.title ?? 'the event'}`, destination: 'card',
+        data: { screen: 'my-event-tickets', order_id: eventOrder.id },
+      });
     }
 
     return json({
