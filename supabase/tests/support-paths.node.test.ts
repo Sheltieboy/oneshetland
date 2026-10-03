@@ -25,6 +25,9 @@ const mobile = (rel: string) => readFileSync(join(MOBILE, rel), 'utf8');
 const web = (rel: string) => readFileSync(join(WEB, rel), 'utf8');
 const SUPPORT_EMAIL = 'hello@oneshetland.com';
 const SUPPORT_URL = 'https://oneshetland.com/support';
+const SUPPORT_PHONE = '01595 922404';
+const SUPPORT_PHONE_INTL = '+44 1595 922404';
+const SUPPORT_PHONE_TEL = 'tel:+441595922404';
 
 /** Every route directory under the web app (page.tsx present). */
 function routes(dir = join(WEB, 'app'), prefix = ''): Set<string> {
@@ -96,6 +99,58 @@ describe('web discoverability', opts, () => {
   test('the web account area is never the only way to find help (footer is outside auth)', () => {
     const layout = web('app/layout.tsx');
     assert.doesNotMatch(layout, /redirect\(/);
+  });
+});
+
+describe('support telephone', opts, () => {
+  const page = () => web('app/support/page.tsx');
+  const legalPages = ['app/support/page.tsx', 'app/privacy/page.tsx', 'app/terms/page.tsx', 'app/delete-account/page.tsx',
+    'app/community-guidelines/page.tsx', 'app/selling-policy/page.tsx', 'app/legal/page.tsx', 'components/site/LegalLayout.tsx'];
+
+  test('the support page shows the number in national and international form, with a tap-to-call link', () => {
+    const p = page();
+    assert.ok(p.includes(SUPPORT_PHONE), 'national format');
+    assert.ok(p.includes(SUPPORT_PHONE_INTL), 'international format');
+    assert.ok(p.includes(`href="${SUPPORT_PHONE_TEL}"`), 'tel: link');
+  });
+
+  test('the visible number, the international form and the tel: link are the same number', () => {
+    const digits = (x: string) => x.replace(/\D/g, '');
+    assert.equal(digits(SUPPORT_PHONE_INTL).slice(2), digits(SUPPORT_PHONE).slice(1));
+    assert.equal(digits(SUPPORT_PHONE_TEL), digits(SUPPORT_PHONE_INTL));
+    assert.match(SUPPORT_PHONE, /^01595 \d{6}$/); // Shetland geographic code
+  });
+
+  test('no other or placeholder phone number appears on a support or legal page', () => {
+    for (const f of legalPages) {
+      const src = web(f);
+      const nums = src.match(/(?:\+44[ \d]{9,13}|\b0[1-37-9]\d{2,3}[ ]?\d{3}[ ]?\d{3,4}\b)/g) ?? [];
+      const same = (n: string) => {
+        const d = n.replace(/\D/g, '');
+        return d === SUPPORT_PHONE.replace(/\D/g, '') || d === SUPPORT_PHONE_INTL.replace(/\D/g, '');
+      };
+      for (const n of nums) assert.ok(same(n), `${f}: unexpected number ${n}`);
+      assert.doesNotMatch(src, /07700 ?900|0123 ?456|555-?01\d\d|tel:\+?0*\s*"/);
+    }
+  });
+
+  test('the page does not promise a live answer — it tells people to leave a message', () => {
+    assert.match(page(), /can&rsquo;t always answer live/);
+    assert.match(page(), /leave a message/);
+    assert.doesNotMatch(page(), /24\/7|24 hours a day|open (?:daily|9)|opening hours/i);
+  });
+
+  test('the runbook records the same number and what to do with a voicemail', () => {
+    const rb = mobile('SUPPORT-RUNBOOK.md');
+    assert.ok(rb.includes(SUPPORT_PHONE) && rb.includes(SUPPORT_PHONE_INTL));
+    assert.match(rb, /Voicemail left on 01595 922404/);
+    assert.match(rb, /Soho66/);
+  });
+
+  test('the Google-Wallet-facing details and the site agree: email, URL and phone on one page', () => {
+    const p = page();
+    assert.ok(p.includes(`mailto:${SUPPORT_EMAIL}`) && p.includes(SUPPORT_PHONE_TEL));
+    assert.ok(mobile('app/(tabs)/me.tsx').includes(SUPPORT_URL)); // the app opens that same page
   });
 });
 

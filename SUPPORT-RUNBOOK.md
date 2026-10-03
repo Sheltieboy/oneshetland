@@ -3,7 +3,7 @@
 Launch-sized, not a helpdesk. It answers one question: **a real person has written to
 us or reported something — what do we do next, and where?**
 
-Last verified: 3 Oct 2026.
+Last verified: 3 Oct 2026 (telephone channel added the same day).
 
 ## 1. How people reach us
 
@@ -15,6 +15,7 @@ Last verified: 3 Oct 2026.
 | Mobile → Me tab → Account | **Help & support** (opens /support) next to Privacy and Terms |
 | Mobile → Account screen → "Help & legal" | **Help & support** |
 | Mobile sign-in screen footer | **Help** (opens /support) — reachable by someone locked out |
+| Web `/support` — telephone | **01595 922404** (+44 1595 922404), a Shetland geographic number on Soho66. Calls that are not answered go to voicemail, which Soho66 emails to the operator. The page says live answering is not guaranteed. |
 | Every legal page (terms, privacy, delete-account, community guidelines, selling policy) | `hello@oneshetland.com` |
 
 **Inbox:** `hello@oneshetland.com` is the single published support address. It is a real
@@ -23,8 +24,14 @@ mailbox on the domain's mail host (livemail.co.uk; MX `_dc-mx.082c10a7059f.onesh
 (SUBMISSION_PACK.md) — **check it reaches the same person as `hello@`**.
 The App Store review contact `appreview@oneshetland.com` also exists.
 
+**Telephone:** `01595 922404` is the same number shown on the Google Pay & Wallet Business
+Profile. Inbound calls reach the Soho66 account; an unanswered call leaves a voicemail that is
+**delivered by email** (physically verified 3 Oct 2026). So the number is monitored through email even
+though it is not answered live. A custom recorded greeting is optional post-launch polish.
+Soho66 holds the number; if calls stop arriving, check the Soho66 account first.
+
 **Owner:** Darren Fullerton (Darren Fullerton Consultancy Ltd t/a OneShetland). There is
-no second operator yet. Daily routine: read `hello@` and `support@`, open
+no second operator yet. Daily routine: read `hello@` and `support@` and any voicemail emails, open
 `/admin/reports`, glance at `/admin/payments`.
 
 **Response promises already published (do not exceed them silently):**
@@ -37,6 +44,13 @@ no second operator yet. Daily routine: read `hello@` and `support@`, open
 Always: reply from the support address, ask for the **account email** if not given, and
 **verify the requester writes from the address on the account** before changing or
 deleting anything.
+
+### Voicemail left on 01595 922404
+1. It arrives as an email from Soho66 with the caller's number and the recording.
+2. Call back or email within the same working day where you can; treat it as an email request and
+   follow the section below that matches. Verify identity before any account change (never act on
+   caller ID alone).
+3. Add nothing sensitive to a voicemail reply; move to email for anything about payments.
 
 ### Customer: account / sign-in
 1. Point to *Forgot password* (`/forgot-password`) first.
