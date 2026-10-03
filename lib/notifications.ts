@@ -83,7 +83,12 @@ const SCREEN_ALIASES: Record<string, string> = {
   games:                  '/games',
   'my-shift-applications':'/my-shift-applications',
   'my-job-applications':  '/my-job-applications',
-  'employer-applications':'/employer-applications',
+  // The employer's applicants live on the posted-shifts screen; there is no /employer-applications screen,
+  // so a tap on 'new application' used to open Not Found.
+  'employer-applications':'/my-posted-shifts',
+  'my-posted-shifts':     '/my-posted-shifts',
+  // Merchant notices (new booking, sale, payment received, plan ended) carry no business id.
+  'local-business-dashboard': '/local-business-dashboard',
   'local-my-cards':       '/local-my-cards',
   'local-offers':         '/local-offers',
   'local-wallet':         '/local-wallet',

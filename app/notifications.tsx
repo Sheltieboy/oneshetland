@@ -46,14 +46,17 @@ export default function NotificationsInboxScreen() {
 
   const [items, setItems]       = useState<InboxNotification[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [failed, setFailed]     = useState(false);
   const [refreshing, setRefresh] = useState(false);
 
   const load = useCallback(async () => {
     if (!profile) { setLoading(false); return; }
     try {
       setItems(await fetchInbox());
+      setFailed(false);
     } catch (e) {
       console.warn('[inbox] load failed', e);
+      setFailed(true);
     } finally {
       setLoading(false);
       setRefresh(false);
@@ -105,8 +108,8 @@ export default function NotificationsInboxScreen() {
           ListEmptyComponent={
             <View style={styles.center}>
               <FontAwesome5 name="bell-slash" size={28} color={colors.textLight} />
-              <Text style={styles.emptyTitle}>Nothing yet</Text>
-              <Text style={styles.dim}>Your notifications will appear here.</Text>
+              <Text style={styles.emptyTitle}>{failed ? 'We couldn\'t load your notifications' : 'Nothing yet'}</Text>
+              <Text style={styles.dim}>{failed ? 'Pull down to try again.' : 'Your notifications will appear here.'}</Text>
             </View>
           }
           renderItem={({ item }) => {
