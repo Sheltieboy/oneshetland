@@ -1641,7 +1641,11 @@ export interface DiscountGrantInput {
   duration_months?: number;
 }
 
-/** Admin: grant a discount that becomes applicable `delay_days` later (default a week). */
+/**
+ * NOT LIVE. Nothing reads business_discount_grants and no coupon exists, so a grant changes no business's plan;
+ * the table now refuses the insert (migration 20261103000000). To give a launch partner a plan use the
+ * admin_grant_launch_plan database function. No screen calls this any more.
+ */
 export async function grantDiscount(
   businessId: string,
   input: DiscountGrantInput,

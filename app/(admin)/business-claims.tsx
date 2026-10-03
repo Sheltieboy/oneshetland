@@ -19,7 +19,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import {
-  fetchClaims, approveClaim, rejectClaim, grantDiscount,
+  fetchClaims, approveClaim, rejectClaim,
   type BusinessClaim, type ClaimStatus,
 } from '@/lib/local-api';
 
@@ -27,13 +27,6 @@ const FILTERS: { key: ClaimStatus | 'all'; label: string }[] = [
   { key: 'pending',  label: 'Pending' },
   { key: 'approved', label: 'Approved' },
   { key: 'all',      label: 'All' },
-];
-
-const DISCOUNT_PRESETS: { tier: 'pro' | 'premium'; percent: number; label: string }[] = [
-  { tier: 'pro',     percent: 25, label: 'Pro · 25% off, 1 year' },
-  { tier: 'pro',     percent: 50, label: 'Pro · 50% off, 1 year' },
-  { tier: 'premium', percent: 25, label: 'Premium · 25% off, 1 year' },
-  { tier: 'premium', percent: 50, label: 'Premium · 50% off, 1 year' },
 ];
 
 export default function BusinessClaimsScreen() {
@@ -78,10 +71,7 @@ export default function BusinessClaimsScreen() {
               alert({
                 title: 'Approved ✅',
                 message: `${c.business?.name ?? 'The business'} is now owned and verified.`,
-                actions: [
-                  { label: 'Grant discount', style: 'primary', onPress: () => offerDiscount(c) },
-                  { label: 'Done', style: 'secondary' },
-                ],
+                actions: [{ label: 'Done', style: 'secondary' }],
               });
               await load();
             } catch (e: any) {
@@ -108,29 +98,6 @@ export default function BusinessClaimsScreen() {
             finally { setActing(null); }
           },
         },
-      ],
-    });
-  }
-
-  function offerDiscount(c: BusinessClaim) {
-    if (!c.business_id) return;
-    alert({
-      title: 'Grant discount',
-      message: `Applies one week after today, valid for a year. Choose a tier and rate for ${c.business?.name ?? 'this business'}:`,
-      actions: [
-        ...DISCOUNT_PRESETS.map(p => ({
-          label: p.label,
-          style: 'primary' as const,
-          onPress: async () => {
-            try {
-              await grantDiscount(c.business_id, { tier: p.tier, percent_off: p.percent });
-              alert({ title: 'Discount granted 🎉', message: `${p.label} — applicable in 7 days.` });
-            } catch (e: any) {
-              alert({ title: 'Could not grant', message: e?.message ?? '' });
-            }
-          },
-        })),
-        { label: 'Cancel', style: 'cancel' as const },
       ],
     });
   }
@@ -206,11 +173,6 @@ export default function BusinessClaimsScreen() {
                       onPress={() => confirmReject(c)} disabled={acting === c.id} />
                     <Button label="Approve" size="sm"
                       onPress={() => confirmApprove(c)} loading={acting === c.id} />
-                  </View>
-                ) : c.status === 'approved' ? (
-                  <View style={styles.actions}>
-                    <Button label="Grant discount" variant="secondary" size="sm"
-                      onPress={() => offerDiscount(c)} />
                   </View>
                 ) : null}
               </Card>
