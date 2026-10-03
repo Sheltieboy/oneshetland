@@ -25,6 +25,8 @@
  *   L  idempotent: same grant twice records once; a change replaces the previous grant; one open grant per business
  *   M  owner / public / admin entitlement agree in every state; no Stripe object or money row is created
  *   N  the dead "Grant discount" write is refused with a pointer to the real tool
+ *   O  the admin screen's business lookup: admin-only, finds inactive listings, reports facts (subscription? grant?)
+ *      without leaking any Stripe identifier
  *
  * SAFETY — ISOLATED DATABASE ONLY: requires PASS_PROOF_DSN, refuses a DSN mentioning Supabase.
  */
@@ -45,6 +47,7 @@ const FRESH = join(MIG, '20260902120000_subscription_event_freshness.sql');
 const RECON = join(MIG, '20260903120000_subscription_same_second_reconcile.sql');
 const BINDING = join(MIG, '20260904120000_subscription_business_binding.sql');
 const GRANTS = join(MIG, '20261103000000_launch_plan_grants.sql');
+const LOOKUP = join(MIG, '20261103010000_admin_launch_business_lookup.sql');
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 const src = (p: string) => readFileSync(p, 'utf8');
@@ -148,6 +151,7 @@ before(() => {
     'grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;',
     'grant execute on function public.is_admin(), public.is_business_owner(uuid, uuid), public.business_meets_tier(uuid, text) to anon, authenticated, service_role;',
     src(GRANTS),
+    src(LOOKUP),
   ].join('\n'));
   assert.doesNotMatch(out, /ERROR/i, `fixture did not build:\n${out.slice(0, 2000)}`);
   const seed = raw(`
@@ -434,5 +438,34 @@ describe('N — the dead "Grant discount" write is refused', () => {
     const ins = `insert into public.business_discount_grants (business_id, tier, percent_off, applicable_from, expires_at) values ('${CAFE}', 'pro', 100, now(), ${IN(365)})`;
     for (const out of [raw(ins), asService(ins), asUser(ADMIN, ins)]) assert.match(out, /Discount grants are not active.*admin_grant_launch_plan/s, out);
     assert.equal(scalar('select count(*) from public.business_discount_grants'), '0');
+  });
+});
+
+describe('O — the admin screen\'s business lookup', () => {
+  const look = (q: string) => `select business_id, name, is_active, tier, plan_live, has_subscription, grant_tier from public.admin_launch_business_lookup('${q}')`;
+  test('an admin finds a business by a piece of its name, case-insensitively, and by its id — including an INACTIVE one', () => {
+    raw(`update public.local_businesses set is_active=false where id='${KILN}'`);
+    assert.match(asUser(ADMIN, look('kiln pot')), new RegExp(`${KILN}\\|Kiln Pottery\\|f\\|`));
+    assert.match(asUser(ADMIN, look(KILN)), new RegExp(`${KILN}\\|Kiln Pottery`));
+    assert.match(asUser(ADMIN, look(KILN.toUpperCase())), new RegExp(`${KILN}`));
+  });
+  test('it reports facts: a real subscription, a live open grant, a plain Free listing', () => {
+    assert.match(asUser(ADMIN, look(SUBBED)), /Paying Joiners\|t\|(pro|premium)\|t\|t\|/);   // has_subscription = t
+    assert.match(asUser(ADMIN, look(FERRY)), /Ferry Tours\|t\|premium\|t\|f\|premium$/m);   // open grant, no subscription
+    assert.match(asUser(ADMIN, look(BAKERY)), /Bakery\|t\|free\|f\|f\|$/m);
+  });
+  test('LIKE wildcards in the query are literal, and a too-short query is refused', () => {
+    assert.deepEqual(rowsOf(asUser(ADMIN, look('%%%'))), []);
+    assert.match(asUser(ADMIN, look('ab')), /at least 3 letters/);
+  });
+  test('only an administrator may look: customer, owner, anon and uid-less callers are refused', () => {
+    assert.match(asUser(CUSTOMER, look('Harbour')), /Only an administrator/);
+    assert.match(asUser(OWNER_A, look('Harbour')), /Only an administrator/);
+    assert.match(as(null, 'anon', look('Harbour')), /permission denied/i);
+    assert.match(as(null, 'authenticated', look('Harbour')), /Only an administrator/);
+  });
+  test('it names no Stripe identifier: the result has only the documented columns', () => {
+    const out = raw(`select * from public.admin_launch_business_lookup('${SUBBED}')`);
+    assert.doesNotMatch(out, /cus_|sub_|acct_/);
   });
 });
