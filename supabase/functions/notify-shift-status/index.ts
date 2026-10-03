@@ -85,7 +85,8 @@ serve(async (req) => {
         userId: shift.employer_id, module: 'shifts', categoryId: 'shifts.withdrawn',
         title: 'Application withdrawn',
         body: `${who} withdrew from "${shift.title ?? 'a shift'}".`,
-        data: { screen: 'employer-applications', shift_id: app.shift_id },
+        // shift_id, not a `screen`: the app build in users' hands has no screen for an employer's applicants and opens Not Found.
+        data: { shift_id: app.shift_id },
       });
       return json({ ok: true, notified: 1 });
     }

@@ -216,3 +216,115 @@ describe('rendering contracts — the same inbox on both platforms', opts, () =>
     assert.match(m('lib/notifications-inbox.ts'), /rpc\('unread_notification_count'\)/);
   });
 });
+
+/* ── compatibility with the app build already in users' hands (iOS build 144) ─────────────────────────────────
+ * Build 144 was made from the source at 8563e1a (28 Sep). Its tap router has no `local-business-dashboard` or
+ * `my-posted-shifts` screen and maps `employer-applications` to a screen that does not exist. The fixes for
+ * that are committed but not shipped, so the SERVER must send payloads the shipped router can open.
+ */
+import { execFileSync } from 'node:child_process';
+const BUILD_144 = '8563e1a';
+const git = (...args: string[]) => { try { return execFileSync('git', args, { cwd: MOBILE, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; } };
+const router144Src = git('show', `${BUILD_144}:lib/notifications.ts`);
+const tree144 = git('ls-tree', '-r', '--name-only', BUILD_144, 'app');
+const have144 = !!(router144Src && tree144);
+const opts144 = { skip: have144 ? false : `git history for build 144 (${BUILD_144}) not available` };
+
+const route144 = have144 ? (() => {
+  const a = router144Src!.indexOf('const SCREEN_ALIASES'); const b = router144Src!.indexOf('/**', router144Src!.indexOf('export function notificationRoute'));
+  return new Function(strip(router144Src!.slice(a, b)) + ';return notificationRoute;')() as (d: Record<string, unknown> | null) => string | null;
+})() : () => null;
+const aliases144 = have144 ? (() => {
+  const a = router144Src!.indexOf('const SCREEN_ALIASES'); const b = router144Src!.indexOf('};', a) + 2;
+  return new Function(strip(router144Src!.slice(a, b)) + ';return SCREEN_ALIASES;')() as Record<string, string>;
+})() : {};
+const files144 = have144 ? new Set(tree144!.split('\n').filter((f) => f.endsWith('.tsx')).map((f) => f.replace(/^app/, '').replace(/\/\([^)]+\)/g, '').replace(/\.tsx$/, '').replace(/\/index$/, '') || '/')) : new Set<string>();
+const exists144 = (r: string) => /^\/\(tabs\)/.test(r) || [...files144].some((c) => dynamicMatch(c, r.split('?')[0].replace(/\/\([^)]+\)/g, '')));
+
+describe('compatible with the app build already shipped (iOS build 144)', opts144, () => {
+  const BIZ = '00000000-0000-4000-8000-0000000000b1', SHIFT = '00000000-0000-4000-8000-0000000000a1';
+
+  test('the reconstructed build-144 router really lacks the screens that were broken (so this test means something)', () => {
+    assert.equal(aliases144['local-business-dashboard'], undefined);
+    assert.equal(aliases144['my-posted-shifts'], undefined);
+    assert.equal(aliases144['employer-applications'], '/employer-applications');
+    assert.ok(!exists144('/employer-applications'), 'that screen never existed');
+  });
+
+  test('THE DEFECT: the old employer payloads open Not Found / nothing in build 144', () => {
+    assert.ok(!exists144(route144({ screen: 'employer-applications' })!));
+    assert.equal(route144({ screen: 'my-posted-shifts' }), null);
+    assert.equal(route144({ screen: 'local-business-dashboard' }), null);
+  });
+
+  test('employer notices now carry a shift_id and open that shift in build 144', () => {
+    for (const f of ['notify-shift-application', 'notify-shift-status', 'notify-worker-checkin']) {
+      const src = m(`supabase/functions/${f}/index.ts`).replace(/\/\/.*$/gm, '');
+      assert.doesNotMatch(src, /employer-applications|my-posted-shifts/, f);
+      assert.match(src, /data:\s*\{\s*shift_id:\s*app\.shift_id\s*\}/, f);
+    }
+    const r = route144({ shift_id: SHIFT })!;
+    assert.equal(r, `/shift-detail?id=${SHIFT}`);
+    assert.ok(exists144(r));
+  });
+
+  test('merchant notices, once the database has added the business, open that business\'s own page in build 144', () => {
+    for (const payload of [
+      { screen: 'local-business-dashboard', business_id: BIZ },
+      { screen: 'local-business-dashboard', booking_id: 'b', business_id: BIZ },
+    ]) {
+      const r = route144(payload)!;
+      assert.equal(r, `/local-business-detail?id=${BIZ}`);
+      assert.ok(exists144(r));
+    }
+  });
+
+  test('the owner lands somewhere useful: that page has the owner\'s "Manage business" entry (build-144 source)', () => {
+    const detail = git('show', `${BUILD_144}:app/local-business-detail.tsx`)!;
+    assert.match(detail, /const isOwner = profile\?\.id === business\.owner_id/);
+    assert.match(detail, /Manage business/);
+    assert.match(detail, /pathname: '\/local-business-dashboard'/);
+    const shift = git('show', `${BUILD_144}:app/shift-detail.tsx`)!;
+    assert.match(shift, /isOwnShift \? \(\s*<ShiftOwnerHub/);
+  });
+
+  test('a newer app (the unshipped router) still prefers the dashboard when the payload has both', () => {
+    assert.equal(mobileRoute({ screen: 'local-business-dashboard', business_id: BIZ }), '/local-business-dashboard');
+  });
+
+  test('GUARD: every `screen` any sender uses is understood by build 144, or is one the database normalises', () => {
+    const FUNCS = join(MOBILE, 'supabase', 'functions');
+    const used = new Map<string, string>();
+    const walk = (d: string) => { for (const n of readdirSync(d)) { const p = join(d, n); if (statSync(p).isDirectory()) walk(p); else if (n.endsWith('.ts') && !n.endsWith('.test.ts')) for (const x of readFileSync(p, 'utf8').replace(/\/\/.*$/gm, '').matchAll(/\bscreen:\s*'([a-z-]+)'/g)) used.set(x[1], p.slice(FUNCS.length + 1)); } };
+    walk(FUNCS);
+    const special = new Set(['job-applicants', 'business-orders', 'cruise-day', 'memory', 'boat']);   // handled by id in build 144
+    const normalisedByDatabase = new Set(['local-business-dashboard']);                                // notification_log_route_compat
+    for (const [screen, file] of used) {
+      assert.ok(aliases144[screen] || special.has(screen) || normalisedByDatabase.has(screen),
+        `"${screen}" (sent by ${file}) is unknown to the shipped app and not normalised — it would open Not Found or nothing`);
+    }
+  });
+
+  test('the database normaliser is in the migrations and covers exactly the broken screens', () => {
+    const mig = m('supabase/migrations/20261031020000_notification_routes_for_shipped_build.sql').replace(/^\s*--.*$/gm, '');
+    assert.match(mig, /create trigger notification_log_route_compat\s+before insert on public\.notification_log/);
+    assert.match(mig, /scr = 'local-business-dashboard'/);
+    assert.match(mig, /scr in \('employer-applications', 'my-posted-shifts'\)/);
+    assert.match(mig, /revoke execute on function public\.notification_log_route_compat\(\)/);
+  });
+
+  test('every payload shape production holds opens a real screen in build 144, or is a known nothing-to-open case', () => {
+    // PRODUCTION_SHAPES is the pre-fix inventory; the corrected payloads are what the database now stores.
+    const fixed = PRODUCTION_SHAPES.map(([c, d]) => {
+      const x = { ...d };
+      if (x.screen === 'employer-applications' || x.screen === 'my-posted-shifts') { if (x.shift_id) delete x.screen; else x.screen = 'shifts'; }
+      if (x.screen === 'local-business-dashboard') x.business_id = BIZ;
+      return [c, x] as [string, Record<string, unknown>];
+    });
+    for (const [c, d] of [...fixed, ...REFUND_SHAPES]) {
+      const r = route144(d);
+      assert.ok(r, `${c} ${JSON.stringify(Object.keys(d))} has no destination in build 144`);
+      assert.ok(exists144(r!), `${c}: ${r} does not exist in build 144`);
+    }
+  });
+});

@@ -94,7 +94,8 @@ serve(async (req) => {
       categoryId: 'shifts.new_application',
       title:      'New application 📩',
       body:       `${workerName} has applied for "${shift.title}"`,
-      data:       { screen: 'employer-applications' },
+      // shift_id, not a `screen`: the app build in users' hands has no screen for an employer's applicants and opens Not Found.
+      data:       { shift_id: app.shift_id },
     });
 
     return new Response(JSON.stringify({ ok: true }), {

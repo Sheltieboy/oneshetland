@@ -19,6 +19,7 @@
  *   E  mark-read / mark-all-read / unread count: own rows only, idempotent, count == visible unread
  *   F  preferences are self-only to read and to write
  *   G  should_notify (which reveals another user's settings) is service-role only
+ *   H  payloads are made openable by the already-shipped app build (merchant and employer notices)
  *
  * SAFETY — ISOLATED DATABASE ONLY
  * Requires PASS_PROOF_DSN and refuses a DSN mentioning Supabase. Run by `npm run test:isolated`.
@@ -38,6 +39,7 @@ const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const SPINE = join(MIG, '20260627000000_notifications_spine.sql');
 const SERVICE_ONLY = join(MIG, '20261031000000_should_notify_service_only.sql');
 const QUIET = join(MIG, '20261031010000_quiet_hours_stay_in_inbox.sql');
+const ROUTES = join(MIG, '20261031020000_notification_routes_for_shipped_build.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
@@ -108,6 +110,8 @@ before(() => {
        select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;`,
     'grant execute on function auth.uid() to anon, authenticated, service_role;',
     'create table public.profiles (id uuid primary key);',
+    'create table public.local_businesses (id uuid primary key, owner_id uuid);',
+    'create table public.book_bookings (id uuid primary key, business_id uuid);',
     createTable(BASELINE, 'CREATE TABLE public.notification_log ('),
     'alter table public.notification_log add primary key (id);',
     'alter table public.notification_log add foreign key (user_id) references public.profiles(id) on delete cascade;',
@@ -128,6 +132,7 @@ before(() => {
     'grant execute on all functions in schema public to anon, authenticated, service_role, public;',
     src(SERVICE_ONLY),
     src(QUIET),
+    src(ROUTES),
   ].join('\n'));
   assert.doesNotMatch(out, /ERROR/i, `fixture did not build:\n${out.slice(0, 1500)}`);
 
@@ -326,5 +331,87 @@ describe('G — should_notify is not a probe for other people\'s settings', () =
   });
   test('the trigger function is not callable by clients either', () => {
     assert.match(asUser(A, 'select public.notification_log_classify_skip()'), /permission denied|trigger functions can only be called as triggers/i);
+  });
+});
+
+describe('H — notifications the shipped app build can open', () => {
+  const OWN1 = 'f1f1f1f1-1111-4111-8111-f1f1f1f1f1f1';   // owns exactly one business
+  const OWN2 = 'f2f2f2f2-2222-4222-8222-f2f2f2f2f2f2';   // owns two
+  const BIZ1 = 'b1b1b1b1-1111-4111-8111-b1b1b1b1b1b1';
+  const BIZ2A = 'b2b2b2b2-aaaa-4aaa-8aaa-b2b2b2b2b2aa';
+  const BIZ2B = 'b2b2b2b2-bbbb-4bbb-8bbb-b2b2b2b2b2bb';
+  const BK_2B = '0b0b0b0b-bbbb-4bbb-8bbb-0b0b0b0b0b0b';   // a booking at OWN2's second business
+  const BK_X  = '0c0c0c0c-cccc-4ccc-8ccc-0c0c0c0c0c0c';   // a booking at someone else's business
+  const NOBODY = 'f3f3f3f3-3333-4333-8333-f3f3f3f3f3f3';
+  const SHIFT = '5a5a5a5a-5555-4555-8555-5a5a5a5a5a5a';
+
+  before(() => {
+    const r = raw(`
+      insert into public.profiles values ('${OWN1}'), ('${OWN2}'), ('${NOBODY}');
+      insert into public.local_businesses values ('${BIZ1}', '${OWN1}'), ('${BIZ2A}', '${OWN2}'), ('${BIZ2B}', '${OWN2}');
+      insert into public.book_bookings values ('${BK_2B}', '${BIZ2B}'), ('${BK_X}', '${BIZ1}');`);
+    assert.doesNotMatch(r, /ERROR/i, r);
+  });
+  const post = (uid: string, category: string, data: object, title: string) =>
+    asService(`insert into public.notification_log (user_id, category, title, body, status, data)
+               values ('${uid}', '${category}', '${title}', 'b', 'sent', '${JSON.stringify(data)}'::jsonb)`);
+  const dataOf = (title: string) => JSON.parse(scalar(`select data::text from public.notification_log where title='${title}'`));
+
+  test('THE DEFECT: a merchant sale notice (no id) gets the owner\'s only business, so build 144 can open it', () => {
+    post(OWN1, 'business.sale', { screen: 'local-business-dashboard' }, 'sale');
+    assert.deepEqual(dataOf('sale'), { screen: 'local-business-dashboard', business_id: BIZ1 });
+  });
+  test('a booking notice goes to the booking\'s own business even when the owner has several', () => {
+    post(OWN2, 'business.new_booking', { screen: 'local-business-dashboard', booking_id: BK_2B }, 'booking');
+    assert.equal(dataOf('booking').business_id, BIZ2B);
+    assert.equal(dataOf('booking').booking_id, BK_2B);
+  });
+  test('an owner of several businesses and no precise id is NOT guessed at', () => {
+    post(OWN2, 'business.payment_received', { screen: 'local-business-dashboard' }, 'multi');
+    assert.deepEqual(dataOf('multi'), { screen: 'local-business-dashboard' });
+  });
+  test('a booking at somebody else\'s business is never used to route', () => {
+    post(OWN2, 'business.new_booking', { screen: 'local-business-dashboard', booking_id: BK_X }, 'foreign');
+    assert.equal(dataOf('foreign').business_id, undefined);
+  });
+  test('a user with no business, or a malformed booking id, is left alone', () => {
+    post(NOBODY, 'business.sale', { screen: 'local-business-dashboard' }, 'nobiz');
+    post(OWN1, 'business.new_booking', { screen: 'local-business-dashboard', booking_id: 'not-a-uuid' }, 'badid');
+    assert.deepEqual(dataOf('nobiz'), { screen: 'local-business-dashboard' });
+    assert.equal(dataOf('badid').business_id, BIZ1, 'falls back to the only business, never errors');
+  });
+  test('an existing business_id is never overwritten', () => {
+    post(OWN1, 'business.sale', { screen: 'local-business-dashboard', business_id: BIZ2A }, 'keep');
+    assert.equal(dataOf('keep').business_id, BIZ2A);
+  });
+  test('THE DEFECT: the employer\'s broken screen is dropped when a shift is known, so the shift opens', () => {
+    post(OWN1, 'shifts.withdrawn', { screen: 'employer-applications', shift_id: SHIFT }, 'emp-shift');
+    assert.deepEqual(dataOf('emp-shift'), { shift_id: SHIFT });
+  });
+  test('without a shift id the employer gets the Shifts tab, never a missing screen', () => {
+    post(OWN1, 'shifts.new_application', { screen: 'employer-applications' }, 'emp-none');
+    post(OWN1, 'shifts.worker_checked_in', { screen: 'my-posted-shifts' }, 'chk-none');
+    assert.deepEqual(dataOf('emp-none'), { screen: 'shifts' });
+    assert.deepEqual(dataOf('chk-none'), { screen: 'shifts' });
+  });
+  test('every other notification is passed through untouched', () => {
+    for (const [i, d] of [{ screen: 'local-wallet' }, { screen: 'my-event-tickets', order_id: 'o' }, { hub_id: 'h' }, { screen: 'business-orders', business_id: 'b' }].entries()) {
+      post(OWN1, 'wallet.topup', d, `plain-${i}`);
+      assert.deepEqual(dataOf(`plain-${i}`), d);
+    }
+    asService(`insert into public.notification_log (user_id, category, title, body, status) values ('${OWN1}', 'games.streak', 'nodata', 'b', 'sent')`);
+    assert.equal(scalar(`select data is null from public.notification_log where title='nodata'`), 't');
+  });
+  test('the routing function is not callable by clients', () => {
+    assert.match(asUser(A, 'select public.notification_log_route_compat()'), /permission denied|trigger functions can only be called as triggers/i);
+  });
+  test('the backfill fixes notifications that are already in the inbox', () => {
+    raw(`insert into public.notification_log (user_id, category, title, body, status, data) values
+         ('${OWN1}', 'business.sale', 'old-sale', 'b', 'sent', '{"screen":"local-business-dashboard"}'::jsonb);`);
+    // inserted as superuser, so the trigger already fixed it; re-break it and re-run the backfill statements
+    raw(`update public.notification_log set data = '{"screen":"local-business-dashboard"}'::jsonb where title='old-sale'`);
+    const mig = readFileSync(ROUTES, 'utf8');
+    raw(mig.slice(mig.indexOf('update public.notification_log n')));
+    assert.equal(dataOf('old-sale').business_id, BIZ1);
   });
 });

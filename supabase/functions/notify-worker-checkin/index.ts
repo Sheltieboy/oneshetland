@@ -94,7 +94,8 @@ serve(async (req) => {
         categoryId: 'shifts.worker_checked_in',
         title:      'Worker checked in 📍',
         body:       `${workerName} has checked in for "${shift.title}"`,
-        data:       { screen: 'my-posted-shifts' },
+        // shift_id, not a `screen`: the app build in users' hands has no screen for an employer's applicants and opens Not Found.
+        data:       { shift_id: app.shift_id },
       });
     } else if (event === 'checked_out') {
       await sendUserPush(supabase, {
@@ -103,7 +104,8 @@ serve(async (req) => {
         categoryId: 'shifts.worker_checked_out',
         title:      'Shift finished ✅',
         body:       `${workerName} has finished their shift on "${shift.title}" — confirm when ready`,
-        data:       { screen: 'my-posted-shifts' },
+        // shift_id, not a `screen`: the app build in users' hands has no screen for an employer's applicants and opens Not Found.
+        data:       { shift_id: app.shift_id },
       });
     }
 
