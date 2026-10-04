@@ -1,10 +1,10 @@
 /**
  * components/DisplayText.tsx
  *
- * Hero typography for the section landings. Uses Fraunces (a variable
- * Google serif with character) when the @expo-google-fonts/fraunces
- * package is installed; gracefully falls back to system sans-serif
- * black-weight otherwise.
+ * Hero typography for the section landings. Uses Fraunces (a Google serif
+ * with character) from @expo-google-fonts/fraunces; falls back to system
+ * sans-serif black-weight only if a font file genuinely cannot be loaded
+ * (and says so in development).
  *
  * To enable Fraunces:
  *   npx expo install @expo-google-fonts/fraunces
@@ -25,13 +25,21 @@ import * as Font from 'expo-font';
 // during development. Wrap each require in its own try/catch so the
 // component never crashes the bundle if the install hasn't happened yet.
 
+/** A missing display font must be loud in development, never a silent fallback. */
+function warnMissing(name: string, e: unknown) {
+  if (__DEV__) console.warn(`[DisplayText] ${name} could not be loaded — headings will fall back to system sans-serif.`, e);
+}
+
 let fontBlack:    any = null;
 let fontSemiBold: any = null;
 let fontItalic:   any = null;
 
-try { fontBlack    = require('@expo-google-fonts/fraunces/Fraunces_900Black.ttf');         } catch { /* not installed */ }
-try { fontSemiBold = require('@expo-google-fonts/fraunces/Fraunces_700Bold.ttf');          } catch { /* not installed */ }
-try { fontItalic   = require('@expo-google-fonts/fraunces/Fraunces_900Black_Italic.ttf');  } catch { /* not installed */ }
+// The package (v0.4+) keeps each weight in its own folder: '<weight>/Fraunces_<weight>.ttf'. These paths used to be
+// the flat 'Fraunces_900Black.ttf' form, which does not exist in the installed package, so every require threw, was
+// swallowed as "not installed", and the whole app silently rendered bold sans-serif instead of Fraunces.
+try { fontBlack    = require('@expo-google-fonts/fraunces/900Black/Fraunces_900Black.ttf');                } catch (e) { warnMissing('Fraunces_900Black', e); }
+try { fontSemiBold = require('@expo-google-fonts/fraunces/700Bold/Fraunces_700Bold.ttf');                   } catch (e) { warnMissing('Fraunces_700Bold', e); }
+try { fontItalic   = require('@expo-google-fonts/fraunces/900Black_Italic/Fraunces_900Black_Italic.ttf');   } catch (e) { warnMissing('Fraunces_900Black_Italic', e); }
 
 // Module-level cache so the load only fires once across the whole app.
 let loaded = false;

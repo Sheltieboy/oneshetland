@@ -186,14 +186,15 @@ describe('For You surfaces the entitlement once, without duplicating the actiona
   });
 
   test('mobile home tile copy names the action ("book"), and still routes through the single My Gifts destination', () => {
-    const home = read('app/(tabs)/index.tsx');
-    const tile = home.slice(home.indexOf("if (personal?.giftToClaim)"), home.indexOf("// ── 1. GPS"));
+    const forYou = read('components/home-local/forYou.ts');
+    const tile = forYou.slice(forYou.indexOf("if (h?.giftToClaim)"), forYou.indexOf("if (i.walletPence"));
     assert.match(tile, /You have a gift to book/);
-    assert.match(tile, /router\.push\('\/local-my-gifts'\)/);
+    assert.match(tile, /pathname: '\/local-my-gifts'/);
   });
 
-  test('the mobile tile id stays in the LIVE_TILE_IDS set — never demoted below dated/ranked content', () => {
-    const home = read('app/(tabs)/index.tsx');
-    assert.match(home, /LIVE_TILE_IDS = new Set\(\[[^\]]*'my-gift'/);
+  test('the mobile gift tile is one of the person\'s own live commitments — built before wallet, nearby and saved items', () => {
+    const forYou = read('components/home-local/forYou.ts');
+    assert.ok(forYou.indexOf("id: 'gift'") > 0 && forYou.indexOf("id: 'gift'") < forYou.indexOf("id: 'wallet'"));
+    assert.ok(forYou.indexOf("id: 'gift'") < forYou.indexOf("id: 'nearby'"));
   });
 });

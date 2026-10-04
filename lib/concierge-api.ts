@@ -1,27 +1,36 @@
 /**
  * lib/concierge-api.ts
  *
- * Fetchers for the Home concierge. Each one tries the real DB first
- * and falls back to the placeholder seed data when the table is empty
- * or unreachable — so the Home tab stays populated and on-brand even
- * before notices, events and jobs have any real entries.
- *
- * Once data starts flowing into the new tables, the seed disappears
- * silently. No code changes needed in the screen.
+ * Fetchers for the Home / Local screens. Each reads the real tables and returns an empty list when there is nothing
+ * (or the request fails) — never placeholder content. A screen collapses a section that has no data.
  */
 
 import { supabase } from './supabase';
-import {
-  SAMPLE_EVENTS, SAMPLE_NOTICES, SAMPLE_JOBS, SAMPLE_SHIFTS,
-  SampleEvent, SampleNotice, SampleJob, SampleShift,
-  todaysSpik,
-} from './seed-content';
+import { todaysSpik } from './seed-content';
 
-// ── Types — keep the same shape the screen already renders ──────────────────
+// ── Types ───────────────────────────────────────────────────────────────────
 
-export type HomeEvent   = SampleEvent   & { source: 'db' | 'seed' };
-export type HomeNotice  = SampleNotice  & {
-  source:       'db' | 'seed';
+export interface HomeEvent {
+  id:           string;
+  title:        string;
+  starts_at:    string;
+  venue:        string | null;
+  category:     string | null;
+  cover_url?:   string | null;
+  is_featured?: boolean;
+  price_text?:  string | null;
+  has_tickets?: boolean;
+  source:       'db';
+}
+export interface HomeNotice {
+  id:           string;
+  severity:     'urgent' | 'community' | 'info';
+  title:        string;
+  body:         string;
+  locality:     string | null;
+  posted_at:    string;
+  publisher:    string;
+  source:       'db';
   // Publisher branding (hub or business) + optional linked campaign.
   logo_url?:    string | null;
   brand_color?: string | null;
@@ -30,9 +39,7 @@ export type HomeNotice  = SampleNotice  & {
   campaign?:    { id: string; raised_pence: number; goal_pence: number; donor_count: number; status: string } | null;
   event_id?:    string | null;
   event?:       { id: string; title: string; starts_at: string; venue: string | null; cover_url: string | null; has_tickets: boolean } | null;
-};
-export type HomeJob     = SampleJob     & { source: 'db' | 'seed' };
-export type HomeShift   = SampleShift   & { source: 'db' | 'seed' };
+}
 
 export interface SpikDaily {
   word:    string;
@@ -67,11 +74,11 @@ export async function fetchHomeEvents(limit = 6): Promise<HomeEvent[]> {
       .order('starts_at',   { ascending: true })
       .limit(limit);
     if (!error && data && data.length > 0) {
-      return data.map((r: any) => ({ ...r, source: 'db' }));
+      return data.map((r: any) => ({ ...r, source: 'db' as const }));
     }
-  } catch { /* fall through */ }
+  } catch { /* nothing to show */ }
 
-  return SAMPLE_EVENTS.slice(0, limit).map(e => ({ ...e, source: 'seed' }));
+  return [];
 }
 
 // ── Notices ────────────────────────────────────────────────────────────────
@@ -144,9 +151,9 @@ export async function fetchHomeNotices(opts: {
         source:    'db' as const,
       }));
     }
-  } catch { /* fall through */ }
+  } catch { /* nothing to show */ }
 
-  return SAMPLE_NOTICES.slice(0, limit).map(n => ({ ...n, source: 'seed' }));
+  return [];
 }
 
 function scoreLocality(noticeLocality: string | null, viewerParish: string): number {
@@ -156,65 +163,6 @@ function scoreLocality(noticeLocality: string | null, viewerParish: string): num
   if (l === 'all-shetland')            return 1; // archipelago-wide
   if (l.includes(viewerParish.split(' ')[0])) return 2; // partial
   return 3;
-}
-
-// ── Jobs ────────────────────────────────────────────────────────────────────
-
-export async function fetchHomeJobs(limit = 2): Promise<HomeJob[]> {
-  try {
-    const { data, error } = await supabase
-      .from('jobs')
-      .select('id, title, location, pay_text, posted_at, posted_as_business_id, employer_id')
-      .eq('is_hidden', false)
-      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-      .order('is_featured', { ascending: false })
-      .order('posted_at',   { ascending: false })
-      .limit(limit);
-    if (!error && data && data.length > 0) {
-      return data.map((r: any) => ({
-        id:        r.id,
-        title:     r.title,
-        employer:  r.posted_as_business_id ? 'Local business' : 'Member',
-        location:  r.location ?? '',
-        pay:       r.pay_text ?? '',
-        posted_at: r.posted_at,
-        source:    'db' as const,
-      }));
-    }
-  } catch { /* fall through */ }
-
-  return SAMPLE_JOBS.slice(0, limit).map(j => ({ ...j, source: 'seed' }));
-}
-
-// ── Shifts — reuse existing shifts table ───────────────────────────────────
-
-export async function fetchHomeShifts(limit = 2): Promise<HomeShift[]> {
-  try {
-    const { data, error } = await supabase
-      .from('shifts')
-      .select('id, title, pay_type, hourly_pay_pence, fixed_pay_pence, start_at, employer_id')
-      .eq('status', 'open')
-      .order('start_at', { ascending: true })
-      .limit(limit);
-    if (!error && data && data.length > 0) {
-      return data.map((r: any) => ({
-        id:        r.id,
-        title:     r.title,
-        employer:  'Employer',
-        when:      r.start_at ? new Date(r.start_at).toLocaleString(undefined, {
-          weekday: 'short', hour: 'numeric', minute: '2-digit',
-        }) : 'Flexible',
-        pay:
-          r.pay_type === 'hourly'     ? `£${((r.hourly_pay_pence ?? 0) / 100).toFixed(2)}/hr`
-          : r.pay_type === 'fixed'    ? `£${((r.fixed_pay_pence ?? 0) / 100).toFixed(0)}`
-          : r.pay_type === 'volunteer' ? 'Volunteer'
-          : 'Discuss',
-        source:    'db' as const,
-      }));
-    }
-  } catch { /* fall through */ }
-
-  return SAMPLE_SHIFTS.slice(0, limit).map(s => ({ ...s, source: 'seed' }));
 }
 
 // ── Spik daily ─────────────────────────────────────────────────────────────

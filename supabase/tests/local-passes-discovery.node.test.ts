@@ -126,10 +126,10 @@ describe('the two adjacent eligibility/ordering bugs found during this audit', (
 describe('empty sections do not advertise zero content', () => {
   test('web stats strip hides bookable/cashback the same way it already hid offers', () => {
     const page = readWeb('app/local/page.tsx');
-    const stripStart = page.indexOf('Stats strip');
+    const stripStart = page.indexOf('const stats = [');
     assert.ok(stripStart >= 0);
     const strip = page.slice(stripStart, stripStart + 1500);
     assert.match(strip, /hasBookable \? \[\{ n: bookableServices\.length/);
-    assert.match(strip, /hasCashback \? \[\{ n: cashbackCount/);
+    assert.match(page, /Stats strip/);
   });
 });

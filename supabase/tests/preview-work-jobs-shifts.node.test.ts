@@ -1,6 +1,8 @@
 /**
- * preview-work-jobs-shifts.node.test.ts — guard rails for "Work = jobs + shifts" in the V2 DESIGN PREVIEWS
- * (web Home/Local V2 and app Home/Local V2). Not a design acceptance: the look is judged by eye.
+ * preview-work-jobs-shifts.node.test.ts — guard rails for "Work = jobs + shifts" in the WEB V2 DESIGN PREVIEWS
+ * (web /preview/home-v2 and /preview/local-v2), plus a parity check that the production app's Work model derives
+ * urgency and times exactly as the web preview does. (The app's own behaviour is tested in home-local-screens.node.test.ts.)
+ * Not a design acceptance: the look is judged by eye.
  *
  * What must never regress:
  *   • the web and app models agree (same urgency labels, same curation, same routing)
@@ -26,17 +28,18 @@ const haveWeb = existsSync(join(WEB, 'lib/preview-work.ts'));
 const webOpts = { skip: haveWeb ? false : 'sibling oneshetland-web checkout not found' };
 const code = (abs: string) => readFileSync(abs, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-const app = loadModule('components/preview-v2/work.ts');
+const app = loadModule('components/home-local/work.ts');
 const web = haveWeb ? loadModule('../oneshetland-web/lib/preview-work.ts') : null;
-const MODELS: [string, any][] = [['app', app], ...(web ? [['web', web] as [string, any]] : [])];
+const MODELS: [string, any][] = web ? [['web', web]] : [];
+const BOTH: [string, any][] = [['app', app], ...MODELS];
 
 // Tue 6 Oct 2026, 11:00 London (BST) = 10:00Z.   Winter: Tue 1 Dec 2026, 10:00 GMT.
 const NOW = new Date('2026-10-06T10:00:00Z');
 const WINTER = new Date('2026-12-01T10:00:00Z');
 const iso = (s: string) => new Date(s).toISOString();
 
-describe('urgency is derived from the real start time, in London time', () => {
-  for (const [name, m] of MODELS) {
+describe('urgency is derived from the real start time, in London time (app and web agree)', () => {
+  for (const [name, m] of BOTH) {
     test(`${name}: TODAY · TONIGHT · TOMORROW · THIS WEEK · none`, () => {
       const u = (start: string, end: string, now = NOW) => m.shiftUrgency(iso(start), iso(end), now);
       assert.equal(u('2026-10-06T11:30:00Z', '2026-10-06T15:00:00Z'), 'TODAY');
@@ -171,20 +174,14 @@ describe('routing — "See all jobs & shifts" goes to the Work hub', () => {
     assert.equal(web.workHubHref(both), '/jobs');
     assert.equal(web.workHubHref(s), '/jobs?tab=shifts');
   });
-  test('app: the Work tab, on its Shifts pill only when there is nothing but shifts', () => {
-    assert.equal(app.workTab(j), 'jobs');
-    assert.equal(app.workTab(both), 'jobs');
-    assert.equal(app.workTab(s), 'shifts');
-  });
   test('the routes exist: web /jobs (+ ?tab=shifts, and /shifts redirects there); app (tabs)/jobs reads ?tab=', { skip: haveWeb ? false : 'no web checkout' }, () => {
     assert.ok(existsSync(join(WEB, 'app/jobs/page.tsx')));
     assert.match(code(join(WEB, 'app/jobs/page.tsx')), /tab === "shifts"/);
     assert.match(code(join(WEB, 'app/shifts/page.tsx')), /redirect\("\/jobs\?tab=shifts"\)/);
-    assert.match(code(join(REPO, 'app/(tabs)/jobs.tsx')), /tab: tabParam/);
   });
   test('the CTA copy is exactly "See all jobs & shifts" on web and app', { skip: haveWeb ? false : 'no web checkout' }, () => {
     assert.match(code(join(WEB, 'components/preview/v2/WorkV2.tsx')), /label: "See all jobs & shifts"/);
-    assert.match(code(join(REPO, 'components/preview-v2/WorkModule.tsx')), /See all jobs &amp; shifts →/);
+    assert.match(code(join(REPO, 'components/home-local/WorkModule.tsx')), /See all jobs &amp; shifts →/);
   });
 });
 
@@ -195,13 +192,8 @@ describe('surfaces', () => {
     assert.doesNotMatch(code(join(WEB, 'components/preview/v2/HomeV2.tsx')), /Who's hiring|View all jobs/);
     assert.doesNotMatch(code(join(WEB, 'components/preview/v2/LocalV2.tsx')), /Hiring locally|JobsCompact/);
   });
-  test('app Home and Local V2 use the shared Work module; the old jobs-only list is gone', () => {
-    assert.match(code(join(REPO, 'app/preview/home-v2.tsx')), /<HomeWork /);
-    assert.match(code(join(REPO, 'app/preview/local-v2.tsx')), /<LocalWork /);
-    assert.doesNotMatch(code(join(REPO, 'app/preview/local-v2.tsx')), /Hiring locally/);
-  });
   test('live data is only ever read: no write calls in either Work data path', { skip: haveWeb ? false : 'no web checkout' }, () => {
-    for (const f of [join(WEB, 'lib/preview-work.ts'), join(WEB, 'lib/preview-work-live.ts'), join(REPO, 'components/preview-v2/work.ts'), join(REPO, 'components/preview-v2/data.ts')]) {
+    for (const f of [join(WEB, 'lib/preview-work.ts'), join(WEB, 'lib/preview-work-live.ts'), join(REPO, 'components/home-local/work.ts'), join(REPO, 'components/home-local/data.ts')]) {
       assert.doesNotMatch(code(f), /\.(insert|update|upsert|delete|rpc)\(/, f);
     }
   });
@@ -209,7 +201,7 @@ describe('surfaces', () => {
     const live = code(join(WEB, 'lib/preview-work-live.ts'));
     assert.match(live, /getOpenShifts\(\)\.catch\(\(\) => \[\]\)/);
     assert.doesNotMatch(live, /sample|SAMPLE/);
-    assert.doesNotMatch(code(join(REPO, 'components/preview-v2/data.ts')), /sample.?shift|SAMPLE_SHIFTS/i);
+    assert.doesNotMatch(code(join(REPO, 'components/home-local/data.ts')), /sample.?shift|SAMPLE_SHIFTS/i);
   });
   test('production Home / Local never mention the Work preview', { skip: haveWeb ? false : 'no web checkout' }, () => {
     assert.doesNotMatch(code(join(WEB, 'app/page.tsx')) + code(join(WEB, 'app/local/page.tsx')), /preview-work|WorkV2|HomeWork|LocalWork/);

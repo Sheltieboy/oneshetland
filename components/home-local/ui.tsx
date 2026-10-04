@@ -2,12 +2,13 @@ import React, { useId, useState } from 'react';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { View, Text, Image, Pressable, ScrollView, StyleSheet, LayoutChangeEvent, ViewStyle, StyleProp } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import { DisplayText } from './PreviewDisplayText';
+import { useRouter } from 'expo-router';
+import { DisplayText } from '../DisplayText';
 import { PHOTOS } from './images';
-import { PILLARS, density, type Merch, type Pillar, type Crop } from './model';
+import { PILLARS, PILLAR_ROUTE, PILLAR_CTA_ROUTE, density, type Merch, type Pillar, type Crop } from './model';
 
 /**
- * Shared building blocks for the App Home V2 / Local V2 design previews. Preview only.
+ * Shared building blocks for the Home and Local screens.
  *
  *   CropImage   exact crop of a photograph (one still-life becomes a dozen products)
  *   Scrim       SVG gradient overlay (the app has no gradient library)
@@ -63,14 +64,6 @@ export function CropImage({ photo, uri, crop, style }: { photo?: keyof typeof PH
 
 /* ── Small parts ──────────────────────────────────────────────────────────── */
 
-export function TestRibbon({ tag }: { tag: 'TEST' | 'QA' }) {
-  return (
-    <View style={s.ribbon}>
-      <Text style={s.ribbonText}>{tag} · ADMIN ONLY</Text>
-    </View>
-  );
-}
-
 export function Chip({ label, color = '#fff', bg = 'rgba(255,255,255,0.2)', size = 10 }: { label: string; color?: string; bg?: string; size?: number }) {
   return (
     <View style={{ alignSelf: 'flex-start', backgroundColor: bg, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 }}>
@@ -105,20 +98,27 @@ export function Rail({ children, gap = 12 }: { children: React.ReactNode; gap?: 
 
 /* ── One item ─────────────────────────────────────────────────────────────── */
 
-const qa = (m: Merch): ViewStyle => (m.tag ? { borderWidth: 2, borderStyle: 'dashed', borderColor: '#FBBF24' } : {});
+export function MerchCard(props: { m: Merch; dark?: boolean; width?: number; notch?: string }) {
+  const router = useRouter();
+  const { route } = props.m;
+  return (
+    <Pressable disabled={!route} onPress={() => route && router.push({ pathname: route.pathname as never, params: route.params })} accessibilityRole="button" accessibilityLabel={`${props.m.title}, ${props.m.business}`}>
+      <MerchBody {...props} />
+    </Pressable>
+  );
+}
 
-export function MerchCard({ m, dark = false, width, notch = '#F6F1E8' }: { m: Merch; dark?: boolean; width?: number; notch?: string }) {
+function MerchBody({ m, dark = false, width, notch = '#F6F1E8' }: { m: Merch; dark?: boolean; width?: number; notch?: string }) {
   const p = PILLARS[m.pillar];
   if (m.pillar === 'shop') {
     const w = width ?? 152;
     return (
-      <View style={[{ width: w, borderRadius: 18 }, qa(m)]}>
+      <View style={[{ width: w, borderRadius: 18 }]}>
         <View style={{ width: w, height: w * 1.25, borderRadius: 16, overflow: 'hidden' }}>
           {m.photo || m.uri
             ? <CropImage photo={m.photo} uri={m.uri} crop={m.crop} style={StyleSheet.absoluteFill} />
             : <View style={[StyleSheet.absoluteFill, { backgroundColor: p.color, alignItems: 'center', justifyContent: 'center', padding: 10 }]}><DisplayText weight="bold" style={{ color: '#fff', fontSize: 16, textAlign: 'center' }}>{m.title}</DisplayText></View>}
           <Scrim dir="up" stops={fade('#000', 0.45, 0.1, 0)} />
-          {!!m.tag && <TestRibbon tag={m.tag} />}
           {!!m.price && <View style={s.pricePill}><Text style={s.pricePillText}>{m.price}</Text></View>}
         </View>
         <DisplayText weight="bold" numberOfLines={2} style={{ marginTop: 8, fontSize: 16, lineHeight: 19, color: dark ? '#fff' : '#0F1C26' }}>{m.title}</DisplayText>
@@ -129,10 +129,9 @@ export function MerchCard({ m, dark = false, width, notch = '#F6F1E8' }: { m: Me
   if (m.pillar === 'offers') {
     const w = width ?? 224;
     return (
-      <View style={[{ width: w, height: 168, borderRadius: 18, overflow: 'hidden', backgroundColor: p.color, padding: 16, justifyContent: 'space-between' }, qa(m)]}>
+      <View style={[{ width: w, height: 168, borderRadius: 18, overflow: 'hidden', backgroundColor: p.color, padding: 16, justifyContent: 'space-between' }]}>
         <Scrim dir="diag" stops={[{ at: 0, color: p.color, opacity: 1 }, { at: 1, color: p.deep, opacity: 1 }]} />
-        {!!m.tag && <TestRibbon tag={m.tag} />}
-        <DisplayText style={{ color: '#fff', fontSize: 34, lineHeight: 36, marginTop: m.tag ? 14 : 0 }}>{m.badge ?? 'Offer'}</DisplayText>
+        <DisplayText style={{ color: '#fff', fontSize: 34, lineHeight: 36, marginTop: 0 }}>{m.badge ?? 'Offer'}</DisplayText>
         <View>
           <Text numberOfLines={2} style={{ color: '#fff', fontSize: 15, fontWeight: '700', lineHeight: 19 }}>{m.title}</Text>
           <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '600', marginTop: 3 }}>{m.business}{m.meta ? ` · ${m.meta}` : ''}</Text>
@@ -146,10 +145,9 @@ export function MerchCard({ m, dark = false, width, notch = '#F6F1E8' }: { m: Me
     const w = width ?? 208;
     const mins = m.meta?.match(/\d+/)?.[0];
     return (
-      <View style={[{ width: w, borderRadius: 18, overflow: 'hidden', backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E9EF' }, qa(m)]}>
+      <View style={[{ width: w, borderRadius: 18, overflow: 'hidden', backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E9EF' }]}>
         <View style={{ height: 78, backgroundColor: p.color, padding: 12, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <Scrim dir="diag" stops={[{ at: 0, color: p.color, opacity: 1 }, { at: 1, color: p.deep, opacity: 1 }]} />
-          {!!m.tag && <TestRibbon tag={m.tag} />}
           <DisplayText style={{ color: '#fff', fontSize: 40, lineHeight: 42 }}>{mins ?? '·'}<Text style={{ fontSize: 14, fontWeight: '700' }}> min</Text></DisplayText>
           {!!m.badge && <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{m.badge}</Text></View>}
         </View>
@@ -166,12 +164,11 @@ export function MerchCard({ m, dark = false, width, notch = '#F6F1E8' }: { m: Me
   }
   const w = width ?? 268;
   return (
-    <View style={[{ width: w, height: 188, borderRadius: 18, overflow: 'hidden' }, qa(m)]}>
+    <View style={[{ width: w, height: 188, borderRadius: 18, overflow: 'hidden' }]}>
       {m.photo || m.uri
         ? <CropImage photo={m.photo} uri={m.uri} crop={m.crop} style={StyleSheet.absoluteFill} />
         : <View style={[StyleSheet.absoluteFill, { backgroundColor: p.color }]} />}
       <Scrim dir="up" stops={fade('#000', 0.82, 0.25, 0)} />
-      {!!m.tag && <TestRibbon tag={m.tag} />}
       {!!m.price && <View style={[s.pricePill, { left: undefined, right: 10, top: 10, bottom: undefined }]}><Text style={s.pricePillText}>{m.price}</Text></View>}
       <View style={{ position: 'absolute', left: 14, right: 14, bottom: 12 }}>
         <DisplayText weight="bold" numberOfLines={2} style={{ color: '#fff', fontSize: 19, lineHeight: 21 }}>{m.title}</DisplayText>
@@ -184,6 +181,7 @@ export function MerchCard({ m, dark = false, width, notch = '#F6F1E8' }: { m: Me
 /* ── A pillar at any inventory level ──────────────────────────────────────── */
 
 export function PillarEmpty({ pillar, width }: { pillar: Pillar; width: number }) {
+  const router = useRouter();
   const p = PILLARS[pillar];
   return (
     <View style={{ marginHorizontal: SIDE, width: width - SIDE * 2, borderRadius: 22, overflow: 'hidden', padding: 20, minHeight: 230, justifyContent: 'flex-end' }}>
@@ -192,21 +190,21 @@ export function PillarEmpty({ pillar, width }: { pillar: Pillar; width: number }
       <Chip label="Opening soon" />
       <DisplayText weight="bold" style={{ color: '#fff', fontSize: 26, lineHeight: 28, marginTop: 10 }}>{p.emptyTitle}</DisplayText>
       <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 14, lineHeight: 20, marginTop: 6 }}>{p.emptyBody}</Text>
-      <View style={{ alignSelf: 'flex-start', backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 16, paddingVertical: 9, marginTop: 14 }}>
+      <Pressable onPress={() => router.push(PILLAR_CTA_ROUTE as never)} style={{ alignSelf: 'flex-start', backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 16, paddingVertical: 9, marginTop: 14 }}>
         <Text style={{ fontSize: 13, fontWeight: '800', color: '#0F1C26' }}>{p.cta} →</Text>
-      </View>
+      </Pressable>
     </View>
   );
 }
 
 function FeatureTile({ m, width }: { m: Merch; width: number }) {
+  const router = useRouter();
   const p = PILLARS[m.pillar];
   const w = width - SIDE * 2;
   return (
-    <View style={[{ marginHorizontal: SIDE, width: w, height: 300, borderRadius: 22, overflow: 'hidden', backgroundColor: p.color }, qa(m)]}>
+    <Pressable disabled={!m.route} onPress={() => m.route && router.push({ pathname: m.route.pathname as never, params: m.route.params })} style={[{ marginHorizontal: SIDE, width: w, height: 300, borderRadius: 22, overflow: 'hidden', backgroundColor: p.color }]}>
       {m.photo || m.uri ? <CropImage photo={m.photo} uri={m.uri} crop={m.crop} style={StyleSheet.absoluteFill} /> : <Scrim dir="diag" stops={[{ at: 0, color: p.color, opacity: 1 }, { at: 1, color: p.deep, opacity: 1 }]} />}
       <Scrim dir="up" stops={fade('#000', 0.85, 0.25, 0.02)} />
-      {!!m.tag && <TestRibbon tag={m.tag} />}
       {!(m.photo || m.uri) && (m.pillar === 'book' ? m.meta : m.badge) ? <DisplayText style={{ position: 'absolute', right: 18, top: 16, color: '#fff', fontSize: 46 }}>{m.pillar === 'book' ? m.meta : m.badge}</DisplayText> : null}
       <View style={{ position: 'absolute', left: 18, right: 18, bottom: 18 }}>
         <Chip label={p.label} />
@@ -214,16 +212,18 @@ function FeatureTile({ m, width }: { m: Merch; width: number }) {
         <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 13, fontWeight: '600', marginTop: 4 }}>{m.business}{m.meta ? ` · ${m.meta}` : ''}</Text>
         {!!m.price && <View style={{ alignSelf: 'flex-start', backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 14, paddingVertical: 6, marginTop: 10 }}><Text style={{ fontSize: 14, fontWeight: '900', color: '#0F1C26' }}>{m.price}</Text></View>}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
 export function PillarSection({ pillar, items, width, dark = false, notch }: { pillar: Pillar; items: Merch[]; width: number; dark?: boolean; notch?: string }) {
+  const router = useRouter();
   const p = PILLARS[pillar];
   const d = density(items.length);
+  const seeAll = () => router.push(PILLAR_ROUTE[pillar] as never);
   return (
     <View>
-      <SectionHead eyebrow={p.short} title={p.heading} color={p.color} light={dark} action={d === 'none' ? undefined : d === 'many' ? `See all ${items.length}` : 'See all'} />
+      <SectionHead eyebrow={p.short} title={p.heading} color={p.color} light={dark} action={d === 'none' ? undefined : d === 'many' ? `See all ${items.length}` : 'See all'} onAction={seeAll} />
       {d === 'none' && <PillarEmpty pillar={pillar} width={width} />}
       {d === 'few' && (
         <View style={{ gap: 12 }}>
@@ -232,23 +232,15 @@ export function PillarSection({ pillar, items, width, dark = false, notch }: { p
         </View>
       )}
       {(d === 'rail' || d === 'many') && (
-        <View style={{ gap: 12 }}>
+        <Rail>
+          {items.slice(0, 12).map((m) => <MerchCard key={m.id} m={m} dark={dark} notch={notch} />)}
           {d === 'many' && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: SIDE, gap: 8 }}>
-              <View style={{ backgroundColor: p.color, borderRadius: 99, paddingHorizontal: 13, paddingVertical: 7 }}><Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>All {items.length}</Text></View>
-              {p.cats.map((c) => <View key={c} style={{ borderWidth: 1, borderColor: dark ? 'rgba(255,255,255,0.35)' : '#CBD5E1', borderRadius: 99, paddingHorizontal: 13, paddingVertical: 7 }}><Text style={{ color: dark ? 'rgba(255,255,255,0.9)' : '#374151', fontSize: 12, fontWeight: '700' }}>{c}</Text></View>)}
-            </ScrollView>
+            <Pressable onPress={seeAll} style={{ width: 130, borderRadius: 18, borderWidth: 2, borderStyle: 'dashed', borderColor: dark ? 'rgba(255,255,255,0.5)' : p.color, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+              <Text style={{ color: dark ? '#fff' : p.color, fontSize: 13, fontWeight: '800', textAlign: 'center' }}>See all {items.length}</Text>
+              <Text style={{ color: dark ? '#fff' : p.color, fontSize: 24, marginTop: 4 }}>→</Text>
+            </Pressable>
           )}
-          <Rail>
-            {items.slice(0, 12).map((m) => <MerchCard key={m.id} m={m} dark={dark} notch={notch} />)}
-            {d === 'many' && (
-              <View style={{ width: 130, borderRadius: 18, borderWidth: 2, borderStyle: 'dashed', borderColor: dark ? 'rgba(255,255,255,0.5)' : p.color, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-                <Text style={{ color: dark ? '#fff' : p.color, fontSize: 13, fontWeight: '800', textAlign: 'center' }}>See all {items.length}</Text>
-                <Text style={{ color: dark ? '#fff' : p.color, fontSize: 24, marginTop: 4 }}>→</Text>
-              </View>
-            )}
-          </Rail>
-        </View>
+        </Rail>
       )}
     </View>
   );
@@ -256,11 +248,11 @@ export function PillarSection({ pillar, items, width, dark = false, notch }: { p
 
 /* ── Gateway tile (photo-led) ─────────────────────────────────────────────── */
 
-export function GatewayTile({ label, line, chip, photo, crop, from, to, w, h, big = false, children }: {
-  label: string; line: string; chip: string; photo?: keyof typeof PHOTOS; crop?: Crop; from: string; to: string; w: number; h: number; big?: boolean; children?: React.ReactNode;
+export function GatewayTile({ label, line, chip, photo, crop, from, to, w, h, big = false, children, onPress }: {
+  label: string; line: string; chip: string; photo?: keyof typeof PHOTOS; crop?: Crop; from: string; to: string; w: number; h: number; big?: boolean; children?: React.ReactNode; onPress?: () => void;
 }) {
   return (
-    <View style={{ width: w, height: h, borderRadius: 20, overflow: 'hidden', backgroundColor: from }}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}. ${line}`} style={{ width: w, height: h, borderRadius: 20, overflow: 'hidden', backgroundColor: from }}>
       {photo ? <CropImage photo={photo} crop={crop} style={StyleSheet.absoluteFill} /> : <Scrim dir="diag" stops={[{ at: 0, color: from, opacity: 1 }, { at: 1, color: to, opacity: 1 }]} />}
       <Scrim dir="up" stops={[{ at: 0, color: to, opacity: 0.95 }, { at: 0.5, color: to, opacity: 0.55 }, { at: 1, color: from, opacity: 0.1 }]} />
       {children}
@@ -271,7 +263,7 @@ export function GatewayTile({ label, line, chip, photo, crop, from, to, w, h, bi
           <Text style={{ color: '#fff', fontSize: 10.5, fontWeight: '800' }}>{chip} →</Text>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

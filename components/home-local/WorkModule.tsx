@@ -2,13 +2,13 @@
  * WorkModule — jobs AND shifts as one "Work in Shetland" proposition for App Home V2 / Local V2.
  * Formal vacancies keep the established green vacancy presentation; a shift is told apart at a glance by an amber time
  * block (the amber the Work tab already uses for Shifts), a clock cue, a derived urgency label and a rate.
- * PREVIEW ONLY. Real items open their real detail screens; sample items open the Work tab (they have no real record).
+ * Real items open their real detail screens; the buttons open the Work tab.
  */
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { DisplayText } from './PreviewDisplayText';
+import { DisplayText } from '../DisplayText';
 import { SectionHead, SIDE } from './ui';
 import {
   clockRange, curateHome, curateLocal, shiftUrgency, shortDate, workTab,
@@ -25,8 +25,8 @@ function useGo() {
   const hub = (tab: 'jobs' | 'shifts') => router.push({ pathname: '/(tabs)/jobs' as never, params: { tab } });
   return {
     hub,
-    shift: (s: WorkShift) => (s.sample ? hub('shifts') : router.push({ pathname: '/shift-detail' as never, params: { id: s.id } })),
-    job: (j: WorkJob) => (j.sample ? hub('jobs') : router.push({ pathname: '/job/[id]' as never, params: { id: j.id } })),
+    shift: (s: WorkShift) => router.push({ pathname: '/shift-detail' as never, params: { id: s.id } }),
+    job: (j: WorkJob) => router.push({ pathname: '/job/[id]' as never, params: { id: j.id } }),
   };
 }
 

@@ -179,7 +179,7 @@ describe('counters and copy reflect what a customer can actually do, not a raw b
   test('web: the pillar is gated on hasBookable (real services), and hides like every other pillar when there are none', () => {
     const page = readWeb('app/local/page.tsx');
     const pillars = page.slice(page.indexOf('const pillars ='), page.indexOf('];') + 2);
-    assert.match(pillars, /hasBookable\s*\n\s*\? \[\{ emoji: "📅", title: "Book now"/);
+    assert.match(pillars, /hasBookable \? \[\{ emoji: "📅", title: "Book"/);   // launch terminology: "Book", not "Book now"
   });
 });
 
