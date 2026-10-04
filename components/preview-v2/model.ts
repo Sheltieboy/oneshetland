@@ -72,6 +72,7 @@ export const PILLAR_ORDER: Pillar[] = ['shop', 'offers', 'book', 'experiences'];
 type Base = Omit<Merch, 'id' | 'pillar'>;
 const SHOP: Base[] = [
   { title: 'Fair Isle yoke jumper', business: 'Sample Knitwear Studio', price: '£185', photo: 'shopping', crop: { cx: 0.24, cy: 0.2, z: 2.3 }, category: 'Knitwear' },
+  { title: 'Harbour art print', business: 'Sample Print Studio', price: '£22', photo: 'boats', crop: { cx: 0.62, cy: 0.5, z: 1.5 }, category: 'Art & prints' },
   { title: 'Shetland dry gin, 70cl', business: 'Sample Distillery', price: '£38', photo: 'shopping', crop: { cx: 0.44, cy: 0.38, z: 2.6 }, category: 'Food & drink' },
   { title: 'Hand-knitted mittens', business: 'Sample Knitwear Studio', price: '£42', photo: 'shopping', crop: { cx: 0.12, cy: 0.68, z: 2.4 }, category: 'Knitwear' },
   { title: 'Smoked salmon, whole side', business: 'Sample Smokehouse', price: '£24', photo: 'shopping', crop: { cx: 0.46, cy: 0.76, z: 2.4 }, category: 'Food & drink' },
@@ -82,7 +83,6 @@ const SHOP: Base[] = [
   { title: 'Wool, 4-ply skein', business: 'Sample Spinners', price: '£14', photo: 'shopping', crop: { cx: 0.08, cy: 0.3, z: 2.8 }, category: 'Craft' },
   { title: 'Mussels, 1kg net', business: 'Sample Shellfish Co.', price: '£8', photo: 'shopping', crop: { cx: 0.72, cy: 0.2, z: 2.4 }, category: 'Food & drink' },
   { title: 'Handmade pottery jug', business: 'Sample Pottery', price: '£36', photo: 'shopping', crop: { cx: 0.53, cy: 0.17, z: 2.9 }, category: 'Home' },
-  { title: 'Lighthouse art print', business: 'Sample Print Studio', price: '£22', photo: 'lighthouse', crop: { cx: 0.5, cy: 0.5, z: 1.1 }, category: 'Art & prints' },
 ];
 const OFFERS: Base[] = [
   { title: '10% off any cake box', business: 'Sample Bakehouse', badge: '10% off', meta: 'Until 31 Oct' },

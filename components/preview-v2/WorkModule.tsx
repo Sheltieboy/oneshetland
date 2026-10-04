@@ -8,7 +8,7 @@ import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { DisplayText } from '../DisplayText';
+import { DisplayText } from './PreviewDisplayText';
 import { SectionHead, SIDE } from './ui';
 import {
   clockRange, curateHome, curateLocal, shiftUrgency, shortDate, workTab,

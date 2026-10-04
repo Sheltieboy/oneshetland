@@ -6,11 +6,11 @@
  * Low inventory changes how a rail is treated, never whether the proposition is on the screen.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Image, StyleSheet, useWindowDimensions } from 'react-native';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { View, Text, ScrollView, Image, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DisplayText } from '../../components/DisplayText';
-import { CropImage, Scrim, fade, MerchCard, Rail, SectionHead, GatewayTile, Chip, PillarSection, SIDE } from '../../components/preview-v2/ui';
+import { DisplayText } from '../../components/preview-v2/PreviewDisplayText';
+import { CropImage, Scrim, fade, MerchCard, Rail, SectionHead, PillarTile, Chip, PillarSection, SIDE } from '../../components/preview-v2/ui';
 import { LocalWork } from '../../components/preview-v2/WorkModule';
 import { buildWork, parseMix } from '../../components/preview-v2/work';
 import { PreviewSwitch } from '../../components/preview-v2/PreviewSwitch';
@@ -25,8 +25,9 @@ const parseState = (v?: string): PreviewState => (['live', 'empty', 'seed', 'ful
 
 export default function AppLocalV2() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { width } = useWindowDimensions();
-  const q = useLocalSearchParams<{ state?: string; as?: string; work?: string }>();
+  const q = useLocalSearchParams<{ state?: string; as?: string; work?: string; chrome?: string }>();
   const state = parseState(q.state);
   const viewer: PreviewViewer = q.as === 'admin' ? 'admin' : 'public';
   const [data, setData] = useState<PreviewData | null>(null);
@@ -62,36 +63,29 @@ export default function AppLocalV2() {
     <View style={{ flex: 1, backgroundColor: '#FBF8F2' }}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-        <View style={{ height: insets.top, backgroundColor: '#0F172A' }} />
-        <PreviewSwitch route="local-v2" state={state} viewer={viewer} />
-
-        {/* Hero ─────────────────────────────────────────────────────────────────── */}
-        <View style={{ paddingHorizontal: SIDE, paddingTop: 22, paddingBottom: 22, overflow: 'hidden' }}>
+        {/* Hero — compact: the title, one line, the search ──────────────────────────────── */}
+        <View style={{ paddingHorizontal: SIDE, paddingTop: insets.top + 10, paddingBottom: 14, overflow: 'hidden' }}>
           <CropImage photo="street" crop={{ cx: 0.5, cy: 0.4, z: 1.05 }} style={StyleSheet.absoluteFill} />
           <Scrim dir="diag" stops={[{ at: 0, color: '#2E1065', opacity: 0.95 }, { at: 0.55, color: '#4C1D95', opacity: 0.82 }, { at: 1, color: '#7C3AED', opacity: 0.4 }]} />
-          <Text style={{ color: '#DDD6FE', fontSize: 11, fontWeight: '800', letterSpacing: 1.4 }}>ONESHETLAND · LOCAL</Text>
-          <DisplayText style={{ color: '#fff', fontSize: 50, lineHeight: 50, marginTop: 6 }}>Local</DisplayText>
-          <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 16, lineHeight: 22, marginTop: 8, maxWidth: 320 }}>Shop, save, book and discover across Shetland.</Text>
-          <View style={s.search}><Text style={{ fontSize: 15, marginRight: 8 }}>🔍</Text><Text style={{ color: '#6B7280', fontSize: 15 }}>Search shops, cafés, services…</Text></View>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
+            <DisplayText style={{ color: '#fff', fontSize: 34, lineHeight: 38 }}>Local</DisplayText>
+            <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13.5, flex: 1 }}>Shop, save, book and discover.</Text>
+          </View>
+          <View style={s.search}><Text style={{ fontSize: 13, marginRight: 7 }}>🔍</Text><Text numberOfLines={1} style={{ color: '#6B7280', fontSize: 14 }}>Search shops, cafés, services…</Text></View>
         </View>
 
-        {/* The gateway: six permanent entry points (2 × 3) ───────────────────────── */}
-        <View style={{ paddingHorizontal: SIDE, paddingTop: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-          <GatewayTile label="Shop" line={PILLARS.shop.short} chip={chipFor('shop')} photo="shopping" crop={{ cx: 0.35, cy: 0.45, z: 1.2 }} from="#7C3AED" to="#3B0764" w={gw} h={158} />
-          <GatewayTile label="Offers" line={PILLARS.offers.short} chip={chipFor('offers')} photo="street" crop={PILLARS.offers.crop} from="#D97706" to="#78350F" w={gw} h={158} />
-          <GatewayTile label="Book" line={PILLARS.book.short} chip={chipFor('book')} photo="cafe" crop={{ cx: 0.5, cy: 0.4, z: 1.1 }} from="#059669" to="#064E3B" w={gw} h={158} />
-          <GatewayTile label="Experiences" line={PILLARS.experiences.short} chip={chipFor('experiences')} photo="jarlshof" from="#0E7490" to="#164E63" w={gw} h={158} />
-          <GatewayTile label="Businesses" line="Everyone trading across the isles" chip="500+ listed" photo="street" crop={{ cx: 0.85, cy: 0.5, z: 1.4 }} from="#4F46E5" to="#1E1B4B" w={gw} h={158} />
-          <GatewayTile label="Rewards" line="Stamps, points and your Wallet" chip="Collect as you shop" from="#A855F7" to="#4C1D95" w={gw} h={158}>
-            <View style={s.stampCard}>
-              <Text style={{ fontSize: 8, fontWeight: '900', color: '#4C1D95', letterSpacing: 0.6 }}>SAMPLE CAFÉ · 5/8</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>{Array.from({ length: 8 }, (_, i) => <View key={i} style={[s.stamp, i < 5 ? { backgroundColor: '#7C3AED' } : { borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#C4B5FD' }]} />)}</View>
-            </View>
-          </GatewayTile>
+        {/* The gateway: six permanent entry points (2 × 3), compact ─────────────────────── */}
+        <View style={{ paddingHorizontal: SIDE, paddingTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+          <PillarTile label="Shop" sub={chipFor('shop')} icon="shopping-bag" photo="shopping" crop={{ cx: 0.35, cy: 0.45, z: 1.2 }} from="#7C3AED" to="#3B0764" w={gw} onPress={() => router.push('/shop' as never)} />
+          <PillarTile label="Offers" sub={chipFor('offers')} icon="tags" from="#D97706" to="#92400E" w={gw} onPress={() => router.push('/local-offers' as never)} />
+          <PillarTile label="Book" sub={chipFor('book')} icon="calendar-check" photo="cafe" crop={{ cx: 0.5, cy: 0.4, z: 1.1 }} from="#059669" to="#064E3B" w={gw} onPress={() => router.push('/local-bookable-browse' as never)} />
+          <PillarTile label="Experiences" sub={chipFor('experiences')} icon="ticket-alt" photo="scatness" crop={{ cx: 0.5, cy: 0.5, z: 1.1 }} from="#0E7490" to="#164E63" w={gw} onPress={() => router.navigate('/(tabs)/services' as never)} />
+          <PillarTile label="Businesses" sub="Directory" icon="store" from="#4F46E5" to="#1E1B4B" w={gw} onPress={() => router.navigate('/(tabs)/services' as never)} />
+          <PillarTile label="Rewards" sub="Stamps & points" icon="gift" from="#A855F7" to="#4C1D95" w={gw} onPress={() => router.push('/local-loyalty-hub' as never)} />
         </View>
 
         {/* Area chips ─────────────────────────────────────────────────────────────── */}
-        <View style={{ marginTop: 16 }}>
+        <View style={{ marginTop: 14 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: SIDE, gap: 8 }}>
             {AREAS.map((a) => (
               <Text key={a} onPress={() => setArea(a)} style={[s.areaChip, area === a && { backgroundColor: '#5B21B6', color: '#fff', borderColor: '#5B21B6' }]}>{a}</Text>
@@ -100,9 +94,9 @@ export default function AppLocalV2() {
         </View>
 
         {/* Featured locally ─────────────────────────────────────────────────────────── */}
-        {lead && (
-          <View style={{ marginTop: 26 }}>
-            <SectionHead eyebrow="Featured locally" title="Handpicked from across the isles" color="#7C3AED" />
+        {lead ? (
+          <View style={{ marginTop: 22 }}>
+            <SectionHead eyebrow="Featured locally" title="Handpicked from across the isles" color="#7C3AED" action="Browse directory" onAction={() => router.navigate('/(tabs)/services' as never)} />
             <Rail>
               <View style={{ width: 270, height: 330, borderRadius: 24, overflow: 'hidden', backgroundColor: CAT_COLOR[lead.category] ?? '#4F46E5' }}>
                 <CropImage uri={lead.cover_url ?? undefined} photo={lead.cover_url ? undefined : 'street'} crop={{ cx: 0.5, cy: 0.4, z: 1.2 }} style={StyleSheet.absoluteFill} />
@@ -116,6 +110,14 @@ export default function AppLocalV2() {
               {featured.map((m) => <MerchCard key={m.id} m={m} />)}
               {others.slice(0, 2).map((b) => <BizTile key={b.id} b={b} />)}
             </Rail>
+          </View>
+        ) : (
+          <View style={{ marginTop: 22, paddingHorizontal: SIDE }}>
+            <Pressable onPress={() => router.navigate('/(tabs)/services' as never)} style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16 }}>
+              <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 }}>FEATURED LOCALLY</Text>
+              <DisplayText weight="bold" style={{ color: '#0F1C26', fontSize: 22, lineHeight: 25, marginTop: 3 }}>Shetland businesses, in one place</DisplayText>
+              <Text style={{ color: '#7C3AED', fontWeight: '800', fontSize: 13, marginTop: 8 }}>Browse the directory →</Text>
+            </Pressable>
           </View>
         )}
 
@@ -162,12 +164,13 @@ export default function AppLocalV2() {
           <View style={{ alignSelf: 'flex-start', backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 18, paddingVertical: 10, marginTop: 14 }}><Text style={{ fontWeight: '800', fontSize: 13.5 }}>Add your business free →</Text></View>
         </View>
       </ScrollView>
+      {q.chrome !== '0' && <PreviewSwitch route="local-v2" state={state} viewer={viewer} />}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  search: { marginTop: 18, backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 16, height: 46, flexDirection: 'row', alignItems: 'center' },
+  search: { marginTop: 10, backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 13, height: 40, flexDirection: 'row', alignItems: 'center' },
   areaChip: { overflow: 'hidden', borderRadius: 99, borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, fontWeight: '700', color: '#374151', backgroundColor: '#fff' },
   logoTile: { width: 52, height: 52, borderRadius: 13, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   stampCard: { position: 'absolute', right: 10, top: 8, width: 84, backgroundColor: '#fff', borderRadius: 10, padding: 6, transform: [{ rotate: '5deg' }] },

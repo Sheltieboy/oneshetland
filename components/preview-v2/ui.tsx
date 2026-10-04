@@ -1,7 +1,8 @@
 import React, { useId, useState } from 'react';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { View, Text, Image, Pressable, ScrollView, StyleSheet, LayoutChangeEvent, ViewStyle, StyleProp } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import { DisplayText } from '../DisplayText';
+import { DisplayText } from './PreviewDisplayText';
 import { PHOTOS } from './images';
 import { PILLARS, density, type Merch, type Pillar, type Crop } from './model';
 
@@ -271,6 +272,30 @@ export function GatewayTile({ label, line, chip, photo, crop, from, to, w, h, bi
         </View>
       </View>
     </View>
+  );
+}
+
+/* ── Compact pillar tile (Local's six-way gateway) ──────────────────────────── */
+
+/** A short, premium entry tile: colour (and optionally a photograph) behind a strong icon and the pillar name; the
+ *  count / descriptor is deliberately secondary. 72pt tall — comfortably above the minimum tap size. */
+export function PillarTile({ label, sub, icon, photo, crop, from, to, w, h = 72, onPress }: {
+  label: string; sub: string; icon: string; photo?: keyof typeof PHOTOS; crop?: Crop; from: string; to: string; w: number; h?: number; onPress?: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}. ${sub}`} style={{ width: w, height: h, borderRadius: 18, overflow: 'hidden', backgroundColor: from }}>
+      {photo && <CropImage photo={photo} crop={crop} style={StyleSheet.absoluteFill} />}
+      <Scrim dir="diag" stops={[{ at: 0, color: from, opacity: photo ? 0.8 : 1 }, { at: 1, color: to, opacity: photo ? 0.68 : 1 }]} />
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 10 }}>
+        <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' }}>
+          <FontAwesome5 name={icon as never} size={16} color="#fff" solid />
+        </View>
+        <View style={{ flex: 1 }}>
+          <DisplayText weight="bold" numberOfLines={1} style={{ color: '#fff', fontSize: 19, lineHeight: 22 }}>{label}</DisplayText>
+          <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.68)', fontSize: 10.5, fontWeight: '700', marginTop: 1 }}>{sub}</Text>
+        </View>
+      </View>
+    </Pressable>
   );
 }
 

@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DisplayText } from '../../components/DisplayText';
+import { DisplayText } from '../../components/preview-v2/PreviewDisplayText';
 import { CropImage, Scrim, fade, MerchCard, Rail, SectionHead, GatewayTile, Chip, SIDE } from '../../components/preview-v2/ui';
 import { HomeWork } from '../../components/preview-v2/WorkModule';
 import { buildWork, parseMix } from '../../components/preview-v2/work';
@@ -17,6 +17,12 @@ import { buildCommerce, density, PILLARS, PILLAR_ORDER, type Merch, type Pillar,
 const EMPTY_REAL: Record<Pillar, Merch[]> = { shop: [], offers: [], book: [], experiences: [] };
 const CAT_COLOR: Record<string, string> = { food_drink: '#C2410C', retail: '#7C3AED', services: '#0E7490', accommodation: '#15803D' };
 const CAT_LABEL: Record<string, string> = { food_drink: 'Food & drink', retail: 'Retail', services: 'Services', accommodation: 'Stay' };
+// One photograph per tile and none repeated on screen: Offers is colour (its cards are tickets), the rest are distinct.
+const GATEWAY_PHOTO: Partial<Record<Pillar, { photo: keyof typeof import('../../components/preview-v2/images').PHOTOS; crop?: { cx: number; cy: number; z: number } }>> = {
+  shop: { photo: 'shopping', crop: { cx: 0.35, cy: 0.45, z: 1.2 } }, book: { photo: 'cafe', crop: { cx: 0.5, cy: 0.4, z: 1.1 } }, experiences: { photo: 'scatness', crop: { cx: 0.5, cy: 0.5, z: 1.1 } },
+};
+// The rail leads with a ticket, a day out and a service so its first cards don't echo the Shop tile above it.
+const RAIL_ORDER: Pillar[] = ['offers', 'experiences', 'book', 'shop'];
 const NOUN: Record<Pillar, [string, string]> = { shop: ['product', 'products'], offers: ['offer', 'offers'], book: ['service', 'services'], experiences: ['experience', 'experiences'] };
 
 const parseState = (v?: string): PreviewState => (['live', 'empty', 'seed', 'full'] as const).find((x) => x === v) ?? 'seed';
@@ -24,7 +30,7 @@ const parseState = (v?: string): PreviewState => (['live', 'empty', 'seed', 'ful
 export default function AppHomeV2() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const q = useLocalSearchParams<{ state?: string; as?: string; work?: string }>();
+  const q = useLocalSearchParams<{ state?: string; as?: string; work?: string; chrome?: string }>();
   const state = parseState(q.state);
   const viewer: PreviewViewer = q.as === 'admin' ? 'admin' : 'public';
   const [data, setData] = useState<PreviewData | null>(null);
@@ -37,7 +43,7 @@ export default function AppHomeV2() {
 
   const total = PILLAR_ORDER.reduce((n, p) => n + commerce[p].length, 0);
   const mixed: Merch[] = [];
-  for (let i = 0; mixed.length < 12 && i < 6; i++) for (const p of PILLAR_ORDER) if (commerce[p][i] && mixed.length < 12) mixed.push(commerce[p][i]);
+  for (let i = 0; mixed.length < 12 && i < 6; i++) for (const p of RAIL_ORDER) if (commerce[p][i] && mixed.length < 12) mixed.push(commerce[p][i]);
   const gw = (width - SIDE * 2 - 12) / 2;
   const events = data?.events ?? [];
   const [e0, e1, e2] = events;
@@ -53,41 +59,34 @@ export default function AppHomeV2() {
     <View style={{ flex: 1, backgroundColor: '#F6F1E8' }}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-        <View style={{ height: insets.top, backgroundColor: '#0F172A' }} />
-        <PreviewSwitch route="home-v2" state={state} viewer={viewer} />
-
-        {/* 1–4 · top bar, search, mode, Shetland now ─────────────────────────────── */}
-        <View style={{ backgroundColor: '#032F4C', paddingHorizontal: SIDE, paddingTop: 14, paddingBottom: 18 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Image source={require('../../assets/logo-mark-keyed.png')} style={{ width: 32, height: 32 }} resizeMode="contain" />
-            <DisplayText weight="bold" style={{ color: '#fff', fontSize: 21, marginLeft: 8, flex: 1 }}>OneShetland</DisplayText>
-            <View style={s.walletPill}><Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>👛  £12.50</Text></View>
-            <View style={s.roundBtn}><Text style={{ fontSize: 15 }}>🔔</Text><View style={s.dot} /></View>
-            <View style={[s.roundBtn, { backgroundColor: '#12B3D6' }]}><Text style={{ color: '#fff', fontWeight: '900', fontSize: 13 }}>D</Text></View>
+        {/* 1–4 · compact top: identity · wallet · alerts · profile / search + audience / Shetland now ───────── */}
+        <View style={{ backgroundColor: '#032F4C', paddingHorizontal: SIDE, paddingTop: insets.top + 6, paddingBottom: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', height: 40 }}>
+            <Image source={require('../../assets/logo-mark-keyed.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
+            <DisplayText weight="bold" style={{ color: '#fff', fontSize: 20, marginLeft: 7, flex: 1 }}>OneShetland</DisplayText>
+            <Pressable hitSlop={6} style={s.walletPill} accessibilityLabel="Wallet, £12.50"><Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '800' }}>👛 £12.50</Text></Pressable>
+            <Pressable hitSlop={5} style={s.roundBtn} accessibilityLabel="Notifications"><Text style={{ fontSize: 14 }}>🔔</Text><View style={s.dot} /></Pressable>
+            <Pressable hitSlop={5} style={[s.roundBtn, { backgroundColor: '#12B3D6' }]} accessibilityLabel="Profile"><Text style={{ color: '#fff', fontWeight: '900', fontSize: 13 }}>D</Text></Pressable>
           </View>
 
-          <View style={s.search}><Text style={{ fontSize: 15, marginRight: 8 }}>🔍</Text><Text style={{ color: '#6B7280', fontSize: 15 }}>Search Shetland — businesses, events, jobs…</Text></View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, justifyContent: 'space-between' }}>
-            <View style={s.seg}>
-              {(['resident', 'visiting'] as const).map((a) => (
-                <Pressable key={a} onPress={() => setAudience(a)} style={[s.segItem, audience === a && { backgroundColor: '#fff' }]}>
-                  <Text style={{ fontSize: 11.5, fontWeight: '800', color: audience === a ? '#032F4C' : 'rgba(255,255,255,0.85)' }}>{a === 'resident' ? '🏠 I live here' : "🧳 I'm visiting"}</Text>
-                </Pressable>
-              ))}
-            </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+            <View style={s.search}><Text style={{ fontSize: 13, marginRight: 7 }}>🔍</Text><Text numberOfLines={1} style={{ color: '#6B7280', fontSize: 14, flex: 1 }}>Search Shetland…</Text></View>
+            <Pressable onPress={() => setAudience(audience === 'resident' ? 'visiting' : 'resident')} style={s.mode} accessibilityLabel={audience === 'resident' ? 'Mode: I live here. Tap to switch to visiting' : "Mode: I'm visiting. Tap to switch to I live here"}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>{audience === 'resident' ? '🏠 Live here' : '🧳 Visiting'}</Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginLeft: 5 }}>⇄</Text>
+            </Pressable>
           </View>
 
-          {/* Shetland now */}
+          {/* Shetland now — a slim contextual line */}
           <View style={s.nowStrip}>
-            <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700', flex: 1 }} numberOfLines={1}>{data?.weather ?? 'Lerwick · loading…'}</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 12, fontWeight: '700', flex: 1 }} numberOfLines={1}>{data?.weather ?? 'Lerwick · loading…'}</Text>
             {data?.ships && <View style={s.nowChip}><Text style={s.nowChipText}>⚓ {data.ships.count} {data.ships.count === 1 ? 'ship' : 'ships'} in port</Text></View>}
           </View>
         </View>
 
         {/* 5 · FOR YOU — real personal content only; sample tiles shown in the seeded states so the design can be judged ── */}
         {showForYou && (
-          <View style={{ marginTop: 22 }}>
+          <View style={{ marginTop: 18 }}>
             <SectionHead eyebrow="Picked for you · preview sample" title="For you" color="#7C3AED" />
             <Rail>
               <View style={[s.fy, { backgroundColor: '#4C1D95' }]}>
@@ -189,7 +188,8 @@ export default function AppHomeV2() {
           <View style={{ paddingHorizontal: SIDE, flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
             {PILLAR_ORDER.map((p) => {
               const pl = PILLARS[p]; const n = commerce[p].length; const d = density(n);
-              return <GatewayTile key={p} label={pl.label} line={pl.short} chip={d === 'none' ? 'Opening soon' : `${n} ${NOUN[p][n === 1 ? 0 : 1]}`} photo={pl.photo} crop={pl.crop} from={pl.color} to={pl.deep} w={gw} h={172} />;
+              const gp = GATEWAY_PHOTO[p];
+              return <GatewayTile key={p} label={pl.label} line={pl.short} chip={d === 'none' ? 'Opening soon' : `${n} ${NOUN[p][n === 1 ? 0 : 1]}`} photo={gp?.photo} crop={gp?.crop} from={pl.color} to={pl.deep} w={gw} h={172} />;
             })}
           </View>
           <View style={{ marginTop: 22 }}>
@@ -261,19 +261,19 @@ export default function AppHomeV2() {
           </View>
         </View>
       </ScrollView>
+      {q.chrome !== '0' && <PreviewSwitch route="home-v2" state={state} viewer={viewer} />}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  walletPill: { backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 99, paddingHorizontal: 11, paddingVertical: 7, marginRight: 8 },
-  roundBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
-  dot: { position: 'absolute', top: 7, right: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', borderWidth: 1, borderColor: '#032F4C' },
-  search: { marginTop: 14, backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 16, height: 46, flexDirection: 'row', alignItems: 'center' },
-  seg: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 99, padding: 3 },
-  segItem: { borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 },
-  nowStrip: { marginTop: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, gap: 8 },
-  nowChip: { backgroundColor: 'rgba(125,211,252,0.25)', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4 },
+  walletPill: { backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 99, paddingHorizontal: 11, height: 32, justifyContent: 'center', marginRight: 6 },
+  roundBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
+  dot: { position: 'absolute', top: 6, right: 7, width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', borderWidth: 1, borderColor: '#032F4C' },
+  search: { flex: 1, backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 13, height: 40, flexDirection: 'row', alignItems: 'center' },
+  mode: { height: 40, borderRadius: 99, paddingHorizontal: 12, backgroundColor: 'rgba(255,255,255,0.14)', flexDirection: 'row', alignItems: 'center' },
+  nowStrip: { marginTop: 8, flexDirection: 'row', alignItems: 'center', height: 26, gap: 8 },
+  nowChip: { backgroundColor: 'rgba(125,211,252,0.25)', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 },
   nowChipText: { color: '#E0F2FE', fontSize: 11, fontWeight: '800' },
   fy: { width: 176, height: 150, borderRadius: 20, overflow: 'hidden', padding: 14, justifyContent: 'space-between' },
   fyLine: { color: 'rgba(255,255,255,0.88)', fontSize: 11.5, fontWeight: '600', marginTop: 3 },
