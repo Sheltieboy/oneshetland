@@ -203,9 +203,23 @@ describe('Wallet hub does not call used / refunded / expired passes "active"', (
   });
 });
 
-describe('Plan my day is not on Home, and its screen still exists', () => {
-  test('Home does not link to the planner; the planner screen is intact', () => {
-    assert.doesNotMatch(src('components/home-local/HomeScreen.tsx'), /plan-day/);
+describe('Plan my day — visitors only on Home, with a second way in', () => {
+  const h = src('components/home-local/HomeScreen.tsx');
+  test('Home renders the card only when the audience is "visiting", and routes to /plan-day', () => {
+    assert.equal((h.match(/<PlanDayCard /g) ?? []).length, 1, 'rendered exactly once');
+    assert.match(h, /audience === 'visiting' && <PlanDayCard onPress=\{\(\) => router\.push\('\/plan-day'\)\} \/>/);
+  });
+  test('it sits above For you and What\'s happening so a visitor sees it high on Home', () => {
+    assert.ok(h.indexOf('<PlanDayCard onPress') < h.indexOf('forYou.length > 0'));
+    assert.ok(h.indexOf('<PlanDayCard onPress') < h.indexOf('{e0 && ('));
+  });
+  test('the card is the V2 language: Fraunces title, gradient scrim, pill CTA', () => {
+    const card = h.slice(h.indexOf('function PlanDayCard'));
+    assert.match(card, /<DisplayText weight="bold"[^>]*>Plan my day<\/DisplayText>/);
+    assert.match(card, /<Scrim /);
+  });
+  test('the cruise day screen links to the planner as a second route, and the screen exists', () => {
+    assert.match(src('app/cruise-day.tsx'), /router\.push\('\/plan-day'\)/);
     assert.ok(existsSync(join(REPO, 'app/plan-day.tsx')));
   });
 });

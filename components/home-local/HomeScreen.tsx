@@ -198,6 +198,9 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* 4b · PLAN MY DAY — visitors only. Someone who lives here doesn't need an itinerary, so in "Live here" mode this does not render. */}
+        {audience === 'visiting' && <PlanDayCard onPress={() => router.push('/plan-day')} />}
+
         {/* 5 · FOR YOU — only what genuinely belongs to this person; no tiles → no section ─────────────────── */}
         {forYou.length > 0 && (
           <View style={{ marginTop: 18 }}>
@@ -363,6 +366,22 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+/** Visitor-only front door to the day planner (app/plan-day.tsx). The form lives on that screen; this is the invitation. */
+function PlanDayCard({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Plan my day. Tell us when you're free and what you fancy." style={{ marginHorizontal: SIDE, marginTop: 18, borderRadius: 24, overflow: 'hidden', padding: 18, backgroundColor: '#4C1D95' }}>
+      <Scrim dir="diag" stops={[{ at: 0, color: '#7C3AED', opacity: 1 }, { at: 1, color: '#312E81', opacity: 1 }]} />
+      <Chip label="Visiting Shetland" />
+      <DisplayText weight="bold" style={{ color: '#fff', fontSize: 28, lineHeight: 30, marginTop: 8 }}>Plan my day</DisplayText>
+      <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20, marginTop: 5 }}>Tell us when you&apos;re free and what you fancy — Peerie Bot ✨ lays out a day with travel times and a map.</Text>
+      <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderRadius: 99, paddingHorizontal: 18, paddingVertical: 11, marginTop: 14 }}>
+        <Text style={{ color: '#4C1D95', fontSize: 13.5, fontWeight: '800' }}>Plan my day</Text>
+        <FontAwesome5 name="arrow-right" size={11} color="#4C1D95" solid />
+      </View>
+    </Pressable>
   );
 }
 

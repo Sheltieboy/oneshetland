@@ -139,6 +139,16 @@ export default function CruiseDayScreen() {
             );
           })
         )}
+
+        {/* Ashore for a few hours: the day planner is built for exactly that. */}
+        <TouchableOpacity style={styles.planRow} activeOpacity={0.85} onPress={() => router.push('/plan-day')} accessibilityRole="button" accessibilityLabel="Plan a day out">
+          <FontAwesome5 name="route" size={16} color={ACCENT} solid />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.planRowTitle}>Ashore for the day?</Text>
+            <Text style={styles.planRowSub}>Plan a day out with travel times and a map</Text>
+          </View>
+          <FontAwesome5 name="chevron-right" size={12} color={colors.textLight} />
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -176,4 +186,7 @@ const styles = StyleSheet.create({
   shipName: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
   shipMeta: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   status: { fontSize: 11, fontWeight: '800' },
+  planRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: spacing.lg },
+  planRowTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
+  planRowSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
 });
