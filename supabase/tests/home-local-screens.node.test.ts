@@ -194,6 +194,15 @@ describe('Rewards — honest when there is no stamp card', () => {
   });
 });
 
+describe('Wallet hub does not call used / refunded / expired passes "active"', () => {
+  test('the Passes & vouchers row counts only passes whose status is active, and otherwise says "past"', () => {
+    const w = src('app/local-wallet.tsx');
+    assert.doesNotMatch(w, /countLabel=\{`\$\{passes\.length\} active`\}/);
+    assert.match(w, /p\.status === 'active'/);
+    assert.match(w, /\} past`/);
+  });
+});
+
 describe('Plan my day is not on Home, and its screen still exists', () => {
   test('Home does not link to the planner; the planner screen is intact', () => {
     assert.doesNotMatch(src('components/home-local/HomeScreen.tsx'), /plan-day/);
@@ -212,6 +221,8 @@ describe('Home top and Local gateway (approved structure)', () => {
     assert.equal((l.match(/<PillarTile /g) ?? []).length, 6);
     for (const p of PILLARS) assert.match(l, new RegExp(`pillar="${p}"`), p);
     assert.match(l, /Browse directory/);
+    assert.doesNotMatch(l, /\(tabs\)\/services/, 'Directory is pushed (so Back returns to Local), not navigated to as a tab');
+    assert.match(l, /router\.push\('\/local-businesses-browse' as never\)/);
     assert.match(l, /<LocalWork /);
     assert.match(l, /For businesses/i);
     assert.match(l, /PILLAR_CTA_ROUTE/);

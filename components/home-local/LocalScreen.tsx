@@ -106,7 +106,7 @@ export default function LocalScreen() {
           <PillarTile label="Offers" sub={chipFor('offers')} icon="tags" from="#D97706" to="#92400E" w={gw} onPress={() => router.push('/local-offers' as never)} />
           <PillarTile label="Book" sub={chipFor('book')} icon="calendar-check" photo="cafe" crop={{ cx: 0.5, cy: 0.4, z: 1.1 }} from="#059669" to="#064E3B" w={gw} onPress={() => router.push('/local-bookable-browse' as never)} />
           <PillarTile label="Experiences" sub={chipFor('experiences')} icon="ticket-alt" photo="scatness" crop={{ cx: 0.5, cy: 0.5, z: 1.1 }} from="#0E7490" to="#164E63" w={gw} onPress={() => router.push(PILLAR_ROUTE.experiences as never)} />
-          <PillarTile label="Businesses" sub="Directory" icon="store" from="#4F46E5" to="#1E1B4B" w={gw} onPress={() => router.navigate('/(tabs)/services' as never)} />
+          <PillarTile label="Businesses" sub="Directory" icon="store" from="#4F46E5" to="#1E1B4B" w={gw} onPress={() => router.push('/local-businesses-browse' as never)} />
           <PillarTile label="Rewards" sub="Stamps & points" icon="gift" from="#A855F7" to="#4C1D95" w={gw} onPress={() => router.push('/local-loyalty-hub' as never)} />
         </View>
 
@@ -122,7 +122,7 @@ export default function LocalScreen() {
         {/* Featured locally ─────────────────────────────────────────────────────────── */}
         {lead ? (
           <View style={{ marginTop: 22 }}>
-            <SectionHead eyebrow="Featured locally" title="Handpicked from across the isles" color="#7C3AED" action="Browse directory" onAction={() => router.navigate('/(tabs)/services' as never)} />
+            <SectionHead eyebrow="Featured locally" title="Handpicked from across the isles" color="#7C3AED" action="Browse directory" onAction={() => router.push('/local-businesses-browse' as never)} />
             <Rail>
               <Pressable onPress={() => openBusiness(lead.id)} style={{ width: 270, height: 330, borderRadius: 24, overflow: 'hidden', backgroundColor: CAT_COLOR[lead.category] ?? '#4F46E5' }}>
                 <CropImage uri={lead.cover_url ?? undefined} photo={lead.cover_url ? undefined : 'street'} crop={{ cx: 0.5, cy: 0.4, z: 1.2 }} style={StyleSheet.absoluteFill} />
@@ -139,7 +139,7 @@ export default function LocalScreen() {
           </View>
         ) : (
           <View style={{ marginTop: 22, paddingHorizontal: SIDE }}>
-            <Pressable onPress={() => router.navigate('/(tabs)/services' as never)} style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16 }}>
+            <Pressable onPress={() => router.push('/local-businesses-browse' as never)} style={{ backgroundColor: '#fff', borderRadius: 20, padding: 16 }}>
               <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 }}>FEATURED LOCALLY</Text>
               <DisplayText weight="bold" style={{ color: '#0F1C26', fontSize: 22, lineHeight: 25, marginTop: 3 }}>{area === 'All Shetland' ? 'Shetland businesses, in one place' : `Nothing featured in ${area} yet`}</DisplayText>
               <Text style={{ color: '#7C3AED', fontWeight: '800', fontSize: 13, marginTop: 8 }}>Browse the directory →</Text>

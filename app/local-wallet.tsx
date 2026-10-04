@@ -342,7 +342,7 @@ export default function WalletScreen() {
           <HubSection
             icon="ticket-alt"
             title="Passes & vouchers"
-            countLabel={`${passes.length} active`}
+            countLabel={passes.some(p => p.status === 'active') ? `${passes.filter(p => p.status === 'active').length} active` : `${passes.length} past`}
             onPress={() => router.push('/local-my-passes' as any)}
           />
         )}
