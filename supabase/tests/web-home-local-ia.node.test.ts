@@ -84,6 +84,16 @@ describe('Open for business — genuine businesses, not "newest 20"', opts, () =
     const first4 = (rankBusinesses(rows, NOW, 8) as { category: string }[]).slice(0, 4).map((b) => b.category);
     assert.deepEqual(new Set(first4).size, 4, first4.join());
   });
+  test('THE DEFECT (found 4 Oct): the mix was lost whenever the shelf filled on the first pass — i.e. with a real directory', () => {
+    const rows = [
+      ...Array.from({ length: 20 }, (_, i) => biz({ name: `Bank ${String(i).padStart(2, '0')}`, category: 'services', is_claimed: true, logo_url: 'x' })),
+      ...Array.from({ length: 6 }, (_, i) => biz({ name: `Café ${i}`, category: 'food_drink', logo_url: 'x' })),
+      ...Array.from({ length: 6 }, (_, i) => biz({ name: `Shop ${i}`, category: 'retail', logo_url: 'x' })),
+    ];
+    const out = rankBusinesses(rows, NOW, 8) as { category: string }[];
+    assert.equal(out.length, 8);
+    assert.deepEqual(out.slice(0, 3).map((b) => b.category), ['food_drink', 'retail', 'services'], out.map((b) => b.category).join());
+  });
   test('when one category is all there is, the shelf still fills (best first)', () => {
     const rows = Array.from({ length: 12 }, (_, i) => biz({ name: `Only ${i}`, category: 'retail' }));
     assert.equal(rankBusinesses(rows, NOW, 8).length, 8);
