@@ -240,6 +240,28 @@ describe('Test fixtures — labelled for the people who can see them, absent for
   });
 });
 
+describe('Public browsing — Shop and Book never ask for an account to look', () => {
+  test('the root layout protects only private groups; Shop and Book are in none of them', () => {
+    const l = src('app/_layout.tsx');
+    assert.match(l, /const inProtected = inCustomerGroup \|\| inDriverGroup \|\| inAdminGroup \|\| inAccountScreen \|\| onOnboardingScreen;/);
+    assert.ok(existsSync(join(REPO, 'app/shop.tsx')) && existsSync(join(REPO, 'app/local-bookable-browse.tsx')));
+    for (const f of ['app/shop.tsx', 'app/local-bookable-browse.tsx', 'app/product-detail.tsx']) {
+      assert.doesNotMatch(src(f), /useGoToSignIn|goToSignIn|\(auth\)\/sign-in|<Redirect/, `${f} must not force sign-in`);
+    }
+  });
+  test('their empty states are the designed Opening-soon panels (only when nothing is being searched or filtered)', () => {
+    assert.match(src('app/shop.tsx'), /!error && !query && !category \? <PillarEmpty pillar="shop"/);
+    assert.match(src('app/local-bookable-browse.tsx'), /!filter \? <View[^>]*><PillarEmpty pillar="book"/);
+  });
+  test('sign-in is required exactly at the account-dependent action: choosing a booking slot, and confirming a purchase', () => {
+    const b = src('app/local-book-business.tsx');
+    const slot = b.slice(b.indexOf('const handleSlotPress'), b.indexOf('const handleSlotPress') + 600);
+    assert.match(slot, /if \(!profile\) \{[\s\S]*goToSignIn\(next\)/);
+    assert.match(src('app/product-checkout.tsx'), /if \(!session\) return 'Sign in to buy/);
+    assert.match(src('app/local-buy-unit.tsx'), /if \(!session \|\| !profile \|\| !item\) return;/);
+  });
+});
+
 describe('Experiences — a real destination, not the directory', () => {
   test('Home and Local Experiences both open /local-experiences; the generic directory is no longer behind them', () => {
     const model = loadModule('components/home-local/model.ts');

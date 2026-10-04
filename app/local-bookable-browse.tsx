@@ -25,7 +25,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -33,6 +33,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { TestBadge } from '@/components/TestBadge';
+import { PillarEmpty } from '@/components/home-local/ui';
 import { useFixtureIds } from '@/lib/discovery-fixtures';
 import { SECTIONS } from '@/constants/sections';
 import { CATEGORY_LABELS, CATEGORY_ICONS, type LocalCategory } from '@/lib/local-api';
@@ -54,6 +55,7 @@ const FILTERS: { id: LocalCategory | ''; label: string }[] = [
 
 export default function BookableBrowseScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
 
   const [services, setServices]     = useState<BookableServiceCard[]>([]);
   const [filter, setFilter]         = useState<LocalCategory | ''>('');
@@ -144,6 +146,8 @@ export default function BookableBrowseScreen() {
             />
           }
           ListEmptyComponent={
+            // No bookable services at all: Book's standing proposition. A category with none keeps the plain hint below.
+            !filter ? <View style={{ paddingTop: spacing.md }}><PillarEmpty pillar="book" width={width} /></View> :
             <View style={styles.empty}>
               <View style={[styles.emptyIcon, { backgroundColor: S.light }]}>
                 <FontAwesome5 name="calendar-times" size={28} color={S.color} solid />

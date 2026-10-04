@@ -25,6 +25,7 @@ import { SECTION_HEROES } from '@/constants/section-heroes';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
 import { TestBadge } from '@/components/TestBadge';
+import { PillarEmpty } from '@/components/home-local/ui';
 import { useFixtureIds } from '@/lib/discovery-fixtures';
 import {
   browseProducts, PRODUCT_CATEGORIES,
@@ -175,6 +176,8 @@ export default function ShopScreen() {
           onEndReachedThreshold={0.5}
           onEndReached={loadMore}
           ListEmptyComponent={
+            // Nothing on sale and nothing being searched: the Shop's standing proposition, not a bare "no results".
+            !error && !query && !category ? <PillarEmpty pillar="shop" width={width} /> :
             <View style={styles.empty}>
               <FontAwesome5 name={error ? 'exclamation-circle' : 'shopping-bag'} size={26} color={colors.textLight} />
               <Text style={styles.emptyTitle}>
