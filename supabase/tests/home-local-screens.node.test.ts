@@ -171,6 +171,36 @@ describe('For you — only what genuinely belongs to the person', () => {
   });
 });
 
+describe('Rewards — honest when there is no stamp card', () => {
+  const l = src('components/home-local/LocalScreen.tsx');
+  test('with no card it is a discovery invitation that does not imply a started card', () => {
+    assert.match(l, /Collect rewards locally/);
+    assert.match(l, /Find participating businesses and start earning stamps and points\./);
+    assert.match(l, /Explore rewards →/);
+    assert.doesNotMatch(l, /Any stamp-card shop|Collect a stamp at every visit|0 of 8/);
+  });
+  test('the progress card (name, N of M, stamps) exists only in the real-card branch', () => {
+    const real = l.indexOf('{card ? (');
+    const empty = l.indexOf('Collect rewards locally');
+    assert.ok(real > 0 && empty > real);
+    const branch = l.slice(real, empty);
+    assert.match(branch, /collected\} of \{needed/);
+    assert.match(branch, /card\.business\?\.name/);
+    assert.doesNotMatch(l.slice(empty), /collected\} of/);
+  });
+  test('the empty-state button opens the rewards hub; the real card opens the person\'s own cards', () => {
+    assert.match(l, /router\.push\('\/local-loyalty-hub' as never\)[^\n]*\n?[^\n]*Explore rewards/s);
+    assert.match(l, /router\.push\('\/local-my-cards' as never\)/);
+  });
+});
+
+describe('Plan my day is not on Home, and its screen still exists', () => {
+  test('Home does not link to the planner; the planner screen is intact', () => {
+    assert.doesNotMatch(src('components/home-local/HomeScreen.tsx'), /plan-day/);
+    assert.ok(existsSync(join(REPO, 'app/plan-day.tsx')));
+  });
+});
+
 describe('Home top and Local gateway (approved structure)', () => {
   test('Home keeps identity, wallet, notifications, profile, search, audience and Shetland-now — wired to the real thing', () => {
     const h = src('components/home-local/HomeScreen.tsx');

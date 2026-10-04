@@ -60,12 +60,10 @@ export default function LocalScreen() {
   const biz = areaBiz ?? data?.businesses ?? [];
   const lead = biz.find((b) => b.logo_url || b.cover_url) ?? biz[0];
   const others = biz.filter((b) => b.id !== lead?.id);
-  // The Rewards card shows the person's own first stamp card; with none, it shows the idea (an empty card), never a made-up one.
+  // The Rewards card shows the person's own first stamp card; with none it is an invitation to explore rewards.
   const needed = Math.min(12, card?.program?.stamps_required ?? 8);
   const collected = Math.min(needed, card?.stamps_collected ?? 0);
-  const cardLine = card
-    ? (needed - collected > 0 ? `${needed - collected} more ${needed - collected === 1 ? 'stamp' : 'stamps'} for your reward` : 'Card full — show it to redeem your reward')
-    : 'Collect a stamp at every visit. Fill the card, get a reward.';
+  const cardLine = needed - collected > 0 ? `${needed - collected} more ${needed - collected === 1 ? 'stamp' : 'stamps'} for your reward` : 'Card full — show it to redeem your reward';
   const openBusiness = (id: string) => router.push({ pathname: '/local-business-detail', params: { id } } as never);
   const chipFor = (p: Pillar) => { const n = commerce[p].length; return n === 0 ? 'Opening soon' : `${n} ${n === 1 ? 'item' : 'items'}`; };
   const featured: Merch[] = [commerce.offers[0], commerce.shop[0], commerce.experiences[0], commerce.book[0]].filter(Boolean) as Merch[];
@@ -167,16 +165,27 @@ export default function LocalScreen() {
               </View>
             ))}
           </View>
-          <Pressable onPress={() => router.push('/local-loyalty-hub' as never)} style={{ marginHorizontal: SIDE, marginTop: 16, backgroundColor: '#fff', borderRadius: 22, padding: 16, transform: [{ rotate: '-1.5deg' }] }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <DisplayText weight="bold" numberOfLines={1} style={{ color: '#2E1065', fontSize: 19, flex: 1, marginRight: 8 }}>{card?.business?.name ?? 'Any stamp-card shop'}</DisplayText>
-              <View style={{ backgroundColor: '#EDE9FE', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 3 }}><Text style={{ color: '#5B21B6', fontSize: 11, fontWeight: '900' }}>{collected} of {needed}</Text></View>
+          {card ? (
+            <Pressable onPress={() => router.push('/local-my-cards' as never)} style={{ marginHorizontal: SIDE, marginTop: 16, backgroundColor: '#fff', borderRadius: 22, padding: 16, transform: [{ rotate: '-1.5deg' }] }} accessibilityLabel={`Your ${card.business?.name ?? ''} stamp card, ${collected} of ${needed}`}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <DisplayText weight="bold" numberOfLines={1} style={{ color: '#2E1065', fontSize: 19, flex: 1, marginRight: 8 }}>{card.business?.name ?? 'Your stamp card'}</DisplayText>
+                <View style={{ backgroundColor: '#EDE9FE', borderRadius: 99, paddingHorizontal: 10, paddingVertical: 3 }}><Text style={{ color: '#5B21B6', fontSize: 11, fontWeight: '900' }}>{collected} of {needed}</Text></View>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                {Array.from({ length: needed }, (_, i) => <View key={i} style={[s.bigStamp, i < collected ? { backgroundColor: '#7C3AED' } : { borderWidth: 2, borderStyle: 'dashed', borderColor: '#C4B5FD' }]}><Text style={{ color: i < collected ? '#fff' : '#C4B5FD', fontWeight: '900' }}>{i < collected ? '★' : i + 1}</Text></View>)}
+              </View>
+              <Text style={{ color: '#6D28D9', fontSize: 12.5, fontWeight: '700', marginTop: 12 }}>{cardLine}</Text>
+            </Pressable>
+          ) : (
+            // No stamp card yet: an honest invitation, never an empty card that implies one has been started.
+            <View style={{ marginHorizontal: SIDE, marginTop: 16, backgroundColor: '#fff', borderRadius: 22, padding: 18, transform: [{ rotate: '-1.5deg' }] }}>
+              <DisplayText weight="bold" style={{ color: '#2E1065', fontSize: 22, lineHeight: 25 }}>Collect rewards locally</DisplayText>
+              <Text style={{ color: '#4C1D95', fontSize: 14, lineHeight: 20, marginTop: 6 }}>Find participating businesses and start earning stamps and points.</Text>
+              <Pressable onPress={() => router.push('/local-loyalty-hub' as never)} accessibilityRole="button" style={{ alignSelf: 'flex-start', backgroundColor: '#7C3AED', borderRadius: 99, paddingHorizontal: 18, paddingVertical: 10, marginTop: 14 }}>
+                <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '800' }}>Explore rewards →</Text>
+              </Pressable>
             </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-              {Array.from({ length: needed }, (_, i) => <View key={i} style={[s.bigStamp, i < collected ? { backgroundColor: '#7C3AED' } : { borderWidth: 2, borderStyle: 'dashed', borderColor: '#C4B5FD' }]}><Text style={{ color: i < collected ? '#fff' : '#C4B5FD', fontWeight: '900' }}>{i < collected ? '★' : i + 1}</Text></View>)}
-            </View>
-            <Text style={{ color: '#6D28D9', fontSize: 12.5, fontWeight: '700', marginTop: 12 }}>{cardLine}</Text>
-          </Pressable>
+          )}
         </View>
 
         {/* Work — jobs & shifts, supporting ───────────────────────────────────────────── */}
