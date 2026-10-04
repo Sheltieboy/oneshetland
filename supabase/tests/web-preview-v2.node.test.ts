@@ -96,7 +96,7 @@ describe('the previews do not touch the live pages', opts, () => {
   };
   test('nothing outside the preview routes and components imports or links to a preview', () => {
     const offenders = ['app', 'components', 'lib'].flatMap((d) => walk(join(WEB, d)))
-      .filter((f) => !/components\/preview\/|lib\/preview-v2/.test(f))
+      .filter((f) => !/components\/preview\/|lib\/preview-(v2|work)/.test(f))
       .filter((f) => /preview-v2|\/preview\/(home|local)-v2|components\/preview\/v2/.test(readFileSync(f, 'utf8')));
     assert.deepEqual(offenders.map((f) => f.replace(WEB, '')), []);
   });
@@ -112,13 +112,13 @@ describe('the previews do not touch the live pages', opts, () => {
     }
   });
   test('the preview writes nothing: no insert, update, upsert or delete anywhere in it', () => {
-    const files = ['app/preview/home-v2/page.tsx', 'app/preview/local-v2/page.tsx', 'components/preview/v2/Merch.tsx', 'components/preview/v2/HomeV2.tsx', 'components/preview/v2/LocalV2.tsx', 'lib/preview-v2.ts'];
+    const files = ['app/preview/home-v2/page.tsx', 'app/preview/local-v2/page.tsx', 'components/preview/v2/Merch.tsx', 'components/preview/v2/HomeV2.tsx', 'components/preview/v2/LocalV2.tsx', 'components/preview/v2/WorkV2.tsx', 'lib/preview-v2.ts', 'lib/preview-work.ts', 'lib/preview-work-live.ts'];
     for (const f of files) assert.doesNotMatch(code(f), /\.(insert|update|upsert|delete|rpc)\(/, f);
   });
 });
 
 describe('phone fit — the shrinkable-column rule, in the preview too', opts, () => {
-  for (const file of ['components/preview/v2/Merch.tsx', 'components/preview/v2/HomeV2.tsx', 'components/preview/v2/LocalV2.tsx']) {
+  for (const file of ['components/preview/v2/Merch.tsx', 'components/preview/v2/HomeV2.tsx', 'components/preview/v2/LocalV2.tsx', 'components/preview/v2/WorkV2.tsx']) {
     test(`${file}: every responsive grid starts from a base column count`, () => {
       const s = code(file);
       const grids = [...s.matchAll(/className=(?:"|\{")(grid [^"]*)"/g)].map((m) => m[1]).filter((g) => /(sm|md|lg):grid-cols-/.test(g));

@@ -11,6 +11,8 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DisplayText } from '../../components/DisplayText';
 import { CropImage, Scrim, fade, MerchCard, Rail, SectionHead, GatewayTile, Chip, PillarSection, SIDE } from '../../components/preview-v2/ui';
+import { LocalWork } from '../../components/preview-v2/WorkModule';
+import { buildWork, parseMix } from '../../components/preview-v2/work';
 import { PreviewSwitch } from '../../components/preview-v2/PreviewSwitch';
 import { loadPreviewData, type PreviewData } from '../../components/preview-v2/data';
 import { buildCommerce, PILLARS, PILLAR_ORDER, type Merch, type Pillar, type PreviewState, type PreviewViewer } from '../../components/preview-v2/model';
@@ -24,7 +26,7 @@ const parseState = (v?: string): PreviewState => (['live', 'empty', 'seed', 'ful
 export default function AppLocalV2() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const q = useLocalSearchParams<{ state?: string; as?: string }>();
+  const q = useLocalSearchParams<{ state?: string; as?: string; work?: string }>();
   const state = parseState(q.state);
   const viewer: PreviewViewer = q.as === 'admin' ? 'admin' : 'public';
   const [data, setData] = useState<PreviewData | null>(null);
@@ -53,7 +55,8 @@ export default function AppLocalV2() {
     );
   };
 
-  const jobs = data?.jobs ?? [];
+  const now = useMemo(() => new Date(), []);
+  const work = useMemo(() => buildWork(state, parseMix(q.work), { jobs: data?.jobs ?? [], shifts: data?.shifts ?? [] }, now), [state, q.work, data, now]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FBF8F2' }}>
@@ -146,21 +149,8 @@ export default function AppLocalV2() {
           </View>
         </View>
 
-        {/* Jobs — supporting ────────────────────────────────────────────────────────── */}
-        {jobs.length > 0 && (
-          <View style={{ paddingTop: 26 }}>
-            <SectionHead eyebrow="Work" title="Hiring locally" color="#2A8B5C" action="All jobs" />
-            <View style={{ paddingHorizontal: SIDE, gap: 10 }}>
-              {jobs.slice(0, 3).map((j) => (
-                <View key={j.id} style={{ backgroundColor: '#fff', borderRadius: 16, borderLeftWidth: 4, borderLeftColor: '#2A8B5C', padding: 14 }}>
-                  <DisplayText weight="bold" numberOfLines={2} style={{ fontSize: 17, lineHeight: 20, color: '#0F1C26' }}>{j.title}</DisplayText>
-                  <Text numberOfLines={1} style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>{j.employer} · {j.location}</Text>
-                  {!!j.pay && <Text style={{ color: '#2A8B5C', fontSize: 12.5, fontWeight: '800', marginTop: 4 }}>{j.pay}</Text>}
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
+        {/* Work — jobs & shifts, supporting ───────────────────────────────────────────── */}
+        <LocalWork work={work} now={now} />
 
         {/* For businesses ───────────────────────────────────────────────────────────── */}
         <View style={{ margin: SIDE, marginTop: 28, borderRadius: 24, overflow: 'hidden', padding: 20, backgroundColor: '#032F4C' }}>

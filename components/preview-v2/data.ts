@@ -7,6 +7,8 @@ import { supabase } from '../../lib/supabase';
 import { BUSINESS_PUBLIC_SOURCE, BUSINESS_PUBLIC_COLS, fetchActiveOffers, fetchActiveLocalPasses, type LocalBusiness } from '../../lib/local-api';
 import { fetchFreshProducts } from '../../lib/products-api';
 import { fetchActiveBookableServices } from '../../lib/book-api';
+import { fetchOpenShifts, shiftDisplayBusiness, formatPay } from '../../lib/shifts-api';
+import type { WorkJob, WorkShift } from './work';
 import { fetchTodaySnapshot, describeWeather, type TodaySnapshot } from '../../lib/shetland-today';
 import { getCruiseHomeCard } from '../../lib/cruise-api';
 import { fetchHomeNotices, fetchTodaysSpik } from '../../lib/concierge-api';
@@ -21,7 +23,9 @@ export interface PreviewData {
   ships: { count: number; isToday: boolean } | null;
   events: PreviewEvent[];
   businesses: LocalBusiness[];
-  jobs: { id: string; title: string; employer: string; location: string; pay: string }[];
+  /** Real current jobs and real current shifts (the live Work content). Never padded: no shift in production → none. */
+  jobs: WorkJob[];
+  shifts: WorkShift[];
   notices: { id: string; title: string; body: string; publisher: string }[];
   spik: { word: string; meaning: string } | null;
   real: Record<Pillar, Merch[]>;
@@ -42,7 +46,7 @@ export function curate(list: LocalBusiness[], limit = 9): LocalBusiness[] {
 
 export async function loadPreviewData(): Promise<PreviewData> {
   const now = new Date().toISOString();
-  const [today, cruise, events, bizAll, jobs, notices, spik, products, offers, passes, services] = await Promise.all([
+  const [today, cruise, events, bizAll, jobs, notices, spik, products, offers, passes, services, openShifts] = await Promise.all([
     soft(fetchTodaySnapshot(), null),
     soft(getCruiseHomeCard(), null),
     soft(
@@ -61,16 +65,17 @@ export async function loadPreviewData(): Promise<PreviewData> {
       })(), [] as LocalBusiness[]),
     soft(
       (async () => {
-        const { data } = await supabase.from('jobs').select('id,title,location,pay_text,external_employer_name').eq('status', 'open').eq('is_hidden', false)
+        const { data } = await supabase.from('jobs').select('id,title,location,pay_text,contract_type,external_employer_name').eq('status', 'open').eq('is_hidden', false)
           .or(`expires_at.is.null,expires_at.gt.${now}`).order('is_featured', { ascending: false }).order('posted_at', { ascending: false }).limit(4);
-        return (data ?? []) as { id: string; title: string; location: string | null; pay_text: string | null; external_employer_name: string | null }[];
-      })(), [] as { id: string; title: string; location: string | null; pay_text: string | null; external_employer_name: string | null }[]),
+        return (data ?? []) as { id: string; title: string; location: string | null; pay_text: string | null; contract_type: string | null; external_employer_name: string | null }[];
+      })(), [] as { id: string; title: string; location: string | null; pay_text: string | null; contract_type: string | null; external_employer_name: string | null }[]),
     soft(fetchHomeNotices({ limit: 2 }), []),
     soft(fetchTodaysSpik(), null),
     soft(fetchFreshProducts(12), [] as any[]),
     soft(fetchActiveOffers(), [] as any[]),
     soft(fetchActiveLocalPasses(12), [] as any[]),
     soft(fetchActiveBookableServices(12), [] as any[]),
+    soft(fetchOpenShifts(), [] as any[]),
   ]);
   const ships = cruise && (cruise as any).isToday ? { count: (cruise as any).ships_count ?? (cruise as any).visits?.length ?? 1, isToday: true } : null;
   return {
@@ -79,7 +84,8 @@ export async function loadPreviewData(): Promise<PreviewData> {
     ships,
     events,
     businesses: curate(bizAll, 9),
-    jobs: jobs.map((j) => ({ id: j.id, title: j.title, employer: j.external_employer_name ?? 'Local employer', location: j.location ?? 'Shetland', pay: j.pay_text ?? '' })),
+    jobs: jobs.map((j) => ({ kind: 'job' as const, id: j.id, title: j.title, employer: j.external_employer_name, where: j.location, pay: j.pay_text, contract: j.contract_type })),
+    shifts: (openShifts as any[]).map((s) => ({ kind: 'shift' as const, id: s.id, title: s.title, employer: shiftDisplayBusiness(s).name, where: s.location_text, startAt: s.start_at, endAt: s.end_at, rate: formatPay(s.pay_type, s.pay_amount) })),
     notices: (notices as any[]).filter((n) => n.source === 'db').map((n) => ({ id: n.id, title: n.title, body: n.body, publisher: n.publisher })),
     spik: spik ? { word: (spik as any).word, meaning: (spik as any).meaning } : null,
     real: {

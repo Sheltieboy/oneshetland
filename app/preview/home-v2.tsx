@@ -8,6 +8,8 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DisplayText } from '../../components/DisplayText';
 import { CropImage, Scrim, fade, MerchCard, Rail, SectionHead, GatewayTile, Chip, SIDE } from '../../components/preview-v2/ui';
+import { HomeWork } from '../../components/preview-v2/WorkModule';
+import { buildWork, parseMix } from '../../components/preview-v2/work';
 import { PreviewSwitch } from '../../components/preview-v2/PreviewSwitch';
 import { loadPreviewData, type PreviewData } from '../../components/preview-v2/data';
 import { buildCommerce, density, PILLARS, PILLAR_ORDER, type Merch, type Pillar, type PreviewState, type PreviewViewer } from '../../components/preview-v2/model';
@@ -22,13 +24,16 @@ const parseState = (v?: string): PreviewState => (['live', 'empty', 'seed', 'ful
 export default function AppHomeV2() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const q = useLocalSearchParams<{ state?: string; as?: string }>();
+  const q = useLocalSearchParams<{ state?: string; as?: string; work?: string }>();
   const state = parseState(q.state);
   const viewer: PreviewViewer = q.as === 'admin' ? 'admin' : 'public';
   const [data, setData] = useState<PreviewData | null>(null);
   const [audience, setAudience] = useState<'resident' | 'visiting'>('resident');
   useEffect(() => { void loadPreviewData().then(setData); }, []);
   const commerce = useMemo(() => buildCommerce(state, viewer, data?.real ?? EMPTY_REAL), [state, viewer, data]);
+
+  const now = useMemo(() => new Date(), []);
+  const work = useMemo(() => buildWork(state, parseMix(q.work), { jobs: data?.jobs ?? [], shifts: data?.shifts ?? [] }, now), [state, q.work, data, now]);
 
   const total = PILLAR_ORDER.reduce((n, p) => n + commerce[p].length, 0);
   const mixed: Merch[] = [];
@@ -202,6 +207,9 @@ export default function AppHomeV2() {
             )}
           </View>
         </View>
+
+        {/* 8b · WORK — jobs & shifts together ───────────────────────────────────────── */}
+        <HomeWork work={work} now={now} />
 
         {/* 9 · ISLAND LIFE — one mosaic ──────────────────────────────────────────── */}
         <View style={{ backgroundColor: '#032F4C', paddingTop: 26, paddingBottom: 26 }}>

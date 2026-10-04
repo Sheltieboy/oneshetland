@@ -78,7 +78,7 @@ export function Chip({ label, color = '#fff', bg = 'rgba(255,255,255,0.2)', size
   );
 }
 
-export function SectionHead({ eyebrow, title, color = '#6B7280', light = false, action }: { eyebrow?: string; title: string; color?: string; light?: boolean; action?: string }) {
+export function SectionHead({ eyebrow, title, color = '#6B7280', light = false, action, onAction }: { eyebrow?: string; title: string; color?: string; light?: boolean; action?: string; onAction?: () => void }) {
   return (
     <View style={{ paddingHorizontal: SIDE, marginBottom: 12, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
       <View style={{ flex: 1, paddingRight: 12 }}>
@@ -86,9 +86,9 @@ export function SectionHead({ eyebrow, title, color = '#6B7280', light = false, 
         <DisplayText weight="bold" style={{ color: light ? '#fff' : '#0F1C26', fontSize: 26, lineHeight: 29, marginTop: 3 }}>{title}</DisplayText>
       </View>
       {!!action && (
-        <View style={{ borderWidth: 1, borderColor: light ? 'rgba(255,255,255,0.45)' : '#CBD5E1', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7 }}>
+        <Pressable disabled={!onAction} onPress={onAction} hitSlop={8} style={{ borderWidth: 1, borderColor: light ? 'rgba(255,255,255,0.45)' : '#CBD5E1', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7 }}>
           <Text style={{ color: light ? '#fff' : '#374151', fontSize: 12, fontWeight: '800' }}>{action} →</Text>
-        </View>
+        </Pressable>
       )}
     </View>
   );
