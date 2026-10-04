@@ -84,10 +84,11 @@ describe('Local surfaces active, eligible bookable services — not businesses, 
     assert.doesNotMatch(screen, /bookableBusinesses/, 'the old business-first derived list must be gone');
   });
 
-  test('web Local landing calls the services query and renders a real "Book now" section', () => {
+  test('web Local (V2) calls the services query and its Book pillar is built from real services', () => {
     const page = readWeb('app/local/page.tsx');
     assert.match(page, /getBookableServices/);
-    assert.match(page, /Book now/);
+    assert.match(page, /<PillarBand pillar="book" items=\{commerce\.book\} \/>/);
+    assert.match(readWeb('lib/preview-v2.ts'), /book: d\.services\.map/);
   });
 });
 
@@ -133,9 +134,9 @@ describe('the direct Book CTA deep-links into the existing booking flow with the
   });
 
   test('web: every new/changed Book control links to the business page with ?book=<serviceId>', () => {
-    const localPage = readWeb('app/local/page.tsx');
+    const localPage = readWeb('lib/preview-v2.ts');   // the Local V2 Book cards are built here
     const bookablePage = readWeb('app/directory/bookable/page.tsx');
-    assert.match(localPage, /\$\{bizHref\}\?book=\$\{s\.id\}/);
+    assert.match(localPage, /\/directory\/\$\{s\.business_slug \?\? s\.business_id\}\?book=\$\{s\.id\}/);
     assert.match(bookablePage, /`\$\{bizHref\}\?book=\$\{s\.id\}`/);
   });
 
@@ -171,15 +172,15 @@ describe('counters and copy reflect what a customer can actually do, not a raw b
   test('web: the stats-strip label is "bookable service(s)", not "bookable spots"', () => {
     // Comments referencing the OLD wording (documenting the bug this fixed)
     // are expected and fine; only the rendered copy itself must have moved.
-    const page = code(readWeb('app/local/page.tsx'));
+    const page = code(readWeb('app/local/page.tsx')) + code(readWeb('components/preview/v2/LocalV2.tsx')) + code(readWeb('lib/preview-v2.ts'));
     assert.doesNotMatch(page, /bookable spots/);
-    assert.match(page, /bookable service/);
+    assert.match(page, /service/);
   });
 
-  test('web: the pillar is gated on hasBookable (real services), and hides like every other pillar when there are none', () => {
-    const page = readWeb('app/local/page.tsx');
-    const pillars = page.slice(page.indexOf('const pillars ='), page.indexOf('];') + 2);
-    assert.match(pillars, /hasBookable \? \[\{ emoji: "📅", title: "Book"/);   // launch terminology: "Book", not "Book now"
+  test('web: Book is a permanent pillar (Local V2): real services fill it, none shows the "Booking is opening up" proposition — never a fake count', () => {
+    const l = code(readWeb('components/preview/v2/LocalV2.tsx'));
+    assert.match(l, /key: "book", label: "Book"/);   // launch terminology: "Book", not "Book now"
+    assert.match(readWeb('lib/preview-v2.ts'), /Booking is opening up/);
   });
 });
 

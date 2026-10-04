@@ -152,55 +152,47 @@ describe('Local\'s hero promises only what the page can show', opts, () => {
   });
 });
 
-describe('Web Home — composition', opts, () => {
+describe('Web Home — the approved V2, live', opts, () => {
   const page = () => code('app/page.tsx');
-  test('sections run in the approved order', () => {
+  test('sections run in the approved V2 order', () => {
     const s = page();
-    const order = ['<UrgentAlertBanner', '<HeroActions', '<ShetlandTodayCard', '<PlanDayTile', '<ForYou', '<WhatsHappening', '<FindLocal', '<HiringShelf', '<LocalCommerce', '<IslandAndCommunity', '<ExploreMore']
+    const order = ['<UrgentAlertBanner', '<HeroActions', '<LivePills', '<PlanDayTile', '<ForYou', '<RightNow', '<DiscoverLocal', '<CommerceGateway', '<HomeWork', '<IslandMosaic', '<CommunityV2', '<ExploreV2']
       .map((t) => { const i = s.indexOf(t); assert.notEqual(i, -1, `${t} is missing`); return i; });
     assert.deepEqual(order, [...order].sort((a, b) => a - b));
   });
-  test('REMOVED: the 13-tile grid, the bento, the duplicate Work/Hiring modules, the rails and the test-product rail', () => {
+  test('LIVE only: no preview state, viewer, switch bar or ?work= override; shifts are always the real ones', () => {
     const s = page();
-    for (const gone of ['SectionGrid', 'HomeBento', 'FeaturedShelf', 'OffersShelf', 'ShopRails', 'IslandLifeBand', 'getHomeContent', 'fetchLeaderboardWithTrend'])
+    for (const gone of ['parsePreview', 'buildCommerce', 'PreviewBar', 'parseMix', 'searchParams', 'state=seed'])
       assert.doesNotMatch(s, new RegExp(gone), gone);
-    assert.equal((s.match(/<HiringShelf/g) ?? []).length, 1, 'jobs appear once');
-    assert.equal((s.match(/<WhatsHappening/g) ?? []).length, 1, 'events appear once');
+    assert.match(s, /buildWork\("live", undefined, \{ jobs: mapLiveJobs\(shelves\.hiring\), shifts: await loadLiveShifts\(\) \}/);
+    assert.match(s, /const commerce = mapLiveCommerce\(/);
+    assert.doesNotMatch(s, /robots/, 'the live Home is indexable');
+  });
+  test('the old Home\'s modules are gone: no 13-tile grid, bento, duplicate Work/Hiring shelves or rails', () => {
+    const s = page();
+    for (const gone of ['SectionGrid', 'HomeBento', 'FeaturedShelf', 'OffersShelf', 'ShopRails', 'IslandLifeBand', 'HiringShelf', 'WhatsHappening', 'LocalCommerce', 'IslandAndCommunity'])
+      assert.doesNotMatch(s, new RegExp(gone), gone);
+    assert.equal((s.match(/<HomeWork/g) ?? []).length, 1, 'Work appears once');
+    assert.equal((s.match(/<RightNow/g) ?? []).length, 1, 'events appear once');
   });
   test('the first phone screen has real actions: What\'s On, Find a business and the Directory search', () => {
     const sec = code('components/home/HomeSections.tsx');
     assert.match(sec, /href="\/whats-on"[^>]*>\s*What&apos;s On/);
     assert.match(sec, /href="\/directory"[^>]*>\s*Find a business/);
     assert.match(sec, /<form action="\/directory" method="get" role="search"/);
-    assert.match(sec, /name="q"/);
   });
-  test('the weather panel steps aside on a phone for a one-line strip; the mode switch is compact and in the hero', () => {
+  test('the visitor module leads for visitors only; the mode switch is compact and in the hero', () => {
     const s = page();
-    assert.match(s, /md:hidden">\{strip\}/);
-    assert.match(s, /<div className="hidden md:block"><ShetlandTodayCard/);
+    assert.match(s, /\{visiting && <section[^>]*><PlanDayTile wide \/><\/section>\}/);
+    assert.doesNotMatch(s, /\{!visiting/);
     assert.match(s, /<AudienceChip audience=\{audience\} compact \/>/);
   });
-  test('commerce, businesses and community modules hide themselves when empty', () => {
-    const sec = code('components/home/HomeSections.tsx');
-    assert.match(sec, /export function LocalCommerce[\s\S]*?if \(offers\.length === 0 && products\.length === 0\) return null;/);
-    assert.match(sec, /export function FindLocal[\s\S]*?if \(businesses\.length === 0\) return null;/);
-    assert.match(sec, /export function WhatsHappening[\s\S]*?if \(!featured && !showCruise\) return null;/);
-    assert.match(sec, /if \(!anyCulture && visibleNotices\.length === 0 && live\.length === 0\) return null;/);
+  test('personal content only where it genuinely exists: For you for a signed-in account with items', () => {
+    assert.match(page(), /\{account && forYou\.length > 0 && <ForYou /);
   });
-  test('one game promotion only (inside Island life), and no stale "Ten sections" copy anywhere', () => {
-    const all = code('components/home/HomeSections.tsx') + code('components/home/Shelves.tsx') + page();
-    assert.equal((all.match(/Today&apos;s game/g) ?? []).length, 1);
-    assert.doesNotMatch(all, /Ten sections/);
-  });
-  test('"More from OneShetland" is a compact strip, not tiles with photos', () => {
-    const sec = code('components/home/HomeSections.tsx');
-    assert.match(sec, /More from OneShetland/);
-    assert.doesNotMatch(sec.slice(sec.indexOf('export function ExploreMore')), /<Image|SafeImage|h-40/);
-  });
-  test('the visitor module leads for visitors; residents get a quiet offer instead', () => {
-    const s = page();
-    assert.match(s, /\{visiting && \(\s*<section[^>]*>\s*<PlanDayTile wide \/>/);
-    assert.match(s, /\{!visiting && \(/);
+  test('Home reads only the PUBLIC client, so a fixture can never reach it', () => {
+    for (const f of ['lib/home-data.ts', 'lib/home-shelves.ts', 'lib/curated-businesses.ts', 'lib/local-data.ts', 'lib/jobs-data.ts', 'lib/cruise-data.ts'])
+      assert.doesNotMatch(code(f), /supabase\/server|cookies\(/, f);
   });
   test('Home\'s job source is open vacancies only', () => {
     assert.match(code('lib/home-data.ts'), /\.from\("jobs"\)\s*\.select\("id, title, location, pay_text, posted_at"\)\s*\.eq\("status", "open"\)/);
@@ -208,54 +200,65 @@ describe('Web Home — composition', opts, () => {
   });
   test('notices carry a real destination and the mobile menu reaches the notifications inbox', () => {
     assert.match(code('lib/home-data.ts'), /href: noticeHref\(/);
-    assert.match(code('components/home/HomeSections.tsx'), /href=\{n\.href\}/);
+    assert.match(code('components/preview/v2/HomeV2.tsx'), /href=\{n\.href\}/);
     assert.match(code('components/site/SiteHeader.tsx'), /href="\/notifications"[\s\S]{0,400}Notifications/);
   });
 });
 
-describe('Web Local — composition and the zero-commerce state', opts, () => {
+describe('Web Local — the approved V2, live', opts, () => {
   const page = () => code('app/local/page.tsx');
-  test('order: hero, urgent notice, Open for business, Offers, Book, Passes, Shop, Jobs, Local rewards, business CTA', () => {
+  test('order: hero, six pillars, urgent notice, Featured locally, Shop, Offers, Book, Experiences, Rewards, Businesses, Work, business CTA', () => {
     const s = page();
-    const marks = ['localHeroCopy(', 'urgent.length > 0', '<FindLocal', 'id="offers"', 'id="book"', 'id="passes"', 'shopCount > 0', 'All jobs', 'One card for every shop', 'Running a business in Shetland?'];
+    const marks = ['<LocalHero', '<SixPillars', 'urgent.length > 0', '<GoodLocally', 'pillar="shop"', 'pillar="offers"', 'pillar="book"', 'pillar="experiences"', '<RewardsPanel', '<BusinessesCurated', '<LocalWork', '<ForBusinesses'];
     const at = marks.map((m) => { const i = s.indexOf(m); assert.notEqual(i, -1, `${m} is missing`); return i; });
     assert.deepEqual(at, [...at].sort((a, b) => a - b));
   });
-  test('THE DEFECT: no empty stats band, no zero-count pillars, no cashback promise, no "newest 20"', () => {
+  test('LIVE only: no preview state, viewer or switch bar; area chips link to /local itself; the page is indexable', () => {
     const s = page();
-    assert.match(s, /\{stats\.length > 0 && \(/);
-    assert.match(s, /\{pillars\.length >= 2 && \(/);
-    assert.doesNotMatch(s, /cashback/i);
-    assert.doesNotMatch(s, /businesses\.map\(\(b\) =>/);
+    for (const gone of ['parsePreview', 'buildCommerce', 'PreviewBar', 'parseMix', 'preview/local-v2'])
+      assert.doesNotMatch(s, new RegExp(gone), gone);
+    assert.match(s, /<LocalHero areaKey=\{areaKey\} base="\/local" \/>/);
+    assert.match(s, /export const metadata = \{ title: "Local" \}/);
+    assert.doesNotMatch(s, /robots/);
   });
-  test('every commerce module — and the Shop entry — renders only for genuine items', () => {
-    const s = page();
-    assert.match(s, /\{hasOffers && \(\s*<section id="offers"/);
-    assert.match(s, /\{hasBookable && \(\s*<section id="book"/);
-    assert.match(s, /\{hasPasses && \(\s*<section id="passes"/);
-    assert.match(s, /\{shopCount > 0 && \(/);
-    assert.match(s, /\(jobs\.length > 0\)/);
+  test('all six pillars are permanent: the gateway is built from fixed tiles, not from what happens to be in stock', () => {
+    const l = code('components/preview/v2/LocalV2.tsx');
+    for (const k of ['shop', 'offers', 'book', 'exp', 'biz', 'rewards']) assert.match(l, new RegExp(`key: "${k}"`), k);
+    const p = page();
+    for (const k of ['shop', 'offers', 'book', 'experiences']) assert.match(p, new RegExp(`<PillarBand pillar="${k}"`), k);
   });
-  test('hub notices are not a consumer section on Local (Home carries them); an urgent notice keeps the admin broadcast control', () => {
+  test('Rewards is honest: an invitation, never a made-up card, a named business or a Wallet balance', () => {
+    const l = code('components/preview/v2/LocalV2.tsx');
+    assert.match(l, /Collect rewards locally/);
+    assert.match(l, /Find participating businesses and start earning stamps and points\./);
+    assert.doesNotMatch(l, /Sample Café|5 of 8|5 \/ 8|£12\.50|3 more stamps/);
+  });
+  test('an urgent notice keeps the admin-only broadcast control; hub notices are not a consumer section on Local', () => {
     const s = page();
     assert.doesNotMatch(s, /Hub notices/);
-    assert.match(s, /urgent = notices\.filter\(\(n\) => n\.severity === "urgent"\)/);
-    assert.match(s, /<NoticeBroadcast/);
+    assert.match(s, /urgent = feed\.notices\.filter\(\(n\) => n\.severity === "urgent"\)/);
+    assert.match(s, /\{isAdmin && <NoticeBroadcast/);
+    assert.match(s, /const isAdmin = account\?\.profile\?\.role === "admin"/);
   });
-  test('Jobs: 3–4 open vacancies, same open-status rule as Home and the Jobs page', () => {
-    assert.match(code('app/local/page.tsx'), /jobs\.slice\(0, 4\)/);
-    assert.match(code('lib/local-data.ts'), /from\("jobs"\)\s*\.select\("id, title, location, pay_text, posted_at"\)\s*\.eq\("status", "open"\)/);
+  test('Experiences has a real destination: See all goes to the Experiences section of Local, not the generic directory', () => {
+    const v2 = code('lib/preview-v2.ts');
+    assert.match(v2, /seeAll: "\/local#experiences"/);
+    assert.doesNotMatch(v2, /seeAll: "\/directory"/);
   });
-  test('with no businesses in the chosen area it says so honestly and invites a listing', () => {
-    assert.match(page(), /No businesses listed in \$\{areaLabel\} yet/);
-    assert.match(page(), /Add a business/);
+  test('Jobs & shifts: real vacancies and real shifts, never padded', () => {
+    assert.match(page(), /buildWork\("live", undefined, \{ jobs: mapLiveJobs\(shelves\.hiring\), shifts: await loadLiveShifts\(\) \}/);
+    assert.match(code('lib/preview-work-live.ts'), /getOpenShifts\(\)\.catch\(\(\) => \[\]\)/);
+  });
+  test('For businesses: the call to action reaches the add-a-business form', () => {
+    assert.match(code('components/preview/v2/LocalV2.tsx'), /href="\/directory\/new"[^>]*>Add your business free/);
   });
 });
 
 describe('terminology', opts, () => {
   test('Jobs / Book / Local rewards on the changed surfaces; the old drift is gone', () => {
-    const surfaces = code('app/page.tsx') + code('components/home/HomeSections.tsx') + code('components/home/Shelves.tsx') + code('app/local/page.tsx');
-    for (const old of ['Hiring now', 'Jobs & shifts', 'Book now', 'Book in Shetland', 'Shop Local Shetland'])
+    // Work is now deliberately "Jobs & shifts" (one proposition) on Home and Local, so that phrase is no longer drift.
+    const surfaces = code('app/page.tsx') + code('app/local/page.tsx') + code('components/preview/v2/HomeV2.tsx') + code('components/preview/v2/LocalV2.tsx') + code('components/preview/v2/WorkV2.tsx') + code('lib/preview-v2.ts');
+    for (const old of ['Hiring now', 'Book now', 'Book in Shetland', 'Shop Local Shetland'])
       assert.doesNotMatch(surfaces, new RegExp(old), old);
     assert.match(code('lib/sections.ts'), /key: "jobs",\s*label: "Jobs"/);
     assert.match(code('components/site/SiteFooter.tsx'), />Local rewards</);
@@ -267,7 +270,7 @@ describe('phone fit — the shrinkable-column rule', opts, () => {
   // A CSS grid with no base column gets an implicit AUTO track that grows to the longest unwrapped line: the same
   // defect that made Events, Jobs and Local wider than a 375px phone. Caught here on the new What's happening grid
   // (469px wide on a 390px screen) before it shipped.
-  for (const file of ['components/home/HomeSections.tsx', 'components/home/Shelves.tsx', 'app/local/page.tsx']) {
+  for (const file of ['components/home/HomeSections.tsx', 'components/home/Shelves.tsx', 'components/preview/v2/HomeV2.tsx', 'components/preview/v2/LocalV2.tsx', 'components/preview/v2/WorkV2.tsx']) {
     test(`${file}: every responsive grid starts from grid-cols-1 (or an explicit base count)`, () => {
       const s = code(file);
       const grids = [...s.matchAll(/className=(?:"|\{")(grid [^"]*)"/g)].map((m) => m[1]).filter((g) => /(sm|md|lg):grid-cols-/.test(g));

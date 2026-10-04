@@ -94,16 +94,17 @@ describe('the previews do not touch the live pages', opts, () => {
     }
     return out;
   };
-  test('nothing outside the preview routes and components imports or links to a preview', () => {
-    const offenders = ['app', 'components', 'lib'].flatMap((d) => walk(join(WEB, d)))
-      .filter((f) => !/components\/preview\/|lib\/preview-(v2|work)/.test(f))
-      .filter((f) => /preview-v2|\/preview\/(home|local)-v2|components\/preview\/v2/.test(readFileSync(f, 'utf8')));
-    assert.deepEqual(offenders.map((f) => f.replace(WEB, '')), []);
+  test('the V2 modules are now production code: Home and Local import them, and they carry no preview controls', () => {
+    assert.match(code('app/page.tsx'), /from "@\/components\/preview\/v2\/HomeV2"/);
+    assert.match(code('app/local/page.tsx'), /from "@\/components\/preview\/v2\/LocalV2"/);
+    assert.doesNotMatch(code('app/page.tsx') + code('app/local/page.tsx'), /PreviewBar|parsePreview|buildCommerce|searchParams: Promise<\{ state/);
   });
-  test('the live Home and Local pages are the curated ones, untouched by the previews', () => {
-    assert.match(code('app/page.tsx'), /<WhatsHappening/);
-    assert.match(code('app/local/page.tsx'), /Open for business/);
-    assert.doesNotMatch(code('app/page.tsx') + code('app/local/page.tsx'), /preview/i);
+  test('nothing else links to a preview route, and the live pages never do', () => {
+    const offenders = ['app', 'components', 'lib'].flatMap((d) => walk(join(WEB, d)))
+      .filter((f) => !/app\/preview\/|components\/preview\/v2\/PreviewBar|lib\/preview-v2\.ts/.test(f))
+      .filter((f) => /\/preview\/(home|local)-v2/.test(readFileSync(f, 'utf8')));
+    assert.deepEqual(offenders.map((f) => f.replace(WEB, '')), []);
+    assert.doesNotMatch(code('app/page.tsx') + code('app/local/page.tsx'), /\/preview\/(home|local)-v2/);
   });
   test('both preview routes are unindexed', () => {
     for (const r of ['app/preview/home-v2/page.tsx', 'app/preview/local-v2/page.tsx']) {

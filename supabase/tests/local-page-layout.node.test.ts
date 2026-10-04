@@ -15,20 +15,14 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'oneshetland-web');
-const have = existsSync(join(WEB, 'app/local/page.tsx'));
+const have = existsSync(join(WEB, 'components/preview/v2/LocalV2.tsx'));
 const opts = { skip: have ? false : 'sibling oneshetland-web checkout not found' };
-const src = () => readFileSync(join(WEB, 'app/local/page.tsx'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const src = () => ['components/preview/v2/LocalV2.tsx', 'components/preview/v2/Merch.tsx', 'components/preview/v2/WorkV2.tsx'].map((f) => readFileSync(join(WEB, f), 'utf8')).join('\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('every card grid on /local starts from a shrinkable column', opts, () => {
-  test('THE DEFECT: no grid is left with an implicit auto column', () => {
-    const grids = (src().match(/className=(?:"|\{")grid [^"]*"/g) ?? []).filter((g) => /sm:grid-cols-/.test(g));   // the responsive card grids (not small icon boxes)
-    assert.ok(grids.length >= 7, `expected the page's card grids, found ${grids.length}`);
-    for (const g of grids) assert.match(g, /grid grid-cols-1 /, g);
-  });
-  test('the desktop layouts are unchanged (sm / lg column counts still there)', () => {
-    const s = src();
-    assert.equal((s.match(/grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3/g) ?? []).length, 4);
-    assert.match(s, /grid grid-cols-1 gap-3 sm:grid-cols-2"/);
-    assert.match(s, /lg:grid-cols-4/);
+  test('THE DEFECT: no responsive card grid is left with an implicit auto column', () => {
+    const grids = (src().match(/className=(?:"|\{")grid [^"]*"/g) ?? []).filter((g) => /(sm|md|lg):grid-cols-/.test(g));
+    assert.ok(grids.length >= 3, `expected the page's card grids, found ${grids.length}`);
+    for (const g of grids) assert.match(g, /grid grid-cols-\d/, g);
   });
 });

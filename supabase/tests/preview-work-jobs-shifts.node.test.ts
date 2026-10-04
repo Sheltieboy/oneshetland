@@ -203,7 +203,10 @@ describe('surfaces', () => {
     assert.doesNotMatch(live, /sample|SAMPLE/);
     assert.doesNotMatch(code(join(REPO, 'components/home-local/data.ts')), /sample.?shift|SAMPLE_SHIFTS/i);
   });
-  test('production Home / Local never mention the Work preview', { skip: haveWeb ? false : 'no web checkout' }, () => {
-    assert.doesNotMatch(code(join(WEB, 'app/page.tsx')) + code(join(WEB, 'app/local/page.tsx')), /preview-work|WorkV2|HomeWork|LocalWork/);
+  test('production Home / Local use the Work module in LIVE mode only (no ?work= override, no sample states)', { skip: haveWeb ? false : 'no web checkout' }, () => {
+    const pages = code(join(WEB, 'app/page.tsx')) + code(join(WEB, 'app/local/page.tsx'));
+    assert.match(pages, /<HomeWork /); assert.match(pages, /<LocalWork /);
+    assert.doesNotMatch(pages, /parseMix|searchParams\.work|sp\.work/);
+    assert.equal((pages.match(/buildWork\("live", undefined,/g) ?? []).length, 2);
   });
 });

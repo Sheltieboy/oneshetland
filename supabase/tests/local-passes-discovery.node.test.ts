@@ -68,7 +68,8 @@ describe('passes are discoverable from Local, not just from a business page', ()
 
     const page = readWeb('app/local/page.tsx');
     assert.match(page, /getActiveLocalPasses/, 'the Local landing page must call it');
-    assert.match(page, /Passes (&amp;|&) experiences/, 'and render a passes section');
+    assert.match(page, /<PillarBand pillar="experiences" items=\{commerce\.experiences\} \/>/, 'and render the Experiences & passes section');
+    assert.match(readWeb('lib/preview-v2.ts'), /label: "Experiences", short: "Passes and things to do"/);
   });
 
   test('the old orphaned marketplace query is not what either platform relies on for this', () => {
@@ -124,12 +125,9 @@ describe('the two adjacent eligibility/ordering bugs found during this audit', (
 });
 
 describe('empty sections do not advertise zero content', () => {
-  test('web stats strip hides bookable/cashback the same way it already hid offers', () => {
-    const page = readWeb('app/local/page.tsx');
-    const stripStart = page.indexOf('const stats = [');
-    assert.ok(stripStart >= 0);
-    const strip = page.slice(stripStart, stripStart + 1500);
-    assert.match(strip, /hasBookable \? \[\{ n: bookableServices\.length/);
-    assert.match(page, /Stats strip/);
+  test('web: no section advertises a zero count — an empty pillar says "Opening soon" and shows its proposition (Local V2)', () => {
+    const l = readWeb('components/preview/v2/LocalV2.tsx');
+    assert.match(l, /Opening soon/);
+    assert.doesNotMatch(l, /0 live offers|\{0\} /);
   });
 });

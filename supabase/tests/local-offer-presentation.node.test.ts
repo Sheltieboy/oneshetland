@@ -1,167 +1,62 @@
 /**
- * local-offer-presentation.node.test.ts — /local with nothing to offer.
+ * local-offer-presentation.node.test.ts — /local with nothing to offer (Local V2).
  *
- * The page led with "0 live offers" and an "Offers & deals" tile pointing at
- * `#offers`. The section that anchor belongs to only renders when there ARE
- * offers, so with none the tile was a link that scrolled nowhere — a dead
- * control on a public page, not merely a bare number.
+ * The earlier Local page HID the Offers pillar (and its #offers anchor) when there were no live offers, so a launch
+ * visitor saw a page that said nothing about offers at all. Local V2 reverses that deliberately: every pillar is
+ * permanent, and low inventory changes how it is TREATED (an "Opening soon" chip, a proposition panel), never whether
+ * it exists. What must still hold is that nothing links to an anchor the page is not rendering, and that the first
+ * published offer simply fills the section that was already there.
  *
- * All three now hang off one value derived from the offers themselves, so the
- * first published offer restores the stat, the tile and the section together.
- * No flag, nothing to remember to switch back on.
- *
- * The conditionals are EXTRACTED FROM THE SOURCE and evaluated here rather than
- * re-described, so this cannot pass by agreeing with a copy of the logic — if
- * either condition is removed the arrays come out wrong and the tests fail.
- *
- * Run: npm test
+ * Needs the sibling ../oneshetland-web checkout.
  */
-
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadModule } from './_support/load-source.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEB_ROOT  = join(REPO_ROOT, '..', 'oneshetland-web');
+const have = existsSync(join(WEB_ROOT, 'lib/preview-v2.ts'));
+const opts = { skip: have ? false : 'sibling oneshetland-web checkout not found' };
 const web = (p: string) => readFileSync(join(WEB_ROOT, p), 'utf8');
+const code = (p: string) => web(p).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-const localPage = web('app/local/page.tsx');
-const loyalty   = web('app/loyalty/page.tsx');
-
-type Tile = { title: string; href: string };
-type Stat = { n: number; label: string };
-
-/** Pull a bracketed array literal out of the source, starting at `marker`. */
-function arrayLiteralAt(src: string, marker: string): string {
-  const start = src.indexOf(marker);
-  assert.ok(start > 0, `could not find ${marker}`);
-  const open = src.indexOf('[', start);
-  let depth = 0;
-  for (let i = open; i < src.length; i++) {
-    if (src[i] === '[') depth++;
-    else if (src[i] === ']') { depth--; if (depth === 0) return src.slice(open, i + 1); }
-  }
-  throw new Error(`unbalanced array literal at ${marker}`);
-}
-
-/**
- * Evaluate one of the page's arrays with a chosen offer count. Passes,
- * bookable services and cashback partners default to present (matching this
- * suite's original assumption that those two are "always there" while only
- * offers vary) — pass `opts` to isolate one of the others instead.
- */
-function evalWith<T>(literal: string, offerCount: number, opts?: { passCount?: number; serviceCount?: number; cashbackCount?: number }): T[] {
-  const offers = Array.from({ length: offerCount }, (_, i) => ({ id: `o${i}` }));
-  const passes = Array.from({ length: opts?.passCount ?? 0 }, (_, i) => ({ id: `p${i}` }));
-  const bookableServices = Array.from({ length: opts?.serviceCount ?? 4 }, (_, i) => ({ id: `s${i}` }));
-  const cashbackCount = opts?.cashbackCount ?? 2;
-  const hasOffers   = offers.length > 0;
-  const hasPasses   = passes.length > 0;
-  const hasBookable = bookableServices.length > 0;
-  const hasCashback = cashbackCount > 0;
-  return new Function(
-    'offers', 'passes', 'bookableServices', 'hasOffers', 'hasPasses', 'hasBookable', 'hasCashback',
-    'cashbackCount', 'OFFERS_COLOR', 'PASSES_COLOR', 'BOOK_COLOR', 'LOCAL',
-    `return ${literal};`,
-  )(offers, passes, bookableServices, hasOffers, hasPasses, hasBookable, hasCashback,
-    cashbackCount, '#d97706', '#7c3aed', '#059669', '#7c3aed') as T[];
-}
-
-const PILLARS = arrayLiteralAt(localPage, 'const pillars =');
-// Anchored on the element that OPENS the stats strip, so the extractor finds
-// the array containing the counts rather than the next bracket after them.
-const STATS   = arrayLiteralAt(localPage, 'divide-x divide-line px-5');
-
-/* ── 1. Nothing to offer ────────────────────────────────────────────────── */
-
-describe('with no live offers the page says nothing about them', () => {
-  test('the "0 live offers" statistic is not rendered', () => {
-    const stats = evalWith<Stat>(STATS, 0);
-    assert.ok(!stats.some((s) => s.label === 'live offers'),
-      'a headline reading "0 live offers" is worse than no headline');
+describe('Offers on Local V2 — present at every inventory level', opts, () => {
+  test('the Offers pillar tile is built for any count, with an "Opening soon" chip when there are none', () => {
+    const l = code('components/preview/v2/LocalV2.tsx');
+    assert.match(l, /key: "offers"/);
+    assert.match(l, /href: "#offers"/);
+    assert.match(l, /Opening soon/);
   });
-
-  test('the Offers pillar — and its dead #offers link — is not rendered', () => {
-    const tiles = evalWith<Tile>(PILLARS, 0);
-    assert.ok(!tiles.some((t) => t.title === 'Offers & deals'));
-    assert.ok(!tiles.some((t) => t.href === '#offers'),
-      'nothing may link to an anchor the page is not rendering');
+  test('the #offers section the tile points at is rendered unconditionally by PillarBand, so the anchor is never dead', () => {
+    const page = code('app/local/page.tsx');
+    assert.match(page, /<PillarBand pillar="offers" items=\{commerce\.offers\} \/>/);
+    assert.match(code('components/preview/v2/Merch.tsx'), /<section id=\{id\}/);
   });
-
-  test('the other statistics and tiles are untouched', () => {
-    const stats = evalWith<Stat>(STATS, 0).map((s) => s.label);
-    assert.deepEqual(stats, ['bookable services', 'cashback partners']);
-    const tiles = evalWith<Tile>(PILLARS, 0);
-    assert.deepEqual(tiles.map((t) => t.title), ['Book now', 'Cashback partners']);
-    assert.deepEqual(tiles.map((t) => t.href), ['#book', '/directory']);
+  test('zero offers → the proposition panel; the first offer fills the same section (one rule, no flag)', () => {
+    const m = loadModule('../oneshetland-web/lib/preview-v2.ts');
+    assert.equal(m.density(0), 'none');
+    assert.equal(m.density(1), 'few');
+    assert.ok(!/OFFERS_ENABLED|NEXT_PUBLIC_.*OFFER|featureFlag/i.test(web('app/local/page.tsx')));
   });
-
-  test('the row still fills its width rather than leaving a hole', () => {
-    assert.match(localPage, /pillars\.length >= 4 \? "lg:grid-cols-4" : pillars\.length === 3 \? "lg:grid-cols-3" : ""/);
+  test('live offers map to cards linking to the business that runs them', () => {
+    const m = loadModule('../oneshetland-web/lib/preview-v2.ts');
+    const out = m.mapLiveCommerce({ products: [], passes: [], services: [], offers: [{ id: 'o1', title: '10% off', valid_until: '2026-12-01T00:00:00Z', business: { id: 'b1', name: 'Café' } }] });
+    assert.equal(out.offers.length, 1);
+    assert.equal(out.offers[0].href, '/directory/b1');
   });
 });
 
-/* ── 2. The moment a business publishes one ─────────────────────────────── */
-
-describe('with live offers everything comes back on its own', () => {
-  test('the statistic appears, counting the real offers', () => {
-    const stats = evalWith<Stat>(STATS, 3);
-    const offersStat = stats.find((s) => s.label === 'live offers');
-    assert.ok(offersStat, 'the statistic returns without anyone switching it on');
-    assert.equal(offersStat!.n, 3);
-  });
-
-  test('the pillar returns, linking to #offers', () => {
-    const tiles = evalWith<Tile>(PILLARS, 1);
-    const offersTile = tiles.find((t) => t.title === 'Offers & deals');
-    assert.ok(offersTile);
-    assert.equal(offersTile!.href, '#offers');
-    assert.equal(tiles.length, 3, 'all three pillars, in their original order');
-    assert.equal(tiles[0].title, 'Offers & deals');
-  });
-
-  test('and the #offers section it points at is rendered', () => {
-    assert.match(localPage, /\{hasOffers && \(\s*\n\s*<section id="offers"/);
-  });
-
-  test('all three are driven by the SAME value, so they cannot drift apart', () => {
-    assert.match(localPage, /const hasOffers = offers\.length > 0;/);
-    const uses = localPage.match(/hasOffers/g) ?? [];
-    assert.ok(uses.length >= 4, 'declared once and used by stat, tile and section');
-    assert.ok(!/OFFERS_ENABLED|NEXT_PUBLIC_.*OFFER|featureFlag/i.test(localPage),
-      'no flag and no manual configuration — the data decides');
-  });
-});
-
-/* ── 3. What must not have moved ────────────────────────────────────────── */
-
-describe('nothing else was touched', () => {
+describe('nothing else was touched', opts, () => {
   test('/loyalty keeps its own honest empty state', () => {
-    assert.match(loyalty, /coming soon/i);
-    assert.ok(!/hasOffers/.test(loyalty), '/loyalty was not given this page\'s conditional');
+    assert.match(web('app/loyalty/page.tsx'), /coming soon/i);
   });
-
   test('business-facing Offers routes still exist', () => {
-    for (const p of [
-      'app/business/[id]/manage/offers/page.tsx',
-      'app/local/page.tsx',
-    ]) {
-      assert.ok(existsSync(join(WEB_ROOT, p)), `${p} must remain`);
-    }
+    for (const p of ['app/business/[id]/manage/offers/page.tsx', 'app/local/page.tsx']) assert.ok(existsSync(join(WEB_ROOT, p)), `${p} must remain`);
   });
-
   test('Shifts is untouched by this change', () => {
-    assert.ok(!/shift/i.test(PILLARS), 'no Shifts tile was added or removed here');
-    for (const p of ['app/shifts/new/page.tsx', 'app/shifts/manage/page.tsx', 'app/jobs/page.tsx']) {
-      assert.ok(existsSync(join(WEB_ROOT, p)), `${p} must remain`);
-    }
-  });
-
-  test('the offers query itself is unchanged — presentation only', () => {
-    const dataLayer = web('lib/local-data.ts');
-    assert.match(dataLayer, /business:local_businesses!inner\(/);
-    assert.match(dataLayer, /\.eq\("business\.is_active", true\)/);
+    for (const p of ['app/shifts/new/page.tsx', 'app/shifts/manage/page.tsx', 'app/jobs/page.tsx']) assert.ok(existsSync(join(WEB_ROOT, p)), `${p} must remain`);
   });
 });
