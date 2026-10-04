@@ -203,6 +203,79 @@ describe('Wallet hub does not call used / refunded / expired passes "active"', (
   });
 });
 
+describe('Test fixtures — labelled for the people who can see them, absent for everyone else', () => {
+  test('the badge text is exactly "TEST · ADMIN ONLY"', () => {
+    assert.match(src('components/TestBadge.tsx'), /TEST_BADGE_TEXT = 'TEST · ADMIN ONLY'/);
+  });
+  test('fixture ids come from the explicit server list via the admin-only RPC — never a name pattern', () => {
+    const f = src('lib/discovery-fixtures.ts');
+    assert.match(f, /rpc\('admin_discovery_fixture_ids'\)/);
+    assert.doesNotMatch(f, /ZZ|DEMO|\.includes\(|startsWith|RegExp|\/i\b/, 'no name matching');
+    assert.match(f, /if \(!userId\) return Promise\.resolve\(NO_FIXTURES\)/, 'signed out → nothing to label');
+    assert.match(f, /error \|\| !Array\.isArray\(data\)\) return NO_FIXTURES/, 'any failure → nothing is labelled, nothing is revealed');
+  });
+  test('every discovery surface badges a fixture it is shown', () => {
+    const must: [string, RegExp][] = [
+      ['components/home-local/ui.tsx', /props\.m\.test && <TestBadge \/>/],            // Home rail, Local pillar sections, Experiences cards
+      ['components/home-local/ui.tsx', /m\.test && <TestBadge \/>/],                   // feature tiles
+      ['components/home-local/HomeScreen.tsx', /fixtures\.business\.has\(lead\.id\) && <TestBadge/],
+      ['components/home-local/HomeScreen.tsx', /fixtures\.business\.has\(b\.id\) && <TestBadge/],
+      ['components/home-local/LocalScreen.tsx', /fixtures\.business\.has\(lead\.id\) && <TestBadge/],
+      ['components/home-local/LocalScreen.tsx', /fixtures\.business\.has\(b\.id\) && <TestBadge/],
+      ['app/local-businesses-browse.tsx', /isTest && <TestBadge/],                       // Directory
+      ['app/shop.tsx', /fixtures\.business\.has\(item\.business_id\) && <TestBadge/],  // Shop
+      ['app/local-offers.tsx', /isTest && <TestBadge/],                                  // Offers
+      ['app/local-bookable-browse.tsx', /isTest && <TestBadge/],                         // Book
+    ];
+    for (const [f, re] of must) assert.match(src(f), re, `${f}: ${re}`);
+  });
+  test('the data layer marks products, offers, services and passes by business id', () => {
+    const d = src('components/home-local/data.ts');
+    assert.equal((d.match(/test: fixtures\.business\.has\(/g) ?? []).length, 4);
+  });
+  test('the migration is read-only: no policy, no write, no data change, and it is not callable by anon', () => {
+    const m = read('supabase/migrations/20261104020000_admin_discovery_fixture_ids.sql');
+    assert.doesNotMatch(m.replace(/--.*$/gm, ''), /\b(insert|update|delete|alter policy|create policy|drop)\b/i);
+    assert.match(m, /revoke execute on function public\.admin_discovery_fixture_ids\(\) from public, anon/);
+  });
+});
+
+describe('Experiences — a real destination, not the directory', () => {
+  test('Home and Local Experiences both open /local-experiences; the generic directory is no longer behind them', () => {
+    const model = loadModule('components/home-local/model.ts');
+    assert.equal(model.PILLAR_ROUTE.experiences, '/local-experiences');
+    assert.match(src('components/home-local/LocalScreen.tsx'), /PILLAR_ROUTE\.experiences/);
+    assert.match(src('components/home-local/HomeScreen.tsx'), /PILLAR_ROUTE\[p\]/);
+    assert.ok(existsSync(join(REPO, 'app/local-experiences.tsx')));
+    assert.match(src('app/_layout.tsx'), /<Stack\.Screen name="local-experiences" \/>/);
+  });
+  test('the screen lists real passes, has an intentional zero state, and supports Back', () => {
+    const e = src('app/local-experiences.tsx');
+    assert.match(e, /fetchActiveLocalPasses\(60\)/);
+    assert.match(e, /<PillarEmpty pillar="experiences"/);
+    assert.match(e, /onBack=\{\(\) => router\.back\(\)\}/);
+    assert.match(e, /passesToMerch\(passes, fixtures\)/);
+  });
+  test('an experience opens the existing pass purchase flow for that pass; that screen exists', () => {
+    const model = loadModule('components/home-local/model.ts');
+    assert.equal(model.EXPERIENCE_ROUTE, '/local-buy-unit');
+    assert.match(src('components/home-local/data.ts'), /params: \{ itemId: p\.id \}/);
+    assert.ok(existsSync(join(REPO, 'app/local-buy-unit.tsx')));
+  });
+  test('a fixture pass is badged and a genuine one is not', () => {
+    const mods = ['@/lib/supabase', '@/lib/local-api', '@/lib/products-api', '@/lib/book-api', '@/lib/shetland-today', '@/lib/cruise-api', '@/lib/concierge-api', '@/lib/discovery-fixtures', '@/lib/shifts-api'];
+    const stubs: Record<string, unknown> = Object.fromEntries(mods.map((m) => [m, {}]));
+    stubs['./model'] = { EXPERIENCE_ROUTE: '/local-buy-unit' };
+    const { passesToMerch } = loadModule('components/home-local/data.ts', stubs);
+    const pass = (id: string, biz: string) => ({ id, business_id: biz, name: id, price_pence: 100, uses_per_purchase: 1, valid_days: 1, image_url: null, business_name: 'B', business_logo_url: null, business_category: 'retail' });
+    const out = passesToMerch([pass('fixture-pass', 'FIX'), pass('real-pass', 'REAL')], { business: new Set(['FIX']), hub: new Set() });
+    assert.equal(out.find((m: any) => m.id === 'fixture-pass').test, true);
+    assert.equal(out.find((m: any) => m.id === 'real-pass').test, false, 'genuine content is never classed as test');
+    const none = passesToMerch([pass('fixture-pass', 'FIX')], { business: new Set(), hub: new Set() });
+    assert.equal(none[0].test, false, 'for the public the set is empty, so nothing is labelled');
+  });
+});
+
 describe('Plan my day — visitors only on Home, with a second way in', () => {
   const h = src('components/home-local/HomeScreen.tsx');
   test('Home renders the card only when the audience is "visiting", and routes to /plan-day', () => {

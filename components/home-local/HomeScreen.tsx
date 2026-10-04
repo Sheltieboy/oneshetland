@@ -25,6 +25,7 @@ import { fetchHomeData, type HomeData } from '@/lib/home-data';
 import { fetchMyUpcomingEventTickets } from '@/lib/events-api';
 import { fetchNearbyOffers, type NearbyOffer } from '@/lib/concierge-api';
 import { loadSavedBoats, type VesselStub } from '@/lib/boats-prefs';
+import { TestBadge } from '@/components/TestBadge';
 import { CropImage, Scrim, fade, MerchCard, Rail, SectionHead, GatewayTile, Chip, SIDE } from './ui';
 import { HomeWork } from './WorkModule';
 import { buildWork } from './work';
@@ -105,7 +106,7 @@ export default function HomeScreen() {
   const loadAll = useCallback(async () => {
     const parish = (profile as { parish?: string | null } | null)?.parish ?? null;
     const tasks: Promise<unknown>[] = [
-      loadHomeLocalData(parish).then(setData),
+      loadHomeLocalData(parish, profile?.id).then(setData),
       loadSavedBoats().then(setSavedBoats).catch(() => {}),
     ];
     if (profile?.id) {
@@ -262,6 +263,7 @@ export default function HomeScreen() {
               <Pressable onPress={() => openBusiness(lead.id)} style={{ width: 262, height: 330, borderRadius: 24, overflow: 'hidden', backgroundColor: CAT_COLOR[lead.category] ?? '#4F46E5' }}>
                 <CropImage uri={lead.cover_url ?? undefined} photo={lead.cover_url ? undefined : 'street'} crop={{ cx: 0.5, cy: 0.4, z: 1.2 }} style={StyleSheet.absoluteFill} />
                 <Scrim dir="up" stops={[{ at: 0, color: CAT_COLOR[lead.category] ?? '#4F46E5', opacity: 0.97 }, { at: 0.45, color: CAT_COLOR[lead.category] ?? '#4F46E5', opacity: 0.75 }, { at: 1, color: CAT_COLOR[lead.category] ?? '#4F46E5', opacity: 0 }]} />
+                {data?.fixtures.business.has(lead.id) && <TestBadge style={{ top: 14 }} />}
                 <View style={{ position: 'absolute', left: 16, right: 16, bottom: 16 }}>
                   <View style={s.logoTile}>{lead.logo_url ? <Image source={{ uri: lead.logo_url }} style={{ width: 54, height: 54 }} resizeMode="contain" /> : <Text style={{ fontSize: 24, fontWeight: '900' }}>{lead.name[0]}</Text>}</View>
                   <Chip label={CAT_LABEL[lead.category] ?? 'Business'} />
@@ -274,7 +276,8 @@ export default function HomeScreen() {
                 return (
                   <Pressable key={b.id} onPress={() => openBusiness(b.id)} style={{ width: 158, height: 200, borderRadius: 22, overflow: 'hidden', backgroundColor: c, padding: 14, justifyContent: 'space-between' }}>
                     <Scrim dir="diag" stops={[{ at: 0, color: c, opacity: 1 }, { at: 1, color: '#1E1B4B', opacity: 1 }]} />
-                    <View style={[s.logoTile, { marginBottom: 0 }]}>{b.logo_url ? <Image source={{ uri: b.logo_url }} style={{ width: 46, height: 46 }} resizeMode="contain" /> : <Text style={{ fontSize: 20, fontWeight: '900' }}>{b.name[0]}</Text>}</View>
+                    {data?.fixtures.business.has(b.id) && <TestBadge style={{ top: 0 }} />}
+                    <View style={[s.logoTile, { marginBottom: 0, marginTop: data?.fixtures.business.has(b.id) ? 14 : 0 }]}>{b.logo_url ? <Image source={{ uri: b.logo_url }} style={{ width: 46, height: 46 }} resizeMode="contain" /> : <Text style={{ fontSize: 20, fontWeight: '900' }}>{b.name[0]}</Text>}</View>
                     <View>
                       <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 9.5, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }}>{CAT_LABEL[b.category] ?? 'Business'}</Text>
                       <DisplayText weight="bold" numberOfLines={2} style={{ color: '#fff', fontSize: 18, lineHeight: 20, marginTop: 2 }}>{b.name}</DisplayText>

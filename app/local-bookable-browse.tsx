@@ -32,6 +32,8 @@ import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
+import { TestBadge } from '@/components/TestBadge';
+import { useFixtureIds } from '@/lib/discovery-fixtures';
 import { SECTIONS } from '@/constants/sections';
 import { CATEGORY_LABELS, CATEGORY_ICONS, type LocalCategory } from '@/lib/local-api';
 import {
@@ -165,8 +167,10 @@ export default function BookableBrowseScreen() {
 function BusinessGroup({ services }: { services: BookableServiceCard[] }) {
   const router = useRouter();
   const first = services[0];
+  const isTest = useFixtureIds().business.has(first.business_id);
   return (
     <View style={styles.group}>
+      {isTest && <TestBadge inline style={{ marginLeft: spacing.md, marginTop: 8 }} />}
       <TouchableOpacity
         style={styles.groupHeader}
         onPress={() => router.push({ pathname: '/local-business-detail', params: { id: first.business_id } })}

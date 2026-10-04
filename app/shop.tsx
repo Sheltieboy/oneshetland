@@ -24,6 +24,8 @@ import { SECTIONS } from '@/constants/sections';
 import { SECTION_HEROES } from '@/constants/section-heroes';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { HeroBackPill } from '@/components/ui/HeroBackPill';
+import { TestBadge } from '@/components/TestBadge';
+import { useFixtureIds } from '@/lib/discovery-fixtures';
 import {
   browseProducts, PRODUCT_CATEGORIES,
   type BrowseProduct, type BrowseSort, type ProductCategory,
@@ -45,6 +47,7 @@ export default function ShopScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const numCols = width >= 900 ? 4 : width >= 620 ? 3 : 2;
+  const fixtures = useFixtureIds();
 
   const [items, setItems] = useState<BrowseProduct[]>([]);
   const [category, setCategory] = useState<ProductCategory | null>(null);
@@ -200,6 +203,7 @@ export default function ShopScreen() {
                   <FontAwesome5 name="image" size={18} color={colors.textLight} />
                 </View>
               )}
+              {fixtures.business.has(item.business_id) && <TestBadge />}
               <View style={styles.cardBody}>
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
                 <Text style={styles.cardShop} numberOfLines={1}>{item.business_name}</Text>

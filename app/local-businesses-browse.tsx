@@ -26,6 +26,8 @@ import {
 } from '@/lib/local-api';
 import { fetchProductThumbs, type ProductThumbs } from '@/lib/products-api';
 import { isBookableLive } from '@/lib/book-api';
+import { TestBadge } from '@/components/TestBadge';
+import { useFixtureIds } from '@/lib/discovery-fixtures';
 
 // Directory uses the indigo "services" accent — deliberately distinct from
 // the violet Local section so the two tabs no longer read as duplicates.
@@ -241,6 +243,7 @@ function BusinessCard({ business, offer, featured, numCols, onPress, thumbs }: {
   thumbs?: ProductThumbs;
 }) {
   const router   = useRouter();
+  const isTest   = useFixtureIds().business.has(business.id);
   const cat      = business.category ?? 'other';
   const catColor = CATEGORY_COLOR[cat] ?? S.color;
   const emoji    = CATEGORY_EMOJI[cat] ?? '🏪';
@@ -259,6 +262,8 @@ function BusinessCard({ business, offer, featured, numCols, onPress, thumbs }: {
           <Text style={styles.cardPlaceholderEmoji}>{emoji}</Text>
         </View>
       )}
+
+      {isTest && <TestBadge style={{ top: 12 }} />}
 
       {/* Featured badge */}
       {featured && (

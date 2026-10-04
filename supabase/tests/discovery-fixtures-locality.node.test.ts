@@ -33,6 +33,7 @@ const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const MEETS = join(MIG, '20260916120000_business_meets_tier.sql');
 const LOCALITY = join(MIG, '20261104000000_public_business_locality.sql');
 const FIXTURES = join(MIG, '20261104010000_discovery_fixtures.sql');
+const FIXTURE_IDS = join(MIG, '20261104020000_admin_discovery_fixture_ids.sql');
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 const src = (p: string) => readFileSync(p, 'utf8');
@@ -333,6 +334,35 @@ describe('B2 — the build-144 Home contracts, as the anonymous role runs them',
     const out = run(`select p.title from public.products p join public.local_businesses_public b on b.id = p.business_id where p.is_active and p.sold_at is null and b.is_active order by p.created_at desc limit 10`);
     assert.ok(out.includes('Real Fudge'));
     for (const n of out) assert.doesNotMatch(n, /Hamnavoe|DEMO/);
+  });
+});
+
+describe('B3 — the people who can see fixtures can label them; nobody else can learn which they are', () => {
+  test('apply the migration', () => {
+    const out = raw(src(FIXTURE_IDS));
+    assert.doesNotMatch(out, /ERROR/i, out);
+  });
+  const ids = (out: string) => rowsOf(out).sort();
+  test('an administrator receives exactly the listed fixtures (the explicit list, not a name pattern)', () => {
+    const got = ids(user(ADMIN, `select entity || ':' || entity_id from public.admin_discovery_fixture_ids()`));
+    assert.deepEqual(got, [`business:${ANDERSON}`, `business:${ZZ}`, `hub:${ZZ_HUB}`].sort());
+  });
+  test('a lookalike named "ZZ TEST" that is not listed is NOT returned', () => {
+    const got = user(ADMIN, `select entity_id from public.admin_discovery_fixture_ids()`);
+    assert.doesNotMatch(got, new RegExp(LOOKALIKE));
+  });
+  test('an ordinary signed-in user gets nothing, and neither does the owner of a genuine business', () => {
+    assert.deepEqual(ids(user(CUSTOMER, `select entity_id from public.admin_discovery_fixture_ids()`)), []);
+    assert.deepEqual(ids(user(REAL_OWNER, `select entity_id from public.admin_discovery_fixture_ids()`)), []);
+  });
+  test('a fixture\'s own owner (who can see it through the owner policies) gets exactly their own — the business, not the others', () => {
+    assert.deepEqual(ids(user(ZZ_OWNER, `select entity || ':' || entity_id from public.admin_discovery_fixture_ids()`)), [`business:${ZZ}`, `hub:${ZZ_HUB}`].sort());
+  });
+  test('a signed-out caller is refused outright', () => {
+    assert.match(anon(`select * from public.admin_discovery_fixture_ids()`), /permission denied/i);
+  });
+  test('it writes nothing: the fixture rows are byte-identical afterwards', () => {
+    assert.equal(fingerprint(), baseFingerprint());
   });
 });
 

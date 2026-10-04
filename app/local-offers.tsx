@@ -23,6 +23,8 @@ import {
   type LocalOffer,
 } from '@/lib/local-api';
 import { isBookableLive } from '@/lib/book-api';
+import { TestBadge } from '@/components/TestBadge';
+import { useFixtureIds } from '@/lib/discovery-fixtures';
 
 const S = SECTIONS.local;
 
@@ -88,6 +90,7 @@ export default function OffersScreen() {
 
 function OfferRow({ offer, claimed }: { offer: LocalOffer; claimed: boolean }) {
   const router = useRouter();
+  const isTest = useFixtureIds().business.has(offer.business_id);
   const days = daysRemaining(offer.valid_until);
 
   return (
@@ -107,6 +110,7 @@ function OfferRow({ offer, claimed }: { offer: LocalOffer; claimed: boolean }) {
         <Text style={styles.discountText}>{formatOfferDiscount(offer)}</Text>
       </View>
       <View style={{ flex: 1 }}>
+        {isTest && <TestBadge inline style={{ marginBottom: 4 }} />}
         <Text style={styles.title} numberOfLines={1}>{offer.title}</Text>
         {offer.business && (
           <Text style={styles.business}>{offer.business.name}</Text>

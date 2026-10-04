@@ -5,6 +5,7 @@ import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { DisplayText } from '../DisplayText';
 import { PHOTOS } from './images';
+import { TestBadge } from '../TestBadge';
 import { PILLARS, PILLAR_ROUTE, PILLAR_CTA_ROUTE, density, type Merch, type Pillar, type Crop } from './model';
 
 /**
@@ -104,6 +105,7 @@ export function MerchCard(props: { m: Merch; dark?: boolean; width?: number; not
   return (
     <Pressable disabled={!route} onPress={() => route && router.push({ pathname: route.pathname as never, params: route.params })} accessibilityRole="button" accessibilityLabel={`${props.m.title}, ${props.m.business}`}>
       <MerchBody {...props} />
+      {props.m.test && <TestBadge />}
     </Pressable>
   );
 }
@@ -205,6 +207,7 @@ function FeatureTile({ m, width }: { m: Merch; width: number }) {
     <Pressable disabled={!m.route} onPress={() => m.route && router.push({ pathname: m.route.pathname as never, params: m.route.params })} style={[{ marginHorizontal: SIDE, width: w, height: 300, borderRadius: 22, overflow: 'hidden', backgroundColor: p.color }]}>
       {m.photo || m.uri ? <CropImage photo={m.photo} uri={m.uri} crop={m.crop} style={StyleSheet.absoluteFill} /> : <Scrim dir="diag" stops={[{ at: 0, color: p.color, opacity: 1 }, { at: 1, color: p.deep, opacity: 1 }]} />}
       <Scrim dir="up" stops={fade('#000', 0.85, 0.25, 0.02)} />
+      {m.test && <TestBadge />}
       {!(m.photo || m.uri) && (m.pillar === 'book' ? m.meta : m.badge) ? <DisplayText style={{ position: 'absolute', right: 18, top: 16, color: '#fff', fontSize: 46 }}>{m.pillar === 'book' ? m.meta : m.badge}</DisplayText> : null}
       <View style={{ position: 'absolute', left: 18, right: 18, bottom: 18 }}>
         <Chip label={p.label} />
@@ -283,7 +286,7 @@ export function PillarTile({ label, sub, icon, photo, crop, from, to, w, h = 72,
           <FontAwesome5 name={icon as never} size={16} color="#fff" solid />
         </View>
         <View style={{ flex: 1 }}>
-          <DisplayText weight="bold" numberOfLines={1} style={{ color: '#fff', fontSize: 19, lineHeight: 22 }}>{label}</DisplayText>
+          <DisplayText weight="bold" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={{ color: '#fff', fontSize: 19, lineHeight: 22 }}>{label}</DisplayText>
           <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.68)', fontSize: 10.5, fontWeight: '700', marginTop: 1 }}>{sub}</Text>
         </View>
       </View>

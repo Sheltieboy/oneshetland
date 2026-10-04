@@ -14,8 +14,9 @@ import { fetchActiveBookableServices } from '@/lib/book-api';
 import { fetchTodaySnapshot, describeWeather, type TodaySnapshot } from '@/lib/shetland-today';
 import { getCruiseHomeCard } from '@/lib/cruise-api';
 import { fetchHomeEvents, fetchHomeNotices, fetchTodaysSpik, type HomeEvent, type HomeNotice } from '@/lib/concierge-api';
+import { fetchFixtureIds, NO_FIXTURES, type FixtureIds } from '@/lib/discovery-fixtures';
 import { fetchOpenShifts, shiftDisplayBusiness, formatPay } from '@/lib/shifts-api';
-import type { Merch, Pillar } from './model';
+import { EXPERIENCE_ROUTE, type Merch, type Pillar } from './model';
 import type { WorkJob, WorkShift } from './work';
 
 const soft = async <T,>(p: Promise<T>, fallback: T): Promise<T> => { try { return await p; } catch { return fallback; } };
@@ -31,6 +32,8 @@ export interface HomeLocalData {
   notices: HomeNotice[];
   spik: { word: string; meaning: string } | null;
   commerce: Record<Pillar, Merch[]>;
+  /** Test fixtures (administrators only; empty for everyone else) so the screens can label them. */
+  fixtures: FixtureIds;
 }
 
 const gbp = (p: number) => (p % 100 === 0 ? `£${p / 100}` : `£${(p / 100).toFixed(2)}`);
@@ -56,6 +59,16 @@ export async function loadBusinesses(areaLabel?: string, limit = 9): Promise<Loc
     const { data } = await q.order('is_claimed', { ascending: false }).order('is_verified', { ascending: false }).order('created_at', { ascending: false }).limit(120);
     return curate((data ?? []) as LocalBusiness[], limit);
   })(), [] as LocalBusiness[]);
+}
+
+type Pass = Awaited<ReturnType<typeof fetchActiveLocalPasses>>[number];
+/** Passes → the Experiences pillar's cards. A card opens the existing pass purchase flow for that pass. */
+export function passesToMerch(passes: Pass[], fixtures: FixtureIds): Merch[] {
+  return passes.map((p) => ({
+    id: p.id, pillar: 'experiences' as const, title: p.name, business: p.business_name, price: gbp(p.price_pence), uri: p.image_url ?? undefined,
+    meta: `${p.uses_per_purchase > 1 ? `${p.uses_per_purchase} uses` : '1 use'}${p.valid_days ? ` · valid ${p.valid_days} days` : ''}`,
+    route: { pathname: EXPERIENCE_ROUTE, params: { itemId: p.id } }, test: fixtures.business.has(p.business_id),
+  }));
 }
 
 async function loadJobs(): Promise<WorkJob[]> {
@@ -84,8 +97,9 @@ async function loadShifts(): Promise<WorkShift[]> {
   }));
 }
 
-export async function loadHomeLocalData(viewerParish?: string | null): Promise<HomeLocalData> {
-  const [today, cruise, events, businesses, jobs, shifts, notices, spik, products, offers, passes, services] = await Promise.all([
+export async function loadHomeLocalData(viewerParish?: string | null, userId?: string | null): Promise<HomeLocalData> {
+  const [fixtures, today, cruise, events, businesses, jobs, shifts, notices, spik, products, offers, passes, services] = await Promise.all([
+    soft(fetchFixtureIds(userId), NO_FIXTURES),
     soft(fetchTodaySnapshot(), null),
     soft(getCruiseHomeCard(), null),
     soft(fetchHomeEvents(5), [] as HomeEvent[]),
@@ -104,24 +118,20 @@ export async function loadHomeLocalData(viewerParish?: string | null): Promise<H
     ? (`Lerwick ${today.tempC != null ? Math.round(today.tempC) + '°' : ''} ${describeWeather(today.weatherCode).label}`.replace(/\s+/g, ' ').trim() + (today.sunset ? ` · Sunset ${today.sunset}` : ''))
     : null;
   return {
-    today, weather, ships, events, businesses, jobs, shifts, notices,
+    fixtures, today, weather, ships, events, businesses, jobs, shifts, notices,
     spik: spik ? { word: spik.word, meaning: spik.meaning } : null,
     commerce: {
-      shop: products.map((p) => ({ id: p.id, pillar: 'shop' as const, title: p.title, business: p.business_name, price: gbp(p.price_pence), uri: p.photo, route: { pathname: '/product-detail', params: { id: p.id } } })),
+      shop: products.map((p) => ({ id: p.id, pillar: 'shop' as const, title: p.title, business: p.business_name, price: gbp(p.price_pence), uri: p.photo, route: { pathname: '/product-detail', params: { id: p.id } }, test: fixtures.business.has(p.business_id) })),
       offers: offers.filter((o) => o.business?.is_active !== false).map((o) => ({
         id: o.id, pillar: 'offers' as const, title: o.title, business: o.business?.name ?? '', badge: formatOfferDiscount(o),
         meta: `Until ${new Date(o.valid_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`,
-        route: { pathname: '/local-business-detail', params: { id: o.business_id } },
+        route: { pathname: '/local-business-detail', params: { id: o.business_id } }, test: fixtures.business.has(o.business_id),
       })),
       book: services.map((s) => ({
         id: s.id, pillar: 'book' as const, title: s.name, business: s.business_name, price: `from ${gbp(s.price_pence)}`, meta: `${s.duration_minutes} min`,
-        route: { pathname: '/local-book-business', params: { businessId: s.business_id, serviceId: s.id } },
+        route: { pathname: '/local-book-business', params: { businessId: s.business_id, serviceId: s.id } }, test: fixtures.business.has(s.business_id),
       })),
-      experiences: passes.map((p) => ({
-        id: p.id, pillar: 'experiences' as const, title: p.name, business: p.business_name, price: gbp(p.price_pence), uri: p.image_url ?? undefined,
-        meta: `${p.uses_per_purchase > 1 ? `${p.uses_per_purchase} uses` : '1 use'}${p.valid_days ? ` · valid ${p.valid_days} days` : ''}`,
-        route: { pathname: '/local-business-detail', params: { id: p.business_id } },
-      })),
+      experiences: passesToMerch(passes, fixtures),
     },
   };
 }

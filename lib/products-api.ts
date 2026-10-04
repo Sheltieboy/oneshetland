@@ -300,6 +300,7 @@ function normaliseBuyerOrder(row: unknown): BuyerOrder {
 
 export type FreshProduct = {
   id: string;
+  business_id: string;
   title: string;
   price_pence: number;
   photo: string;
@@ -311,7 +312,7 @@ export async function fetchFreshProducts(limit = 10): Promise<FreshProduct[]> {
   try {
     const { data } = await supabase
       .from('products')
-      .select('id, title, price_pence, photos, business:local_businesses(name, is_active)')
+      .select('id, business_id, title, price_pence, photos, business:local_businesses(name, is_active)')
       .eq('is_active', true)
       .is('sold_at', null)
       .order('created_at', { ascending: false })
@@ -321,7 +322,7 @@ export async function fetchFreshProducts(limit = 10): Promise<FreshProduct[]> {
       const biz = (Array.isArray(p.business) ? (p.business as Record<string, unknown>[])[0] : p.business) as { name?: string; is_active?: boolean } | null;
       const photo = (p.photos as string[])?.[0];
       if (!biz?.is_active || !biz.name || !photo) continue;
-      out.push({ id: p.id as string, title: p.title as string, price_pence: p.price_pence as number, photo, business_name: biz.name });
+      out.push({ id: p.id as string, business_id: p.business_id as string, title: p.title as string, price_pence: p.price_pence as number, photo, business_name: biz.name });
       if (out.length >= limit) break;
     }
     return out;

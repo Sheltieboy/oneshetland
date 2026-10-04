@@ -15,6 +15,7 @@ import DisplayText from '@/components/DisplayText';
 import { useAuth } from '@/context/AuthContext';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { fetchMyLoyaltyCards, type LoyaltyCard, type LocalBusiness } from '@/lib/local-api';
+import { TestBadge } from '@/components/TestBadge';
 import { CropImage, Scrim, MerchCard, Rail, SectionHead, PillarTile, Chip, PillarSection, SIDE } from './ui';
 import { LocalWork } from './WorkModule';
 import { buildWork } from './work';
@@ -39,7 +40,7 @@ export default function LocalScreen() {
 
   const load = useCallback(async () => {
     const parish = (profile as { parish?: string | null } | null)?.parish ?? null;
-    const tasks: Promise<unknown>[] = [loadHomeLocalData(parish).then(setData)];
+    const tasks: Promise<unknown>[] = [loadHomeLocalData(parish, profile?.id).then(setData)];
     if (profile?.id) tasks.push(fetchMyLoyaltyCards(profile.id).then((cs) => setCard(cs.find((c) => c.program?.type === 'stamps' && (c.program?.stamps_required ?? 0) > 0) ?? null)).catch(() => setCard(null)));
     else setCard(null);
     await Promise.all(tasks);
@@ -73,7 +74,8 @@ export default function LocalScreen() {
     return (
       <Pressable onPress={() => openBusiness(b.id)} style={{ width: w, height: h, borderRadius: 22, overflow: 'hidden', backgroundColor: c, padding: 14, justifyContent: 'space-between' }}>
         <Scrim dir="diag" stops={[{ at: 0, color: c, opacity: 1 }, { at: 1, color: '#1E1B4B', opacity: 1 }]} />
-        <View style={s.logoTile}>{b.logo_url ? <Image source={{ uri: b.logo_url }} style={{ width: 42, height: 42 }} resizeMode="contain" /> : <Text style={{ fontSize: 20, fontWeight: '900' }}>{b.name[0]}</Text>}</View>
+        {data?.fixtures.business.has(b.id) && <TestBadge style={{ top: 0 }} />}
+        <View style={[s.logoTile, data?.fixtures.business.has(b.id) ? { marginTop: 14 } : null]}>{b.logo_url ? <Image source={{ uri: b.logo_url }} style={{ width: 42, height: 42 }} resizeMode="contain" /> : <Text style={{ fontSize: 20, fontWeight: '900' }}>{b.name[0]}</Text>}</View>
         <View>
           <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 9.5, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }}>{CAT_LABEL[b.category] ?? 'Business'}</Text>
           <DisplayText weight="bold" numberOfLines={2} style={{ color: '#fff', fontSize: 18, lineHeight: 20, marginTop: 2 }}>{b.name}</DisplayText>
@@ -127,6 +129,7 @@ export default function LocalScreen() {
               <Pressable onPress={() => openBusiness(lead.id)} style={{ width: 270, height: 330, borderRadius: 24, overflow: 'hidden', backgroundColor: CAT_COLOR[lead.category] ?? '#4F46E5' }}>
                 <CropImage uri={lead.cover_url ?? undefined} photo={lead.cover_url ? undefined : 'street'} crop={{ cx: 0.5, cy: 0.4, z: 1.2 }} style={StyleSheet.absoluteFill} />
                 <Scrim dir="up" stops={[{ at: 0, color: CAT_COLOR[lead.category] ?? '#4F46E5', opacity: 0.97 }, { at: 0.45, color: CAT_COLOR[lead.category] ?? '#4F46E5', opacity: 0.75 }, { at: 1, color: CAT_COLOR[lead.category] ?? '#4F46E5', opacity: 0 }]} />
+                {data?.fixtures.business.has(lead.id) && <TestBadge style={{ top: 14 }} />}
                 <View style={{ position: 'absolute', left: 16, right: 16, bottom: 16 }}>
                   <View style={[s.logoTile, { width: 56, height: 56 }]}>{lead.logo_url ? <Image source={{ uri: lead.logo_url }} style={{ width: 48, height: 48 }} resizeMode="contain" /> : <Text style={{ fontSize: 24, fontWeight: '900' }}>{lead.name[0]}</Text>}</View>
                   <Chip label={CAT_LABEL[lead.category] ?? 'Business'} />

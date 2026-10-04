@@ -26,6 +26,8 @@ export interface Merch {
   photo?: PhotoKey;
   crop?: Crop;
   route?: MerchRoute;
+  /** A test / acceptance fixture. Only ever present for an administrator; always shown with <TestBadge/>. */
+  test?: boolean;
 }
 
 export const PILLARS: Record<Pillar, {
@@ -55,12 +57,15 @@ export const PILLARS: Record<Pillar, {
 };
 export const PILLAR_ORDER: Pillar[] = ['shop', 'offers', 'book', 'experiences'];
 
+/** An experience / pass opens the existing pass purchase flow (the same one the business page uses). */
+export const EXPERIENCE_ROUTE = '/local-buy-unit';
+
 /** Where each pillar's "See all" goes (all existing screens). */
 export const PILLAR_ROUTE: Record<Pillar, string> = {
   shop: '/shop',
   offers: '/local-offers',
   book: '/local-bookable-browse',
-  experiences: '/local-businesses-browse',
+  experiences: '/local-experiences',
 };
 
 /** The empty-pillar call to action ("Sell on OneShetland", "Post an offer"…) starts business onboarding. */
