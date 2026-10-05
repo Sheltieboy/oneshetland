@@ -1,7 +1,7 @@
 /**
  * launch-partner-claims.node.test.ts — the private invitation and its claim, against the real SQL.
  *
- * Migration 20261106000000. A Launch Partner Preview is shown to the owner of ONE existing listing; this proves the
+ * Migration 20261104030000. A Launch Partner Preview is shown to the owner of ONE existing listing; this proves the
  * invitation lets them submit an ORDINARY pending claim for that listing and nothing else.
  *
  *   A  issuing: admin / service / direct SQL only; the token comes back once and only its hash is stored; a new
@@ -34,7 +34,7 @@ const FIX = join(MIG, '20261031030000_business_claims_claimants_submit_only.sql'
 const DECIDER = join(MIG, '20261031040000_business_claims_record_the_decider.sql');
 const REFUNDFIX = join(MIG, '20261007120000_business_wallet_refunds.sql');
 const GRANTS = join(MIG, '20261103000000_launch_plan_grants.sql');
-const FEATURE = join(MIG, '20261106000000_launch_partner_claims.sql');
+const FEATURE = join(MIG, '20261104030000_launch_partner_claims.sql');
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 const src = (p: string) => readFileSync(p, 'utf8');
