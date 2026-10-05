@@ -11,7 +11,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CommercialTermsGate } from '@/components/CommercialTermsGate';
 import { logCompliance } from '@/lib/compliance';
 import { useStripe } from '@stripe/stripe-react-native';
-import { FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
@@ -56,7 +56,8 @@ function PaymentSetupBody() {
         returnURL: 'oneshetland-fetch://payment-return',
         // Apple Pay requires a registered merchantIdentifier — enable once configured
         // applePay: { merchantCountryCode: 'GB' },
-        googlePay: { merchantCountryCode: 'GB', testEnv: true },
+        // Google Pay is deliberately NOT enabled: it was configured with testEnv: true (Google's TEST environment), which
+        // in a store build offers test cards. Enable it only once Google Pay production access is approved.
         style: 'automatic',
         appearance: {
           colors: {
@@ -177,13 +178,8 @@ function PaymentSetupBody() {
               <FontAwesome5 name="cc-apple-pay" size={24} color={colors.textMuted} />
               <Text style={styles.methodLabel}>Apple Pay</Text>
             </View>
-          ) : (
-            <View style={styles.methodItem}>
-              <FontAwesome6 name="google-pay" size={24} color={colors.textMuted} />
-              <Text style={styles.methodLabel}>Google Pay</Text>
-            </View>
-          )}
-          <View style={styles.divider} />
+          ) : null}
+          {Platform.OS === 'ios' && <View style={styles.divider} />}
           <View style={styles.methodItem}>
             <FontAwesome5 name="credit-card" size={20} color={colors.textMuted} />
             <Text style={styles.methodLabel}>Debit / Credit card</Text>
