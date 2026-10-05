@@ -250,7 +250,7 @@ function costPatternFunctions(): { name: string; tags: string[]; limited: boolea
     if (name === '_shared' || !existsSync(p)) continue;
     const b = readFileSync(p, 'utf8');
     const tags: string[] = [];
-    if (/send-email\.ts|sendEmail/.test(b)) tags.push('EMAIL');
+    if (/send-email\.ts|sendEmail|api\.postmarkapp\.com|launch-invitation-postmark/.test(b)) tags.push('EMAIL'); // direct Postmark use counts as email too
     if (/send-push\.ts|sendPush/.test(b)) tags.push('PUSH');
     if (/api\.stripe\.com/.test(b)) tags.push('STRIPE');
     if (/api\.openai|googleapis|admiralty/i.test(b)) tags.push('PROVIDER');
