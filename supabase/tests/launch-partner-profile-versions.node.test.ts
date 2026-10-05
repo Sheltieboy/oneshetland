@@ -40,6 +40,8 @@ const CLAIMS = join(MIG, '20261104030000_launch_partner_claims.sql');
 const IMPORT = join(MIG, '20261105000000_product_import_foundation.sql');
 const CAMPAIGNS = join(MIG, '20261106000000_launch_partner_campaigns.sql');
 const FEATURE = join(MIG, '20261107000000_launch_partner_profile_versions.sql');
+// 20261108000000 re-issues admin_launch_partner_get (adds email_opening). Anything that re-installs FEATURE must re-apply it after.
+const OPENING = join(MIG, '20261108000000_launch_partner_email_opening.sql');
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 const src = (p: string) => readFileSync(p, 'utf8');
@@ -146,6 +148,7 @@ function buildSchema(): string {
     src(CLAIMS),
     src(CAMPAIGNS),
     src(FEATURE),
+    src(OPENING),
   ].join('\n'));
 }
 
@@ -779,7 +782,7 @@ describe('G · nothing else changes; update whitelist; admin get; events', () =>
     const previous = ['id', 'business_id', 'slug', 'stage', 'is_test', 'positioning', 'contact_name', 'has_contact_email', 'has_email_draft',
       'has_preview', 'has_page_draft', 'sent_at', 'first_viewed_at', 'last_viewed_at', 'view_count', 'setup_ready_at', 'live_at', 'created_at',
       'updated_at', 'business', 'tier', 'plan_live', 'grant', 'invitation', 'claim', 'product_count', 'active_product_count', 'import_batch_count',
-      'last_activity', 'preview_config', 'page_config', 'contact_email', 'email_subject', 'email_body', 'notes', 'events'];
+      'last_activity', 'preview_config', 'page_config', 'contact_email', 'email_subject', 'email_body', 'email_opening', 'notes', 'events'];
     for (const k of previous) assert.ok(k in g, `get lost ${k}`);
     const added = ['approved_version_id', 'approved_at', 'approved_by', 'published_version_id', 'versions'];
     for (const k of added) assert.ok(k in g, `get is missing ${k}`);
@@ -856,6 +859,7 @@ describe('H · no outbound calls; nothing touched that should not be', () => {
     ownerWorld(); const id = scalar(`select id from public.launch_partner_campaigns where business_id='${SHOP}'`); prepare(id);
     const n = versionCount();
     assert.doesNotMatch(raw(src(FEATURE)), /ERROR/i);
+    assert.doesNotMatch(raw(src(OPENING)), /ERROR/i);   // 20261108 re-issues get; put it back on top
     assert.equal(versionCount(), n);
     assert.ok(isErr(raw(`update public.launch_partner_page_versions set note='x'`), '55000') || /append-only/.test(raw(`update public.launch_partner_page_versions set note='x'`)));
   });
@@ -871,7 +875,10 @@ describe('K · mutations', () => {
     const out = raw(original.replace(from, () => to));
     assert.doesNotMatch(out, /ERROR/i, `mutated migration did not install:\n${out.slice(0, 800)}`);
   };
-  const restore = () => { const out = raw(original); assert.doesNotMatch(out, /ERROR/i, out.slice(0, 800)); };
+  const restore = () => {
+    const out = raw(original); assert.doesNotMatch(out, /ERROR/i, out.slice(0, 800));
+    const o2 = raw(src(OPENING)); assert.doesNotMatch(o2, /ERROR/i, o2.slice(0, 800));   // get() gains email_opening again
+  };
   after(restore);
 
   test('M1 without the whitelist, commerce reaches a version both from page_config and from an owner', () => {
