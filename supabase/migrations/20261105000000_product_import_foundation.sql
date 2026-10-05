@@ -957,7 +957,7 @@ begin
     select * into r from public.import_rows
      where batch_id = p_batch and status = 'applied'
        and (image_status = 'pending'
-            or (image_status = 'processing' and image_claimed_at < now() - interval '5 minutes'))
+            or (image_status = 'processing' and image_claimed_at < now() - interval '90 seconds'))
      order by item_index
      limit 1
      for update skip locked;

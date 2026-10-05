@@ -954,10 +954,11 @@ describe('I · image hand-off', () => {
     assert.equal(batchStatus(b), 'complete');
   });
 
-  test('an abandoned claim is picked up again after five minutes (resumable image phase)', () => {
+  test('an abandoned claim is picked up again after 90 seconds (resumable image phase)', () => {
     const { b, rowId } = seed();
     assert.equal(val(OWNER, `select public.import_claim_image_row('${b}')::text;`), '');   // still claimed
-    raw(`update public.import_rows set image_claimed_at = now() - interval '6 minutes' where id='${rowId}';`);
+    assert.equal(val(OWNER, `select public.import_claim_image_row('${b}')::text;`), '', 'a claim made seconds ago is not stolen');
+    raw(`update public.import_rows set image_claimed_at = now() - interval '2 minutes' where id='${rowId}';`);
     assert.equal(JSON.parse(val(OWNER, `select public.import_claim_image_row('${b}')::text;`)).row_id, rowId);
   });
 });
