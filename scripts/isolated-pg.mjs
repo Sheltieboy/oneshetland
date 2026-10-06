@@ -60,6 +60,7 @@ const SUITES = [
   'supabase/tests/launch-partner-send-claim.node.test.ts',
   'supabase/tests/launch-partner-enrichment.node.test.ts',
   'supabase/tests/launch-partner-go-live.node.test.ts',
+  'supabase/tests/launch-partner-takedown.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
