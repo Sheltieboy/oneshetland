@@ -85,10 +85,24 @@ export function renderInvitationEmail(i: RenderInput): RenderedEmail {
     return `<p style="${p}">${lines.map(esc).join("<br>")}</p>`;
   }).join("\n");
 
-  const doc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(i.subject)}</title></head>` +
+  const doc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(i.subject)}</title></head>` +
     `<body style="margin:0;padding:24px 12px;background:#fbf8f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">` +
-    `<div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:14px;padding:28px 28px 12px">${html}</div></body></html>`;
+    `<div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #ece5d6;border-radius:14px;padding:22px 28px 12px">${brandHeader()}${html}</div></body></html>`;
   return { subject: i.subject, text, html: doc, hasInvitation: !!url };
+}
+
+/**
+ * The OneShetland mark and name, exactly as the live site header shows them (mark + "OneShetland" in navy). The mark is the
+ * site's own logo-mark-keyed.png, resized to 120px for email (public/brand/email/logo-mark-120.png) — same artwork, a fraction
+ * of the weight. It is a plain image on our own domain: no link, no query string, no tracking pixel. The name beside it is real
+ * text, so the header still reads correctly when a client blocks images.
+ */
+export const EMAIL_LOGO_URL = "https://oneshetland.com/brand/email/logo-mark-120.png";
+function brandHeader(): string {
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:0 0 22px;border-bottom:1px solid #ece5d6"><tr>` +
+    `<td width="40" style="padding:0 0 14px;width:40px;vertical-align:middle"><img src="${EMAIL_LOGO_URL}" width="40" height="40" alt="OneShetland" style="display:block;width:40px;height:40px;border:0;outline:none"></td>` +
+    `<td style="padding:0 0 14px 10px;vertical-align:middle;font-family:Georgia,'Times New Roman',serif;font-size:20px;line-height:24px;font-weight:600;letter-spacing:-0.2px;color:#032f4c">OneShetland</td>` +
+    `</tr></table>`;
 }
 
 function ctaHtml(url: string | null, masked: string | null): string {

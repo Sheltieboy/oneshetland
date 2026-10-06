@@ -14,7 +14,7 @@ import {
   launchInvitationSend, evaluateGates, resolveReplyTo, validSender, addressOf, MESSAGE, ProviderRejected, ProviderUnknown,
   type CampaignFacts, type SendDeps, type MailMessage,
 } from './launch-invitation-send.ts';
-import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE } from './launch-invitation-email.ts';
+import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL } from './launch-invitation-email.ts';
 import { postmarkSend, postmarkRequestBody, POSTMARK_URL, type FetchLike } from './launch-invitation-postmark.ts';
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -23,7 +23,7 @@ const read = (p: string) => readFileSync(here(p), 'utf8');
 const TOKEN = '7f3a9c1e5b2d4f60a8c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1';
 const CID = '0d38887b-8e0f-4aa6-b5c3-3a41abb38fd6';
 const BIZ = 'fdda4cbe-1e28-4f4d-89d8-aed8317be513';
-const FROM = 'Darren Fullerton · OneShetland <hello@oneshetland.com>';
+const FROM = 'OneShetland <hello@oneshetland.com>';
 const OPENING = 'You make something genuinely Shetland, and I think more locals and visitors should be able to find what you do easily.';
 const BODY = ['Hello,', '', "I’m Darren, and I’m getting ready to launch OneShetland.", '', '{{PERSONALISED_OPENING}}', '', '{{INVITATION_CTA}}', '', 'Darren'].join('\n');
 const future = new Date(Date.now() + 7 * 864e5).toISOString();
@@ -245,5 +245,52 @@ describe('parity with the web renderer (golden vectors shared by both repos)', (
     const f = facts({ stage: i.stage, sentAt: i.sentAt, contactEmail: i.contactEmail, subject: i.subject, opening: i.opening, body: i.body, invitation: { status: i.invitationStatus, expiresAt: i.expiresAt } });
     const got = evaluateGates(f, i.tokenValid, i.confirm, new Date(g.nowIso));
     assert.deepEqual([...got].sort(), g.expected);
+  });
+});
+
+describe('sender: OneShetland <hello@oneshetland.com>', () => {
+  const NEW_FROM = 'OneShetland <hello@oneshetland.com>';
+  test('the configured sender resolves to that exact display name and the SAME address; Reply-To stays the bare address', () => {
+    assert.equal(FROM, NEW_FROM);
+    assert.equal(validSender(NEW_FROM), NEW_FROM); assert.equal(addressOf(NEW_FROM), 'hello@oneshetland.com');
+    assert.equal(resolveReplyTo(NEW_FROM, undefined), 'hello@oneshetland.com'); assert.doesNotMatch(NEW_FROM, /Darren|·/);
+  });
+  test('a send uses that From and that Reply-To end to end, and the provider request keeps tracking OFF', async () => {
+    const r = rig({ from: NEW_FROM }); await go(r); const m = r.sent[0];
+    assert.equal(m.from, NEW_FROM); assert.equal(m.replyTo, 'hello@oneshetland.com');
+    const b = postmarkRequestBody(m); assert.equal(b.From, NEW_FROM); assert.equal(b.ReplyTo, 'hello@oneshetland.com');
+    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, 'outbound');
+  });
+  test('the function’s own documentation names the new sender, not the old one', () => {
+    const src = read('../send-launch-invitation/index.ts'); assert.ok(src.includes('"OneShetland <hello@oneshetland.com>"')); assert.ok(!src.includes('Darren Fullerton ·'));
+  });
+});
+
+describe('the email carries light OneShetland branding and nothing else changed', () => {
+  const LINK = `https://oneshetland.com/launch/zz-launch-email-test?invite=${TOKEN}`;
+  const input = { subject: 'S', body: BODY, opening: OPENING, businessName: 'ZZ TEST', invitationUrl: LINK };
+  const out = renderInvitationEmail(input);
+  test('the header is the live site’s mark (resized copy of logo-mark-keyed.png) plus the name as real text, first in the card', () => {
+    assert.equal(EMAIL_LOGO_URL, 'https://oneshetland.com/brand/email/logo-mark-120.png');
+    assert.ok(out.html.includes(`<img src="${EMAIL_LOGO_URL}" width="40" height="40" alt="OneShetland"`));
+    assert.match(out.html, />OneShetland<\/td>/, 'the name is text, so it survives blocked images');
+    assert.ok(out.html.indexOf(EMAIL_LOGO_URL) < out.html.indexOf('Hello,'), 'header above the message');
+  });
+  test('the logo is a bare image on our own domain: no link, no query string, no second image, no tracking pixel', () => {
+    assert.ok(!/\?/.test(EMAIL_LOGO_URL)); assert.equal((out.html.match(/<img /g) ?? []).length, 1);
+    assert.equal((out.html.match(/<a /g) ?? []).length, 1, 'the only link is the invitation button');
+  });
+  test('message, opening position and invitation CTA are intact', () => {
+    const iHello = out.html.indexOf('Hello,'), iOpening = out.html.indexOf(OPENING), iBtn = out.html.indexOf(CTA_LABEL), iSign = out.html.lastIndexOf('Darren');
+    assert.ok(iHello > 0 && iHello < iOpening && iOpening < iBtn && iBtn < iSign, 'order: greeting, opening, button, sign-off');
+    assert.ok(out.html.includes(`href="${LINK}"`)); assert.equal(out.html.split(LINK).length - 1, 2, 'button href + fallback text only');
+    assert.equal(out.hasInvitation, true);
+  });
+  test('the plain-text version is untouched by the branding: no markup, no logo, same words, link present', () => {
+    assert.ok(!/<|>/.test(out.text.replace(/→/g, ''))); assert.ok(!out.text.includes(EMAIL_LOGO_URL) && !/<img/i.test(out.text));
+    assert.equal(out.text, BODY.replace('{{PERSONALISED_OPENING}}', OPENING).replace('{{INVITATION_CTA}}', `View your private preview: ${LINK}`));
+  });
+  test('no marketing furniture: no unsubscribe, footer, banner or tracking pixel', () => {
+    assert.doesNotMatch(out.html.toLowerCase(), /unsubscribe|manage preferences|view in browser|newsletter|pixel|track/);
   });
 });

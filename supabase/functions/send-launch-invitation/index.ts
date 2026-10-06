@@ -21,7 +21,7 @@ import { postmarkSend } from '../_shared/launch-invitation-postmark.ts';
  *
  * Secrets (Supabase function secrets — never exposed to the browser or the web host):
  *   POSTMARK_API_KEY       the existing transactional-email server token
- *   LAUNCH_OUTREACH_FROM   "Darren Fullerton · OneShetland <hello@oneshetland.com>"
+ *   LAUNCH_OUTREACH_FROM   "OneShetland <hello@oneshetland.com>"
  *   LAUNCH_OUTREACH_REPLY_TO (optional) otherwise the bare address of LAUNCH_OUTREACH_FROM
  *   LAUNCH_SITE_ORIGIN     (optional) defaults to https://oneshetland.com
  */
