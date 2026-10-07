@@ -5,7 +5,7 @@
  * `X-Postmark-Server-Token` header: it is never put in a body, a log line, an error or a response.
  *
  * It is a personal one-to-one note, not marketing: open tracking OFF, link tracking OFF (links are not rewritten),
- * no marketing footer, no unsubscribe machinery, and provider metadata that never contains the link, token or recipient.
+ * no marketing footer, no unsubscribe machinery (the renderer's one quiet opt-out line asks for a plain reply), and provider metadata that never contains the link, token or recipient.
  */
 import { ProviderRejected, ProviderUnknown, type MailMessage } from './launch-invitation-send.ts';
 
@@ -43,7 +43,7 @@ export async function postmarkSend(fetchFn: FetchLike, apiKey: string, m: MailMe
   try { json = (await res.json()) as typeof json; } catch { /* unreadable body */ }
   if (res.ok && !json.ErrorCode && json.MessageID) return { id: json.MessageID };
   // A 4xx with a Postmark error code is an explicit refusal (bad address, inactive recipient, unverified sender…).
-  if (res.status >= 400 && res.status < 500) throw new ProviderRejected(`mail provider refused the message (HTTP ${res.status})`);
+  if (res.status >= 400 && res.status < 500) throw new ProviderRejected(`mail provider refused the message (HTTP ${res.status})`, typeof json.ErrorCode === 'number' ? json.ErrorCode : undefined);
   // 5xx, or a 2xx we cannot read as an acceptance: unknown.
   throw new ProviderUnknown(`mail provider answer not conclusive (HTTP ${res.status})`);
 }

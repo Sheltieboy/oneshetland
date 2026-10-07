@@ -14,7 +14,7 @@ import {
   launchInvitationSend, evaluateGates, resolveReplyTo, validSender, addressOf, MESSAGE, ProviderRejected, ProviderUnknown,
   type CampaignFacts, type SendDeps, type MailMessage,
 } from './launch-invitation-send.ts';
-import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL } from './launch-invitation-email.ts';
+import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL, OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT } from './launch-invitation-email.ts';
 import { postmarkSend, postmarkRequestBody, POSTMARK_URL, type FetchLike } from './launch-invitation-postmark.ts';
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -242,7 +242,7 @@ describe('parity with the web renderer (golden vectors shared by both repos)', (
   for (const c of golden.checks) test(`check: ${c.name}`, () => { assert.deepEqual(checkEmail(c.input), c.expected); });
   for (const g of golden.gates) test(`gates: ${g.name}`, () => {
     const i = g.input;
-    const f = facts({ stage: i.stage, sentAt: i.sentAt, contactEmail: i.contactEmail, subject: i.subject, opening: i.opening, body: i.body, invitation: { status: i.invitationStatus, expiresAt: i.expiresAt } });
+    const f = facts({ stage: i.stage, sentAt: i.sentAt, contactEmail: i.contactEmail, subject: i.subject, opening: i.opening, body: i.body, invitation: { status: i.invitationStatus, expiresAt: i.expiresAt }, outreachStopped: i.outreachStopped === true });
     const got = evaluateGates(f, i.tokenValid, i.confirm, new Date(g.nowIso));
     assert.deepEqual([...got].sort(), g.expected);
   });
@@ -288,9 +288,119 @@ describe('the email carries light OneShetland branding and nothing else changed'
   });
   test('the plain-text version is untouched by the branding: no markup, no logo, same words, link present', () => {
     assert.ok(!/<|>/.test(out.text.replace(/→/g, ''))); assert.ok(!out.text.includes(EMAIL_LOGO_URL) && !/<img/i.test(out.text));
-    assert.equal(out.text, BODY.replace('{{PERSONALISED_OPENING}}', OPENING).replace('{{INVITATION_CTA}}', `View your private preview: ${LINK}`));
+    const wanted = BODY.replace('{{PERSONALISED_OPENING}}', OPENING).replace('{{INVITATION_CTA}}', `View your private preview: ${LINK}`);
+    assert.equal(out.text, `${wanted}\n\n--\n${OUTREACH_OPT_OUT}\n\n${OUTREACH_IDENTITY} ${OUTREACH_CONTACT}\n`, 'the words are the draft\'s own, then the quiet identity and opt-out lines');
   });
   test('no marketing furniture: no unsubscribe, footer, banner or tracking pixel', () => {
     assert.doesNotMatch(out.html.toLowerCase(), /unsubscribe|manage preferences|view in browser|newsletter|pixel|track/);
+  });
+});
+
+
+/* ═══ Launch Partner outreach safeguards: do not contact, identity, opt-out ═══════════════════════════════════════════ */
+const NOTE = 'INTERNAL-NOTE-MARKER-31b9';
+describe('do not contact — the send is refused SERVER-SIDE, before the mail provider is touched', () => {
+  test('1 · a normal business (not stopped) can send', async () => {
+    const r = rig(); assert.equal((await go(r)).ok, true); assert.equal(r.sent.length, 1);
+  });
+  test('2 · a business whose outreach is stopped is refused at the gates: nothing reserved, nothing sent, nothing recorded as sent', async () => {
+    const r = rig({ facts: facts({ outreachStopped: true }) }); const out = await go(r);
+    assert.equal(out.ok, false); assert.equal((out as { code: string }).code, 'do_not_contact');
+    assert.deepEqual(r.calls, ['get', 'resolve'], 'it stopped before claim, send and markSent'); assert.equal(r.sent.length, 0);
+  });
+  test('3 · a suppressed ADDRESS/contact is treated the same (the database reports it through the same flag, whichever scope matched)', async () => {
+    const r = rig({ facts: facts({ outreachStopped: true, contactEmail: 'someone-who-opted-out@example.test' }) });
+    assert.equal(((await go(r)) as { code: string }).code, 'do_not_contact'); assert.equal(r.sent.length, 0);
+  });
+  test('4 · STALE page/facts: the read said "not stopped", but the database refuses the reservation — still no email, no record, and the right explanation', async () => {
+    const r = rig({ claim: { ok: false, reason: 'do_not_contact' } }); const out = await go(r) as { ok: boolean; code: string; message: string };
+    assert.equal(out.ok, false); assert.equal(out.code, 'do_not_contact'); assert.deepEqual(r.calls, ['get', 'resolve', 'claim']); assert.equal(r.sent.length, 0);
+    assert.equal(out.message, MESSAGE.do_not_contact);
+  });
+  test('5 · NO Postmark request is made: driven through the real Postmark client with a counting fake fetch', async () => {
+    let requests = 0; const fetchFn: FetchLike = async () => { requests++; return { ok: true, status: 200, json: async () => ({ MessageID: 'x' }) }; };
+    for (const over of [{ facts: facts({ outreachStopped: true }) }, { claim: { ok: false, reason: 'do_not_contact' } }]) {
+      const r = rig({ ...over, send: undefined }); r.deps.send = (m) => postmarkSend(fetchFn, 'token', m);
+      assert.equal(((await go(r)) as { code: string }).code, 'do_not_contact');
+    }
+    assert.equal(requests, 0, 'the provider was never called');
+  });
+  test('6 · no false "sent" state: markSent and releaseSend are never called for a refused send', async () => {
+    for (const over of [{ facts: facts({ outreachStopped: true }) }, { claim: { ok: false, reason: 'do_not_contact' } }]) {
+      const r = rig(over); await go(r); assert.ok(!r.calls.includes('markSent') && !r.calls.includes('send'), r.calls.join());
+    }
+  });
+  test('the refusal outranks every other problem and never mentions the reason or any internal note', () => {
+    const g = evaluateGates(facts({ outreachStopped: true, stage: 'preparing', contactEmail: null }), false, null, new Date());
+    assert.equal(g[0], 'do_not_contact'); assert.ok(g.length > 1);
+    assert.doesNotMatch(MESSAGE.do_not_contact, /requested|complaint|bounce|note|reason/i); assert.doesNotMatch(NOTE + MESSAGE.do_not_contact, /INTERNAL-NOTE.*(?:requested|complaint)/);
+  });
+  test('the function reads the flag from the database and nothing from the request: index.ts maps the campaign\'s outreach field, and the request has no suppression input', () => {
+    const idx = read('../send-launch-invitation/index.ts');
+    assert.match(idx, /outreachStopped: !!c\.outreach/); assert.match(idx, /'do_not_contact'/);
+    assert.doesNotMatch(idx, /body\.(outreach|suppress|override|skip|force)/i);
+    assert.match(idx, /admin_launch_partner_get/);
+  });
+  test('an inactive recipient (the provider already suppresses it after a bounce or complaint) is explained plainly, released, and not recorded as sent', async () => {
+    const fetchFn: FetchLike = async () => ({ ok: false, status: 422, json: async () => ({ ErrorCode: 406, Message: 'inactive' }) });
+    const r = rig(); r.deps.send = (m) => postmarkSend(fetchFn, 'token', m); const out = await go(r) as { code: string; message: string };
+    assert.equal(out.code, 'recipient_inactive'); assert.deepEqual(r.calls, ['get', 'resolve', 'claim', 'release']); assert.match(out.message, /inactive.*do not contact/i);
+    const other: FetchLike = async () => ({ ok: false, status: 422, json: async () => ({ ErrorCode: 300, Message: 'invalid' }) });
+    const r2 = rig(); r2.deps.send = (m) => postmarkSend(other, 'token', m); assert.equal(((await go(r2)) as { code: string }).code, 'provider_rejected');
+  });
+});
+
+describe('every outreach email carries the identity and opt-out lines', () => {
+  const link = `https://oneshetland.com/launch/zz?invite=${TOKEN}`;
+  const variants: [string, Parameters<typeof renderInvitationEmail>[0]][] = [
+    ['the default draft with a real link', { subject: 's', body: BODY, opening: OPENING, businessName: 'ZZ', invitationUrl: link }],
+    ['a hand-edited draft that dropped any sign-off', { subject: 's', body: 'Hi.\n\n{{INVITATION_CTA}}', invitationUrl: link }],
+    ['an OLDER saved draft from before this feature', { subject: 's', body: 'Old text\n\n{{INVITATION_LINK}}\n\nDarren', invitationUrl: link }],
+    ['a preview with no invitation yet', { subject: 's', body: BODY, opening: OPENING, businessName: 'ZZ' }],
+    ['hostile text in the draft', { subject: '<b>x</b>', body: '<script>1</script>\n\n{{INVITATION_CTA}}', invitationUrl: link }],
+  ];
+  for (const [name, input] of variants) {
+    test(`11/12/13 · ${name}: the opt-out line and the identity line + contact are in BOTH the HTML and the plain text`, () => {
+      const out = renderInvitationEmail(input);
+      for (const part of [OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT]) { assert.ok(out.text.includes(part), `text: ${part}`); assert.ok(out.html.includes(part.replace(/&/g, '&amp;')), `html: ${part}`); }
+      assert.ok(out.text.trimEnd().endsWith(`${OUTREACH_IDENTITY} ${OUTREACH_CONTACT}`), 'the identity line is the last thing');
+    });
+  }
+  test('the exact wording', () => {
+    assert.equal(OUTREACH_OPT_OUT, 'If you’d rather not receive another Launch Partner invitation from us, just reply and let us know.');
+    assert.equal(OUTREACH_IDENTITY, 'OneShetland is operated by Darren Fullerton Consultancy Ltd.'); assert.equal(OUTREACH_CONTACT, 'hello@oneshetland.com');
+  });
+  test('it is quiet: small grey text after a hairline; no link, image, unsubscribe URL, banner or promotional copy was added by the footer', () => {
+    const out = renderInvitationEmail({ subject: 's', body: BODY, opening: OPENING, businessName: 'ZZ', invitationUrl: link });
+    const footer = out.html.slice(out.html.lastIndexOf('<div style="margin:22px 0 8px'));
+    assert.match(footer, /font-size:12px/); assert.doesNotMatch(footer, /<a |<img|href=|unsubscribe|newsletter|sale|offer|discount|follow us/i);
+    assert.equal((out.html.match(/<a /g) ?? []).length, 1, 'the only link in the whole email is still the private-preview button');
+    assert.equal((out.html.match(/<img /g) ?? []).length, 1, 'and the only image is still the header mark');
+  });
+  test('the reply route is real: Reply-To is the bare hello@ address, so "just reply" reaches a monitored mailbox', () => {
+    assert.equal(resolveReplyTo(FROM, undefined), 'hello@oneshetland.com'); assert.equal(OUTREACH_CONTACT, addressOf(FROM));
+  });
+});
+
+describe('what has NOT changed: sender, Reply-To, tracking, the provider request', () => {
+  test('14/15 · a send goes out From "OneShetland <hello@oneshetland.com>" with Reply-To hello@oneshetland.com', async () => {
+    const r = rig(); await go(r); assert.equal(r.sent[0].from, 'OneShetland <hello@oneshetland.com>'); assert.equal(r.sent[0].replyTo, 'hello@oneshetland.com');
+    assert.ok(r.sent[0].text.includes(OUTREACH_OPT_OUT) && r.sent[0].html.includes(OUTREACH_IDENTITY), 'and the email that actually goes to the provider has the lines');
+  });
+  test('16/17 · open tracking OFF, link tracking OFF, outbound stream, metadata without link/token/recipient; no extra provider fields', async () => {
+    const r = rig(); await go(r); const b = postmarkRequestBody(r.sent[0]) as Record<string, unknown>;
+    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, 'outbound'); assert.equal(b.From, 'OneShetland <hello@oneshetland.com>'); assert.equal(b.ReplyTo, 'hello@oneshetland.com');
+    assert.deepEqual(Object.keys(b).sort(), ['From', 'HtmlBody', 'Metadata', 'MessageStream', 'ReplyTo', 'Subject', 'TextBody', 'To', 'TrackLinks', 'TrackOpens'].sort());
+    assert.doesNotMatch(JSON.stringify(b.Metadata), /invite=|recipient|@/);
+  });
+  test('18 · transactional email is a different code path and knows nothing about outreach suppression', () => {
+    for (const f of ['./send-email.ts', './refund-notice.ts', './ticket-receipt.ts', '../request-password-reset/index.ts']) { let t = ''; try { t = read(f); } catch { continue; } assert.doesNotMatch(t, /outreach|do_not_contact|launch_outreach|admin_launch_partner/i, f); }
+  });
+  test('19 · every pre-existing behaviour still holds: already sent, not ready, in progress, provider refused, unknown outcome', async () => {
+    assert.equal(((await go(rig({ facts: facts({ sentAt: new Date().toISOString() }) }))) as { code: string }).code, 'already_sent');
+    assert.equal(((await go(rig({ facts: facts({ stage: 'preparing' }) }))) as { code: string }).code, 'not_ready');
+    assert.equal(((await go(rig({ claim: { ok: false, reason: 'send_in_progress' } }))) as { code: string }).code, 'send_in_progress');
+    assert.equal(((await go(rig({ send: async () => { throw new ProviderRejected('no'); } }))) as { code: string }).code, 'provider_rejected');
+    assert.equal(((await go(rig({ send: async () => { throw new ProviderUnknown('?'); } }))) as { code: string }).code, 'outcome_unknown');
   });
 });

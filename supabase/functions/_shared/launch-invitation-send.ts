@@ -25,16 +25,18 @@
 import { checkEmail, renderInvitationEmail } from './launch-invitation-email.ts';
 
 export type GateFailure =
-  | 'not_confirmed' | 'already_sent' | 'not_ready' | 'contact_missing' | 'contact_invalid' | 'draft_incomplete'
+  | 'do_not_contact' | 'not_confirmed' | 'already_sent' | 'not_ready' | 'contact_missing' | 'contact_invalid' | 'draft_incomplete'
   | 'invitation_invalid' | 'invitation_expired' | 'link_missing' | 'recipient_changed' | 'subject_changed';
 
 export type FailureCode =
-  | GateFailure | 'bad_request' | 'not_found' | 'not_configured' | 'send_in_progress' | 'provider_rejected' | 'outcome_unknown';
+  | GateFailure | 'bad_request' | 'not_found' | 'not_configured' | 'send_in_progress' | 'provider_rejected' | 'recipient_inactive' | 'outcome_unknown';
 
 export interface CampaignFacts {
   id: string; slug: string; businessId: string; businessName: string; stage: string; sentAt: string | null;
   contactEmail: string | null; subject: string | null; opening: string | null; body: string | null;
   invitation: { status: string; expiresAt: string | null };
+  /** Launch Partner outreach to this business (or this contact address) has been stopped. Read from the database with everything else. */
+  outreachStopped?: boolean;
 }
 
 export interface MailMessage {
@@ -42,7 +44,11 @@ export interface MailMessage {
 }
 
 /** The provider refused this message outright (an HTTP error answer). Nothing was sent; retrying is safe. */
-export class ProviderRejected extends Error {}
+export class ProviderRejected extends Error {
+  /** The provider's own error code when it gave one (406 = the address is inactive: a previous bounce or spam complaint). */
+  errorCode?: number;
+  constructor(message: string, errorCode?: number) { super(message); this.errorCode = errorCode; }
+}
 /** We cannot know whether the provider accepted it (timeout, dropped connection, 5xx). It may have gone out. */
 export class ProviderUnknown extends Error {}
 
@@ -50,7 +56,7 @@ export interface SendDeps {
   getCampaign(id: string): Promise<CampaignFacts | null>;
   /** The business the token is valid for under this preview name, or null (invalid, revoked or expired). */
   resolveToken(slug: string, token: string): Promise<string | null>;
-  claimSend(id: string): Promise<{ ok: true } | { ok: false; reason: 'already_sent' | 'not_ready' | 'send_in_progress' }>;
+  claimSend(id: string): Promise<{ ok: true } | { ok: false; reason: 'already_sent' | 'not_ready' | 'send_in_progress' | 'do_not_contact' }>;
   releaseSend(id: string): Promise<void>;
   markSent(id: string, note: string): Promise<void>;
   /** Resolves with the provider's message id; throws ProviderRejected or ProviderUnknown. */
@@ -68,6 +74,7 @@ export interface SendRequest {
 }
 
 export const MESSAGE: Record<FailureCode, string> = {
+  do_not_contact: 'Launch Partner outreach to this business has been stopped (do not contact), so nothing was sent.',
   not_confirmed: 'Confirm the send first.',
   already_sent: 'This invitation email has already been recorded as sent.',
   not_ready: 'Mark the campaign Ready to invite first.',
@@ -84,6 +91,7 @@ export const MESSAGE: Record<FailureCode, string> = {
   not_configured: "Sending from OneShetland isn't configured yet, so nothing was sent.",
   send_in_progress: 'A send for this campaign is already in progress or its outcome is unknown. Check the mail provider’s activity before trying again.',
   provider_rejected: 'The mail provider refused the message, so nothing was sent. You can try again.',
+  recipient_inactive: 'The mail provider has marked this address as inactive (a previous bounce or spam complaint), so nothing was sent. Check the address — or, if they asked not to be emailed, record do not contact.',
   outcome_unknown: 'The mail provider did not answer, so it is not known whether the email went out. It has NOT been recorded as sent and a resend is blocked for 30 minutes. Check the mail provider’s activity before trying again.',
 };
 
@@ -100,6 +108,7 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 /** Every gate that is not satisfied. Empty means the send may proceed to reservation. */
 export function evaluateGates(c: CampaignFacts, tokenValid: boolean, conf: { confirm: boolean; recipient: string; subject: string } | null, now: Date): GateFailure[] {
   const f: GateFailure[] = [];
+  if (c.outreachStopped) f.push('do_not_contact');                       // first: nothing below can make a stopped business sendable
   if (!conf?.confirm) f.push('not_confirmed');
   if (c.sentAt) f.push('already_sent');
   if (c.stage !== 'ready_to_invite') f.push('not_ready');
@@ -137,7 +146,8 @@ export async function launchInvitationSend(req: SendRequest, deps: SendDeps): Pr
   if (!email.hasInvitation) return fail('link_missing');
   // 5. reserve — the double-send guard
   const claim = await deps.claimSend(c.id);
-  if (!claim.ok) return fail(claim.reason === 'send_in_progress' ? 'send_in_progress' : claim.reason === 'already_sent' ? 'already_sent' : 'not_ready');
+  // The database re-checks do-not-contact under the campaign lock: a page, a tab or a read that was stale cannot get past it.
+  if (!claim.ok) return fail(claim.reason === 'do_not_contact' ? 'do_not_contact' : claim.reason === 'send_in_progress' ? 'send_in_progress' : claim.reason === 'already_sent' ? 'already_sent' : 'not_ready');
   // 6. send
   let id: string;
   try {
@@ -151,7 +161,7 @@ export async function launchInvitationSend(req: SendRequest, deps: SendDeps): Pr
     if (e instanceof ProviderRejected) {
       await deps.releaseSend(c.id).catch(() => { /* a stuck reservation expires on its own; never mask the real answer */ });
       deps.log?.(`launch invitation: provider rejected (campaign ${c.slug})`);
-      return fail('provider_rejected');
+      return fail(e.errorCode === 406 ? 'recipient_inactive' : 'provider_rejected');
     }
     // Anything else — including an unexpected exception — is treated as UNKNOWN: it may have been sent.
     deps.log?.(`launch invitation: outcome unknown (campaign ${c.slug})`);

@@ -37,6 +37,16 @@ const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;"
 /** Only a plain https (or, for local review, http) address may become a link. Anything else is not rendered as one. */
 export const isLinkable = (u: string | null | undefined): u is string => !!u && /^https?:\/\/[^\s<>"']+$/.test(u);
 
+/**
+ * The quiet identity and opt-out lines. The RENDERER appends them to EVERY outreach email — they are not part of the editable draft, so an
+ * edit (or an older saved draft) can never leave them out. Who is writing, how to reach them, and a plain, human way to say no: a reply
+ * to this email (the reply goes to a monitored mailbox, and an administrator records the request, which stops further outreach for good).
+ * Deliberately small and quiet: no logo, no link, no tracking, no marketing footer, nothing promotional.
+ */
+export const OUTREACH_OPT_OUT = "If you’d rather not receive another Launch Partner invitation from us, just reply and let us know.";
+export const OUTREACH_IDENTITY = "OneShetland is operated by Darren Fullerton Consultancy Ltd.";
+export const OUTREACH_CONTACT = "hello@oneshetland.com";
+
 export interface RenderInput {
   subject: string;
   body: string;
@@ -67,12 +77,19 @@ function expand(body: string, i: RenderInput): string {
 const ctaText = (url: string | null, masked: string | null): string =>
   url ? `${CTA_TEXT_LABEL} ${url}` : masked ? `${CTA_TEXT_LABEL} ${masked}` : `[${NO_INVITATION_TITLE} — the link is inserted here when you generate the invitation.]`;
 
+const outreachFooterText = (): string => `--\n${OUTREACH_OPT_OUT}\n\n${OUTREACH_IDENTITY} ${OUTREACH_CONTACT}\n`;
+const outreachFooterHtml = (): string =>
+  `<div style="margin:22px 0 8px;padding-top:14px;border-top:1px solid #ece5d6">` +
+  `<p style="margin:0 0 8px;font-size:12px;line-height:1.55;color:#6b7280">${esc(OUTREACH_OPT_OUT)}</p>` +
+  `<p style="margin:0;font-size:12px;line-height:1.55;color:#6b7280">${esc(OUTREACH_IDENTITY)} ${esc(OUTREACH_CONTACT)}</p></div>`;
+
 export function renderInvitationEmail(i: RenderInput): RenderedEmail {
   const url = isLinkable(i.invitationUrl) ? i.invitationUrl : null;
   const masked = !url && i.maskedUrl ? i.maskedUrl : null;
   const base = expand(i.body, i);
   const cta = ctaText(url, masked);
-  const text = base.split(TOKEN_CTA).join(cta).split(LINK_PLACEHOLDER).join(cta);
+  const body = base.split(TOKEN_CTA).join(cta).split(LINK_PLACEHOLDER).join(cta);
+  const text = `${body.replace(/\s+$/, "")}\n\n${outreachFooterText()}`;
 
   const blocks = base.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
   const p = "margin:0 0 16px;font-size:16px;line-height:1.55;color:#14222c";
@@ -87,7 +104,7 @@ export function renderInvitationEmail(i: RenderInput): RenderedEmail {
 
   const doc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(i.subject)}</title></head>` +
     `<body style="margin:0;padding:24px 12px;background:#fbf8f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">` +
-    `<div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #ece5d6;border-radius:14px;padding:22px 28px 12px">${brandHeader()}${html}</div></body></html>`;
+    `<div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #ece5d6;border-radius:14px;padding:22px 28px 12px">${brandHeader()}${html}${outreachFooterHtml()}</div></body></html>`;
   return { subject: i.subject, text, html: doc, hasInvitation: !!url };
 }
 

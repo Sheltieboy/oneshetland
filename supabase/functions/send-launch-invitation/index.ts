@@ -74,19 +74,21 @@ serve(async (req) => {
           id: string; slug: string; business_id: string; business?: { name?: string }; stage: string; sent_at?: string | null;
           contact_email?: string | null; email_subject?: string | null; email_opening?: string | null; email_body?: string | null;
           invitation?: { status?: string; expires_at?: string | null };
+          outreach?: { id?: string } | null;      // present when Launch Partner outreach to this business / address has been stopped
         } | null>('admin_launch_partner_get', { p_id: id });
         if (!c) return null;
         return {
           id: c.id, slug: c.slug, businessId: c.business_id, businessName: c.business?.name ?? '', stage: c.stage, sentAt: c.sent_at ?? null,
           contactEmail: c.contact_email ?? null, subject: c.email_subject ?? null, opening: c.email_opening ?? null, body: c.email_body ?? null,
           invitation: { status: c.invitation?.status ?? 'none', expiresAt: c.invitation?.expires_at ?? null },
+          outreachStopped: !!c.outreach,
         };
       },
       async resolveToken(slug, token) {
         const r = await rpc<string | null>('launch_invite_resolve', { p_slug: slug, p_token: token });
         return typeof r === 'string' ? r : null;
       },
-      async claimSend(id) { return await rpc<{ ok: true } | { ok: false; reason: 'already_sent' | 'not_ready' | 'send_in_progress' }>('admin_launch_partner_claim_send', { p_id: id }); },
+      async claimSend(id) { return await rpc<{ ok: true } | { ok: false; reason: 'already_sent' | 'not_ready' | 'send_in_progress' | 'do_not_contact' }>('admin_launch_partner_claim_send', { p_id: id }); },
       async releaseSend(id) { await rpc('admin_launch_partner_release_send', { p_id: id }); },
       async markSent(id, note) { await rpc('admin_launch_partner_mark_sent', { p_id: id, p_note: note }); },
       send: (m) => postmarkSend(fetch as never, apiKey, m),
