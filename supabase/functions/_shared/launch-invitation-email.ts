@@ -38,14 +38,23 @@ const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;"
 export const isLinkable = (u: string | null | undefined): u is string => !!u && /^https?:\/\/[^\s<>"']+$/.test(u);
 
 /**
- * The quiet identity and opt-out lines. The RENDERER appends them to EVERY outreach email — they are not part of the editable draft, so an
- * edit (or an older saved draft) can never leave them out. Who is writing, how to reach them, and a plain, human way to say no: a reply
- * to this email (the reply goes to a monitored mailbox, and an administrator records the request, which stops further outreach for good).
- * Deliberately small and quiet: no logo, no link, no tracking, no marketing footer, nothing promotional.
+ * The quiet company disclosure and opt-out lines. The RENDERER appends them to EVERY outreach email — they are not part of the editable draft, so an
+ * edit (or an older saved draft) can never leave them out. Who is writing (the registered company, its place of registration, number and registered
+ * office, as the Companies Act asks of business emails) and a plain, human way to say no: a reply to this email (the reply goes to a monitored mailbox,
+ * and an administrator records the request, which stops further outreach for good). Deliberately small and quiet: no logo, no link, no tracking,
+ * no marketing footer, nothing promotional.
+ *
+ * SOURCE OF THE PARTICULARS (checked 7 Oct 2026, not guessed): the Companies House public record for company 15480428 — registered name
+ * DARREN FULLERTON CONSULTANCY LTD, registered office 155a Tottenham Lane, London, N8 9BT, England and Wales, status Active — which agrees with the
+ * company's own settings (dfc-control: company_settings), the statutory footer printed on its invoices, and its purchase orders. The registered
+ * office is the London address; the Burra address is a TRADING address and is deliberately not used here.
  */
-export const OUTREACH_OPT_OUT = "If you’d rather not receive another Launch Partner invitation from us, just reply and let us know.";
-export const OUTREACH_IDENTITY = "OneShetland is operated by Darren Fullerton Consultancy Ltd.";
+export const OUTREACH_COMPANY_NAME = "Darren Fullerton Consultancy Ltd";
+export const OUTREACH_IDENTITY = `OneShetland is operated by ${OUTREACH_COMPANY_NAME}.`;
+export const OUTREACH_REGISTRATION = "Registered in England and Wales · Company No. 15480428";
+export const OUTREACH_OFFICE = "Registered office: 155A Tottenham Lane, London, N8 9BT";
 export const OUTREACH_CONTACT = "hello@oneshetland.com";
+export const OUTREACH_OPT_OUT = "If you’d rather not receive another Launch Partner invitation from us, just reply and let us know.";
 
 export interface RenderInput {
   subject: string;
@@ -77,11 +86,12 @@ function expand(body: string, i: RenderInput): string {
 const ctaText = (url: string | null, masked: string | null): string =>
   url ? `${CTA_TEXT_LABEL} ${url}` : masked ? `${CTA_TEXT_LABEL} ${masked}` : `[${NO_INVITATION_TITLE} — the link is inserted here when you generate the invitation.]`;
 
-const outreachFooterText = (): string => `--\n${OUTREACH_OPT_OUT}\n\n${OUTREACH_IDENTITY} ${OUTREACH_CONTACT}\n`;
+const outreachFooterText = (): string =>
+  `--\n${OUTREACH_IDENTITY}\n${OUTREACH_REGISTRATION}\n${OUTREACH_OFFICE}\n${OUTREACH_CONTACT}\n\n${OUTREACH_OPT_OUT}\n`;
 const outreachFooterHtml = (): string =>
   `<div style="margin:22px 0 8px;padding-top:14px;border-top:1px solid #ece5d6">` +
-  `<p style="margin:0 0 8px;font-size:12px;line-height:1.55;color:#6b7280">${esc(OUTREACH_OPT_OUT)}</p>` +
-  `<p style="margin:0;font-size:12px;line-height:1.55;color:#6b7280">${esc(OUTREACH_IDENTITY)} ${esc(OUTREACH_CONTACT)}</p></div>`;
+  `<p style="margin:0 0 8px;font-size:12px;line-height:1.55;color:#6b7280">${esc(OUTREACH_IDENTITY)}<br>${esc(OUTREACH_REGISTRATION)}<br>${esc(OUTREACH_OFFICE)}<br>${esc(OUTREACH_CONTACT)}</p>` +
+  `<p style="margin:0;font-size:12px;line-height:1.55;color:#6b7280">${esc(OUTREACH_OPT_OUT)}</p></div>`;
 
 export function renderInvitationEmail(i: RenderInput): RenderedEmail {
   const url = isLinkable(i.invitationUrl) ? i.invitationUrl : null;

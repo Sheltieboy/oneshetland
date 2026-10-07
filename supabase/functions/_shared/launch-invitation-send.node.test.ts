@@ -14,7 +14,7 @@ import {
   launchInvitationSend, evaluateGates, resolveReplyTo, validSender, addressOf, MESSAGE, ProviderRejected, ProviderUnknown,
   type CampaignFacts, type SendDeps, type MailMessage,
 } from './launch-invitation-send.ts';
-import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL, OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT } from './launch-invitation-email.ts';
+import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL, OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT, OUTREACH_COMPANY_NAME, OUTREACH_REGISTRATION, OUTREACH_OFFICE } from './launch-invitation-email.ts';
 import { postmarkSend, postmarkRequestBody, POSTMARK_URL, type FetchLike } from './launch-invitation-postmark.ts';
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -289,7 +289,7 @@ describe('the email carries light OneShetland branding and nothing else changed'
   test('the plain-text version is untouched by the branding: no markup, no logo, same words, link present', () => {
     assert.ok(!/<|>/.test(out.text.replace(/→/g, ''))); assert.ok(!out.text.includes(EMAIL_LOGO_URL) && !/<img/i.test(out.text));
     const wanted = BODY.replace('{{PERSONALISED_OPENING}}', OPENING).replace('{{INVITATION_CTA}}', `View your private preview: ${LINK}`);
-    assert.equal(out.text, `${wanted}\n\n--\n${OUTREACH_OPT_OUT}\n\n${OUTREACH_IDENTITY} ${OUTREACH_CONTACT}\n`, 'the words are the draft\'s own, then the quiet identity and opt-out lines');
+    assert.equal(out.text, `${wanted}\n\n--\n${OUTREACH_IDENTITY}\n${OUTREACH_REGISTRATION}\n${OUTREACH_OFFICE}\n${OUTREACH_CONTACT}\n\n${OUTREACH_OPT_OUT}\n`, 'the words are the draft\'s own, then the quiet company disclosure and the opt-out line');
   });
   test('no marketing furniture: no unsubscribe, footer, banner or tracking pixel', () => {
     assert.doesNotMatch(out.html.toLowerCase(), /unsubscribe|manage preferences|view in browser|newsletter|pixel|track/);
@@ -362,13 +362,27 @@ describe('every outreach email carries the identity and opt-out lines', () => {
   for (const [name, input] of variants) {
     test(`11/12/13 · ${name}: the opt-out line and the identity line + contact are in BOTH the HTML and the plain text`, () => {
       const out = renderInvitationEmail(input);
-      for (const part of [OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT]) { assert.ok(out.text.includes(part), `text: ${part}`); assert.ok(out.html.includes(part.replace(/&/g, '&amp;')), `html: ${part}`); }
-      assert.ok(out.text.trimEnd().endsWith(`${OUTREACH_IDENTITY} ${OUTREACH_CONTACT}`), 'the identity line is the last thing');
+      for (const part of [OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_COMPANY_NAME, OUTREACH_REGISTRATION, OUTREACH_OFFICE, OUTREACH_CONTACT, '15480428', 'England and Wales', '155A Tottenham Lane']) { assert.ok(out.text.includes(part), `text: ${part}`); assert.ok(out.html.includes(part.replace(/&/g, '&amp;')), `html: ${part}`); }
+      assert.ok(out.text.trimEnd().endsWith(OUTREACH_OPT_OUT), 'the opt-out line is the last thing');
     });
   }
-  test('the exact wording', () => {
+  test('the exact wording, and the particulars as the Companies House record holds them (company 15480428)', () => {
     assert.equal(OUTREACH_OPT_OUT, 'If you’d rather not receive another Launch Partner invitation from us, just reply and let us know.');
-    assert.equal(OUTREACH_IDENTITY, 'OneShetland is operated by Darren Fullerton Consultancy Ltd.'); assert.equal(OUTREACH_CONTACT, 'hello@oneshetland.com');
+    assert.equal(OUTREACH_COMPANY_NAME, 'Darren Fullerton Consultancy Ltd'); assert.equal(OUTREACH_IDENTITY, 'OneShetland is operated by Darren Fullerton Consultancy Ltd.');
+    assert.equal(OUTREACH_REGISTRATION, 'Registered in England and Wales · Company No. 15480428');
+    assert.equal(OUTREACH_OFFICE, 'Registered office: 155A Tottenham Lane, London, N8 9BT'); assert.equal(OUTREACH_CONTACT, 'hello@oneshetland.com');
+  });
+  test('statutory particulars: registered name, place of registration, number and registered office are each present, EXACTLY once, in both versions — the trading address is not used', () => {
+    const out = renderInvitationEmail({ subject: 's', body: BODY, opening: OPENING, businessName: 'ZZ', invitationUrl: link });
+    for (const v of [out.text, out.html]) {
+      for (const part of ['Darren Fullerton Consultancy Ltd', 'England and Wales', '15480428', '155A Tottenham Lane, London, N8 9BT']) assert.equal(v.split(part).length - 1, 1, `${part} appears once`);
+      assert.doesNotMatch(v, /Burra|Hamnavoe|ZE2/, 'the registered office is the London address; Burra is only a trading address');
+    }
+  });
+  test('the disclosure is RENDERER-ENFORCED: a draft that tries to remove it, replace it or carry its own different details cannot change what is added', () => {
+    const tamper = ['No footer here.\n\n{{INVITATION_CTA}}', 'Registered in Scotland · Company No. SC000000\n\n{{INVITATION_CTA}}', '{{INVITATION_CTA}}\n\n--'];
+    for (const body of tamper) { const out = renderInvitationEmail({ subject: 's', body, invitationUrl: link }); for (const part of [OUTREACH_REGISTRATION, OUTREACH_OFFICE, OUTREACH_IDENTITY, OUTREACH_OPT_OUT]) { assert.ok(out.text.includes(part) && out.html.includes(part), part); } }
+    assert.ok(![...tamper.slice(0, 1)].some((b) => b.includes('15480428')), 'and the stored default template does not carry it, so there is nothing in a draft to edit away');
   });
   test('it is quiet: small grey text after a hairline; no link, image, unsubscribe URL, banner or promotional copy was added by the footer', () => {
     const out = renderInvitationEmail({ subject: 's', body: BODY, opening: OPENING, businessName: 'ZZ', invitationUrl: link });
