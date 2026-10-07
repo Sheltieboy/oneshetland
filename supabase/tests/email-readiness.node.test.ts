@@ -340,7 +340,7 @@ describe('every email-sending function', () => {
   test('the inventory is what we think it is (a new sender must be reviewed here)', () => {
     const names = emailSenders.map((f) => f.slice(FUNCS.length + 1)).sort();
     assert.deepEqual(names, [
-      '_shared/fulfilment.ts', '_shared/send-email.ts', '_shared/ticket-receipt.ts', 'confirm-gift/index.ts',
+      '_shared/fulfilment.ts', '_shared/launch-invitation-postmark.ts', '_shared/send-email.ts', '_shared/ticket-receipt.ts', 'confirm-gift/index.ts',
       'hub-broadcast/index.ts', 'notify-event-update/index.ts', 'request-password-reset/index.ts',
       'send-email/index.ts', 'stripe-webhook/index.ts', 'verify-gift-recipient/index.ts',
     ]);
