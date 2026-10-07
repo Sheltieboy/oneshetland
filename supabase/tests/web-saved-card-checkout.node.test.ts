@@ -122,7 +122,8 @@ describe('the flag is a preference, not a claim', () => {
   test('the payment method is re-resolved from Stripe for that Customer', () => {
     const src = fn();
     assert.match(src, /const pm = await listSavedCard\(customerId\)/);
-    assert.match(src, /if \(!pm\) \{ await releaseAll\(\); return json\(\{ error: 'No saved card on file' \}, 400\)/,
+    // The attempt is cancelled (its stock released once, by the status-guarded database function) rather than releaseAll()'d.
+    assert.match(src, /if \(!pm\) \{ await cancelAttempt\(\); return json\(\{ error: 'No saved card on file' \}, 400\)/,
       'a client claiming a card it does not have must be refused, not served someone else’s');
   });
 
@@ -146,7 +147,8 @@ describe('the rest of the checkout is unchanged', () => {
 
   test('one attempt is still one order and one Stripe key', () => {
     const src = app('supabase/functions/create-product-order-intent/index.ts');
-    assert.match(src, /`product-order-\$\{order\.id\}`/,
+    // The key comes from the ORDER ROW the database returned for this attempt (the same row on every repeat), never from the client.
+    assert.match(src, /`product-order-\$\{orderId\}`/,
       'the idempotency key is per order, so switching card choice cannot double-charge');
   });
 

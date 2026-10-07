@@ -275,15 +275,23 @@ describe('the buyer’s card is not the seller’s bank', () => {
 describe('a failed payment does not eat the stock', () => {
   test('the failed branch releases the reservation and cancels the order', () => {
     const fn = read('supabase/functions/create-product-order-intent/index.ts');
-    const failed = fn.slice(fn.indexOf("if (outcome.kind !== 'succeeded')"), fn.indexOf("charged: true, status: 'succeeded'"));
-    assert.match(failed, /await releaseAll\(\)/,
+    const failedAt = fn.indexOf("if (outcome.kind !== 'succeeded')");
+    const failed = fn.slice(failedAt, fn.indexOf("return json({ charged: true, status: 'succeeded', order_id: orderId, payment_intent_id: pi.id })", failedAt));
+    // Releasing and cancelling are ONE status-guarded database call now (cancel_pending_product_order): of any number of racing
+    // callers only the one that flips pending → cancelled gives the stock back, so it can never be released twice.
+    assert.match(failed, /await cancelAttempt\(\)/,
       'a one-off item held by a declined payment is unbuyable by anyone');
-    assert.match(failed, /status: 'cancelled'/);
+    assert.match(fn, /const cancelAttempt = \(\) => svc\.rpc\('cancel_pending_product_order', \{ p_order: orderId, p_as: 'cancelled' \}\)/);
   });
 
   test('a payment still in flight keeps its reservation', () => {
     const fn = read('supabase/functions/create-product-order-intent/index.ts');
-    const inflight = fn.slice(fn.indexOf("outcome.kind === 'requires_action'"), fn.indexOf("outcome.kind === 'processing'"));
-    assert.ok(!/releaseAll/.test(inflight), 'releasing mid-authentication would sell the item twice');
+    // every place that handles an in-flight intent: the resumed-payment one-liners and the first-run saved-card blocks.
+    // None may give the stock back — the cardholder is still authenticating THIS intent.
+    const oneLiners = [...fn.matchAll(/^\s*if \(outcome\.kind === '(?:requires_action|processing)'\) return .*$/gm)].map((m) => m[0]);
+    const blocks = [...fn.matchAll(/if \(outcome\.kind === '(?:requires_action|processing)'\) \{[\s\S]*?\n {8}\}/g)].map((m) => m[0]);
+    assert.equal(oneLiners.length, 2, 'the resumed-payment branches exist');
+    assert.equal(blocks.length, 2, 'the first-run saved-card branches exist');
+    for (const x of [...oneLiners, ...blocks]) assert.ok(!/cancelAttempt|cancel_pending_product_order|release_product_stock/.test(x), `releasing mid-authentication would sell the item twice: ${x.slice(0, 90)}`);
   });
 });

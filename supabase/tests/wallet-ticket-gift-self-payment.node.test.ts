@@ -77,6 +77,9 @@ function fakeSupabase() {
           return { data: !!args.p_account && (controls[args.p_account] ?? []).includes(args.p_user), error: null };
         case 'reserve_ticket_basket': calls.reserved++; return { data: { order_id: ORDER, ticket_ids: ['t1'], already: false, status: 'pending' }, error: null };
         case 'release_ticket_order': calls.released++; return { data: true, error: null };
+        // the atomic attempt claim + lease (their SQL is proved in purchase-attempt-idempotency.node.test.ts)
+        case 'claim_gift_purchase': return { data: { gift_id: 'gift1', replayed: false, status: 'pending_payment', pay_mode: args.p_pay_mode, payment_intent_id: null }, error: null };
+        case 'claim_purchase_processing': return { data: true, error: null };
         default: return { data: null, error: null };
       }
     },
@@ -122,6 +125,7 @@ function loadTickets(strip = false) {
 }
 function loadGifts(strip = false) {
   loadModule('supabase/functions/create-gift-intent/index.ts', {
+    '../_shared/purchase-attempt.ts': loadModule('supabase/functions/_shared/purchase-attempt.ts', {}),
     'https://deno.land/std@0.168.0/http/server.ts': { serve: (h: any) => { handler = h; } },
     'https://esm.sh/@supabase/supabase-js@2': { createClient },
     '../_shared/commission.ts': { calculateCommission: (pence: number) => ({ fee_pence: Math.floor(pence * 0.05) }) },
@@ -137,7 +141,7 @@ function loadGifts(strip = false) {
 const post = (fn: string, as: string, body: Row) => handler(new Request(`https://fake.supabase.co/functions/v1/${fn}`, { method: 'POST', headers: { Authorization: `Bearer user-${as}` }, body: JSON.stringify(body) }));
 let n = 0;
 const buyTicket = (as: string, over: Row = {}) => post('create-event-ticket-intent', as, { event_id: EVENT, line_items: [{ ticket_type_id: TT, quantity: 1 }], pay_with_wallet: true, client_request_id: `req-${++n}-abcdefgh`, ...over });
-const buyGift = (as: string, over: Row = {}) => post('create-gift-intent', as, { kind: 'unit', unit_item_id: 'item1', recipient_email: 'friend@example.org', recipient_name: 'Friend', pay_with_wallet: true, ...over });
+const buyGift = (as: string, over: Row = {}) => post('create-gift-intent', as, { client_request_id: `req-${++n}-abcdefgh`, kind: 'unit', unit_item_id: 'item1', recipient_email: 'friend@example.org', recipient_name: 'Friend', pay_with_wallet: true, ...over });
 const transfers = () => calls.debits.filter((d) => d.transfer);
 
 beforeEach(() => {
@@ -297,6 +301,7 @@ describe('wallet GIFTS — the same closure', () => {
     assert.equal((await res.json()).reason, 'self_payment');
     assert.equal(calls.debits.length, 0);
     assert.equal(calls.inserts.filter((i) => i.table === 'book_gifts').length, 0, 'no gift row was created, so there is nothing to clean up');
+    assert.ok(!calls.rpc.includes('claim_gift_purchase'), 'and no attempt was even claimed');
     assert.deepEqual(calls.deletes, []);
   });
 

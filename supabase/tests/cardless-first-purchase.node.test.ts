@@ -62,7 +62,8 @@ describe('a first-time buyer reaches the card form', () => {
     });
 
     test(`${name} runs the saved-card path only when there IS a card`, () => {
-      assert.match(src, /if \(customerId && pmId\) \{/, `${name} does not gate on both`);
+      // The gift now resolves its pay mode first (a saved card only counts if there IS one) and branches on that.
+      assert.match(src, /if \(customerId && pmId\) \{|payMode === 'card_saved' && customerId && pmId/, `${name} does not gate on both`);
       assert.match(src, /pmId = customerId \? await listSavedCard\(customerId\) : null/);
     });
 
@@ -162,7 +163,7 @@ describe('the payment safety of each route is untouched', () => {
   });
 
   test('gift and pass keep their own fulfilment', () => {
-    assert.match(gift, /`gift-\$\{gift\.id\}`/);
+    assert.match(gift, /`gift-\$\{giftId\}`|`gift-\$\{gift\.id\}`/);
     assert.match(unit, /unit_item_id|book_unit/);
   });
 });

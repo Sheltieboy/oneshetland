@@ -30,6 +30,7 @@ import { supabase } from '@/lib/supabase';
 import { fetchBusiness, fetchWalletBalance, walletFailureNotice, type LocalBusiness, type PaymentNotice } from '@/lib/local-api';
 import { formatPence, type BookUnitItem, type BookService } from '@/lib/book-api';
 import { settleSavedCardPayment, type PaymentStart } from '@/lib/stripe-sca';
+import { createAttemptHolder, isFinalRefusal } from '@/lib/checkout-attempt';
 
 const S = SECTIONS.local;
 
@@ -58,6 +59,9 @@ export default function GiftScreen() {
   // Modals and iOS cannot present one over (or while dismissing) the other — that froze the app.
   const [payNotice, setPayNotice]            = useState<PaymentNotice | null>(null);
   const walletInFlight = useRef(false);
+  // One reference per deliberate gift: the same recipient, message and payment method reuse it (so tapping Pay twice, a retry or a
+  // dismissed-then-reopened card sheet resolves to the SAME gift on the server); changing any of them is a different gift.
+  const attempt = useRef(createAttemptHolder()).current;
   const [walletBalance, setWalletBalance]   = useState<number | null>(null);
 
   useEffect(() => { if (profile?.id) fetchWalletBalance(profile.id).then(setWalletBalance).catch(() => {}); }, [profile?.id]);
@@ -129,6 +133,7 @@ export default function GiftScreen() {
     setPayNotice(null);
     try {
       const body: Record<string, unknown> = {
+        client_request_id: attempt.idFor(JSON.stringify([kind, targetId, emailTrim, recipientName.trim(), message.trim(), viaWallet ? 'wallet' : 'card'])),
         kind,
         recipient_email: emailTrim,
         recipient_name:  recipientName.trim() || null,
@@ -148,11 +153,13 @@ export default function GiftScreen() {
         // supabase.functions.invoke gives a generic "non-2xx" message — the real
         // reason is in the response body. Surface it.
         let msg = intentErr?.message ?? 'Could not start gift.';
+        let status: number | undefined; let code: string | undefined;
         try {
           const ctx = (intentErr as any)?.context;
-          if (ctx && typeof ctx.json === 'function') { const b = await ctx.json(); if (b?.error) msg = b.error; }
+          if (ctx && typeof ctx.json === 'function') { status = ctx.status; const b = await ctx.json(); if (b?.error) msg = b.error; code = b?.code; }
         } catch { /* keep generic */ }
-        throw new Error(msg);
+        // Keep the status and code: a definitive refusal ends this attempt; a network failure or 5xx does not (the retry resumes it).
+        throw Object.assign(new Error(msg), { status, code });
       }
       if (intent.error) throw new Error(intent.error);
 
@@ -162,7 +169,7 @@ export default function GiftScreen() {
       // A saved-card charge the issuer wants authenticated is PAUSED, not failed:
       // finish that same PaymentIntent rather than starting a second one.
       const settled = await settleSavedCardPayment(intent as PaymentStart);
-      if (settled.outcome === 'failed') throw new Error(settled.message);
+      if (settled.outcome === 'failed') { attempt.spend(); throw new Error(settled.message); }
       const scaCharged = settled.outcome === 'succeeded';
 
       if (!intent.charged && !scaCharged) {
@@ -201,6 +208,7 @@ export default function GiftScreen() {
         throw new Error(msg);
       }
 
+      attempt.spend();                                  // delivered: the next gift is a new purchase
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Only claim the email went out if the server actually sent it. The
       // already-sent (idempotent) path doesn't re-send, so treat that as "share
@@ -208,6 +216,7 @@ export default function GiftScreen() {
       const emailed = confirm.email_sent === true;
       setDoneState({ code: confirm.code, recipientEmail: emailTrim, emailed });
     } catch (e: any) {
+      if (isFinalRefusal(e)) attempt.spend();           // declined / expired / refused: that attempt is over
       if (viaWallet) {
         // Shown INSIDE the sheet, which stays open: the sender can dismiss it, close the sheet or pay another way.
         walletFailed = true;
@@ -222,7 +231,7 @@ export default function GiftScreen() {
     }
   }, [
     session, profile, item, kind, targetId, recipientEmail, recipientName, message,
-    business, initPaymentSheet, presentPaymentSheet, router, alert,
+    business, initPaymentSheet, presentPaymentSheet, router, alert, attempt,
   ]);
 
   if (loading) {

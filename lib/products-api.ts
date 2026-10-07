@@ -125,12 +125,18 @@ export const BUYER_STATUS_LABEL: Record<string, string> = {
 };
 
 /** Decode an edge-function error into something readable (same as local-api). */
-async function fnErr(error: unknown, fallback: string): Promise<Error> {
+async function fnErr(error: unknown, fallback: string): Promise<Error & { status?: number; code?: string }> {
   try {
     const ctx = (error as { context?: Response }).context;
     if (ctx) {
       const body = await ctx.json();
-      if (body?.error) return new Error(body.error);
+      if (body?.error) {
+        // Keep the HTTP status and code: a purchase screen needs them to tell a final refusal (declined, expired, conflicting)
+        // from a transient failure, and so to know whether the attempt id may be reused.
+        const e: Error & { status?: number; code?: string } = new Error(body.error);
+        e.status = ctx.status; e.code = body.code;
+        return e;
+      }
     }
   } catch { /* fall through */ }
   return error instanceof Error ? error : new Error(fallback);
@@ -248,6 +254,8 @@ export type ProductOrderResult = {
 };
 
 export async function createProductOrder(body: {
+  /** One id per deliberate checkout (createAttemptHolder on the screen) — NOT minted here, so a retry reuses it. */
+  client_request_id: string;
   business_id: string;
   items: { product_id: string; variant_id?: string | null; qty: number }[];
   fulfilment: 'collect' | 'post' | 'fetch';

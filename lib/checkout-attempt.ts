@@ -51,3 +51,40 @@ export function newCheckoutAttemptId(): string {
   }
   return id;
 }
+
+/**
+ * One attempt id per DISTINCT purchase, remembered across taps, retries and a cancelled-then-resumed payment sheet.
+ *
+ * `idFor(fingerprint)` returns the same id for as long as the fingerprint (everything that makes this THIS purchase: the items,
+ * the recipient, the address, how it is paid) is unchanged, and a new id the moment it changes. So tapping Pay twice, retrying
+ * after a timeout, or dismissing the card sheet and trying again all reuse the id and resolve to the same order or gift on the
+ * server, while changing what is being bought is a different purchase and gets its own.
+ *
+ * `spend()` forgets the id. Call it when the server has given a DEFINITIVE answer for this attempt — it succeeded, was declined,
+ * expired or was refused — because that attempt is over and the next tap is a new purchase. Do NOT call it for a network failure
+ * or a 5xx: the attempt may well be alive on the server, and retrying with the same id is exactly how it is resumed.
+ *
+ * ⚠️ Mirrored in oneshetland-web/lib/checkout-attempt.ts — change both together.
+ */
+export interface AttemptHolder { idFor(fingerprint: string): string; spend(): void }
+export function createAttemptHolder(): AttemptHolder {
+  let current: { fingerprint: string; id: string } | null = null;
+  return {
+    idFor(fingerprint: string) {
+      if (!current || current.fingerprint !== fingerprint) current = { fingerprint, id: newCheckoutAttemptId() };
+      return current.id;
+    },
+    spend() { current = null; },
+  };
+}
+
+/**
+ * Did the server end this attempt? True for a 4xx — declined, expired, conflicting, refused — except "in_progress", which means
+ * ANOTHER request for the same attempt is mid-payment and this one should simply be tried again with the same id.
+ * A network failure or 5xx is not final: the attempt may be alive.
+ */
+export function isFinalRefusal(e: unknown): boolean {
+  const status = (e as { status?: unknown } | null)?.status;
+  const code = (e as { code?: unknown } | null)?.code;
+  return typeof status === 'number' && status >= 400 && status < 500 && code !== 'in_progress';
+}

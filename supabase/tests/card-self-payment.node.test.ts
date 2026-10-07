@@ -75,6 +75,15 @@ function fakeDb(tables: Record<string, any>, rpcResults: Record<string, any> = {
   };
 }
 
+/** What the database's atomic claim / lease functions answer (their SQL is proved in purchase-attempt-idempotency.node.test.ts). */
+const ATTEMPT_RPCS = {
+  claim_gift_purchase: (a: Row) => ({ gift_id: 'new-book_gifts', replayed: false, status: 'pending_payment', pay_mode: a.p_pay_mode, payment_intent_id: null }),
+  claim_product_order: (a: Row) => ({ order_id: 'new-product_orders', replayed: false, status: 'pending', pay_mode: a.p_pay_mode, payment_intent_id: null, total_pence: a.p_total_pence }),
+  claim_purchase_processing: true,
+};
+/** a refused self-payment must not even have claimed an attempt */
+const claimed = () => calls.rpc.filter((r) => r.startsWith('claim_')).map((r) => `an attempt was claimed (${r})`);
+
 let dbFactory: () => any;
 const createClient = (_u: string, key: string, opts: Row = {}) => key === 'anon-key'
   ? { auth: { getUser: async () => ({ data: { user: { id: String(opts?.global?.headers?.Authorization ?? '').replace('Bearer user-', '') } }, error: null }) } }
@@ -165,8 +174,9 @@ const TICKETS: Route = {
 const GIFTS: Route = {
   name: 'gifts',
   load(strip) {
-    dbFactory = () => fakeDb({ book_unit_items: { id: 'item1', business_id: BIZ, name: 'Hamper', price_pence: 2000, stock: 5, is_active: true } });
+    dbFactory = () => fakeDb({ book_unit_items: { id: 'item1', business_id: BIZ, name: 'Hamper', price_pence: 2000, stock: 5, is_active: true } }, ATTEMPT_RPCS);
     loadModule('supabase/functions/create-gift-intent/index.ts', {
+      '../_shared/purchase-attempt.ts': loadModule('supabase/functions/_shared/purchase-attempt.ts', {}),
       'https://deno.land/std@0.168.0/http/server.ts': { serve: (h: any) => { handler = h; } },
       'https://esm.sh/@supabase/supabase-js@2': { createClient },
       '../_shared/commission.ts': { calculateCommission: (p: number) => ({ fee_pence: Math.floor(p * 0.05) }) },
@@ -179,8 +189,8 @@ const GIFTS: Route = {
       '../_shared/saved-card.ts': { chargeableCardFor: async () => null },
     }, strip ? withoutGuard : undefined);
   },
-  buy: (as, extra = {}) => post('create-gift-intent', as, { kind: 'unit', unit_item_id: 'item1', recipient_email: 'friend@example.org', recipient_name: 'Friend', pay_with_wallet: false, ...extra }),
-  forbidden() { return [...noWrites(), ...(calls.deletes.length ? ['a gift row had to be cleaned up'] : [])]; },
+  buy: (as, extra = {}) => post('create-gift-intent', as, { client_request_id: `req-${++n}-abcdefgh`, kind: 'unit', unit_item_id: 'item1', recipient_email: 'friend@example.org', recipient_name: 'Friend', pay_with_wallet: false, ...extra }),
+  forbidden() { return [...noWrites(), ...claimed(), ...(calls.deletes.length ? ['a gift row had to be cleaned up'] : [])]; },
 };
 
 /* ── shop orders (card) ────────────────────────────────────────────────────── */
@@ -196,8 +206,9 @@ const PRODUCTS: Route = {
       products: [{ id: PRODUCT, business_id: BIZ, title: 'Mug', price_pence: 1000, photos: [], stock_mode: 'tracked', is_active: true, sold_at: null, collect_only: false, free_uk_post: false }],
       product_variants: [],
       profiles: { stripe_customer_id: null },
-    }, { business_meets_tier: true, reserve_product_stock: true });
+    }, { business_meets_tier: true, ...ATTEMPT_RPCS });
     loadModule('supabase/functions/create-product-order-intent/index.ts', {
+      '../_shared/purchase-attempt.ts': loadModule('supabase/functions/_shared/purchase-attempt.ts', {}),
       'https://deno.land/std@0.168.0/http/server.ts': { serve: (h: any) => { handler = h; } },
       'https://esm.sh/@supabase/supabase-js@2': { createClient },
       '../_shared/commission.ts': { calculateCommission: (p: number) => ({ fee_pence: Math.floor(p * 0.05) }) },
@@ -212,8 +223,9 @@ const PRODUCTS: Route = {
       '../_shared/saved-card.ts': { chargeableCardFor: async () => null },
     }, strip ? withoutGuard : undefined);
   },
-  buy: (as, extra = {}) => post('create-product-order-intent', as, { business_id: BIZ, items: [{ product_id: PRODUCT, qty: 1 }], fulfilment: 'collect', pay_with: 'card', ...extra }),
-  forbidden() { return [...noWrites(), ...(calls.rpc.includes('reserve_product_stock') ? ['stock was reserved'] : [])]; },
+  buy: (as, extra = {}) => post('create-product-order-intent', as, { client_request_id: `req-${++n}-abcdefgh`, business_id: BIZ, items: [{ product_id: PRODUCT, qty: 1 }], fulfilment: 'collect', pay_with: 'card', ...extra }),
+  // Stock is reserved INSIDE the attempt claim now, so "no claim" is the same statement as "no reservation".
+  forbidden() { return [...noWrites(), ...claimed(), ...(calls.rpc.includes('reserve_product_stock') ? ['stock was reserved'] : [])]; },
 };
 
 /* ── passes (card) ─────────────────────────────────────────────────────────── */

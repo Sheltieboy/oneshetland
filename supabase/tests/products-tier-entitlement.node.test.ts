@@ -223,11 +223,13 @@ describe('the order refuses before Stripe', () => {
   test('the check sits after the business loads and before any side effect', () => {
     const check = ORDER_FN.indexOf("p_required_tier: 'premium'");
     const bizLoad = ORDER_FN.indexOf("if (!biz?.is_active)");
-    const orderInsert = ORDER_FN.indexOf("from('product_orders').insert");
-    const stripe = ORDER_FN.indexOf('await createPaymentIntent(');
+    // The order row (and its stock reservation) is now created by ONE atomic database call, the attempt claim.
+    const orderInsert = ORDER_FN.indexOf("rpc('claim_product_order'");
+    const stripe = ORDER_FN.indexOf('await createPaymentIntentOnce(');
     assert.ok(check > bizLoad, 'the business must be loaded first');
     assert.ok(orderInsert > check, 'no order row before the check');
     assert.ok(stripe > check, 'no Stripe call before the check');
+    assert.ok(orderInsert > 0 && stripe > 0, 'the markers this test orders must still exist');
   });
 
   test('it asks the shared predicate, not the configured tier', () => {

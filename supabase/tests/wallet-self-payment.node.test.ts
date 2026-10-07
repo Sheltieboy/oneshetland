@@ -235,7 +235,9 @@ describe('every payout route is guarded; the platform-revenue route is not', () 
     const g = code(read('supabase/functions/create-gift-intent/index.ts'));
     const guard = g.indexOf("await selfPaymentBlock(supabase, user.id, giftSellerAccountId, pay_with_wallet ? 'wallet' : 'card')");
     assert.ok(guard > -1, 'the gift route does not ask who controls the destination account');
-    assert.ok(guard < g.indexOf(".from('book_gifts')\n      .insert"), 'the gift row is created before the check');
+    // The gift row is created by the atomic attempt claim now (claim_gift_purchase), no longer by a direct insert.
+    const claimAt = g.indexOf("rpc('claim_gift_purchase'");
+    assert.ok(claimAt > -1 && guard < claimAt, 'the gift row is created before the check');
     assert.ok(guard < g.indexOf('debitAndTransfer(supabase'), 'the wallet is debited before the check');
   });
 
