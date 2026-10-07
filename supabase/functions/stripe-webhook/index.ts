@@ -5,6 +5,7 @@ import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
 import { reconcileCharge } from '../_shared/refund-reconcile.ts';
+import { brakeAfterFailedPayment, productionBrakeDeps } from '../_shared/payment-failure-brake.ts';
 import { parseReconciledSubscription, ReconcileFailed, type ReconciledSubscription } from '../_shared/subscription-reconcile.ts';
 
 /**
@@ -499,6 +500,19 @@ serve(async (req) => {
       // ── Payment failed ───────────────────────────────────────────────
       case 'payment_intent.payment_failed': {
         const meta = (eventData.metadata ?? {}) as Record<string, string>;
+
+        // Card-testing brake: count this failure against the account and against the intent, and cancel an intent that keeps
+        // failing. First, and fenced off — it must never stop the Fetch handling below, and it must never make Stripe retry
+        // (and so re-run) this whole event. See _shared/payment-failure-brake.ts.
+        try {
+          await brakeAfterFailedPayment(productionBrakeDeps(supabase, Deno.env.get('STRIPE_SECRET_KEY') ?? ''), {
+            id: eventData.id as string, kind: 'payment_intent',
+            customer: eventData.customer as string | null | undefined,
+            invoice: eventData.invoice as string | null | undefined,
+            metadata: meta,
+          });
+        } catch (e) { console.error('[stripe-webhook] failed-payment brake:', e instanceof Error ? e.message : e); }
+
         const requestId = meta.request_id;
         if (requestId) {
           await supabase
@@ -532,6 +546,20 @@ serve(async (req) => {
             }).catch((e) => console.error('[stripe-webhook] payment_failed push:', e));
           }
         }
+        break;
+      }
+
+      // ── A card setup failed ───────────────────────────────────────────
+      // The same card-testing door as a failed payment (a SetupIntent checks a card without charging it), so the same brake.
+      // Only fires if the endpoint is subscribed to setup_intent.setup_failed; harmless otherwise.
+      case 'setup_intent.setup_failed': {
+        try {
+          await brakeAfterFailedPayment(productionBrakeDeps(supabase, Deno.env.get('STRIPE_SECRET_KEY') ?? ''), {
+            id: eventData.id as string, kind: 'setup_intent',
+            customer: eventData.customer as string | null | undefined,
+            metadata: (eventData.metadata ?? {}) as Record<string, string>,
+          });
+        } catch (e) { console.error('[stripe-webhook] failed-setup brake:', e instanceof Error ? e.message : e); }
         break;
       }
 

@@ -111,3 +111,76 @@ export async function enforceRateLimit(
 
   return { ok: true };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Starting a payment
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Every route that can create something a card is then tried against — a PaymentIntent, a SetupIntent, a Subscription, a Checkout
+// Session — goes through ONE function, so no route can be added with a weaker rule than the rest.
+//
+// Two different things are controlled:
+//
+//   1. HOW OFTEN a payment is STARTED: an hourly, a per-minute and a daily budget, plus the aggregate across every Stripe-calling
+//      route. Claimed together, before Stripe is touched (see enforceRateLimit).
+//   2. HOW MANY CARDS HAVE ALREADY FAILED for this account. A client secret can be confirmed with a new card as many times as
+//      Stripe allows, straight from the browser — creation counts cannot see that. stripe-webhook counts each failed payment
+//      against the account (payment-failure-brake.ts); here, an account already at its failure ceiling is refused a NEW payment
+//      start without spending any allowance. That is what makes "create one intent, try a hundred cards" stop paying off.
+//
+// Both fail CLOSED, like the limiter they use.
+
+/** Budgets claimed (all or nothing) every time a payment is started. Their ceilings live in rate_limit_policies. */
+export const PAYMENT_START_ACTIONS = ['stripe_intent', 'stripe_intent_burst', 'stripe_intent_day', 'stripe_any'];
+
+/** Counted by stripe-webhook per failed payment; read here by the gate. */
+export const PAYMENT_FAILURE_ACTIONS = ['payment_failed', 'payment_failed_day'];
+
+export async function enforcePaymentStart(
+  scope: string,
+  userId: string,
+  corsHeaders: Record<string, string>,
+): Promise<RateLimitResult> {
+  const url = Deno.env.get('SUPABASE_URL') ?? '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  const json = (b: unknown, s: number, extra: Record<string, string> = {}) =>
+    new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, ...extra, 'Content-Type': 'application/json' } });
+
+  if (!url || !serviceKey) {
+    console.error(`[${scope}] payment gate: service credentials unavailable`);
+    return { denied: json({ error: 'Service unavailable' }, 503) };
+  }
+
+  // 1. Has this account already failed too many payments? (read-only: nothing is spent)
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/rate_limit_blocked`, {
+      method: 'POST',
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_subject: userSubject(userId), p_actions: PAYMENT_FAILURE_ACTIONS }),
+    });
+    if (!res.ok) {
+      console.error(`[${scope}] payment gate: check failed HTTP ${res.status}`);
+      return { denied: json({ error: 'Service unavailable' }, 503) };
+    }
+    const rows = await res.json();
+    const verdict = Array.isArray(rows) ? rows[0] : undefined;
+    if (!verdict) {
+      console.error(`[${scope}] payment gate: check returned nothing`);
+      return { denied: json({ error: 'Service unavailable' }, 503) };
+    }
+    if (verdict.blocked) {
+      const retry = Math.max(1, verdict.retry_after_secs || 600);
+      console.warn(`[${scope}] payment start refused after failed payments: ${verdict.blocked_action} retry_after=${retry}s`);
+      return {
+        denied: json({ error: 'Several payments have not gone through. Please wait a little while before trying again.' }, 429,
+          { 'Retry-After': String(retry) }),
+      };
+    }
+  } catch (err) {
+    console.error(`[${scope}] payment gate: check threw`, err);
+    return { denied: json({ error: 'Service unavailable' }, 503) };
+  }
+
+  // 2. Spend the creation budgets.
+  return enforceRateLimit(scope, userSubject(userId), PAYMENT_START_ACTIONS, corsHeaders);
+}

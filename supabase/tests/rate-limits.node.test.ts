@@ -281,6 +281,11 @@ describe('the protected endpoint inventory', () => {
       if (name === '_shared' || !existsSync(p)) continue;
       for (const m of readFileSync(p, 'utf8').matchAll(/'([a-z_]+)'/g)) claimed.add(m[1]);
     }
+    // Some budgets are claimed by shared helpers rather than by a route: enforcePaymentStart (rate-limit.ts) names the payment-start
+    // budgets and payment-failure-brake / the failed-payment gate name the failure budgets.
+    for (const f of readdirSync(join(FN_DIR, '_shared')).filter((n) => n.endsWith('.ts'))) {
+      for (const m of readFileSync(join(FN_DIR, '_shared', f), 'utf8').matchAll(/'([a-z_]+)'/g)) claimed.add(m[1]);
+    }
     const orphans = declared.filter((a) => !claimed.has(a));
     assert.deepEqual(orphans, [], `policies nothing claims: ${orphans.join(', ')}`);
   });

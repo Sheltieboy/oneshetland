@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 import { canonicalStripeCustomer } from '../_shared/stripe-customer.ts';
 
 const corsHeaders = {
@@ -42,7 +42,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('create-setup-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('create-setup-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     // Admin client — bypasses RLS for profile reads/writes

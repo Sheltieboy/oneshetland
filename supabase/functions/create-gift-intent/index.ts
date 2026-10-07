@@ -5,7 +5,7 @@ import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
 import { withWalletLiquidityGate } from '../_shared/wallet-liquidity-gate.ts';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 import { chargeableCardFor } from '../_shared/saved-card.ts';
 
@@ -93,7 +93,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('create-gift-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('create-gift-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     const supabase = createClient(

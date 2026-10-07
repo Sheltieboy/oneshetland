@@ -220,7 +220,8 @@ describe('the rest of the unit purchase is untouched', () => {
   });
 
   test('rate limiting is preserved', () => {
-    assert.match(intent, /enforceRateLimit\('create-unit-purchase-intent', userSubject\(user\.id\), \['stripe_intent', 'stripe_any'\]/);
+    // now through the shared payment-start gate (hourly + per-minute + daily budgets, and the failed-payment gate)
+    assert.match(intent, /enforcePaymentStart\('create-unit-purchase-intent', user\.id, corsHeaders\)/);
   });
 
   test('saved-card SCA still resumes the SAME PaymentIntent', () => {
