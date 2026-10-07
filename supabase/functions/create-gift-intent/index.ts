@@ -191,16 +191,17 @@ serve(async (req) => {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    // ── You cannot pay yourself with your own wallet ─────────────────────────
-    // A wallet gift sends the price (less commission) to the seller's connected account by Connect transfer. If the buyer controls
-    // that account — directly, or through a second hub or business pointing at it — the route is: top up by card → "gift"
-    // something of your own → the money lands in YOUR account → charge the card back. The recovery that follows a chargeback can
-    // only take back what is still in the wallet. Asked of the DESTINATION ACCOUNT, exactly as wallet-checkout and the till do.
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A gift sends the price (less commission) to the seller's connected account — by Connect transfer from the wallet, by
+    // destination charge from a card. If the buyer controls that account — directly, through a second hub or business pointing at
+    // it, or as the owner whose central account a business with no account of its own is paid into — the route is: pay for a gift
+    // of your own → the money lands in YOUR account → charge it back. Asked of the DESTINATION ACCOUNT, exactly as wallet-checkout,
+    // the till and the card membership do.
     //
-    // Before the gift row exists and before any debit: a refusal creates nothing and costs nothing. A demo business (no account)
-    // is not asked, and nor is a card gift (a card payment is a different rail).
-    if (pay_with_wallet) {
-      const selfPay = await selfPaymentBlock(supabase, user.id, giftSellerAccountId);
+    // Before the gift row exists, before any debit and before any PaymentIntent: a refusal creates nothing and costs nothing. A
+    // demo business (no account) is not asked.
+    {
+      const selfPay = await selfPaymentBlock(supabase, user.id, giftSellerAccountId, pay_with_wallet ? 'wallet' : 'card');
       if (selfPay) {
         return new Response(JSON.stringify(selfPay.body), {
           status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

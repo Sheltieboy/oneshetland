@@ -4,6 +4,7 @@ import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforcePaymentStart } from '../_shared/rate-limit.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 import { normaliseUkPostcode } from '../_shared/uk-postcode.ts';
 import { chargeableCardFor } from '../_shared/saved-card.ts';
@@ -129,6 +130,14 @@ serve(async (req) => {
     if (!isDemoHub && !hubHasAccount) {
       return json({ error: 'This hub has not finished setting up payouts yet.' }, 409);
     }
+
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A card donation is a destination charge into the hub's connected account. The wallet donation route has refused the hub's
+    // owner (and anyone controlling that account) since Paygate 7; the card route did not. Asked of the DESTINATION ACCOUNT. Before
+    // the fee, the Gift Aid declaration, the donation attempt row and any PaymentIntent: a refusal creates nothing. A demo hub (no
+    // account) is not asked. A committee member, who cannot change where the money goes, is not blocked.
+    const selfPay = await selfPaymentBlock(svc, user.id, hubHasAccount ? hub.stripe_account_id : null, 'card');
+    if (selfPay) return json(selfPay.body, selfPay.status);
 
     // Donations earn the platform nothing. We retain an application_fee equal to
     // Stripe's estimated processing fee — the platform keeps it but immediately

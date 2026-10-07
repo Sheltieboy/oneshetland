@@ -45,6 +45,7 @@ const DEBIT = join(MIG, '20260826150000_wallet_spend_blocked_by_recovery.sql');
 const REVERSE = join(MIG, '20261006120000_wallet_loyalty_points.sql');
 const STATE = join(MIG, '20261002120000_wallet_transfer_state_reversed.sql');
 const GUARD = join(MIG, '20260826200000_wallet_self_payment_guard.sql');
+const GUARD2 = join(MIG, '20261119000000_self_payment_guard_covers_central_accounts.sql');   // the current definition
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 const src = (p: string) => readFileSync(p, 'utf8');
@@ -85,12 +86,22 @@ const COMMITTEE = 'c0000000-0000-4000-8000-0000000000c0';
 const BIZ = 'bb000000-0000-4000-8000-0000000000bb';
 const HUB1 = 'a4000000-0000-4000-8000-0000000000a4';
 const HUB2 = 'a5000000-0000-4000-8000-0000000000a5';
+const BIZ2 = 'bb200000-0000-4000-8000-0000000000b2';
+const BIZ3 = 'bb300000-0000-4000-8000-0000000000b3';
+const CENTRAL = 'ce000000-0000-4000-8000-0000000000ce';   // owns BIZ2; BIZ2 is paid into acct_central
+const DRIVER = 'd0000000-0000-4000-8000-0000000000d0';    // a Fetch driver with a connected account
+const PARALLEL = 'fa000000-0000-4000-8000-0000000000fa';
 
 before(() => {
   assert.ok(DSN, 'PASS_PROOF_DSN is not set — run `npm run test:isolated`.');
   assert.ok(!/supabase\.co|pooler\.supabase/.test(DSN), 'PASS_PROOF_DSN points at Supabase. Refusing to run.');
   const out = raw([
     'drop schema if exists public cascade; create schema public; drop schema if exists auth cascade; create schema auth; create table auth.users (id uuid primary key);',
+    `do $$ begin
+       if not exists (select 1 from pg_roles where rolname='anon') then create role anon; end if;
+       if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
+       if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role; end if;
+     end $$;`,
     createTable(BASELINE, 'CREATE TABLE public.local_wallet_balances ('),
     'alter table public.local_wallet_balances add primary key (user_id);',
     'alter table public.local_wallet_balances add column if not exists deficit_pence integer not null default 0 check (deficit_pence >= 0);',
@@ -111,8 +122,10 @@ before(() => {
     // (its user_id points at auth.users, which this fixture does not populate; the key is not what is under test)
     'alter table public.local_wallet_topup_recovery drop constraint if exists local_wallet_topup_recovery_user_id_fkey;',
     // the destination-ownership guard reads these two columns of each
-    'create table public.local_businesses (id uuid primary key, owner_id uuid, stripe_account_id text);',
+    'create table public.local_businesses (id uuid primary key, owner_id uuid, stripe_account_id text, business_stripe_account_id text);',
     'create table public.hubs (id uuid primary key, owner_id uuid, stripe_account_id text);',
+    'create table public.profiles (id uuid primary key, stripe_account_id text);',
+    'create table public.driver_profiles (id uuid primary key, stripe_account_id text);',
     'create or replace function public.loyalty_reverse_for_wallet_spend(p uuid) returns void language sql as $$ select $$;',
     // the REAL current functions
     fn(LEDGER, 'create or replace function public.wallet_credit_with_ledger'),
@@ -121,12 +134,21 @@ before(() => {
     fn(RECOVERY, 'create or replace function public.wallet_spend_block('),
     fn(TOPUP, 'create or replace function public.wallet_recover_topup('),
     fn(TOPUP, 'create or replace function public.wallet_topup('),
-    fn(GUARD, 'create or replace function public.wallet_destination_self_controlled('),
+    // the ORIGINAL definition, kept under another name so the widening can be shown against it
+    fn(GUARD, 'create or replace function public.wallet_destination_self_controlled(').replace('wallet_destination_self_controlled', 'wallet_destination_self_controlled_original'),
+    // the CURRENT definition (20261119)
+    fn(GUARD2, 'create or replace function public.wallet_destination_self_controlled('),
   ].join('\n'));
   assert.doesNotMatch(out, /ERROR/i, `fixture did not build:\n${out.slice(0, 2000)}`);
   const seed = raw(`
     insert into public.local_businesses values ('${BIZ}', '${OWNER}', 'acct_organiser');
-    insert into public.hubs values ('${HUB1}', '${OWNER}', 'acct_organiser'), ('${HUB2}', '${SIBLING}', 'acct_organiser');`);
+    insert into public.hubs values ('${HUB1}', '${OWNER}', 'acct_organiser'), ('${HUB2}', '${SIBLING}', 'acct_organiser');
+    -- an owner whose business has NO payout account of its own: it is paid into the owner's central account, which is on no business or hub row
+    insert into public.local_businesses values ('${BIZ2}', '${CENTRAL}', null, null);
+    insert into public.profiles values ('${CENTRAL}', 'acct_central'), ('${ALICE}', null), ('${DRIVER}', null);
+    insert into public.driver_profiles values ('${DRIVER}', 'acct_driver');
+    -- a business whose payout account sits in the PARALLEL column the resolver also honours
+    insert into public.local_businesses values ('${BIZ3}', '${PARALLEL}', null, 'acct_parallel');`);
   assert.doesNotMatch(seed, /ERROR/i, seed);
 });
 
@@ -150,8 +172,46 @@ describe('wallet_destination_self_controlled — who ends up with the money', ()
     assert.equal(controls(OWNER, ''), 'false');
     assert.equal(controls(null, 'acct_organiser'), 'false');
   });
+  test('THE WIDENING: an owner whose shop has no account of its own is paid into their CENTRAL account — which is on no business or hub row — and controls it', () => {
+    assert.equal(scalar(`select count(*) from public.local_businesses where stripe_account_id = 'acct_central' or business_stripe_account_id = 'acct_central'`), '0', 'the central account is not on any business row');
+    assert.equal(scalar(`select count(*) from public.hubs where stripe_account_id = 'acct_central'`), '0', 'nor on any hub row');
+    assert.equal(controls(CENTRAL, 'acct_central'), 'true');
+    assert.equal(controls(ALICE, 'acct_central'), 'false', 'a stranger still does not');
+    assert.equal(controls(OWNER, 'acct_central'), 'false', 'nor a different owner');
+  });
+  test('CONTROL: the ORIGINAL definition could not see that — it answers false for the central account, the driver account and the parallel column', () => {
+    const old = (u: string, a: string) => scalar(`select public.wallet_destination_self_controlled_original('${u}', '${a}')::text`);
+    assert.equal(old(CENTRAL, 'acct_central'), 'false');
+    assert.equal(old(DRIVER, 'acct_driver'), 'false');
+    assert.equal(old(PARALLEL, 'acct_parallel'), 'false');
+    // and the new one sees all three
+    assert.equal(controls(DRIVER, 'acct_driver'), 'true');
+    assert.equal(controls(PARALLEL, 'acct_parallel'), 'true');
+  });
+  test('a Fetch driver controls their own driver account (the customer-is-also-the-driver case); nobody else does', () => {
+    assert.equal(controls(DRIVER, 'acct_driver'), 'true');
+    assert.equal(controls(CENTRAL, 'acct_driver'), 'false');
+    assert.equal(controls(ALICE, 'acct_driver'), 'false');
+  });
+  test('everything the ORIGINAL function caught is still caught, and nothing it let through is newly blocked for an unrelated person', () => {
+    for (const [u, a] of [[OWNER, 'acct_organiser'], [SIBLING, 'acct_organiser']] as const) {
+      assert.equal(scalar(`select public.wallet_destination_self_controlled_original('${u}', '${a}')::text`), 'true');
+      assert.equal(controls(u, a), 'true');
+    }
+    for (const a of ['acct_organiser', 'acct_central', 'acct_driver', 'acct_parallel', 'acct_other']) assert.equal(controls(ALICE, a), 'false', a);
+    assert.equal(controls(COMMITTEE, 'acct_organiser'), 'false');
+  });
+  test('the migration applies exactly as written (its own self-check passes), twice, and the answers do not change', () => {
+    const run = () => spawnSync(PSQL, [DSN, '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-f', GUARD2], { cwd: REPO_ROOT, encoding: 'utf8' });
+    const before = [controls(CENTRAL, 'acct_central'), controls(DRIVER, 'acct_driver'), controls(ALICE, 'acct_central'), controls(OWNER, 'acct_organiser')];
+    assert.equal(run().status, 0, run().stderr);
+    assert.deepEqual([controls(CENTRAL, 'acct_central'), controls(DRIVER, 'acct_driver'), controls(ALICE, 'acct_central'), controls(OWNER, 'acct_organiser')], before);
+    assert.deepEqual(before, ['true', 'true', 'false', 'true']);
+    assert.equal(scalar(`select has_function_privilege('anon','public.wallet_destination_self_controlled(uuid,text)','EXECUTE')::text`), 'false');
+    assert.equal(scalar(`select has_function_privilege('authenticated','public.wallet_destination_self_controlled(uuid,text)','EXECUTE')::text`), 'false');
+  });
   test('it is service_role-only with a pinned search_path (source)', () => {
-    const m = src(GUARD);
+    const m = src(GUARD2);
     assert.match(m, /revoke all on function public\.wallet_destination_self_controlled\(uuid, text\) from public, anon, authenticated;/);
     assert.match(m, /grant execute on function public\.wallet_destination_self_controlled\(uuid, text\) to service_role;/);
     assert.match(m, /set search_path to 'public'/);

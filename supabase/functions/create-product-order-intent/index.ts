@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { executeWalletPayment, type PayBusiness } from '../_shared/wallet-pay.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { spawnFetchRequest } from '../_shared/fulfilment.ts';
 import { safeError } from '../_shared/safe-error.ts';
@@ -155,6 +156,17 @@ serve(async (req) => {
     const sellerAccountId: string | null = payout?.account_id ?? null;
     if (!sellerAccountId) {
       return json({ error: "This shop isn't quite ready to take payments yet." }, 400);
+    }
+
+    // ── You cannot pay yourself by card ───────────────────────────────────────
+    // A card order is a destination charge into the seller's connected account. If the buyer controls that account — as the shop's
+    // owner, through another business or hub on the same account, or because a shop with no payout account of its own is paid into
+    // its owner's central account — the money goes round in a circle that ends in their own bank, and a chargeback is the
+    // platform's loss. Asked of the DESTINATION ACCOUNT, the way the wallet route below (executeWalletPayment) and the card
+    // membership ask it. BEFORE any stock is reserved, any order row exists or any PaymentIntent is made: a refusal costs nothing.
+    if (payWith === 'card') {
+      const selfPay = await selfPaymentBlock(svc, user.id, sellerAccountId, 'card');
+      if (selfPay) return json(selfPay.body, selfPay.status);
     }
 
     const { data: ship } = await svc.from('business_shipping').select('*').eq('business_id', businessId).maybeSingle();

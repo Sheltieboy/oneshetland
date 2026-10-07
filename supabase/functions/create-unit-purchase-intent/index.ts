@@ -4,6 +4,7 @@ import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforcePaymentStart } from '../_shared/rate-limit.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 import { chargeableCardFor } from '../_shared/saved-card.ts';
 
@@ -185,6 +186,19 @@ serve(async (req) => {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A card purchase of a pass is a destination charge into the seller's connected account. If the buyer controls that account
+    // (as the owner, through another business or hub on it, or as the owner whose central account an account-less business is paid
+    // into), the money lands with the buyer. Asked of the DESTINATION ACCOUNT, as wallet-checkout asks it for the wallet route.
+    // Before the commission is worked out and before any PaymentIntent exists: a refusal costs nothing. A demo business (no
+    // account) is not asked.
+    const selfPay = await selfPaymentBlock(supabase, user.id, unitSellerAccountId, 'card');
+    if (selfPay) {
+      return new Response(JSON.stringify(selfPay.body), {
+        status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Platform commission — admin-editable, see fees.unit.* in admin_config.
     // Default 5% (matches the previous hardcoded rate).
     const unitCfg = await getCommissionConfig(supabase, 'unit');

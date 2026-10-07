@@ -102,7 +102,7 @@ const walletLedgerStub = () => ({
 });
 
 /** removes the self-payment guard from a handler's own source: the handler as it was */
-const withoutGuard = (src: string) => src.replace(/\n\s*\/\/ ── You cannot pay yourself with your own wallet[\s\S]*?\n    \}\n(?=\n)/, '\n');
+const withoutGuard = (src: string) => src.replace(/\n\s*\/\/ ── You cannot pay yourself[\s\S]*?\n    \}\n(?=\n)/, '\n');
 
 let handler: (r: Request) => Promise<Response>;
 function loadTickets(strip = false) {
@@ -231,13 +231,20 @@ describe('wallet TICKETS — the cash-out, and its closure', () => {
     assert.ok(!calls.rpc.includes('wallet_destination_self_controlled'));
   });
 
-  test('the CARD path is not touched by the wallet guard (it is a different rail, and no wallet value is involved)', async () => {
+  test('the CARD path is guarded too (own wording, same rule, same place) — see card-self-payment.node.test.ts', async () => {
     loadTickets();
     const res = await buyTicket(OWNER, { pay_with_wallet: false });
-    assert.equal(res.status, 200);
-    assert.ok(!calls.rpc.includes('wallet_destination_self_controlled'));
+    assert.equal(res.status, 403);
+    const body = await res.json();
+    assert.equal(body.reason, 'self_payment');
+    assert.match(body.error, /can't pay a business, hub or driver whose payout account you control/, 'a card buyer is not told about a wallet');
     assert.equal(calls.debits.length, 0);
-    assert.ok(stripeCalls.some((c) => c.startsWith('POST') && /payment_intents/.test(c)), 'a card payment intent is created as before');
+    assert.equal(calls.reserved, 0);
+    assert.deepEqual(stripeCalls, [], 'no PaymentIntent was created');
+    loadTickets();
+    const fine = await buyTicket(BOB, { pay_with_wallet: false });
+    assert.equal(fine.status, 200);
+    assert.ok(stripeCalls.some((c) => c.startsWith('POST') && /payment_intents/.test(c)), 'an unrelated card buyer still gets a payment intent');
   });
 
   test('if the guard cannot answer, the purchase fails closed — nothing is debited', async () => {
@@ -299,13 +306,13 @@ describe('wallet GIFTS — the same closure', () => {
     assert.equal((await buyGift(SIBLING)).status, 403);
   });
 
-  test('an unrelated payer is not over-blocked, and a CARD gift never asks the wallet question', async () => {
+  test('an unrelated payer is not over-blocked, and a CARD gift to your own account is refused with the card wording', async () => {
     loadGifts();
     assert.equal((await buyGift(BOB)).status, 200);
-    calls.rpc.length = 0;
     loadGifts();
-    await buyGift(OWNER, { pay_with_wallet: false });
-    assert.ok(!calls.rpc.includes('wallet_destination_self_controlled'));
+    const own = await buyGift(OWNER, { pay_with_wallet: false });
+    assert.equal(own.status, 403);
+    assert.match((await own.json()).error, /can't pay a business, hub or driver whose payout account you control/);
     assert.equal(calls.debits.length, 1, 'only the earlier legitimate wallet gift debited anything');
   });
 

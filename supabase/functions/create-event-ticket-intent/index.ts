@@ -219,17 +219,19 @@ serve(async (req) => {
       );
     }
 
-    // ── You cannot pay yourself with your own wallet ─────────────────────────
-    // A wallet ticket sends the face value to the organiser's connected account by Connect transfer. If that account is one the
-    // buyer controls, the route is: top up by card → "buy" a ticket to your own event → the money lands in YOUR account → charge
-    // the card back. The refund and dispute recovery can only take back what is still in the wallet; the transfer has already
-    // left. The same question wallet-checkout (donations, memberships, passes) and the till already ask of the DESTINATION
-    // ACCOUNT — not of the event — because one connected account can sit behind more than one hub or business.
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A paid ticket sends the face value to the organiser's connected account — by Connect transfer when paid from the wallet, by
+    // destination charge when paid by card. If that account is one the buyer controls, the route is: pay (with a topped-up wallet
+    // or a card that is not theirs) for a ticket to your own event → the money lands in YOUR account → charge it back. Recovery
+    // can only take back what is still in the wallet, or claw a transfer back from an account that still holds the funds. The same
+    // question wallet-checkout, the till and the card membership already ask, and of the same thing: the DESTINATION ACCOUNT, not
+    // the event, because one connected account can sit behind more than one hub or business — and an owner's central account is
+    // where a business with no account of its own is paid.
     //
-    // Before the basket is reserved: a refusal holds no seats, creates no order and costs nothing, and the same checkout
-    // reference stays usable. A free order (no transfer) and a demo organiser (no account) are not asked.
-    if (pay_with_wallet && totalPence > 0) {
-      const selfPay = await selfPaymentBlock(supabase, user.id, stripeAccountId);
+    // Before the basket is reserved: a refusal holds no seats, creates no order, creates no PaymentIntent and costs nothing, and
+    // the same checkout reference stays usable. A free order (no payout) and a demo organiser (no account) are not asked.
+    if (totalPence > 0) {
+      const selfPay = await selfPaymentBlock(supabase, user.id, stripeAccountId, pay_with_wallet ? 'wallet' : 'card');
       if (selfPay) {
         return new Response(JSON.stringify(selfPay.body), {
           status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
