@@ -4,6 +4,8 @@
  * `fetch` is injected, so tests can prove the exact request without a network. The API key is used only as the
  * `X-Postmark-Server-Token` header: it is never put in a body, a log line, an error or a response.
  *
+ * The MessageStream is whatever the message carries — the dedicated Launch Partner stream, set by the caller. There is deliberately no default here.
+ *
  * It is a personal one-to-one note, not marketing: open tracking OFF, link tracking OFF (links are not rewritten),
  * no marketing footer, no unsubscribe machinery (the renderer's one quiet opt-out line asks for a plain reply), and provider metadata that never contains the link, token or recipient.
  */
@@ -18,7 +20,7 @@ export type FetchLike = (url: string, init: { method: string; headers: Record<st
 export function postmarkRequestBody(m: MailMessage): Record<string, unknown> {
   return {
     From: m.from, ReplyTo: m.replyTo, To: m.to, Subject: m.subject, TextBody: m.text, HtmlBody: m.html,
-    MessageStream: 'outbound', TrackOpens: false, TrackLinks: 'None', Metadata: m.metadata,
+    MessageStream: m.messageStream, TrackOpens: false, TrackLinks: 'None', Metadata: m.metadata,
   };
 }
 

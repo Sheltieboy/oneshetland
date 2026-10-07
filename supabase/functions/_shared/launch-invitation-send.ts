@@ -29,7 +29,8 @@ export type GateFailure =
   | 'invitation_invalid' | 'invitation_expired' | 'link_missing' | 'recipient_changed' | 'subject_changed';
 
 export type FailureCode =
-  | GateFailure | 'bad_request' | 'not_found' | 'not_configured' | 'send_in_progress' | 'provider_rejected' | 'recipient_inactive' | 'outcome_unknown';
+  | GateFailure | 'bad_request' | 'not_found' | 'not_configured' | 'stream_not_configured' | 'stream_missing' | 'stream_type_unsupported'
+  | 'send_in_progress' | 'provider_rejected' | 'recipient_inactive' | 'outcome_unknown';
 
 export interface CampaignFacts {
   id: string; slug: string; businessId: string; businessName: string; stage: string; sentAt: string | null;
@@ -41,6 +42,25 @@ export interface CampaignFacts {
 
 export interface MailMessage {
   from: string; replyTo: string; to: string; subject: string; text: string; html: string; metadata: Record<string, string>;
+  /** The dedicated Launch Partner message stream. Always explicit — there is NO default, so a launch email can never fall back to the transactional stream. */
+  messageStream: string;
+}
+
+/**
+ * The streams Postmark creates for every server. Launch Partner outreach must NEVER be sent through any of them: 'outbound' carries the
+ * transactional mail (password resets, tickets, receipts) and 'broadcast'/'broadcasts' carry newsletters. It needs a stream of its own, so its
+ * bounces, complaints and suppressions are kept apart.
+ */
+export const SHARED_STREAMS = ['outbound', 'broadcast', 'broadcasts', 'inbound'] as const;
+
+/**
+ * The configured dedicated stream (LAUNCH_OUTREACH_MESSAGE_STREAM), or null when it is missing, malformed or one of the shared streams above.
+ * null means "do not send": a missing or wrong setting fails CLOSED, it never degrades to the transactional stream.
+ */
+export function validMessageStream(v: string | null | undefined): string | null {
+  const s = v?.trim();
+  if (!s || !/^[a-z0-9][a-z0-9-]{2,49}$/.test(s)) return null;
+  return (SHARED_STREAMS as readonly string[]).includes(s) ? null : s;
 }
 
 /** The provider refused this message outright (an HTTP error answer). Nothing was sent; retrying is safe. */
@@ -65,6 +85,8 @@ export interface SendDeps {
   origin: string;
   from: string | null;
   replyTo: string | null;
+  /** The dedicated Launch Partner stream, already validated (validMessageStream). null = not configured = nothing is sent. */
+  messageStream: string | null;
   log?(line: string): void;
 }
 
@@ -89,8 +111,11 @@ export const MESSAGE: Record<FailureCode, string> = {
   bad_request: 'That request was not understood.',
   not_found: 'That campaign was not found.',
   not_configured: "Sending from OneShetland isn't configured yet, so nothing was sent.",
+  stream_not_configured: "Launch Partner sending has no dedicated mail stream set up (LAUNCH_OUTREACH_MESSAGE_STREAM is missing or not allowed), so nothing was sent. It will not fall back to the everyday email stream.",
   send_in_progress: 'A send for this campaign is already in progress or its outcome is unknown. Check the mail provider’s activity before trying again.',
   provider_rejected: 'The mail provider refused the message, so nothing was sent. You can try again.',
+  stream_missing: "Postmark says the Launch Partner mail stream does not exist on this server (or has been archived), so nothing was sent. Create it in Postmark, make sure it matches LAUNCH_OUTREACH_MESSAGE_STREAM, then try again.",
+  stream_type_unsupported: "Postmark won't send through the Launch Partner mail stream as it is set up (wrong stream type), so nothing was sent. Check the stream in Postmark.",
   recipient_inactive: 'The mail provider has marked this address as inactive (a previous bounce or spam complaint), so nothing was sent. Check the address — or, if they asked not to be emailed, record do not contact.',
   outcome_unknown: 'The mail provider did not answer, so it is not known whether the email went out. It has NOT been recorded as sent and a resend is blocked for 30 minutes. Check the mail provider’s activity before trying again.',
 };
@@ -132,6 +157,9 @@ export async function launchInvitationSend(req: SendRequest, deps: SendDeps): Pr
     || !conf || typeof conf.recipient !== 'string' || typeof conf.subject !== 'string') return fail('bad_request');
   // 1. configuration, before anything is read or reserved
   if (!deps.from || !deps.replyTo) return fail('not_configured');
+  // …and the DEDICATED stream. Without it nothing is read, reserved or sent — never a silent fallback to the transactional stream.
+  const stream = validMessageStream(deps.messageStream);
+  if (!stream) return fail('stream_not_configured');
   // 2. facts from the database
   const c = await deps.getCampaign(req.campaignId);
   if (!c) return fail('not_found');
@@ -155,13 +183,15 @@ export async function launchInvitationSend(req: SendRequest, deps: SendDeps): Pr
       from: deps.from, replyTo: deps.replyTo, to: c.contactEmail!.trim(), subject: email.subject, text: email.text, html: email.html,
       // Provider-side metadata: NEVER the link, the token or the recipient.
       metadata: { kind: 'launch_partner_invitation', campaign: c.slug },
+      messageStream: stream,
     });
     id = res.id;
   } catch (e) {
     if (e instanceof ProviderRejected) {
       await deps.releaseSend(c.id).catch(() => { /* a stuck reservation expires on its own; never mask the real answer */ });
       deps.log?.(`launch invitation: provider rejected (campaign ${c.slug})`);
-      return fail(e.errorCode === 406 ? 'recipient_inactive' : 'provider_rejected');
+      // Postmark's own codes: 406 inactive recipient · 1235 the stream does not exist on this server · 1236 sending not supported for this stream type.
+      return fail(e.errorCode === 406 ? 'recipient_inactive' : e.errorCode === 1235 ? 'stream_missing' : e.errorCode === 1236 ? 'stream_type_unsupported' : 'provider_rejected');
     }
     // Anything else — including an unexpected exception — is treated as UNKNOWN: it may have been sent.
     deps.log?.(`launch invitation: outcome unknown (campaign ${c.slug})`);

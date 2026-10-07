@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  launchInvitationSend, evaluateGates, resolveReplyTo, validSender, addressOf, MESSAGE, ProviderRejected, ProviderUnknown,
+  launchInvitationSend, evaluateGates, resolveReplyTo, validSender, validMessageStream, SHARED_STREAMS, addressOf, MESSAGE, ProviderRejected, ProviderUnknown,
   type CampaignFacts, type SendDeps, type MailMessage,
 } from './launch-invitation-send.ts';
 import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL, OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT, OUTREACH_COMPANY_NAME, OUTREACH_REGISTRATION, OUTREACH_OFFICE, INVITE_DEFAULT_DAYS, expiryLine } from './launch-invitation-email.ts';
@@ -24,6 +24,8 @@ const TOKEN = '7f3a9c1e5b2d4f60a8c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1'
 const CID = '0d38887b-8e0f-4aa6-b5c3-3a41abb38fd6';
 const BIZ = 'fdda4cbe-1e28-4f4d-89d8-aed8317be513';
 const FROM = 'OneShetland <hello@oneshetland.com>';
+/** The dedicated Launch Partner Postmark stream used throughout these tests. It is configuration (LAUNCH_OUTREACH_MESSAGE_STREAM), never a default. */
+const STREAM = 'launch-partners';
 const OPENING = 'You make something genuinely Shetland, and I think more locals and visitors should be able to find what you do easily.';
 const BODY = ['Hello,', '', "I’m Darren, and I’m getting ready to launch OneShetland.", '', '{{PERSONALISED_OPENING}}', '', '{{INVITATION_CTA}}', '', 'Darren'].join('\n');
 const future = new Date(Date.now() + 7 * 864e5).toISOString();
@@ -35,12 +37,12 @@ const facts = (o: Partial<CampaignFacts> = {}): CampaignFacts => ({
 });
 const confirm = (f = facts()) => ({ confirm: true, recipient: f.contactEmail!, subject: f.subject! });
 
-function rig(over: Partial<{ facts: CampaignFacts | null; tokenBiz: string | null; claim: unknown; send: (m: MailMessage) => Promise<{ id: string }>; markFails: number; releaseThrows: boolean; from: string | null; replyTo: string | null }> = {}) {
+function rig(over: Partial<{ facts: CampaignFacts | null; tokenBiz: string | null; claim: unknown; send: (m: MailMessage) => Promise<{ id: string }>; markFails: number; releaseThrows: boolean; from: string | null; replyTo: string | null; messageStream: string | null }> = {}) {
   const calls: string[] = [];
   const sent: MailMessage[] = [];
   let markFails = over.markFails ?? 0;
   const deps: SendDeps = {
-    origin: 'https://oneshetland.com', from: over.from === undefined ? FROM : over.from, replyTo: over.replyTo === undefined ? 'hello@oneshetland.com' : over.replyTo, now: () => new Date(),
+    origin: 'https://oneshetland.com', from: over.from === undefined ? FROM : over.from, replyTo: over.replyTo === undefined ? 'hello@oneshetland.com' : over.replyTo, messageStream: over.messageStream === undefined ? STREAM : over.messageStream, now: () => new Date(),
     async getCampaign() { calls.push('get'); return over.facts === undefined ? facts() : over.facts; },
     async resolveToken() { calls.push('resolve'); return over.tokenBiz === undefined ? BIZ : over.tokenBiz; },
     async claimSend() { calls.push('claim'); return (over.claim ?? { ok: true }) as never; },
@@ -182,17 +184,17 @@ describe('Reply-To and the sender', () => {
 });
 
 describe('the Postmark request', () => {
-  const msg: MailMessage = { from: FROM, replyTo: 'hello@oneshetland.com', to: 'recipient@example.test', subject: 'S', text: 'T', html: '<p>H</p>', metadata: { kind: 'launch_partner_invitation', campaign: 'zz' } };
+  const msg: MailMessage = { from: FROM, replyTo: 'hello@oneshetland.com', to: 'recipient@example.test', subject: 'S', text: 'T', html: '<p>H</p>', metadata: { kind: 'launch_partner_invitation', campaign: 'zz' }, messageStream: STREAM };
   const KEY = 'pm-secret-key-should-never-leak';
   const fake = (status: number, body: unknown): { fn: FetchLike; calls: { url: string; init: Parameters<FetchLike>[1] }[] } => {
     const calls: { url: string; init: Parameters<FetchLike>[1] }[] = [];
     return { calls, fn: async (url, init) => { calls.push({ url, init }); return { ok: status >= 200 && status < 300, status, json: async () => body }; } };
   };
-  test('tracking is OFF, link rewriting is OFF, the stream is transactional, Reply-To is bare', async () => {
+  test('tracking is OFF, link rewriting is OFF, the stream is the dedicated launch stream, Reply-To is bare', async () => {
     const f = fake(200, { MessageID: 'pm-1', ErrorCode: 0 }); const out = await postmarkSend(f.fn, KEY, msg);
     assert.equal(out.id, 'pm-1'); assert.equal(f.calls[0].url, POSTMARK_URL);
     const b = JSON.parse(f.calls[0].init.body);
-    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, 'outbound');
+    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, STREAM);
     assert.equal(b.From, FROM); assert.equal(b.ReplyTo, 'hello@oneshetland.com'); assert.equal(b.To, 'recipient@example.test');
     assert.deepEqual(Object.keys(b).sort(), ['From', 'HtmlBody', 'Metadata', 'MessageStream', 'ReplyTo', 'Subject', 'TextBody', 'To', 'TrackLinks', 'TrackOpens'].sort(), 'no unsubscribe, template, tag or bulk fields');
   });
@@ -259,7 +261,7 @@ describe('sender: OneShetland <hello@oneshetland.com>', () => {
     const r = rig({ from: NEW_FROM }); await go(r); const m = r.sent[0];
     assert.equal(m.from, NEW_FROM); assert.equal(m.replyTo, 'hello@oneshetland.com');
     const b = postmarkRequestBody(m); assert.equal(b.From, NEW_FROM); assert.equal(b.ReplyTo, 'hello@oneshetland.com');
-    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, 'outbound');
+    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, STREAM);
   });
   test('the function’s own documentation names the new sender, not the old one', () => {
     const src = read('../send-launch-invitation/index.ts'); assert.ok(src.includes('"OneShetland <hello@oneshetland.com>"')); assert.ok(!src.includes('Darren Fullerton ·'));
@@ -401,9 +403,9 @@ describe('what has NOT changed: sender, Reply-To, tracking, the provider request
     const r = rig(); await go(r); assert.equal(r.sent[0].from, 'OneShetland <hello@oneshetland.com>'); assert.equal(r.sent[0].replyTo, 'hello@oneshetland.com');
     assert.ok(r.sent[0].text.includes(OUTREACH_OPT_OUT) && r.sent[0].html.includes(OUTREACH_IDENTITY), 'and the email that actually goes to the provider has the lines');
   });
-  test('16/17 · open tracking OFF, link tracking OFF, outbound stream, metadata without link/token/recipient; no extra provider fields', async () => {
+  test('16/17 · open tracking OFF, link tracking OFF, the DEDICATED stream, metadata without link/token/recipient; no extra provider fields', async () => {
     const r = rig(); await go(r); const b = postmarkRequestBody(r.sent[0]) as Record<string, unknown>;
-    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, 'outbound'); assert.equal(b.From, 'OneShetland <hello@oneshetland.com>'); assert.equal(b.ReplyTo, 'hello@oneshetland.com');
+    assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None'); assert.equal(b.MessageStream, STREAM); assert.equal(b.From, 'OneShetland <hello@oneshetland.com>'); assert.equal(b.ReplyTo, 'hello@oneshetland.com');
     assert.deepEqual(Object.keys(b).sort(), ['From', 'HtmlBody', 'Metadata', 'MessageStream', 'ReplyTo', 'Subject', 'TextBody', 'To', 'TrackLinks', 'TrackOpens'].sort());
     assert.doesNotMatch(JSON.stringify(b.Metadata), /invite=|recipient|@/);
   });
@@ -459,5 +461,74 @@ describe('the invitation email states how long the link lasts', () => {
   test('the function\'s own lifetime wording agrees with the database migration (30 days) and not the old 45', () => {
     const mig = readFileSync(here('../../migrations/20261114000000_launch_invite_default_30_days.sql'), 'utf8');
     assert.match(mig, /default \(now\(\) \+ interval '30 days'\)/); assert.doesNotMatch(mig.replace(/--.*$/gm, ''), /45 days/);
+  });
+});
+
+
+/* ═══ I2 — Launch Partner outreach has a DEDICATED Postmark stream; it fails closed and never falls back to the transactional one ═══════════ */
+describe('the dedicated Launch Partner stream', () => {
+  const postmarkRefuses = (errorCode: number) => async () => { throw new ProviderRejected('refused', errorCode); };
+  test('1 · every launch email goes out on the configured dedicated stream, and the request body carries exactly that', async () => {
+    const r = rig(); await go(r); assert.equal(r.sent[0].messageStream, STREAM);
+    assert.equal((postmarkRequestBody(r.sent[0]) as Record<string, unknown>).MessageStream, STREAM);
+  });
+  test('2 · it NEVER uses the transactional (or any shared) stream: the shared names are refused as configuration, and no send path names one', async () => {
+    for (const bad of ['outbound', 'broadcast', 'broadcasts', 'inbound', ' OUTBOUND ', 'Outbound']) assert.equal(validMessageStream(bad), null, bad);
+    for (const name of SHARED_STREAMS) { const r = rig({ messageStream: name }); const out = await go(r) as { code: string }; assert.equal(out.code, 'stream_not_configured', name); assert.equal(r.sent.length, 0); }
+    for (const f of ['./launch-invitation-send.ts', './launch-invitation-postmark.ts', '../send-launch-invitation/index.ts']) assert.doesNotMatch(read(f).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''), /MessageStream\s*:\s*['"]/, `${f} has no literal stream`);
+  });
+  test('3 · a valid configuration is accepted (lowercase letters, digits and dashes); anything else is not', () => {
+    for (const ok of ['launch-partners', 'launch-outreach', 'launch-partners-2']) assert.equal(validMessageStream(ok), ok);
+    for (const bad of [null, undefined, '', '   ', 'ab', 'Launch Partners', 'launch_partners', '-launch', 'launch/partners', 'x'.repeat(60), "launch'; drop"]) assert.equal(validMessageStream(bad as never), null, String(bad));
+  });
+  test('4 · MISSING or invalid stream configuration FAILS CLOSED: nothing is read, reserved, sent or recorded, and the admin is told exactly why', async () => {
+    for (const messageStream of [null, '', 'outbound']) {
+      const r = rig({ messageStream }); const out = await go(r) as { ok: boolean; code: string; message: string };
+      assert.equal(out.ok, false); assert.equal(out.code, 'stream_not_configured'); assert.deepEqual(r.calls, [], 'no database call and no provider call at all'); assert.equal(r.sent.length, 0);
+      assert.match(out.message, /no dedicated mail stream.*nothing was sent.*not fall back to the everyday email stream/i);
+    }
+  });
+  test('4b · through the REAL Postmark client with a counting fake fetch: a missing stream means zero provider requests', async () => {
+    let requests = 0; const fetchFn: FetchLike = async () => { requests++; return { ok: true, status: 200, json: async () => ({ MessageID: 'x' }) }; };
+    const r = rig({ messageStream: null }); r.deps.send = (m) => postmarkSend(fetchFn, 'token', m); await go(r); assert.equal(requests, 0);
+  });
+  test('4c · the Edge Function reads the setting from the environment only, validates it, and passes null when it is not usable', () => {
+    const idx = read('../send-launch-invitation/index.ts');
+    assert.match(idx, /const messageStream = validMessageStream\(Deno\.env\.get\('LAUNCH_OUTREACH_MESSAGE_STREAM'\)\);/); assert.match(idx, /\n      messageStream,/);
+    assert.doesNotMatch(idx, /body\.(stream|messageStream|message_stream)/i, 'a request cannot choose the stream');
+  });
+  test('5 · Postmark saying the stream does not exist (1235) or cannot send (1236): no false "sent", the reservation is released, and the admin gets a useful message', async () => {
+    for (const [code, expected, rx] of [[1235, 'stream_missing', /does not exist on this server.*Create it in Postmark/i], [1236, 'stream_type_unsupported', /wrong stream type/i]] as const) {
+      const r = rig({ send: postmarkRefuses(code) }); const out = await go(r) as { ok: boolean; code: string; message: string };
+      assert.equal(out.ok, false); assert.equal(out.code, expected); assert.match(out.message, rx);
+      assert.deepEqual(r.calls, ['get', 'resolve', 'claim', 'send', 'release']); assert.ok(!r.calls.includes('markSent'), 'never recorded as sent');
+    }
+  });
+  test('5b · through the real client: a 422 with ErrorCode 1235 becomes stream_missing; 1236 stream_type_unsupported; 406 stays recipient_inactive; anything else stays provider_rejected', async () => {
+    const via = (code: number): FetchLike => async () => ({ ok: false, status: 422, json: async () => ({ ErrorCode: code, Message: 'x' }) });
+    for (const [code, expected] of [[1235, 'stream_missing'], [1236, 'stream_type_unsupported'], [406, 'recipient_inactive'], [300, 'provider_rejected']] as const) {
+      const r = rig(); r.deps.send = (m) => postmarkSend(via(code), 'token', m); assert.equal(((await go(r)) as { code: string }).code, expected, String(code));
+    }
+  });
+  test('6/7 · suppression still fails BEFORE Postmark, and a stale page cannot bypass it — on the dedicated stream exactly as before', async () => {
+    let requests = 0; const fetchFn: FetchLike = async () => { requests++; return { ok: true, status: 200, json: async () => ({ MessageID: 'x' }) }; };
+    for (const over of [{ facts: facts({ outreachStopped: true }) }, { claim: { ok: false, reason: 'do_not_contact' } }]) { const r = rig(over); r.deps.send = (m) => postmarkSend(fetchFn, 'token', m); assert.equal(((await go(r)) as { code: string }).code, 'do_not_contact'); assert.ok(!r.calls.includes('send')); }
+    assert.equal(requests, 0);
+  });
+  test('8–13 · sender, Reply-To, tracking, company disclosure, opt-out and expiry wording are all unchanged', async () => {
+    const r = rig(); await go(r); const m = r.sent[0]; const b = postmarkRequestBody(m) as Record<string, unknown>;
+    assert.equal(b.From, 'OneShetland <hello@oneshetland.com>'); assert.equal(b.ReplyTo, 'hello@oneshetland.com'); assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None');
+    for (const part of [OUTREACH_IDENTITY, OUTREACH_REGISTRATION, OUTREACH_OFFICE, OUTREACH_CONTACT, OUTREACH_OPT_OUT]) { assert.ok(m.text.includes(part) && m.html.includes(part), part); }
+    assert.match(m.text, /Your private invitation link is available until \d+ \w+ \d{4}\./); assert.match(m.html, /Your private invitation link is available until \d+ \w+ \d{4}\./);
+    assert.deepEqual(Object.keys(b).sort(), ['From', 'HtmlBody', 'Metadata', 'MessageStream', 'ReplyTo', 'Subject', 'TextBody', 'To', 'TrackLinks', 'TrackOpens'].sort());
+  });
+  test('14/15 · transactional email is a different code path and is UNCHANGED: send-email.ts still takes its stream from the template (default outbound), hub-broadcast keeps its own, and none knows the launch setting', () => {
+    const se = read('./send-email.ts'); assert.match(se, /const stream = tmpl\.postmark_stream \?\? 'outbound';/); assert.match(se, /MessageStream: stream,/);
+    for (const f of ['./send-email.ts', './refund-notice.ts', './ticket-receipt.ts', '../request-password-reset/index.ts', '../hub-broadcast/index.ts', '../stripe-webhook/index.ts']) { let t = ''; try { t = read(f); } catch { continue; } assert.doesNotMatch(t, /LAUNCH_OUTREACH|launch-invitation|validMessageStream/, f); }
+    assert.match(read('../hub-broadcast/index.ts'), /MessageStream: 'outbound'/, 'untouched by this change');
+  });
+  test('only the launch function reads the launch stream setting', () => {
+    const hits = ['../send-launch-invitation/index.ts', '../request-password-reset/index.ts', '../hub-broadcast/index.ts', './send-email.ts'].filter((f) => { try { return /LAUNCH_OUTREACH_MESSAGE_STREAM/.test(read(f).replace(/\/\*[\s\S]*?\*\//g, '')); } catch { return false; } });
+    assert.deepEqual(hits, ['../send-launch-invitation/index.ts']);
   });
 });

@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
-import { launchInvitationSend, resolveReplyTo, validSender, type CampaignFacts, type SendDeps } from '../_shared/launch-invitation-send.ts';
+import { launchInvitationSend, resolveReplyTo, validMessageStream, validSender, type CampaignFacts, type SendDeps } from '../_shared/launch-invitation-send.ts';
 import { postmarkSend } from '../_shared/launch-invitation-postmark.ts';
 
 /**
@@ -22,6 +22,9 @@ import { postmarkSend } from '../_shared/launch-invitation-postmark.ts';
  * Secrets (Supabase function secrets — never exposed to the browser or the web host):
  *   POSTMARK_API_KEY       the existing transactional-email server token
  *   LAUNCH_OUTREACH_FROM   "OneShetland <hello@oneshetland.com>"
+ *   LAUNCH_OUTREACH_MESSAGE_STREAM  REQUIRED. The id of the dedicated Postmark stream for Launch Partner outreach (e.g. "launch-partners"). Missing, malformed,
+ *                          or one of Postmark's shared streams ('outbound', 'broadcast', 'broadcasts', 'inbound') => the function sends NOTHING and says why.
+ *                          There is no default and no fallback to the transactional stream.
  *   LAUNCH_OUTREACH_REPLY_TO (optional) otherwise the bare address of LAUNCH_OUTREACH_FROM
  *   LAUNCH_SITE_ORIGIN     (optional) defaults to https://oneshetland.com
  */
@@ -56,6 +59,8 @@ serve(async (req) => {
     const from = validSender(Deno.env.get('LAUNCH_OUTREACH_FROM'));
     const apiKey = Deno.env.get('POSTMARK_API_KEY') ?? '';
     const replyTo = resolveReplyTo(from, Deno.env.get('LAUNCH_OUTREACH_REPLY_TO'));
+    const messageStream = validMessageStream(Deno.env.get('LAUNCH_OUTREACH_MESSAGE_STREAM'));
+    if (!messageStream) console.error('[send-launch-invitation] LAUNCH_OUTREACH_MESSAGE_STREAM is missing or not allowed — launch sends are disabled');
 
     const rpc = async <T>(fn: string, args: Record<string, unknown>): Promise<T> => {
       const { data, error } = await sb.rpc(fn, args);
@@ -67,6 +72,7 @@ serve(async (req) => {
       origin: Deno.env.get('LAUNCH_SITE_ORIGIN') || 'https://oneshetland.com',
       from: apiKey ? from : null,         // no key => "not configured", before anything is read or reserved
       replyTo: apiKey ? replyTo : null,
+      messageStream,                      // null => "no dedicated stream" => nothing is read, reserved or sent
       now: () => new Date(),
       log: (l) => console.error(`[send-launch-invitation] ${l}`),
       async getCampaign(id): Promise<CampaignFacts | null> {
