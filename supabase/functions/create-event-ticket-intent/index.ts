@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
-import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
+import { debitAndTransfer, selfPaymentBlock } from '../_shared/wallet-ledger.ts';
 import { withWalletLiquidityGate } from '../_shared/wallet-liquidity-gate.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforcePaymentStart } from '../_shared/rate-limit.ts';
@@ -217,6 +217,24 @@ serve(async (req) => {
         JSON.stringify({ error: 'This organiser isn\u2019t set up to take payments yet. Please check back soon.' }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // ── You cannot pay yourself with your own wallet ─────────────────────────
+    // A wallet ticket sends the face value to the organiser's connected account by Connect transfer. If that account is one the
+    // buyer controls, the route is: top up by card → "buy" a ticket to your own event → the money lands in YOUR account → charge
+    // the card back. The refund and dispute recovery can only take back what is still in the wallet; the transfer has already
+    // left. The same question wallet-checkout (donations, memberships, passes) and the till already ask of the DESTINATION
+    // ACCOUNT — not of the event — because one connected account can sit behind more than one hub or business.
+    //
+    // Before the basket is reserved: a refusal holds no seats, creates no order and costs nothing, and the same checkout
+    // reference stays usable. A free order (no transfer) and a demo organiser (no account) are not asked.
+    if (pay_with_wallet && totalPence > 0) {
+      const selfPay = await selfPaymentBlock(supabase, user.id, stripeAccountId);
+      if (selfPay) {
+        return new Response(JSON.stringify(selfPay.body), {
+          status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // ── Reserve the basket, create the order and the tickets, atomically ─────

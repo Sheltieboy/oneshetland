@@ -222,6 +222,23 @@ describe('every payout route is guarded; the platform-revenue route is not', () 
     assert.match(checkout, /const selfPayUnit = await selfPaymentBlock\(svc, userId, biz\.stripe_account_id\)/);
   });
 
+  test('event tickets paid from the wallet: asked of the resolved destination, before the basket is reserved and before the debit', () => {
+    const t = code(read('supabase/functions/create-event-ticket-intent/index.ts'));
+    const guard = t.indexOf('await selfPaymentBlock(supabase, user.id, stripeAccountId)');
+    assert.ok(guard > -1, 'the ticket route does not ask who controls the destination account');
+    assert.match(t.slice(guard - 80, guard), /pay_with_wallet && totalPence > 0/);
+    assert.ok(guard < t.indexOf("rpc('reserve_ticket_basket'"), 'seats are reserved before the check');
+    assert.ok(guard < t.indexOf('debitAndTransfer(supabase'), 'the wallet is debited before the check');
+  });
+
+  test('gifts paid from the wallet: asked of the resolved destination, before the gift row exists and before the debit', () => {
+    const g = code(read('supabase/functions/create-gift-intent/index.ts'));
+    const guard = g.indexOf('await selfPaymentBlock(supabase, user.id, giftSellerAccountId)');
+    assert.ok(guard > -1, 'the gift route does not ask who controls the destination account');
+    assert.ok(guard < g.indexOf(".from('book_gifts')\n      .insert"), 'the gift row is created before the check');
+    assert.ok(guard < g.indexOf('debitAndTransfer(supabase'), 'the wallet is debited before the check');
+  });
+
   test('SHIFT BOOST is not guarded, because it pays the platform', () => {
     const fn = checkout.slice(checkout.indexOf('async function shiftBoost'));
     assert.ok(!fn.includes('selfPaymentBlock'), 'the shift boost route was given a self-payment guard');

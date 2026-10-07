@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
-import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
+import { debitAndTransfer, selfPaymentBlock } from '../_shared/wallet-ledger.ts';
 import { withWalletLiquidityGate } from '../_shared/wallet-liquidity-gate.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforcePaymentStart } from '../_shared/rate-limit.ts';
@@ -191,6 +191,23 @@ serve(async (req) => {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    // ── You cannot pay yourself with your own wallet ─────────────────────────
+    // A wallet gift sends the price (less commission) to the seller's connected account by Connect transfer. If the buyer controls
+    // that account — directly, or through a second hub or business pointing at it — the route is: top up by card → "gift"
+    // something of your own → the money lands in YOUR account → charge the card back. The recovery that follows a chargeback can
+    // only take back what is still in the wallet. Asked of the DESTINATION ACCOUNT, exactly as wallet-checkout and the till do.
+    //
+    // Before the gift row exists and before any debit: a refusal creates nothing and costs nothing. A demo business (no account)
+    // is not asked, and nor is a card gift (a card payment is a different rail).
+    if (pay_with_wallet) {
+      const selfPay = await selfPaymentBlock(supabase, user.id, giftSellerAccountId);
+      if (selfPay) {
+        return new Response(JSON.stringify(selfPay.body), {
+          status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Platform commission — admin-editable, see fees.gift.* in admin_config.
     // Default 5% (matches the previous hardcoded rate).
     const giftCfg = await getCommissionConfig(supabase, 'gift');

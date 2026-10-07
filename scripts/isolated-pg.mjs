@@ -54,6 +54,7 @@ const SUITES = [
   'supabase/tests/event-ticket-orders-server-only.node.test.ts',
   'supabase/tests/hub-members-server-authoritative.node.test.ts',
   'supabase/tests/payment-abuse-limits.node.test.ts',
+  'supabase/tests/wallet-card-cashout.node.test.ts',
   'supabase/tests/launch-plan-grants.node.test.ts',
   'supabase/tests/discovery-fixtures-locality.node.test.ts',
   'supabase/tests/product-import-foundation.node.test.ts',
