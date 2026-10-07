@@ -485,6 +485,7 @@ serve(async (req) => {
         const fulfilRes = await fulfilByType(supabase, {
           id:       eventData.id as string,
           amount:   (eventData.amount as number) ?? 0,
+          currency: eventData.currency as string | undefined,
           metadata: meta,
           status:   eventData.status as string | undefined,
         });

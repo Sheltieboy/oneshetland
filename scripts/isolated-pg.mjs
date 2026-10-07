@@ -51,6 +51,7 @@ const SUITES = [
   'supabase/tests/notification-centre-sql.node.test.ts',
   'supabase/tests/business-claims-flow.node.test.ts',
   'supabase/tests/email-tables-lockdown.node.test.ts',
+  'supabase/tests/event-ticket-orders-server-only.node.test.ts',
   'supabase/tests/launch-plan-grants.node.test.ts',
   'supabase/tests/discovery-fixtures-locality.node.test.ts',
   'supabase/tests/product-import-foundation.node.test.ts',
