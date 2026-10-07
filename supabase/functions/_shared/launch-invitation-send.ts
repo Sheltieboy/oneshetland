@@ -142,7 +142,7 @@ export async function launchInvitationSend(req: SendRequest, deps: SendDeps): Pr
   if (gates.length) return fail(gates[0], gates);
   // 4. the message: rendered here from the SAVED draft, with this campaign's own private link
   const url = `${deps.origin.replace(/\/$/, '')}/launch/${c.slug}?invite=${req.token}`;
-  const email = renderInvitationEmail({ subject: c.subject!, body: c.body!, opening: c.opening, businessName: c.businessName, invitationUrl: url });
+  const email = renderInvitationEmail({ subject: c.subject!, body: c.body!, opening: c.opening, businessName: c.businessName, invitationUrl: url, invitationExpiresAt: c.invitation.expiresAt });
   if (!email.hasInvitation) return fail('link_missing');
   // 5. reserve — the double-send guard
   const claim = await deps.claimSend(c.id);

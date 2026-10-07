@@ -14,7 +14,7 @@ import {
   launchInvitationSend, evaluateGates, resolveReplyTo, validSender, addressOf, MESSAGE, ProviderRejected, ProviderUnknown,
   type CampaignFacts, type SendDeps, type MailMessage,
 } from './launch-invitation-send.ts';
-import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL, OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT, OUTREACH_COMPANY_NAME, OUTREACH_REGISTRATION, OUTREACH_OFFICE } from './launch-invitation-email.ts';
+import { renderInvitationEmail, checkEmail, CTA_LABEL, CTA_FALLBACK_LINE, EMAIL_LOGO_URL, OUTREACH_OPT_OUT, OUTREACH_IDENTITY, OUTREACH_CONTACT, OUTREACH_COMPANY_NAME, OUTREACH_REGISTRATION, OUTREACH_OFFICE, INVITE_DEFAULT_DAYS, expiryLine } from './launch-invitation-email.ts';
 import { postmarkSend, postmarkRequestBody, POSTMARK_URL, type FetchLike } from './launch-invitation-postmark.ts';
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -288,7 +288,7 @@ describe('the email carries light OneShetland branding and nothing else changed'
   });
   test('the plain-text version is untouched by the branding: no markup, no logo, same words, link present', () => {
     assert.ok(!/<|>/.test(out.text.replace(/→/g, ''))); assert.ok(!out.text.includes(EMAIL_LOGO_URL) && !/<img/i.test(out.text));
-    const wanted = BODY.replace('{{PERSONALISED_OPENING}}', OPENING).replace('{{INVITATION_CTA}}', `View your private preview: ${LINK}`);
+    const wanted = BODY.replace('{{PERSONALISED_OPENING}}', OPENING).replace('{{INVITATION_CTA}}', `View your private preview: ${LINK}\n${expiryLine(null)}`);
     assert.equal(out.text, `${wanted}\n\n--\n${OUTREACH_IDENTITY}\n${OUTREACH_REGISTRATION}\n${OUTREACH_OFFICE}\n${OUTREACH_CONTACT}\n\n${OUTREACH_OPT_OUT}\n`, 'the words are the draft\'s own, then the quiet company disclosure and the opt-out line');
   });
   test('no marketing furniture: no unsubscribe, footer, banner or tracking pixel', () => {
@@ -416,5 +416,48 @@ describe('what has NOT changed: sender, Reply-To, tracking, the provider request
     assert.equal(((await go(rig({ claim: { ok: false, reason: 'send_in_progress' } }))) as { code: string }).code, 'send_in_progress');
     assert.equal(((await go(rig({ send: async () => { throw new ProviderRejected('no'); } }))) as { code: string }).code, 'provider_rejected');
     assert.equal(((await go(rig({ send: async () => { throw new ProviderUnknown('?'); } }))) as { code: string }).code, 'outcome_unknown');
+  });
+});
+
+
+/* ═══ Invitation links: ONE canonical lifetime, stated in the email by the RENDERER ═══════════════════════════════════ */
+describe('the invitation email states how long the link lasts', () => {
+  const link = `https://oneshetland.com/launch/zz?invite=${TOKEN}`;
+  const EXP = '2026-11-05T19:50:17.506Z';
+  const sentence = (v: string) => (/Your private invitation link is available [^\n<]*?\./.exec(v) ?? [''])[0];
+  test('17 · the canonical lifetime is 30 days, and the wording is natural: "available until <date>" for a real invitation, "for 30 days" before one exists', () => {
+    assert.equal(INVITE_DEFAULT_DAYS, 30);
+    assert.equal(expiryLine(EXP), 'Your private invitation link is available until 5 November 2026.');
+    assert.equal(expiryLine(null), 'Your private invitation link is available for 30 days.'); assert.equal(expiryLine('not a date'), expiryLine(null));
+  });
+  test('the date is the London date: 23:30 UTC in summer time is already the next day', () => { assert.equal(expiryLine('2026-10-06T23:30:00.000Z'), 'Your private invitation link is available until 7 October 2026.'); });
+  test('18 · the HTML and the plain text carry the SAME sentence, once each, next to the link', () => {
+    const out = renderInvitationEmail({ subject: 's', body: BODY, opening: OPENING, businessName: 'ZZ', invitationUrl: link, invitationExpiresAt: EXP });
+    assert.equal(sentence(out.text), expiryLine(EXP)); assert.equal(sentence(out.html), expiryLine(EXP));
+    for (const v of [out.text, out.html]) assert.equal(v.split('Your private invitation link is available').length - 1, 1);
+    assert.ok(out.text.indexOf(link) < out.text.indexOf('Your private invitation link is available') && out.html.indexOf(link) < out.html.indexOf('Your private invitation link is available'));
+  });
+  test('it is renderer-enforced: a draft cannot remove it, and a draft that claims a different lifetime cannot change what the renderer says', () => {
+    const own = renderInvitationEmail({ subject: 's', body: 'Valid for 90 days, honest.\n\n{{INVITATION_CTA}}', invitationUrl: link, invitationExpiresAt: EXP });
+    assert.equal(sentence(own.text), expiryLine(EXP)); assert.equal(sentence(own.html), expiryLine(EXP));
+    for (const body of ['Hi.\n\n{{INVITATION_CTA}}', 'Old.\n\n{{INVITATION_LINK}}\n\nDarren']) assert.ok(renderInvitationEmail({ subject: 's', body, invitationUrl: link, invitationExpiresAt: EXP }).text.includes(expiryLine(EXP)));
+  });
+  test('a real send states that invitation\'s own expiry, read from the database — not a number typed into the draft', async () => {
+    const r = rig({ facts: facts({ invitation: { status: 'open', expiresAt: '2026-12-01T12:00:00.000Z' } }) }); await go(r);
+    assert.ok(r.sent[0].text.includes('Your private invitation link is available until 1 December 2026.') && r.sent[0].html.includes('Your private invitation link is available until 1 December 2026.'));
+  });
+  test('19/20 · the I3 company disclosure and the opt-out wording are still there, in order, after the expiry line', async () => {
+    const r = rig(); await go(r); const t = r.sent[0].text;
+    for (const part of [OUTREACH_IDENTITY, OUTREACH_REGISTRATION, OUTREACH_OFFICE, OUTREACH_CONTACT, OUTREACH_OPT_OUT]) { assert.ok(t.includes(part), part); assert.ok(r.sent[0].html.includes(part)); }
+    assert.ok(t.indexOf('Your private invitation link is available') < t.indexOf(OUTREACH_IDENTITY) && t.indexOf(OUTREACH_IDENTITY) < t.indexOf(OUTREACH_OPT_OUT));
+  });
+  test('21 · the do-not-contact gate and the sender/tracking settings are unaffected', async () => {
+    assert.equal(((await go(rig({ facts: facts({ outreachStopped: true }) }))) as { code: string }).code, 'do_not_contact');
+    const r = rig(); await go(r); const b = postmarkRequestBody(r.sent[0]) as Record<string, unknown>;
+    assert.equal(b.From, 'OneShetland <hello@oneshetland.com>'); assert.equal(b.ReplyTo, 'hello@oneshetland.com'); assert.equal(b.TrackOpens, false); assert.equal(b.TrackLinks, 'None');
+  });
+  test('the function\'s own lifetime wording agrees with the database migration (30 days) and not the old 45', () => {
+    const mig = readFileSync(here('../../migrations/20261114000000_launch_invite_default_30_days.sql'), 'utf8');
+    assert.match(mig, /default \(now\(\) \+ interval '30 days'\)/); assert.doesNotMatch(mig.replace(/--.*$/gm, ''), /45 days/);
   });
 });

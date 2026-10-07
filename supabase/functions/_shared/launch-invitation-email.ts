@@ -56,6 +56,21 @@ export const OUTREACH_OFFICE = "Registered office: 155A Tottenham Lane, London, 
 export const OUTREACH_CONTACT = "hello@oneshetland.com";
 export const OUTREACH_OPT_OUT = "If you’d rather not receive another Launch Partner invitation from us, just reply and let us know.";
 
+/**
+ * HOW LONG A PRIVATE INVITATION LASTS — the ONE canonical default, in days. The Admin screen's "Valid for" box, the server action and the
+ * database function (admin_issue_launch_invite) all use it; the email states it. (An administrator may choose another length when issuing; the
+ * email then states that invitation's real expiry date, so it can never be stale.) It was 30 in Admin and the action but 45 in the database.
+ */
+export const INVITE_DEFAULT_DAYS = 30;
+
+const expiryDay = (iso: string): string => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "long", year: "numeric" }).format(new Date(iso));
+/**
+ * The one quiet line about expiry, added by the RENDERER next to the private link (so a draft can neither omit nor falsify it). With the
+ * invitation's real expiry it names the date; before an invitation exists (a draft preview) it names the default length.
+ */
+export const expiryLine = (expiresAt?: string | null): string =>
+  expiresAt && Number.isFinite(Date.parse(expiresAt)) ? `Your private invitation link is available until ${expiryDay(expiresAt)}.` : `Your private invitation link is available for ${INVITE_DEFAULT_DAYS} days.`;
+
 export interface RenderInput {
   subject: string;
   body: string;
@@ -65,6 +80,8 @@ export interface RenderInput {
   invitationUrl?: string | null;
   /** A stand-in shown when an invitation exists but its link is no longer available (it is shown once). Preview only. */
   maskedUrl?: string | null;
+  /** When the invitation expires (ISO). Read from the database, never from the draft. Absent only for a preview before the invitation exists. */
+  invitationExpiresAt?: string | null;
 }
 
 export interface RenderedEmail {
@@ -83,8 +100,8 @@ function expand(body: string, i: RenderInput): string {
   return out;
 }
 
-const ctaText = (url: string | null, masked: string | null): string =>
-  url ? `${CTA_TEXT_LABEL} ${url}` : masked ? `${CTA_TEXT_LABEL} ${masked}` : `[${NO_INVITATION_TITLE} — the link is inserted here when you generate the invitation.]`;
+const ctaText = (url: string | null, masked: string | null, expiresAt?: string | null): string =>
+  (url ? `${CTA_TEXT_LABEL} ${url}` : masked ? `${CTA_TEXT_LABEL} ${masked}` : `[${NO_INVITATION_TITLE} — the link is inserted here when you generate the invitation.]`) + `\n${expiryLine(expiresAt)}`;
 
 const outreachFooterText = (): string =>
   `--\n${OUTREACH_IDENTITY}\n${OUTREACH_REGISTRATION}\n${OUTREACH_OFFICE}\n${OUTREACH_CONTACT}\n\n${OUTREACH_OPT_OUT}\n`;
@@ -97,14 +114,14 @@ export function renderInvitationEmail(i: RenderInput): RenderedEmail {
   const url = isLinkable(i.invitationUrl) ? i.invitationUrl : null;
   const masked = !url && i.maskedUrl ? i.maskedUrl : null;
   const base = expand(i.body, i);
-  const cta = ctaText(url, masked);
+  const cta = ctaText(url, masked, i.invitationExpiresAt);
   const body = base.split(TOKEN_CTA).join(cta).split(LINK_PLACEHOLDER).join(cta);
   const text = `${body.replace(/\s+$/, "")}\n\n${outreachFooterText()}`;
 
   const blocks = base.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
   const p = "margin:0 0 16px;font-size:16px;line-height:1.55;color:#14222c";
   const html = blocks.map((b) => {
-    if (b === TOKEN_CTA || b === LINK_PLACEHOLDER) return ctaHtml(url, masked);
+    if (b === TOKEN_CTA || b === LINK_PLACEHOLDER) return ctaHtml(url, masked, i.invitationExpiresAt);
     const lines = b.split("\n");
     if (lines.every((l) => l.startsWith("• "))) {
       return `<ul style="margin:0 0 16px;padding-left:22px;font-size:16px;line-height:1.55;color:#14222c">${lines.map((l) => `<li style="margin:0 0 6px">${esc(l.slice(2))}</li>`).join("")}</ul>`;
@@ -132,14 +149,15 @@ function brandHeader(): string {
     `</tr></table>`;
 }
 
-function ctaHtml(url: string | null, masked: string | null): string {
+function ctaHtml(url: string | null, masked: string | null, expiresAt?: string | null): string {
+  const expiry = `<p style="margin:0 0 20px;font-size:13px;line-height:1.5;color:#6b7280">${esc(expiryLine(expiresAt))}</p>`;
   if (!url && !masked) {
-    return `<div style="margin:0 0 20px;padding:14px 16px;border:2px dashed #d8cfbd;border-radius:12px;background:#fbf8f2;color:#3a4754;font-size:14px;line-height:1.5"><strong style="color:#14222c">${esc(NO_INVITATION_TITLE)}</strong><br>${esc(NO_INVITATION_NOTE)}</div>`;
+    return `<div style="margin:0 0 8px;padding:14px 16px;border:2px dashed #d8cfbd;border-radius:12px;background:#fbf8f2;color:#3a4754;font-size:14px;line-height:1.5"><strong style="color:#14222c">${esc(NO_INVITATION_TITLE)}</strong><br>${esc(NO_INVITATION_NOTE)}</div>` + expiry;
   }
   const shown = url ?? masked!;
   const href = url ? esc(url) : "#";
   return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:4px 0 8px"><tr><td style="border-radius:999px;background:#032f4c"><a href="${href}" style="display:inline-block;padding:14px 26px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px">${esc(CTA_LABEL)}</a></td></tr></table>` +
-    `<p style="margin:0 0 20px;font-size:13px;line-height:1.5;color:#6b7280">${esc(CTA_FALLBACK_LINE)}<br><span style="word-break:break-all;color:#3a4754">${esc(shown)}</span></p>`;
+    `<p style="margin:0 0 6px;font-size:13px;line-height:1.5;color:#6b7280">${esc(CTA_FALLBACK_LINE)}<br><span style="word-break:break-all;color:#3a4754">${esc(shown)}</span></p>` + expiry;
 }
 
 /* ── readiness ─────────────────────────────────────────────────────────── */
