@@ -2,7 +2,7 @@
   "captured_on": "2026-10-08",
   "project_ref": "nkrtmakxygkvxuxriiil",
   "how": "read-only: select version from supabase_migrations.schema_migrations",
-  "note": "Snapshot of the versions production has REGISTERED in supabase_migrations.schema_migrations. Updated 2026-10-08 after the 29 hand-applied migrations were registered with `supabase migration repair --status applied` (history only; no SQL executed). 247 files, 247 registered. Then 20261122000000_shift_employer_stripe_customer_lock was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261122000000`: 248 files, 248 registered.",
+  "note": "Snapshot of the versions production has REGISTERED in supabase_migrations.schema_migrations. Updated 2026-10-08 after the 29 hand-applied migrations were registered with `supabase migration repair --status applied` (history only; no SQL executed). 247 files, 247 registered. Then 20261122000000_shift_employer_stripe_customer_lock was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261122000000`: 248 files, 248 registered. Then 20261123000000_shift_profile_trust_fields was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261123000000`: 249 files, 249 registered.",
   "versions": [
     "20260623000000",
     "20260623010000",
@@ -251,6 +251,7 @@
     "20261119000000",
     "20261120010000",
     "20261121000000",
-    "20261122000000"
+    "20261122000000",
+    "20261123000000"
   ]
 }
