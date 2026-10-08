@@ -26,6 +26,7 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush, sendUserPushBulk } from './send-push.ts';
 import { sendTicketReceipt } from './ticket-receipt.ts';
 import { sendEmail } from './send-email.ts';
+import { paymentBelongsToTicketOrder } from './ticket-payment-binding.ts';
 
 type WalletTopupResult = { balance_pence: number; already_credited: boolean };
 
@@ -33,6 +34,8 @@ type WalletTopupResult = { balance_pence: number; already_credited: boolean };
 export interface FulfilPI {
   id:       string;
   amount:   number;
+  /** Stripe's lower-case ISO currency. Read by the ticket fulfiller, which will not mark an order paid in another one. */
+  currency?: string;
   metadata: Record<string, string>;
   status?:  string;
 }
@@ -206,7 +209,7 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
   if (!orderId) return { granted: false, note: 'no order_id' };
 
   const { data: order } = await svc.from('event_ticket_orders')
-    .select('id, status, tickets_count, event_id, stripe_payment_intent_id, buyer_id')
+    .select('id, status, tickets_count, event_id, stripe_payment_intent_id, buyer_id, total_pence')
     .eq('id', orderId).single();
   if (!order) return { granted: false, note: 'order not found' };
   if (order.status === 'paid') {
@@ -221,6 +224,26 @@ export async function fulfilEventTickets(svc: SupabaseClient, pi: FulfilPI): Pro
   // The order stored its own PI id at creation — never mark paid off a different PI.
   if (order.stripe_payment_intent_id && order.stripe_payment_intent_id !== pi.id) {
     return { granted: false, note: 'PI does not match order' };
+  }
+
+  // …and the payment must be FOR this order: type, event, buyer, amount and currency, all stamped by our own checkout when it
+  // created the PaymentIntent. The order's total came from database prices, so any difference is not this order's payment.
+  const bound = paymentBelongsToTicketOrder(
+    { id: order.id, event_id: order.event_id, buyer_id: order.buyer_id, total_pence: order.total_pence },
+    { amount: pi.amount, currency: pi.currency, metadata: pi.metadata });
+  if (!bound.ok) {
+    console.error(`[fulfilment] order ${orderId} not marked paid by ${pi.id}: ${bound.reason}`);
+    // A genuine payment succeeded and could not be matched to its order — money has moved, so it must not vanish into a log.
+    try {
+      await svc.from('failed_fulfilments').insert({
+        user_id: (pi.metadata.buyer_id as string | undefined) ?? order.buyer_id ?? null,
+        purpose: 'event_tickets_payment_mismatch',
+        amount_pence: pi.amount ?? 0,
+        error: `payment succeeded but does not match the order: ${bound.reason}`,
+        detail: { order_id: orderId, payment_intent_id: pi.id },
+      });
+    } catch (e) { console.error('[fulfilment] failed_fulfilments insert failed:', e); }
+    return { granted: false, note: `payment does not match order — ${bound.reason}` };
   }
 
   // Compare-and-swap, not a blind write. The status check above and this update

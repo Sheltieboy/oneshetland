@@ -54,6 +54,108 @@ function parsePositiveInt(raw: string | undefined): number | null {
   return n;
 }
 
+/* ── Wallet: tier-aware, server-resolved ──────────────────────────────────────
+ *
+ * Every other rail charges one rate regardless of who's selling. Wallet is
+ * the first to charge DIFFERENTLY depending on who's being paid — Premium
+ * gets a lower rate than Pro, as a subscription perk, not an accident of
+ * when they joined.
+ *
+ * The tier comes from THIS QUERY, inside this function, never from the
+ * caller. executeWalletPayment already resolves `business` server-side from
+ * its own DB read before this is ever called — there is no client-supplied
+ * tier anywhere in this path to begin with — but resolving it again here,
+ * independently of whatever shape the caller's `business` object happens to
+ * carry, means this function's answer can never silently drift from the
+ * database's own current value of a column it was never actually passed.
+ *
+ * fees.wallet.percent_bps (the original, single, global key) is kept as the
+ * fallback when a tier-specific key is missing or blank — so an admin who
+ * never sets the new keys gets exactly today's behaviour, not a silent
+ * change, and nothing that already reads the old key breaks.
+ */
+export async function getWalletCommissionConfig(
+  supabase: SupabaseClient,
+  businessId: string,
+): Promise<CommissionConfig> {
+  const { data: biz, error: bizErr } = await supabase
+    .from('local_businesses')
+    .select('subscription_tier')
+    .eq('id', businessId)
+    .maybeSingle();
+  if (bizErr) {
+    console.error(`[commission-config:wallet] could not resolve tier for business ${businessId}:`, bizErr);
+  }
+  // Anything that isn't literally 'premium' resolves as 'pro'. A business
+  // below Pro should never reach this function — accepts_wallet and
+  // business_meets_tier('pro') already refuse it earlier in
+  // executeWalletPayment — so this is a fee lookup, not a second
+  // entitlement check, and it fails safe (Pro's rate, never Premium's) if
+  // the tier read itself is somehow unreadable.
+  const tier: 'pro' | 'premium' = biz?.subscription_tier === 'premium' ? 'premium' : 'pro';
+  const tierKey   = tier === 'premium' ? 'fees.wallet.premium_percent_bps' : 'fees.wallet.pro_percent_bps';
+  const legacyKey = 'fees.wallet.percent_bps';
+  const fixedKey  = 'fees.wallet.fixed_pence';
+
+  const map = await getConfigBulk(supabase, [tierKey, legacyKey, fixedKey]);
+
+  const tierPercent   = parsePositiveInt(map.get(tierKey));
+  const legacyPercent = parsePositiveInt(map.get(legacyKey));
+  const fixed         = parsePositiveInt(map.get(fixedKey));
+
+  const fellBack: string[] = [];
+  let percent_bps: number;
+  if (tierPercent !== null) {
+    percent_bps = tierPercent;
+  } else if (legacyPercent !== null) {
+    percent_bps = legacyPercent;
+    fellBack.push(`${tierKey} → legacy ${legacyKey}`);
+  } else {
+    percent_bps = DEFAULTS.wallet.percent_bps;
+    fellBack.push(`${tierKey} → in-code default`);
+  }
+  let fixed_pence: number;
+  if (fixed !== null) {
+    fixed_pence = fixed;
+  } else {
+    fixed_pence = DEFAULTS.wallet.fixed_pence;
+    fellBack.push(`${fixedKey} → in-code default`);
+  }
+
+  if (fellBack.length > 0) {
+    console.info(`[commission-config:wallet:${tier}] using fallback for: ${fellBack.join(', ')}`);
+  }
+
+  return { percent_bps, fixed_pence };
+}
+
+/**
+ * The configurable comparison benchmark the merchant savings metric is
+ * measured against. Deliberately NOT tied to any real card processor's
+ * contract — it is an admin-set estimate, and the merchant-facing copy that
+ * reads this value must say so.
+ */
+export interface WalletSavingsBenchmark {
+  percent_bps: number;
+  fixed_pence: number;
+  enabled: boolean;
+}
+
+export async function getWalletSavingsBenchmark(
+  supabase: SupabaseClient,
+): Promise<WalletSavingsBenchmark> {
+  const map = await getConfigBulk(supabase, [
+    'wallet.savings.card_percent_bps',
+    'wallet.savings.card_fixed_pence',
+    'wallet.savings.enabled',
+  ]);
+  return {
+    percent_bps: parsePositiveInt(map.get('wallet.savings.card_percent_bps')) ?? 175,
+    fixed_pence: parsePositiveInt(map.get('wallet.savings.card_fixed_pence')) ?? 0,
+    enabled: map.get('wallet.savings.enabled') === 'true',
+  };
+}
+
 export async function getCommissionConfig(
   supabase: SupabaseClient,
   rail: Rail,

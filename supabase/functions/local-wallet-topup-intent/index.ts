@@ -1,8 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { chargeableCardFor } from '../_shared/saved-card.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,14 @@ const corsHeaders = {
 };
 
 const STRIPE_API_VERSION = '2023-10-16';
+
+// Which card, by the ONE canonical rule (the Customer's default when it is
+// really attached, else the newest) rather than "whatever Stripe listed
+// first". Throws when Stripe cannot be asked, so an outage never reads as
+// "no saved card".
+async function listSavedCard(customerId: string): Promise<string | null> {
+  return chargeableCardFor(Deno.env.get('STRIPE_SECRET_KEY') ?? '', customerId);
+}
 
 /**
  * local-wallet-topup-intent
@@ -48,7 +57,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('local-wallet-topup-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('local-wallet-topup-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     const svc = createClient(
@@ -107,20 +116,7 @@ serve(async (req) => {
 
       const customerId = profile?.stripe_customer_id;
       if (customerId) {
-        const pmRes = await fetch(
-          `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-          {
-            headers: {
-              'Authorization':  `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-              'Stripe-Version': STRIPE_API_VERSION,
-            },
-          },
-        );
-        const pmJson = await pmRes.json();
-        if (!pmRes.ok) {
-          throw new Error(pmJson.error?.message ?? `Stripe payment_methods list failed (HTTP ${pmRes.status})`);
-        }
-        const pmId: string | undefined = pmJson.data?.[0]?.id;
+        const pmId = await listSavedCard(customerId);
 
         if (pmId) {
           const intentRes = await fetch('https://api.stripe.com/v1/payment_intents', {

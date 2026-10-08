@@ -3,9 +3,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 import { normaliseUkPostcode } from '../_shared/uk-postcode.ts';
+import { chargeableCardFor } from '../_shared/saved-card.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -29,14 +31,11 @@ function stripeHeaders(): HeadersInit {
     'Stripe-Version': STRIPE_API_VERSION,
   };
 }
+// Which card, by the ONE canonical rule (the Customer's default when it is really
+// attached, else the newest) rather than "whatever Stripe listed first". Throws
+// when Stripe cannot be asked, so an outage never reads as "no saved card".
 async function listSavedCard(customerId: string): Promise<string | null> {
-  const res = await fetch(
-    `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-    { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } },
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message ?? `Stripe payment_methods list failed (HTTP ${res.status})`);
-  return data.data?.[0]?.id ?? null;
+  return chargeableCardFor(Deno.env.get('STRIPE_SECRET_KEY') ?? '', customerId);
 }
 async function createPaymentIntent(params: Record<string, string>, idempotencyKey?: string): Promise<any> {
   const headers: Record<string, string> = { ...stripeHeaders() };
@@ -79,7 +78,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('create-hub-donation-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('create-hub-donation-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
@@ -131,6 +130,14 @@ serve(async (req) => {
     if (!isDemoHub && !hubHasAccount) {
       return json({ error: 'This hub has not finished setting up payouts yet.' }, 409);
     }
+
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A card donation is a destination charge into the hub's connected account. The wallet donation route has refused the hub's
+    // owner (and anyone controlling that account) since Paygate 7; the card route did not. Asked of the DESTINATION ACCOUNT. Before
+    // the fee, the Gift Aid declaration, the donation attempt row and any PaymentIntent: a refusal creates nothing. A demo hub (no
+    // account) is not asked. A committee member, who cannot change where the money goes, is not blocked.
+    const selfPay = await selfPaymentBlock(svc, user.id, hubHasAccount ? hub.stripe_account_id : null, 'card');
+    if (selfPay) return json(selfPay.body, selfPay.status);
 
     // Donations earn the platform nothing. We retain an application_fee equal to
     // Stripe's estimated processing fee — the platform keeps it but immediately

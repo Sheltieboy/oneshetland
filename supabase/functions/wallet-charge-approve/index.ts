@@ -94,14 +94,28 @@ serve(async (req) => {
     });
 
     if (!result.ok) {
-      // executeWalletPayment already refunded the wallet if the transfer failed.
-      await svc.from('wallet_charge_requests').update({ status: 'failed', resolved_at: new Date().toISOString() }).eq('id', reqRow.id);
-      return json({ error: result.error }, result.status);
+      // 'liquidity_unavailable' is an intentional operational refusal, BEFORE
+      // any debit — never collapsed into the same 'failed' a genuine Stripe
+      // transfer rejection gets. The till and the approval prompt each read
+      // this to show a calm, neutral state instead of a destructive one.
+      const settledStatus = result.reason === 'liquidity_unavailable' ? 'liquidity_unavailable' : 'failed';
+      await svc.from('wallet_charge_requests').update({ status: settledStatus, resolved_at: new Date().toISOString() }).eq('id', reqRow.id);
+      return json({ error: result.error, reason: result.reason }, result.status);
     }
 
     await svc.from('wallet_charge_requests')
       .update({ status: 'paid', stripe_transfer_id: result.transfer_id, resolved_at: new Date().toISOString() })
       .eq('id', reqRow.id);
+
+
+    // Loyalty is awarded HERE, at completion — not at the debit. The retired
+    // trigger fired on the wallet insert, before the merchant was paid and
+    // before this purchase existed, so three later events could undo the spend
+    // and none of them gave the points back. Best-effort: a loyalty failure
+    // must never fail a purchase that has already been paid for.
+    try {
+      await svc.rpc('loyalty_award_for_wallet_spend', { p_wallet_txn: result.transactionId });
+    } catch (e) { console.error('[wallet-charge-approve] loyalty award failed', e); }
 
     return json({ ok: true, balance_pence: result.balance_pence, cashback_pence: result.cashback_pence });
   } catch (err) {

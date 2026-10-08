@@ -6,6 +6,7 @@ import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { classifyHold, readHold } from '../_shared/fetch-hold.ts';
 import { defaultCardFor } from '../_shared/saved-card.ts';
 import { canonicalStripeCustomer } from '../_shared/stripe-customer.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 
 const STRIPE = 'https://api.stripe.com/v1';
 const corsHeaders = {
@@ -226,6 +227,18 @@ async function reauthorise(svc: any, stripeKey: string, request: any, userId: st
   if (attempt.capture_state === 'captured' || attempt.status === 'captured') {
     return json({ error: 'This delivery has already been paid for.', code: 'CAPTURED' }, 409);
   }
+
+  // A replacement hold is a NEW destination charge into the driver's connected account, so it is asked the same question as the
+  // first one (authorise-payment): does the person whose card it is control that account? Before the old hold is touched, so a
+  // refusal changes nothing at all.
+  const { data: runEarly } = request.run_id
+    ? await svc.from('runs').select('driver_id').eq('id', request.run_id).maybeSingle()
+    : { data: null };
+  const { data: driverEarly } = runEarly?.driver_id
+    ? await svc.from('driver_profiles').select('stripe_account_id').eq('id', runEarly.driver_id).maybeSingle()
+    : { data: null };
+  const selfPay = await selfPaymentBlock(svc, request.customer_id, driverEarly?.stripe_account_id, 'card');
+  if (selfPay) return json(selfPay.body, selfPay.status);
 
   // 1 + 2. Stripe decides, and the old intent is put beyond use before
   // anything else exists.

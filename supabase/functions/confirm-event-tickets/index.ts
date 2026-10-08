@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { paymentBelongsToTicketOrder } from '../_shared/ticket-payment-binding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -78,6 +79,15 @@ serve(async (req) => {
 
     // Defence-in-depth: the PI's own metadata must point back at this order + buyer.
     if (pi.metadata?.order_id !== order_id || pi.metadata?.buyer_id !== user.id) {
+      return new Response(JSON.stringify({ error: 'Payment does not match this order.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // …and so must its amount, currency, type and event. The order total was set by the server from database prices and the
+    // PaymentIntent was created for exactly that amount, so any difference means this is not the payment for this order.
+    const bound = paymentBelongsToTicketOrder(
+      { id: order.id, event_id: order.event_id, buyer_id: order.buyer_id, total_pence: order.total_pence }, pi);
+    if (!bound.ok) {
+      console.error(`[confirm-event-tickets] order ${order_id} not marked paid: ${bound.reason}`);
       return new Response(JSON.stringify({ error: 'Payment does not match this order.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 

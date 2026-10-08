@@ -9,6 +9,24 @@ const corsHeaders = {
 };
 
 /**
+ * Where the emailed link may land. The endpoint is unauthenticated by necessity, so `redirect_to`
+ * is attacker-controlled input: used as given, anyone could ask for a reset for someone ELSE's
+ * address with redirect_to=https://their-site and the victim would receive a genuine OneShetland
+ * email whose button hands the single-use recovery token to that site. The link is therefore only
+ * ever built on our own reset page; anything else falls back to it.
+ */
+const RESET_PAGE = 'https://oneshetland.com/reset-password';
+const RESET_ORIGINS = new Set(['https://oneshetland.com', 'https://www.oneshetland.com']);
+
+function safeResetRedirect(raw: unknown): string {
+  try {
+    const u = new URL(String(raw ?? ''));
+    if (RESET_ORIGINS.has(u.origin) && u.pathname === '/reset-password') return `${u.origin}/reset-password`;
+  } catch { /* not a URL */ }
+  return RESET_PAGE;
+}
+
+/**
  * request-password-reset
  *
  * Sends a BRANDED OneShetland password-reset email (via Postmark / the shared
@@ -45,6 +63,7 @@ serve(async (req) => {
     );
 
     const cleanEmail = email.trim().toLowerCase();
+    const redirectTo = safeResetRedirect(redirect_to);
 
     /**
      * Throttle. This endpoint is unauthenticated by necessity — you cannot be
@@ -97,7 +116,7 @@ serve(async (req) => {
     const { data, error } = await svc.auth.admin.generateLink({
       type: 'recovery',
       email: cleanEmail,
-      options: redirect_to ? { redirectTo: redirect_to } : undefined,
+      options: { redirectTo },
     });
 
     // No such user (or any other issue) → return ok anyway to avoid leaking
@@ -120,10 +139,9 @@ serve(async (req) => {
      * hands the hash straight back to Supabase and gets a session.
      */
     const hashedToken = data.properties.hashed_token;
-    const base = redirect_to || data.properties.redirect_to;
-    if (!hashedToken || !base) return ok();
+    if (!hashedToken) return ok();
 
-    const target = new URL(base);
+    const target = new URL(redirectTo);
     target.searchParams.set('token_hash', hashedToken);
     target.searchParams.set('type', 'recovery');
     const resetUrl = target.toString();

@@ -1,8 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
-import { requireCaller, forbidden } from '../_shared/require-caller.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseEngagementNotify } from '../_shared/engagement-notify-auth.ts';
 
 /**
  * notify-engagement
@@ -54,6 +55,13 @@ serve(async (req) => {
     const { event, comment_id, memory_id, actor_id } = await req.json();
     if (!event) return json({ error: 'event required' }, 400);
     const svc = createServiceClient();
+
+    // The caller must be the real author of the comment, or the real actor
+    // named — not any signed-in account naming someone else's interaction.
+    const decision = await authoriseEngagementNotify(svc, caller, {
+      event, commentId: comment_id, memoryId: memory_id, actorId: actor_id,
+    });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     // ── Comment on a story ──────────────────────────────────────────────────
     if (event === 'memory_comment') {

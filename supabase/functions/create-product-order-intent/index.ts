@@ -3,17 +3,24 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { executeWalletPayment, type PayBusiness } from '../_shared/wallet-pay.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { spawnFetchRequest } from '../_shared/fulfilment.ts';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { chargeableCardFor } from '../_shared/saved-card.ts';
+import {
+  attemptIdProblem, payModeFor, mapClaimError, createPaymentIntentOnce, retrievePaymentIntent, isCardDecline, EXPIRED_BODY, IN_PROGRESS_BODY,
+} from '../_shared/purchase-attempt.ts';
 
 /**
  * create-product-order-intent — Shop Shetland checkout.
  *
- * Validates the basket server-side (prices, stock, fulfilment rules), RESERVES
- * stock atomically, creates a pending product_order, then takes payment:
+ * Validates the basket server-side (prices, stock, fulfilment rules), then CLAIMS the
+ * purchase attempt — one atomic database call that creates the pending product_order and
+ * RESERVES its stock, or resolves a repeat of the same attempt to the order it already
+ * made — and then takes payment:
  *
  *   pay_with = 'wallet'      → debits the Local Wallet via the shared helper,
  *                              order finalised as paid immediately.
@@ -25,8 +32,16 @@ import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/str
  * 5% platform fee on the GOODS subtotal (product rail; shipping passes through
  * uncharged). Wallet path mirrors this via the wallet rail's transfer.
  *
+ * ONE ATTEMPT, ONE ORDER. `client_request_id` is minted by the client once per deliberate
+ * checkout and sent with every request for it, retries included. The database keys on
+ * (buyer, id): a double-click, a retry after a lost response, two tabs or a replayed call
+ * all resolve to the SAME order — no second reservation, no second PaymentIntent, no second
+ * wallet debit. It is an idempotency token only; the basket, prices and destination are
+ * still resolved here. A reused id for a different basket / address / payment method is a
+ * 409, never a silent swap, and a cancelled or expired attempt is never resurrected.
+ *
  * Body: {
- *   business_id, items: [{ product_id, variant_id?, qty }],
+ *   client_request_id, business_id, items: [{ product_id, variant_id?, qty }],
  *   fulfilment: 'collect' | 'post' | 'fetch',
  *   delivery?: { name, address, postcode, phone?, region_slug? },  // post + fetch
  *                                                    // region_slug required for fetch
@@ -38,6 +53,9 @@ import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/str
  * fee through the normal Fetch pre-auth rails when a driver accepts.
  *
  * Unpaid orders expire after 30 min (reminder-runner releases the stock).
+ *
+ * Replies on a repeat: paid → { charged: true, replayed: true }; unpaid card → the SAME PaymentIntent's state (clientSecret /
+ * requires_action / processing); another request is mid-payment → 409 in_progress; cancelled or expired → 409 checkout_expired.
  */
 
 const corsHeaders = {
@@ -45,33 +63,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const STRIPE_API_VERSION = '2023-10-16';
 const ORDER_TTL_MIN = 30;
 
-async function createPaymentIntent(params: Record<string, string>, idempotencyKey: string): Promise<Record<string, unknown>> {
-  const res = await fetch('https://api.stripe.com/v1/payment_intents', {
-    method: 'POST',
-    headers: {
-      'Authorization':   `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
-      'Content-Type':    'application/x-www-form-urlencoded',
-      'Stripe-Version':  STRIPE_API_VERSION,
-      'Idempotency-Key': idempotencyKey,
-    },
-    body: new URLSearchParams(params),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error((json as { error?: { message?: string } }).error?.message ?? `Stripe PaymentIntent failed (HTTP ${res.status})`);
-  return json;
-}
-
+// Which card, by the ONE canonical rule (the Customer's default when it is really
+// attached, else the newest) rather than "whatever Stripe listed first". Throws
+// when Stripe cannot be asked, so an outage never reads as "no saved card".
 async function listSavedCard(customerId: string): Promise<string | null> {
-  const res = await fetch(
-    `https://api.stripe.com/v1/customers/${customerId}/payment_methods?type=card&limit=1`,
-    { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } },
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message ?? 'Stripe payment_methods list failed');
-  return data.data?.[0]?.id ?? null;
+  return chargeableCardFor(Deno.env.get('STRIPE_SECRET_KEY') ?? '', customerId);
 }
 
 type Item = { product_id: string; variant_id?: string | null; qty: number };
@@ -81,14 +79,7 @@ serve(async (req) => {
   const json = (b: unknown, s = 200) =>
     new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-  // Track reservations made so far so ANY failure path releases them.
   const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-  const reservedSoFar: Item[] = [];
-  const releaseAll = async () => {
-    for (const r of reservedSoFar) {
-      await svc.rpc('release_product_stock', { p_product: r.product_id, p_variant: r.variant_id ?? null, p_qty: r.qty });
-    }
-  };
 
   try {
     // ── Auth ────────────────────────────────────────────────────────────────
@@ -102,7 +93,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('create-product-order-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('create-product-order-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     const body = await req.json();
@@ -110,6 +101,9 @@ serve(async (req) => {
     const fulfilment: string = body.fulfilment;
     const items: Item[] = Array.isArray(body.items) ? body.items : [];
     const payWith: string = body.pay_with === 'wallet' ? 'wallet' : 'card';
+    // One id per deliberate checkout, sent again on every retry. Idempotency token ONLY — see the header.
+    const clientRequestId: string = body.client_request_id;
+    if (attemptIdProblem(clientRequestId)) return json({ error: 'client_request_id required', code: 'attempt_id_required' }, 400);
     if (!businessId || !items.length || items.length > 20) return json({ error: 'Bad basket' }, 400);
     if (!['collect', 'post', 'fetch'].includes(fulfilment)) return json({ error: 'Bad fulfilment' }, 400);
     for (const it of items) {
@@ -157,6 +151,17 @@ serve(async (req) => {
     const sellerAccountId: string | null = payout?.account_id ?? null;
     if (!sellerAccountId) {
       return json({ error: "This shop isn't quite ready to take payments yet." }, 400);
+    }
+
+    // ── You cannot pay yourself by card ───────────────────────────────────────
+    // A card order is a destination charge into the seller's connected account. If the buyer controls that account — as the shop's
+    // owner, through another business or hub on the same account, or because a shop with no payout account of its own is paid into
+    // its owner's central account — the money goes round in a circle that ends in their own bank, and a chargeback is the
+    // platform's loss. Asked of the DESTINATION ACCOUNT, the way the wallet route below (executeWalletPayment) and the card
+    // membership ask it. BEFORE any stock is reserved, any order row exists or any PaymentIntent is made: a refusal costs nothing.
+    if (payWith === 'card') {
+      const selfPay = await selfPaymentBlock(svc, user.id, sellerAccountId, 'card');
+      if (selfPay) return json(selfPay.body, selfPay.status);
     }
 
     const { data: ship } = await svc.from('business_shipping').select('*').eq('business_id', businessId).maybeSingle();
@@ -241,144 +246,215 @@ serve(async (req) => {
     const cfg = await getCommissionConfig(svc, 'product');
     const commissionPence = calculateCommission(itemsPence, cfg, 'product').fee_pence;
 
-    // ── Reserve stock atomically (any failure → everything released) ───────
-    for (const it of items) {
-      const { data: ok, error } = await svc.rpc('reserve_product_stock', {
-        p_product: it.product_id, p_variant: it.variant_id ?? null, p_qty: it.qty,
-      });
-      if (error || !ok) {
-        await releaseAll();
-        const t = pmap.get(it.product_id)?.title ?? 'An item';
-        return json({ error: `${t} sold out while you were browsing — sorry!` }, 409);
-      }
-      reservedSoFar.push(it);
-    }
-
-    // ── Create the pending order + snapshot items ───────────────────────────
+    // ── Claim the attempt (atomic): create the order + reserve its stock, or resolve a repeat ──────────
+    //
+    // This is the ONE place an order comes into existence. The database keys on (buyer, client_request_id), so of any number
+    // of simultaneous or repeated requests for this attempt exactly one creates the order and reserves the stock; the rest are
+    // handed that same order. A sold-out line aborts the whole claim — the order row and every earlier reservation vanish
+    // together, so nothing is left held and nothing can be released twice.
     const d = body.delivery ?? {};
-    const { data: order, error: orderErr } = await svc.from('product_orders').insert({
-      business_id: businessId,
-      buyer_id: user.id,
-      status: 'pending',
-      fulfilment,
-      items_pence: itemsPence,
-      shipping_pence: shippingPence,
-      total_pence: totalPence,
-      commission_pence: commissionPence,
-      delivery_name: d.name?.trim() || null,
-      delivery_address: d.address?.trim() || null,
-      delivery_postcode: d.postcode?.trim() || null,
-      delivery_region_slug: fulfilment === 'fetch' ? d.region_slug : null,
-      contact_phone: d.phone?.trim() || null,
-      buyer_note: body.note?.trim() || null,
-      expires_at: new Date(Date.now() + ORDER_TTL_MIN * 60_000).toISOString(),
-    }).select('id').single();
-    if (orderErr || !order) { await releaseAll(); throw orderErr ?? new Error('order insert failed'); }
-    await svc.from('product_order_items').insert(lines.map((l) => ({ ...l, order_id: order.id })));
+    const payMode = payModeFor({ wallet: payWith === 'wallet', savedCard: !!body.use_saved_card });
+    const { data: claim, error: claimErr } = await svc.rpc('claim_product_order', {
+      p_buyer: user.id, p_client_request_id: clientRequestId, p_pay_mode: payMode,
+      p_business: businessId, p_fulfilment: fulfilment, p_items: lines,
+      p_items_pence: itemsPence, p_shipping_pence: shippingPence, p_total_pence: totalPence, p_commission_pence: commissionPence,
+      p_delivery_name: d.name?.trim() || null,
+      p_delivery_address: d.address?.trim() || null,
+      p_delivery_postcode: d.postcode?.trim() || null,
+      p_delivery_region: fulfilment === 'fetch' ? d.region_slug : null,
+      p_contact_phone: d.phone?.trim() || null,
+      p_buyer_note: body.note?.trim() || null,
+      p_ttl_minutes: ORDER_TTL_MIN,
+    });
+    if (claimErr) {
+      const mapped = mapClaimError(claimErr.message);
+      if (mapped) return json(mapped.body, mapped.status);
+      throw claimErr;
+    }
+    const orderId: string = claim.order_id;
 
-    /* ── Wallet path — finalise immediately ─────────────────────────────── */
-    if (payWith === 'wallet') {
-      const payBiz: PayBusiness = {
-        id: biz.id, name: biz.name, owner_id: biz.owner_id,
-        accepts_wallet: biz.accepts_wallet ?? false,
-        cashback_percent: biz.cashback_percent,
-        stripe_account_id: sellerAccountId,
-        payout_enabled: true,   // resolved above, or we would not be here
-      };
-      const res = await executeWalletPayment(svc, {
-        userId: user.id, business: payBiz, amountPence: totalPence,
-        idempotencyKey: `product-order-${order.id}`, label: `Shop order at ${biz.name}`,
-      });
-      if (!res.ok) {
-        await releaseAll();
-        await svc.from('product_orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', order.id);
-        return json({ error: res.error }, res.status);
-      }
-      for (const it of items) {
-        await svc.rpc('commit_product_stock', { p_product: it.product_id, p_variant: it.variant_id ?? null, p_qty: it.qty });
-      }
-      await svc.from('product_orders').update({
-        status: 'paid', paid_via: 'wallet', paid_at: new Date().toISOString(), expires_at: null,
-      }).eq('id', order.id);
-      await sendUserPush(svc, {
-        userId: biz.owner_id, module: 'business', categoryId: 'business.order',
-        title: '🛍️ New shop order!',
-        body: `£${(totalPence / 100).toFixed(2)} — ${lines.length === 1 ? lines[0].title : `${totalQty} items`} (${fulfilment})`,
-        // NOTE: not `order_id` — that key routes to event tickets in the app.
-        data: { screen: 'business-orders', product_order_id: order.id, business_id: businessId },
-      });
-      // Fetch lane: spawn the delivery request and ping matching drivers now
-      // (notify-drivers needs the buyer's JWT, which only this path holds —
-      // the card/webhook path spawns without the ping; the request still
-      // appears on the Fetch board).
-      if (fulfilment === 'fetch') {
-        try {
-          await spawnFetchRequest(svc, order.id);
-          const { data: o2 } = await svc.from('product_orders').select('delivery_request_id').eq('id', order.id).maybeSingle();
-          if (o2?.delivery_request_id) {
-            fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/notify-drivers`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: authHeader, apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '' },
-              body: JSON.stringify({ request_id: o2.delivery_request_id }),
-            }).catch(() => {});
-          }
-        } catch (e) { console.error('[create-product-order-intent] fetch spawn failed', e); }
-      }
-      return json({ charged: true, order_id: order.id, balance_pence: res.balance_pence });
+    // An attempt that already ended is reported, never revived: the client starts a new one.
+    if (['cancelled', 'expired', 'refunded'].includes(claim.status)) return json(EXPIRED_BODY, 409);
+    // Already paid (or beyond): this is a repeat of a purchase that went through. Nothing to charge, nothing to redo.
+    if (claim.status !== 'pending') {
+      return json({ charged: true, status: 'succeeded', order_id: orderId, payment_intent_id: claim.payment_intent_id ?? undefined, replayed: true });
     }
 
-    /* ── Card path — PaymentIntent; webhook finalises ───────────────────── */
-    const { data: profile } = await svc.from('profiles').select('stripe_customer_id').eq('id', user.id).maybeSingle();
-    const customerId = profile?.stripe_customer_id ?? null;
+    // Give back what a dead attempt reserved — once. The status flip inside the function is the guard, so the failed request,
+    // its retry and the expiry sweeper can all call it and the stock still goes back a single time.
+    const cancelAttempt = () => svc.rpc('cancel_pending_product_order', { p_order: orderId, p_as: 'cancelled' });
 
-    const params: Record<string, string> = {
-      amount: String(totalPence),
-      currency: 'gbp',
-      'metadata[type]':        'product_order',
-      'metadata[order_id]':    order.id,
-      'metadata[buyer_id]':    user.id,
-      'metadata[business_id]': businessId,
-      'transfer_data[destination]': sellerAccountId,
-      description: `OneShetland shop order at ${biz.name}`,
-    };
-    if (commissionPence > 0) params['application_fee_amount'] = String(commissionPence);
-    if (customerId) params['customer'] = customerId;
-
-    if (body.use_saved_card) {
-      if (!customerId) { await releaseAll(); return json({ error: 'No saved card on file' }, 400); }
-      const pm = await listSavedCard(customerId);
-      if (!pm) { await releaseAll(); return json({ error: 'No saved card on file' }, 400); }
-      Object.assign(params, onSessionConfirm(customerId, pm));
-      const pi = await createPaymentIntent(params, `product-order-${order.id}`);
-      await svc.from('product_orders').update({ payment_intent_id: String(pi.id) }).eq('id', order.id);
+    /** What the caller should be told about a PaymentIntent this attempt already started. */
+    const respondForIntent = async (pi: Record<string, any>) => {
       const outcome = classifyIntent(pi);
-      if (outcome.kind === 'requires_action') {
-        // Middle of a payment: the order stays pending and its reservation
-        // stands while the cardholder authenticates THIS intent.
-        return json({ status: 'requires_action', clientSecret: outcome.clientSecret, order_id: order.id, payment_intent_id: outcome.id }, 200);
+      if (outcome.kind === 'succeeded') return json({ charged: true, status: 'succeeded', order_id: orderId, payment_intent_id: pi.id, replayed: true });
+      if (outcome.kind === 'processing') return json({ status: 'processing', order_id: orderId, payment_intent_id: outcome.id }, 200);
+      if (outcome.kind === 'requires_action') return json({ status: 'requires_action', clientSecret: outcome.clientSecret, order_id: orderId, payment_intent_id: outcome.id }, 200);
+      // An unfinished card FORM payment (nothing entered yet, or a failed try the customer may repeat on the same intent) is
+      // resumed by handing back the same client secret; a saved-card intent in this state was declined and is spent.
+      if (payMode === 'card_form' && ['requires_payment_method', 'requires_confirmation'].includes(pi.status) && pi.client_secret) {
+        return json({ clientSecret: pi.client_secret, order_id: orderId, payment_intent_id: pi.id });
       }
-      if (outcome.kind === 'processing') {
-        return json({ status: 'processing', order_id: order.id, payment_intent_id: outcome.id }, 200);
-      }
-      if (outcome.kind !== 'succeeded') {
-        // A dead intent — declined or cancelled. Give the stock back: a one-off
-        // item held by a failed payment is unbuyable by anyone, including the
-        // buyer retrying, and nothing else releases it — unlike ticket orders,
-        // product reservations have no expiry job yet.
-        await releaseAll();
-        await svc.from('product_orders')
-          .update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', order.id);
-        return json({ status: 'failed', error: failureMessage(outcome.status), order_id: order.id }, 402);
-      }
-      return json({ charged: true, status: 'succeeded', order_id: order.id, payment_intent_id: pi.id });
+      await cancelAttempt();
+      return json({ status: 'failed', error: failureMessage(outcome.status), order_id: orderId }, 402);
+    };
+
+    /* ── A card payment this attempt already started: resume it, never start another ── */
+    if (payWith !== 'wallet' && claim.payment_intent_id) {
+      return await respondForIntent(await retrievePaymentIntent(String(claim.payment_intent_id)));
     }
 
-    params['automatic_payment_methods[enabled]'] = 'true';
-    const pi = await createPaymentIntent(params, `product-order-${order.id}`);
-    await svc.from('product_orders').update({ payment_intent_id: String(pi.id) }).eq('id', order.id);
-    return json({ clientSecret: pi.client_secret, order_id: order.id });
+    // ── Single-flight the money-moving step ────────────────────────────────────────
+    // Whoever holds the lease creates the PaymentIntent / runs the wallet debit. A concurrent repeat is told to wait and moves
+    // nothing. The lease goes stale after 90 s so a request that died cannot lock the attempt, and the Stripe and wallet keys
+    // below make a takeover safe.
+    const { data: leased } = await svc.rpc('claim_purchase_processing', { p_kind: 'product_order', p_id: orderId });
+    if (leased !== true) return json(IN_PROGRESS_BODY, 409);
+    try {
+      // The previous holder may have bound its PaymentIntent between our claim and our lease: look again before creating.
+      if (payWith !== 'wallet') {
+        const { data: fresh } = await svc.from('product_orders').select('payment_intent_id, status').eq('id', orderId).maybeSingle();
+        if (fresh && fresh.status !== 'pending') {
+          return ['cancelled', 'expired', 'refunded'].includes(fresh.status)
+            ? json(EXPIRED_BODY, 409)
+            : json({ charged: true, status: 'succeeded', order_id: orderId, replayed: true });
+        }
+        if (fresh?.payment_intent_id) return await respondForIntent(await retrievePaymentIntent(String(fresh.payment_intent_id)));
+      }
+
+      /* ── Wallet path — finalise immediately ─────────────────────────────── */
+      if (payWith === 'wallet') {
+        const payBiz: PayBusiness = {
+          id: biz.id, name: biz.name, owner_id: biz.owner_id,
+          accepts_wallet: biz.accepts_wallet ?? false,
+          cashback_percent: biz.cashback_percent,
+          stripe_account_id: sellerAccountId,
+          payout_enabled: true,   // resolved above, or we would not be here
+        };
+        // The key is the order id, which is now the same on every repeat of this attempt: a second run finds the debit already
+        // applied (alreadyApplied) and does not take the money or make the transfer again.
+        const res = await executeWalletPayment(svc, {
+          userId: user.id, business: payBiz, amountPence: totalPence,
+          idempotencyKey: `product-order-${orderId}`, label: `Shop order at ${biz.name}`,
+        });
+        if (!res.ok) {
+          await cancelAttempt();
+          return json({ error: res.error }, res.status);
+        }
+        // Only the request that flips pending → paid commits the stock and tells the shop; a repeat finds it done.
+        const { data: flipped } = await svc.from('product_orders').update({
+          status: 'paid', paid_via: 'wallet', paid_at: new Date().toISOString(), expires_at: null,
+        }).eq('id', orderId).eq('status', 'pending').select('id').maybeSingle();
+        if (!flipped) return json({ charged: true, order_id: orderId, balance_pence: res.balance_pence, replayed: true });
+
+        for (const it of items) {
+          await svc.rpc('commit_product_stock', { p_product: it.product_id, p_variant: it.variant_id ?? null, p_qty: it.qty });
+        }
+
+        // Loyalty is awarded HERE, at completion — not at the debit. The retired
+        // trigger fired on the wallet insert, before the merchant was paid and
+        // before this purchase existed, so three later events could undo the spend
+        // and none of them gave the points back. Best-effort: a loyalty failure
+        // must never fail a purchase that has already been paid for.
+        try {
+          await svc.rpc('loyalty_award_for_wallet_spend', { p_wallet_txn: res.transactionId });
+        } catch (e) { console.error('[create-product-order-intent] loyalty award failed', e); }
+
+        await sendUserPush(svc, {
+          userId: biz.owner_id, module: 'business', categoryId: 'business.order',
+          title: '🛍️ New shop order!',
+          body: `£${(totalPence / 100).toFixed(2)} — ${lines.length === 1 ? lines[0].title : `${totalQty} items`} (${fulfilment})`,
+          // NOTE: not `order_id` — that key routes to event tickets in the app.
+          data: { screen: 'business-orders', product_order_id: orderId, business_id: businessId },
+        });
+        // Fetch lane: spawn the delivery request and ping matching drivers now
+        // (notify-drivers needs the buyer's JWT, which only this path holds —
+        // the card/webhook path spawns without the ping; the request still
+        // appears on the Fetch board).
+        if (fulfilment === 'fetch') {
+          try {
+            await spawnFetchRequest(svc, orderId);
+            const { data: o2 } = await svc.from('product_orders').select('delivery_request_id').eq('id', orderId).maybeSingle();
+            if (o2?.delivery_request_id) {
+              fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/notify-drivers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: authHeader, apikey: Deno.env.get('SUPABASE_ANON_KEY') ?? '' },
+                body: JSON.stringify({ request_id: o2.delivery_request_id }),
+              }).catch(() => {});
+            }
+          } catch (e) { console.error('[create-product-order-intent] fetch spawn failed', e); }
+        }
+        return json({ charged: true, order_id: orderId, balance_pence: res.balance_pence });
+      }
+
+      /* ── Card path — PaymentIntent; webhook finalises ───────────────────── */
+      const { data: profile } = await svc.from('profiles').select('stripe_customer_id').eq('id', user.id).maybeSingle();
+      const customerId = profile?.stripe_customer_id ?? null;
+
+      const params: Record<string, string> = {
+        amount: String(totalPence),
+        currency: 'gbp',
+        'metadata[type]':        'product_order',
+        'metadata[order_id]':    orderId,
+        'metadata[buyer_id]':    user.id,
+        'metadata[business_id]': businessId,
+        'transfer_data[destination]': sellerAccountId,
+        description: `OneShetland shop order at ${biz.name}`,
+      };
+      if (commissionPence > 0) params['application_fee_amount'] = String(commissionPence);
+      if (customerId) params['customer'] = customerId;
+
+      // The Stripe idempotency key comes from the ORDER ROW the database returned — never from anything the client sent. Every
+      // repeat of this attempt resolves to the same order id, so every repeat asks Stripe for the same object and gets it.
+      const stripeKey = `product-order-${orderId}`;
+
+      if (body.use_saved_card) {
+        if (!customerId) { await cancelAttempt(); return json({ error: 'No saved card on file' }, 400); }
+        const pm = await listSavedCard(customerId);
+        if (!pm) { await cancelAttempt(); return json({ error: 'No saved card on file' }, 400); }
+        Object.assign(params, onSessionConfirm(customerId, pm));
+        let pi: Record<string, any>;
+        try {
+          pi = await createPaymentIntentOnce(params, stripeKey);
+        } catch (e) {
+          // The issuer refused the card. Stripe will give the same refusal for this key every time, so this attempt is over:
+          // give the stock back and let the buyer start a new one (or choose another card).
+          if (isCardDecline(e)) { await cancelAttempt(); return json({ status: 'failed', error: failureMessage('requires_payment_method'), order_id: orderId }, 402); }
+          throw e;
+        }
+        // Bind the intent to the order BEFORE any branch returns: the webhook may settle it while the cardholder is still
+        // authenticating, and a repeat must find THIS intent rather than make another.
+        await svc.from('product_orders').update({ payment_intent_id: String(pi.id) }).eq('id', orderId).is('payment_intent_id', null);
+        const outcome = classifyIntent(pi);
+        if (outcome.kind === 'requires_action') {
+          // Middle of a payment: the order stays pending and its reservation
+          // stands while the cardholder authenticates THIS intent.
+          return json({ status: 'requires_action', clientSecret: outcome.clientSecret, order_id: orderId, payment_intent_id: outcome.id }, 200);
+        }
+        if (outcome.kind === 'processing') {
+          return json({ status: 'processing', order_id: orderId, payment_intent_id: outcome.id }, 200);
+        }
+        if (outcome.kind !== 'succeeded') {
+          // A dead intent — declined or cancelled. Give the stock back (once): a one-off
+          // item held by a failed payment is unbuyable by anyone, including the
+          // buyer retrying, and nothing else releases it before the 30-minute sweep.
+          await cancelAttempt();
+          return json({ status: 'failed', error: failureMessage(outcome.status), order_id: orderId }, 402);
+        }
+        return json({ charged: true, status: 'succeeded', order_id: orderId, payment_intent_id: pi.id });
+      }
+
+      params['automatic_payment_methods[enabled]'] = 'true';
+      const pi = await createPaymentIntentOnce(params, stripeKey);
+      await svc.from('product_orders').update({ payment_intent_id: String(pi.id) }).eq('id', orderId).is('payment_intent_id', null);
+      return json({ clientSecret: pi.client_secret, order_id: orderId });
+    } finally {
+      // Best-effort: a stale lease expires on its own, but there is no reason to make a retry wait for it.
+      try { await svc.rpc('release_purchase_processing', { p_kind: 'product_order', p_id: orderId }); } catch { /* the lease expires */ }
+    }
   } catch (err) {
-    await releaseAll().catch(() => {});
+    // Nothing is released here on purpose. If the claim succeeded the order is still pending and a repeat of this attempt
+    // RESUMES it (same order, same Stripe key); if the buyer walks away the 30-minute sweep gives the stock back.
     console.error('[create-product-order-intent]', err);
     return json({ error: safeError('create-product-order-intent', err) }, 500);
   }

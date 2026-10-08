@@ -4,6 +4,8 @@ import { getConfig } from '../_shared/admin-config.ts';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
+import { reconcileCharge } from '../_shared/refund-reconcile.ts';
+import { brakeAfterFailedPayment, productionBrakeDeps } from '../_shared/payment-failure-brake.ts';
 import { parseReconciledSubscription, ReconcileFailed, type ReconciledSubscription } from '../_shared/subscription-reconcile.ts';
 
 /**
@@ -484,6 +486,7 @@ serve(async (req) => {
         const fulfilRes = await fulfilByType(supabase, {
           id:       eventData.id as string,
           amount:   (eventData.amount as number) ?? 0,
+          currency: eventData.currency as string | undefined,
           metadata: meta,
           status:   eventData.status as string | undefined,
         });
@@ -497,6 +500,19 @@ serve(async (req) => {
       // ── Payment failed ───────────────────────────────────────────────
       case 'payment_intent.payment_failed': {
         const meta = (eventData.metadata ?? {}) as Record<string, string>;
+
+        // Card-testing brake: count this failure against the account and against the intent, and cancel an intent that keeps
+        // failing. First, and fenced off — it must never stop the Fetch handling below, and it must never make Stripe retry
+        // (and so re-run) this whole event. See _shared/payment-failure-brake.ts.
+        try {
+          await brakeAfterFailedPayment(productionBrakeDeps(supabase, Deno.env.get('STRIPE_SECRET_KEY') ?? ''), {
+            id: eventData.id as string, kind: 'payment_intent',
+            customer: eventData.customer as string | null | undefined,
+            invoice: eventData.invoice as string | null | undefined,
+            metadata: meta,
+          });
+        } catch (e) { console.error('[stripe-webhook] failed-payment brake:', e instanceof Error ? e.message : e); }
+
         const requestId = meta.request_id;
         if (requestId) {
           await supabase
@@ -530,6 +546,20 @@ serve(async (req) => {
             }).catch((e) => console.error('[stripe-webhook] payment_failed push:', e));
           }
         }
+        break;
+      }
+
+      // ── A card setup failed ───────────────────────────────────────────
+      // The same card-testing door as a failed payment (a SetupIntent checks a card without charging it), so the same brake.
+      // Only fires if the endpoint is subscribed to setup_intent.setup_failed; harmless otherwise.
+      case 'setup_intent.setup_failed': {
+        try {
+          await brakeAfterFailedPayment(productionBrakeDeps(supabase, Deno.env.get('STRIPE_SECRET_KEY') ?? ''), {
+            id: eventData.id as string, kind: 'setup_intent',
+            customer: eventData.customer as string | null | undefined,
+            metadata: (eventData.metadata ?? {}) as Record<string, string>,
+          });
+        } catch (e) { console.error('[stripe-webhook] failed-setup brake:', e instanceof Error ? e.message : e); }
         break;
       }
 
@@ -1016,6 +1046,32 @@ serve(async (req) => {
               );
             }
           }
+          // ── Merchant-side reconciliation ──────────────────────────────────
+          //
+          // Everything above proves the CUSTOMER was refunded. It says nothing
+          // about the merchant: a refund issued without reverse_transfer and
+          // refund_application_fee (the Stripe Dashboard's default) leaves the
+          // connected account holding the money while OneShetland pays the
+          // customer from its own balance — and the order row still reads
+          // "refunded". So whatever initiated this refund, check the transfer
+          // and the application fee against Stripe, record the verdict, and
+          // (event tickets, full and recent only) complete the missing legs.
+          //
+          // It is a safety net, not part of fulfilment: a failure here is
+          // logged and left for the scheduled sweep, never allowed to fail the
+          // event and re-run everything above.
+          if (eventData.transfer && typeof eventData.id === 'string') {
+            try {
+              const rr = await reconcileCharge(supabase, eventData.id, { actor: 'webhook', allowRepair: true });
+              console.log(`[stripe-webhook] refund reconciliation ${eventData.id}: ${rr.state} ${JSON.stringify(rr.steps_run)} ${rr.note}`);
+              if (rr.state === 'needs_repair' || rr.state === 'needs_review' || rr.state === 'repair_failed') {
+                console.error(`[stripe-webhook] REFUND NOT RECONCILED ${eventData.id}: ${rr.state} — ${rr.note}`);
+              }
+            } catch (e) {
+              console.error('[stripe-webhook] refund reconciliation failed (sweep will retry):', e instanceof Error ? e.message : 'error');
+            }
+          }
+
           // Notify the customer a refund was issued.
           const meta = (eventData.metadata ?? {}) as Record<string, string>;
           const customerId = meta.customer_id || '';

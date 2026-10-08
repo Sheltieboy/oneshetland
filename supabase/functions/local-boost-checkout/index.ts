@@ -4,6 +4,7 @@ import Stripe from 'npm:stripe@17';
 import { getConfig } from '../_shared/admin-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { classifyIntent } from '../_shared/stripe-sca.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -119,6 +120,12 @@ serve(async (req) => {
       if (client_request_id.length < 8 || client_request_id.length > 100) {
         return json({ error: 'client_request_id must be 8-100 characters' }, 400);
       }
+    }
+
+    // A preview makes no Stripe call and creates nothing, so it is not counted. A real purchase is, here, before Stripe is touched.
+    if (!preview) {
+      const limited = await enforcePaymentStart('local-boost-checkout', user.id, corsHeaders);
+      if ('denied' in limited) return limited.denied;
     }
 
     const { data: business } = await svc

@@ -1,6 +1,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { safeError } from '../_shared/safe-error.ts';
+import { reconcileCharge, reconcileWalletOrder } from '../_shared/refund-reconcile.ts';
+import { isWalletRef, refundWalletEventOrder, type WalletRefundDeps } from '../_shared/event-wallet-refund-core.ts';
+import { notifyRefund } from '../_shared/refund-notice.ts';
+import { paymentBelongsToTicketOrder, refundableOnTicketPayment } from '../_shared/ticket-payment-binding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -21,7 +25,18 @@ const STRIPE = 'https://api.stripe.com/v1';
  * refunds issued straight from the Stripe Dashboard).
  *
  * Body: { payment_intent_id: string, amount_pence?: number, reason?: string }
+ *    or { event_order_id: string }   (an event ticket order, refunded IN FULL)
  * Returns: { ok, refund_id, amount_pence, reversed_transfer }
+ *
+ * Event ticket orders are addressed by the ORDER's own id, never by a Stripe
+ * identifier: the payment reference is read from our row here, so a caller
+ * cannot point a ticket refund at somebody else's payment. Authority for a
+ * ticket order is public.can_refund_event_orders (platform admin, the owner of
+ * the organising business, or the owner of the organising hub — whoever
+ * controls the connected account the money was paid to). Everything after
+ * that is the same canonical path as every other rail: refund the customer,
+ * reverse the merchant transfer, refund the platform fee, stamp refunded_by,
+ * be idempotent, and be checked by refund reconciliation.
  */
 type MembershipPurchase = {
   id: string;
@@ -85,7 +100,7 @@ async function chargeAmountRefunded(
  * operator took to press the button again. A transfer we cannot read falls
  * through to the POST, so nothing that worked before behaves differently.
  */
-async function reverseTransfer(transferId: string): Promise<void> {
+async function reverseTransfer(transferId: string, description = 'OneShetland: membership refunded'): Promise<void> {
   const look = await fetch(`${STRIPE}/transfers/${transferId}`, {
     headers: {
       'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`,
@@ -106,7 +121,7 @@ async function reverseTransfer(transferId: string): Promise<void> {
       'Stripe-Version': STRIPE_API_VERSION,
       'Idempotency-Key': `reverse_${transferId}`,
     },
-    body: new URLSearchParams({ description: 'OneShetland: membership refunded' }),
+    body: new URLSearchParams({ description }),
   });
   const j = await res.json();
   if (!res.ok) throw new Error(j.error?.message ?? `Transfer reversal failed (HTTP ${res.status})`);
@@ -203,6 +218,10 @@ async function refundWalletMembership(
   }
 
   console.log(`[refund-payment] wallet membership ${m.id} refunded by ${adminId}: ${JSON.stringify(rec)}`);
+  await notifyRefund(svc, {
+    userId: m.user_id, refundKey: `membership:${m.id}`, amountPence: total,
+    what: `Your ${m.hub_name} membership`, destination: 'wallet', data: { screen: 'local-wallet' },
+  });
   return jsonResponse({
     ok: true,
     rail: 'wallet',
@@ -212,6 +231,42 @@ async function refundWalletMembership(
     already_reversed: (rev as { already_reversed?: boolean } | null)?.already_reversed ?? false,
     membership: rec,
   });
+}
+
+/**
+ * The canonical Wallet primitives behind a Wallet-funded event ticket refund:
+ * the same transfer clawback and wallet_reverse_debit the Wallet membership
+ * refund uses, plus the idempotent ticket void the webhook uses.
+ */
+// deno-lint-ignore no-explicit-any
+function walletEventRefundDeps(svc: any): WalletRefundDeps {
+  return {
+    async loadLedgerRow(txId) {
+      const { data } = await svc.from('local_wallet_transactions')
+        .select('id, user_id, type, amount_pence, stripe_transfer_id, transfer_state, idempotency_key')
+        .eq('id', txId).maybeSingle();
+      return data ?? null;
+    },
+    async reverseTransfer(transferId) { await reverseTransfer(transferId, 'OneShetland: event ticket refunded'); },
+    async reverseDebit(txId, reason, merchant) {
+      const { data, error } = await svc.rpc('wallet_reverse_debit',
+        { p_transaction_id: txId, p_reason: reason, p_merchant: merchant }).maybeSingle();
+      if (error || !data) {
+        console.error('[refund-payment] wallet event reversal failed', error?.code ?? 'no row');
+        return { ok: false as const, message: 'reversal failed' };
+      }
+      return {
+        ok: true as const, reversalId: data.reversal_id as string,
+        alreadyReversed: data.already_reversed === true, balancePence: data.balance_pence as number,
+      };
+    },
+    async voidTickets(ref) {
+      const { data, error } = await svc.rpc('refund_event_tickets_for_payment',
+        { p_payment_intent_id: ref, p_fully_refunded: true });
+      if (error) { console.error('[refund-payment] wallet event ticket void failed', error.code); return { ok: false as const, message: 'void failed' }; }
+      return { ok: true as const, action: String((data as { action?: string } | null)?.action ?? 'refunded') };
+    },
+  };
 }
 
 serve(async (req) => {
@@ -231,7 +286,7 @@ serve(async (req) => {
     const svc = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
 
     const body = await req.json();
-    const { amount_pence = null, reason = 'requested_by_customer', boost_purchase_id = null } = body;
+    const { amount_pence = null, reason = 'requested_by_customer', boost_purchase_id = null, event_order_id = null } = body;
     let payment_intent_id: string = body.payment_intent_id;
 
     // ── Business boost ─────────────────────────────────────────────────────
@@ -262,6 +317,90 @@ serve(async (req) => {
         return json({ error: 'That boost was never paid for, so there is nothing to refund.' }, 400);
       }
       payment_intent_id = boost.stripe_payment_intent_id;
+    }
+
+    // ── Event ticket order ─────────────────────────────────────────────────
+    //
+    // Authorised BEFORE anything about the order is revealed, so a caller who
+    // may not refund it learns nothing (not found and not permitted look the
+    // same to them). Full refunds only: nothing in the schema says which
+    // tickets a partial refund would cover.
+    type TicketOrder = {
+      id: string; event_id: string; buyer_id: string; status: string;
+      total_pence: number; stripe_payment_intent_id: string | null; refunded_at: string | null;
+    };
+    let eventOrder: TicketOrder | null = null;
+    let ownsThisEvent = false;
+    if (event_order_id) {
+      if (typeof event_order_id !== 'string' || !/^[0-9a-f-]{36}$/i.test(event_order_id)) {
+        return json({ error: 'event_order_id must be an id' }, 400);
+      }
+      if (boost_purchase_id) return json({ error: 'Send one of event_order_id or boost_purchase_id' }, 400);
+      const { data: ord } = await svc.from('event_ticket_orders')
+        .select('id, event_id, buyer_id, status, total_pence, stripe_payment_intent_id, refunded_at')
+        .eq('id', event_order_id).maybeSingle();
+      eventOrder = ord as TicketOrder | null;
+
+      const { data: meRow } = await svc.from('profiles')
+        .select('role, is_platform_owner').eq('id', user.id).maybeSingle();
+      const adminHere = meRow?.role === 'admin' || meRow?.is_platform_owner === true;
+      if (eventOrder) {
+        const { data: ok } = await svc.rpc('can_refund_event_orders',
+          { p_event_id: eventOrder.event_id, p_user_id: user.id });
+        ownsThisEvent = ok === true;
+      }
+      if (!eventOrder || !ownsThisEvent) {
+        return adminHere && !eventOrder
+          ? json({ error: 'That ticket order could not be found.' }, 404)
+          : json({ error: 'Forbidden — only the organiser who received this payment, or OneShetland, can refund it.' }, 403);
+      }
+      if (amount_pence != null) return json({ error: 'A ticket order is refunded in full.' }, 400);
+      if (eventOrder.status === 'refunded' || eventOrder.refunded_at) {
+        return json({ error: 'This order has already been refunded.' }, 400);
+      }
+      if (eventOrder.status !== 'paid' || !eventOrder.stripe_payment_intent_id || !(eventOrder.total_pence > 0)) {
+        return json({ error: 'Only a paid ticket order can be refunded.' }, 400);
+      }
+      payment_intent_id = eventOrder.stripe_payment_intent_id;
+
+      // ── Paid from the customer's OneShetland WALLET ────────────────────────
+      //
+      // There is no PaymentIntent behind a Wallet order — its reference is the
+      // synthetic wallet_<ledger id> — so a Stripe card refund is the wrong rail
+      // and would only fail on a payment that does not exist. The Wallet refund
+      // claws back the organiser's Connect transfer, credits the customer's
+      // Wallet once through wallet_reverse_debit, and voids the tickets.
+      if (isWalletRef(eventOrder.stripe_payment_intent_id)) {
+        const { data: ev } = await svc.from('events').select('title').eq('id', eventOrder.event_id).maybeSingle();
+        const out = await refundWalletEventOrder(
+          walletEventRefundDeps(svc),
+          { id: eventOrder.id, buyer_id: eventOrder.buyer_id, total_pence: eventOrder.total_pence, stripe_payment_intent_id: eventOrder.stripe_payment_intent_id },
+          (ev as { title?: string } | null)?.title ?? 'event', user.id,
+        );
+        if (!out.ok) return json({ error: out.error, stage: out.stage, retry_safe: out.retry_safe }, out.status);
+        console.log(`[refund-payment] wallet event order ${eventOrder.id} refunded by ${user.id}: ${JSON.stringify({ merchant_reversed: out.merchant_reversed, already: out.already_reversed })}`);
+        // Tell the buyer the money is back in their Wallet. Never throws, never blocks the refund.
+        await notifyRefund(svc, {
+          userId: eventOrder.buyer_id, refundKey: `event_order:${eventOrder.id}`, amountPence: out.amount_pence,
+          what: `Your tickets for ${(ev as { title?: string } | null)?.title ?? 'the event'}`, destination: 'wallet',
+          data: { screen: 'my-event-tickets', order_id: eventOrder.id },
+        });
+        // Judge it from the ledger and the Connect transfer now. Reading only: a failure here
+        // never changes the refund that has already happened.
+        let reconciliation: { state: string; note: string } | null = null;
+        try {
+          const rr = await reconcileWalletOrder(svc, eventOrder.id, `refund-payment:${user.id}`);
+          reconciliation = { state: rr.state, note: rr.note };
+        } catch (e) {
+          console.error('[refund-payment] wallet reconciliation check failed', e instanceof Error ? e.message : 'error');
+        }
+        return json({
+          ok: true, rail: 'wallet', amount_pence: out.amount_pence,
+          reversed_transfer: out.merchant_reversed, already_reversed: out.already_reversed,
+          tickets: { action: out.tickets_action },
+          reconciliation,
+        });
+      }
     }
 
     if (!payment_intent_id || typeof payment_intent_id !== 'string') {
@@ -309,9 +448,10 @@ serve(async (req) => {
     if (boost && !isAdmin) {
       return json({ error: 'Forbidden — only OneShetland can refund a business boost.' }, 403);
     }
-    if (!isAdmin && !ownsThisHub) {
-      // Deliveries, tickets and every other rail stay platform-admin only:
-      // there is no hub whose owner could claim them.
+    if (!isAdmin && !ownsThisHub && !ownsThisEvent) {
+      // Deliveries and every other rail stay platform-admin only: there is no
+      // hub or event organiser whose owner could claim them. A ticket refund
+      // reaches here only through event_order_id, authorised above.
       return json({ error: 'Forbidden — you cannot refund this payment.' }, 403);
     }
 
@@ -366,8 +506,28 @@ serve(async (req) => {
     if (charge?.refunded) return json({ error: 'This payment is already fully refunded.' }, 400);
     const hasTransfer = !!(charge?.transfer) || !!(pi.transfer_data?.destination);
 
+    // ── A ticket order may refund ITS OWN payment, and nothing else ─────────
+    //
+    // The payment id above was read from the order row. A row is not proof: until migration 20261116000000 any signed-in
+    // user could write one with a paid status and a payment id of their choosing, and everything below — a card refund
+    // that reverses the organiser's transfer — would have run against whatever payment they named. What cannot be forged
+    // is what OUR checkout stamped on the PaymentIntent: so refund only when the payment's own type, order, event, buyer,
+    // amount and currency all agree with the order. A mismatch changes nothing and says so.
+    let ticketRefundAmount: number | null = null;
+    if (eventOrder) {
+      const bound = paymentBelongsToTicketOrder(eventOrder, pi);
+      if (!bound.ok) {
+        console.error(`[refund-payment] ticket order ${eventOrder.id} refused: ${bound.reason}`);
+        return json({ error: 'That payment does not belong to this ticket order, so nothing was refunded.' }, 409);
+      }
+      const refundable = refundableOnTicketPayment(pi.amount, charge?.amount_refunded);
+      if (refundable <= 0) return json({ error: 'This payment is already fully refunded.' }, 400);
+      // Part of it was already returned elsewhere (e.g. the Stripe Dashboard): refund exactly what is left, never more.
+      if (refundable < (pi.amount as number)) ticketRefundAmount = refundable;
+    }
+
     // Partial-amount validation.
-    let amount: number | null = null;
+    let amount: number | null = ticketRefundAmount;
     if (amount_pence != null) {
       amount = Math.round(Number(amount_pence));
       if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'amount_pence must be a positive integer' }, 400);
@@ -383,6 +543,7 @@ serve(async (req) => {
     if (allowedReasons.includes(reason)) form.set('reason', reason);
     else form.set('metadata[note]', String(reason).slice(0, 200));
     form.set('metadata[refunded_by]', user.id);
+    if (eventOrder) form.set('metadata[event_order_id]', eventOrder.id);
     if (hasTransfer) {
       form.set('reverse_transfer', 'true');       // claw the money back from the connected account
       form.set('refund_application_fee', 'true'); // and return our platform fee too
@@ -401,6 +562,21 @@ serve(async (req) => {
     });
     const refund = await refRes.json();
     if (!refRes.ok) return json({ error: refund.error?.message ?? `Refund failed (HTTP ${refRes.status})` }, 502);
+
+    // Do not trust that the flags above did what they were meant to: check the
+    // merchant's side of this refund against Stripe now. The same check runs
+    // again from charge.refunded, so this is for an immediate verdict, and a
+    // failure here never changes the refund that has already happened.
+    let reconciliation: { state: string; note: string } | null = null;
+    try {
+      const chargeId = typeof charge?.id === 'string' ? charge.id : null;
+      if (chargeId) {
+        const rr = await reconcileCharge(svc, chargeId, { actor: `refund-payment:${user.id}`, allowRepair: true });
+        reconciliation = { state: rr.state, note: rr.note };
+      }
+    } catch (e) {
+      console.error('[refund-payment] reconciliation check failed', e instanceof Error ? e.message : 'error');
+    }
 
     // Best-effort app-state update for Fetch deliveries (other flows are handled
     // by the charge.refunded webhook). Full vs partial.
@@ -434,11 +610,32 @@ serve(async (req) => {
         .eq('payment_intent_id', payment_intent_id);
     }
 
+    // A ticket order: apply the same idempotent state change the webhook applies
+    // (order -> refunded, valid tickets void), so the organiser's screen is right
+    // the moment this returns instead of whenever charge.refunded arrives.
+    let ticketOutcome: Record<string, unknown> | null = null;
+    if (eventOrder) {
+      const { data: t, error: tErr } = await svc.rpc('refund_event_tickets_for_payment',
+        { p_payment_intent_id: payment_intent_id, p_fully_refunded: true });
+      if (tErr) console.error('[refund-payment] ticket void failed (webhook will retry)', tErr.code);
+      else ticketOutcome = t as Record<string, unknown>;
+
+      // The card refund has been issued: tell the buyer, and say it takes days to show.
+      const { data: evCard } = await svc.from('events').select('title').eq('id', eventOrder.event_id).maybeSingle();
+      await notifyRefund(svc, {
+        userId: eventOrder.buyer_id, refundKey: `event_order:${eventOrder.id}`, amountPence: Number(refund.amount),
+        what: `Your tickets for ${(evCard as { title?: string } | null)?.title ?? 'the event'}`, destination: 'card',
+        data: { screen: 'my-event-tickets', order_id: eventOrder.id },
+      });
+    }
+
     return json({
       ok: true,
       refund_id: refund.id,
       amount_pence: refund.amount,
       reversed_transfer: hasTransfer,
+      reconciliation,
+      tickets: ticketOutcome,
     });
   } catch (err) {
     console.error('[refund-payment]', err);

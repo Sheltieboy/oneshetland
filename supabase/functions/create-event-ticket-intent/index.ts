@@ -2,10 +2,12 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
-import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
+import { debitAndTransfer, selfPaymentBlock } from '../_shared/wallet-ledger.ts';
+import { withWalletLiquidityGate } from '../_shared/wallet-liquidity-gate.ts';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
-import { onSessionConfirm, classifyIntent } from '../_shared/stripe-sca.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
+import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
+import { resolveSavedCard, boundCustomerFor } from '../_shared/saved-card-state.ts';
 import { stripeError, checkoutFailure } from '../_shared/stripe-errors.ts';
 
 const corsHeaders = {
@@ -51,10 +53,17 @@ async function sha256hex(s: string): Promise<string> {
  * Body: {
  *   event_id:    string,
  *   line_items:  Array<{ ticket_type_id: string, quantity: number, attendee_name?: string, attendee_email?: string }>,
- *   use_saved_card?: boolean
+ *   use_saved_card?: boolean      — the buyer EXPLICITLY chose their saved card
  * }
  *
  * Returns: { clientSecret, order_id, tickets } | { charged: true, order_id, tickets }
+ *   or, when use_saved_card was chosen but cannot be honoured:
+ *   409 { code: 'saved_card_unavailable', reason, error, order_id }
+ *   402 { code: 'saved_card_declined',    error, order_id }
+ *
+ * A saved card is used ONLY when asked for, and only if it can be resolved from
+ * Stripe (see _shared/saved-card-state.ts). Asking for it and not getting it is
+ * an explicit answer, never a silent switch to the card form.
  *
  * On success, creates a pending order + ticket rows (status='pending_payment').
  * Capacity, the pending order and the ticket rows are created together by
@@ -79,7 +88,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('create-event-ticket-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('create-event-ticket-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
@@ -182,13 +191,6 @@ serve(async (req) => {
       : 0;
     const chargeTotalPence = totalPence + platformFeePence;
 
-    // Load buyer profile (for Stripe customer + push token)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('stripe_customer_id, full_name')
-      .eq('id', user.id)
-      .single();
-
     // Resolve the organiser's Connect account for the destination charge.
     //
     // ONE rule, in the database (event_payout_destination), shared with the
@@ -215,6 +217,26 @@ serve(async (req) => {
         JSON.stringify({ error: 'This organiser isn\u2019t set up to take payments yet. Please check back soon.' }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A paid ticket sends the face value to the organiser's connected account — by Connect transfer when paid from the wallet, by
+    // destination charge when paid by card. If that account is one the buyer controls, the route is: pay (with a topped-up wallet
+    // or a card that is not theirs) for a ticket to your own event → the money lands in YOUR account → charge it back. Recovery
+    // can only take back what is still in the wallet, or claw a transfer back from an account that still holds the funds. The same
+    // question wallet-checkout, the till and the card membership already ask, and of the same thing: the DESTINATION ACCOUNT, not
+    // the event, because one connected account can sit behind more than one hub or business — and an owner's central account is
+    // where a business with no account of its own is paid.
+    //
+    // Before the basket is reserved: a refusal holds no seats, creates no order, creates no PaymentIntent and costs nothing, and
+    // the same checkout reference stays usable. A free order (no payout) and a demo organiser (no account) are not asked.
+    if (totalPence > 0) {
+      const selfPay = await selfPaymentBlock(supabase, user.id, stripeAccountId, pay_with_wallet ? 'wallet' : 'card');
+      if (selfPay) {
+        return new Response(JSON.stringify(selfPay.body), {
+          status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // ── Reserve the basket, create the order and the tickets, atomically ─────
@@ -298,6 +320,17 @@ serve(async (req) => {
       if (existingPi && !existingPi.startsWith('wallet_')) {
         const piRes = await fetch(`https://api.stripe.com/v1/payment_intents/${existingPi}`, { headers: stripeHeaders() });
         const piJson = await piRes.json();
+        // The buyer chose their saved card again, but that card was already
+        // tried on this order and said no. Handing back the same intent's
+        // client secret would put a card form in front of somebody who did not
+        // ask for one, so say so instead and let them choose another way.
+        if (use_saved_card && piRes.ok && piJson?.status === 'requires_payment_method' && piJson?.last_payment_error) {
+          return new Response(JSON.stringify({
+            error: failureMessage('requires_payment_method'),
+            code: 'saved_card_declined',
+            order_id: order.id,
+          }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
         if (piRes.ok && piJson?.client_secret) {
           return new Response(JSON.stringify({
             clientSecret: piJson.client_secret, order_id: order.id,
@@ -357,7 +390,7 @@ serve(async (req) => {
       // A throw there left the wallet down, the order paid, and no accounting
       // entry — which is exactly the £8.95 ticket order sitting unledgered in
       // production today.
-      const paid = await debitAndTransfer(supabase, {
+      const settleWallet = () => debitAndTransfer(supabase, {
         userId:         user.id,
         spendPence:     chargeTotalPence,
         description:    `Tickets — ${event.title}`,
@@ -369,6 +402,26 @@ serve(async (req) => {
           metadata: { type: 'event_tickets_wallet', order_id: order.id, buyer_id: user.id },
         } : undefined,
       });
+
+      // ── Liquidity gate — BEFORE the customer is debited ──────────────────────
+      //
+      // This path debits the Wallet and (for any organiser with a connected
+      // account) sends the face value to them as a real Connect transfer. That
+      // transfer is paid out of the SAME pooled Stripe balance as every other
+      // Wallet merchant payment, so it must pass the SAME check. It did not: on
+      // 2 Oct 2026 a £1.96 Wallet ticket sent a real £1.00 transfer while Local
+      // Wallet liquidity read Critical. The amount asked for is what actually
+      // leaves Stripe — the face value — not the customer's total (the booking
+      // fee never leaves). A refusal happens before settleWallet() runs, so the
+      // buyer is not debited; the seats held for this checkout are given back.
+      const gate = await withWalletLiquidityGate(supabase, stripeAccountId ? totalPence : 0, settleWallet);
+      if (!gate.ok) {
+        await releaseHeldSeats();
+        return new Response(JSON.stringify({ error: gate.error, reason: gate.reason }), {
+          status: gate.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const paid = gate.value;
 
       if (!paid.ok) {
         await releaseHeldSeats();
@@ -406,62 +459,92 @@ serve(async (req) => {
       if (platformFeePence > 0) baseParams['application_fee_amount'] = String(platformFeePence);
     }
 
-    // Saved card off-session mode
-    if (use_saved_card && profile?.stripe_customer_id) {
-      const pmRes = await fetch(
-        `https://api.stripe.com/v1/customers/${profile.stripe_customer_id}/payment_methods?type=card&limit=1`,
-        { headers: { 'Authorization': `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}`, 'Stripe-Version': STRIPE_API_VERSION } },
-      );
-      const pmData = await pmRes.json();
-      const pmId = pmData.data?.[0]?.id;
+    // ── Saved card — only when the buyer chose it ────────────────────────────
+    // profiles.has_payment_method is NOT consulted: it is a hint, and 4 of the
+    // 6 profiles carrying it had no Stripe Customer at all. The card is resolved
+    // from Stripe by the canonical helper (bound Customer → attached cards →
+    // default, else newest) and, if it is not there, the buyer is TOLD.
+    if (use_saved_card) {
+      const saved = await resolveSavedCard({
+        supabase, stripeKey: Deno.env.get('STRIPE_SECRET_KEY') ?? '', userId: user.id,
+      });
 
-      if (pmId) {
-        const pi = await createPaymentIntent({
-          ...baseParams,
-          ...onSessionConfirm(profile.stripe_customer_id, pmId),
-        }, `evt-order-${order.id}`);
-
-        const outcome = classifyIntent(pi);
-
-        // A payment that is mid-flight must NOT fall through to the PaymentSheet
-        // branch below, because that branch creates a SECOND PaymentIntent. The
-        // first one is already confirmed and may be holding the customer's money,
-        // so falling through could authorise the same basket twice. Only a
-        // genuinely dead intent (declined, cancelled) may fall through and let
-        // the buyer try another card.
-        if (outcome.kind === 'requires_action' || outcome.kind === 'processing') {
-          // The webhook fulfils from metadata[order_id] once this same intent
-          // succeeds, so record it against the order first.
-          await supabase.from('event_ticket_orders')
-            .update({ stripe_payment_intent_id: pi.id }).eq('id', order.id);
-          return new Response(JSON.stringify({
-            status:            outcome.kind,
-            clientSecret:      outcome.kind === 'requires_action' ? outcome.clientSecret : undefined,
-            payment_intent_id: outcome.id,
-            order_id:          order.id,
-            tokens:            tokensByIndex,
-            ticket_ids:        ticketIdsByIndex,
-          }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        if (outcome.kind === 'succeeded') {
-          await supabase.from('event_ticket_orders').update({ stripe_payment_intent_id: pi.id, status: 'paid', paid_at: new Date().toISOString() }).eq('id', order.id);
-          await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
-          await sendTicketReceipt(supabase, order.id, user.id);
-          // Use the atomic counter RPC — `event.tickets_sold` was never selected,
-          // so `event.tickets_sold + totalTickets` was NaN and the raw update
-          // failed AFTER the card was charged (500 → client retry → double charge).
-          try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
-
-          return new Response(JSON.stringify({
-            charged:    true,
-            order_id:   order.id,
-            tokens:     tokensByIndex,
-            ticket_ids: ticketIdsByIndex,
-          }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
+      if (saved.kind !== 'card') {
+        // Race-safe: the card the buyer was shown may have gone between rendering
+        // and now. The order stays pending under the same checkout reference, so
+        // choosing another way to pay resumes THIS order rather than reserving twice.
+        const unreadable = saved.kind === 'unknown';
+        return new Response(JSON.stringify({
+          error: unreadable
+            ? 'We couldn\u2019t check your saved card just now. Please try again, or use a different card.'
+            : 'Your saved card is no longer available. Please choose another way to pay.',
+          code:     'saved_card_unavailable',
+          reason:   unreadable ? 'unreadable' : saved.reason,
+          order_id: order.id,
+        }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+
+      const pi = await createPaymentIntent({
+        ...baseParams,
+        ...onSessionConfirm(saved.customerId, saved.paymentMethodId),
+      }, `evt-order-${order.id}`);
+
+      const outcome = classifyIntent(pi);
+
+      // A payment that is mid-flight must NOT be followed by a second
+      // PaymentIntent: the first is already confirmed and may be holding the
+      // customer's money.
+      if (outcome.kind === 'requires_action' || outcome.kind === 'processing') {
+        // The webhook fulfils from metadata[order_id] once this same intent
+        // succeeds, so record it against the order first.
+        await supabase.from('event_ticket_orders')
+          .update({ stripe_payment_intent_id: pi.id }).eq('id', order.id);
+        return new Response(JSON.stringify({
+          status:            outcome.kind,
+          clientSecret:      outcome.kind === 'requires_action' ? outcome.clientSecret : undefined,
+          payment_intent_id: outcome.id,
+          order_id:          order.id,
+          tokens:            tokensByIndex,
+          ticket_ids:        ticketIdsByIndex,
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (outcome.kind === 'succeeded') {
+        await supabase.from('event_ticket_orders').update({ stripe_payment_intent_id: pi.id, status: 'paid', paid_at: new Date().toISOString() }).eq('id', order.id);
+        await supabase.from('event_tickets').update({ status: 'valid' }).eq('order_id', order.id);
+        await sendTicketReceipt(supabase, order.id, user.id);
+        // Use the atomic counter RPC — `event.tickets_sold` was never selected,
+        // so `event.tickets_sold + totalTickets` was NaN and the raw update
+        // failed AFTER the card was charged (500 → client retry → double charge).
+        try { await supabase.rpc('increment_event_tickets_sold', { p_event_id: event_id, p_count: totalTickets }); } catch { /* best-effort counter */ }
+
+        return new Response(JSON.stringify({
+          charged:    true,
+          order_id:   order.id,
+          tokens:     tokensByIndex,
+          ticket_ids: ticketIdsByIndex,
+        }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // The saved card said no. This used to fall through and mint a SECOND
+      // PaymentIntent behind the buyer's back, for a card form they never
+      // chose. Now it is an answer. The declined intent is recorded on the
+      // order so choosing another card reuses it instead of adding another.
+      await supabase.from('event_ticket_orders').update({ stripe_payment_intent_id: pi.id }).eq('id', order.id);
+      return new Response(JSON.stringify({
+        error:    failureMessage(outcome.status),
+        code:     'saved_card_declined',
+        order_id: order.id,
+      }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    // ── New card — the normal Payment Element ────────────────────────────────
+    // Attach the buyer's canonical Customer when they have one, so the payment
+    // belongs to them in Stripe. Still a platform-account destination charge:
+    // no Stripe-Account header, transfer_data and the application fee as above.
+    // Nothing is created here — a buyer with no Customer simply has none.
+    const boundCustomer = await boundCustomerFor(supabase, user.id);
+    if (boundCustomer) baseParams['customer'] = boundCustomer;
 
     // Standard PaymentSheet
     const pi = await createPaymentIntent({

@@ -3,6 +3,7 @@ import { createServiceClient, sendPush } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { requireCaller } from '../_shared/require-caller.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { authoriseBusinessClaimNotify } from '../_shared/business-claim-notify-auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -43,6 +44,10 @@ serve(async (req) => {
     if (!claim_id) return json({ error: 'claim_id required' }, 400);
 
     const svc = createServiceClient();
+
+    // Only the person who lodged this claim may ask admins to be told about it.
+    const decision = await authoriseBusinessClaimNotify(svc, caller, { claimId: claim_id });
+    if (!decision.ok) return json({ error: decision.error }, decision.status);
 
     const { data: claim } = await svc
       .from('business_claims')

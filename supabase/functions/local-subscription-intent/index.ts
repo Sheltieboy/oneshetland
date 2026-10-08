@@ -5,6 +5,7 @@ import { getConfig } from '../_shared/admin-config.ts';
 import { subscriptionPricesFor, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { classifySavedCardConfirm } from '../_shared/saved-card-outcome.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -65,6 +66,10 @@ serve(async (req) => {
     if (client_request_id.length < 8 || client_request_id.length > 100) {
       return json({ error: 'client_request_id must be 8-100 characters' }, 400);
     }
+
+    // Abuse ceiling + failed-payment gate, BEFORE anything is created at Stripe or recorded here.
+    const limited = await enforcePaymentStart('local-subscription-intent', user.id, corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const { data: business } = await svc
       .from('local_businesses')

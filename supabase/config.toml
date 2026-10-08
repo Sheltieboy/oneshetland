@@ -67,6 +67,16 @@ verify_jwt = false
 [functions.sync-council-jobs]
 verify_jwt = false
 
+# Card-state reconciler. Scheduled by pg_cron through pg_net with x-cron-secret
+# (requireCronSecret is the whole boundary, like the four above).
+[functions.reconcile-saved-cards]
+verify_jwt = false
+
+# Local Wallet liquidity monitor. Scheduled by pg_cron through pg_net with
+# x-cron-secret, same boundary as reconcile-saved-cards above.
+[functions.wallet-liquidity-monitor]
+verify_jwt = false
+
 
 # ── Webhook ──────────────────────────────────────────────────────────────────
 #
@@ -164,10 +174,55 @@ verify_jwt = true
 [functions.create-product-order-intent]
 verify_jwt = true
 
+# Takes money for a Book pass/class-pack/day-pass purchase on behalf of the
+# signed-in buyer. Pinned true after the exact same mistake the note above
+# confirm-hub-membership describes happened again here: a payout-resolver fix
+# deploy on 2026-09-17 (correcting business_payout_destination() usage — see
+# supabase/functions/create-unit-purchase-intent/index.ts) was run once with
+# --no-verify-jwt by accident, and a follow-up redeploy without the flag did
+# not put it back, for the same reason recorded above. Written down here so
+# it cannot happen a third time.
+[functions.create-unit-purchase-intent]
+verify_jwt = true
+
 [functions.confirm-event-tickets]
 verify_jwt = true
 
 # Admin-only: issues Stripe refunds and reverses Connect transfers. Behind the
 # gateway as well as its own profiles admin check.
 [functions.refund-payment]
+verify_jwt = true
+
+# Admin-only: reads live Wallet liquidity (Stripe balance totals, Wallet
+# liability, coverage). Behind the gateway as well as its own profiles admin
+# check. Read-only — moves nothing.
+[functions.wallet-liquidity-snapshot]
+verify_jwt = true
+
+# Admin-only: creates a real Stripe Topup to fund the platform's Wallet
+# liquidity reserve. Behind the gateway as well as its own profiles admin
+# check and wallet.liquidity.funding_enabled. Platform working capital
+# only — never touches a customer's Wallet balance.
+[functions.wallet-liquidity-fund]
+verify_jwt = true
+
+# Admin-only: the Stripe push-funding bank details (beneficiary / account
+# number / sort code). Behind the gateway as well as its own profiles admin
+# check; edits are audited. Never exposed to business users.
+[functions.wallet-funding-details]
+verify_jwt = true
+
+# Admin-only: records that the operator is sending a push bank transfer to
+# fund the Wallet reserve. Moves no money and makes no Stripe write.
+[functions.wallet-liquidity-funding-session]
+verify_jwt = true
+
+# Scheduled by pg_cron through pg_net with x-cron-secret (requireCronSecret is
+# the whole boundary, like the other schedulers). FLAG ONLY — never moves money.
+[functions.refund-reconcile-sweep]
+verify_jwt = false
+
+# Admin-only: lists refund reconciliation state, re-scans Stripe, and — on an
+# explicit confirmed request — completes a missing merchant transfer reversal.
+[functions.refund-reconcile]
 verify_jwt = true

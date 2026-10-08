@@ -1,0 +1,1555 @@
+{
+  "schema": 1,
+  "project_ref": "nkrtmakxygkvxuxriiil",
+  "captured_on": "2026-10-08",
+  "captured_by": "read-only `supabase functions list` + `supabase functions download <name> --use-api` for every function",
+  "summary": {
+    "functions": 100,
+    "canonical_current": 42,
+    "intentional_shared_drift": 58,
+    "verify_jwt_true": 88,
+    "verify_jwt_false": 12
+  },
+  "functions": {
+    "ai-cover-letter": {
+      "version": 34,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "4c8a5e172832c8bc663a01f1fcdde2bb449445e3d57dc2a89a3fbe4dfac73a6c",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "ai-cover-letter/index.ts": "4c8a5e172832c8bc663a01f1fcdde2bb449445e3d57dc2a89a3fbe4dfac73a6c"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "apple-wallet-pass": {
+      "version": 31,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "a789ae8c7e86b5f67c46bf68a70e8e43da7dd5b35d65aefdd4321f71705dc449",
+      "files": {
+        "apple-wallet-pass/index.ts": "a789ae8c7e86b5f67c46bf68a70e8e43da7dd5b35d65aefdd4321f71705dc449"
+      },
+      "shared_drift": []
+    },
+    "authorise-payment": {
+      "version": 72,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "4c2518c91f985736daa56861ffb4c70c07c6bcad5cba517ceae7d79eb3e6776d",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "efa2679efe26f7ea609667b3cd251afaf9e64d99b6ea5d86b303c27b39fd2eaa",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/fetch-authorisation.ts": "e00d4d8fe3f8cadb1d50f66da34a2470798b482149630d814dd2db56c2b4a84f",
+        "_shared/fetch-hold.ts": "a18e3911cf1431f93e80ee1abf38e322aa5cb081fd5d474939a459e33ddba394",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "d19d177276d7f35a049f49e016139cb27f9684353053ce39084002a4ae36fd6a",
+        "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/stripe-customer.ts": "073c4288e24db1818a13a4868cbe17ae0cc189a422ad9c20fb13cdd5bb9a2bd0",
+        "authorise-payment/index.ts": "4c2518c91f985736daa56861ffb4c70c07c6bcad5cba517ceae7d79eb3e6776d"
+      },
+      "shared_drift": [
+        "_shared/commission-config.ts",
+        "_shared/saved-card.ts"
+      ]
+    },
+    "become-driver": {
+      "version": 33,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "15ca7e6ce841614682aa64550fdf98e1cbed1308acde3110d8bf2c764a22937c",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "become-driver/index.ts": "15ca7e6ce841614682aa64550fdf98e1cbed1308acde3110d8bf2c764a22937c"
+      },
+      "shared_drift": []
+    },
+    "calculate-fee": {
+      "version": 45,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "933aeb51039b52dc60f90d564c2be99f89b11475d6509e83cc618ec3e747a4aa",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/uk-postcode.ts": "2ce99cb9e56c09d4ad6ebaa1d6364ed498acbbe87f33b77fdbd1acfe5f3be4a5",
+        "calculate-fee/index.ts": "933aeb51039b52dc60f90d564c2be99f89b11475d6509e83cc618ec3e747a4aa"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "cancel-payment": {
+      "version": 32,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "6fab2ce7ad07b07b575730a9ec97fd1c73a5c8fc4d0bda17778d056427942b61",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "cancel-payment/index.ts": "6fab2ce7ad07b07b575730a9ec97fd1c73a5c8fc4d0bda17778d056427942b61"
+      },
+      "shared_drift": []
+    },
+    "capture-payment": {
+      "version": 63,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "b739696e478a354bba8a20b978a22b600c3aff0f887ea3d05c991c73ec15059b",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "efa2679efe26f7ea609667b3cd251afaf9e64d99b6ea5d86b303c27b39fd2eaa",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/fetch-authorisation.ts": "e00d4d8fe3f8cadb1d50f66da34a2470798b482149630d814dd2db56c2b4a84f",
+        "_shared/fetch-hold.ts": "a18e3911cf1431f93e80ee1abf38e322aa5cb081fd5d474939a459e33ddba394",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "capture-payment/index.ts": "b739696e478a354bba8a20b978a22b600c3aff0f887ea3d05c991c73ec15059b"
+      },
+      "shared_drift": [
+        "_shared/commission-config.ts"
+      ]
+    },
+    "confirm-boost": {
+      "version": 44,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "e5b601643cb17ead48a959f166f6b7dc2e759432e6150df26d52b23081ad2e75",
+      "files": {
+        "_shared/fulfilment.ts": "b59118c0071516cbdbcc7df35fe0fb4fa67b395cb96740b2f9b122f027c00ce8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
+        "confirm-boost/index.ts": "e5b601643cb17ead48a959f166f6b7dc2e759432e6150df26d52b23081ad2e75"
+      },
+      "shared_drift": [
+        "_shared/fulfilment.ts",
+        "_shared/ticket-payment-binding.ts"
+      ]
+    },
+    "confirm-card-setup": {
+      "version": 34,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "79ba46c62572aca9774f48097205010d76271c98ea76682e30bd52996bcfa947",
+      "files": {
+        "_shared/personal-subscriptions.ts": "97a96391db6bf4ebaa639bb0b44fe2b3f50f21bab2c9a062e415e410c476bc5f",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "d19d177276d7f35a049f49e016139cb27f9684353053ce39084002a4ae36fd6a",
+        "confirm-card-setup/index.ts": "79ba46c62572aca9774f48097205010d76271c98ea76682e30bd52996bcfa947"
+      },
+      "shared_drift": [
+        "_shared/saved-card.ts"
+      ]
+    },
+    "confirm-event-tickets": {
+      "version": 47,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "b34919ff4276e3637a1b967ebc0ce23742570f99a8bdf5a69c9d54e123246ce6",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/ticket-payment-binding.ts": "0999c1556980a0701b19961acd71e0c076df5ef7da861b0a6039044e4f40c0cc",
+        "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
+        "confirm-event-tickets/index.ts": "b34919ff4276e3637a1b967ebc0ce23742570f99a8bdf5a69c9d54e123246ce6"
+      },
+      "shared_drift": []
+    },
+    "confirm-gift": {
+      "version": 41,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "e42be8f5333f103f2a937e7a9dd5b587b551ff11abfe5160fabe81057b021011",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "confirm-gift/index.ts": "e42be8f5333f103f2a937e7a9dd5b587b551ff11abfe5160fabe81057b021011"
+      },
+      "shared_drift": []
+    },
+    "confirm-hub-donation": {
+      "version": 37,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "f226f1232e03049c1e14756cd57743eea208de4f1c3f3d8a9fbbf23bb8215e07",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "confirm-hub-donation/index.ts": "f226f1232e03049c1e14756cd57743eea208de4f1c3f3d8a9fbbf23bb8215e07"
+      },
+      "shared_drift": []
+    },
+    "confirm-hub-membership": {
+      "version": 36,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "b27b8856169ec05b825301f85a4561c19ce3879ca38fcdbca894814b340ab0ca",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "confirm-hub-membership/index.ts": "b27b8856169ec05b825301f85a4561c19ce3879ca38fcdbca894814b340ab0ca"
+      },
+      "shared_drift": []
+    },
+    "confirm-unit-purchase": {
+      "version": 38,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "4a0a20c178dbe3e24f0842d7f345adecdfcc38087294caf8d12147f25d739cff",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "confirm-unit-purchase/index.ts": "4a0a20c178dbe3e24f0842d7f345adecdfcc38087294caf8d12147f25d739cff"
+      },
+      "shared_drift": []
+    },
+    "connect-redirect": {
+      "version": 47,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "4ff20e76450393a0d6bc65c349277e35dfdb946cf2090bed482000ae4ef9124a",
+      "files": {
+        "connect-redirect/index.ts": "4ff20e76450393a0d6bc65c349277e35dfdb946cf2090bed482000ae4ef9124a"
+      },
+      "shared_drift": []
+    },
+    "create-boost-intent": {
+      "version": 47,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "0f181c554a38a6396fed675d99833b65e4f349a7ffe6d4b305f70558d6c81bdc",
+      "files": {
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "create-boost-intent/index.ts": "0f181c554a38a6396fed675d99833b65e4f349a7ffe6d4b305f70558d6c81bdc"
+      },
+      "shared_drift": []
+    },
+    "create-connect-account": {
+      "version": 56,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "82103237c2885a1503bcabf70b87b601dcded942b20ed1816c99d87604a13ecf",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "create-connect-account/index.ts": "82103237c2885a1503bcabf70b87b601dcded942b20ed1816c99d87604a13ecf"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "create-event-ticket-intent": {
+      "version": 71,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "58d71ced66c87ad9a0b6a508d5dedd741f6aad4634ef272e7fd45dc3d490eb4c",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card-state.ts": "ffb8584be2ae7ca38389c6184bee3b38fa8c3a1b4c5bdca695cf2ce23640786c",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "_shared/stripe-errors.ts": "7d585af8ea54c616289eaac34df35e6717dcb6407a724c152da1f6f342e92972",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "_shared/ticket-quantities.ts": "708510096c01b53af7de5cf0dad1053205774def64674d4cf21205ba31bf16db",
+        "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
+        "_shared/wallet-ledger.ts": "00352fd2378317da9d76a9dadc201bb9b9e263781c42294688e80c13b1cc56b6",
+        "_shared/wallet-liquidity-gate-core.ts": "1bb0ccb92f4beff1aacde31cdc6076ce1501c005564a7aa0ce0a8bdc41165795",
+        "_shared/wallet-liquidity-gate.ts": "ebb418671da3e21fa065de2ac487872b655b0edd7db96f29b97cc26a0bd09c18",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "create-event-ticket-intent/index.ts": "58d71ced66c87ad9a0b6a508d5dedd741f6aad4634ef272e7fd45dc3d490eb4c"
+      },
+      "shared_drift": []
+    },
+    "create-gift-intent": {
+      "version": 57,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "9a058e813d8ff8b65edc34ae8ec7bd192ee0bfd3227147e009b47c673186316a",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "83252bae9798d909d59fc13f438a96ba1d5b2ea83da9e0d2a465c39d82bdc724",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/purchase-attempt.ts": "e399768403f19a74e33684385a999a7f422e479cdd5a3a4f7ce2018a0cf50906",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "_shared/wallet-ledger.ts": "05752f56182445491209cd3e13408f07cdaf62fea798f9b28cbeacafa25d674b",
+        "_shared/wallet-liquidity-gate-core.ts": "1bb0ccb92f4beff1aacde31cdc6076ce1501c005564a7aa0ce0a8bdc41165795",
+        "_shared/wallet-liquidity-gate.ts": "ebb418671da3e21fa065de2ac487872b655b0edd7db96f29b97cc26a0bd09c18",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "create-gift-intent/index.ts": "9a058e813d8ff8b65edc34ae8ec7bd192ee0bfd3227147e009b47c673186316a"
+      },
+      "shared_drift": [
+        "_shared/wallet-ledger.ts"
+      ]
+    },
+    "create-hub-donation-intent": {
+      "version": 47,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "3af1ec4d48588b99e76fb45243f60278a988708714843d688c871ed27edb2ea5",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "efa2679efe26f7ea609667b3cd251afaf9e64d99b6ea5d86b303c27b39fd2eaa",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "_shared/uk-postcode.ts": "2ce99cb9e56c09d4ad6ebaa1d6364ed498acbbe87f33b77fdbd1acfe5f3be4a5",
+        "create-hub-donation-intent/index.ts": "3af1ec4d48588b99e76fb45243f60278a988708714843d688c871ed27edb2ea5"
+      },
+      "shared_drift": [
+        "_shared/commission-config.ts"
+      ]
+    },
+    "create-hub-membership-intent": {
+      "version": 44,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "e290ccd1078a286af6f6113bd0cd40c3781173d05d05e26024250bc1a9f8ef63",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "efa2679efe26f7ea609667b3cd251afaf9e64d99b6ea5d86b303c27b39fd2eaa",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/self-payment.ts": "cdd06c1f0930d92de6ef694f840a7d51d78d328384884e9a88d2d6b253ada772",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "create-hub-membership-intent/index.ts": "e290ccd1078a286af6f6113bd0cd40c3781173d05d05e26024250bc1a9f8ef63"
+      },
+      "shared_drift": [
+        "_shared/commission-config.ts",
+        "_shared/self-payment.ts"
+      ]
+    },
+    "create-product-order-intent": {
+      "version": 39,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "03597e50c078a8718da70ab8400f93728c10eeee76984f9cdab5a72afe639bab",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "efa2679efe26f7ea609667b3cd251afaf9e64d99b6ea5d86b303c27b39fd2eaa",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/fulfilment.ts": "b59118c0071516cbdbcc7df35fe0fb4fa67b395cb96740b2f9b122f027c00ce8",
+        "_shared/purchase-attempt.ts": "e399768403f19a74e33684385a999a7f422e479cdd5a3a4f7ce2018a0cf50906",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
+        "_shared/wallet-ledger.ts": "05752f56182445491209cd3e13408f07cdaf62fea798f9b28cbeacafa25d674b",
+        "_shared/wallet-pay.ts": "0e6c9c5fe14925d5afc701c6d5f56880a97e62210c1a53ab3836dba74d7bbd1c",
+        "create-product-order-intent/index.ts": "03597e50c078a8718da70ab8400f93728c10eeee76984f9cdab5a72afe639bab"
+      },
+      "shared_drift": [
+        "_shared/commission-config.ts",
+        "_shared/fulfilment.ts",
+        "_shared/ticket-payment-binding.ts",
+        "_shared/wallet-ledger.ts",
+        "_shared/wallet-liquidity.ts",
+        "_shared/wallet-pay.ts"
+      ]
+    },
+    "create-setup-intent": {
+      "version": 62,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "78f4438c06619a0a023f2f08b22239e0a847396ee1a0773388c288b0f7df9a79",
+      "files": {
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/stripe-customer.ts": "073c4288e24db1818a13a4868cbe17ae0cc189a422ad9c20fb13cdd5bb9a2bd0",
+        "create-setup-intent/index.ts": "78f4438c06619a0a023f2f08b22239e0a847396ee1a0773388c288b0f7df9a79"
+      },
+      "shared_drift": []
+    },
+    "create-unit-purchase-intent": {
+      "version": 51,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "97b107cd822a7c6781a4e5a036495ca7b25228415b4bc6567a7ab6618812f9d1",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "efa2679efe26f7ea609667b3cd251afaf9e64d99b6ea5d86b303c27b39fd2eaa",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "create-unit-purchase-intent/index.ts": "97b107cd822a7c6781a4e5a036495ca7b25228415b4bc6567a7ab6618812f9d1"
+      },
+      "shared_drift": [
+        "_shared/commission-config.ts"
+      ]
+    },
+    "delete-account": {
+      "version": 31,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "a631a1da57faef17542bd44e49bf5f3d0e3449e31cf01e8c81729473c87cc5a8",
+      "files": {
+        "delete-account/index.ts": "a631a1da57faef17542bd44e49bf5f3d0e3449e31cf01e8c81729473c87cc5a8"
+      },
+      "shared_drift": []
+    },
+    "fetch-authorise": {
+      "version": 16,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "78120fdef222bb1df6f06993969c8c35b50ba2cf4ab1200ed751681792213b82",
+      "files": {
+        "_shared/fetch-authorisation.ts": "e00d4d8fe3f8cadb1d50f66da34a2470798b482149630d814dd2db56c2b4a84f",
+        "_shared/fetch-hold.ts": "a18e3911cf1431f93e80ee1abf38e322aa5cb081fd5d474939a459e33ddba394",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "d19d177276d7f35a049f49e016139cb27f9684353053ce39084002a4ae36fd6a",
+        "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
+        "_shared/stripe-customer.ts": "073c4288e24db1818a13a4868cbe17ae0cc189a422ad9c20fb13cdd5bb9a2bd0",
+        "fetch-authorise/index.ts": "78120fdef222bb1df6f06993969c8c35b50ba2cf4ab1200ed751681792213b82"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts",
+        "_shared/saved-card.ts"
+      ]
+    },
+    "fetch-hold-check": {
+      "version": 10,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "13510838d5f44dcd102c6369dd31ec6c7be44c0a3f6daa9a02f8bb04d8dd3ae7",
+      "files": {
+        "_shared/fetch-authorisation.ts": "e00d4d8fe3f8cadb1d50f66da34a2470798b482149630d814dd2db56c2b4a84f",
+        "_shared/fetch-hold.ts": "a18e3911cf1431f93e80ee1abf38e322aa5cb081fd5d474939a459e33ddba394",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "fetch-hold-check/index.ts": "13510838d5f44dcd102c6369dd31ec6c7be44c0a3f6daa9a02f8bb04d8dd3ae7"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "fetch-quote": {
+      "version": 13,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "75ac4d88a0e4ac1fd412845ad70f349555a543f4f509728a39776ce69b395733",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "efa2679efe26f7ea609667b3cd251afaf9e64d99b6ea5d86b303c27b39fd2eaa",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "fetch-quote/index.ts": "75ac4d88a0e4ac1fd412845ad70f349555a543f4f509728a39776ce69b395733"
+      },
+      "shared_drift": [
+        "_shared/commission-config.ts",
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "google-wallet-pass": {
+      "version": 28,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "272edb9429683aaefc3ef94cad9dbcbf5093b6d4211d2ecbedd420f695ef17b0",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "google-wallet-pass/index.ts": "272edb9429683aaefc3ef94cad9dbcbf5093b6d4211d2ecbedd420f695ef17b0"
+      },
+      "shared_drift": []
+    },
+    "hub-broadcast": {
+      "version": 36,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "eddc9ddee0b781d3ab13bbf61b08a7d082d4777440aa2b878b3e0bd6dfe9b7b4",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "hub-broadcast/index.ts": "eddc9ddee0b781d3ab13bbf61b08a7d082d4777440aa2b878b3e0bd6dfe9b7b4"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "hub-onboard": {
+      "version": 36,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "7b5316001e12984178a26eaa1475ff9ad4e05adfcf759780d0322e746507f3ad",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "hub-onboard/index.ts": "7b5316001e12984178a26eaa1475ff9ad4e05adfcf759780d0322e746507f3ad"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "local-billing-portal": {
+      "version": 40,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "cb7f8898a9a3f0c8095601b0957e23edaf8b11f32651b5210243e08489e8ad90",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-billing-portal/index.ts": "cb7f8898a9a3f0c8095601b0957e23edaf8b11f32651b5210243e08489e8ad90"
+      },
+      "shared_drift": []
+    },
+    "local-boost-checkout": {
+      "version": 46,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "7d2ad15c586a9497f29b2cc4587d84a56f01a1d502bfceea3faf96e9b2378558",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "local-boost-checkout/index.ts": "7d2ad15c586a9497f29b2cc4587d84a56f01a1d502bfceea3faf96e9b2378558"
+      },
+      "shared_drift": []
+    },
+    "local-business-onboard": {
+      "version": 42,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "29a3767faeb17c1bc1bd419675616844e3bc91e885f418e08894976ee4b2ff50",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-business-onboard/index.ts": "29a3767faeb17c1bc1bd419675616844e3bc91e885f418e08894976ee4b2ff50"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "local-nfc-stamp": {
+      "version": 47,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "ef1c4e4579961b1775431b18a2a002251d81a5170acce7de7e19b2528010a46b",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "local-nfc-stamp/index.ts": "ef1c4e4579961b1775431b18a2a002251d81a5170acce7de7e19b2528010a46b"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "local-redeem-offer": {
+      "version": 39,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "152f0ab1f72eb35c59c1426552539b0f2284b2fd75303933ffacb77512365621",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-redeem-offer/index.ts": "152f0ab1f72eb35c59c1426552539b0f2284b2fd75303933ffacb77512365621"
+      },
+      "shared_drift": []
+    },
+    "local-redeem-reward": {
+      "version": 40,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "390c11496f2bcd4178d53ab8530f24fd4733016b1bdc20e8d724f8a48f312e50",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-redeem-reward/index.ts": "390c11496f2bcd4178d53ab8530f24fd4733016b1bdc20e8d724f8a48f312e50"
+      },
+      "shared_drift": []
+    },
+    "local-redeem-start": {
+      "version": 38,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "05828052722450015e964bcf17a4d435a66e9780f1f29747e2716956a8a4da77",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-redeem-start/index.ts": "05828052722450015e964bcf17a4d435a66e9780f1f29747e2716956a8a4da77"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "local-redeem-verify": {
+      "version": 40,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "377c2a22a58d95cb0797b82db62b7598e02da7442bf62326cc8dd826bda92b76",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-redeem-verify/index.ts": "377c2a22a58d95cb0797b82db62b7598e02da7442bf62326cc8dd826bda92b76"
+      },
+      "shared_drift": []
+    },
+    "local-stamp-collect": {
+      "version": 47,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "b691a2e9a77e27f030c73d5e3ff423eef8f66ab50015845405cae78b8e486a20",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "local-stamp-collect/index.ts": "b691a2e9a77e27f030c73d5e3ff423eef8f66ab50015845405cae78b8e486a20"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "local-subscription-cancel": {
+      "version": 12,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "79790c20f618ca00d4f625a63ced8db137d92f953388486033aa819db77eccf1",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-subscription-cancel/index.ts": "79790c20f618ca00d4f625a63ced8db137d92f953388486033aa819db77eccf1"
+      },
+      "shared_drift": []
+    },
+    "local-subscription-change": {
+      "version": 44,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "d9cde2f33cc719d46cedfc266ea7be5538059d117160fdec9a00a14fbd8848fb",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/invoice-lines.ts": "0083c009be4b346356d33fa060529141f0e91b3acb25d4a612498ec14b1ddcbb",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/tier-price.ts": "a1568e2646e1f25b106312f8766414e39676fd276132c1048a8216666c75cc90",
+        "local-subscription-change/index.ts": "d9cde2f33cc719d46cedfc266ea7be5538059d117160fdec9a00a14fbd8848fb"
+      },
+      "shared_drift": []
+    },
+    "local-subscription-checkout": {
+      "version": 50,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "f84febb7d249b7396ca2804de8f6da32129adc43dae4eaa5a0a51b16b79a9bef",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/tier-price.ts": "a1568e2646e1f25b106312f8766414e39676fd276132c1048a8216666c75cc90",
+        "local-subscription-checkout/index.ts": "f84febb7d249b7396ca2804de8f6da32129adc43dae4eaa5a0a51b16b79a9bef"
+      },
+      "shared_drift": []
+    },
+    "local-subscription-intent": {
+      "version": 51,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "98a861b7a37bdff0eee143284f61ac99fc10f0051210601e27670700de134925",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card-outcome.ts": "934001979de1b63c300390248bcbd4ffa297376ac451125e1c7a84f45386a798",
+        "_shared/tier-price.ts": "a1568e2646e1f25b106312f8766414e39676fd276132c1048a8216666c75cc90",
+        "local-subscription-intent/index.ts": "98a861b7a37bdff0eee143284f61ac99fc10f0051210601e27670700de134925"
+      },
+      "shared_drift": []
+    },
+    "local-subscription-invoices": {
+      "version": 14,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "73916df374451e149e17900250e6b3ccd72eb88f1e13d8af985ad2f95dc06ff4",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "local-subscription-invoices/index.ts": "73916df374451e149e17900250e6b3ccd72eb88f1e13d8af985ad2f95dc06ff4"
+      },
+      "shared_drift": []
+    },
+    "local-wallet-confirm-topup": {
+      "version": 45,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "e6d35da9694568742a035dae9ac38a3ee5c03950ea9fb8cd93f7bdab32269110",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "local-wallet-confirm-topup/index.ts": "e6d35da9694568742a035dae9ac38a3ee5c03950ea9fb8cd93f7bdab32269110"
+      },
+      "shared_drift": []
+    },
+    "local-wallet-pay": {
+      "version": 69,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "d8219f0d7f526a75d6a2cce885001a16a0bac3b6d2fa4bcca340303c46d36c29",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "83252bae9798d909d59fc13f438a96ba1d5b2ea83da9e0d2a465c39d82bdc724",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/self-payment.ts": "cdd06c1f0930d92de6ef694f840a7d51d78d328384884e9a88d2d6b253ada772",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/wallet-ledger.ts": "05752f56182445491209cd3e13408f07cdaf62fea798f9b28cbeacafa25d674b",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "_shared/wallet-pay.ts": "07f0808290ab7d9ec9b143b41278bd8fb655e3d269f599ba7ecc89401bc6b0e1",
+        "local-wallet-pay/index.ts": "d8219f0d7f526a75d6a2cce885001a16a0bac3b6d2fa4bcca340303c46d36c29"
+      },
+      "shared_drift": [
+        "_shared/self-payment.ts",
+        "_shared/wallet-ledger.ts"
+      ]
+    },
+    "local-wallet-topup-intent": {
+      "version": 46,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "610e347359818b7c45de240d07ddc66d27a74facdca0876e8d51095c5f099a4f",
+      "files": {
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
+        "local-wallet-topup-intent/index.ts": "610e347359818b7c45de240d07ddc66d27a74facdca0876e8d51095c5f099a4f"
+      },
+      "shared_drift": []
+    },
+    "loyalty-till": {
+      "version": 33,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "7519da86fe57ca625c08b91376a4754b249024e028097d0753bfd2190f64fee0",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "loyalty-till/index.ts": "7519da86fe57ca625c08b91376a4754b249024e028097d0753bfd2190f64fee0"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "meter-bookings": {
+      "version": 17,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "277c2b94eb0af77f1c363b1e25dcff38bc62f19c00a488fa4872cf98c12a0cc2",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/stripe-usage.ts": "4257a0c2334d7f7cee75c9e5285b8fa58e7595eab6571c1565cf2d384c5f74f5",
+        "meter-bookings/index.ts": "277c2b94eb0af77f1c363b1e25dcff38bc62f19c00a488fa4872cf98c12a0cc2"
+      },
+      "shared_drift": []
+    },
+    "notify-application-update": {
+      "version": 43,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "7e1bacb5a8238d1de9669b451e98f971e9161945ed325b89d1ebe88b39b83fae",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-application-update/index.ts": "7e1bacb5a8238d1de9669b451e98f971e9161945ed325b89d1ebe88b39b83fae"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-booking": {
+      "version": 33,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "e480c7fb7da29487d6aea1fb9a9f29b1a8cb5fd0f77c908b1c15d8a78d618e18",
+      "files": {
+        "_shared/booking-notify-auth.ts": "32e23bbffb9081c9d8ef41a269e3ab3bd0dcff4973e9f4b2d9d80965f0c3b79d",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-booking/index.ts": "e480c7fb7da29487d6aea1fb9a9f29b1a8cb5fd0f77c908b1c15d8a78d618e18"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-business-alert": {
+      "version": 34,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "a04b4b13e47472efe4d60eaa9246fc43a2f9305b44b2333de31629c614061728",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-business-alert/index.ts": "a04b4b13e47472efe4d60eaa9246fc43a2f9305b44b2333de31629c614061728"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-business-claim": {
+      "version": 33,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "e4e83953638dc2fc36b7d369e6434b0f81766d69c07d0e50275d4ccaca76d104",
+      "files": {
+        "_shared/business-claim-notify-auth.ts": "608a5f75c715f96d86f1023f2bf10cc465531cbd4a46ae77a59a499f86c78ab4",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-business-claim/index.ts": "e4e83953638dc2fc36b7d369e6434b0f81766d69c07d0e50275d4ccaca76d104"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-claim": {
+      "version": 35,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "60491a1e1323d5507cb99711daa0184b395f327df0f27bfe0189c7498fcb54fc",
+      "files": {
+        "_shared/claim-outcome-notify-auth.ts": "68cafd9fc7f349bf0a3f10af4fe04651c844fca273c7bbbb8d31d3703df258a6",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-claim/index.ts": "60491a1e1323d5507cb99711daa0184b395f327df0f27bfe0189c7498fcb54fc"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-collected": {
+      "version": 48,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "1eeac21f60e4335a4c46b4e34f77dafc6defaec48398f95f6a95e9274344ce02",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-collected/index.ts": "1eeac21f60e4335a4c46b4e34f77dafc6defaec48398f95f6a95e9274344ce02"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-community-notice": {
+      "version": 13,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "b8e2a058db699e3634d8fd22d7972c7ef0446592a12d23c868b8e42e0df8e746",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-community-notice/index.ts": "b8e2a058db699e3634d8fd22d7972c7ef0446592a12d23c868b8e42e0df8e746"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-drivers": {
+      "version": 50,
+      "verify_jwt": false,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "2715b33a088cb8853081b75099e754e231a84d0e262a93d88efb8b3e70941fdf",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-drivers/index.ts": "2715b33a088cb8853081b75099e754e231a84d0e262a93d88efb8b3e70941fdf"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-engagement": {
+      "version": 38,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "d80236a6f484f1408569fe615d28b47ca3c4c4a0d05d30b536cb207e77e5b797",
+      "files": {
+        "_shared/engagement-notify-auth.ts": "2f1e31de104f3ac91b9edacef9fd0ad52c19a4d1e5d00ad54d3c6e17adf94d21",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-engagement/index.ts": "d80236a6f484f1408569fe615d28b47ca3c4c4a0d05d30b536cb207e77e5b797"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-event-update": {
+      "version": 38,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "656b5d826e597332add6b8ee5895e1b7ddb04df621d7c44630bd436b0436fd66",
+      "files": {
+        "_shared/event-update-notify-auth.ts": "ec676f3d82a43676f42de95c2d3fcd1c33467184767f7b6bd614a6cf482f5818",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-event-update/index.ts": "656b5d826e597332add6b8ee5895e1b7ddb04df621d7c44630bd436b0436fd66"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-hub": {
+      "version": 36,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "2d57a7ab91da965d28112f6b2c976cc5d2ab85a5be293b7e490e22bf6b0b986c",
+      "files": {
+        "_shared/hub-notify-auth.ts": "34b336a76d05b8b1d0fbf1d1df0654c7bab302edd6bc462c7f28cdad0ece8c91",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-hub/index.ts": "2d57a7ab91da965d28112f6b2c976cc5d2ab85a5be293b7e490e22bf6b0b986c"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-hub-content": {
+      "version": 35,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "9de84133b76885a02bae46d8198106875f9a35a3d10e472a1c1f5a36b3427e47",
+      "files": {
+        "_shared/hub-content-notify-auth.ts": "ae7f2d7d72b4d723bc38ccb24554fbfd3c635511420658e4fbc7cfccf0ffcf3e",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-hub-content/index.ts": "9de84133b76885a02bae46d8198106875f9a35a3d10e472a1c1f5a36b3427e47"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-job": {
+      "version": 37,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "b86088523d6a41227d95f0372df68a73f956db7d3fb753cacbc4a4e938533672",
+      "files": {
+        "_shared/job-notify-auth.ts": "fe3bcfcb657e9cabf9fcb37803f1712423e2088e6ae43a7be62af42b77a8740f",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-job/index.ts": "b86088523d6a41227d95f0372df68a73f956db7d3fb753cacbc4a4e938533672"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-matching-workers": {
+      "version": 40,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "24e325da3b57925840c68b6beb491601c655992463f70fd0e0f7ecd3ba318d08",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-matching-workers/index.ts": "24e325da3b57925840c68b6beb491601c655992463f70fd0e0f7ecd3ba318d08"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-new-offer": {
+      "version": 42,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "2f1e6e2dea4db5dd0296922cc4d1bfaf14766c6885bafbb589874d3a2aa58f37",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-new-offer/index.ts": "2f1e6e2dea4db5dd0296922cc4d1bfaf14766c6885bafbb589874d3a2aa58f37"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-product-order": {
+      "version": 12,
+      "verify_jwt": false,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "80ed24178271f46110fc0fe63c6b6e822a9595b084f23bca48929049f3c9c1a5",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-product-order/index.ts": "80ed24178271f46110fc0fe63c6b6e822a9595b084f23bca48929049f3c9c1a5"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-shift-application": {
+      "version": 42,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "79637b2aa008b3ef8d9aea9cebe7944a0ad38a925ec29c65fdf8997cb1280b38",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-shift-application/index.ts": "79637b2aa008b3ef8d9aea9cebe7944a0ad38a925ec29c65fdf8997cb1280b38"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-shift-complete": {
+      "version": 41,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "57f8a795ad14e3e81205a7e2a46e96261c30dbf33f8f33f8b5e874e79058a6db",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-shift-complete/index.ts": "57f8a795ad14e3e81205a7e2a46e96261c30dbf33f8f33f8b5e874e79058a6db"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-shift-status": {
+      "version": 35,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "87f1375a1968c6f9928840906f5cea16ae86fb605f4ad07823d6917c8f1ad172",
+      "files": {
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/shift-status-notify-auth.ts": "f5c82798d7a9423e5191aa4cf4cd4b6831e5f61eacbf64768b0d0402600dc394",
+        "notify-shift-status/index.ts": "87f1375a1968c6f9928840906f5cea16ae86fb605f4ad07823d6917c8f1ad172"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-trade-lead": {
+      "version": 13,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "3a556e81ba936b488972c20b88c2d05569a8d8017212b0c56a29ed0f36b6da36",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-trade-lead/index.ts": "3a556e81ba936b488972c20b88c2d05569a8d8017212b0c56a29ed0f36b6da36"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "notify-worker-checkin": {
+      "version": 42,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "8908f3d69ababe4fcc51593580da74b565415da1465d772082064100c907a007",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "notify-worker-checkin/index.ts": "8908f3d69ababe4fcc51593580da74b565415da1465d772082064100c907a007"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "oneshetland-feed": {
+      "version": 44,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "75374dc37551a70917e5756a5ef9c37b18400de661ea96fc43c6fe94146b1731",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "oneshetland-feed/index.ts": "75374dc37551a70917e5756a5ef9c37b18400de661ea96fc43c6fe94146b1731"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "places-search": {
+      "version": 7,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "8fb404eb2cc6c60f87302ff307945fa32fc88a5d2d3eb68d71366e75f4f7ac80",
+      "files": {
+        "_shared/places-params.ts": "47c50cfa6dfe477a19d916460e71e8d51190b43836c79227d31db98c0fa71814",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "places-search/index.ts": "8fb404eb2cc6c60f87302ff307945fa32fc88a5d2d3eb68d71366e75f4f7ac80"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "reconcile-saved-cards": {
+      "version": 8,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "59519efe23410596de1c0fd1f1b9a5dc45510f99b7bb7c23b3c75cc4de515d45",
+      "files": {
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card-reconcile.ts": "17481af32b878f763d22f0b391e651ad020f4e842c737dae46e2b699182845c0",
+        "_shared/saved-card-state.ts": "ffb8584be2ae7ca38389c6184bee3b38fa8c3a1b4c5bdca695cf2ce23640786c",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "reconcile-saved-cards/index.ts": "59519efe23410596de1c0fd1f1b9a5dc45510f99b7bb7c23b3c75cc4de515d45"
+      },
+      "shared_drift": []
+    },
+    "refund-payment": {
+      "version": 42,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "6ba7afc567884ddc543962831a06a541c41d8da5db685eba4e70412672fdf838",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/event-wallet-refund-core.ts": "d1f030041b46eea236ab4e98dae30bf49e79f6438dac64015b86b3673f72153c",
+        "_shared/refund-notice.ts": "51cde45779f55b00fe5f3f9fc5e3a6618f374084f4268eedbfaa42d8617c42a5",
+        "_shared/refund-reconcile-core.ts": "87b07c9a79748833b0ab46ac5fc904d99decdf65d0f5bafa11180950c30c0dee",
+        "_shared/refund-reconcile.ts": "d3aaccbc4d83c92f286cc79faee7fa5b56520585926c5217ec4a94f0656bd8e9",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/ticket-payment-binding.ts": "0999c1556980a0701b19961acd71e0c076df5ef7da861b0a6039044e4f40c0cc",
+        "_shared/wallet-event-reconcile-core.ts": "8527f9a714af9e9aa634c58a479390152b894ac992a56356f0e0d8f403c5d97a",
+        "refund-payment/index.ts": "6ba7afc567884ddc543962831a06a541c41d8da5db685eba4e70412672fdf838"
+      },
+      "shared_drift": []
+    },
+    "refund-reconcile": {
+      "version": 6,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "1f9f134f092bc36297f7b943fccfa4d884527c872b72b74367fe90e4310d02f2",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/event-wallet-refund-core.ts": "d1f030041b46eea236ab4e98dae30bf49e79f6438dac64015b86b3673f72153c",
+        "_shared/refund-reconcile-core.ts": "87b07c9a79748833b0ab46ac5fc904d99decdf65d0f5bafa11180950c30c0dee",
+        "_shared/refund-reconcile.ts": "d3aaccbc4d83c92f286cc79faee7fa5b56520585926c5217ec4a94f0656bd8e9",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/wallet-event-reconcile-core.ts": "8527f9a714af9e9aa634c58a479390152b894ac992a56356f0e0d8f403c5d97a",
+        "refund-reconcile/index.ts": "1f9f134f092bc36297f7b943fccfa4d884527c872b72b74367fe90e4310d02f2"
+      },
+      "shared_drift": []
+    },
+    "refund-reconcile-sweep": {
+      "version": 6,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "5f2e24daf6bb32a226e68eda79bc7ce36d3664d167dfec72d9b20b8fa0688628",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/event-wallet-refund-core.ts": "d1f030041b46eea236ab4e98dae30bf49e79f6438dac64015b86b3673f72153c",
+        "_shared/refund-reconcile-core.ts": "87b07c9a79748833b0ab46ac5fc904d99decdf65d0f5bafa11180950c30c0dee",
+        "_shared/refund-reconcile.ts": "d3aaccbc4d83c92f286cc79faee7fa5b56520585926c5217ec4a94f0656bd8e9",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/wallet-event-reconcile-core.ts": "8527f9a714af9e9aa634c58a479390152b894ac992a56356f0e0d8f403c5d97a",
+        "refund-reconcile-sweep/index.ts": "5f2e24daf6bb32a226e68eda79bc7ce36d3664d167dfec72d9b20b8fa0688628"
+      },
+      "shared_drift": []
+    },
+    "reminder-runner": {
+      "version": 57,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "d29541a7e62e3586b2bf4ebf3d0595230f1f68ec4854fb61a27761f72e91b2ce",
+      "files": {
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "reminder-runner/index.ts": "d29541a7e62e3586b2bf4ebf3d0595230f1f68ec4854fb61a27761f72e91b2ce"
+      },
+      "shared_drift": []
+    },
+    "remove-card": {
+      "version": 31,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "e994a4d46d11c81973ff335f26a2fb72e464ba64705a864139724918718d9e17",
+      "files": {
+        "_shared/personal-subscriptions.ts": "97a96391db6bf4ebaa639bb0b44fe2b3f50f21bab2c9a062e415e410c476bc5f",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card.ts": "d19d177276d7f35a049f49e016139cb27f9684353053ce39084002a4ae36fd6a",
+        "remove-card/index.ts": "e994a4d46d11c81973ff335f26a2fb72e464ba64705a864139724918718d9e17"
+      },
+      "shared_drift": [
+        "_shared/saved-card.ts"
+      ]
+    },
+    "request-password-reset": {
+      "version": 35,
+      "verify_jwt": false,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "4eef368f6711c23141b8b55d8f82cf98111727f99c1187306fc92fa84685e979",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "request-password-reset/index.ts": "4eef368f6711c23141b8b55d8f82cf98111727f99c1187306fc92fa84685e979"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "saved-card-state": {
+      "version": 7,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "5756423a90abdcf7c1606fdb7cac42f1ed60986e3ea5bcc96c5732a3240c561a",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/saved-card-state.ts": "ffb8584be2ae7ca38389c6184bee3b38fa8c3a1b4c5bdca695cf2ce23640786c",
+        "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
+        "saved-card-state/index.ts": "5756423a90abdcf7c1606fdb7cac42f1ed60986e3ea5bcc96c5732a3240c561a"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "send-email": {
+      "version": 46,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "d0e5306014f4bea66d309d36ae36e63ab96e5eec6a21e31cd8d1f1062b605ab8",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "send-email/index.ts": "d0e5306014f4bea66d309d36ae36e63ab96e5eec6a21e31cd8d1f1062b605ab8"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "send-launch-invitation": {
+      "version": 8,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "40893d3549463aa3555c9b831dace9501f5d39a471f161dc97abb73b73f3a42d",
+      "files": {
+        "_shared/launch-invitation-email.ts": "f5755ad0f394ac561feef5892c966b23dbe4858909880f8264f1d8742f648344",
+        "_shared/launch-invitation-postmark.ts": "4a8fbd2a33e0ebd0e823ad4500723ceb5321a13d97277bcc8655655079aad542",
+        "_shared/launch-invitation-send.ts": "ac84eb14249e94065b7a23eef09a8d6c47f5505a307b80bcf830410894b0d8d4",
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "send-launch-invitation/index.ts": "40893d3549463aa3555c9b831dace9501f5d39a471f161dc97abb73b73f3a42d"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "social-composer": {
+      "version": 28,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "12a73fca3e5258941cf7deb9fe1d9de83e27d785458498193760fc444e28700a",
+      "files": {
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "social-composer/index.ts": "12a73fca3e5258941cf7deb9fe1d9de83e27d785458498193760fc444e28700a"
+      },
+      "shared_drift": []
+    },
+    "social-publisher": {
+      "version": 21,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "37b28d16c853cd23f727ce014f0fc9eaa10028d9d2f972857a63067aaf39e36d",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "social-publisher/index.ts": "37b28d16c853cd23f727ce014f0fc9eaa10028d9d2f972857a63067aaf39e36d"
+      },
+      "shared_drift": []
+    },
+    "stripe-webhook": {
+      "version": 112,
+      "verify_jwt": false,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "09656932a2c0d5ff4ce88a589dce3344002888759cbf410c8dcdff1e74a48b87",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/fulfilment.ts": "72131d2e122575babcc91211b924d1e53392cff8a899dc40dbe52c9692a14c3f",
+        "_shared/payment-failure-brake.ts": "0cc8c3258040edd81007659daa1c3f0d058dd8e3f4c70b33ebfbd83b33f31369",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/refund-reconcile-core.ts": "87b07c9a79748833b0ab46ac5fc904d99decdf65d0f5bafa11180950c30c0dee",
+        "_shared/refund-reconcile.ts": "7a1d54112f5c09b44c0a7f7cb6fc93ceb242a71d234111cd7e5e81a0e4524fa1",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/subscription-reconcile.ts": "1117a12638d025cf9dae7f03081efb2501a4926b1a61d5c3e627c08c59a88689",
+        "_shared/ticket-payment-binding.ts": "0999c1556980a0701b19961acd71e0c076df5ef7da861b0a6039044e4f40c0cc",
+        "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
+        "stripe-webhook/index.ts": "09656932a2c0d5ff4ce88a589dce3344002888759cbf410c8dcdff1e74a48b87"
+      },
+      "shared_drift": [
+        "_shared/event-wallet-refund-core.ts",
+        "_shared/refund-reconcile.ts",
+        "_shared/wallet-event-reconcile-core.ts"
+      ]
+    },
+    "sync-council-jobs": {
+      "version": 21,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "2f3e00f6fa36d818da8bbf8399f8cfd0725ced5fb95ece660713ebef27384b5b",
+      "files": {
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "sync-council-jobs/index.ts": "2f3e00f6fa36d818da8bbf8399f8cfd0725ced5fb95ece660713ebef27384b5b"
+      },
+      "shared_drift": []
+    },
+    "transcribe-audio": {
+      "version": 34,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "0bea5372dd1c91dc998601f216eb2867fefd3f124c98dbea25a54c7444da1208",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "transcribe-audio/index.ts": "0bea5372dd1c91dc998601f216eb2867fefd3f124c98dbea25a54c7444da1208"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "validate-event-ticket": {
+      "version": 40,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "d8b48977d03a98c2519ed9376dddd2584d7faa239397e61fc7d5c3c6044ed32a",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "validate-event-ticket/index.ts": "d8b48977d03a98c2519ed9376dddd2584d7faa239397e61fc7d5c3c6044ed32a"
+      },
+      "shared_drift": []
+    },
+    "verify-gift-recipient": {
+      "version": 12,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "d72aea049a408cf4ac961d8a586cdaf0712f79021bd8143b2a71fb147cfbad44",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
+        "verify-gift-recipient/index.ts": "d72aea049a408cf4ac961d8a586cdaf0712f79021bd8143b2a71fb147cfbad44"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "wallet-charge-approve": {
+      "version": 38,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "012acd361e3b693b4bedb7d4472c1f73b11608ab03520fbe94bf4c85424f352a",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "83252bae9798d909d59fc13f438a96ba1d5b2ea83da9e0d2a465c39d82bdc724",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/self-payment.ts": "cdd06c1f0930d92de6ef694f840a7d51d78d328384884e9a88d2d6b253ada772",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/wallet-ledger.ts": "05752f56182445491209cd3e13408f07cdaf62fea798f9b28cbeacafa25d674b",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "_shared/wallet-pay.ts": "07f0808290ab7d9ec9b143b41278bd8fb655e3d269f599ba7ecc89401bc6b0e1",
+        "wallet-charge-approve/index.ts": "012acd361e3b693b4bedb7d4472c1f73b11608ab03520fbe94bf4c85424f352a"
+      },
+      "shared_drift": [
+        "_shared/self-payment.ts",
+        "_shared/wallet-ledger.ts"
+      ]
+    },
+    "wallet-charge-cancel": {
+      "version": 10,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "ac5a1e893792ad44b8386619a381c2a9a9b64a1a2f2e6bec5918dda3159c92e2",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "wallet-charge-cancel/index.ts": "ac5a1e893792ad44b8386619a381c2a9a9b64a1a2f2e6bec5918dda3159c92e2"
+      },
+      "shared_drift": []
+    },
+    "wallet-charge-request": {
+      "version": 27,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "7b1b36b5a4fcf89a93107519aaf0620055876409e74ac7b317a510984df1cf30",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "wallet-charge-request/index.ts": "7b1b36b5a4fcf89a93107519aaf0620055876409e74ac7b317a510984df1cf30"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    },
+    "wallet-checkout": {
+      "version": 55,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "bbf8905132961193169f0782f169eca12052f1e04dd61316e29918e726b47753",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/commission-config.ts": "83252bae9798d909d59fc13f438a96ba1d5b2ea83da9e0d2a465c39d82bdc724",
+        "_shared/commission.ts": "669ce63ba6387237988581784b9105b7e17d671ccc97d2f2278c9dbb80845447",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/self-payment.ts": "cdd06c1f0930d92de6ef694f840a7d51d78d328384884e9a88d2d6b253ada772",
+        "_shared/wallet-ledger.ts": "00352fd2378317da9d76a9dadc201bb9b9e263781c42294688e80c13b1cc56b6",
+        "_shared/wallet-liquidity-gate-core.ts": "1bb0ccb92f4beff1aacde31cdc6076ce1501c005564a7aa0ce0a8bdc41165795",
+        "_shared/wallet-liquidity-gate.ts": "ebb418671da3e21fa065de2ac487872b655b0edd7db96f29b97cc26a0bd09c18",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "_shared/wallet-settlement-core.ts": "b1860fb6ca7d926d304133a1d4c92eaca0949490408aad8fe1210c349119d811",
+        "_shared/wallet-settlement.ts": "97a4623201101f76cf94afaf198cc862bf3add77d224dcb58ac44888caa5541c",
+        "wallet-checkout/index.ts": "bbf8905132961193169f0782f169eca12052f1e04dd61316e29918e726b47753"
+      },
+      "shared_drift": [
+        "_shared/self-payment.ts"
+      ]
+    },
+    "wallet-funding-details": {
+      "version": 5,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "27a4a497302e587a8728438959237dd3bf545c4255fc0752b148970f1271a207",
+      "files": {
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "wallet-funding-details/index.ts": "27a4a497302e587a8728438959237dd3bf545c4255fc0752b148970f1271a207"
+      },
+      "shared_drift": []
+    },
+    "wallet-liquidity-fund": {
+      "version": 6,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "a3810a1ce73d37e18281a37d4ccd477ee3cef85f294b9bac83bde278a346496a",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "wallet-liquidity-fund/index.ts": "a3810a1ce73d37e18281a37d4ccd477ee3cef85f294b9bac83bde278a346496a"
+      },
+      "shared_drift": []
+    },
+    "wallet-liquidity-funding-session": {
+      "version": 6,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "05488f94b61f1446dfe3a6eadc68d3cd49f60e9b733033c53846e3a8737f1f0e",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/wallet-funding-match.ts": "aaec9e4eb0f0a23c2ba8d3db0ff1d024d205febfe5fece438ce000c9b6f4b01a",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "wallet-liquidity-funding-session/index.ts": "05488f94b61f1446dfe3a6eadc68d3cd49f60e9b733033c53846e3a8737f1f0e"
+      },
+      "shared_drift": []
+    },
+    "wallet-liquidity-monitor": {
+      "version": 9,
+      "verify_jwt": false,
+      "classification": "canonical-current",
+      "index_sha256": "c5d603988e6123a62498ff71282217f518c52d7661906df34b51f77fb8a433c1",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/wallet-funding-match.ts": "aaec9e4eb0f0a23c2ba8d3db0ff1d024d205febfe5fece438ce000c9b6f4b01a",
+        "_shared/wallet-funding-sessions.ts": "1383d037e93eeb4be310ecbbc574d2cb6f25e9effe86c6f006ddb6ad076aa9e7",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "wallet-liquidity-monitor/index.ts": "c5d603988e6123a62498ff71282217f518c52d7661906df34b51f77fb8a433c1"
+      },
+      "shared_drift": []
+    },
+    "wallet-liquidity-snapshot": {
+      "version": 9,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "a5d4acfcef27f3e28f8b49252d66bbdeca498be915370059037b8a426d7611a4",
+      "files": {
+        "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/wallet-funding-match.ts": "aaec9e4eb0f0a23c2ba8d3db0ff1d024d205febfe5fece438ce000c9b6f4b01a",
+        "_shared/wallet-funding-sessions.ts": "1383d037e93eeb4be310ecbbc574d2cb6f25e9effe86c6f006ddb6ad076aa9e7",
+        "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
+        "wallet-liquidity-snapshot/index.ts": "a5d4acfcef27f3e28f8b49252d66bbdeca498be915370059037b8a426d7611a4"
+      },
+      "shared_drift": []
+    },
+    "wallet-refund-business": {
+      "version": 11,
+      "verify_jwt": true,
+      "classification": "intentional-shared-drift",
+      "index_sha256": "196e6b1b069101e0d10c7546785f663c4319454ba16939cbb16015e53de144f4",
+      "files": {
+        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/refund-notice.ts": "51cde45779f55b00fe5f3f9fc5e3a6618f374084f4268eedbfaa42d8617c42a5",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "wallet-refund-business/index.ts": "196e6b1b069101e0d10c7546785f663c4319454ba16939cbb16015e53de144f4"
+      },
+      "shared_drift": [
+        "_shared/rate-limit.ts"
+      ]
+    }
+  }
+}

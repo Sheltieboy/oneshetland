@@ -61,8 +61,19 @@ serve(async (req) => {
       .single();
 
     if (!business || business.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
+    // Not an error the merchant caused, and not a prompt to buy anything.
+    //
+    // A business can hold a live entitlement with no billing account behind it:
+    // a plan granted by staff, a discount grant, or an acceptance fixture. The
+    // old wording named an internal billing object and instructed the owner to
+    // go and buy a plan — on a screen that was, at that moment, correctly
+    // showing them Premium with every feature unlocked. It read as a
+    // contradiction, and the instruction it gave was simply wrong.
+    //
+    // There is genuinely nothing to manage until a billing account exists, so
+    // that is all this says.
     if (!business.stripe_customer_id) {
-      return json({ error: 'This business has no Stripe customer yet. Subscribe first to access billing.' }, 400);
+      return json({ error: "There's nothing to manage for this business yet." }, 400);
     }
 
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {

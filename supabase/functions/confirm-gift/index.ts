@@ -134,21 +134,34 @@ serve(async (req) => {
     }
     const code: string = codeData as string;
 
-    // Promote gift to 'sent'
-    const { error: updErr } = await supabase
+    // Promote gift to 'sent' — as an ATOMIC CLAIM, not a blind write. The status check near the top and this update are two
+    // statements, and the webhook (fulfilGift) and the web client's automatic retry can both run in between. Written
+    // unconditionally, the loser overwrote the winner's code and emailed a second, different one, leaving the recipient with a
+    // dead link. Only the request that actually moves the gift out of "not yet sent" mints the code and sends the email.
+    const { data: promoted, error: updErr } = await supabase
       .from('book_gifts')
       .update({
         code,
         status:            'sent',
         payment_intent_id,
       })
-      .eq('id', gift.id);
+      .eq('id', gift.id)
+      .not('status', 'in', '(sent,claimed,used)')
+      .select('id');
 
     if (updErr) {
       console.error('[confirm-gift] gift update failed', updErr);
       return new Response(JSON.stringify({ error: updErr.message }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+    if (!promoted || promoted.length === 0) {
+      // Someone else delivered this gift first (the webhook, or a parallel confirm). Hand back THEIR code; send nothing.
+      const { data: current } = await supabase.from('book_gifts').select('code').eq('id', gift.id).maybeSingle();
+      return new Response(
+        JSON.stringify({ ok: true, gift_id: gift.id, code: current?.code ?? null, already_sent: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     // Gather variables for the email
