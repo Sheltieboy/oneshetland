@@ -293,8 +293,8 @@ select 'boost', 'the expiry never moved after the first grant', 'true',
           from public.local_businesses where id='b0057004-0000-4000-8000-00000000ab01');
 
 -- ══ Ticket refunds ══════════════════════════════════════════════════════════
-insert into public.events (id,title,starts_at,organiser_user_id)
-select 'e5000004-0000-4000-8000-00000000ab01','__T5__ ev',now()+interval '7 days',u from pp;
+insert into public.events (id,title,starts_at,organiser_user_id,is_platform_event)
+select 'e5000004-0000-4000-8000-00000000ab01','__T5__ ev',now()+interval '7 days',u,true from pp;
 insert into public.event_ticket_types (id,event_id,name,price_pence,quantity_available,quantity_sold,is_active,per_order_max)
 values ('e5000004-0000-4000-8000-00000000ab02','e5000004-0000-4000-8000-00000000ab01','__T5__ tt',1000,100,3,true,10);
 insert into public.event_ticket_orders (id,event_id,buyer_id,status,total_pence,platform_fee_pence,tickets_count,stripe_payment_intent_id,client_request_id,paid_at)

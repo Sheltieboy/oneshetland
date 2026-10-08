@@ -126,16 +126,16 @@ async function queryAsync(sql: string): Promise<Record<string, unknown>> {
    twice when timestamps tied. */
 const PEOPLE = `
 create temp table people as select
-  (select id from public.profiles where coalesce(role,'')<>'admin' and coalesce(is_platform_owner,false)=false order by id offset 0 limit 1) as u_org,
+  (select id from public.profiles where role='admin' order by id limit 1) as u_org,   -- scanner: platform admin (organiser_user_id is audit metadata only, never an authority)
   (select id from public.profiles where coalesce(role,'')<>'admin' and coalesce(is_platform_owner,false)=false order by id offset 1 limit 1) as u_other,
   (select id from public.profiles where role='admin' order by id limit 1) as u_admin;`;
 
 const FIXTURE = `${PEOPLE}
-insert into public.events (id, title, starts_at, organiser_user_id)
-select '${EV_A}','__S4TEST__ A', now()+interval '7 days', u_org from people
+insert into public.events (id, title, starts_at, organiser_user_id, is_platform_event)
+select '${EV_A}','__S4TEST__ A', now()+interval '7 days', u_other, true from people
 on conflict (id) do update set organiser_user_id = excluded.organiser_user_id;
-insert into public.events (id, title, starts_at, organiser_user_id)
-select '${EV_B}','__S4TEST__ B', now()+interval '7 days', u_org from people
+insert into public.events (id, title, starts_at, organiser_user_id, is_platform_event)
+select '${EV_B}','__S4TEST__ B', now()+interval '7 days', u_other, true from people
 on conflict (id) do update set organiser_user_id = excluded.organiser_user_id;
 insert into public.event_ticket_types (id, event_id, name, price_pence, quantity_available, quantity_sold, is_active, per_order_max)
 values ('a5000004-0000-4000-8000-0000000000ea','${EV_A}','__S4TEST__ tt',1000,500,0,true,10),
@@ -314,8 +314,8 @@ select 'audit trail', 'a refused scan is recorded, not silently dropped', 'true'
 insert into results (area, case_name, expected, actual)
 select 'can_scan_event', c.name, c.expect, public.can_scan_event(c.ev, c.who)::text
 from people p, lateral (values
-  ('organiser of a user event',  'true',  '${EV_A}'::uuid, p.u_org),
-  ('stranger, user event',       'false', '${EV_A}'::uuid, p.u_other),
+  ('platform admin, platform event',                       'true',  '${EV_A}'::uuid, p.u_org),
+  ('the event''s organiser_user_id alone confers nothing',  'false', '${EV_A}'::uuid, p.u_other),
   ('null event id',              'false', null::uuid,      p.u_org),
   ('null user id',               'false', '${EV_A}'::uuid, null::uuid),
   ('event that does not exist',  'false', '${NIL}'::uuid,  p.u_org)
@@ -433,11 +433,11 @@ describe('backup-code guessing is limited', () => {
     // the check needs a clean event of its own. All of it is rolled back.
     r = query(`begin;
 create temp table pp as select
-  (select id from public.profiles where coalesce(role,'')<>'admin' and coalesce(is_platform_owner,false)=false order by id limit 1) u_org;
-insert into public.events (id, title, starts_at, organiser_user_id)
-select '${EV_RL1}','__S4RL__ a', now()+interval '7 days', u_org from pp;
-insert into public.events (id, title, starts_at, organiser_user_id)
-select '${EV_RL2}','__S4RL__ b', now()+interval '7 days', u_org from pp;
+  (select id from public.profiles where role='admin' order by id limit 1) u_org;
+insert into public.events (id, title, starts_at, organiser_user_id, is_platform_event)
+select '${EV_RL1}','__S4RL__ a', now()+interval '7 days', u_org, true from pp;
+insert into public.events (id, title, starts_at, organiser_user_id, is_platform_event)
+select '${EV_RL2}','__S4RL__ b', now()+interval '7 days', u_org, true from pp;
 
 create temp table x1 as select public.validate_backup_code('ZZZZ-ZZZZ','${EV_RL1}',(select u_org from pp))->>'result' res;
 insert into public.event_checkins (ticket_id, event_id, scanner_id, result)
