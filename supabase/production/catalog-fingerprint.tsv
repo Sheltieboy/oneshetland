@@ -3404,7 +3404,7 @@ fn	analytics_scrub_pii(p text)	6f5df3adcf8ae5625be69095497e7e58
 fn	analytics_top_searches(p_days integer, p_limit integer)	b250bc5b996df00cc9e32023189277c4
 fn	apply_boost_entitlement(p_business uuid)	d0f44c8663fc27e10297f1c07ad62b44
 fn	apply_membership_entitlement(p_hub uuid, p_user uuid)	b3e9d87e2e3a44de2b79eb793f239f2c
-fn	apply_referral_code(p_code text)	7a0703794e795f7ed824b8d20f6f5d80
+fn	apply_referral_code(p_code text)	3e3c2153494a48f3eaaed37151900d28
 fn	apply_subscription_state(p_sub_id text, p_customer text, p_status text, p_tier text, p_period_end timestamp with time zone, p_cancel_at_period_end boolean, p_event_created bigint, p_force boolean, p_meta_business uuid)	a7f54eb5e5581375dcaea6673ab85c91
 fn	approve_business_claim(p_claim_id uuid)	f684b1817226cb4b11ac34bf476ebc76
 fn	approve_spik_suggestion(p_id uuid)	f82e57f8bca36d7e6672237435306269
@@ -3473,8 +3473,8 @@ fn	cruise_visit_derive()	51bd5fbf81a18df3ee31d649f3bdb259
 fn	enforce_gift_funded_booking()	cbb0825f8d94d1b936a6ceb80010ba85
 fn	ensure_member_code()	b3f4daefa2f1584a585404db9cb1d3d4
 fn	ensure_member_code(p_user uuid)	ff66469d3ab90cae51a4b42322e84af9
-fn	ensure_referral_code()	0b019a1792c4e9cc5b23c0a1ab143d29
-fn	ensure_referral_code(p_user uuid)	7837a61a72ba5f0592f88b346c90d4ee
+fn	ensure_referral_code()	d791cf0e7a67032181ab76fe25493c97
+fn	ensure_referral_code(p_user uuid)	d791cf0e7a67032181ab76fe25493c97
 fn	event_payout_destination(p_event_id uuid)	556913b7ee364993a91093ec3fd0b537
 fn	event_payout_ready(p_event_id uuid)	a3432995bc133d61cd0af79cf562bdf6
 fn	expire_stale_ticket_orders(p_older_than_minutes integer)	e49b3d280913760965880ee3726b2f06
@@ -3682,8 +3682,8 @@ fn	tg_memory_reaction_count()	d2fd99523d3b22eabf58056e05e255fe
 fn	tg_notices_attribution_guard()	e88f6df7f9f2f13b681b8d16899acd12
 fn	tg_products_system_columns()	59f907b6fafe5d934bc613f91329d5ce
 fn	tg_profiles_card_flag_needs_customer()	e5711199e2f42460a6e06e2692fa90b4
-fn	tg_profiles_lock_sensitive()	2223f82949d1c5547322f839f005c3a5
-fn	tg_referral_qualify()	79df6945e2521e687ccf198b007fca44
+fn	tg_profiles_lock_sensitive()	b72b62cfc5570927947618cc5816c3b3
+fn	tg_referral_qualify()	a1a7eee10a2de3570e306e2b9024907c
 fn	tg_seed_business_addons()	920abed404323b567b67a64f5e15a149
 fn	tg_set_business_slug()	4775aa025407823d48de9cdd36e71d73
 fn	tg_spik_slug()	626d1447bd19c650e4c31c40bea47060
@@ -4896,7 +4896,7 @@ tacl	profiles	173bab4481f531f3dc624fc3f7e8959e
 tacl	push_tokens	173bab4481f531f3dc624fc3f7e8959e
 tacl	rate_limit_policies	319d8797fc256d3eb8afcf73af58181a
 tacl	rate_limits	319d8797fc256d3eb8afcf73af58181a
-tacl	referrals	173bab4481f531f3dc624fc3f7e8959e
+tacl	referrals	7f9e4d53dc9318adcfe41e4097b5dbde
 tacl	refund_reconciliation	319d8797fc256d3eb8afcf73af58181a
 tacl	refund_reconciliation_events	319d8797fc256d3eb8afcf73af58181a
 tacl	regions	173bab4481f531f3dc624fc3f7e8959e
@@ -5029,7 +5029,6 @@ trg	local_offer_redemptions.ae_offer_redemption	486c670245363d2f535b4befe3849fc6
 trg	local_offers.commercial_terms_guard	4c76718e1900f03a0e097b7b22f2f404
 trg	local_offers.local_offers_tier_guard	7c6ac0c411dcfc9c8fbd7027fdacc301
 trg	local_wallet_transactions.ae_wallet	5f683fadadeb1da5f5f650c1e0f566f8
-trg	local_wallet_transactions.referral_qualify	8011ae90b1418acab55699863a584b41
 trg	memories.tg_memory_child_count_aiud	f884e2fab403db22230bcef6dc542bd9
 trg	memory_comments.tg_memory_comment_count_aiud	44408602d0f9390168f89abd229c9a37
 trg	memory_media.tg_memory_media_count_aiud	240225fc3a84525581315acae51b3848

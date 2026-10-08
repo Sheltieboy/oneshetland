@@ -32,6 +32,7 @@ const FIXES: { name: string; migrations: string[]; code: string[]; isolated: str
   { name: '8 event / notice attribution', migrations: ['20261121000000_event_notice_attribution'], code: ['_shared/event-update-notify-auth.ts', 'delete-account/index.ts'], isolated: ['event-notice-attribution'], hermetic: ['notify-fanout-authz'] },
   { name: '10 Stripe customer ids not client-reachable (shift_employer_profiles.stripe_customer_id)', migrations: ['20261122000000_shift_employer_stripe_customer_lock'], code: [], isolated: ['stripe-customer-exposure'], hermetic: [] },
   { name: '11 shift worker / employer payment and trust fields server-controlled', migrations: ['20261123000000_shift_profile_trust_fields'], code: [], isolated: ['shift-profile-trust-fields'], hermetic: [] },
+  { name: '12 referral programme disabled for launch (no codes, no referrals, no rewards)', migrations: ['20261124000000_referrals_disabled_for_launch'], code: [], isolated: ['referral-disabled'], hermetic: [] },
 ];
 
 describe('every closed security finding is fully represented', () => {
