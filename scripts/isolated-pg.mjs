@@ -30,9 +30,51 @@ const SUITES = [
   'supabase/tests/hub-member-number-concurrency.node.test.ts',
   'supabase/tests/my-unclaimed-gifts.node.test.ts',
   'supabase/tests/gift-claim-concurrency.node.test.ts',
+  'supabase/tests/gift-funded-booking-status-sync.node.test.ts',
   'supabase/tests/wallet-reversal-integrity.node.test.ts',
+  'supabase/tests/loyalty-redemption-atomicity.node.test.ts',
+  'supabase/tests/loyalty-earning-atomicity.node.test.ts',
+  'supabase/tests/wallet-loyalty-points.node.test.ts',
+  'supabase/tests/business-wallet-refunds.node.test.ts',
+  'supabase/tests/wallet-concurrency.node.test.ts',
+  'supabase/tests/production-concurrency-proofs.node.test.ts',
+  'supabase/tests/statement-refund-accounting.node.test.ts',
+  'supabase/tests/redemption-business-scope.node.test.ts',
+  'supabase/tests/wallet-charge-cancel-concurrency.node.test.ts',
+  'supabase/tests/wallet-liquidity-concurrency.node.test.ts',
+  'supabase/tests/product-order-immutability.node.test.ts',
+  'supabase/tests/pass-immutability.node.test.ts',
+  'supabase/tests/event-orders-access.node.test.ts',
+  'supabase/tests/event-wallet-refund.node.test.ts',
+  'supabase/tests/ticket-capacity-release.node.test.ts',
+  'supabase/tests/notification-centre-sql.node.test.ts',
+  'supabase/tests/business-claims-flow.node.test.ts',
+  'supabase/tests/email-tables-lockdown.node.test.ts',
+  'supabase/tests/event-ticket-orders-server-only.node.test.ts',
+  'supabase/tests/hub-members-server-authoritative.node.test.ts',
+  'supabase/tests/payment-abuse-limits.node.test.ts',
+  'supabase/tests/wallet-card-cashout.node.test.ts',
+  'supabase/tests/launch-plan-grants.node.test.ts',
+  'supabase/tests/discovery-fixtures-locality.node.test.ts',
+  'supabase/tests/product-import-foundation.node.test.ts',
+  'supabase/tests/launch-partner-claims.node.test.ts',
+  'supabase/tests/launch-partner-campaigns.node.test.ts',
+  'supabase/tests/launch-partner-profile-versions.node.test.ts',
+  'supabase/tests/launch-partner-email-opening.node.test.ts',
+  'supabase/tests/launch-partner-send-claim.node.test.ts',
+  'supabase/tests/launch-partner-enrichment.node.test.ts',
+  'supabase/tests/launch-partner-go-live.node.test.ts',
+  'supabase/tests/launch-partner-takedown.node.test.ts',
+  'supabase/tests/launch-outreach-suppression.node.test.ts',
+  'supabase/tests/launch-invite-lifecycle.node.test.ts',
+  'supabase/tests/purchase-attempt-idempotency.node.test.ts',
+  'supabase/tests/purchase-attempt-handlers.node.test.ts',
+  'supabase/tests/purchase-attempt-baseline.node.test.ts',
   'supabase/tests/event-notice-attribution.node.test.ts',
 ];
+
+// ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
+const selected = process.env.ISOLATED_ONLY ? SUITES.filter((s) => s.includes(process.env.ISOLATED_ONLY)) : SUITES;
 
 // macOS ships a locale that makes the postmaster multithread during startup
 // ("postmaster became multithreaded during startup"), so pin a plain one for
@@ -64,7 +106,7 @@ try {
   const dsn = `postgresql://proof@/proof?host=${dataDir}`;
   console.log('[isolated-pg] cluster up, running isolated suites\n');
 
-  const r = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...SUITES], {
+  const r = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...selected], {
     stdio: 'inherit',
     env: { ...process.env, PASS_PROOF_DSN: dsn, PASS_PROOF_PSQL: bin('psql') },
   });

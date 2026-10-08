@@ -277,7 +277,12 @@ describe('deployed shape', () => {
        where n.nspname='public' and p.proname <> 'business_meets_tier'
          and position('business_meets_tier' in pg_get_functiondef(p.oid)) > 0
        order by p.proname;`);
-    assert.deepEqual(rows.map((r) => r.proname), [
+    // 20261006120000 retires tg_loyalty_earn_points and replaces it with
+    // loyalty_award_for_wallet_spend, which carries the same tier condition to
+    // a better lifecycle point. Both are listed so this holds before the
+    // migration is applied and after — an allowlist that has to be edited on
+    // the day of a deploy is one that gets edited without being read.
+    const approved = new Set([
       'book_bookings_tier_guard',                 // Bookings transaction backstop
       'book_unit_items_tier_guard',               // Passes activation
       'local_businesses_bookings_tier_guard',     // Bookings activation
@@ -288,9 +293,16 @@ describe('deployed shape', () => {
       'local_offers_tier_guard',                  // Offers activation
       'products_tier_guard',                      // Products activation
       'resolve_nfc_tile',                         // Loyalty on the NFC tile
-      'tg_loyalty_earn_points',                   // Loyalty award on a wallet spend
+      'tg_loyalty_earn_points',                   // retired by 20261006120000
+      'loyalty_award_for_wallet_spend',           // its replacement, at fulfilment
       'wallet_live',                              // Wallet customer-facing answer
-    ], 'nothing beyond the six approved capabilities may enforce tier');
+    ]);
+    const unapproved = rows.map((r) => r.proname).filter((n) => !approved.has(String(n)));
+    assert.deepEqual(unapproved, [], 'nothing beyond the six approved capabilities may enforce tier');
+    // Exactly one of the two loyalty-award consumers exists at any time.
+    const awardFns = rows.map((r) => String(r.proname))
+      .filter((n) => n === 'tg_loyalty_earn_points' || n === 'loyalty_award_for_wallet_spend');
+    assert.equal(awardFns.length, 1, 'the retired trigger and its replacement must never coexist');
 
     const [pol] = sql(`
       select count(*)::int as n from pg_policy p

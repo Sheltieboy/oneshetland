@@ -117,6 +117,11 @@ const PRIVATE_CONTRACT: { table: string; select: string; why: string }[] = [
   { table: 'local_wallet_transactions', select: 'id',                 why: 'wallet movements' },
   { table: 'local_business_follows',   select: 'business_id,user_id', why: 'who follows whom' },
   { table: 'local_offer_redemptions',  select: 'offer_id',            why: 'who redeemed what' },
+  // 20261115000000 — these three carried a PUBLIC `USING (true)` policy and anon grants; anon could read every recipient
+  // and rewrite the password-reset template. They must stay closed.
+  { table: 'email_log',                select: 'id',                  why: 'every recipient address and subject we have mailed' },
+  { table: 'email_templates',          select: 'id',                  why: 'the body of every transactional email, incl. password reset' },
+  { table: 'email_settings',           select: 'id',                  why: 'the sender, reply-to and footer links' },
 ];
 
 /** Step 8 — local_businesses columns anon must still be refused. */

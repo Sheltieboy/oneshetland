@@ -120,7 +120,14 @@ function createTable(file: string, opener: string): string {
  * and so could never match a token — every call died with 42883. Pinning one
  * file would prove whichever version that file happened to hold; replaying the
  * chain, as production did, leaves the database with the definition it actually
- * runs. A third migration would be picked up without touching this test.
+ * runs. A third migration would be picked up without touching this test — and
+ * one was: 20261011120000 added the business-scope parameter.
+ *
+ * That third one also DROPS the previous signature, so the replay has to carry
+ * drops as well as creates. Without them the old three-argument form survives
+ * beside the new four-argument one, both are callable with three arguments, and
+ * every call here dies with "is not unique" — a collision production never has,
+ * because production runs the drop.
  */
 function migrationsDefining(): string[] {
   const files = readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort();
@@ -133,10 +140,14 @@ function migrationsDefining(): string[] {
 function functionDefs(): string {
   return migrationsDefining().map((file) => {
     const s = readFileSync(file, 'utf8');
+    // Any drop of an earlier signature has to come across too, and first.
+    const drops = s.split('\n')
+      .filter((l) => /^\s*drop function if exists public\.redeem_pass_atomic\(/.test(l))
+      .join('\n');
     const start = s.indexOf('create or replace function public.redeem_pass_atomic(');
     const end = s.indexOf('$$;', start);
     assert.notEqual(end, -1, `could not find the end of redeem_pass_atomic in ${file}`);
-    return s.slice(start, end + 3);
+    return `${drops}\n${s.slice(start, end + 3)}`;
   }).join('\n');
 }
 
@@ -146,11 +157,37 @@ function currentDef(): string {
   return all.slice(all.lastIndexOf('create or replace function public.redeem_pass_atomic('));
 }
 
+/**
+ * The signature that chain leaves behind — read off the winning definition
+ * rather than written down, so another parameter does not need this edited.
+ */
+const SIGNATURE = (() => {
+  const head = currentDef();
+  const params = head.slice(head.indexOf('(') + 1, head.indexOf(')'));
+  const types = [...params.matchAll(/^\s*p_\w+\s+(\w+)/gm)].map((m) => m[1]);
+  assert.ok(types.length >= 3, `could not read the parameter list: ${params}`);
+  return `public.redeem_pass_atomic(${types.join(',')})`;
+})();
+
+/**
+ * The privilege intent from the migrations, aimed at the signature the chain
+ * actually leaves behind.
+ *
+ * The early migrations name (uuid, text, text) literally. Production ran those
+ * lines while that signature existed and then, in 20261011120000, dropped it
+ * and re-granted the four-argument one from a do-block. Replaying the literals
+ * unretargeted asks Postgres to grant on a function that is gone. The intent —
+ * service_role only, nobody else — is what is being proved, so it is retargeted
+ * rather than rewritten by hand.
+ */
 function grantLines(): string {
-  return migrationsDefining().flatMap((file) =>
+  const inner = SIGNATURE.slice(SIGNATURE.indexOf('(') + 1, -1).split(',');
+  const lines = migrationsDefining().flatMap((file) =>
     readFileSync(file, 'utf8').split('\n')
-      .filter((l) => /^(revoke|grant)\b/i.test(l.trim()) && l.includes('redeem_pass_atomic')),
-  ).join('\n');
+      .filter((l) => /^(revoke|grant)\b/i.test(l.trim()) && l.includes('redeem_pass_atomic'))
+      .map((l) => l.replace(/redeem_pass_atomic\([^)]*\)/, `redeem_pass_atomic(${inner.join(', ')})`)),
+  );
+  return [...new Set(lines)].join('\n');
 }
 
 /* ── fixture ids, fixed so every case reads clearly ───────────────────────── */
@@ -243,7 +280,7 @@ describe('the isolated cluster really is isolated', () => {
   });
 
   test('the function under test is the one from the migration, not a copy', () => {
-    const installed = text(`select pg_get_functiondef('public.redeem_pass_atomic(uuid,text,text)'::regprocedure)`);
+    const installed = text(`select pg_get_functiondef('${SIGNATURE}'::regprocedure)`);
     assert.match(installed, /for update/i, 'the installed function does not lock at all');
     assert.ok(currentDef().includes('for update'), 'the migration no longer locks');
   });
@@ -360,7 +397,7 @@ describe('CASE D — the last use, and what it leaves behind', () => {
 });
 
 describe('CASE E — only the server may spend a pass', () => {
-  const SIG = 'public.redeem_pass_atomic(uuid,text,text)';
+  const SIG = SIGNATURE;
 
   for (const role of ['anon', 'authenticated', 'public']) {
     test(`${role} cannot execute it`, () => {
