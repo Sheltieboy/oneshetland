@@ -66,7 +66,9 @@ serve(async (req) => {
     await run('memory_image_pin_suggestions', svc.from('memory_image_pin_suggestions').delete().eq('suggester_id', uid));
     await run('memory_reactions', svc.from('memory_reactions').delete().eq('user_id', uid));
     await run('vessel_comments', svc.from('vessel_comments').delete().eq('author_id', uid));
-    await run('notices', svc.from('notices').delete().eq('publisher_user_id', uid));
+    // Only notices that belong to NO entity. A hub or business notice belongs to the hub / business, not to whoever pressed publish:
+    // publisher_user_id on those is audit metadata (server-stamped), and its FK nulls it when the profile goes.
+    await run('notices', svc.from('notices').delete().eq('publisher_user_id', uid).is('publisher_business_id', null).is('publisher_hub_id', null).eq('is_platform_notice', false));
 
     // 2. Push tokens + block relationships.
     await run('push_tokens', svc.from('push_tokens').delete().eq('user_id', uid));

@@ -34,6 +34,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MIG = join(REPO_ROOT, 'supabase/migrations');
 const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const TICKETS = join(MIG, '20260820120000_atomic_ticket_redemption.sql');
+const ATTRIBUTION = join(MIG, '20261121000000_event_notice_attribution.sql');   // can_scan_event no longer honours organiser_user_id
 const REFUNDS = join(MIG, '20260820140000_stripe_event_idempotency_and_ticket_refunds.sql');
 
 /** The refund function now releases seats and uses the held-seat helper: install the whole migration (minus its cron line). */
@@ -125,7 +126,7 @@ function schema() {
     // Reconciliation table, from its own migration (admins see its state).
     createTable(RECON, 'create table if not exists public.refund_reconciliation ('),
     // The REAL authority predicate and the REAL ticket-void function.
-    slice(TICKETS, 'create or replace function public.can_scan_event', '$$;'),
+    slice(ATTRIBUTION, 'create or replace function public.can_scan_event', '$$;'),
     capacityMigration(),
     'grant usage on schema public, auth to anon, authenticated, service_role;',
     'grant execute on function auth.uid() to anon, authenticated, service_role;',
@@ -232,8 +233,9 @@ describe('who can SEE the orders for an event', () => {
     assert.equal(o.purchaser.email, 'kim.buyer@example.com');
   });
 
-  test('the same people who may SCAN the event may view its orders: organiser user, hub owner and committee included', () => {
-    assert.equal(view(U.ORGANISER, EV_BIZ).orders.length, 3);
+  test('the same people who may SCAN the event may view its orders: business owner, hub owner and committee — and NOT a bare organiser_user_id', () => {
+    assert.ok(refused(rpcAs(U.ORGANISER, EV_BIZ)), 'organiser_user_id is audit metadata, never an authority');
+    assert.equal(view(U.BIZ_OWNER, EV_BIZ).orders.length, 3);
     assert.equal(view(U.HUB_OWNER, EV_HUB).orders.length, 1);
     assert.equal(view(U.HUB_COMMITTEE, EV_HUB).orders.length, 1);
     assert.equal(view(U.ADMIN, EV_BIZ).orders.length, 3);
@@ -292,12 +294,11 @@ describe('who can REFUND, and what each viewer is offered', () => {
     assert.equal(r.orders[0].refundable, true);
   });
 
-  test('a hub COMMITTEE member and a bare organiser_user_id can view but are offered no refund (they do not control the connected account)', () => {
-    for (const [uid, ev] of [[U.HUB_COMMITTEE, EV_HUB], [U.ORGANISER, EV_BIZ]] as const) {
-      const r = view(uid, ev);
-      assert.equal(r.can_refund, false, `${uid} must not be able to refund`);
-      assert.ok(r.orders.every((o) => o.refundable === false));
-    }
+  test('a hub COMMITTEE member can view but is offered no refund (they do not control the connected account); a bare organiser_user_id can do neither', () => {
+    const r = view(U.HUB_COMMITTEE, EV_HUB);
+    assert.equal(r.can_refund, false, 'committee must not be able to refund');
+    assert.ok(r.orders.every((o) => o.refundable === false));
+    assert.ok(refused(rpcAs(U.ORGANISER, EV_BIZ)));
   });
 
   test('the shared refund predicate is not callable by clients — only by the server', () => {
