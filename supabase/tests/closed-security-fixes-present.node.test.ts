@@ -26,6 +26,9 @@ const FIXES: { name: string; migrations: string[]; code: string[]; isolated: str
   { name: '5 wallet cash-out / self-payment', migrations: ['20260826200000_wallet_self_payment_guard'], code: ['_shared/self-payment.ts', 'create-event-ticket-intent/index.ts', 'create-gift-intent/index.ts', 'wallet-checkout/index.ts'], isolated: ['wallet-card-cashout'], hermetic: ['wallet-ticket-gift-self-payment'] },
   { name: '6 card self-payment to controlled accounts', migrations: ['20261119000000_self_payment_guard_covers_central_accounts'], code: ['_shared/self-payment.ts', 'authorise-payment/index.ts', 'create-hub-donation-intent/index.ts', 'create-unit-purchase-intent/index.ts', 'fetch-authorise/index.ts'], isolated: ['wallet-card-cashout'], hermetic: ['card-self-payment'] },
   { name: '7 product / gift duplicate-submit idempotency', migrations: ['20261120010000_purchase_attempt_idempotency'], code: ['_shared/purchase-attempt.ts', 'create-product-order-intent/index.ts', 'create-gift-intent/index.ts', 'confirm-gift/index.ts'], isolated: ['purchase-attempt-idempotency', 'purchase-attempt-handlers', 'purchase-attempt-baseline'], hermetic: [] },
+  { name: '9 notification entity authorisation (seven notify-* functions)', migrations: [],
+    code: ['_shared/shift-notify-auth.ts', '_shared/fetch-notify-auth.ts', '_shared/notify-decision.ts', '_shared/require-caller.ts', 'notify-application-update/index.ts', 'notify-shift-application/index.ts', 'notify-worker-checkin/index.ts', 'notify-shift-complete/index.ts', 'notify-matching-workers/index.ts', 'notify-drivers/index.ts', 'notify-collected/index.ts'],
+    isolated: [], hermetic: ['notify-entity-authorisation'] },
   { name: '8 event / notice attribution', migrations: ['20261121000000_event_notice_attribution'], code: ['_shared/event-update-notify-auth.ts', 'delete-account/index.ts'], isolated: ['event-notice-attribution'], hermetic: ['notify-fanout-authz'] },
 ];
 

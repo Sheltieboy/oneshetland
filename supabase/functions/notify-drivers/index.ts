@@ -3,6 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { requireCaller } from '../_shared/require-caller.ts';
+import { authoriseFetchNotify } from '../_shared/fetch-notify-auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,40 +31,37 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // The gateway's verify_jwt accepts the PUBLIC ANON KEY, so it is a shape check, not an authorisation check. Who is calling comes from here;
+    // WHAT they may notify about comes from fetch-notify-auth.ts below.
+    const gate = await requireCaller(req, corsHeaders);
+    if ('denied' in gate) return gate.denied;
+    const caller = gate.caller;
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // Verify caller is authenticated
-    const anonSupabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: authHeader } } },
-    );
-    const { data: { user }, error: userError } = await anonSupabase.auth.getUser();
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    // Counted against notify_any as well as its own route: the aggregate only means anything if every notification path claims it.
+    // A service-role caller is our own backend, not the internet, so it is not throttled.
+    if (!caller.isServiceRole) {
+      const limited = await enforceRateLimit('notify-drivers', userSubject(caller.userId), ['notify_broadcast', 'notify_any'], corsHeaders);
+      if ('denied' in limited) return limited.denied;
     }
-
-    // Abuse ceiling for this account. Limits live in rate_limit_policies,
-    // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('notify-drivers', userSubject(user.id), ['notify_broadcast', 'notify_any'], corsHeaders);
-    if ('denied' in limited) return limited.denied;
 
     const { request_id, event } = await req.json();
     if (!request_id) {
       return new Response(JSON.stringify({ error: 'request_id is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Authorise the ACTION: the caller must be the legitimate actor for THIS entity, and the claimed fact must be true. Recipients are read from
+    // the same rows below — nothing in the request body names who gets the push.
+    const decision = await authoriseFetchNotify(supabase, caller, { action: 'drivers', requestId: request_id, event });
+    if (!decision.ok) {
+      return new Response(JSON.stringify({ error: decision.error }), {
+        status: decision.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
