@@ -30,6 +30,7 @@ const FIXES: { name: string; migrations: string[]; code: string[]; isolated: str
     code: ['_shared/shift-notify-auth.ts', '_shared/fetch-notify-auth.ts', '_shared/notify-decision.ts', '_shared/require-caller.ts', 'notify-application-update/index.ts', 'notify-shift-application/index.ts', 'notify-worker-checkin/index.ts', 'notify-shift-complete/index.ts', 'notify-matching-workers/index.ts', 'notify-drivers/index.ts', 'notify-collected/index.ts'],
     isolated: [], hermetic: ['notify-entity-authorisation'] },
   { name: '8 event / notice attribution', migrations: ['20261121000000_event_notice_attribution'], code: ['_shared/event-update-notify-auth.ts', 'delete-account/index.ts'], isolated: ['event-notice-attribution'], hermetic: ['notify-fanout-authz'] },
+  { name: '10 Stripe customer ids not client-reachable (shift_employer_profiles.stripe_customer_id)', migrations: ['20261122000000_shift_employer_stripe_customer_lock'], code: [], isolated: ['stripe-customer-exposure'], hermetic: [] },
 ];
 
 describe('every closed security finding is fully represented', () => {
@@ -52,5 +53,9 @@ describe('every closed security finding is fully represented', () => {
     assert.match(read('supabase/functions/_shared/rate-limit.ts'), /export (async )?function enforcePaymentStart/);
     assert.match(read('supabase/functions/_shared/self-payment.ts'), /export (async )?function selfPaymentBlock/);
     assert.match(read('supabase/migrations/20261121000000_event_notice_attribution.sql'), /aa_events_attribution_guard[\s\S]*aa_notices_attribution_guard/);
+  });
+  test('the generic Stripe customer-id exposure guard exists and runs against the whole replayed schema', () => {
+    assert.ok(has('scripts/lib/stripe-customer-exposure.mjs'));
+    assert.match(read('scripts/migration-replay/replay.mjs'), /stripe-customer-exposure\.mjs[\s\S]*guard\.violations/);
   });
 });

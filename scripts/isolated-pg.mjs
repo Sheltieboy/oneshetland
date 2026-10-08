@@ -71,10 +71,19 @@ const SUITES = [
   'supabase/tests/purchase-attempt-handlers.node.test.ts',
   'supabase/tests/purchase-attempt-baseline.node.test.ts',
   'supabase/tests/event-notice-attribution.node.test.ts',
+  'supabase/tests/stripe-customer-exposure.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
 const selected = process.env.ISOLATED_ONLY ? SUITES.filter((s) => s.includes(process.env.ISOLATED_ONLY)) : SUITES;
+
+// An empty list must NEVER reach `node --test`: with no file arguments it discovers every *.test.ts under the working directory,
+// including the suites that read and WRITE the live production project (see package.json test:fixtures). A typo in ISOLATED_ONLY
+// or an unregistered suite would otherwise run them.
+if (selected.length === 0) {
+  console.error(`[isolated-pg] no registered suite matches ISOLATED_ONLY=${JSON.stringify(process.env.ISOLATED_ONLY ?? '')}; refusing to start (an empty list would run every test file).`);
+  process.exit(2);
+}
 
 // macOS ships a locale that makes the postmaster multithread during startup
 // ("postmaster became multithreaded during startup"), so pin a plain one for

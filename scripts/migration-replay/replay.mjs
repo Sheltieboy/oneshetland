@@ -19,6 +19,7 @@ import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evaluate as stripeCustomerExposure } from '../lib/stripe-customer-exposure.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -75,6 +76,11 @@ try {
   console.log(`only in production: ${onlyProd.length}; only in replay: ${onlyReplay.length}; differing: ${differ.length} (explained: ${differ.length - unexplained.length}, unexplained: ${unexplained.length}); migration errors: ${unexpected.length}`);
   for (const [t, l] of [['ONLY IN PRODUCTION', onlyProd], ['ONLY IN REPLAY', onlyReplay], ['UNEXPLAINED DIFFERENCE', unexplained], ['STALE known-difference entry', staleKnown]]) for (const k of l.slice(0, 30)) console.log(`  ${t}: ${k.replace('\t', ' ')}`);
   for (const e of unexpected.slice(0, 20)) console.log(`  MIGRATION ERROR: ${e}`);
-  code = onlyProd.length + onlyReplay.length + unexplained.length + unexpected.length + staleKnown.length === 0 ? 0 : 1;
+  // Whole-schema guard: no Stripe CUSTOMER id column may be reachable by anon / authenticated beyond the documented allow-list.
+  const guard = stripeCustomerExposure((sql) => (psql(asPostgres, ['-t', '-A', '-F', '\t', '-c', sql]).stdout || '').split('\n').filter(Boolean).map((l) => l.split('\t')));
+  console.log(`stripe customer-id exposure guard: ${guard.violations.length} violation(s), ${guard.allowed.length} documented exception(s), ${guard.stale.length} stale allow-list entr${guard.stale.length === 1 ? 'y' : 'ies'}`);
+  for (const v of guard.violations) console.log(`  STRIPE CUSTOMER ID EXPOSED: ${v}`);
+  for (const v of guard.stale) console.log(`  STALE stripe-customer allow-list entry: ${v}`);
+  code = onlyProd.length + onlyReplay.length + unexplained.length + unexpected.length + staleKnown.length + guard.violations.length + guard.stale.length === 0 ? 0 : 1;
 } catch (e) { console.error(e.message); } finally { stop(); }
 process.exit(code);
