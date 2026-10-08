@@ -6,7 +6,7 @@
  *   webhook finalises the order, so after a successful sheet we're done.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator,
 } from 'react-native';
@@ -20,6 +20,7 @@ import { SECTIONS } from '@/constants/sections';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatPence, fetchWalletBalance } from '@/lib/local-api';
+import { createAttemptHolder, isFinalRefusal } from '@/lib/checkout-attempt';
 import {
   fetchProduct, createProductOrder, shippingQuote,
   type Product, type ProductVariant, type BusinessShipping,
@@ -53,6 +54,10 @@ export default function ProductCheckoutScreen() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // One reference per deliberate checkout. The same item, delivery details and payment method reuse it, so tapping Pay twice, a
+  // retry after a timeout or a dismissed-then-reopened card sheet resolves to the SAME order on the server (no second
+  // reservation, no second charge); changing anything is a different purchase and gets its own. The server keys on (buyer, id).
+  const attempt = useRef(createAttemptHolder()).current;
 
   useEffect(() => {
     if (!productId) return;
@@ -98,6 +103,11 @@ export default function ProductCheckoutScreen() {
   }
 
   const orderBody = (payWith: 'card' | 'wallet', useSaved: boolean) => ({
+    client_request_id: attempt.idFor(JSON.stringify([
+      product!.business_id, product!.id, variant?.id ?? null, qty, eff,
+      eff !== 'collect' ? [name.trim(), address.trim(), postcode.trim(), phone.trim(), eff === 'fetch' ? regionSlug : null] : null,
+      note.trim(), payWith, useSaved,
+    ])),
     business_id: product!.business_id,
     items: [{ product_id: product!.id, variant_id: variant?.id ?? null, qty }],
     fulfilment: eff,
@@ -114,9 +124,13 @@ export default function ProductCheckoutScreen() {
     setBusy(true); setErr(null);
     try {
       await createProductOrder(orderBody('wallet', false));
+      attempt.spend();                                   // paid: the next order is a new purchase
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDone(true);
-    } catch (e) { setErr(e instanceof Error ? e.message : 'Payment failed'); }
+    } catch (e) {
+      if (isFinalRefusal(e)) attempt.spend();            // declined / expired / refused: that attempt is over
+      setErr(e instanceof Error ? e.message : 'Payment failed');
+    }
     finally { setBusy(false); }
   }
 
@@ -127,6 +141,7 @@ export default function ProductCheckoutScreen() {
       const useSaved = !!profile?.has_payment_method;
       const res = await createProductOrder(orderBody('card', useSaved));
       if (res.charged) {
+        attempt.spend();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setDone(true);
         return;
@@ -140,13 +155,19 @@ export default function ProductCheckoutScreen() {
       if (init.error) throw new Error(init.error.message);
       const sheet = await presentPaymentSheet();
       if (sheet.error) {
-        if (sheet.error.code === 'Canceled') return; // stock releases on TTL
+        // Dismissed: the attempt stays alive, so paying again RESUMES this same order and payment instead of starting a second.
+        // (If they walk away, the stock is released when the order expires.)
+        if (sheet.error.code === 'Canceled') return;
         throw new Error(sheet.error.message);
       }
       // Webhook finalises the order — from the buyer's side, it's placed.
+      attempt.spend();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDone(true);
-    } catch (e) { setErr(e instanceof Error ? e.message : 'Payment failed'); }
+    } catch (e) {
+      if (isFinalRefusal(e)) attempt.spend();
+      setErr(e instanceof Error ? e.message : 'Payment failed');
+    }
     finally { setBusy(false); }
   }
 
