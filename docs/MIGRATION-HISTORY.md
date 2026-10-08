@@ -1,22 +1,32 @@
-# Migration history — read this before `supabase db push`
+# Migration history
 
-**Do not run `supabase db push` against production.** Not yet.
+**Status (8 October 2026): the repository and production's registered history agree — 247 migration files, 247 registered versions.**
 
-## Why
+## How we got here
 
-Production's registered history (`supabase_migrations.schema_migrations`) and this repository disagree:
+Production's registered history (`supabase_migrations.schema_migrations`) had 218 versions. 29 migrations (20261031000000 … 20261121000000: notification and
+claims hardening, launch-partner and outreach tooling, product import, and the six closed security fixes) had been applied by hand with
+`supabase db query -f` and never recorded. On 2026-10-08 they were registered with the official history-repair command, after a rehearsal on an isolated copy
+of the history table:
 
-* **218 versions are registered** (snapshot: `supabase/production/registered-migrations.json`, captured read-only on 2026-10-08).
-* **29 migrations are applied in production but were never registered** — they were applied by hand
-  (`supabase db query -f`). They are listed, with their purpose, in `supabase/production/hand-applied-migrations.json`.
-  Each was verified present in the live catalog on 2026-10-08. `db push` would try to run them a second time.
+```bash
+supabase migration repair --status applied <the 29 versions> --linked
+```
 
-`node scripts/check-migration-history.mjs` compares the two and exits non-zero while they differ
-(`--snapshot` works offline; with no flag it reads `supabase migration list --linked`, which is read-only).
-`npm run db:push:guarded` runs the check and only then `supabase db push`.
+`repair` inserts the version, name and statements into `schema_migrations` and **executes none of the SQL**. Nothing else changed: the 218 existing rows are
+byte-identical (hash `633bbcf8…` before and after), the production catalog fingerprint (4,990 public objects) and the Edge Function versions are unchanged.
+The record of what was registered is `registered_by_repair` in `supabase/production/hand-applied-migrations.json`.
 
-Registering the 29 (a production write) is a separate, explicitly approved step. When it is done, empty
-`hand-applied-migrations.json`, refresh `registered-migrations.json`, and the guard passes.
+## Guard
+
+`node scripts/check-migration-history.mjs` compares the repository's migration files with production's registered versions
+(`--snapshot` works offline against `supabase/production/registered-migrations.json`; with no flag it reads `supabase migration list --linked`, read-only).
+It exits non-zero if a file is unregistered, a registered version has no file, or a hand-applied migration is listed and not registered.
+`npm run db:push:guarded` runs it before `supabase db push`. **If you ever apply a migration by hand, register it in the same sitting** with
+`supabase migration repair --status applied <version>` and refresh `registered-migrations.json`; until then add it to `hand-applied-migrations.json`
+so the guard blocks a push.
+
+Note `db push` compares VERSIONS only. The three hand-applied supplements below are not migrations and are never run by it; they exist so a replay reproduces production.
 
 ## Applied migrations are immutable
 
@@ -35,6 +45,8 @@ Every one of the 217 registered migrations with recorded statements now equals p
 untracked files (`20261015000000`, `20261015010000`) are committed byte-for-byte; the second equals the live `resolve_nfc_tile`.
 
 Changes belong in a NEW migration. No corrective migration has been added by this reconciliation.
+
+The files were restored BEFORE registration, so the 29 rows registered on 2026-10-08 hold the canonical file text.
 
 ## Hand-applied supplements (recorded, not hidden)
 

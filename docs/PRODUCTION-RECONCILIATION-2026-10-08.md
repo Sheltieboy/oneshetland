@@ -3,6 +3,9 @@
 This tree represents the backend that is live in production. Production (migration history, function bundles, catalog) was the authority;
 git history was used for provenance.
 
+> **Update, 2026-10-08:** the 29 hand-applied migrations have since been registered in production's migration history (see `MIGRATION-HISTORY.md`).
+> The repository and production history now agree; `scripts/check-migration-history.mjs` exits 0.
+
 ## Sources
 
 * Migrations: the `home-redesign` lineage at `8a39947` (every migration production has applied), with four historical files restored to the

@@ -1,5 +1,5 @@
 /**
- * migration-history-guard.node.test.ts — `supabase db push` must not look safe while production's REGISTERED history and the repository differ.
+ * migration-history-guard.node.test.ts — the repository and production's REGISTERED migration history must agree, and the guard must refuse when they do not.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,8 @@ import { analyse, parseRegistered, localVersions } from '../../scripts/check-mig
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const snapshot = JSON.parse(readFileSync(join(ROOT, 'supabase/production/registered-migrations.json'), 'utf8'));
-const hand = JSON.parse(readFileSync(join(ROOT, 'supabase/production/hand-applied-migrations.json'), 'utf8')).migrations;
+const handFile = JSON.parse(readFileSync(join(ROOT, 'supabase/production/hand-applied-migrations.json'), 'utf8'));
+const hand = handFile.migrations;
 const local = localVersions();
 
 describe('the comparison', () => {
@@ -41,17 +42,27 @@ describe('the repository against the production snapshot', () => {
   test('every registered production version has a file', () => {
     for (const v of snapshot.versions) assert.ok(local.includes(v), `registered version ${v} has no migration file`);
   });
-  test('the files production has not registered are EXACTLY the documented hand-applied list', () => {
+  test('every migration file is registered in production, so the documented unregistered list is empty', () => {
     const unregistered = local.filter((v) => !snapshot.versions.includes(v));
     assert.deepEqual(unregistered, hand.map((m: any) => m.version));
-    assert.equal(hand.length, 29);
+    assert.deepEqual(unregistered, []);
+    assert.equal(snapshot.versions.length, local.length);
   });
-  test('the command refuses (exit 1) while they differ, and says why', () => {
+  test('the 29 migrations registered on 2026-10-08 are on record, are all registered now, and were registered by `migration repair`, not by running them', () => {
+    assert.equal(handFile.registered_by_repair.length, 29);
+    for (const m of handFile.registered_by_repair) assert.ok(snapshot.versions.includes(m.version), `${m.version} should be registered`);
+    assert.match(handFile.note, /migration repair --status applied/);
+  });
+  test('the command agrees (exit 0) against the snapshot', () => {
     const r = spawnSync(process.execPath, [join(ROOT, 'scripts/check-migration-history.mjs'), '--snapshot'], { encoding: 'utf8' });
-    assert.equal(r.status, 1); assert.match(r.stdout, /DO NOT RUN `supabase db push`/); assert.match(r.stdout, /29 migration\(s\) are applied in production but not registered/);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.match(r.stdout, /agree/);
   });
-  test('it passes once the history agrees (simulated: snapshot with the hand-applied versions registered)', () => {
-    const all = local; const r = analyse(local, all, hand.map((m: any) => m.version)); assert.equal(r.safe_to_push, true);
+  test('it still refuses when a migration is applied by hand and not registered (simulated)', () => {
+    const r = analyse([...local, '29990101000000'], snapshot.versions, ['29990101000000']);
+    assert.equal(r.safe_to_push, false); assert.deepEqual(r.unregistered_known, ['29990101000000']);
+  });
+  test('it passes once the history agrees', () => {
+    const r = analyse(local, snapshot.versions, hand.map((m: any) => m.version)); assert.equal(r.safe_to_push, true);
   });
 });
 

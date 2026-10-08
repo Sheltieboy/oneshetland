@@ -2,9 +2,9 @@
 /**
  * check-migration-history.mjs — is it safe to run `supabase db push` against production?
  *
- * Not while the repository's migration files and the versions production has REGISTERED differ. Some production migrations were applied
- * by hand and never recorded in supabase_migrations.schema_migrations (supabase/production/hand-applied-migrations.json); `db push`
- * would try to apply them a second time. This compares the two lists and exits non-zero until they agree.
+ * Only while the repository's migration files and the versions production has REGISTERED agree. If a migration is ever applied by hand and not
+ * registered (list it in supabase/production/hand-applied-migrations.json), `db push` would try to apply it a second time; this compares the two
+ * lists and exits non-zero whenever they differ. (On 2026-10-08 the 29 earlier hand-applied migrations were registered; they now agree.)
  *
  *   node scripts/check-migration-history.mjs                       reads the registered versions with `supabase migration list --linked` (READ-ONLY)
  *   node scripts/check-migration-history.mjs --snapshot            offline: uses supabase/production/registered-migrations.json
@@ -50,7 +50,7 @@ export function analyse(local, registered, handApplied) {
 
 function main(argv) {
   const a = argv.slice(2); const opt = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
-  const hand = JSON.parse(readFileSync(join(ROOT, 'supabase/production/hand-applied-migrations.json'), 'utf8')).migrations.map((m) => m.version);
+  const hand = JSON.parse(readFileSync(join(ROOT, 'supabase/production/hand-applied-migrations.json'), 'utf8')).migrations.map((m) => m.version); // known-but-unregistered entries (normally empty)
   let registered;
   try {
     if (a.includes('--snapshot')) registered = parseRegistered(readFileSync(join(ROOT, 'supabase/production/registered-migrations.json'), 'utf8'));

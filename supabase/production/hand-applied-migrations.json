@@ -1,7 +1,9 @@
 {
   "captured_on": "2026-10-08",
-  "note": "Applied to production by hand (supabase db query -f) and NOT recorded in supabase_migrations.schema_migrations. Each was verified present in the live catalog on 2026-10-08. A normal `supabase db push` would try to run them again. Remove entries from this list only when the registration step has recorded them.",
-  "migrations": [
+  "note": "EMPTY: every migration in the repository is now registered in production. The 29 below were applied by hand earlier and were registered on 2026-10-08 with `supabase migration repair --status applied <versions> --linked` (it records the versions and their statements in supabase_migrations.schema_migrations and executes nothing). Kept as the record of what was registered. Add an entry here ONLY if a migration is again applied by hand without being registered; scripts/check-migration-history.mjs lists entries still unregistered.",
+  "migrations": [],
+  "registered_by_repair_on": "2026-10-08",
+  "registered_by_repair": [
     {
       "version": "20261031000000",
       "name": "should_notify_service_only",
