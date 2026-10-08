@@ -1,0 +1,21 @@
+{
+  "captured_on": "2026-10-08",
+  "note": "Objects whose replayed definition differs from production only cosmetically (verified by reading both).",
+  "differences": [
+    {
+      "kind": "con",
+      "key": "profiles.profiles_games_handle_format",
+      "reason": "parenthesisation of the AND chain differs; semantically identical"
+    },
+    {
+      "kind": "fn",
+      "key": "local_loyalty_cards_tier_guard()",
+      "reason": "production body has the migration's inline SQL comments stripped; code identical"
+    },
+    {
+      "kind": "fn",
+      "key": "local_offers_tier_guard()",
+      "reason": "production body has the migration's inline SQL comments stripped; code identical"
+    }
+  ]
+}

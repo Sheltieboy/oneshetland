@@ -1,3 +1,8 @@
+-- RECONCILED TO WHAT PRODUCTION APPLIED (8 Oct 2026).
+-- The text previously committed under this name differed from the SQL production recorded in supabase_migrations.schema_migrations
+-- (the file had been edited after it was applied). This file is reconstructed from the statements production recorded, verbatim,
+-- joined with ";". Applied migrations are immutable; later changes belong in a new migration. See docs/MIGRATION-HISTORY.md.
+
 -- Paygate 10 — a tie is not a chronology, so stop guessing at one.
 --
 -- THE DEFECT
@@ -33,7 +38,6 @@
 -- normal path costs no extra Stripe call.
 
 begin;
-
 /**
  * fresh    — newer than anything applied, or a harmless duplicate
  * stale    — an older snapshot; change nothing
@@ -90,9 +94,7 @@ begin
   return 'fresh';
 end;
 $function$;
-
 drop function if exists public.apply_subscription_state(text, text, text, text, timestamptz, boolean, bigint);
-
 create or replace function public.apply_subscription_state(
   p_sub_id               text,
   p_customer             text,
@@ -168,9 +170,7 @@ begin
                             'tier_after', v_tier, 'until', p_period_end);
 end;
 $function$;
-
 drop function if exists public.retire_subscription(text, bigint);
-
 create or replace function public.retire_subscription(
   p_sub_id        text,
   p_event_created bigint  default null,
@@ -204,19 +204,10 @@ begin
                             'tier_before', b.subscription_tier);
 end;
 $function$;
-
 revoke execute on function public.claim_subscription_event(text, bigint, text, boolean)                                   from anon, authenticated, public;
 revoke execute on function public.apply_subscription_state(text, text, text, text, timestamptz, boolean, bigint, boolean) from anon, authenticated, public;
 revoke execute on function public.retire_subscription(text, bigint, boolean)                                              from anon, authenticated, public;
 grant  execute on function public.claim_subscription_event(text, bigint, text, boolean)                                   to service_role;
 grant  execute on function public.apply_subscription_state(text, text, text, text, timestamptz, boolean, bigint, boolean) to service_role;
 grant  execute on function public.retire_subscription(text, bigint, boolean)                                              to service_role;
-
-commit;
-
--- The 3-argument version this replaced returned boolean, so the new signature
--- created an OVERLOAD rather than replacing it — leaving the old
--- "prefer active" tie rule sitting in the database, callable. Drop it.
-begin;
-drop function if exists public.claim_subscription_event(text, bigint, text);
 commit;

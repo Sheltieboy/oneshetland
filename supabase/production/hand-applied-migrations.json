@@ -1,0 +1,151 @@
+{
+  "captured_on": "2026-10-08",
+  "note": "Applied to production by hand (supabase db query -f) and NOT recorded in supabase_migrations.schema_migrations. Each was verified present in the live catalog on 2026-10-08. A normal `supabase db push` would try to run them again. Remove entries from this list only when the registration step has recorded them.",
+  "migrations": [
+    {
+      "version": "20261031000000",
+      "name": "should_notify_service_only",
+      "purpose": "notification privilege closure"
+    },
+    {
+      "version": "20261031010000",
+      "name": "quiet_hours_stay_in_inbox",
+      "purpose": "notification centre"
+    },
+    {
+      "version": "20261031020000",
+      "name": "notification_routes_for_shipped_build",
+      "purpose": "notification payloads for shipped build 144"
+    },
+    {
+      "version": "20261031030000",
+      "name": "business_claims_claimants_submit_only",
+      "purpose": "business claims hardening"
+    },
+    {
+      "version": "20261031040000",
+      "name": "business_claims_record_the_decider",
+      "purpose": "business claims hardening"
+    },
+    {
+      "version": "20261031050000",
+      "name": "job_sync_runs",
+      "purpose": "council jobs sync log"
+    },
+    {
+      "version": "20261103000000",
+      "name": "launch_plan_grants",
+      "purpose": "launch-partner plan grants"
+    },
+    {
+      "version": "20261103010000",
+      "name": "admin_launch_business_lookup",
+      "purpose": "launch-partner admin"
+    },
+    {
+      "version": "20261104000000",
+      "name": "public_business_locality",
+      "purpose": "public business view locality"
+    },
+    {
+      "version": "20261104010000",
+      "name": "discovery_fixtures",
+      "purpose": "discovery fixtures"
+    },
+    {
+      "version": "20261104020000",
+      "name": "admin_discovery_fixture_ids",
+      "purpose": "discovery fixtures"
+    },
+    {
+      "version": "20261104030000",
+      "name": "launch_partner_claims",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261105000000",
+      "name": "product_import_foundation",
+      "purpose": "product import foundation"
+    },
+    {
+      "version": "20261106000000",
+      "name": "launch_partner_campaigns",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261107000000",
+      "name": "launch_partner_profile_versions",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261108000000",
+      "name": "launch_partner_email_opening",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261109000000",
+      "name": "launch_partner_send_claim",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261110000000",
+      "name": "launch_partner_enrichment",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261111000000",
+      "name": "launch_partner_go_live",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261112000000",
+      "name": "launch_partner_takedown",
+      "purpose": "launch-partner pipeline"
+    },
+    {
+      "version": "20261113000000",
+      "name": "launch_outreach_suppression",
+      "purpose": "launch outreach suppression"
+    },
+    {
+      "version": "20261114000000",
+      "name": "launch_invite_default_30_days",
+      "purpose": "launch invitation lifetime"
+    },
+    {
+      "version": "20261115000000",
+      "name": "email_tables_lock_down",
+      "purpose": "SECURITY: email table lockdown"
+    },
+    {
+      "version": "20261116000000",
+      "name": "event_ticket_orders_server_only",
+      "purpose": "SECURITY: forged ticket orders / refund binding"
+    },
+    {
+      "version": "20261117000000",
+      "name": "hub_members_server_authoritative",
+      "purpose": "SECURITY: hub_members paid-tier protection"
+    },
+    {
+      "version": "20261118000000",
+      "name": "payment_start_abuse_limits",
+      "purpose": "SECURITY: payment-start / card-testing limits"
+    },
+    {
+      "version": "20261119000000",
+      "name": "self_payment_guard_covers_central_accounts",
+      "purpose": "SECURITY: card self-payment guard"
+    },
+    {
+      "version": "20261120010000",
+      "name": "purchase_attempt_idempotency",
+      "purpose": "SECURITY: purchase idempotency"
+    },
+    {
+      "version": "20261121000000",
+      "name": "event_notice_attribution",
+      "purpose": "SECURITY: event/notice attribution"
+    }
+  ]
+}
