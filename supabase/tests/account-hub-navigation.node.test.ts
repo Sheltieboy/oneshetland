@@ -37,7 +37,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -119,7 +119,7 @@ describe('the things you have bought are on the account hub', () => {
 
 describe('the regrouping did not drop anything', () => {
   const PRESERVED = [
-    '/my-work', '/payment-setup', '/(driver)/connect-bank', '/referrals',
+    '/my-work', '/payment-setup', '/(driver)/connect-bank',
     '/(customer)/saved-addresses', '/(customer)/previous-requests',
     '/notifications', '/notification-preferences', '/blocked-users',
     '/edit-profile', '/security', '/account',
@@ -130,6 +130,29 @@ describe('the regrouping did not drop anything', () => {
       assert.ok(routesIn(hub).includes(route), `${route} disappeared from the account hub`);
     });
   }
+
+  // The £5 referral programme was never approved for launch: the Me screen no longer links to it, and the old route only redirects here.
+  test('the retired referral programme is not advertised on the hub, and /referrals only redirects to Me', () => {
+    assert.ok(!routesIn(hub).includes('/referrals'), 'the hub must not link to /referrals');
+    assert.doesNotMatch(hub, /Invite friends|Give £5|get £5/);
+    const route = read('app/referrals.tsx');
+    assert.match(route, /<Redirect href="\/\(tabs\)\/me" \/>/);
+    assert.doesNotMatch(route, /£5|Give £|ENTER CODE|supabase|ensure_referral_code|apply_referral_code/);
+  });
+
+  test('nothing in the app navigates to /referrals', () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(join(APP_ROOT, dir))) {
+        const rel = `${dir}/${name}`;
+        if (statSync(join(APP_ROOT, rel)).isDirectory()) { walk(rel); continue; }
+        if (!/\.(tsx?|jsx?)$/.test(name)) continue;
+        if (/\/referrals['"`?]/.test(read(rel))) offenders.push(rel);
+      }
+    };
+    for (const d of ['app', 'components', 'context', 'hooks', 'lib']) if (existsSync(join(APP_ROOT, d))) walk(d);
+    assert.deepEqual(offenders, []);
+  });
 
   test('sign out and account deletion survive', () => {
     assert.match(hub, /handleSignOut/);
