@@ -62,6 +62,8 @@ const EXPECTED = {
   'hub-media':          { pub: true, mb: 20, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
   // PRIVATE since the Step 13C cutover: its objects follow the memory's
   // visibility, so they are signed for at read time rather than served openly.
+  // Launch Test Centre screenshots (20261125000000): PRIVATE, owner-or-admin only, so even reads are `authenticated`, not `public`.
+  'launch-test-evidence': { pub: false, mb: 5, mime: ['image/jpeg','image/png','image/webp','image/heic','image/heif'] },
   'memories-media':     { pub: false, mb: 25, mime: ['image/jpeg','image/jpg','image/png','image/webp',
                                                     'audio/webm','audio/ogg','audio/mpeg','audio/mp4','audio/m4a','audio/wav'] },
   'site-media':         { pub: true, mb: 10, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
@@ -128,7 +130,7 @@ describe('the policy surface is complete and correctly scoped', () => {
        order by policyname;`);
   });
 
-  test('all four commands are policed on all ten buckets', () => {
+  test('all four commands are policed on every bucket', () => {
     const gaps: string[] = [];
     for (const b of BUCKETS) {
       for (const cmd of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
@@ -146,6 +148,7 @@ describe('the policy surface is complete and correctly scoped', () => {
     // table local_businesses" instead of its own policy.
     const wrong = pols
       .filter((p) => BUCKETS.some((b) => String(p.policyname).startsWith(`${b} `)))
+      .filter((p) => !String(p.policyname).startsWith('launch-test-evidence '))   // private bucket: every command is `authenticated`
       .filter((p) => (p.cmd === 'SELECT' ? !String(p.roles).includes('public')
                                          : !String(p.roles).includes('authenticated')))
       .map((p) => `${p.policyname} [${p.cmd}] roles=${p.roles}`);
