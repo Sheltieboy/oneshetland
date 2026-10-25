@@ -831,8 +831,8 @@ Further constraints:
 | 8 | **Notifications** | DONE (see Step 8 status): one server-fed outbox; Notification Centre row first, then push; opportunity vs activity policy; four time-critical kinds; deep-link contract; legacy `notify-drivers`/`notify-collected` refuse v2 | migration `20261205000000`, `fetch-v2-runner`, `notify-drivers`, `notify-collected`, `_shared/fetch-v2-notify.ts`, `_shared/fetch-v2-push-gateway.ts` | 5, 6, 7 | Low | `notification_log` assertions; controls | Legacy notifiers refuse v2 | After clearance |
 | 9 | **Messages, issues, photos** | DONE (see Step 9 status): participant-only messages with admin hide and a collapsed notice; 72-hour issue reporting and audited resolution; five photo roles by signed upload with real-type checks and metadata stripping; stricter delivery/return evidence; service-only photo bucket | migration `20261206000000`, `fetch-v2-photos`, `fetch-v2-admin` (`area: support`), `fetch-v2-runner` | 3, 8 | Low–Medium | Party-only, write-once, storage matrix; controls | No | After clearance |
 | 10 | **Admin controls** | DONE (see Step 10 status): web Fetch operations console at `/admin/fetch` (queues, jobs, job page, driver review, members, notifications) over admin-gated reads and the audited `fetch-v2-admin` actions; item-description redaction; Fetch restriction; counters | migration `20261207000000`, `fetch-v2-admin` support area; web `app/admin/fetch`, `lib/fetch-admin`, `components/admin/fetch` | 5, 6, 8, 9 | Medium | Admin action tests (isolated); web contract tests; build | Web admin only; old driver-approval screen replaced | After clearance |
-| 11 | **Web UI** | Exact scope in "Step 11 scope" below: requester and driver flows on `lib/fetch-api.ts`; 18+; quote/create; item photos; payment completion (3DS); job pages; messages and issues; driver apply/verification/vehicle/board/journeys/accept/collect/deliver/return; Step 8 deep-link routes; copy fixes (A.1, K.0) | web `fetch-v2` | 5–10 | Medium | Contract tests; build | Behind the flag | No |
-| 12 | **Mobile UI** | The same flows, on `fetch-v2-mobile` derived from the post-148 line; remove client price, status and notify writes and hardcoded production URLs; Android directions fix | mobile branch | 5–10 | Medium | Contract tests; simulator | **Next native build only** | **No**: Build 148 untouched |
+| 11 | **Web UI** | DONE (see Step 11 status): web requester and driver product on `lib/fetch-api.ts` — landing, 5-step create with server quote and hold explained, 18+, 3DS, job pages, messages, problems, photos, driver apply/verification/board/journeys/accept/active job, history, Step 8 deep links; old v1 routes forward; Shop Fetch stays hidden | web `app/fetch/**`, `components/fetch/v2`, `lib/fetch-api.ts`, `lib/fetch/*`; migration `20261208000000` (member lists) | 5–10 | Medium | Web contract + logic + scenario tests (33); isolated member-lists tests; build; fixture preview | Behind the flag | No |
+| 12 | **Mobile UI** | Exact scope in "Step 12 scope" below: the same flows in the app on a shared `lib/fetch-api.ts`; remove v1 client writes, client price, notify calls and hardcoded URLs; HEIC→JPEG on device; push routing on `data.route`; Android directions fix | branch `fetch-v2-mobile` from the post-148 line | 5–11 | Medium | Contract tests; simulator against a local backend | **Next native build only** | **No**: Build 148 untouched |
 | 13 | **Port legacy tests** | Rewrite the 7 production-touching suites as isolated-PG | `supabase/tests` | 3–5 | Low | — | No | No |
 | 14 | **Payments live gate** | One real-card admin run incl. a ferry supplement and a return resolution, reconciled in Stripe | — | 11 or 12; deploys done | **High** (live money) | Reconciliation checklist | Live, admins only | After clearance |
 | 15 | **Real-device acceptance** | Section Q on iPhone, Android and web with testers | — | 12, 14 | — | Q | Testers only | No |
@@ -1756,6 +1756,211 @@ Step 8's administrator deep links `/admin/fetch/requests/<id>` redirect to the j
 5. **Gating.** The existing server flag still gates `/fetch/*` (coming-soon until the audience allows). Copy fixes from A.1/K.0 (no 95p, the hold explained).
 6. **Tests:** contract and pure-logic tests as in Step 10, a build, typecheck and lint.
 7. **Not in Step 11:** mobile (Step 12), live payments (Step 14), deploy.
+
+**Step 11 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing sent.**
+
+**Web** (`fetch-v2` branch of `oneshetland-web`, worktree `~/Claude/oneshetland-web-fetch-v2`). **Backend** (`fetch-v2`): one small migration for a contract the product could not work without (below).
+
+**Architecture.**
+- **One client.** `lib/fetch-api.ts` is the only Fetch interface on the web. It runs over an injected transport: `lib/fetch/transport.server.ts` carries the member's own session on the server, and tests use a fake.
+  - It may call 26 allow-listed database functions and 8 edge functions. Its only direct reads are the job's `fetch_request_events` (safe columns) and the public `regions` / `delivery_categories`.
+  - It never sends a money value; every amount comes from the server.
+  - Server refusals become stable codes with plain-English messages (`FETCH_MESSAGES`).
+- **Thin layers.** Pages are server loaders: sign-in check (`lib/fetch/load.server.ts`), one load, one view component. Changes go through server actions (`app/fetch/actions.ts`); each is one client call, and it revalidates the page only on success.
+- **Pure logic, tested under node:** `lib/fetch/present.ts` (words, money lines, statuses, timeline) and `lib/fetch/flow.ts` (create steps, which actions apply now).
+- **Views** live in `components/fetch/v2/*`. There is no browser Supabase client anywhere in Fetch.
+
+**Routes.** Every one is `force-dynamic` and behind the server flag: `proxy.ts` rewrites `/fetch/*` to coming-soon unless `fetch_v2_enabled()` is true, and fails closed.
+
+| Route | Purpose |
+|---|---|
+| `/fetch` | Landing. The proposition "Someone's going that way", two paths ("I need something fetched" / "I'm travelling / I can fetch") and how it works. Signed in: your live Fetches, the jobs you're doing, your open journeys. |
+| `/fetch/new` | Sign-in, the 18+ gate, a restricted-account notice, then the five-step wizard. |
+| `/fetch/requests/<id>` | The requester's job page (deep link). |
+| `/fetch/requests/<id>/payment` | The 3DS deep link. Anything else forwards to the job page. |
+| `/fetch/history` | Both roles' safe history. |
+| `/fetch/drive` | Driver home: the onboarding explainer if not applied; otherwise status, board, journeys and payouts link. |
+| `/fetch/drive/apply` | Driver application. |
+| `/fetch/driver/verification` | Driver details and documents (deep link). |
+| `/fetch/board` | The board, `?all=1` for "Show all". |
+| `/fetch/board/<id>` | One Fetch on the board, with accept (deep link). It forwards to the job if it's already yours; otherwise "This Fetch has gone". |
+| `/fetch/journeys/new` | Post a journey. |
+| `/fetch/jobs/<id>` | The driver's job page (deep link). |
+
+The two job pages redirect to each other by viewer. The old v1 addresses forward: `/fetch/[id]` → `/fetch/requests/[id]`, `/fetch/apply` → `/fetch/drive/apply`, `/fetch/runs/new` → `/fetch/journeys/new`, `/fetch/previous` → `/fetch/history`, `/fetch/about` → `/fetch`, and `/fetch/connect-bank` → `/account/payments` (unchanged). The v1 components in `components/fetch/*` are left in place but no longer used by any page (non-destructive).
+
+**Requester journey.**
+1. **Collection**, then **Delivery**. Area, address, optional postcode (a non-ZE postcode is caught early) and village. Optional name and notes, with the note that only the accepting driver sees them.
+2. **The item.**
+   - Kind (category) and a description of 3–140 characters, with "please don't include names, phone numbers or addresses".
+   - Size in plain words with examples.
+   - Rough measurements for large or bulky items ("so the driver can make sure it will fit").
+   - Two-person lift; fragile.
+   - The pharmacy/takeaway liability note.
+   - Bulky items need a photo after posting.
+3. **Timing.** As soon as possible / by a time / "I'm flexible" ("Easier to match with someone already going that way."). Also the phone number, share-phone and safe-place choices.
+4. **Price & review.**
+   - A summary of the Fetch, then the server quote line by line: Driver payment, Ferry journey extra, OneShetland fee, Expected total.
+   - When the hold is higher: "Expected charge if everything goes normally" and "Temporary card authorisation: up to …", plus the exact R.2 sentence. The hold is never presented as the price.
+   - A location error from the quote sends the member back to that step with the message. The minimum price is never applied silently.
+5. **Post.**
+   - One idempotency key per draft, so a retry is the same Fetch.
+   - "No card" shows the message with an "Add a card" link to `/account/payments`.
+   - On success, the job page shows "Your Fetch is posted. Nothing has been charged."
+
+**Job page (requester).**
+- **Status in words:** Looking for someone / Driver found / Waiting for payment confirmation / Payment needs your attention / Cancellation asked / On its way / Needs attention / Delivered / Returned / Cancelled / No driver found.
+- **While waiting:** "This isn't a booking yet — a driver still needs to accept your Fetch." and the Step 7 hint, which never names a driver.
+- **Actions:** only those valid now (`requesterActions`): pay, cancel, ask to cancel, extend, ready, photos, message, report. Each opens a dialog that says exactly what will happen, and shows the server's own answer.
+- **Price:** shown as recorded, plus waiting or return when the server has set them.
+- **Timeline:** in words; internal payment events are hidden.
+- **Messages, photos, problems** (below).
+
+**Quote and payment UX.** "Nothing is charged now. When a driver accepts, your saved card is authorised; you're charged when your item is delivered."
+- **3DS:** "Your bank needs you to confirm this payment authorisation." `fetch-v2-payment complete` returns the server's client secret, then `settleSavedCardPayment` (Stripe.js `handleNextAction`), then `refresh`. Outcomes are in words (confirmed / you closed the check / still checking / not confirmed).
+- **A declined card** points to "your payments". In P0 a new card cannot be attached to an existing hold (see the concerns below).
+
+**Messages.** Plain text, at most 1,000 characters, requester ↔ current driver only, chronological, sender shown ("You" / first name).
+- A removed message reads "Message removed".
+- Sending uses a client reference, so a retry is one message. Messages refresh every 15 s while the tab is visible.
+- No editing, reactions, attachments or group chat. Messaging closes when the server says so.
+
+**Problems.**
+- The kinds shown depend on who is reporting (requester: "It hasn't arrived" and "the driver's behaviour"; driver: "the requester's behaviour"; both: the rest).
+- Optional detail and an optional photo (uploaded as an `issue` photo against the new issue).
+- "For anything urgent or unsafe, call 999 first." The 72-hour window is stated. Your own reports are listed with their outcome.
+
+**Photos.**
+- The requester adds item photos and chooses whether drivers see each one ("Show to drivers" / "Hide from drivers" / "Remove") until acceptance. The driver adds collection, delivery and return photos.
+- Uploads are JPEG/PNG/WEBP up to 10 MB: one-use signed upload, then a server check. Viewing goes through a two-minute link fetched on click.
+- No storage path ever reaches the browser. HEIC is refused with a clear message (Step 12 converts on the device).
+
+**Verification (driver).**
+- **Status:** Under review, Approved, Not approved or Paused, with the documents' "current until" date and why the driver can't accept now, from the server's code.
+- **Each required document:** its state (Not supplied / Awaiting review / Approved until … / expiring within 30 days / Expired / Needs replacing with OneShetland's note), the configured guidance, upload a new copy, and "View what I sent" (a short-lived link to your own copy only).
+- **Vehicle change** warns that the vehicle's evidence needs checking again.
+
+**Driver application.** Vehicle; the largest size, limited to what the vehicle takes; two-person lift; registration (except on foot or bicycle); up to 20 areas (`fetch_v2_set_my_areas`); a short statement. It ends on the verification page as **Under review**. The client cannot approve itself (Step 6 trigger).
+
+**Board.**
+- **Default "Suits you", secondary "Show all".** Each card shows from → to (area only), "You'd receive £…", the item, size, two-person/ferry/photo, and when.
+- **Why it matches:** the server's summary, e.g. "Fits your Lerwick → Yell journey · fits your vehicle".
+- **Run matches stand out:** a heavy orange border and a "★ FITS YOUR SATURDAY JOURNEY" badge (the day is the run's departure day). Area matches get a quieter "In your area". There are no scores.
+- **Never shown:** requester identity, exact addresses, phone or private notes (a test pins this).
+
+**Journeys.** From, to, earliest and latest departure (a window of at most 12 hours, up to 14 days ahead), optional room-for size and categories. Open journeys are listed with cancel. No recurring runs, stops, optimisation or capacity tracking.
+
+**Accept.**
+- The board item shows route, pay, when, size with measurements, handling and any match. "View photo" uses the board-safe link.
+- Large and bulky items require "I've checked the item details and it will fit in my vehicle." `fetch-v2-accept` then answers:
+  - **Confirmed:** "It's yours… you can collect."
+  - **Payment not confirmed yet:** "please don't collect until the job says it's ready".
+  - **Requester's bank check needed:** the requester confirms with their bank first, and the job is released if they don't in time.
+  - **Refused, in words:** already taken, expired verification (link to documents), payouts not enabled (link to `/account/payments`), or a bulky item without a photo.
+
+**Active job (driver).**
+- **Shown:** status in words; a warning when the driver's own documents would block collection; "Waiting started … Any waiting charge is calculated automatically." after arrival (the arrive button then disappears).
+- **Next actions,** by state:
+  - **Before collection:**
+    - arrive;
+    - collect, offered only when payment is confirmed (the server decides again; a refusal is shown, never a pretend success);
+    - "Check the payment again";
+    - give up, with a reason;
+    - agree or ask to go ahead when the requester asks to cancel.
+  - **After collection:**
+    - deliver: handed over or the agreed safe place, which needs a delivery photo first;
+    - "I can't deliver it": a structured reason and note, explaining the return;
+    - after that, "I've returned it" (return photo first), which shows "Return reported — OneShetland will review this."
+- **Addresses, notes and safe-place instruction** while the server allows (72 h after close). The phone only when shared and live.
+- **"Your pay"** from the server, line by line: delivery, ferry, then waiting and return once set ("Any return payment is decided by OneShetland"). Plus the payouts link with "bank transfers can take a few working days".
+- **If the capture fails at delivery,** the server does not record the delivery. The page says "The payment couldn't be taken, so this delivery isn't marked complete yet. OneShetland has been told and will be in touch." It never says delivered.
+
+**History.** One page for both roles, from `fetch_v2_my_requests` / `fetch_v2_my_jobs`:
+- route, item, size, date and status in words;
+- the total for requesters; for drivers, the pay on delivered or returned jobs.
+
+These summaries never carry addresses or phone numbers. Job pages apply the server's windows: addresses and notes disappear 72 h after close for drivers; the phone only while live; the summary, messages and photos last 30 days.
+
+**Refresh.** Job pages and the board call `router.refresh()` every 20 s while the tab is visible, and messages poll every 15 s. Clients subscribe to no tables; Fetch tables have no realtime publication. Everything else comes through notification deep links.
+
+**Privacy (what the tests prove).**
+- **Board / accept:** no requester identity, addresses, phone or notes.
+- **Requester page:** never a phone; the driver is first name and vehicle only.
+- **Driver page:** the phone appears only under `phone_shared`; addresses only while `addresses_visible`.
+- **History:** no addresses or phone.
+- **Documents and photos:** only through owner/party short-lived links; no storage URLs.
+- **No direct access:** no direct table writes or Fetch-table reads; no Supabase client in client components.
+
+**Responsive and accessibility.**
+- **Layout:** one column on phones (`max-w-3xl`, 16 px gutters), two-up grids from `sm`. No member-facing tables except the short money table. Checked with no sideways scroll at 360 px on every preview screen.
+- **Forms:** every control in a `<label>`; steps marked `aria-current="step"`, the board toggle `aria-current="page"`.
+- **Dialogs** use the shared `Modal` (`role="dialog"`, Escape and backdrop close).
+- **Status** has an icon and words, never colour alone, in `role="status"`. Errors use `role="alert"`; loading states are in the button text.
+- **Route arrows** carry sr-only "to". No animation is added (reduced motion respected by default).
+
+**Notifications / deep links.** Step 8's `route` values all land:
+- `/fetch/requests/<id>`, `/fetch/requests/<id>/payment`, `/fetch/jobs/<id>`, `/fetch/board/<id>` and `/fetch/driver/verification`;
+- `/admin/fetch/...` already from Step 10.
+
+**Old Shop Fetch option.** It stays hidden (`SHOP_FETCH_DELIVERY_OFFERED = false`, Step 0; a test pins it). A Shop purchase never creates a v2 request. **Transition requirement:** before Shop offers Fetch again, it needs an approved product design that creates a v2 request through `fetch-v2-create` (with the buyer as requester, quote shown, and 18+ and card checks). Until then the option stays hidden, and v1 `notify-drivers` customer pings stay only for legacy v1 rows.
+
+**Backend contract added** (migration `20261208000000_fetch_v2_member_lists`, with rollback). Since Step 2 a member cannot read v2 rows directly, so the product had no way to list its own Fetches, jobs or journeys, or set a driver's areas. Each function is for the signed-in member only, behind the flag, granted to `authenticated` and `service_role`, and never to `anon` (asserted):
+- `fetch_v2_my_requests()`: safe summary.
+- `fetch_v2_my_jobs()`: summary plus the driver's own pay line by line; no requester money.
+- `fetch_v2_my_runs()`: last 30 days, open first.
+- `fetch_v2_set_my_areas(uuid[])`: applied drivers only, existing regions only, at most 20.
+
+Tested by `fetch-v2-member-lists` (6 isolated tests).
+
+**Visual check.** There is a dev-only fixture preview at `/dev/fetch-preview/<a…j|home>`. It exists only when `NODE_ENV` ≠ production and `FETCH_PREVIEW=1`, sits outside `/fetch`, and loads nothing. It renders the real views from `lib/fetch/scenarios.ts`, the same fixtures the scenario tests use, covering scenarios A–J of the brief.
+- It was run with `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:9`, so nothing could reach production; the server log shows the site's own public reads failing.
+- It was inspected at 360 px and on desktop. **It is not a live backend:** no screen was exercised against real Fetch v2 data, and the action buttons there fail harmlessly.
+- Fixes from the visual pass:
+  - a repeated sentence;
+  - a missing review summary;
+  - the arrive button staying after arrival;
+  - no early warning of an expired document on the job page;
+  - the board's "You'd receive" wording.
+
+**Tests.** `tests/fetch-api.test.mjs` (5), `tests/fetch-member-flow.test.mjs` (15, including scenarios A–J), `tests/fetch-member-pages.test.mjs` (13 source contracts; controls that break privacy or sign-in make it fail). The whole web suite: 671/671. Typecheck clean; lint clean on every touched file; `next build` succeeds (built with the dead Supabase address).
+
+**Mandatory pre-deploy acceptance items** (not Step 11 work):
+1. **Admin console browser check.** View the Step 10 console (`/admin/fetch/**`) in a browser against Fetch v2 data: the reviewed deploy behind `admins`, or a local backend. Never connect local development to production for it.
+2. **Member UI check against a real Fetch v2 backend.** View the Step 11 member UI the same way, walking scenarios A–J with real data: quote/geocode, create, 3DS in Stripe test mode, accept, photos, and the deep links from a real notification.
+
+**Unresolved UX issues**
+- **Declined card on a live hold.** In P0 a requester with a declined card (`requires_payment_method`) can only update the card in "your payments". The hold is not re-attempted with the new card until the runner rotates or the job is released (R.2 and Step 5 behaviour). A "use my new card" action needs a server action that doesn't exist yet.
+- **Polling, not realtime.** That's fine at this scale. Realtime would need a safe per-party channel.
+- **Region choice.** The wizard asks for the area as a list, which isn't geographic. Address autocomplete (Places) is a later improvement; geocoding stays server-side.
+- **Board item page uses "show all".** `/fetch/board/<id>` finds its item in `fetch_v2_board(true)`, so it shows only open items (anything else is "This Fetch has gone"). A dedicated board-item RPC would be cheaper at scale.
+- **Rejected / suspended drivers** see the application page redirect to verification. A re-application path is a product decision.
+- **Message and issue notifications** rely on Step 8's inbox. The web has no unread badge on the job page.
+
+**Step 12 scope (exact): mobile requester and driver product** (Expo app, branch `fetch-v2-mobile` cut from the Build 148 / next-release line, never `origin/main`; Build 148 itself untouched)
+1. **Shared client.** `lib/fetch-api.ts` in the app, with the same contract, allow-lists and `FETCH_MESSAGES` as the web (copy the web module and its contract tests). It runs over a transport built on the app's Supabase client and session.
+2. **Remove v1 client writes and calls from Fetch screens:**
+   - `app/(customer)/request/step-4.tsx` (direct `delivery_requests` insert and client price);
+   - `app/(driver)/create-run.tsx` (direct `runs` insert);
+   - `app/(driver)/dashboard.tsx` (direct `runs` / `delivery_requests` updates);
+   - `notify-drivers` invokes in `app/(customer)/dashboard.tsx` and `request-detail.tsx`;
+   - the 95p copy in step 4;
+   - any hardcoded production URLs in Fetch screens.
+3. **Gating.** The Fetch tab and every Fetch screen check `fetch_v2_enabled()` on the server and show "coming soon" otherwise. This is the mobile half of Step 0a: hide v1 entry points.
+4. **Requester screens** (same flow as the web):
+   - landing with two paths, 18+ gate, five-step create, quote with the hold explained, post with idempotency;
+   - no-card → Payments;
+   - 3DS with the Stripe React Native SDK `handleNextAction` on the server's client secret;
+   - job page (status words, hint, valid actions, timeline, messages, problems, item photos with the board toggle), history.
+5. **Driver screens:**
+   - onboarding, apply (areas), verification (upload evidence, view own copy);
+   - board ("Suits you" / "Show all", run-match badge), journeys create/cancel, accept (fit confirmation, refusals);
+   - active job (arrive, collect, check payment, give up, cancellation response, deliver hand/safe-place, cannot deliver, return), pay lines, payouts link.
+6. **Photos on device.** Camera and library through `expo-image-picker`. **Convert HEIC/HEIF to JPEG on the device** (`expo-image-manipulator`) before upload, resizing large images. Upload to the one-use signed address.
+7. **Notifications.** Route Step 8 pushes (`data.screen === 'fetch'` with `data.route`) to the matching mobile screens in `lib/notifications.ts` instead of the generic Fetch tab. Use inbox rows the same way.
+8. **Deep links.** Decide whether `oneshetland.com/fetch/...` opens the app (AASA and Android intent filters); in P0 the push route is enough.
+9. **Android directions fix** (from the plan) on the driver job's addresses.
+10. **Tests:** the shared-client contract tests, pure flow/present tests (shared with the web), and source contracts (no direct Fetch table writes; no client money). Simulator checks of scenarios A–J against a local or isolated backend only.
+11. **Not in Step 12:** deploys, live payments (Step 14), App Store submission or metadata, Build 148.
 
 **Changes from revision 1 caused by the decisions:**
 
