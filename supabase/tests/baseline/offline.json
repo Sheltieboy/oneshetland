@@ -1,6 +1,6 @@
 {
-  "commit": "7317508",
-  "note": "Failures of the offline lane (npm test) on an UNTOUCHED checkout of Build 148 (7317508), run with the same guard and lane list (Fetch v2 Step 13, 25 Oct 2026). These are pre-existing and not caused by Fetch v2. The runner reports them separately and fails only on failures NOT listed here. Remove an entry when it starts passing; never add one to hide a new failure.",
+  "commit": "7317508 + 312f7fc",
+  "note": "Union of the two lines' baselines (Fetch v2 Step 14A): the offline-lane failures measured on untouched Build 148 (7317508, app line) and on untouched origin/main (312f7fc, backend line). Pre-existing, not caused by Fetch v2. Remove an entry when it starts passing; never add one to hide a new failure.",
   "generated": "2026-10-25",
   "failures": [
     "supabase/tests/boost-offer-staleness.node.test.ts :: Free with no subscription — offered, exactly as before",
@@ -21,15 +21,27 @@
     "supabase/tests/local-offer-presentation.node.test.ts :: the row still fills its width rather than leaving a hole",
     "supabase/tests/local-offer-presentation.node.test.ts :: the statistic appears, counting the real offers",
     "supabase/tests/shift-management-and-boost-visibility.node.test.ts :: the main nav Work item still points at /jobs — that is the page to fix",
+    "supabase/tests/ticket-live-checkin.node.test.ts :: supabase/tests/ticket-live-checkin.node.test.ts",
     "supabase/tests/transactions-ledger-economics-display.node.test.ts :: the breakdown Text is gated on hasDeduction — it does not render at all when gross already equals net"
   ],
   "removedInStep13": {
-    "reason": "test-registration.node.test.ts was rewritten for the new lane manifest (lanes.json); these four Build 148 failures (orphaned suites, and the old production lanes) no longer exist under these names. The 21 suites unregistered at Build 148 are recorded in lanes.json unregisteredAtBuild148 instead.",
-    "entries": [
-      "supabase/tests/test-registration.node.test.ts :: no executable suite is missing from every lane",
-      "supabase/tests/test-registration.node.test.ts :: no suite in test deletes from a Wallet money table",
-      "supabase/tests/test-registration.node.test.ts :: no suite in test races two database connections",
-      "supabase/tests/test-registration.node.test.ts :: no suite in test tidies Wallet rows up afterwards"
-    ]
+    "app": {
+      "reason": "test-registration.node.test.ts was rewritten for the new lane manifest (lanes.json); these four Build 148 failures (orphaned suites, and the old production lanes) no longer exist under these names. The 21 suites unregistered at Build 148 are recorded in lanes.json unregisteredAtBuild148 instead.",
+      "entries": [
+        "supabase/tests/test-registration.node.test.ts :: no executable suite is missing from every lane",
+        "supabase/tests/test-registration.node.test.ts :: no suite in test deletes from a Wallet money table",
+        "supabase/tests/test-registration.node.test.ts :: no suite in test races two database connections",
+        "supabase/tests/test-registration.node.test.ts :: no suite in test tidies Wallet rows up afterwards"
+      ]
+    },
+    "backend": {
+      "reason": "test-registration.node.test.ts was rewritten for the new lane manifest (lanes.json). At 312f7fc these four failed because the old file did not know the test:replay script and the lane layout; the rewritten file is checked as a normal suite.",
+      "entries": [
+        "supabase/tests/test-registration.node.test.ts :: every exclusion is deliberate, and still exists",
+        "supabase/tests/test-registration.node.test.ts :: no executable suite is missing from every lane",
+        "supabase/tests/test-registration.node.test.ts :: the isolated-database suite stays excluded, and stays explained",
+        "supabase/tests/test-registration.node.test.ts :: the lanes are the ones this file knows about"
+      ]
+    }
   }
 }

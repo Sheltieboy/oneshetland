@@ -168,6 +168,36 @@ verify_jwt = true
 [functions.fetch-hold-check]
 verify_jwt = true
 
+# Fetch v2 (STAGED, not deployed — supabase/production/staged-functions.json). Member-authenticated: the quote geocodes with the
+# server key and prices in the database; create also checks the member's saved card read-only and commits the job idempotently.
+[functions.fetch-v2-quote]
+verify_jwt = true
+
+[functions.fetch-v2-create]
+verify_jwt = true
+
+[functions.fetch-v2-accept]
+verify_jwt = true
+
+[functions.fetch-v2-payment]
+verify_jwt = true
+
+[functions.fetch-v2-driver]
+verify_jwt = true
+
+[functions.fetch-v2-admin]
+verify_jwt = true
+
+# Cron-only: authenticated by x-cron-secret (requireCronSecret), like reminder-runner.
+[functions.fetch-v2-runner]
+verify_jwt = false
+
+[functions.fetch-v2-driver-verification]
+verify_jwt = true
+
+[functions.fetch-v2-photos]
+verify_jwt = true
+
 [functions.confirm-boost]
 verify_jwt = true
 

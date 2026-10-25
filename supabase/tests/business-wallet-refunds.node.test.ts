@@ -39,7 +39,8 @@ const FN = join(REPO_ROOT, 'supabase/functions');
 
 const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const LEDGER = join(MIG, '20260820160000_wallet_atomic_ledger.sql');
-const REMINDERS = join(MIG, '20260721020000_loyalty_reminders.sql');
+// The reminder columns arrived with 20260803120000 (production's loyalty_reminders migration, as applied, did not add them).
+const REMINDERS = join(MIG, '20260803120000_fix_missing_nudge_reminded_at.sql');
 const TIERS = join(MIG, '20260721030000_loyalty_reward_tiers.sql');
 const BACKBONE = join(MIG, '20260721000000_loyalty_redemption_backbone.sql');
 const COMMERCE = join(MIG, '20260801130000_commerce_engine.sql');

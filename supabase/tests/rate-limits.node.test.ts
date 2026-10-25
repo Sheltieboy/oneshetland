@@ -250,7 +250,7 @@ function costPatternFunctions(): { name: string; tags: string[]; limited: boolea
     if (name === '_shared' || !existsSync(p)) continue;
     const b = readFileSync(p, 'utf8');
     const tags: string[] = [];
-    if (/send-email\.ts|sendEmail/.test(b)) tags.push('EMAIL');
+    if (/send-email\.ts|sendEmail|api\.postmarkapp\.com|launch-invitation-postmark/.test(b)) tags.push('EMAIL'); // direct Postmark use counts as email too
     if (/send-push\.ts|sendPush/.test(b)) tags.push('PUSH');
     if (/api\.stripe\.com/.test(b)) tags.push('STRIPE');
     if (/api\.openai|googleapis|admiralty/i.test(b)) tags.push('PROVIDER');
@@ -280,6 +280,11 @@ describe('the protected endpoint inventory', () => {
       const p = join(FN_DIR, name, 'index.ts');
       if (name === '_shared' || !existsSync(p)) continue;
       for (const m of readFileSync(p, 'utf8').matchAll(/'([a-z_]+)'/g)) claimed.add(m[1]);
+    }
+    // Some budgets are claimed by shared helpers rather than by a route: enforcePaymentStart (rate-limit.ts) names the payment-start
+    // budgets and payment-failure-brake / the failed-payment gate name the failure budgets.
+    for (const f of readdirSync(join(FN_DIR, '_shared')).filter((n) => n.endsWith('.ts'))) {
+      for (const m of readFileSync(join(FN_DIR, '_shared', f), 'utf8').matchAll(/'([a-z_]+)'/g)) claimed.add(m[1]);
     }
     const orphans = declared.filter((a) => !claimed.has(a));
     assert.deepEqual(orphans, [], `policies nothing claims: ${orphans.join(', ')}`);

@@ -13,14 +13,18 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
  * Not for platform-revenue checkouts. A shift boost has no destination at all,
  * so there is nothing here to ask about.
  *
- * Used by wallet spends AND by the card membership charge — a destination
- * charge pays a connected account just as surely as a wallet transfer does,
- * and the payer should not be on the receiving end of either.
+ * Used by wallet spends AND by every CARD charge that pays a connected account —
+ * a destination charge pays a connected account just as surely as a wallet
+ * transfer does, and the payer should not be on the receiving end of either.
+ * (Tickets, gifts, passes, shop orders, donations, memberships, and the Fetch
+ * driver hold all ask it, before any Stripe object or order exists.)
  */
 export async function selfPaymentBlock(
   svc: SupabaseClient,
   userId: string,
   destinationAccount: string | null | undefined,
+  // Only the WORDS differ. A wallet payment says so; a card payment must not talk about a wallet the buyer is not using.
+  rail: 'wallet' | 'card' = 'wallet',
 ): Promise<{ body: { error: string; reason: string }; status: number } | null> {
   if (!destinationAccount) return null;
   const { data, error } = await svc.rpc('wallet_destination_self_controlled', {
@@ -31,7 +35,9 @@ export async function selfPaymentBlock(
   return {
     status: 403,
     body: {
-      error: "You can't use your OneShetland wallet to pay a business or hub you control.",
+      error: rail === 'card'
+        ? "You can't pay a business, hub or driver whose payout account you control."
+        : "You can't use your OneShetland wallet to pay a business or hub you control.",
       reason: 'self_payment',
     },
   };

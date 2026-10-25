@@ -12,7 +12,13 @@
     "test:isolated": "node scripts/isolated-pg.mjs",
     "test:all": "npm test && npm run test:isolated",
     "test:quarantined": "node scripts/test-lanes.mjs quarantined",
-    "test:integration:production-readonly": "node scripts/test-lanes.mjs production-readonly"
+    "test:integration:production-readonly": "node scripts/test-lanes.mjs production-readonly",
+    "check:migrations": "node scripts/check-migration-history.mjs",
+    "check:migrations:offline": "node scripts/check-migration-history.mjs --snapshot",
+    "db:push:guarded": "node scripts/check-migration-history.mjs && supabase db push",
+    "check:function-deploy": "node scripts/check-function-deploy.mjs",
+    "check:function-manifest": "node scripts/function-manifest.mjs verify",
+    "test:replay": "node scripts/migration-replay/replay.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/fraunces": "^0.4.1",

@@ -242,56 +242,40 @@ describe('notify-engagement: only the real author or the real actor may raise a 
 // deno-lint-ignore no-explicit-any
 const EventUpdate: Record<string, any> = loadAuth('supabase/functions/_shared/event-update-notify-auth.ts');
 
-describe('notify-event-update: only the organiser (or the org that organises) may email ticket holders', () => {
+describe('notify-event-update: only someone who CURRENTLY controls the organiser may email ticket holders', () => {
   const UPDATE = ENTITY;
   const EVENT_ID = OTHER_ENTITY;
-  const BIZ = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-  const HUB = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  /** can_scan_event is the single source of truth; this stub plays it for a given set of authorised users. */
+  const scanners = (...ids: string[]) => (name: string, args: Record<string, unknown>) =>
+    ({ data: name === 'can_scan_event' && args.p_event_id === EVENT_ID && ids.includes(args.p_user_id as string), error: null });
+  const tables = { event_updates: [{ id: UPDATE, event_id: EVENT_ID }], events: [{ id: EVENT_ID, organiser_user_id: A }] };
 
   test('an unrelated signed-in user is refused', async () => {
-    const svc = fakeSvc({
-      event_updates: [{ id: UPDATE, event_id: EVENT_ID }],
-      events: [{ id: EVENT_ID, organiser_user_id: A, organiser_business_id: null, organiser_hub_id: null }],
-      profiles: [{ id: B, role: 'member' }],
-    });
-    const d = await EventUpdate.authoriseEventUpdateNotify(svc, user(B), { updateId: UPDATE });
+    const d = await EventUpdate.authoriseEventUpdateNotify(fakeSvc(tables, scanners(A)), user(B), { updateId: UPDATE });
     assert.equal(d.ok, false);
     assert.equal(d.status, 403);
   });
 
-  test('the organiser themselves is allowed', async () => {
-    const svc = fakeSvc({
-      event_updates: [{ id: UPDATE, event_id: EVENT_ID }],
-      events: [{ id: EVENT_ID, organiser_user_id: A, organiser_business_id: null, organiser_hub_id: null }],
-    });
+  test('someone can_scan_event authorises (business owner, hub owner / committee, platform admin) is allowed', async () => {
+    const svc = fakeSvc(tables, scanners(A));
     assert.equal((await EventUpdate.authoriseEventUpdateNotify(svc, user(A), { updateId: UPDATE })).ok, true);
+    assert.deepEqual(svc.rpcCalls.map((c) => [c.name, c.args]), [['can_scan_event', { p_event_id: EVENT_ID, p_user_id: A }]]);
   });
 
-  test('the organising business\'s owner is allowed', async () => {
-    const svc = fakeSvc({
-      event_updates: [{ id: UPDATE, event_id: EVENT_ID }],
-      events: [{ id: EVENT_ID, organiser_user_id: null, organiser_business_id: BIZ, organiser_hub_id: null }],
-      local_businesses: [{ id: BIZ, owner_id: A }],
-    });
-    assert.equal((await EventUpdate.authoriseEventUpdateNotify(svc, user(A), { updateId: UPDATE })).ok, true);
+  test('a bare organiser_user_id confers nothing: the row creator is refused when the database says they no longer control the organiser', async () => {
+    const d = await EventUpdate.authoriseEventUpdateNotify(fakeSvc(tables, scanners()), user(A), { updateId: UPDATE });
+    assert.equal(d.ok, false);
+    assert.equal(d.status, 403);
   });
 
-  test('the organising hub\'s owner is allowed', async () => {
-    const svc = fakeSvc({
-      event_updates: [{ id: UPDATE, event_id: EVENT_ID }],
-      events: [{ id: EVENT_ID, organiser_user_id: null, organiser_business_id: null, organiser_hub_id: HUB }],
-      hubs: [{ id: HUB, owner_id: A }],
-    });
-    assert.equal((await EventUpdate.authoriseEventUpdateNotify(svc, user(A), { updateId: UPDATE })).ok, true);
+  test('a database error fails closed', async () => {
+    const svc = fakeSvc(tables, () => ({ data: null, error: { message: 'boom' } }));
+    assert.equal((await EventUpdate.authoriseEventUpdateNotify(svc, user(A), { updateId: UPDATE })).status, 403);
   });
 
-  test('a global admin is allowed even with no organiser link', async () => {
-    const svc = fakeSvc({
-      event_updates: [{ id: UPDATE, event_id: EVENT_ID }],
-      events: [{ id: EVENT_ID, organiser_user_id: null, organiser_business_id: null, organiser_hub_id: null }],
-      profiles: [{ id: A, role: 'admin' }],
-    });
-    assert.equal((await EventUpdate.authoriseEventUpdateNotify(svc, user(A), { updateId: UPDATE })).ok, true);
+  test('the gate never reads organiser_user_id or the owner tables itself', () => {
+    const src = read('supabase/functions/_shared/event-update-notify-auth.ts').replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.doesNotMatch(src, /organiser_user_id|organiser_business_id|organiser_hub_id|from\('(events|hubs|local_businesses|profiles)'\)/);
   });
 
   test('an update that does not exist is a 404; the service role is trusted', async () => {

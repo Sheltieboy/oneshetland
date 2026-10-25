@@ -179,11 +179,13 @@ describe('event tickets and gifts now pass through the gate, BEFORE any debit', 
     assert.match(decline, /reason: gate\.reason/);
   });
 
-  test('gifts: same gate, on the amount that reaches the business, with the half-created gift removed on refusal', () => {
+  test('gifts: same gate, on the amount that reaches the business, with the half-created gift CANCELLED on refusal', () => {
     assert.doesNotMatch(gift, /await debitAndTransfer\(/);
     assert.match(gift, /withWalletLiquidityGate\(supabase, giftHasAccount \? pricePence! - giftPlatformFee : 0, settleWallet\)/);
     const declineAt = gift.indexOf('if (!gate.ok) {');
-    assert.match(gift.slice(declineAt, declineAt + 250), /from\('book_gifts'\)\.delete\(\)/);
+    // Cancelled, not deleted: a concurrent repeat of the same attempt must never find the row it is working on gone.
+    assert.match(gift.slice(declineAt, declineAt + 250), /rpc\('cancel_pending_gift'/);
+    assert.doesNotMatch(gift, /from\('book_gifts'\)\.delete\(\)/);
   });
 
   test('the wiring uses the real liquidity snapshot and the real atomic reservation, and always releases', () => {

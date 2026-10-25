@@ -5,7 +5,10 @@ import { sendUserPush } from '../_shared/send-push.ts';
 import { sendEmail } from '../_shared/send-email.ts';
 import { fulfilByType } from '../_shared/fulfilment.ts';
 import { reconcileCharge } from '../_shared/refund-reconcile.ts';
+import { brakeAfterFailedPayment, productionBrakeDeps } from '../_shared/payment-failure-brake.ts';
 import { parseReconciledSubscription, ReconcileFailed, type ReconciledSubscription } from '../_shared/subscription-reconcile.ts';
+import { isFetchV2Intent, handleFetchV2Webhook } from '../_shared/fetch-v2-payments.ts';
+import { stripeGateway } from '../_shared/fetch-v2-stripe.ts';
 
 /**
  * stripe-webhook
@@ -321,6 +324,21 @@ serve(async (req) => {
   }
 
   try {
+    // ── Fetch v2 (STAGED — docs/FETCH_V2_IMPLEMENTATION.md, Step 5) ─────────
+    //
+    // A Fetch v2 intent carries metadata.fetch_v2_request_id and never the v1
+    // request_id, so no branch below would touch it anyway; this hands it to the
+    // v2 reconciler instead. It re-reads the intent from Stripe and applies its
+    // CURRENT state through fetch_v2_apply_payment_state, which is scoped to the
+    // job's current hold and never moves backwards — so replays and out-of-order
+    // deliveries converge. A failure throws, the event is marked failed, and
+    // Stripe retries it.
+    if (isFetchV2Intent(eventType, eventData)) {
+      await handleFetchV2Webhook(eventType, eventData, {
+        rpc: async (fn, args) => { const { data, error } = await supabase.rpc(fn, args); return { data, error }; },
+        stripe: stripeGateway(stripeKey, (url, init) => fetch(url, init)),
+      });
+    } else
     switch (eventType) {
 
       // ── Payment confirmed ────────────────────────────────────────────
@@ -485,6 +503,7 @@ serve(async (req) => {
         const fulfilRes = await fulfilByType(supabase, {
           id:       eventData.id as string,
           amount:   (eventData.amount as number) ?? 0,
+          currency: eventData.currency as string | undefined,
           metadata: meta,
           status:   eventData.status as string | undefined,
         });
@@ -498,6 +517,19 @@ serve(async (req) => {
       // ── Payment failed ───────────────────────────────────────────────
       case 'payment_intent.payment_failed': {
         const meta = (eventData.metadata ?? {}) as Record<string, string>;
+
+        // Card-testing brake: count this failure against the account and against the intent, and cancel an intent that keeps
+        // failing. First, and fenced off — it must never stop the Fetch handling below, and it must never make Stripe retry
+        // (and so re-run) this whole event. See _shared/payment-failure-brake.ts.
+        try {
+          await brakeAfterFailedPayment(productionBrakeDeps(supabase, Deno.env.get('STRIPE_SECRET_KEY') ?? ''), {
+            id: eventData.id as string, kind: 'payment_intent',
+            customer: eventData.customer as string | null | undefined,
+            invoice: eventData.invoice as string | null | undefined,
+            metadata: meta,
+          });
+        } catch (e) { console.error('[stripe-webhook] failed-payment brake:', e instanceof Error ? e.message : e); }
+
         const requestId = meta.request_id;
         if (requestId) {
           await supabase
@@ -531,6 +563,20 @@ serve(async (req) => {
             }).catch((e) => console.error('[stripe-webhook] payment_failed push:', e));
           }
         }
+        break;
+      }
+
+      // ── A card setup failed ───────────────────────────────────────────
+      // The same card-testing door as a failed payment (a SetupIntent checks a card without charging it), so the same brake.
+      // Only fires if the endpoint is subscribed to setup_intent.setup_failed; harmless otherwise.
+      case 'setup_intent.setup_failed': {
+        try {
+          await brakeAfterFailedPayment(productionBrakeDeps(supabase, Deno.env.get('STRIPE_SECRET_KEY') ?? ''), {
+            id: eventData.id as string, kind: 'setup_intent',
+            customer: eventData.customer as string | null | undefined,
+            metadata: (eventData.metadata ?? {}) as Record<string, string>,
+          });
+        } catch (e) { console.error('[stripe-webhook] failed-setup brake:', e instanceof Error ? e.message : e); }
         break;
       }
 

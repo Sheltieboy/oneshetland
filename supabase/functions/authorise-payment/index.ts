@@ -8,6 +8,7 @@ import { classifyAuthorisation, paymentStatusFor } from '../_shared/fetch-author
 import { classifyHold } from '../_shared/fetch-hold.ts';
 import { defaultCardFor } from '../_shared/saved-card.ts';
 import { canonicalStripeCustomer } from '../_shared/stripe-customer.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -130,6 +131,20 @@ serve(async (req) => {
       .select('stripe_account_id')
       .eq('id', run?.driver_id)
       .single();
+
+    // ── A delivery's card hold must not pay the person whose card it is ──────
+    // This hold is a destination charge into the DRIVER's connected account. A person who is both the customer and the driver
+    // (an approved, onboarded driver can request a delivery and accept it themselves) would be charging a card — not necessarily
+    // theirs to use — into their own account for a delivery nobody makes. Asked of the destination account, for the person whose
+    // card it is (request.customer_id), as every other route does. Before the Stripe Customer is created and before any
+    // PaymentIntent: a refusal creates nothing. The request stays accepted but unpaid, and no capture can follow without a hold.
+    const selfPay = await selfPaymentBlock(supabase, request.customer_id, driverProfile?.stripe_account_id, 'card');
+    if (selfPay) {
+      console.warn(`[authorise-payment] refused: request ${request.id} would pay its own customer's account`);
+      return new Response(JSON.stringify(selfPay.body), {
+        status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // ── The customer's Stripe Customer, created if they have never had one ──
     //

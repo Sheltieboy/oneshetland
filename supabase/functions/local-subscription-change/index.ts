@@ -4,6 +4,7 @@ import Stripe from 'npm:stripe@17';
 import { subscriptionPricesFor, resolveBookingMeterPrice, resolveTierPrice, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
 import { splitInvoice } from '../_shared/invoice-lines.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +43,11 @@ serve(async (req) => {
     );
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
+
+    // Changes an EXISTING subscription, so no new card can be tried here — but every request calls Stripe, so it counts against
+    // the aggregate Stripe ceiling.
+    const limited = await enforceRateLimit('local-subscription-change', userSubject(user.id), ['stripe_any'], corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const svc = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',

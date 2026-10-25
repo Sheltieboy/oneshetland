@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 import { subscriptionPricesFor, missingPriceError, assertPriceMatches } from '../_shared/tier-price.ts';
 import { safeError } from '../_shared/safe-error.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +43,10 @@ serve(async (req) => {
     );
     const { data: { user } } = await anon.auth.getUser();
     if (!user) return json({ error: 'Unauthorised' }, 401);
+
+    // Abuse ceiling + failed-payment gate, BEFORE anything is created at Stripe or recorded here.
+    const limited = await enforcePaymentStart('local-subscription-checkout', user.id, corsHeaders);
+    if ('denied' in limited) return limited.denied;
 
     const svc = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',

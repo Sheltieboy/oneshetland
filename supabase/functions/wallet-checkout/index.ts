@@ -306,8 +306,21 @@ async function unitPurchase(svc: any, userId: string, body: any, rid: string): P
   if (item.stock != null && item.stock <= 0) return json({ error: 'Sold out.' }, 409);
 
   const { data: biz } = await svc.from('local_businesses')
-    .select('id, name, stripe_account_id, payout_enabled').eq('id', item.business_id).maybeSingle();
-  if (!biz?.stripe_account_id || !biz.payout_enabled) return json({ error: 'This business has not finished setting up payouts yet.' }, 400);
+    .select('id, name').eq('id', item.business_id).maybeSingle();
+  if (!biz) return json({ error: 'This item is not available.' }, 400);
+
+  // Where does this business's money go? The same rule products and event
+  // tickets already use: the business's own Connect account when it has
+  // one, otherwise the owner's central account. This used to read
+  // stripe_account_id/payout_enabled directly, which has no such fallback
+  // and wrongly refused a business that only sells through its owner's
+  // central account. business_payout_destination is that one rule, shared
+  // with events and products.
+  const { data: payoutRows, error: payoutErr } = await svc.rpc('business_payout_destination', { p_business: item.business_id });
+  if (payoutErr) return json({ error: 'Could not check this business’s payment setup. Please try again.' }, 503);
+  const payout = Array.isArray(payoutRows) ? payoutRows[0] : payoutRows;
+  const sellerAccountId: string | null = payout?.account_id ?? null;
+  if (!sellerAccountId) return json({ error: 'This business has not finished setting up payouts yet.' }, 400);
 
   const fee = Math.round(item.price_pence * 0.05); // 5% platform fee, matching the card flow
   const toBusiness = item.price_pence - fee;
@@ -317,7 +330,7 @@ async function unitPurchase(svc: any, userId: string, body: any, rid: string): P
   // ACCOUNT — a connected account can belong to more than one resource — and
   // BEFORE the attempt is claimed, so a refusal costs nothing and the same
   // reference works for a legitimate recipient.
-  const selfPayUnit = await selfPaymentBlock(svc, userId, biz.stripe_account_id);
+  const selfPayUnit = await selfPaymentBlock(svc, userId, sellerAccountId);
   if (selfPayUnit) return json(selfPayUnit.body, selfPayUnit.status);
 
   const attempt = await claimAttempt(svc, rid, userId,
@@ -332,7 +345,7 @@ async function unitPurchase(svc: any, userId: string, body: any, rid: string): P
     idempotencyKey: `wallet-attempt:${rid}`,
     platformFeePence: fee,
     transfer: {
-      destination: biz.stripe_account_id,
+      destination: sellerAccountId,
       amountPence: toBusiness,
       description: `OneShetland wallet purchase · ${item.name}`,
       metadata: { type: 'unit_purchase_wallet', user_id: userId, business_id: biz.id, unit_item_id: item.id, fee_pence: String(fee) },

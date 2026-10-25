@@ -1,3 +1,8 @@
+-- RECONCILED TO WHAT PRODUCTION APPLIED (8 Oct 2026).
+-- The text previously committed under this name differed from the SQL production recorded in supabase_migrations.schema_migrations
+-- (the file had been edited after it was applied). This file is reconstructed from the statements production recorded, verbatim,
+-- joined with ";". Applied migrations are immutable; later changes belong in a new migration. See docs/MIGRATION-HISTORY.md.
+
 -- Paygate 9 — business boost refunds.
 --
 -- A boost refund already worked in Stripe and did nothing here. charge.refunded
@@ -25,7 +30,6 @@
 -- rather than of the order refund events happened to arrive in.
 
 begin;
-
 -- ── 1. Refund state on the durable purchase fact ────────────────────────────
 -- The original purchase is never rewritten. status stays 'succeeded' because
 -- the payment DID succeed; that is history and it remains true. A refund is an
@@ -35,7 +39,6 @@ alter table public.local_boost_purchases
   add column if not exists refunded_pence integer not null default 0,
   add column if not exists refund_state   text    not null default 'none',
   add column if not exists refunded_at    timestamptz;
-
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'local_boost_purchases_refunded_pence_check') then
@@ -48,12 +51,10 @@ begin
       check (refund_state in ('none', 'partial', 'full'));
   end if;
 end $$;
-
 comment on column public.local_boost_purchases.refunded_pence is
   'Cumulative amount refunded, a high-water mark. Stripe reports amount_refunded as a running total, so this is greatest(existing, reported) clamped to the original price — never a sum of refund events.';
 comment on column public.local_boost_purchases.refund_state is
   'none | partial | full. Only ''full'' stops the purchase contributing to Pro entitlement.';
-
 -- ── 2. What the surviving purchases add up to ───────────────────────────────
 --
 -- The grant rule in the webhook is: start from whichever is later, now or the
@@ -98,10 +99,8 @@ begin
     v_count;
 end;
 $function$;
-
 comment on function public.boost_entitlement(uuid) is
   'Replays the boost-bought Pro expiry from the purchases that still stand. Pure reconstruction: never reads subscription_until, never subtracts refunded weeks.';
-
 -- ── 3. Applying it, without ever downgrading a stronger right ───────────────
 --
 -- A refund may only lower entitlement that boost purchases can prove they
@@ -113,34 +112,23 @@ comment on function public.boost_entitlement(uuid) is
 --     stripe_subscription_id, which is the signal the fulfilment path itself
 --     uses to tell a boost apart from a subscription — not on the tier label.
 --
---   * Otherwise the current expiry must be one the boosts can ACCOUNT FOR.
---     Replaying every succeeded purchase as if nothing had been refunded gives
---     the furthest date boosts could ever have granted. An expiry beyond that
---     came from somewhere else — a manual grant, an admin change — and is not
---     this refund's business to overwrite.
---
---     An earlier attempt compared the expiry against the LAST purchase's
---     recorded expires_at. It looked authoritative and was wrong: the first
---     refund rewrites subscription_until, so the second refund no longer
---     matched anything and silently did nothing. Refunding A then B left a
---     different answer from B then A, which is exactly the order-dependence
---     this whole design exists to prevent. The ceiling test survives repeated
---     refunds because it does not assume the expiry is still untouched.
---
---   * And the write may only ever REDUCE entitlement. A refund is not a route
---     to extending anyone's Pro access, whatever the arithmetic says.
+--   * Otherwise the CURRENT expiry must be one the boosts actually wrote. Each
+--     purchase records the cumulative expiry it produced, so the latest
+--     succeeded purchase's expires_at is exactly what was last written to the
+--     business. If subscription_until is anything else, something stronger or
+--     newer owns it — a manual grant, an admin change — and it is not this
+--     refund's business to overwrite.
 
 create or replace function public.apply_boost_entitlement(p_business uuid)
 returns jsonb
 language plpgsql security definer set search_path to 'public'
 as $function$
 declare
-  b        public.local_businesses%rowtype;
-  r        record;
-  v_ceil   timestamptz := null;   -- furthest date the boosts could have granted
-  v_until  timestamptz;
-  v_left   integer;
-  v_tier   text;
+  b            public.local_businesses%rowtype;
+  v_last_grant timestamptz;
+  v_until      timestamptz;
+  v_left       integer;
+  v_tier       text;
 begin
   select * into b from public.local_businesses where id = p_business for update;
   if not found then
@@ -152,21 +140,14 @@ begin
                               'subscription_until', b.subscription_until);
   end if;
 
-  if b.subscription_until is null then
-    return jsonb_build_object('applied', false, 'reason', 'nothing_to_reduce');
-  end if;
+  select expires_at into v_last_grant
+    from public.local_boost_purchases
+   where business_id = p_business and status = 'succeeded' and expires_at is not null
+   order by created_at desc, id desc
+   limit 1;
 
-  -- The ceiling: replay ignoring refunds entirely.
-  for r in
-    select * from public.local_boost_purchases
-     where business_id = p_business and status = 'succeeded'
-     order by created_at, id
-  loop
-    v_ceil := greatest(r.created_at, coalesce(v_ceil, r.created_at))
-              + (r.weeks * interval '7 days');
-  end loop;
-
-  if v_ceil is null or b.subscription_until > v_ceil then
+  if v_last_grant is null or b.subscription_until is distinct from v_last_grant then
+    -- Nothing here proves the boosts put this expiry there.
     return jsonb_build_object('applied', false, 'reason', 'entitlement_not_boost_derived',
                               'subscription_until', b.subscription_until);
   end if;
@@ -174,20 +155,14 @@ begin
   select pro_until, purchases_left into v_until, v_left
     from public.boost_entitlement(p_business);
 
+  v_tier := case when v_until is not null and v_until > now() then 'pro' else 'free' end;
   -- An expired boost refunded weeks later replays to the value the business
   -- already holds. Writing it again would be a no-op that still fires the
   -- column-lock trigger and moves updated_at, so don't.
-  if b.subscription_until is not distinct from v_until then
+  if b.subscription_until is not distinct from v_until and b.subscription_tier = v_tier then
     return jsonb_build_object('applied', false, 'reason', 'no_change',
                               'subscription_until', v_until, 'purchases_left', v_left);
   end if;
-
-  if v_until is not null and v_until > b.subscription_until then
-    return jsonb_build_object('applied', false, 'reason', 'would_extend',
-                              'subscription_until', b.subscription_until);
-  end if;
-
-  v_tier := case when v_until is not null and v_until > now() then 'pro' else 'free' end;
 
   update public.local_businesses set
     subscription_tier                 = v_tier,
@@ -199,7 +174,6 @@ begin
                             'subscription_until', v_until, 'purchases_left', v_left);
 end;
 $function$;
-
 -- ── 4. Recording one Stripe refund ──────────────────────────────────────────
 --
 -- Bound through the UNIQUE stripe_payment_intent_id and nothing else. The
@@ -275,7 +249,6 @@ begin
   );
 end;
 $function$;
-
 -- ── 5. Trusted backend only ─────────────────────────────────────────────────
 -- These move money state and entitlement. Nothing holding an anon key or a
 -- signed-in user's token may call them, admin included: refunds go through
@@ -287,5 +260,4 @@ revoke execute on function public.boost_entitlement(uuid)             from anon,
 grant  execute on function public.record_boost_refund(text, integer)  to service_role;
 grant  execute on function public.apply_boost_entitlement(uuid)       to service_role;
 grant  execute on function public.boost_entitlement(uuid)             to service_role;
-
 commit;

@@ -38,7 +38,8 @@ const WEB_ROOT = join(REPO_ROOT, '..', 'oneshetland-web');
 const MIG = join(REPO_ROOT, 'supabase/migrations');
 const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
 const REFUNDFIX = join(MIG, '20261007120000_business_wallet_refunds.sql');
-const REMINDERS = join(MIG, '20260721020000_loyalty_reminders.sql');
+// The reminder columns arrived with 20260803120000 (production's loyalty_reminders migration, as applied, did not add them).
+const REMINDERS = join(MIG, '20260803120000_fix_missing_nudge_reminded_at.sql');
 const LOCK = join(MIG, '20261028000200_pass_financial_lock.sql');
 
 const DSN = process.env.PASS_PROOF_DSN ?? '';

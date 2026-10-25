@@ -2,10 +2,10 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendTicketReceipt } from '../_shared/ticket-receipt.ts';
 import { checkLineItems, totalOrder } from '../_shared/ticket-quantities.ts';
-import { debitAndTransfer } from '../_shared/wallet-ledger.ts';
+import { debitAndTransfer, selfPaymentBlock } from '../_shared/wallet-ledger.ts';
 import { withWalletLiquidityGate } from '../_shared/wallet-liquidity-gate.ts';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 import { resolveSavedCard, boundCustomerFor } from '../_shared/saved-card-state.ts';
 import { stripeError, checkoutFailure } from '../_shared/stripe-errors.ts';
@@ -88,7 +88,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('create-event-ticket-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('create-event-ticket-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
@@ -217,6 +217,26 @@ serve(async (req) => {
         JSON.stringify({ error: 'This organiser isn\u2019t set up to take payments yet. Please check back soon.' }),
         { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A paid ticket sends the face value to the organiser's connected account — by Connect transfer when paid from the wallet, by
+    // destination charge when paid by card. If that account is one the buyer controls, the route is: pay (with a topped-up wallet
+    // or a card that is not theirs) for a ticket to your own event → the money lands in YOUR account → charge it back. Recovery
+    // can only take back what is still in the wallet, or claw a transfer back from an account that still holds the funds. The same
+    // question wallet-checkout, the till and the card membership already ask, and of the same thing: the DESTINATION ACCOUNT, not
+    // the event, because one connected account can sit behind more than one hub or business — and an owner's central account is
+    // where a business with no account of its own is paid.
+    //
+    // Before the basket is reserved: a refusal holds no seats, creates no order, creates no PaymentIntent and costs nothing, and
+    // the same checkout reference stays usable. A free order (no payout) and a demo organiser (no account) are not asked.
+    if (totalPence > 0) {
+      const selfPay = await selfPaymentBlock(supabase, user.id, stripeAccountId, pay_with_wallet ? 'wallet' : 'card');
+      if (selfPay) {
+        return new Response(JSON.stringify(selfPay.body), {
+          status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // ── Reserve the basket, create the order and the tickets, atomically ─────

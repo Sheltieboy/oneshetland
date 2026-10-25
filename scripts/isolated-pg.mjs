@@ -26,6 +26,8 @@ const PG_HOME = '/opt/homebrew/opt/postgresql@17';   // production is 17.x
 const bin = (n) => (existsSync(join(PG_HOME, 'bin', n)) ? join(PG_HOME, 'bin', n) : n);
 
 const SUITES = [
+  // Fetch v2 Step 14A: from the app line (Build 148 ancestry); the backend line never had it.
+  'supabase/tests/my-tickets-privacy.node.test.ts',
   'supabase/tests/pass-redemption-concurrency.node.test.ts',
   'supabase/tests/hub-column-privacy.node.test.ts',
   'supabase/tests/hub-member-number-concurrency.node.test.ts',
@@ -47,16 +49,62 @@ const SUITES = [
   'supabase/tests/pass-immutability.node.test.ts',
   'supabase/tests/event-orders-access.node.test.ts',
   'supabase/tests/event-wallet-refund.node.test.ts',
-  'supabase/tests/my-tickets-privacy.node.test.ts',
   'supabase/tests/ticket-capacity-release.node.test.ts',
   'supabase/tests/notification-centre-sql.node.test.ts',
   'supabase/tests/business-claims-flow.node.test.ts',
+  'supabase/tests/email-tables-lockdown.node.test.ts',
+  'supabase/tests/event-ticket-orders-server-only.node.test.ts',
+  'supabase/tests/hub-members-server-authoritative.node.test.ts',
+  'supabase/tests/payment-abuse-limits.node.test.ts',
+  'supabase/tests/wallet-card-cashout.node.test.ts',
   'supabase/tests/launch-plan-grants.node.test.ts',
   'supabase/tests/discovery-fixtures-locality.node.test.ts',
+  'supabase/tests/product-import-foundation.node.test.ts',
+  'supabase/tests/launch-partner-claims.node.test.ts',
+  'supabase/tests/launch-partner-campaigns.node.test.ts',
+  'supabase/tests/launch-partner-profile-versions.node.test.ts',
+  'supabase/tests/launch-partner-email-opening.node.test.ts',
+  'supabase/tests/launch-partner-send-claim.node.test.ts',
+  'supabase/tests/launch-partner-enrichment.node.test.ts',
+  'supabase/tests/launch-partner-go-live.node.test.ts',
+  'supabase/tests/launch-partner-takedown.node.test.ts',
+  'supabase/tests/launch-outreach-suppression.node.test.ts',
+  'supabase/tests/launch-invite-lifecycle.node.test.ts',
+  'supabase/tests/purchase-attempt-idempotency.node.test.ts',
+  'supabase/tests/purchase-attempt-handlers.node.test.ts',
+  'supabase/tests/purchase-attempt-baseline.node.test.ts',
+  'supabase/tests/event-notice-attribution.node.test.ts',
+  'supabase/tests/stripe-customer-exposure.node.test.ts',
+  'supabase/tests/shift-profile-trust-fields.node.test.ts',
+  'supabase/tests/referral-disabled.node.test.ts',
+  'supabase/tests/launch-test-centre.node.test.ts',
+  'supabase/tests/launch-test-centre-web.node.test.ts',
+  'supabase/tests/fetch-v2-flag.node.test.ts',
+  'supabase/tests/fetch-v2-data-model.node.test.ts',
+  'supabase/tests/fetch-v2-access-boundary.node.test.ts',
+  'supabase/tests/fetch-v2-lifecycle.node.test.ts',
+  'supabase/tests/fetch-v2-pricing-terms.node.test.ts',
+  'supabase/tests/fetch-v2-payments.node.test.ts',
+  'supabase/tests/fetch-v2-driver-verification.node.test.ts',
+  'supabase/tests/fetch-v2-matching.node.test.ts',
+  'supabase/tests/fetch-v2-notifications.node.test.ts',
+  'supabase/tests/fetch-v2-messages-issues-photos.node.test.ts',
+  'supabase/tests/fetch-v2-admin-controls.node.test.ts',
+  'supabase/tests/fetch-v2-member-lists.node.test.ts',
+  'supabase/tests/fetch-v2-legacy-guarantees.node.test.ts',
+  'supabase/tests/fetch-v2-scenarios.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
 const selected = process.env.ISOLATED_ONLY ? SUITES.filter((s) => s.includes(process.env.ISOLATED_ONLY)) : SUITES;
+
+// An empty list must NEVER reach `node --test`: with no file arguments it discovers every *.test.ts under the working directory,
+// including the suites that read and WRITE the live production project (see package.json test:fixtures). A typo in ISOLATED_ONLY
+// or an unregistered suite would otherwise run them.
+if (selected.length === 0) {
+  console.error(`[isolated-pg] no registered suite matches ISOLATED_ONLY=${JSON.stringify(process.env.ISOLATED_ONLY ?? '')}; refusing to start (an empty list would run every test file).`);
+  process.exit(2);
+}
 
 // macOS ships a locale that makes the postmaster multithread during startup
 // ("postmaster became multithreaded during startup"), so pin a plain one for

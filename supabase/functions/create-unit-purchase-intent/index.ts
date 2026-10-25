@@ -3,7 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculateCommission } from '../_shared/commission.ts';
 import { getCommissionConfig } from '../_shared/commission-config.ts';
 import { safeError } from '../_shared/safe-error.ts';
-import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { enforcePaymentStart } from '../_shared/rate-limit.ts';
+import { selfPaymentBlock } from '../_shared/self-payment.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 import { chargeableCardFor } from '../_shared/saved-card.ts';
 
@@ -92,7 +93,7 @@ serve(async (req) => {
 
     // Abuse ceiling for this account. Limits live in rate_limit_policies,
     // not here; a broken limiter refuses rather than waving traffic through.
-    const limited = await enforceRateLimit('create-unit-purchase-intent', userSubject(user.id), ['stripe_intent', 'stripe_any'], corsHeaders);
+    const limited = await enforcePaymentStart('create-unit-purchase-intent', user.id, corsHeaders);
     if ('denied' in limited) return limited.denied;
 
     const supabase = createClient(
@@ -185,6 +186,19 @@ serve(async (req) => {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    // ── You cannot pay yourself ───────────────────────────────────────────────
+    // A card purchase of a pass is a destination charge into the seller's connected account. If the buyer controls that account
+    // (as the owner, through another business or hub on it, or as the owner whose central account an account-less business is paid
+    // into), the money lands with the buyer. Asked of the DESTINATION ACCOUNT, as wallet-checkout asks it for the wallet route.
+    // Before the commission is worked out and before any PaymentIntent exists: a refusal costs nothing. A demo business (no
+    // account) is not asked.
+    const selfPay = await selfPaymentBlock(supabase, user.id, unitSellerAccountId, 'card');
+    if (selfPay) {
+      return new Response(JSON.stringify(selfPay.body), {
+        status: selfPay.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Platform commission — admin-editable, see fees.unit.* in admin_config.
     // Default 5% (matches the previous hardcoded rate).
     const unitCfg = await getCommissionConfig(supabase, 'unit');

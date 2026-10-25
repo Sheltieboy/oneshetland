@@ -49,7 +49,12 @@ beforeEach(() => {
   (globalThis as any).Deno = { env: { get: (k: string) => env[k] } };
   (globalThis as any).fetch = async (url: string, init: any) => {
     stripeCalls.push(`${init?.method ?? 'GET'} ${url.replace('https://api.stripe.com/v1', '')}`);
-    if (url.includes('/payment_intents/')) return { ok: true, status: 200, json: async () => ({ status: 'succeeded', amount: 1500, metadata: {}, latest_charge: { id: 'ch_1', refunded: false, transfer: 'tr_1' } }) };
+    if (url.includes('/payment_intents/')) return { ok: true, status: 200, json: async () => ({
+      // a genuine ticket payment: what create-event-ticket-intent stamps on it (refund-payment now refuses anything else)
+      status: 'succeeded', amount: 1500, currency: 'gbp',
+      metadata: { type: 'event_tickets', order_id: ORDER_ID, event_id: 'ev1', buyer_id: 'buyer-1' },
+      latest_charge: { id: 'ch_1', refunded: false, amount_refunded: 0, transfer: 'tr_1' },
+    }) };
     if (url.endsWith('/refunds')) return { ok: true, status: 200, json: async () => ({ id: 're_1', amount: 1500 }) };
     if (url.includes('/reversals')) return { ok: true, status: 200, json: async () => ({ id: 'trr_1' }) };
     throw new Error('unexpected fetch ' + url);
@@ -139,6 +144,7 @@ describe('event-ticket refund (refund-payment)', () => {
         refundWalletEventOrder: async () => ({ ok: true, amount_pence: 1500, merchant_reversed: true, already_reversed: false, tickets_action: 'refunded' }),
       },
       '../_shared/refund-notice.ts': notice,
+      '../_shared/ticket-payment-binding.ts': loadModule('supabase/functions/_shared/ticket-payment-binding.ts', {}),
     });
   }
   const refund = () => handler(new Request('https://x/refund-payment', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: JSON.stringify({ event_order_id: ORDER_ID }) }));

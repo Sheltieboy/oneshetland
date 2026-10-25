@@ -1,0 +1,68 @@
+{
+  "_comment": "Edge Functions that exist in the repository but are NOT deployed yet. Each needs an approved deploy; after it, run the manifest generator and remove the entry. The manifest guard fails for any undeployed function not listed here, and for any listed function that production already runs. \"modified\" lists DEPLOYED functions whose source has a reviewed, not-yet-deployed change: the guard skips only their index/bundle comparison and fails if one is listed that is not deployed.",
+  "functions": {
+    "fetch-v2-quote": {
+      "step": "Fetch v2 Step 4",
+      "verify_jwt": true,
+      "reason": "Fetch v2 quote boundary; held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-create": {
+      "step": "Fetch v2 Step 4",
+      "verify_jwt": true,
+      "reason": "Fetch v2 create boundary; held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-accept": {
+      "step": "Fetch v2 Step 5",
+      "verify_jwt": true,
+      "reason": "driver accepts a Fetch v2 job and the manual-capture hold is placed; held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-payment": {
+      "step": "Fetch v2 Step 5",
+      "verify_jwt": true,
+      "reason": "requester completes a Fetch v2 hold that needs 3DS or a new card; held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-driver": {
+      "step": "Fetch v2 Step 5",
+      "verify_jwt": true,
+      "reason": "driver hold refresh, release, agree cancellation, deliver (capture); held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-admin": {
+      "step": "Fetch v2 Step 5",
+      "verify_jwt": true,
+      "reason": "administrator Fetch v2 payment actions (Step 5), driver verification review/decisions (Step 6, area \"drivers\") and support actions on messages, issues and photos (Step 9, area \"support\"); held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-runner": {
+      "step": "Fetch v2 Step 5",
+      "verify_jwt": false,
+      "reason": "cron-only Fetch v2 sweeps (x-cron-secret): payments (Step 5), driver-verification expiry/reminders/upload clean-up (Step 6), abandoned photo uploads (Step 9) and the notification outbox drain (Step 8), not scheduled; held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-driver-verification": {
+      "step": "Fetch v2 Step 6",
+      "verify_jwt": true,
+      "reason": "driver's own verification: status, vehicle, evidence upload to the private bucket via signed upload, own short-lived link; held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-photos": {
+      "step": "Fetch v2 Step 9",
+      "verify_jwt": true,
+      "reason": "Fetch v2 photos: signed uploads to the private fetch-photos bucket (real type checked, metadata stripped) and 60-second viewing links; held until iOS Build 148 clears review and Darren approves"
+    }
+  },
+  "modified": {
+    "stripe-webhook": {
+      "step": "Fetch v2 Step 5",
+      "reason": "adds the scoped Fetch v2 PaymentIntent hand-off (metadata.fetch_v2_request_id); v1 branches unchanged. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
+    },
+    "become-driver": {
+      "step": "Fetch v2 Step 6",
+      "reason": "application can only ever reach pending: logic moved to the audited fetch_v2_apply_driver (refuses suspended accounts, 18+ and restriction checks, vehicle changes re-verified); response shape kept for the existing apply forms. Needs migration 20261203000000 applied first. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
+    },
+    "notify-drivers": {
+      "step": "Fetch v2 Step 8",
+      "reason": "refuses Fetch v2 requests (409 handled_by_fetch_v2) for every caller: v2 jobs are notified only by the database outbox. v1 behaviour unchanged. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
+    },
+    "notify-collected": {
+      "step": "Fetch v2 Step 8",
+      "reason": "refuses Fetch v2 requests (409 handled_by_fetch_v2) for every caller: v2 jobs are notified only by the database outbox. v1 behaviour unchanged. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
+    }
+  }
+}

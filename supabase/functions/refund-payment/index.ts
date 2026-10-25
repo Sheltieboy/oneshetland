@@ -4,6 +4,7 @@ import { safeError } from '../_shared/safe-error.ts';
 import { reconcileCharge, reconcileWalletOrder } from '../_shared/refund-reconcile.ts';
 import { isWalletRef, refundWalletEventOrder, type WalletRefundDeps } from '../_shared/event-wallet-refund-core.ts';
 import { notifyRefund } from '../_shared/refund-notice.ts';
+import { paymentBelongsToTicketOrder, refundableOnTicketPayment } from '../_shared/ticket-payment-binding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -505,8 +506,28 @@ serve(async (req) => {
     if (charge?.refunded) return json({ error: 'This payment is already fully refunded.' }, 400);
     const hasTransfer = !!(charge?.transfer) || !!(pi.transfer_data?.destination);
 
+    // ── A ticket order may refund ITS OWN payment, and nothing else ─────────
+    //
+    // The payment id above was read from the order row. A row is not proof: until migration 20261116000000 any signed-in
+    // user could write one with a paid status and a payment id of their choosing, and everything below — a card refund
+    // that reverses the organiser's transfer — would have run against whatever payment they named. What cannot be forged
+    // is what OUR checkout stamped on the PaymentIntent: so refund only when the payment's own type, order, event, buyer,
+    // amount and currency all agree with the order. A mismatch changes nothing and says so.
+    let ticketRefundAmount: number | null = null;
+    if (eventOrder) {
+      const bound = paymentBelongsToTicketOrder(eventOrder, pi);
+      if (!bound.ok) {
+        console.error(`[refund-payment] ticket order ${eventOrder.id} refused: ${bound.reason}`);
+        return json({ error: 'That payment does not belong to this ticket order, so nothing was refunded.' }, 409);
+      }
+      const refundable = refundableOnTicketPayment(pi.amount, charge?.amount_refunded);
+      if (refundable <= 0) return json({ error: 'This payment is already fully refunded.' }, 400);
+      // Part of it was already returned elsewhere (e.g. the Stripe Dashboard): refund exactly what is left, never more.
+      if (refundable < (pi.amount as number)) ticketRefundAmount = refundable;
+    }
+
     // Partial-amount validation.
-    let amount: number | null = null;
+    let amount: number | null = ticketRefundAmount;
     if (amount_pence != null) {
       amount = Math.round(Number(amount_pence));
       if (!Number.isFinite(amount) || amount <= 0) return json({ error: 'amount_pence must be a positive integer' }, 400);
