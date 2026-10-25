@@ -2322,6 +2322,123 @@ How the app suites reach production:
    - porting the quarantined write-capable suites (68 app, 59 backend; none Fetch-specific beyond the retired seven).
 7. **Not in Step 14:** opening Fetch to `testers` or `everyone`; App Store / Play submission or OTA; business requests (P2).
 
+**Step 14A result (25 Oct 2026): the lines are reconciled locally into one release candidate. Nothing is deployed, applied, published or built for release.**
+
+**Where the release candidate lives.**
+
+| Repo | Branch / worktree | Grew from | HEAD |
+|---|---|---|---|
+| App + backend (`oneshetland-delivers`) | `fetch-v2-rc`, `~/Claude/oneshetland-fetch-v2-rc` | `fetch-v2-mobile` (Build 148 `7317508` + Steps 12–13), with `fetch-v2` (`origin/main` `312f7fc` + Steps 0–13) merged in | `3d023b1` (code; this record is the docs commit on top) |
+| Web (`oneshetland-web`) | `fetch-v2-rc`, `~/Claude/oneshetland-web-fetch-v2-rc` | web `fetch-v2` `f3a3832` (= web `origin/main` `83bfb1c` + Steps 0a, 10–13; `origin/main` has not moved) | `614b7db` |
+
+- **Build 148 stays the app's ancestry.** `7317508` is an ancestor of the RC; its own worktree was not touched.
+- **No home-redesign work came in.** The 27 home-redesign commits that are not in Build 148 are not on the RC.
+- **Nothing is pushed.** No branch has an upstream.
+
+**How the backend and app lines were reconciled (merge `634f6fc`).** The two lines share only `0bd39a0`. The rule was: the backend comes from the backend line, the app comes from the mobile line, and every shared test file is chosen with evidence.
+- **Deployable backend** is taken wholesale from `fetch-v2`, which is production-canonical: `supabase/migrations`, `functions`, `production`, `rollbacks`, `config.toml`, migration-replay and check scripts. It was verified byte-identical to `fetch-v2` after the merge.
+- **App code and `package-lock.json`** are identical to `fetch-v2-mobile`.
+- **`package.json`** has the mobile dependencies plus the backend's check scripts (`check:migrations[:offline]`, `db:push:guarded`, `check:function-deploy`, `check:function-manifest`, `test:replay`).
+- **`scripts/isolated-pg.mjs`** is the backend runner plus the app's `my-tickets-privacy` suite.
+- **`lanes.json` and `baseline/offline.json`** are the union of both lines, with every suite on disk in exactly one lane. The counts are:
+  - 285 suites;
+  - offline 112;
+  - production read-only 20;
+  - quarantined 68;
+  - excluded 1;
+  - isolated 66;
+  - unregistered-at-base 18.
+
+  The base label is "Build 148 / origin/main". `PRODUCTION-ACCESS.md` was regenerated and lists 89 production-capable suites.
+- **Ten shared suites take the backend version,** because they assert the production-canonical functions: notify-fanout-authz, event-orders-access, pass-immutability, redemption-business-scope, wallet-loyalty-points, the loyalty suites, email-readiness, transactional-notifications and wallet-liquidity-gate.
+- **Two take the mobile version** with the backend's reminders migration name: business-wallet-refunds and statement-refund-accounting.
+- **Stale assertions corrected (`fe6cbea`).** Five app-line assertions predated the production-canonical payment functions. Each was rewritten to the current code after checking in source that the security property still holds:
+  - the cardless first-purchase gate is in `if (customerId && pmId)` form or `savedCard:` form (create-product-order-intent still refuses "No saved card on file");
+  - the gift idempotency key;
+  - `enforcePaymentStart` on unit purchases;
+  - `cancelAttempt()` on the web saved card;
+  - the product-order key.
+
+  `rate-limit-concurrency` was deleted on the mobile line (its proof lives in `production-concurrency-proofs`), so it was removed from the fixture list. The baseline entry for `ticket-live-checkin` was dropped because it now passes.
+- **`3d023b1`.** `referral-disabled` now checks Build 148's retired referral screen: it redirects to Me and makes no RPC.
+
+**Web reconciliation (`614b7db`).** Web `main` has no commits beyond `origin/main`, so there was nothing to merge. The sweep did find v1 Fetch code that would still be reachable once Fetch is switched on, and that code is now retired:
+- **Header chip.** The v1 header chip read `delivery_requests` and subscribed to raw table changes. Under v2 it would have shown nothing. It is replaced by `components/fetch/v2/HeaderChip`, which is:
+  - built from a server-side summary of `fetch_v2_my_requests` (`lib/fetch/header.ts`, using the shared `requesterStatus` words, attention first);
+  - refreshed every 30 s through a server action, with no browser client and no subscription.
+- **`/admin/operations`** held the v1 runs and a waiting-fee editor that wrote `waiting_events` directly. It now forwards to `/admin/fetch`, and its menu entries are removed.
+- **v1 components moved out of the build.** The 14 unused v1 Fetch components and the v1 `DisputesManager` moved to `legacy/fetch-v1/`, which is not built, typechecked or linted. `PlaceAutocomplete` stays because the business event form uses it.
+- **`tests/fetch-rc-integration.test.mjs`** (6 tests) guards all of this. Its controls, a planted Fetch-table write and a planted `notify-drivers` call, fail it.
+
+**Shared contract.** `lib/fetch/contract.json` is equal in both RCs, and all four shared modules are byte-identical, so the contract did not change and was not regenerated. The web parity test run against the app RC (`FETCH_APP_ROOT`) passes 2/2.
+
+**Safe lanes on the RC.** No production lane ran: the read-only lane was not run and the quarantined suites never run. Every run went under the guard with `SUPABASE_ACCESS_TOKEN=invalid-offline-run`.
+
+| Check | Result |
+|---|---|
+| App+backend `npm test` (offline, web root = web RC) | 3,004 tests in 112 files: 2,981 pass, 1 skipped, 22 known (19 baseline + 3 expected migration-history until deploy), **0 new, 0 blocked** |
+| App+backend `test:isolated` | **2,213/2,213** under the guard (throwaway PostgreSQL 17, destroyed after) |
+| Fresh-worktree check at `3d023b1` | **PASS**: a production URL + live key refused to start (exit 78); `npm test` from a fresh worktree has 0 blocked and 0 new; worktree removed |
+| App typecheck | clean |
+| Manifest / migration-history (snapshot) / replay | manifest consistent; history lists exactly the 12 unapplied Fetch v2 migrations; replay unchanged (6 known, 18 only-in-production, 883 only-in-replay, 0 errors) |
+| Web tests | 681/681 |
+| Web typecheck / lint | clean; touched files lint clean. 3 lint errors and 2 warnings are pre-existing on unchanged `origin/main` lines (`lib/admin-data.server.ts:34`, `app/basket/page.tsx:58`) |
+| Web `next build` (dead Supabase env) | OK; `/fetch/*` and `/admin/operations` dynamic |
+
+**Static sweep of shipping Fetch code (web RC and app RC).**
+- **Fetch tables:** no direct writes.
+- **v1 routes:** none reachable from v2 (web v1 retired as above; the app's v2 screens only call the v2 client).
+- **95p:** no 95p pricing in Fetch. 95p appears only in the event booking fee and listing tiers.
+- **Notifications:** no `notify-drivers` or `notify-collected` calls from v2, and no `postgres_changes` subscription.
+- **Money:** no money computed or sent by a client (the create body carries no price, money or state; asserted by `fetch-v2-client-contract`).
+- **Production:** no production ref, URL, live key or credential in Fetch code.
+- **Still open — v1 reads in the app.** The app's admin screens (`delivery-requests`, `disputes`, `payments`, `runs`, `driver-approvals`, the dashboard counts) still read v1 tables, as do `lib/home-data.ts`, `lib/wallet-hub.ts`, `lib/payment-state.ts` and `app/account.tsx`. These are reads only, with no writes. Each shows v1 rows or counts, which will be stale or empty for v2.
+
+**What ships together (release-candidate dependency map).** Each item depends on the ones above it.
+1. **Backend migrations,** applied in order from the RC (identical to `fetch-v2`):
+
+   | Migration | Rollback |
+   |---|---|
+   | `20261127000000_fetch_v2_feature_flag` | none: additive, adds the flag row and a Launch Test Centre programme; inert while audience = `off` |
+   | `20261128000000_fetch_v2_data_model` | `.down` |
+   | `20261129000000_fetch_v2_access_boundary` | `.down` |
+   | `20261130000000_fetch_v2_lifecycle` | `.down` |
+   | `20261201000000_fetch_v2_pricing_terms` | `.down` |
+   | `20261202000000_fetch_v2_payments` | `.down` |
+   | `20261203000000_fetch_v2_driver_verification` | `.down` |
+   | `20261204000000_fetch_v2_matching` | `.down` |
+   | `20261205000000_fetch_v2_notifications` | `.down` |
+   | `20261206000000_fetch_v2_messages_issues_photos` | `.down` |
+   | `20261207000000_fetch_v2_admin_controls` | `.down` |
+   | `20261208000000_fetch_v2_member_lists` | `.down` |
+
+2. **Edge functions** (from `supabase/production/staged-functions.json`), after the migrations:
+   - **New:**
+     - `fetch-v2-quote`, `fetch-v2-create`, `fetch-v2-accept`, `fetch-v2-payment`, `fetch-v2-driver`, `fetch-v2-admin`, `fetch-v2-driver-verification`, `fetch-v2-photos` (JWT);
+     - `fetch-v2-runner` (`verify_jwt` false; `x-cron-secret`; not scheduled).
+   - **Modified:**
+     - `stripe-webhook` (v2 PaymentIntent hand-off);
+     - `become-driver` (needs `20261203` first);
+     - `notify-drivers` and `notify-collected` (refuse v2 with 409).
+   - **Secrets** they read, which must already exist: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `CRON_SECRET`, `GOOGLE_GEOCODING_API_KEY`, `POSTMARK_API_KEY`.
+   - **Afterwards:** regenerate the manifest and empty `staged-functions.json`.
+3. **Web:** web `fetch-v2-rc` `614b7db`, deployed only after 1–2 (the server flag hides Fetch until the audience is raised).
+4. **App:** `fetch-v2-rc` `3d023b1` (code; this record is the docs commit on top). It needs a **native development build** (`expo-image-manipulator` is a new native module), so it cannot ship as an OTA onto Build 148. Its acceptance builds are development builds on devices, never Build 148.
+
+**Blockers before the first production backend deploy (Step 14B).**
+1. **Approval.** Darren's explicit go-ahead, and Build 148 cleared by Apple (or the hold explicitly waived).
+2. **How the RC reaches `main`.** Local `main` and `origin/main` do not contain the app line (Build 148 lineage), and home-redesign's unpushed commits are held back on purpose. Pushing or merging the RC needs Darren's decision on branch strategy. The backend deploy itself can be made from the RC worktree, because its deployable files are byte-identical to `fetch-v2`.
+3. **Pre-flight checks** at deploy time:
+   - `npm run check:migrations` against the live history (read-only);
+   - `check:function-deploy`;
+   - the secrets listed above confirmed present.
+4. **After the deploy, before raising the audience:**
+   - the admin console (Step 10) and the member UI (Step 11), checked in a browser against real v2 data;
+   - the app's v1 reads above, fixed or accepted as stale.
+5. **Still open:** R.2 (hold size), and the 68 quarantined app suites and 59 quarantined backend suites (none Fetch-specific).
+
+**Technically ready for Step 14B:** yes, for a backend deploy behind the flag with audience `off`, once blockers 1–3 are cleared. Step 14B has not been started.
+
 **Changes from revision 1 caused by the decisions:**
 
 - Step 0 is split: 0a is *prepared, not deployed*.
