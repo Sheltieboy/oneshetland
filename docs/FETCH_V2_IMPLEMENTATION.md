@@ -824,7 +824,7 @@ Further constraints:
 | 1 | **Data model** | G.1–G.6: request item fields, size, ferry, return and cancel-request columns, statuses; events, messages, issues, photos, ferry paths, verification tables; private buckets; island groups; driver vehicle and capacity; counters | migrations | 0b | Low–Medium (status CHECK widened) | Migration replay; constraints | No behaviour change | Deploy after clearance |
 | 2 | **Permissions / RLS** | DONE (see Step 2 status): v1 broad policies and grants retired; public runs, matching board and participant detail representations; phone, address and history windows | migration | 1 | **Medium**: ends v1 client write paths | Access matrix per audience | **Yes**: v1 web and app Fetch actions stop | **Yes**: deploy only after clearance, with 0a |
 | 3 | **Lifecycle RPCs** | F.2 incl. cancel request, release, undeliverable, return resolution; events; idempotency; **plus run create/cancel and server-recorded arrival/collection waiting events** (client paths retired in Step 2) | migration | 2 | Medium | Transition table, race, idempotency | No (not yet called) | After clearance |
-| 4 | **Pricing + ferry** | `fetch-quote`: £8 bulky minimum, island-group ferry detection and £2 per-job supplement, return cap, refusal rules; extend frozen terms (K.2.9); config columns and keys | migration, `fetch-quote`, Paygate term functions | 1 | **High** (terms tables) | Quote, freeze, capture-total tests with controls | Changes quote behaviour | After clearance |
+| 4 | **Pricing + ferry (edge and frozen terms)** | The SQL price is done (Step 3). Step 4: `fetch-create`/`fetch-quote` edge functions (server geocoding with the Google server key, postcode fallback, refuse when unresolved, card-on-file check, then `fetch_v2_create_request`); extend Paygate frozen terms (`claim_fetch_authorisation`, `fetch_capture_total_pence`) with the ferry supplement, minimum applied, return rate and return max; make one service-fee source; retire `calculate-fee` from Fetch | edge functions, Paygate term functions | 3 | **High** (terms tables) | Quote, freeze, capture-total tests with controls | Changes quote behaviour | After clearance |
 | 5 | **Service layer** | `fetch-create`, `fetch-accept`, `fetch-cancel`, `fetch-driver-action`, `fetch-admin` (incl. resolution capture), K.2.1–K.2.8 changes | `supabase/functions/*`, `_shared/fetch-*` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests; controls proving guards are load-bearing | Function behaviour; deploy as exact deltas | After clearance |
 | 6 | **Driver verification** | `fetch-driver-verification`, admin review RPCs, `become-driver` fix, expiry handling, accept gating | migration, functions | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating | Driver application flow | After clearance |
 | 7 | **Matching** | Board RPC with capacity and ferry-aware fits; narrowed `notify-drivers` | migration, `notify-drivers` | 3, 4 | Low | Matching fixtures | No | After clearance |
@@ -913,6 +913,45 @@ Admin screens become read-only. Requesters still read their own v1 history. Serv
 **Carried into later steps:**
 - Requester live updates: v2 requesters cannot subscribe to raw `delivery_requests` changes, so the clients will subscribe to `fetch_request_events` (party-readable) and re-fetch the detail call (Steps 11–12).
 - `item_description` is free text on the board: the request form must warn against personal details, and Step 10 adds an admin "edit/redact description" action.
+
+**Step 3 status (25 Oct 2026): DONE, local only. Not applied.**
+
+**Files:** migration `20261130000000_fetch_v2_lifecycle.sql`, rollback `supabase/rollbacks/20261130000000_fetch_v2_lifecycle.down.sql`, and the suite `fetch-v2-lifecycle.node.test.ts` (63 tests, including a real two-session claim race and a concurrent double-create).
+
+**State machine.** `fetch_v2_transition_allowed(from, to, role)` is the only definition of a legal move: 14 (from, to, role) triples. Every status-changing action asks it. Terminal states (`delivered`, `returned`, `cancelled`, `expired`) lead nowhere.
+
+**Actions**
+
+| Kind | Granted to | Actions |
+|---|---|---|
+| CLIENT | `authenticated`; the actor is `auth.uid()` | `fetch_v2_cancel_open`, `fetch_v2_request_cancellation`, `fetch_v2_decline_cancellation`, `fetch_v2_extend` (max 2 × 24h), `fetch_v2_confirm_ready`, `fetch_v2_mark_arrived`, `fetch_v2_mark_collected`, `fetch_v2_mark_undeliverable`, `fetch_v2_report_return`, `fetch_v2_create_run`, `fetch_v2_cancel_run` |
+| SERVICE | `service_role` only; the actor is passed by the Step 4/5 edge function after verifying the JWT | `fetch_v2_create_request`, `fetch_v2_claim`, `fetch_v2_release` (driver, or admin return-to-board), `fetch_v2_agree_cancellation`, `fetch_v2_resolve_cancellation`, `fetch_v2_admin_cancel`, `fetch_v2_complete_delivery`, `fetch_v2_resolve_return`; sweeps `fetch_v2_expire_due`, `fetch_v2_release_unpaid_due`, `fetch_v2_escalate_cancel_requests` |
+
+Every action checks the Fetch v2 flag for the actor, locks the job, writes an append-only event (actor, role, from → to, reason, fault, safe metadata: never addresses, phone or notes), and returns a shaped answer.
+- Expected refusals are `{ok:false, code}`; "not yours" is the same "not found" as a missing job.
+- Repeats return `{ok:true, already:true}` with no new effect.
+
+**Payment hooks (no Stripe in Step 3)**
+
+| Action | Hook |
+|---|---|
+| Claim | returns `{action:'authorise', amount_pence}` = total + waiting max + return max |
+| Collect | requires the existing Paygate `fetch_hold_is_fulfillable` |
+| Complete delivery | requires `payment_status = 'captured'` |
+| Release / agree / admin cancel | return `{action:'void', payment_intent_id}` |
+| Resolve return | returns `{action:'capture'|'void', amount_pence}` |
+
+**Pricing pulled forward from Step 4.** A job can't be created without a server price, so `fetch_v2_price()` (65p × 1.40, £4/£8 minimum, flat £2 ferry, service fee once, return max = the same mileage with no minimum) and `fetch_v2_straight_miles()` now live in SQL. Distance is always measured from server-geocoded coordinates passed by the service.
+
+**Requester long-term history (point 21, resolved).** The requester keeps every job permanently as a safe summary: status, timeline, item, regions and villages, money. Their own operational details (pickup name, addresses, access instructions, safe-place note, phone) are shown to them only during the 30-day participant-history window after the job closes; after that the detail call returns the summary only. The driver's narrower windows (72h addresses, phone only while live) are unchanged. Physical deletion of operational data is a separate retention decision (S.18) and must honour `fetch_v2_evidence_held`.
+
+**Found while building**
+- Under-16 accounts cannot be refused in SQL: no age data exists in the database. The gate must live in onboarding or the edge function, or an age attribute must be added.
+- Card-on-file is a Stripe question, so `fetch-create` must check it before calling `fetch_v2_create_request`.
+- After a release, the Paygate `fetch_authorisation_attempts` row (one per request) still holds the previous driver's hold. Step 5 must archive it, like the existing generations pattern, before the next driver's hold is placed.
+- The service fee is now computed in two places: `fetch_v2_service_fee_pence` and `_shared/commission-config.ts`. Step 4 must make one the single source.
+- Runs have no audit trail of their own, which is acceptable for P0 because v2 jobs are not attached to runs.
+- Client actions are callable directly through PostgREST, so edge rate limits do not cover them. They are all idempotent or bounded (2 extends, 10 open runs, one arrival); per-actor rate limits can be added in SQL if abuse appears.
 
 **Changes from revision 1 caused by the decisions:**
 

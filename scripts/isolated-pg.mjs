@@ -79,6 +79,7 @@ const SUITES = [
   'supabase/tests/fetch-v2-flag.node.test.ts',
   'supabase/tests/fetch-v2-data-model.node.test.ts',
   'supabase/tests/fetch-v2-access-boundary.node.test.ts',
+  'supabase/tests/fetch-v2-lifecycle.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
