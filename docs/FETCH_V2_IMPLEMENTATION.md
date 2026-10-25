@@ -822,7 +822,7 @@ Further constraints:
 | 0a | **Prepare v1 retirement** | Web: remove Fetch from `lib/sections.ts`, SiteHeader More, footer, home grid; `/fetch/*` → "coming soon". Mobile: the equivalent NAV, tab and Home-tile gate, for the next release | web `fetch-v2` branch; mobile `fetch-v2-mobile` | — | Low | Render checks | Only when deployed; **timing is Darren's (S.2)** | No (web only; mobile change ships in the next release) |
 | 0b | **Flag** | `fetch.v2.audience`, `fetch-v2` programme, `fetch_v2_enabled_for/()` | migration | — | Low | Flag matrix | No (new objects only) | No; deploy held anyway per S.1 |
 | 1 | **Data model** | G.1–G.6: request item fields, size, ferry, return and cancel-request columns, statuses; events, messages, issues, photos, ferry paths, verification tables; private buckets; island groups; driver vehicle and capacity; counters | migrations | 0b | Low–Medium (status CHECK widened) | Migration replay; constraints | No behaviour change | Deploy after clearance |
-| 2 | **Permissions / RLS** | H in full, plus storage policies (admin-only verification read) | migration | 1 | **Medium**: ends v1 client write paths | Column-level RLS matrix | **Yes**: v1 web and app Fetch actions stop | **Yes**: deploy only after clearance, with 0a |
+| 2 | **Permissions / RLS** | Retire the v1 broad policies and grants (H): drop the two "approved drivers read all pending" and four driver UPDATE policies, revoke anon/authenticated `GRANT ALL`, close the v1 `waiting_events` insert hole, redact `runs` for the public (`fetch_public_runs`). Keep the v2 phone (and private notes) out of the assigned driver's direct reach unless shared. *(v2-row privacy and all new-table/storage policies already landed in Step 1.)* | migration | 1 | **Medium**: ends v1 client write paths | Column-level RLS matrix | **Yes**: v1 web and app Fetch actions stop | **Yes**: deploy only after clearance, with 0a |
 | 3 | **Lifecycle RPCs** | F.2 incl. cancel request, release, undeliverable, return resolution; events; idempotency | migration | 2 | Medium | Transition table, race, idempotency | No (not yet called) | After clearance |
 | 4 | **Pricing + ferry** | `fetch-quote`: £8 bulky minimum, island-group ferry detection and £2 per-job supplement, return cap, refusal rules; extend frozen terms (K.2.9); config columns and keys | migration, `fetch-quote`, Paygate term functions | 1 | **High** (terms tables) | Quote, freeze, capture-total tests with controls | Changes quote behaviour | After clearance |
 | 5 | **Service layer** | `fetch-create`, `fetch-accept`, `fetch-cancel`, `fetch-driver-action`, `fetch-admin` (incl. resolution capture), K.2.1–K.2.8 changes | `supabase/functions/*`, `_shared/fetch-*` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests; controls proving guards are load-bearing | Function behaviour; deploy as exact deltas | After clearance |
@@ -843,6 +843,18 @@ Further constraints:
 - **0b:** migration `20261127000000_fetch_v2_feature_flag.sql`, the edge helper `_shared/fetch-v2-flag.ts`, and tests, on `fetch-v2` (this repo).
 - **0a:** the web hide, on branch `fetch-v2` of `oneshetland-web` (worktree `~/Claude/oneshetland-web-fetch-v2`).
 - **Mobile part of 0a:** deferred to Step 12 on `fetch-v2-mobile`, per Darren's Step 0 instruction (web only now).
+
+**Step 1 status (25 Oct 2026): DONE, local only. Not applied.**
+
+- **Files:** migration `20261128000000_fetch_v2_data_model.sql`, an exact reversal at `supabase/rollbacks/20261128000000_fetch_v2_data_model.down.sql`, and the isolated suite `fetch-v2-data-model.node.test.ts`.
+- **Departures from G**, each decided while building and documented in the migration:
+  1. **v2 privacy lands now, not in Step 2.** RESTRICTIVE policies narrow every existing permissive policy for `fetch_version = 2` rows only. A v2 request is readable by its requester, its assigned driver (within the address window) and admins. No client, admins included, writes a v2 row directly. A permissive "assigned driver reads" policy is added because the v1 driver policies grant access through `runs`, not `driver_id`. v1 rows behave exactly as before.
+  2. **`vehicle_class` is a new constrained column.** The free-text `vehicle_type` written by the current apply form is left unconstrained, so existing rows and v1 clients cannot break.
+  3. **No `fetch_ferry_paths` table** (per S.15): ferry detection is `regions.island_group`.
+  4. **Server-maintained columns are locked against client writes on v1 rows too.** This applies to every new `delivery_requests` column and the new driver counters and decision fields, so the migration opens no new client-writable field.
+  5. **The `price_per_mile_pence` column DEFAULT changes from the obsolete 95 to 65.** The live row (65) is not touched.
+  6. **`fetch_issues` are visible to their reporter and admins only**, not to the other party, by default.
+- **Carried into Step 2:** with table-level reads, the assigned driver can read every column of the row, including `contact_phone`, even when `share_phone_with_driver` is false. Step 2 must keep the v2 phone where the driver cannot read it directly. Either a private contact table (requester and admins; the driver only when shared), or column-level grants plus a detail RPC. The same review applies to `pickup_notes` and `delivery_notes`.
 
 **Changes from revision 1 caused by the decisions:**
 
