@@ -1,0 +1,7 @@
+{
+  "_comment": "Edge Functions that exist in the repository but are NOT deployed yet. Each needs an approved deploy; after it, run the manifest generator and remove the entry. The manifest guard fails for any undeployed function not listed here, and for any listed function that production already runs.",
+  "functions": {
+    "fetch-v2-quote": { "step": "Fetch v2 Step 4", "verify_jwt": true, "reason": "Fetch v2 quote boundary; held until iOS Build 148 clears review and Darren approves" },
+    "fetch-v2-create": { "step": "Fetch v2 Step 4", "verify_jwt": true, "reason": "Fetch v2 create boundary; held until iOS Build 148 clears review and Darren approves" }
+  }
+}

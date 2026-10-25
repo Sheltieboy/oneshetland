@@ -20,13 +20,28 @@ import { sha256 } from '../../scripts/lib/function-deps.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FN = join(ROOT, 'supabase/functions');
 const manifest = JSON.parse(readFileSync(join(ROOT, 'supabase/production/edge-function-manifest.json'), 'utf8'));
+const staged: Record<string, any> = JSON.parse(readFileSync(join(ROOT, 'supabase/production/staged-functions.json'), 'utf8')).functions;
 const dirs = readdirSync(FN).filter((n) => !n.startsWith('_') && statSync(join(FN, n)).isDirectory());
 
 describe('production Edge Function manifest', () => {
   test('describes exactly the 100 deployed functions, each with source', () => {
     assert.equal(Object.keys(manifest.functions).length, 100);
-    assert.deepEqual(Object.keys(manifest.functions).sort(), dirs.sort());
+    assert.deepEqual(Object.keys(manifest.functions).sort(), dirs.filter((d) => !staged[d]).sort());
     assert.equal(manifest.summary.functions, 100);
+  });
+
+  test('every other function directory is a reviewed, not-yet-deployed staged function — and nothing deployed is still listed as staged', () => {
+    assert.deepEqual(dirs.filter((d) => !manifest.functions[d]).sort(), Object.keys(staged).sort());
+    for (const n of Object.keys(staged)) {
+      assert.equal(manifest.functions[n], undefined, `${n} is deployed: remove it from staged-functions.json`);
+      assert.ok(typeof staged[n].reason === 'string' && staged[n].reason.length > 10, `${n} needs a reason`);
+    }
+    const toml = readFileSync(join(ROOT, 'supabase/config.toml'), 'utf8');
+    for (const [n, s] of Object.entries(staged) as [string, any][]) {
+      const m = toml.match(new RegExp(`\\[functions\\.${n}\\]\\s*\\nverify_jwt\\s*=\\s*(true|false)`));
+      assert.ok(m, `${n}: config.toml entry missing`);
+      assert.equal(m![1] === 'true', s.verify_jwt, `${n}: config.toml verify_jwt differs from the staged declaration`);
+    }
   });
 
   test('is consistent with the source tree (index.ts exact; shared drift declared, not silent)', () => {

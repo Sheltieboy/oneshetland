@@ -63,11 +63,20 @@ export function buildManifest(list, bundlesDir) {
   };
 }
 
+/** Reviewed, not-yet-deployed functions (supabase/production/staged-functions.json). */
+export function loadStaged(path = join(dirname(MANIFEST_PATH), 'staged-functions.json')) {
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).functions ?? {} : {};
+}
+
 /** Problems between a manifest and the source tree; empty = consistent. */
-export function verifyManifest(manifest, functionsDir = FUNCTIONS_DIR) {
+export function verifyManifest(manifest, functionsDir = FUNCTIONS_DIR, staged = loadStaged()) {
   const problems = [];
   const dirs = readdirSync(functionsDir).filter((n) => !n.startsWith('_') && statSync(join(functionsDir, n)).isDirectory() && existsSync(join(functionsDir, n, 'index.ts')));
-  for (const d of dirs) if (!manifest.functions[d]) problems.push(`${d}: has source but is not in the manifest`);
+  for (const d of dirs) if (!manifest.functions[d] && !staged[d]) problems.push(`${d}: has source but is not in the manifest (and is not a reviewed staged function)`);
+  for (const n of Object.keys(staged)) {
+    if (manifest.functions[n]) problems.push(`${n}: is deployed but still listed as staged — remove it from staged-functions.json`);
+    if (!dirs.includes(n)) problems.push(`${n}: is listed as staged but has no source directory`);
+  }
   for (const n of Object.keys(manifest.functions)) {
     if (!dirs.includes(n)) { problems.push(`${n}: in the manifest but has no source directory`); continue; }
     const m = manifest.functions[n]; let src;

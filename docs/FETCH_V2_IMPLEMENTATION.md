@@ -953,6 +953,69 @@ Every action checks the Fetch v2 flag for the actor, locks the job, writes an ap
 - Runs have no audit trail of their own, which is acceptable for P0 because v2 jobs are not attached to runs.
 - Client actions are callable directly through PostgREST, so edge rate limits do not cover them. They are all idempotent or bounded (2 extends, 10 open runs, one arrival); per-actor rate limits can be added in SQL if abuse appears.
 
+**Step 4 status (25 Oct 2026): DONE, local only. Not applied, not deployed.**
+
+**Files**
+- Migration `20261201000000_fetch_v2_pricing_terms.sql` and rollback `supabase/rollbacks/20261201000000_fetch_v2_pricing_terms.down.sql`.
+- Edge functions `fetch-v2-quote` and `fetch-v2-create` (staged, see below), the shared modules `_shared/fetch-v2-intake.ts` and `_shared/fetch-v2-geocode.ts`.
+- Tests: `supabase/tests/fetch-v2-pricing-terms.node.test.ts` (31, isolated database, real handlers with mocked Google, Stripe and limiter) and `_shared/fetch-v2-intake.node.test.ts` (10, no database).
+- `supabase/production/staged-functions.json`: the manifest guard now accepts exactly these reviewed, undeployed functions and fails for any other, and for any listed function production already runs.
+
+**Fetch 18+ (decision, 25 Oct).** Fetch v2 is for members aged 18 or over, both requesters and drivers. The server signal is the member's own explicit confirmation, recorded once with its wording version (`fetch_v2_confirm_adult` → `fetch_member_stats.adult_confirmed_at` / `adult_confirmation_version`). It is enforced in SQL by create, claim and run creation, as well as by the edge function. There is no date-of-birth store; driver verification adds the real-world check later. Build 148 and its store metadata are unchanged.
+
+**Source of truth for price.** `fetch_v2_price()` in the database is the only place a Fetch v2 amount is computed. It reads `delivery_pricing_config` (65p, ×1.40, £4, £8 bulky, £2 ferry, waiting rules) and `admin_config fees.fetch.*` (£1.50).
+- Step 3's separate service-fee helper is dropped.
+- The edge functions pass prices through and never compute them; a test fails if any v2 edge file mentions a rate, commission maths or `calculate-fee`.
+- `_shared/commission-config.ts` and `calculate-fee` remain for v1 and the other rails only; the same £1.50 default is pinned in both by a test.
+- Clients display figures and never define them.
+
+**Frozen terms (`fetch_v2_terms`, one immutable row per job, written in the create transaction).** Pricing version, rate, road factor, standard and bulky minimums, size class, straight and road miles, mileage, minimum applied, delivery fee, ferry flag/supplement/basis, service fee (fixed + bps), waiting grace/period/rate/cap, return rate and road factor, return maximum, normal total, maximum hold. The CHECKs tie total = delivery + ferry + service and max hold = total + waiting max + return max. The claim amount, the Paygate hold terms, the waiting cap and the return resolution all read these rows; later configuration changes do not touch an existing job, and fresh quotes use the new prices.
+
+**Where a job is.** Coordinates come only from server geocoding (Google, server key): a client place_id is resolved by the server, otherwise address + postcode, then postcode alone. Client coordinates are ignored. The island is derived from coordinates (`fetch_island_areas`, admin data checked against terminals and settlements). A client-chosen region must be on that island (`region_mismatch` otherwise), so ferry status cannot be avoided by picking the wrong region.
+
+| Situation | Answer |
+|---|---|
+| Location not placeable | `location_unresolved` (never a minimum price) |
+| Outside Shetland | `outside_service_area` |
+| Unsupported isle | `area_not_supported` |
+| Google unreachable | `location_service_unavailable` |
+
+**Quote contract** — `POST fetch-v2-quote` `{size_class, pickup:{region_id, address, postcode?, place_id?, area?}, destination:{…}}` → `{ok, quote}`. The quote contains:
+- `driver_delivery_pence`, `ferry_supplement_pence`, `service_fee_pence`, `expected_total_pence`;
+- `max_authorisation_pence` with `authorisation_breakdown {expected_total_pence, waiting_max_pence, return_max_pence}`;
+- `explanation` (what will be charged vs only held, and why);
+- `ferry_required`, `minimum_applied`, `size_class`, `road_miles`, `pricing_version`.
+
+It writes nothing, and is limited to 40/hour and 200/day per member.
+
+**Create contract** — `POST fetch-v2-create`. The quote fields plus `idempotency_key`, `category_slug`, `item_description`, size/dimensions/handling, notes, phone and sharing, safe place, timing, liability. Only an allow-list is forwarded. Returns 201 `{ok, request_id, status, already:false, quote, needs_item_photo, expires_at}`, or 200 with `already:true` and the same quote on a retry. Limited to 10/hour and 30/day per member.
+
+**Card on file.** `fetch-v2-create` checks read-only that the member's existing Stripe Customer has a chargeable card (`chargeableCardFor`). It creates nothing at Stripe and stores no card data.
+- No customer or no card → 402 `payment_method_required`.
+- Stripe or the profile cannot be asked → 503 `card_check_failed`.
+
+Either way nothing is created, and no geocoding is spent first.
+
+**Order of checks (both functions):** authenticated → rate limit → Fetch v2 flag → 18+ and restriction (→ card) → input → geocode → database. Every failure is a stable `code`; provider and database text is never returned.
+
+**The hold (unchanged policy, review still open — R.2).** The maximum authorisation is expected total + waiting max + return max, shown separately from the expected total with an explanation. Whether the full return exposure must be held up front, or a staged authorisation is better, remains the pre-launch review in R.2. Step 4 did not change that policy.
+
+**Replacement holds after a release (contract for Step 5)**
+- `fetch_v2_claim_authorisation(driver, request)` freezes a hold from the job's terms: driver part = delivery + ferry, application fee = service fee, waiting terms, amount = maximum hold. It continues the generation after any archived hold and returns the Stripe idempotency key (`fetch-auth-<id>` for the first, `fetch-auth-<id>-g<n>` after).
+- `fetch_v2_retire_authorisation(request)` archives a released or cancelled job's hold into `fetch_authorisation_generations` and removes it. It only does so once the job is no longer assigned and the attempt is settled `terminal`; it refuses `hold_still_live` before, and never touches a captured hold.
+- `fetch_capture_total_pence` returns the resolution amount for a v2 return.
+
+**Rollback** restores the catalogue exactly (proved). It refuses while frozen terms or 18+ confirmations exist.
+
+**Step 5 responsibilities (exact)**
+1. `fetch-accept` edge: `fetch_v2_claim` → `fetch_v2_claim_authorisation` → Stripe PaymentIntent (manual capture, destination = the driver's Connect account, `application_fee_amount` = service fee, amount = maximum hold, idempotency key as returned) → `settle_fetch_authorisation` → hold state.
+2. Release, cancellation and payment-timeout paths: Stripe cancel of the returned `payment_intent_id` → `settle_fetch_authorisation('terminal')` → `fetch_v2_retire_authorisation`.
+3. Delivery and return capture: `claim_fetch_capture` → capture `fetch_capture_total_pence` (the resolution amount for returns, ≤ the hold) → `settle_fetch_capture` → `fetch_v2_complete_delivery` (delivery) or nothing further (returns are already resolved).
+4. The reminder runner calls `fetch_v2_expire_due`, `fetch_v2_release_unpaid_due` (then step 2 for each intent) and `fetch_v2_escalate_cancel_requests`.
+5. `authorise-payment` / `capture-payment` / `cancel-payment` either learn v2 or v2 gets its own functions (decision in Step 5); v1 behaviour is not changed in production by Steps 1–4.
+6. The admin edge function for the service-only admin actions, passing the verified admin as actor.
+7. Mocked-Stripe handler tests with controls, as for Paygate 12.
+
 **Changes from revision 1 caused by the decisions:**
 
 - Step 0 is split: 0a is *prepared, not deployed*.
@@ -1171,6 +1234,13 @@ Recorded as given. Sections D–R above are updated to match.
 - No arbitrary period is chosen yet. A privacy/data-retention decision is required before public driver onboarding.
 - Private verification documents must be **deletable separately** from the approval and audit record.
 - **Applied in:** G.2 (`driver_verification_files` split from `driver_verification_items`, `file_deleted_*` columns), H, J, N.3, Step 16, Q-17, R.1.
+
+**S.20 Fetch 18+ (25 Oct 2026).**
+- Fetch v2 is for users aged 18 or over, both requesters and drivers.
+- P0: an explicit 18+ confirmation in Fetch onboarding, recorded server-side as the authoritative eligibility signal.
+- No date-of-birth database and no app-wide age assurance in this work. Driver verification adds a real-world layer later.
+- Build 148 and its store metadata are unchanged.
+- **Applied in:** Step 4 (`fetch_v2_confirm_adult`, `fetch_v2_member_problem`; create/claim/run creation/quote refuse without it).
 
 **S.19 Insurance / legal.**
 - A pre-production external verification item. Ordinary private motor insurance is **not** assumed sufficient.
