@@ -822,8 +822,8 @@ Further constraints:
 | 0a | **Prepare v1 retirement** | Web: remove Fetch from `lib/sections.ts`, SiteHeader More, footer, home grid; `/fetch/*` → "coming soon". Mobile: the equivalent NAV, tab and Home-tile gate, for the next release | web `fetch-v2` branch; mobile `fetch-v2-mobile` | — | Low | Render checks | Only when deployed; **timing is Darren's (S.2)** | No (web only; mobile change ships in the next release) |
 | 0b | **Flag** | `fetch.v2.audience`, `fetch-v2` programme, `fetch_v2_enabled_for/()` | migration | — | Low | Flag matrix | No (new objects only) | No; deploy held anyway per S.1 |
 | 1 | **Data model** | G.1–G.6: request item fields, size, ferry, return and cancel-request columns, statuses; events, messages, issues, photos, ferry paths, verification tables; private buckets; island groups; driver vehicle and capacity; counters | migrations | 0b | Low–Medium (status CHECK widened) | Migration replay; constraints | No behaviour change | Deploy after clearance |
-| 2 | **Permissions / RLS** | Retire the v1 broad policies and grants (H): drop the two "approved drivers read all pending" and four driver UPDATE policies, revoke anon/authenticated `GRANT ALL`, close the v1 `waiting_events` insert hole, redact `runs` for the public (`fetch_public_runs`). Keep the v2 phone (and private notes) out of the assigned driver's direct reach unless shared. *(v2-row privacy and all new-table/storage policies already landed in Step 1.)* | migration | 1 | **Medium**: ends v1 client write paths | Column-level RLS matrix | **Yes**: v1 web and app Fetch actions stop | **Yes**: deploy only after clearance, with 0a |
-| 3 | **Lifecycle RPCs** | F.2 incl. cancel request, release, undeliverable, return resolution; events; idempotency | migration | 2 | Medium | Transition table, race, idempotency | No (not yet called) | After clearance |
+| 2 | **Permissions / RLS** | DONE (see Step 2 status): v1 broad policies and grants retired; public runs, matching board and participant detail representations; phone, address and history windows | migration | 1 | **Medium**: ends v1 client write paths | Access matrix per audience | **Yes**: v1 web and app Fetch actions stop | **Yes**: deploy only after clearance, with 0a |
+| 3 | **Lifecycle RPCs** | F.2 incl. cancel request, release, undeliverable, return resolution; events; idempotency; **plus run create/cancel and server-recorded arrival/collection waiting events** (client paths retired in Step 2) | migration | 2 | Medium | Transition table, race, idempotency | No (not yet called) | After clearance |
 | 4 | **Pricing + ferry** | `fetch-quote`: £8 bulky minimum, island-group ferry detection and £2 per-job supplement, return cap, refusal rules; extend frozen terms (K.2.9); config columns and keys | migration, `fetch-quote`, Paygate term functions | 1 | **High** (terms tables) | Quote, freeze, capture-total tests with controls | Changes quote behaviour | After clearance |
 | 5 | **Service layer** | `fetch-create`, `fetch-accept`, `fetch-cancel`, `fetch-driver-action`, `fetch-admin` (incl. resolution capture), K.2.1–K.2.8 changes | `supabase/functions/*`, `_shared/fetch-*` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests; controls proving guards are load-bearing | Function behaviour; deploy as exact deltas | After clearance |
 | 6 | **Driver verification** | `fetch-driver-verification`, admin review RPCs, `become-driver` fix, expiry handling, accept gating | migration, functions | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating | Driver application flow | After clearance |
@@ -855,6 +855,64 @@ Further constraints:
   5. **The `price_per_mile_pence` column DEFAULT changes from the obsolete 95 to 65.** The live row (65) is not touched.
   6. **`fetch_issues` are visible to their reporter and admins only**, not to the other party, by default.
 - **Carried into Step 2:** with table-level reads, the assigned driver can read every column of the row, including `contact_phone`, even when `share_phone_with_driver` is false. Step 2 must keep the v2 phone where the driver cannot read it directly. Either a private contact table (requester and admins; the driver only when shared), or column-level grants plus a detail RPC. The same review applies to `pickup_notes` and `delivery_notes`.
+
+**Step 2 status (25 Oct 2026): DONE, local only. Not applied.**
+
+**Files:** migration `20261129000000_fetch_v2_access_boundary.sql`, the exact rollback `supabase/rollbacks/20261129000000_fetch_v2_access_boundary.down.sql`, and the suite `fetch-v2-access-boundary.node.test.ts`.
+
+**Access tiers**
+
+| Tier | Who | Through | Contains |
+|---|---|---|---|
+| A. Public | anyone, when the Fetch v2 audience admits them | `fetch_public_runs()` | origin/destination region and island, date, part of day, max size, categories, crosses water, opaque `run_key`. Never driver identity, ids, notes, exact times or registration |
+| B. Matching | approved drivers (flag-gated) | `fetch_v2_board()` | region and village both ends, island groups, ferry, timing, category, `item_description`, size, dimensions, handling, photos the requester marked `matching_visible`, driver pay (delivery fee + ferry supplement). Never pickup name, addresses, notes, safe-place note, phone, coordinates or requester identity |
+| C. Participant | requester, assigned driver | `fetch_v2_request_detail(id)` | shaped per viewer (below). Same "not found" for missing and not-yours |
+| D. Requester-private | requester | the detail call | own phone, notes, money breakdown |
+| E. Admin | admins | direct SELECT + the detail call | everything; **no direct writes** (Step 3's audited actions only) |
+
+Direct table SELECT on a v2 row is **admin-only**. Requesters and drivers never read the raw v2 row.
+
+**Field classification** (`delivery_requests`)
+
+| Class | Fields |
+|---|---|
+| Public | none: requests are never public |
+| Matching-safe | region/village (`pickup_area`, `destination_area`), island groups, `ferry_required`, timing fields, `category_slug`, `item_description`, `size_class`, `approx_dimensions_cm`, `handling_flags`, driver pay |
+| After acceptance, within the exact-address window | `pickup_name`, `pickup_location`, `pickup_notes`, `destination_address`, `delivery_notes`, `safe_place_allowed`, `safe_place_note` |
+| After acceptance, within the history window (job summary) | status, timeline, item, regions, cancel-request and undeliverable reasons and notes, return outcome and fault, return fee, requester first name |
+| Phone | `contact_phone`: the requester's own; the assigned driver **only if `share_phone_with_driver` and the job is live** (`matched`/`collected`/`undeliverable`, not closed) |
+| Requester-only | money breakdown (`total_fee_pence`, `min_fee_applied_pence`, `return_max_pence`, `resolution_capture_pence`); the driver sees their pay instead |
+| Admin-only | `customer_id`, `driver_id` (parties see first names only), payment ids, coordinates, `resolution_override_reason`, `resolved_by` |
+
+**Windows after a job closes (assigned driver)**
+
+| What | Window |
+|---|---|
+| Exact addresses and access instructions | 72h (`exact_address_secs`) |
+| Phone (only if shared) | while the job is live; never after close |
+| Job summary, event timeline, waiting events | 30 days (`participant_history_secs`, renamed from `address_access_secs`) |
+| Messages and evidence photos | 30 days: a problem reported near the end of the 72h window still needs them |
+
+The requester keeps their own job indefinitely.
+
+**Participant visibility is not administrative retention.** Admins can read every job's messages, photos and storage objects regardless of the participant windows, and nothing is deleted automatically. `fetch_v2_evidence_held(request)` (service-role only) is true while a job has an open issue. Any future retention clean-up must honour it, so evidence for an unresolved problem outlives the participant windows until it is resolved.
+
+**v1 behaviours that cease when Steps 1–2 are deployed:**
+- Approved drivers browsing every pending request (with addresses and phone).
+- Accepting, collecting, cancelling, extending or "ready" by direct table write (web and every installed app build).
+- Creating requests from the web/app composer.
+- Drivers reading jobs through their runs.
+- Anyone reading or creating runs directly; drivers creating or cancelling runs from the app.
+- The public "runs live now" list from the raw table.
+- Recording arrival/waiting from the client.
+
+Admin screens become read-only. Requesters still read their own v1 history. Server-side v1 paths (`authorise-payment`, `capture-payment`, `fetch_mark_collected`, refunds, the Shop sync triggers) run as definer/service role and are unaffected.
+
+**Rollback** restores exactly the pre-Step-2 grants, which never included TRUNCATE for client roles: an earlier hardening migration had removed it, so a naive `GRANT ALL` would have widened privileges.
+
+**Carried into later steps:**
+- Requester live updates: v2 requesters cannot subscribe to raw `delivery_requests` changes, so the clients will subscribe to `fetch_request_events` (party-readable) and re-fetch the detail call (Steps 11–12).
+- `item_description` is free text on the board: the request form must warn against personal details, and Step 10 adds an admin "edit/redact description" action.
 
 **Changes from revision 1 caused by the decisions:**
 
