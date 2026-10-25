@@ -136,6 +136,13 @@ describe('2 · the client contract (build 147 and the web)', () => {
     const l = readFileSync(lib, 'utf8'); const s = readFileSync(screen, 'utf8');
     assert.match(l, /rpc\('ensure_referral_code'\)/); assert.match(l, /rpc\('apply_referral_code',\s*\{\s*p_code:/);
     assert.doesNotMatch(l, /rpc\('(?!ensure_referral_code|apply_referral_code)/);
+    // Step 14A: from Build 148 (the release candidate's app line) the referral screen is retired — it only redirects to Me and calls
+    // no referral RPC at all, which is stronger than handling the refusal. Build 147's screen is still checked when present.
+    if (/ReferralsRetired/.test(s)) {
+      assert.match(s, /<Redirect href="\/\(tabs\)\/me" \/>/);
+      assert.doesNotMatch(s, /rpc\(|referral_code|lib\/referrals/);
+      return;
+    }
     assert.match(s, /res\.ok/); assert.match(s, /res\.error/); assert.match(s, /catch \(e\)/);
     assert.match(s, /if \(!data\) return;/, 'Share is inert when the code could not load');
   });
