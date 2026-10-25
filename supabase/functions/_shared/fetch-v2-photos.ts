@@ -38,6 +38,7 @@ const STATUS: Record<string, number> = {
   not_found: 404, invalid_request: 400, invalid_kind: 400, reason_required: 400, resolution_required: 400, file_type_not_allowed: 415,
   file_type_mismatch: 415, file_too_large: 413, upload_missing: 409, upload_expired: 410, too_many_uploads: 429, too_many_photos: 409,
   item_photos_closed: 409, invalid_state: 409, issue_closed: 409, forbidden: 403, fetch_unavailable: 403, rate_limited: 429, unauthorised: 401,
+  cannot_restrict_self: 403,
 };
 const refuse = (code: string, extra: Record<string, unknown> = {}): Outcome => ({ status: STATUS[code] ?? 422, body: { ok: false, code, ...extra } });
 const SERVER_ERROR: Outcome = { status: 500, body: { ok: false, code: 'server_error', error: 'Something went wrong. Please try again.' } };
@@ -134,7 +135,8 @@ export function handlePhotos(userId: string | null, body: unknown, deps: PhotoDe
   });
 }
 
-/** Administrator support actions (fetch-v2-admin, area "support"). Every change needs a reason and is recorded by the database. */
+/** Administrator support actions (fetch-v2-admin, area "support"): messages, issues, photos (Step 9), item-description redaction and
+ *  member restriction (Step 10). Every change needs a reason and is recorded by the database. */
 export function handleSupportAdmin(adminId: string | null, body: unknown, deps: PhotoDeps): Promise<Outcome> {
   return wrap(async () => {
     const blocked = await guard(adminId, deps, ['fetch_v2_admin']);
@@ -169,6 +171,19 @@ export function handleSupportAdmin(adminId: string | null, body: unknown, deps: 
         if (r) return r;
         return { status: 200, body: { ok: true, url: await deps.storage.signedUrl(out.storage_path, ADMIN_LINK_SECS), expires_in: ADMIN_LINK_SECS,
           removed: out.removed === true, evidence_held: out.evidence_held === true } };
+      }
+      case 'redact_description': {
+        if (!id(b, 'request_id')) return refuse('invalid_request');
+        const out = await call(deps, 'fetch_v2_redact_description', { p_admin: adminId, p_request: id(b, 'request_id'),
+          p_replacement: typeof b.replacement === 'string' ? b.replacement.slice(0, 200) : null, p_reason: reason });
+        return fromSql(out) ?? { status: 200, body: { ok: true, already: out.already === true } };
+      }
+      case 'restrict_member':
+      case 'unrestrict_member': {
+        if (!id(b, 'member_id')) return refuse('invalid_request');
+        const out = await call(deps, 'fetch_v2_set_member_restriction', { p_admin: adminId, p_member: id(b, 'member_id'),
+          p_restrict: b.action === 'restrict_member', p_reason: reason });
+        return fromSql(out) ?? { status: 200, body: { ok: true, already: out.already === true, restricted: out.restricted === true, live_jobs: out.live_jobs ?? 0 } };
       }
       default:
         return refuse('invalid_request');

@@ -830,8 +830,8 @@ Further constraints:
 | 7 | **Matching** | DONE (see Step 7 status): board only for claim-eligible drivers; capacity filter with show-all; direction- and ferry-aware run fit; tiers and plain-English reasons; requester hint; once-only recipient selection; admin diagnostics (`notify-drivers` moved to Step 8) | migration `20261204000000` | 3, 4, 6 | Low | Matching fixtures; controls | No | After clearance |
 | 8 | **Notifications** | DONE (see Step 8 status): one server-fed outbox; Notification Centre row first, then push; opportunity vs activity policy; four time-critical kinds; deep-link contract; legacy `notify-drivers`/`notify-collected` refuse v2 | migration `20261205000000`, `fetch-v2-runner`, `notify-drivers`, `notify-collected`, `_shared/fetch-v2-notify.ts`, `_shared/fetch-v2-push-gateway.ts` | 5, 6, 7 | Low | `notification_log` assertions; controls | Legacy notifiers refuse v2 | After clearance |
 | 9 | **Messages, issues, photos** | DONE (see Step 9 status): participant-only messages with admin hide and a collapsed notice; 72-hour issue reporting and audited resolution; five photo roles by signed upload with real-type checks and metadata stripping; stricter delivery/return evidence; service-only photo bucket | migration `20261206000000`, `fetch-v2-photos`, `fetch-v2-admin` (`area: support`), `fetch-v2-runner` | 3, 8 | Low–Medium | Party-only, write-once, storage matrix; controls | No | After clearance |
-| 10 | **Admin controls** | Exact scope in "Step 10 scope" below: web admin console on the `fetch-v2` branch over the `fetch-v2-admin` areas (queues, job page, driver page); new audited RPCs to redact an item description, restrict a member, and a counters view; old direct-write approval screen replaced | RPCs; web admin rebuilt | 5, 6, 8, 9 | Medium | Admin action tests; render/contract | Web admin only | After clearance |
-| 11 | **Web UI** | Requester and driver flows on `lib/fetch-api.ts`; bulky inputs; ferry line; cancel request; return flow; verification upload; copy fixes (A.1, K.0) | web `fetch-v2` | 5–10 | Medium | Contract tests; scripted run | Behind the flag | No |
+| 10 | **Admin controls** | DONE (see Step 10 status): web Fetch operations console at `/admin/fetch` (queues, jobs, job page, driver review, members, notifications) over admin-gated reads and the audited `fetch-v2-admin` actions; item-description redaction; Fetch restriction; counters | migration `20261207000000`, `fetch-v2-admin` support area; web `app/admin/fetch`, `lib/fetch-admin`, `components/admin/fetch` | 5, 6, 8, 9 | Medium | Admin action tests (isolated); web contract tests; build | Web admin only; old driver-approval screen replaced | After clearance |
+| 11 | **Web UI** | Exact scope in "Step 11 scope" below: requester and driver flows on `lib/fetch-api.ts`; 18+; quote/create; item photos; payment completion (3DS); job pages; messages and issues; driver apply/verification/vehicle/board/journeys/accept/collect/deliver/return; Step 8 deep-link routes; copy fixes (A.1, K.0) | web `fetch-v2` | 5–10 | Medium | Contract tests; build | Behind the flag | No |
 | 12 | **Mobile UI** | The same flows, on `fetch-v2-mobile` derived from the post-148 line; remove client price, status and notify writes and hardcoded production URLs; Android directions fix | mobile branch | 5–10 | Medium | Contract tests; simulator | **Next native build only** | **No**: Build 148 untouched |
 | 13 | **Port legacy tests** | Rewrite the 7 production-touching suites as isolated-PG | `supabase/tests` | 3–5 | Low | — | No | No |
 | 14 | **Payments live gate** | One real-card admin run incl. a ferry supplement and a return resolution, reconciled in Stripe | — | 11 or 12; deploys done | **High** (live money) | Reconciliation checklist | Live, admins only | After clearance |
@@ -1633,6 +1633,129 @@ It never contains message text, issue detail, paths or image data.
    - a read-only counters view (`fetch_member_stats`, driver release and fault-return counts).
 6. **Tests:** isolated SQL tests for the new RPCs (admin-only, reasons, events, rollback), and web render/contract tests for the console. No production calls.
 7. **Not in Step 10:** requester and driver UI (Steps 11–12), live payment gate (Step 14).
+
+**Step 10 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing sent.**
+
+**Backend** (`fetch-v2`): migration `20261207000000_fetch_v2_admin_controls.sql`, with a rollback that refuses while any administrator history exists and otherwise restores the catalogue exactly (proved). Plus the `support` area of `fetch-v2-admin`, and `supabase/tests/fetch-v2-admin-controls.node.test.ts` (15 isolated tests, built around six operational scenarios).
+
+**Web** (`fetch-v2` branch of `oneshetland-web`, worktree `~/Claude/oneshetland-web-fetch-v2`):
+- **Pages:** `app/admin/fetch/**` (8 routes), `app/admin/fetch/actions.ts` (server actions).
+- **Components:** `components/admin/fetch/*`.
+- **Modules:** `lib/fetch-admin/*` (pure action registry, queues and job-actions modules; server reads; the edge caller).
+- **Tests:** `tests/fetch-admin-{actions,queues,console}.test.mjs`.
+- **Replaced:** `components/admin/DriverApprovals.tsx` (a direct `driver_status` write, refused since Step 6) is deleted; `/admin/drivers` now forwards to `/admin/fetch/drivers`; the sidebar's "Driver approvals" becomes "Fetch operations".
+
+**Architecture.** The console reads only through four administrator-gated database functions, and changes things only through `fetch-v2-admin`, using the administrator's own session.
+- **Reads:**
+  - `fetch_v2_admin_queues()`: queues and counts;
+  - `fetch_v2_admin_jobs(filters)`: the job list;
+  - `fetch_v2_admin_job(request)`: one job;
+  - `fetch_v2_admin_member(member)`: counters and restriction.
+
+  Each checks `is_admin()` inside.
+- **Changes:** the edge function checks admin rights again, and the audited SQL records every action as that administrator.
+- **No direct writes.** No browser code writes any table: there is no browser Supabase client in the console, and a test fails on any `insert/update/delete/upsert`.
+- **Server-side protection.** Every page sits under `app/admin/layout.tsx` (`requireAdmin()` on the server). Every read and server action calls `requireAdmin()` again. Every page is `force-dynamic` (never static output).
+
+**Queues** (one SQL definition each, used by the landing page, the job list and the tests). Each item has a priority, *Action required* or *Waiting*, and reason codes shown in words:
+
+| Queue | What it holds | Action required when |
+|---|---|---|
+| Payment problems (`fetch_v2_q_payments`) | open payment issue, capture failed or unknown, hold lapsing or expired after collection, return capture pending, hold left behind | the first four |
+| Cannot deliver / returns (`fetch_v2_q_returns`) | undeliverable jobs, with whether the return has been reported and a return photo exists | always |
+| Verification problems on live jobs (`fetch_v2_q_verification_jobs`) | live jobs whose driver can no longer take jobs, marked collection blocked or already collected, and whether new evidence is waiting | always |
+| Cancellation decisions (`fetch_v2_q_cancellations`) | requests not answered in time, declined, or escalated; with the respond-by time | the driver did not respond, declined, or it was escalated; otherwise Waiting |
+| Open issues | kind, reporter role, opened, job state, evidence present, money or return affected | safety, payment, not delivered, verification, return and cancellation kinds. **The reporter's text is never in the list.** |
+| Driver verification | documents awaiting review, pending applications with what is missing (Step 6) | — |
+| Stuck notifications | not written to the inbox after 10 minutes, push being retried, failed, or provider error / invalid token / push unavailable in the last 7 days | not written, failed, or time-critical. **Never shown as "delivered".** |
+
+**Landing page** (`/admin/fetch`): queue cards with counts and the number needing action, then one list of every *Action required* item across the queues, most urgent first. Driver verification and stuck notifications are summarised underneath.
+
+**Jobs** (`/admin/fetch/jobs`): a GET-form filter by state, queue, requester, driver, dates, open issue, payment problem, cannot-deliver/returned, cancellation asked, and job id or its prefix. The URL is sanitised, unknown values are dropped, and nothing on the page changes anything.
+
+**Job page** (`/admin/fetch/jobs/<id>`): read-only, with explicit action buttons. Sections:
+- **Status:** state with priority badges (payment problem, return needed, driver blocked, cancellation with time left, restrictions).
+- **Actions:** only those that fit the state (`jobActions`).
+- **Summary.**
+- **Money:** expected total, maximum hold, owed now, OneShetland fee, driver entitlement, ferry / waiting / return.
+- **Payment:** state, Stripe's state of the hold, hold and capturable amount, Stripe capture deadline with time left, hold state and generation (plus earlier ones), capture state and amount, last checked, PaymentIntent id. Fetch stores no card data, so none can be shown.
+- **Timeline:** the immutable `fetch_request_events`, read as stored.
+- **Issues** (with resolve), **messages** (hidden ones struck through, with reason; hide), **photos** (2-minute links on click; remove).
+- **Description history** (originals, administrators only), **matching** diagnostics for the assigned driver, and **notifications** (inbox status; push, where accepted ≠ delivered; attempts).
+
+**Payment operations** (`fetch-v2-admin` payments area, Step 5 validation):
+- cancel, return to board, decide a cancellation request;
+- resolve a return (outcome and fault; an optional override in whole pence, which needs a reason and is checked against the hold by the server);
+- retry capture, release a left-behind hold (refused while the item is in transit), refresh from Stripe.
+
+No other amount can be sent.
+
+**Driver review** (`/admin/fetch/drivers`, `/admin/fetch/drivers/<id>`):
+- **The queue:** documents awaiting review, and applications with what is missing.
+- **The driver page:**
+  - account and claim state, live jobs;
+  - decisions offered for the state (approve, reject, suspend, reinstate);
+  - required evidence per requirement;
+  - every document version with its review, expiry and note; open it through a 2-minute link fetched on click (each view recorded by Step 6); accept (with the printed expiry), reject, or ask for a replacement;
+  - the verification history, and the member counters and restriction.
+- **Permission:** the reviewer check is still `fetch_v2_is_verification_reviewer` (Step 6: platform administrators). The web admin gate is `profiles.role = 'admin'`. A narrower Fetch-reviewer role would change that one function and add a web check; P0 keeps one admin role.
+
+**Support** (`fetch-v2-admin` support area): hide a message, resolve an issue, remove a photo, view a photo (Step 9), plus:
+- **Redaction:** `fetch_v2_redact_description(admin, request, replacement, reason)`. It replaces `item_description` everywhere members see it (board, requester, driver), defaulting to "Description removed by OneShetland". The original goes to `fetch_request_redactions` (append-only, admin-only), and a `description_redacted` event is logged with the reason and no text.
+- **Restriction:** `fetch_v2_set_member_restriction(admin, member, restrict, reason)` restricts or lifts a restriction, reason required, never on yourself.
+  - It sets `fetch_member_stats.restricted_at/_reason/_by` and appends to `fetch_member_restriction_log`.
+  - It takes effect at once through the existing gates: create, claim, runs, board, matching, recipients.
+  - The wider OneShetland account is unchanged; live jobs are reported and left for the job actions.
+
+**Counters** (`fetch_v2_admin_member`, `/admin/fetch/members/<id>`, and on the driver page). Read-only diagnostics, not a public score:
+- **As requester:** created, delivered, cancelled before acceptance, cancel requests after acceptance, requester-fault returns, open issues.
+- **As driver:** status, claim problem, accepted, delivered, releases (and the last one), driver-fault returns, open issues.
+- Recent jobs.
+
+**Audit.** Every console action is a server function that writes the existing immutable histories:
+- `fetch_request_events` (job actions, `message_hidden`, `issue_resolved`, `photo_removed`, `description_redacted`);
+- `driver_verification_events` (reviews, decisions, document views);
+- `fetch_request_redactions` and `fetch_member_restriction_log`, both append-only.
+
+These appear on the job, driver and member pages. Nothing in the console edits history.
+
+**Confirmations.** Every action is a button that opens a dialog:
+- it states the action's exact consequence from the registry (`lib/fetch-admin/actions.ts`; tests forbid vague confirmation copy);
+- it asks for a reason wherever the server requires one (the button stays disabled until one is given) and for the choices the server needs;
+- it shows the server's own answer, or its refusal in words. The page refreshes only after a successful answer; there is no optimistic success.
+
+**Web routes:**
+- `/admin/fetch` and `/admin/fetch/jobs[?filters]`
+- `/admin/fetch/jobs/<id>`
+- `/admin/fetch/issues`
+- `/admin/fetch/drivers` and `/admin/fetch/drivers/<id>`
+- `/admin/fetch/members/<id>`
+- `/admin/fetch/notifications`
+- `/admin/fetch/requests/<id>`, which redirects to the job page
+
+Step 8's administrator deep links `/admin/fetch/requests/<id>` redirect to the job page, and `/admin/fetch/drivers/<id>` is the driver page.
+
+**Concerns carried forward**
+- **Not seen in a browser.** The web worktree's environment points at the live Supabase project, which has none of these functions, so the pages were built, typechecked, linted and contract-tested but not rendered against data. They need a local backend, or the reviewed deploy, for a visual check.
+- **No paging.** Queues return all items (notifications are capped at 200). Fine at Shetland scale; paging can come later.
+- **Pre-existing lint error.** `lib/admin-data.server.ts` already has one `any` lint error from before this work; untouched.
+
+**Step 11 scope (exact): web requester and driver product** (web `fetch-v2` branch)
+1. **Shared client contract** `lib/fetch-api.ts`: typed calls to `fetch-v2-quote`, `-create`, `-accept`, `-payment`, `-driver`, `-photos`, `-driver-verification`, `become-driver`, and the client RPCs (detail, board, my verification, messages, issues, photos, hint, run create/cancel, cancellation, extend, ready, arrive, collect, undeliverable, report return, eligibility, 18+ confirmation).
+2. **Requester flow:**
+   - 18+ confirmation; quote with the money explanation; create with idempotency and card check;
+   - item photos (JPEG/PNG/WEBP, client-side HEIC→JPEG) with the board toggle;
+   - job page from the detail call and events (polling); "heading that way" hint;
+   - payment completion (Stripe.js with the `client_secret`, 3DS);
+   - cancel or ask to cancel, extend, ready; messages; report a problem.
+3. **Driver flow:**
+   - apply (`become-driver`), vehicle, verification status and document upload;
+   - board (with "show all"), journeys (create/cancel), accept (vehicle confirmation, payment state);
+   - job page: arrive, collect (verification and payment gates explained), collection/delivery/return photos, deliver (safe-place photo), could not deliver, report return, release; messages; report a problem; payouts link.
+4. **Routes for the Step 8 member deep links:** `/fetch/board/<id>`, `/fetch/requests/<id>` (and `/payment`), `/fetch/jobs/<id>`, `/fetch/driver/verification`.
+5. **Gating.** The existing server flag still gates `/fetch/*` (coming-soon until the audience allows). Copy fixes from A.1/K.0 (no 95p, the hold explained).
+6. **Tests:** contract and pure-logic tests as in Step 10, a build, typecheck and lint.
+7. **Not in Step 11:** mobile (Step 12), live payments (Step 14), deploy.
 
 **Changes from revision 1 caused by the decisions:**
 
