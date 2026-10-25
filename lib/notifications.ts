@@ -12,6 +12,7 @@ import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
+import { fetchRouteFor } from './fetch/mobile';
 
 // ── Notification categories ──────────────────────────────────────────────────
 // Each category gets a unique id and a set of actions. The id is what edge
@@ -104,6 +105,11 @@ export function notificationRoute(
   data: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!data) return null;
+
+  // Fetch v2 (Step 8 payloads: { screen: 'fetch', route, kind, request_id }) open the matching Fetch screen — the app has the
+  // website's paths. Must run before the generic 'fetch' alias and the request_id fallback, which only open the Fetch tab.
+  const fetchRoute = fetchRouteFor(data);
+  if (fetchRoute) return fetchRoute;
 
   const screen = typeof data.screen === 'string' ? data.screen : null;
 

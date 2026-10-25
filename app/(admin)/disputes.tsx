@@ -6,10 +6,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { WEB_BASE_URL } from '@/constants/peerie';
 import { Card } from '@/components/ui/Card';
 import { useAlert } from '@/components/BrandedAlert';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
@@ -83,33 +85,16 @@ export default function AdminDisputesScreen() {
     fetchDisputes();
   }, [fetchDisputes]);
 
-  async function handleResolve(id: string, confirm: boolean) {
+  // Fetch v2 (Step 12): waiting time is calculated and charged by the server, and every change to what a requester pays is an audited
+  // action in the Fetch operations console on the website. This screen no longer edits waiting_events directly; it opens the job there.
+  function handleResolve(id: string, confirm: boolean) {
+    const requestId = rows.find((r) => r.id === id)?.request_id;
     alert({
       title: confirm ? 'Confirm fee' : 'Waive fee',
-      message: confirm
-        ? 'Mark the waiting fee as confirmed and accepted by the customer?'
-        : 'Dismiss this dispute and waive the waiting fee?',
+      message: 'Waiting charges are decided in the Fetch operations console on the website, where the change is recorded against the job.',
       actions: [
-        { label: 'Cancel', style: 'cancel' },
-        {
-          label: confirm ? 'Confirm fee' : 'Waive fee',
-          style: confirm ? 'primary' : 'destructive',
-          onPress: async () => {
-            setResolving(id);
-            const updates: Record<string, unknown> = { customer_confirmed: confirm };
-            if (!confirm) updates.waiting_fee_pence = 0;
-            const { error } = await supabase
-              .from('waiting_events')
-              .update(updates)
-              .eq('id', id);
-            setResolving(null);
-            if (error) {
-              alert({ title: 'Error', message: error.message });
-            } else {
-              fetchDisputes();
-            }
-          },
-        },
+        { label: 'Not now', style: 'cancel' },
+        { label: 'Open the job', style: 'primary', onPress: () => { if (requestId) Linking.openURL(`${WEB_BASE_URL}/admin/fetch/jobs/${requestId}`); } },
       ],
     });
   }

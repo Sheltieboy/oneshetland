@@ -532,7 +532,7 @@ export default function MeTab() {
               iconColor={colors.accent}
               label="Previous requests"
               sublabel="Your past Fetch deliveries and pickups"
-              onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/previous-requests'); }}
+              onPress={() => { Haptics.selectionAsync(); router.push('/fetch/history'); }}
               last={isDriver || hasAppliedToDrive}
             />
             {!isDriver && !hasAppliedToDrive && (
@@ -541,7 +541,7 @@ export default function MeTab() {
                 iconColor={colors.accent}
                 label="Apply to become a driver"
                 sublabel="Earn money delivering for Fetch"
-                onPress={() => { Haptics.selectionAsync(); router.push('/(customer)/apply-driver'); }}
+                onPress={() => { Haptics.selectionAsync(); router.push('/fetch/drive/apply'); }}
                 last
               />
             )}

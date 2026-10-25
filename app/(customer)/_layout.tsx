@@ -1,4 +1,5 @@
-import { Redirect, Stack, usePathname } from 'expo-router';
+import { Redirect, Stack, useGlobalSearchParams, usePathname, useSegments } from 'expo-router';
+import { v1Forward } from '@/lib/fetch/mobile';
 import { useAuth } from '@/context/AuthContext';
 import { View, ActivityIndicator } from 'react-native';
 import { colors } from '@/constants/theme';
@@ -7,6 +8,10 @@ import { AppBottomNav } from '@/components/AppBottomNav';
 export default function CustomerLayout() {
   const { session, profile, loading } = useAuth();
   const pathname = usePathname();
+  const segments = useSegments();
+  const { id } = useGlobalSearchParams<{ id?: string }>();
+  // Fetch v2 (Step 12): the old v1 screens here forward to their v2 replacements; only saved addresses stays.
+  const forward = v1Forward('(customer)', (segments as string[])[1], typeof id === 'string' ? id : null);
 
   if (loading) {
     return (
@@ -17,6 +22,7 @@ export default function CustomerLayout() {
   }
 
   if (!session) return <Redirect href={`/(auth)/sign-in?next=${encodeURIComponent(pathname)}`} />;
+  if (forward) return <Redirect href={forward as never} />;
   // Admins/moderators can use the customer Fetch flow too — the admin
   // dashboard is reachable from Me → Admin, not by hijacking other tabs.
 

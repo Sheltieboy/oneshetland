@@ -5,9 +5,11 @@ import {
   ScrollView,
   RefreshControl,
   StyleSheet,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { WEB_BASE_URL } from '@/constants/peerie';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
@@ -37,7 +39,6 @@ export default function DriverApprovalsScreen() {
   const { screenWidth } = useAppLayout();
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
-  const [acting, setActing] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { fetchApplications(); }, []);
@@ -61,45 +62,17 @@ export default function DriverApprovalsScreen() {
     setLoading(false);
   }
 
-  async function handleDecision(id: string, decision: 'approved' | 'rejected') {
+  // Fetch v2 (Step 6/10/12): a driver decision is made only in the Fetch operations console on the website, next to the driver's
+  // documents, through the audited fetch-v2-admin function. The database refuses a direct driver_status write from any client
+  // (tg_fetch_v2_driver_server_columns), so this screen no longer attempts one — it opens the driver's console page instead.
+  function handleReview(id: string) {
     const name = applications.find((a) => a.id === id)?.profile?.full_name ?? 'this driver';
-    const label = decision === 'approved' ? 'Approve' : 'Reject';
-
     alert({
-      title: `${label} application?`,
-      message: decision === 'approved'
-        ? `${name} will be able to create runs immediately.`
-        : `${name}'s application will be marked as rejected.`,
+      title: 'Review on the website',
+      message: `Driver decisions for ${name} are made in the Fetch operations console, where their documents are checked.`,
       actions: [
-        { label: 'Cancel', style: 'cancel' },
-        {
-          label: label,
-          style: decision === 'rejected' ? 'destructive' : 'primary',
-          onPress: async () => {
-            setActing(id);
-
-            const { error } = await supabase
-              .from('driver_profiles')
-              .update({ driver_status: decision })
-              .eq('id', id);
-
-            setActing(null);
-
-            if (error) {
-              alert({ title: 'Could not update application', message: error.message });
-              return;
-            }
-
-            // Remove from list
-            setApplications((prev) => prev.filter((a) => a.id !== id));
-            alert({
-              title: decision === 'approved' ? 'Driver approved ✅' : 'Application rejected',
-              message: decision === 'approved'
-                ? `${name} can now create runs.`
-                : `${name} has been notified.`,
-            });
-          },
-        },
+        { label: 'Not now', style: 'cancel' },
+        { label: 'Open the console', style: 'primary', onPress: () => { Linking.openURL(`${WEB_BASE_URL}/admin/fetch/drivers/${id}`); } },
       ],
     });
   }
@@ -183,20 +156,11 @@ export default function DriverApprovalsScreen() {
                   {/* Actions */}
                   <View style={styles.actions}>
                     <Button
-                      label="Approve"
-                      onPress={() => handleDecision(app.id, 'approved')}
-                      loading={acting === app.id}
+                      label="Review on the website"
+                      onPress={() => handleReview(app.id)}
                       variant="secondary"
                       size="md"
                       style={styles.approveBtn}
-                    />
-                    <Button
-                      label="Reject"
-                      onPress={() => handleDecision(app.id, 'rejected')}
-                      loading={acting === app.id}
-                      variant="ghost"
-                      size="md"
-                      style={styles.rejectBtn}
                     />
                   </View>
                 </Card>

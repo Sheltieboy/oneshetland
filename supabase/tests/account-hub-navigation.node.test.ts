@@ -120,7 +120,8 @@ describe('the things you have bought are on the account hub', () => {
 describe('the regrouping did not drop anything', () => {
   const PRESERVED = [
     '/my-work', '/payment-setup', '/(driver)/connect-bank',
-    '/(customer)/saved-addresses', '/(customer)/previous-requests',
+    // Fetch v2 (Step 12): Fetch history replaced the v1 previous-requests screen (whose address now forwards there).
+    '/(customer)/saved-addresses', '/fetch/history',
     '/notifications', '/notification-preferences', '/blocked-users',
     '/edit-profile', '/security', '/account',
   ];

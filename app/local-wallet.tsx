@@ -445,7 +445,7 @@ export default function WalletScreen() {
                 {!fetch_.driver.isDriver && (
                   <HubFootLink
                     label="Become a driver"
-                    onPress={() => router.push('/(customer)/apply-driver')}
+                    onPress={() => router.push('/fetch/drive/apply')}
                   />
                 )}
               </>

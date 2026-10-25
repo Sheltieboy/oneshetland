@@ -31,7 +31,7 @@ export default function ConnectReturn() {
       } catch {
         // Non-fatal — dashboard will refetch on focus.
       }
-      router.replace('/(driver)/dashboard');
+      router.replace('/fetch/drive');
     })();
   }, []);
 

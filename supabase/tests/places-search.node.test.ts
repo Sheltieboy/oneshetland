@@ -189,8 +189,9 @@ describe('the rate-limit policies the function depends on', () => {
 const MOBILE_SCREENS = [
   'app/local-business-register.tsx',
   'app/event-create.tsx',
-  'app/(customer)/request/step-2.tsx',
-  'app/(customer)/request/step-3.tsx',
+  // The Fetch v1 address steps were retired by Fetch v2 (Step 12) and kept for reference in legacy/fetch-v1/; their source is unchanged.
+  'legacy/fetch-v1/app/(customer)/request/step-2.tsx',
+  'legacy/fetch-v1/app/(customer)/request/step-3.tsx',
   'components/shifts/ShiftPostForm.tsx',
 ];
 
@@ -208,8 +209,8 @@ describe('every mobile address field now goes through the proxy, not a bundled G
     for (const [f, marker] of [
       ['app/local-business-register.tsx', 'details.geometry.location.lat'],
       ['app/event-create.tsx', "details?.name ?? data.structured_formatting?.main_text"],
-      ['app/(customer)/request/step-2.tsx', 'details?.formatted_address ?? data.description'],
-      ['app/(customer)/request/step-3.tsx', "c.types.includes('postal_code')"],
+      ['legacy/fetch-v1/app/(customer)/request/step-2.tsx', 'details?.formatted_address ?? data.description'],
+      ['legacy/fetch-v1/app/(customer)/request/step-3.tsx', "c.types.includes('postal_code')"],
     ] as const) {
       assert.match(read(f), new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), f);
     }

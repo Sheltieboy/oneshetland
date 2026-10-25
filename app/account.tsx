@@ -128,13 +128,6 @@ export default function AccountScreen() {
       setConnectingBank(false);
     }
   }, [connectingBank, loadPayments, alert]);
-  const [driverNotes, setDriverNotes] = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [notesSaved, setNotesSaved] = useState(false);
-  const [vehicleType, setVehicleType] = useState('');
-  const [vehicleReg, setVehicleReg] = useState('');
-  const [savingVehicle, setSavingVehicle] = useState(false);
-  const [vehicleSaved, setVehicleSaved] = useState(false);
   const [removingCard, setRemovingCard] = useState(false);
 
   // Does an active subscription renew on this card? A bare boolean from the
@@ -170,57 +163,8 @@ export default function AccountScreen() {
       .single();
     if (data) {
       setDriverProfile(data as DriverProfile);
-      setDriverNotes(data.notes ?? '');
-      setVehicleType(data.vehicle_type ?? '');
-      setVehicleReg(data.vehicle_reg ?? '');
     }
   }, [profile?.id, hasAppliedToDrive]);
-
-  const VEHICLE_TYPES = ['Car', 'Estate car', 'SUV / 4x4', 'Van', 'Pickup truck', 'Minibus'];
-
-  const isVehicleDirty =
-    vehicleType !== (driverProfile?.vehicle_type ?? '') ||
-    vehicleReg.trim() !== (driverProfile?.vehicle_reg ?? '').trim();
-
-  async function handleSaveVehicle() {
-    if (!profile?.id || !vehicleType || !vehicleReg.trim()) {
-      alert({ title: 'Missing details', message: 'Please select a vehicle type and enter your registration.' });
-      return;
-    }
-    setSavingVehicle(true);
-    const { error } = await supabase
-      .from('driver_profiles')
-      .update({ vehicle_type: vehicleType, vehicle_reg: vehicleReg.trim().toUpperCase() })
-      .eq('id', profile.id);
-    setSavingVehicle(false);
-    if (error) {
-      alert({ title: 'Could not save', message: error.message });
-    } else {
-      setDriverProfile((prev) =>
-        prev ? { ...prev, vehicle_type: vehicleType, vehicle_reg: vehicleReg.trim().toUpperCase() } : prev,
-      );
-      setVehicleReg((v) => v.trim().toUpperCase());
-      setVehicleSaved(true);
-      setTimeout(() => setVehicleSaved(false), 2000);
-    }
-  }
-
-  async function handleSaveNotes() {
-    if (!profile?.id) return;
-    setSavingNotes(true);
-    const { error } = await supabase
-      .from('driver_profiles')
-      .update({ notes: driverNotes.trim() || null })
-      .eq('id', profile.id);
-    setSavingNotes(false);
-    if (error) {
-      alert({ title: 'Could not save', message: error.message });
-    } else {
-      setDriverProfile((prev) => prev ? { ...prev, notes: driverNotes.trim() || null } : prev);
-      setNotesSaved(true);
-      setTimeout(() => setNotesSaved(false), 2000);
-    }
-  }
 
   useEffect(() => {
     fetchDriverProfile();
@@ -564,7 +508,7 @@ export default function AccountScreen() {
               <LinkRow
                 icon="📋"
                 label="Previous requests"
-                onPress={() => { haptic.light(); router.push('/(customer)/previous-requests'); }}
+                onPress={() => { haptic.light(); router.push('/fetch/history'); }}
               />
               <LinkRow
                 icon="🛍️"
@@ -575,7 +519,7 @@ export default function AccountScreen() {
                 <LinkRow
                   icon="🚗"
                   label="Apply to become a driver"
-                  onPress={() => { haptic.light(); router.push('/(customer)/apply-driver'); }}
+                  onPress={() => { haptic.light(); router.push('/fetch/drive/apply'); }}
                   last
                 />
               )}
@@ -615,63 +559,26 @@ export default function AccountScreen() {
                 );
               })()}
 
-              {/* Vehicle */}
-              <Text style={styles.subSectionTitle}>Vehicle</Text>
-              <View style={styles.vehicleGrid}>
-                {VEHICLE_TYPES.map((type) => (
-                  <Pressable
-                    key={type}
-                    style={[styles.vehicleChip, vehicleType === type && styles.vehicleChipSelected]}
-                    onPress={() => { haptic.light(); setVehicleType(type); }}
-                  >
-                    <Text style={[styles.vehicleChipText, vehicleType === type && styles.vehicleChipTextSelected]}>
-                      {type}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Input
-                label="Registration"
-                value={vehicleReg}
-                onChangeText={(v) => setVehicleReg(v.toUpperCase())}
-                placeholder="e.g. SY24 ABC"
-                autoCapitalize="characters"
-                hint="Used to verify your vehicle insurance. Not shown publicly."
+              {/* Fetch v2 (Step 12): vehicle, documents, areas and journeys are changed through Fetch's audited actions (a direct
+                  driver_profiles write is refused by the server), so they live on the Fetch driver screens. */}
+              <Button
+                label="Vehicle, documents and areas"
+                onPress={() => { haptic.light(); router.push('/fetch/driver/verification'); }}
+                variant="secondary"
+                size="md"
+                fullWidth
+                style={{ marginBottom: spacing.sm }}
               />
               <Button
-                label={vehicleSaved ? '✓ Saved' : 'Save vehicle'}
-                onPress={handleSaveVehicle}
-                loading={savingVehicle}
-                disabled={!isVehicleDirty}
-                variant={vehicleSaved ? 'outline' : 'secondary'}
+                label="Your journeys"
+                onPress={() => { haptic.light(); router.push('/fetch/drive'); }}
+                variant="outline"
                 size="md"
                 fullWidth
                 style={{ marginBottom: spacing.md }}
               />
 
-              {/* Typical routes */}
               <View style={styles.divider} />
-              <Text style={styles.subSectionTitle}>Your typical routes</Text>
-              <Input
-                value={driverNotes}
-                onChangeText={setDriverNotes}
-                placeholder="Where do you regularly travel to and from? E.g. Lerwick to Scalloway most days, or regular trips north."
-                multiline
-                numberOfLines={4}
-                style={{ height: 100, textAlignVertical: 'top' }}
-                hint="Helps match you with requests along your route. Seen only by the OneShetland team."
-              />
-              <Button
-                label={notesSaved ? '✓ Saved' : 'Save routes'}
-                onPress={handleSaveNotes}
-                loading={savingNotes}
-                disabled={driverNotes.trim() === (driverProfile?.notes ?? '').trim()}
-                variant={notesSaved ? 'outline' : 'secondary'}
-                size="md"
-                fullWidth
-                style={{ marginBottom: spacing.md }}
-              />
-
               {/* Bank / payouts */}
               <View style={styles.divider} />
               <Text style={styles.subSectionTitle}>Bank account &amp; payouts</Text>

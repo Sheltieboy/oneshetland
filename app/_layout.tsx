@@ -265,6 +265,7 @@ function RootNavigator() {
           <Stack.Screen name="auth/confirm" />
           <Stack.Screen name="(customer)" />
           <Stack.Screen name="(driver)" />
+          <Stack.Screen name="fetch" />
           <Stack.Screen name="(admin)" />
           <Stack.Screen name="account" />
           <Stack.Screen name="blocked-users" />
