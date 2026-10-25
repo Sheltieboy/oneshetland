@@ -20,7 +20,9 @@ import { sha256 } from '../../scripts/lib/function-deps.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FN = join(ROOT, 'supabase/functions');
 const manifest = JSON.parse(readFileSync(join(ROOT, 'supabase/production/edge-function-manifest.json'), 'utf8'));
-const staged: Record<string, any> = JSON.parse(readFileSync(join(ROOT, 'supabase/production/staged-functions.json'), 'utf8')).functions;
+const stagedFile = JSON.parse(readFileSync(join(ROOT, 'supabase/production/staged-functions.json'), 'utf8'));
+const staged: Record<string, any> = stagedFile.functions;
+const stagedModified: Record<string, any> = stagedFile.modified ?? {};
 const dirs = readdirSync(FN).filter((n) => !n.startsWith('_') && statSync(join(FN, n)).isDirectory());
 
 describe('production Edge Function manifest', () => {
@@ -28,6 +30,14 @@ describe('production Edge Function manifest', () => {
     assert.equal(Object.keys(manifest.functions).length, 100);
     assert.deepEqual(Object.keys(manifest.functions).sort(), dirs.filter((d) => !staged[d]).sort());
     assert.equal(manifest.summary.functions, 100);
+  });
+
+  test('a staged modification is a deployed function that really differs, with a reason', () => {
+    for (const [n, v] of Object.entries(stagedModified) as [string, any][]) {
+      assert.ok(manifest.functions[n], `${n} is not deployed`);
+      assert.notEqual(sha256(readFileSync(join(FN, n, 'index.ts'))), manifest.functions[n].index_sha256, `${n} no longer differs: remove it from "modified"`);
+      assert.ok(typeof v.reason === 'string' && v.reason.length > 10, `${n} needs a reason`);
+    }
   });
 
   test('every other function directory is a reviewed, not-yet-deployed staged function — and nothing deployed is still listed as staged', () => {
@@ -50,6 +60,7 @@ describe('production Edge Function manifest', () => {
 
   test('every function directory carries index.ts exactly as production runs it', () => {
     for (const [n, m] of Object.entries(manifest.functions) as [string, any][]) {
+      if (stagedModified[n]) continue;   // a reviewed, staged change (see the next suite)
       assert.equal(sha256(readFileSync(join(FN, n, 'index.ts'))), m.index_sha256, `${n}/index.ts differs from the production bundle`);
       assert.equal(m.files[`${n}/index.ts`], m.index_sha256);
     }

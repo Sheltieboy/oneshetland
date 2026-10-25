@@ -176,6 +176,22 @@ verify_jwt = true
 [functions.fetch-v2-create]
 verify_jwt = true
 
+[functions.fetch-v2-accept]
+verify_jwt = true
+
+[functions.fetch-v2-payment]
+verify_jwt = true
+
+[functions.fetch-v2-driver]
+verify_jwt = true
+
+[functions.fetch-v2-admin]
+verify_jwt = true
+
+# Cron-only: authenticated by x-cron-secret (requireCronSecret), like reminder-runner.
+[functions.fetch-v2-runner]
+verify_jwt = false
+
 [functions.confirm-boost]
 verify_jwt = true
 

@@ -7,6 +7,8 @@ import { fulfilByType } from '../_shared/fulfilment.ts';
 import { reconcileCharge } from '../_shared/refund-reconcile.ts';
 import { brakeAfterFailedPayment, productionBrakeDeps } from '../_shared/payment-failure-brake.ts';
 import { parseReconciledSubscription, ReconcileFailed, type ReconciledSubscription } from '../_shared/subscription-reconcile.ts';
+import { isFetchV2Intent, handleFetchV2Webhook } from '../_shared/fetch-v2-payments.ts';
+import { stripeGateway } from '../_shared/fetch-v2-stripe.ts';
 
 /**
  * stripe-webhook
@@ -322,6 +324,21 @@ serve(async (req) => {
   }
 
   try {
+    // ── Fetch v2 (STAGED — docs/FETCH_V2_IMPLEMENTATION.md, Step 5) ─────────
+    //
+    // A Fetch v2 intent carries metadata.fetch_v2_request_id and never the v1
+    // request_id, so no branch below would touch it anyway; this hands it to the
+    // v2 reconciler instead. It re-reads the intent from Stripe and applies its
+    // CURRENT state through fetch_v2_apply_payment_state, which is scoped to the
+    // job's current hold and never moves backwards — so replays and out-of-order
+    // deliveries converge. A failure throws, the event is marked failed, and
+    // Stripe retries it.
+    if (isFetchV2Intent(eventType, eventData)) {
+      await handleFetchV2Webhook(eventType, eventData, {
+        rpc: async (fn, args) => { const { data, error } = await supabase.rpc(fn, args); return { data, error }; },
+        stripe: stripeGateway(stripeKey, (url, init) => fetch(url, init)),
+      });
+    } else
     switch (eventType) {
 
       // ── Payment confirmed ────────────────────────────────────────────

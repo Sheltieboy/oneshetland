@@ -825,8 +825,8 @@ Further constraints:
 | 2 | **Permissions / RLS** | DONE (see Step 2 status): v1 broad policies and grants retired; public runs, matching board and participant detail representations; phone, address and history windows | migration | 1 | **Medium**: ends v1 client write paths | Access matrix per audience | **Yes**: v1 web and app Fetch actions stop | **Yes**: deploy only after clearance, with 0a |
 | 3 | **Lifecycle RPCs** | F.2 incl. cancel request, release, undeliverable, return resolution; events; idempotency; **plus run create/cancel and server-recorded arrival/collection waiting events** (client paths retired in Step 2) | migration | 2 | Medium | Transition table, race, idempotency | No (not yet called) | After clearance |
 | 4 | **Pricing + ferry (edge and frozen terms)** | The SQL price is done (Step 3). Step 4: `fetch-create`/`fetch-quote` edge functions (server geocoding with the Google server key, postcode fallback, refuse when unresolved, card-on-file check, then `fetch_v2_create_request`); extend Paygate frozen terms (`claim_fetch_authorisation`, `fetch_capture_total_pence`) with the ferry supplement, minimum applied, return rate and return max; make one service-fee source; retire `calculate-fee` from Fetch | edge functions, Paygate term functions | 3 | **High** (terms tables) | Quote, freeze, capture-total tests with controls | Changes quote behaviour | After clearance |
-| 5 | **Service layer** | `fetch-create`, `fetch-accept`, `fetch-cancel`, `fetch-driver-action`, `fetch-admin` (incl. resolution capture), K.2.1–K.2.8 changes | `supabase/functions/*`, `_shared/fetch-*` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests; controls proving guards are load-bearing | Function behaviour; deploy as exact deltas | After clearance |
-| 6 | **Driver verification** | `fetch-driver-verification`, admin review RPCs, `become-driver` fix, expiry handling, accept gating | migration, functions | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating | Driver application flow | After clearance |
+| 5 | **Payment edge layer** | DONE (see Step 5 status): dedicated v2 functions `fetch-v2-accept`, `-payment`, `-driver`, `-admin`, `-runner`; Fetch v2 hand-off inside the existing `stripe-webhook`; manual capture with partial capture, Stripe's own `capture_before`, generation-based replacement, collection gate, admin payment actions | migration `20261202000000`, `supabase/functions/fetch-v2-*`, `_shared/fetch-v2-{payments,stripe,payment-deps}.ts`, `stripe-webhook` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests against the real SQL; controls proving guards are load-bearing | `stripe-webhook` gains a v2-only branch; deploy as exact deltas | After clearance |
+| 6 | **Driver verification** | Exact scope in "Step 6 scope" below: document upload to the private bucket, admin review, `become-driver` fix, `verification_ok_until` from the earliest document expiry, expiry sweep and reminders, accept gating through the existing `fetch_v2_driver_problem` | migration, `fetch-v2-driver-verification`, `fetch-v2-admin` additions | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating; expiry | Driver application flow | After clearance |
 | 7 | **Matching** | Board RPC with capacity and ferry-aware fits; narrowed `notify-drivers` | migration, `notify-drivers` | 3, 4 | Low | Matching fixtures | No | After clearance |
 | 8 | **Notifications** | L categories, server-side sends, deep links | push callers, constants | 5 | Low | `notification_log` assertions | No | After clearance |
 | 9 | **Messages, issues, photos** | Threads, issues, item/delivery/return photos | migration, functions | 3 | Low–Medium | Party-only and write-once | No | After clearance |
@@ -1015,6 +1015,140 @@ Either way nothing is created, and no geocoding is spent first.
 5. `authorise-payment` / `capture-payment` / `cancel-payment` either learn v2 or v2 gets its own functions (decision in Step 5); v1 behaviour is not changed in production by Steps 1–4.
 6. The admin edge function for the service-only admin actions, passing the verified admin as actor.
 7. Mocked-Stripe handler tests with controls, as for Paygate 12.
+
+**Step 5 status (25 Oct 2026): DONE, local only. Not applied, not deployed. No live Stripe.**
+
+**Files**
+- Migration `20261202000000_fetch_v2_payments.sql` and rollback `supabase/rollbacks/20261202000000_fetch_v2_payments.down.sql` (refuses while any hold carries Stripe state; otherwise restores the catalogue exactly, proved).
+- `_shared/fetch-v2-stripe.ts`: the only Stripe calls Fetch v2 makes (create hold, retrieve, cancel, capture), typed errors, never the key in an error.
+- `_shared/fetch-v2-payments.ts`: every handler (accept, requester payment, driver actions, admin, runner, webhook). Pure: Supabase, Stripe, card lookup, Connect lookup, admin check and limiter are injected.
+- `_shared/fetch-v2-payment-deps.ts`: the Deno production wiring.
+- Edge functions `fetch-v2-accept`, `fetch-v2-payment`, `fetch-v2-driver`, `fetch-v2-admin` (JWT) and `fetch-v2-runner` (cron secret), all staged in `supabase/production/staged-functions.json`.
+- `stripe-webhook`: a Fetch v2 hand-off before the existing `switch`. It is listed under the manifest's new `modified` section (deployed function, reviewed staged change). The guard fails if a listed function is not deployed, does not actually differ, or has no reason.
+- Tests: `supabase/tests/fetch-v2-payments.node.test.ts` (47, isolated database, real handlers, in-memory Stripe) and `_shared/fetch-v2-stripe.node.test.ts` (8, fake fetch).
+
+**Decision: dedicated v2 functions, not v1's.** `authorise-payment`, `capture-payment`, `cancel-payment` and the v1 webhook branches are untouched. v2 intents carry `metadata.fetch_v2_request_id` and never `request_id`, so no v1 branch can act on them (a test pins this). The only shared deployed code that changes is the webhook hand-off.
+
+**Connect model (unchanged from v1).** A destination charge on the driver's Express account:
+- `capture_method=manual`; `amount` = the frozen maximum hold;
+- `transfer_data[destination]` = the driver's account;
+- `application_fee_amount` = the frozen £1.50.
+
+On capture, both `amount_to_capture` and `application_fee_amount` are sent: the fee is `least(service fee, capture)`, so a reduced capture never carries a fee larger than itself. The driver receives capture − fee, which is delivery + ferry + waiting (+ return mileage on a return). OneShetland receives the £1.50 once. Nothing is ever captured above Stripe's `amount_capturable`: the handler escalates to a person instead (`capture_exceeds_hold`).
+
+**Authorisation (`fetch-v2-accept`).** The handler runs these steps in order:
+1. Authenticate, then rate limit (`fetch_v2_accept`, plus the shared `stripe_intent` hourly and daily budgets).
+2. Check the flag, the 18+ and restriction rules, and the driver rules.
+3. Check the Connect account exists with payouts enabled (`driver_payouts_not_enabled`).
+4. Self-payment guard (`wallet_destination_self_controlled`) → `self_payment`.
+5. `fetch_v2_claim` (the row lock decides the race; the loser gets `already_taken`).
+6. `fetch_v2_claim_authorisation` freezes the amount, generation and key.
+7. Create the hold with the requester's saved card.
+8. Apply the result through `fetch_v2_apply_payment_state`, the single Stripe → Fetch entry point.
+
+The client sends only `request_id` and `vehicle_confirmed`. Amount, destination, fee, intent, generation and key are never read from the body (tested).
+
+| Stripe outcome | Fetch outcome |
+|---|---|
+| `requires_capture` | `authorised`; stores Stripe's own `capture_before` (from `latest_charge.payment_method_details.card.capture_before`, never an assumed 7 days), `amount_capturable`, and the time it was confirmed |
+| `requires_action` / decline / no saved card | `requester_action_required`; the driver keeps the job; collection is blocked |
+| unreachable or lost response | `pending`; the retry reuses the same key, so Stripe returns the same intent (one intent, proved) |
+| account refused | system release back to the board, **not** counted against the driver; `payment_could_not_start` |
+
+**SCA.** The requester calls `fetch-v2-payment {action:'complete'}`. Only they, and only while the intent needs action, receive the `client_secret`, and they confirm 3DS in the browser. Either `{action:'refresh'}` or the webhook (`amount_capturable_updated`, which covers a closed tab) moves the job to `authorised`. If it is never completed, `fetch_v2_release_unpaid_due` releases the job after `payment_needed_secs` (2h). The clock is measured from the later of the claim and the current hold. The runner then voids and archives the hold.
+
+**Collection gate.** `fetch_v2_hold_ready` is used by `fetch_v2_mark_collected` and shown to the driver as `can_collect`. All of these must hold:
+- Paygate `fetch_hold_is_fulfillable` (authorised, valid or expiring-soon, confirmed within 2h, not past expiry);
+- capturable ≥ total + waiting max;
+- expiry ≥ now + `collect_min_hold_secs` (24h).
+
+Each refusal has a reason: `stale` (refresh from Stripe with `refresh_hold`), `insufficient_hold`, `hold_expiring`, `payment_not_ready`.
+
+**Hold expiry and replacement (generations).** Holds are classed `expiring_soon` inside `hold_expiry_margin_secs` (48h).
+
+| When | What happens |
+|---|---|
+| Before collection, hold dying or expired | the runner **rotates**: void the old intent, archive it in `fetch_authorisation_generations`, `fetch_v2_rotate_authorisation`, then a new hold for the same driver with key `fetch-auth-<id>-g<n>`. If that needs SCA, the job shows action required and collection stays blocked |
+| After collection | never rotated (that risks two holds or none): one `payment` issue is opened for a person |
+
+Never two live holds: a new hold is only created once the previous one is settled `terminal` and archived. `fetch_v2_claim_authorisation` now refuses to reuse a different driver's hold (`previous_hold_not_retired`); the handler voids and retires it, then claims again.
+
+**Delivery and capture (`fetch-v2-driver {action:'deliver'}`).** The steps:
+1. Non-money checks first (`fetch_v2_delivery_precheck`: assigned driver, collected, safe-place rules).
+2. The amount comes from SQL: `fetch_v2_capture_amount` = total + measured waiting.
+3. Retrieve the intent. If it is already `succeeded`, treat it as done.
+4. `claim_fetch_capture` → Stripe capture with key `fetch-v2-capture-<pi>` → apply → `settle_fetch_capture`.
+5. Only then `fetch_v2_complete_delivery`.
+
+| Capture result | Outcome |
+|---|---|
+| lost response | `capture_pending`; the job stays `collected`; the retry returns the original capture |
+| failure | `capture_failed`; a payment issue opens; the admin can `retry_capture` |
+| repeat | `already` |
+
+**Cancellation and release.** Driver release, an agreed cancellation, admin cancel, admin return-to-board and the payment timeout all follow the same path. Stripe cancel with key `fetch-v2-void-<pi>` → `terminal` → `fetch_v2_retire_authorisation`. If Stripe cannot confirm the void, the job still changes state, and the runner's `void_orphan` / `retire` work finishes it.
+
+**Returns.** `fetch-v2-admin {action:'resolve_return'}`:
+
+| Fault | Capture |
+|---|---|
+| not the driver's fault | total + return mileage at 65p, still one £1.50 fee |
+| the driver's fault | 0; the hold is voided |
+| override | needs a reason and an integer amount within the hold; the fee shrinks with it |
+
+Owed > capturable → escalated, nothing captured.
+
+**Admin actions** (`fetch-v2-admin`): `cancel`, `return_to_board`, `resolve_cancellation`, `resolve_return`, `retry_capture`, `void_hold` and `reconcile`.
+- Each needs an admin (checked on the server) and passes them as the actor of the audited SQL action, so every action writes an event.
+- Every action that changes money or a job needs a reason.
+- `void_hold` is refused while the item is in transit.
+
+**Webhook reconciliation.** `isFetchV2Intent` (a `payment_intent.*` event whose metadata holds a UUID `fetch_v2_request_id`) hands the event to `handleFetchV2Webhook`, and every other event goes to the existing switch unchanged. The handler re-retrieves the intent (Stripe's current state beats a stale event) and falls back to the event snapshot only if Stripe is unreachable. `fetch_v2_apply_payment_state` is then:
+- **Scoped:** only the current hold's intent counts. A retired generation is ignored as `retired_generation`, and a non-v2 job as `not_fetch_v2`.
+- **Never backwards:** `already_captured`, `already_terminal`.
+- **Replay-safe:** an unchanged state logs nothing.
+
+The existing signature check (platform and Connect secrets) applies as before. There is no event-id dedupe table, and none is needed: the outcome depends only on Stripe's current state, so a replayed, duplicated or reordered event converges to the same result.
+
+**Runner (`fetch-v2-runner`, cron secret).** It runs the lifecycle sweeps (`expire_due`, `release_unpaid_due` + void, `escalate_cancel_requests`), then `fetch_v2_payment_work()`:
+- `void_orphan`, `retire`, `rotate`, `escalate`, `capture_return`;
+- `refresh` (confirmations older than 1h on live jobs).
+
+Every item is independent and repeat-safe, and one failure never stops the rest. It returns counts only.
+
+**Idempotency keys (deterministic)**
+
+| Call | Key |
+|---|---|
+| hold | `fetch-auth-<request>` (generation 1), `fetch-auth-<request>-g<n>` |
+| capture | `fetch-v2-capture-<pi>` |
+| void | `fetch-v2-void-<pi>` |
+
+**Responses** never contain a Connect account, Customer, payment method, key, intent id or provider text (tested). Rate limits: `fetch_v2_accept` 30/h, `fetch_v2_payment` 60/h, `fetch_v2_driver` 120/h, `fetch_v2_admin` 300/h. Every new SQL function is `service_role` only.
+
+**Not changed: the hold size (R.2 stays open).** The hold is still total + waiting max + return max.
+
+**Concerns carried forward**
+- A system release after a payment failure logs event `payment_timeout` with reason `payment_failed`. It is accurate in the reason, but the event name is broad.
+- After-collection expiry depends on a person acting on the payment issue. Step 10's admin queue must surface `payment` issues prominently.
+- Stripe's `capture_before` is only present once a charge exists. Until then, Fetch treats the hold as not ready (it never invents a deadline).
+- `stripe-webhook` has 5 pre-existing `deno check` errors (`WalletAssessment`), identical before and after this change.
+
+**Step 6 scope (exact): driver verification**
+1. **Migration:**
+   - The verification documents table, keyed to the driver, with a type from the requirements table (licence, insurance, MOT/vehicle, ID), its expiry date, a review status (`submitted`/`approved`/`rejected`/`expired`), reviewer, reason and timestamps.
+   - The private storage bucket policy: owner upload, owner and admin read, no public URLs.
+   - `fetch_v2_submit_verification`.
+   - `fetch_v2_review_verification(admin, document, decision, reason)`, audited.
+   - `verification_ok_until` recomputed as the earliest approved expiry across the required set.
+   - An expiry sweep that marks expired documents, and a reminder window.
+2. **`fetch-v2-driver-verification` edge function:** signed upload, then submit; flag and 18+ gated; rate limited.
+3. **`fetch-v2-admin` additions:** list pending, view through short-lived signed URLs, approve or reject with a reason.
+4. **Fix `become-driver`** so applying cannot self-approve or set vehicle, capacity or verification fields.
+5. **Accept gating stays in `fetch_v2_driver_problem`.** An expired or missing verification refuses claims; already-assigned jobs are untouched.
+6. **The runner** calls the expiry sweep.
+7. **Isolated tests:** storage access matrix (driver, other driver, requester, admin, anonymous), review audit, expiry recompute, the gate, rollback.
+8. **Not in Step 6:** the insurance/legal requirement wording (S.19, external), retention periods (S.18), UI (Steps 11–12).
 
 **Changes from revision 1 caused by the decisions:**
 
