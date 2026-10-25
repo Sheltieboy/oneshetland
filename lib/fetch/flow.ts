@@ -82,12 +82,15 @@ export function requesterActions(r: Detail["request"], now = Date.now()): Reques
 }
 
 export type DriverAction = "collect" | "arrive" | "refresh_payment" | "release" | "agree_cancel" | "decline_cancel" | "deliver" | "cannot_deliver" | "report_return" | "photos" | "message" | "report";
-export function driverActions(r: Detail["request"], now = Date.now()): DriverAction[] {
+/** `driverProblem` (the server's reason this driver can't take Fetch work now) removes arriving and collecting — both lead nowhere until it is sorted. */
+export function driverActions(r: Detail["request"], now = Date.now(), driverProblem?: string | null): DriverAction[] {
   const a: DriverAction[] = [];
   const closedFor = r.closed_at ? now - Date.parse(r.closed_at) : 0;
   if (r.status === "matched") {
     if (r.cancel_requested_at) a.push("agree_cancel", "decline_cancel");
-    else {
+    else if (driverProblem) {
+      if (r.payment_status !== "authorised") a.push("refresh_payment");
+    } else {
       a.push("arrive");
       if (r.payment_status === "authorised") a.push("collect"); else a.push("refresh_payment");
     }

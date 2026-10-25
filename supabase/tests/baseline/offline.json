@@ -1,0 +1,35 @@
+{
+  "commit": "7317508",
+  "note": "Failures of the offline lane (npm test) on an UNTOUCHED checkout of Build 148 (7317508), run with the same guard and lane list (Fetch v2 Step 13, 25 Oct 2026). These are pre-existing and not caused by Fetch v2. The runner reports them separately and fails only on failures NOT listed here. Remove an entry when it starts passing; never add one to hide a new failure.",
+  "generated": "2026-10-25",
+  "failures": [
+    "supabase/tests/boost-offer-staleness.node.test.ts :: Free with no subscription — offered, exactly as before",
+    "supabase/tests/boost-offer-staleness.node.test.ts :: a lapsed entitlement with nothing behind it — offered again",
+    "supabase/tests/boost-offer-staleness.node.test.ts :: a temporary boosted Pro — still offered, because boosts stack",
+    "supabase/tests/boost-offer-staleness.node.test.ts :: cancel_at_period_end is a plan still running, not a plan gone",
+    "supabase/tests/boost-offer-staleness.node.test.ts :: manual Premium with no subscription — still hidden, by the server",
+    "supabase/tests/boost-offer-staleness.node.test.ts :: once the subscription really ends, normal eligibility returns",
+    "supabase/tests/boost-offer-staleness.node.test.ts :: the Free-era answer cannot outlive the subscription that replaced it",
+    "supabase/tests/boost-offer-staleness.node.test.ts :: the suppression can only hide, never offer",
+    "supabase/tests/event-price-label-web.node.test.ts :: BentoCalendarTile.tsx (homepage calendar tile) calls priceLabel() too",
+    "supabase/tests/event-price-label-web.node.test.ts :: no component reimplements &quot;hasFreeTicket ? ... : lowestTicketPrice&quot; locally",
+    "supabase/tests/hub-column-projection.node.test.ts :: it found the hub projections in BOTH repositories",
+    "supabase/tests/launch-readiness-dashboard.node.test.ts :: no client bundle of the current build contains the dataset",
+    "supabase/tests/local-offer-presentation.node.test.ts :: the &quot;0 live offers&quot; statistic is not rendered",
+    "supabase/tests/local-offer-presentation.node.test.ts :: the other statistics and tiles are untouched",
+    "supabase/tests/local-offer-presentation.node.test.ts :: the pillar returns, linking to #offers",
+    "supabase/tests/local-offer-presentation.node.test.ts :: the row still fills its width rather than leaving a hole",
+    "supabase/tests/local-offer-presentation.node.test.ts :: the statistic appears, counting the real offers",
+    "supabase/tests/shift-management-and-boost-visibility.node.test.ts :: the main nav Work item still points at /jobs — that is the page to fix",
+    "supabase/tests/transactions-ledger-economics-display.node.test.ts :: the breakdown Text is gated on hasDeduction — it does not render at all when gross already equals net"
+  ],
+  "removedInStep13": {
+    "reason": "test-registration.node.test.ts was rewritten for the new lane manifest (lanes.json); these four Build 148 failures (orphaned suites, and the old production lanes) no longer exist under these names. The 21 suites unregistered at Build 148 are recorded in lanes.json unregisteredAtBuild148 instead.",
+    "entries": [
+      "supabase/tests/test-registration.node.test.ts :: no executable suite is missing from every lane",
+      "supabase/tests/test-registration.node.test.ts :: no suite in test deletes from a Wallet money table",
+      "supabase/tests/test-registration.node.test.ts :: no suite in test races two database connections",
+      "supabase/tests/test-registration.node.test.ts :: no suite in test tidies Wallet rows up afterwards"
+    ]
+  }
+}

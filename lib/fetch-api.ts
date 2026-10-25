@@ -53,6 +53,7 @@ export const FETCH_MESSAGES: Record<string, string> = {
   driver_verification_incomplete: "Your driver documents aren't complete yet.",
   driver_payouts_not_enabled: "Please set up your payouts before taking a Fetch.",
   self_payment: "You can't take a Fetch that would be paid into your own account.",
+  requester_has_no_payment_profile: "The requester hasn't set up a payment card yet, so this Fetch can't be accepted just now. It's back with drivers.",
   payment_could_not_start: "The payment couldn't be started. The Fetch has gone back on the board.",
   payment_not_ready: "The payment isn't confirmed yet, so the item can't be collected.",
   cancellation_pending: "The requester has asked to cancel. Please answer that first.",

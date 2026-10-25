@@ -41,11 +41,18 @@ export function requesterStatus(r: { status?: string; payment_status?: string; c
   }
 }
 
-/** The driver's view of a job they hold. */
-export function driverStatus(r: { status?: string; payment_status?: string; cancel_requested_at?: string | null }): HumanStatus {
+/**
+ * The driver's view of a job they hold. `driverProblem` is the server's own reason this driver can't take Fetch work right now (an expired
+ * document, a paused account — fetch_v2_my_eligibility().driver_problem). It blocks collection, so it overrides any "ready" headline:
+ * the payment may be confirmed, but the JOB is not ready for this driver to collect.
+ */
+export function driverStatus(r: { status?: string; payment_status?: string; cancel_requested_at?: string | null }, driverProblem?: string | null): HumanStatus {
   switch (r.status) {
     case "matched":
       if (r.cancel_requested_at) return { label: "Cancellation asked", tone: "attention", detail: "The requester has asked to cancel. Please agree or decline." };
+      if (driverProblem) return { label: "Collection is paused", tone: "attention",
+        detail: r.payment_status === "authorised" ? "The requester's payment is confirmed, but you can't collect the item until your driver details are sorted."
+          : "You can't collect the item until your driver details are sorted." };
       if (r.payment_status === "authorised") return { label: "Ready for collection", tone: "good", detail: "Payment is confirmed. You can collect the item." };
       return { label: "Waiting for payment confirmation", tone: "attention", detail: "Please don't collect yet — the requester's payment isn't confirmed." };
     case "collected": return { label: "With you", tone: "good", detail: "Deliver the item, or tell us if you can't." };

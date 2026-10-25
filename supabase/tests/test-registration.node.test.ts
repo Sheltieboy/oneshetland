@@ -23,8 +23,14 @@
  *   · the retired reconciliation snapshot is outside the executable pattern,
  *     absent from every lane, and refuses to run if invoked directly
  *
+ * FETCH V2 STEP 13
+ * Lane membership moved out of package.json into supabase/tests/lanes.json, read by scripts/test-lanes.mjs (offline and production-
+ * read-only lanes) and scripts/isolated-pg.mjs. `npm test` no longer talks to production at all; the committed-fixture lane is gone
+ * and its suites are quarantined (never run); the only production lane is the opt-in, read-only one. Every suite on disk must sit in
+ * exactly one place: a lane, the quarantine, the exclusions, or the list of suites already unregistered at Build 148 (which may not grow).
+ *
  * SAFETY
- * Reads package.json and the filesystem. No database, no network, no writes.
+ * Reads package.json, lanes.json and the filesystem. No database, no network, no writes.
  */
 
 import { test, describe } from 'node:test';
@@ -75,24 +81,25 @@ const FIXTURE_ONLY: Record<string, string> = {
 const RETIRED = 'supabase/tests/retired/wallet-launch-reconciliation.snapshot.ts';
 
 type Lanes = Record<string, string>;
+type Manifest = { offline: string[]; productionReadonly: string[]; quarantined: Record<string, { class: string; via: string }>;
+  excluded: Record<string, string>; unregisteredAtBase: string[]; isolated: string[] };
+const manifest = (): Manifest => JSON.parse(readFileSync(join(REPO_ROOT, 'supabase/tests/lanes.json'), 'utf8'));
 
 /**
- * Every npm script that runs tests, by name. test:all only chains the others.
- *
- * A lane usually lists its suites inline. `test:isolated` cannot: it has to
- * build a throwaway PostgreSQL before anything can run, so it delegates to a
- * runner and the list of suites lives there. Read that file, or the suites it
- * runs look like orphans.
+ * Every runnable test lane, by its npm script name, as one body of text listing its suites. The lists live in lanes.json (offline and
+ * production read-only) and in scripts/isolated-pg.mjs (the isolated lane builds a throwaway PostgreSQL first, so it keeps its own list).
+ * The quarantine is NOT a lane: nothing runs it.
  */
 const lanes = (): Lanes => {
-  const scripts = (JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as
-    { scripts: Record<string, string> }).scripts;
+  const scripts = (JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+  const m = manifest();
   const out: Lanes = {};
   for (const [name, body] of Object.entries(scripts)) {
-    if (!name.startsWith('test')) continue;
-    if (body.includes('node --test')) { out[name] = body; continue; }
-    const runner = body.match(/node\s+(scripts\/\S+\.mjs)/);
-    if (runner) out[name] = readFileSync(join(REPO_ROOT, runner[1]), 'utf8');
+    if (!name.startsWith('test') || name === 'test:all' || name === 'test:quarantined') continue;
+    if (body === 'node scripts/test-lanes.mjs offline') out[name] = m.offline.join('\n');
+    else if (body === 'node scripts/test-lanes.mjs production-readonly') out[name] = m.productionReadonly.join('\n');
+    else if (body.includes('node --test')) out[name] = body;
+    else { const runner = body.match(/node\s+(scripts\/\S+\.mjs)/); if (runner) out[name] = readFileSync(join(REPO_ROOT, runner[1]), 'utf8'); }
   }
   return out;
 };
@@ -114,12 +121,13 @@ function walk(dir: string, out: string[] = []): string[] {
 
 describe('every suite on disk is accounted for', () => {
   test('the lanes are the ones this file knows about', () => {
-    assert.deepEqual(Object.keys(lanes()).sort(), ['test', 'test:fixtures', 'test:isolated'],
+    assert.deepEqual(Object.keys(lanes()).sort(), ['test', 'test:integration:production-readonly', 'test:isolated'],
       'a test lane was added or renamed — teach this file about it before trusting it');
   });
 
   test('no executable suite is missing from every lane', () => {
-    const registered = new Set(allRegistered());
+    const m = manifest();
+    const registered = new Set([...allRegistered(), ...Object.keys(m.quarantined), ...m.unregisteredAtBase]);
     const orphans = walk(SUPABASE)
       .filter((f) => !registered.has(f))
       .filter((f) => !(f.split('/').pop()! in EXCLUDED));
@@ -150,12 +158,28 @@ describe('every suite on disk is accounted for', () => {
       `these commit real rows and must stay in test:fixtures:\n  ${strays.join('\n  ')}`);
   });
 
-  test('every fixture-only suite is in the fixture lane, with a reason', () => {
-    const fixture = new Set(filesIn(lanes()['test:fixtures']).map((f) => f.split('/').pop()!));
+  test('every fixture-only suite is quarantined (it committed rows in production), with a reason', () => {
+    const q = new Set(Object.keys(manifest().quarantined).map((f) => f.split('/').pop()!));
     for (const [name, reason] of Object.entries(FIXTURE_ONLY)) {
-      assert.ok(fixture.has(name), `${name} is fixture-only but not in test:fixtures`);
-      assert.ok(reason.length > 20, `${name} sits in the fixture lane without a usable reason`);
+      assert.ok(q.has(name), `${name} commits real rows and must stay quarantined — it may not run in any lane`);
+      assert.ok(reason.length > 20, `${name} is quarantined without a usable reason`);
     }
+    for (const body of Object.values(lanes())) for (const name of Object.keys(FIXTURE_ONLY)) assert.ok(!body.includes(name), `${name} is in a runnable lane`);
+  });
+
+  test('the quarantine is never a lane, and every entry says why', () => {
+    const m = manifest();
+    const runnable = new Set(allRegistered());
+    for (const [f, v] of Object.entries(m.quarantined)) {
+      assert.ok(!runnable.has(f), `${f} is quarantined AND registered in a lane`);
+      assert.match(v.class, /^[DE]: .{20,}/, `${f} is quarantined without a class and reason`);
+    }
+  });
+
+  test('the suites unregistered since Build 148 are recorded, not added to — a new suite must join a lane', () => {
+    const m = manifest();
+    assert.equal(m.unregisteredAtBase.length, 21, 'the pre-existing unregistered list grew or shrank — register the suite in a lane instead');
+    for (const f of m.unregisteredAtBase) assert.ok(!allRegistered().includes(f), `${f} is now in a lane — remove it from unregisteredAtBase`);
   });
 
   test('the isolated-database suite stays excluded, and stays explained', () => {
@@ -243,7 +267,7 @@ describe('the retired reconciliation snapshot stays retired', () => {
  */
 const MONEY_TABLE = String.raw`(public\.)?local_wallet_(balances|transactions)\b`;
 const MONEY_DELETE = new RegExp(String.raw`delete\s+from\s+` + MONEY_TABLE, 'gi');
-const PRODUCTION_LANES = ['test', 'test:fixtures'];
+const PRODUCTION_LANES = ['test:integration:production-readonly'];
 
 /** The body of every after()/afterEach() hook in a file. */
 function cleanupHooks(src: string): string {
@@ -350,5 +374,43 @@ describe('the production lanes never move real money', () => {
     ]) assert.ok(src.includes(proof), `the "${proof}" proof did not survive the move`);
     assert.match(src, /refusing to run against anything that looks like Supabase/,
       'the moved proofs no longer refuse a production DSN');
+  });
+});
+
+/**
+ * Fetch v2 Step 13: the routine lane cannot reach production, by construction.
+ *
+ * The runtime guard (scripts/test-safety/guard.mjs) would refuse it anyway; this makes the mistake visible before anything runs. Each
+ * signature is how a suite actually reaches a hosted service in this repository: the linked Supabase CLI, the service-role key file,
+ * fetch() to a configured project or the live site.
+ */
+const REACHES: [RegExp, string][] = [
+  [/['"]--linked['"]/, 'the Supabase CLI against the linked project'],
+  [/readFileSync\([^)]*service_key|['"]service_key\.txt['"]|process\.env\.SUPABASE_SERVICE_ROLE_KEY/, 'the production service-role key'],
+  [/fetch\(\s*`\$\{[^}]*(url|URL|Url|SUPABASE|base|BASE)/, 'fetch() to a configured hosted project'],
+  [/fetch\([^)]*(LAUNCH_READINESS_BASE_URL|https:\/\/(www\.)?oneshetland\.com)/, 'fetch() to the live website'],
+];
+describe('the offline lane (npm test) cannot reach production', () => {
+  test('no suite in it has a way to reach a hosted service', () => {
+    const offenders: string[] = [];
+    for (const f of manifest().offline) {
+      if (f.endsWith('test-registration.node.test.ts') || f.endsWith('test-safety.node.test.ts')) continue; // they name these strings to look for them
+      const src = readFileSync(join(REPO_ROOT, f), 'utf8');
+      for (const [re, what] of REACHES) if (re.test(src)) offenders.push(`${f}: ${what}`);
+    }
+    assert.deepEqual(offenders, [], `move these to the production read-only lane or the quarantine:\n  ${offenders.join('\n  ')}`);
+  });
+  test('the read-only production lane holds no write', () => {
+    const WRITE = /\b(insert\s+into|update\s+[\w."]+\s+set|delete\s+from|truncate|alter\s+table|drop\s|create\s+(or\s+replace\s+)?(function|table|policy|trigger)|grant\s|revoke\s)/i;
+    for (const f of manifest().productionReadonly) {
+      const src = readFileSync(join(REPO_ROOT, f), 'utf8');
+      assert.ok(!WRITE.test([...src.matchAll(/`([\s\S]*?)`/g)].map((m) => m[1]).join('\n')), `${f} contains write SQL`);
+      assert.ok(!/method:\s*['"](POST|PATCH|PUT|DELETE)['"]/.test(src), `${f} makes a write request`);
+      assert.ok(!REACHES[1][0].test(src), `${f} uses the service-role key`);
+    }
+  });
+  test('the guard and its own tests are in the routine lane', () => {
+    assert.ok(manifest().offline.includes('supabase/tests/test-safety.node.test.ts'));
+    assert.ok(manifest().offline.includes('supabase/tests/fetch-v2-mobile-guards.node.test.ts'));
   });
 });

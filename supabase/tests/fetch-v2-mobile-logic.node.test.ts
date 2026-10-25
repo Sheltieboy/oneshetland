@@ -10,6 +10,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FetchApi, FETCH_RPCS, FETCH_EDGES, FETCH_MESSAGES } from '../../lib/fetch-api.ts';
@@ -35,6 +36,17 @@ function fake(reply: { rpc?: (fn: string) => unknown; invoke?: (fn: string) => u
 }
 
 describe('web and app share one contract and one vocabulary', () => {
+  // lib/fetch/contract.json records the shared modules' hashes in BOTH repos (Step 13), so a one-sided change is caught even with no
+  // web checkout beside this one.
+  test('every shared module matches the recorded contract hash', () => {
+    const contract = JSON.parse(readFileSync(join(REPO_ROOT, 'lib/fetch/contract.json'), 'utf8')) as { files: Record<string, string> };
+    assert.deepEqual(Object.keys(contract.files).sort(), ['lib/fetch-api.ts', 'lib/fetch/flow.ts', 'lib/fetch/present.ts', 'lib/fetch/scenarios.ts']);
+    for (const [f, hash] of Object.entries(contract.files))
+      assert.equal(createHash('sha256').update(readFileSync(join(REPO_ROOT, f))).digest('hex'), hash, `${f} changed — mirror it on the web and update contract.json in both`);
+  });
+  test('the website records the same contract', { skip: !existsSync(join(WEB_ROOT, 'lib/fetch/contract.json')) && 'web Fetch v2 worktree not present' }, () => {
+    assert.deepEqual(JSON.parse(readFileSync(join(WEB_ROOT, 'lib/fetch/contract.json'), 'utf8')).files, JSON.parse(readFileSync(join(REPO_ROOT, 'lib/fetch/contract.json'), 'utf8')).files);
+  });
   const shared = ['lib/fetch-api.ts', 'lib/fetch/present.ts', 'lib/fetch/flow.ts', 'lib/fetch/scenarios.ts'];
   for (const f of shared) {
     test(`${f} is byte-identical to the website's`, { skip: !existsSync(join(WEB_ROOT, f)) && 'web Fetch v2 worktree not present' }, () => {
@@ -153,3 +165,22 @@ describe('requester and driver flow (shared with the website)', () => {
     }
   });
 });
+
+describe('verification expiry before collection (Step 13 fix)', () => {
+  test('a blocking driver problem overrides "Ready for collection": collection is paused; collect and arrive are not offered', () => {
+    const j = { status: 'matched', payment_status: 'authorised', closed_at: null, cancel_requested_at: null };
+    const st = driverStatus(j, 'driver_verification_expired');
+    assert.equal(st.label, 'Collection is paused');
+    assert.ok(!/You can collect/.test(st.detail));
+    assert.deepEqual(driverActions(j, NOW, 'driver_verification_expired'), ['release', 'photos', 'message', 'report']);
+    assert.equal(driverStatus(j).label, 'Ready for collection');
+    const i = scenarios(NOW).find((x) => x.key === 'i')!.screens[0] as { detail: { request: Record<string, unknown> }; driverProblem?: string };
+    assert.equal(driverStatus(i.detail.request, i.driverProblem).label, 'Collection is paused');
+  });
+  test('the job screen passes the server\'s driver problem to both the headline and the actions', () => {
+    const j = readFileSync(join(REPO_ROOT, 'components/fetch/v2/Jobs.tsx'), 'utf8');
+    assert.match(j, /driverActions\(r, data\.now, data\.driverProblem\)/);
+    assert.match(j, /<StatusCard status=\{driverStatus\(r, data\.driverProblem\)\} \/>/);
+  });
+});
+

@@ -176,3 +176,21 @@ describe('accessibility and copy', () => {
       .match(/>[^<>{}]+<|'[^']{12,}'/g)?.join(' ') ?? ''));
   });
 });
+
+describe('Step 13 static guards', () => {
+  test('no production project URL or ref anywhere in Fetch v2 code', () => {
+    for (const f of V2) assert.ok(!/nkrtmakxygkvxuxriiil|supabase\.co\b/.test(code(read(f))), `${f} names a hosted project`);
+  });
+  test('no Fetch v2 code links back into the retired v1 Fetch routes (payouts excepted)', () => {
+    for (const f of V2) {
+      const s = code(read(f));
+      const v1 = s.match(/['"`]\/\((customer|driver)\)\/(?!connect-bank)[a-z-/]+/g) ?? [];
+      assert.deepEqual(v1, [], `${f} links to ${v1.join(', ')}`);
+      assert.ok(!/fetch-about/.test(s), `${f} links to the v1 explainer`);
+    }
+  });
+  test('no raw document or photo URL is built on the device: only links the server hands out', () => {
+    for (const f of V2) assert.ok(!/storage\/v1|object\/(public|sign|authenticated)|fetch-driver-verification|fetch-photos\//.test(code(read(f))), f);
+  });
+});
+

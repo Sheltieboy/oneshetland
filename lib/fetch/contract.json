@@ -1,0 +1,9 @@
+{
+  "note": "The Fetch v2 product contract shared byte-for-byte by the website (oneshetland-web, branch fetch-v2) and the app (oneshetland-delivers, branch fetch-v2-mobile). Change a shared module in BOTH, then update these hashes in BOTH. Checked by tests/fetch-contract.test.mjs (web) and supabase/tests/fetch-v2-mobile-logic.node.test.ts (app).",
+  "files": {
+    "lib/fetch-api.ts": "ab4b0d313bbd8cfbbb5c52f664733cdc2e5bfbe51a2c52e990e57803df97cf20",
+    "lib/fetch/present.ts": "0a332e8a105af7cf77d036558e159a92ed643aa80043762551ceaeda7f3502b3",
+    "lib/fetch/flow.ts": "e5d2503c66956c6589c8aa9e5e61993d1d0d76c9bfa8640478daa7227e8ec302",
+    "lib/fetch/scenarios.ts": "c362dab880c4746641e9d2a9a5f7a43885bd7b9302bee4c99bfbd5de4fe82493"
+  }
+}

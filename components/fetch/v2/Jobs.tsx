@@ -131,7 +131,7 @@ export function DriverJob({ data, refresh, go }: { data: DriverJobData } & Nav) 
   const r = detail.request;
   const arrived = r.status === 'matched' ? [...data.timeline].reverse().find((e) => e.event === 'arrived') : undefined;
   // Arrival is recorded once; after that the waiting notice replaces the button.
-  const actions = driverActions(r, data.now).filter((a) => !(a === 'arrive' && arrived));
+  const actions = driverActions(r, data.now, data.driverProblem).filter((a) => !(a === 'arrive' && arrived));
   const name: string = r.requester_first_name ?? 'The requester';
   const photoKinds: PhotoKind[] = r.status === 'matched' ? ['collection'] : r.status === 'collected' ? ['delivery', 'collection'] : r.status === 'undeliverable' ? ['return', 'delivery'] : [];
   const hasDeliveryPhoto = data.photos.some((p) => p.kind === 'delivery');
@@ -141,10 +141,10 @@ export function DriverJob({ data, refresh, go }: { data: DriverJobData } & Nav) 
 
   return (
     <View>
-      <StatusCard status={driverStatus(r)} />
+      <StatusCard status={driverStatus(r, data.driverProblem)} />
       {data.driverProblem && r.status === 'matched' && (
         <Notice tone="warn">
-          <Text style={s.body}>{fetchMessage(data.driverProblem)} You can't collect the item until this is sorted.</Text>
+          <Text style={s.body}>{fetchMessage(data.driverProblem)}</Text>
           <FButton label="Your driver details" kind="quiet" onPress={() => go('/fetch/driver/verification')} />
         </Notice>
       )}
