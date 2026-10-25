@@ -34,7 +34,7 @@
     "fetch-v2-runner": {
       "step": "Fetch v2 Step 5",
       "verify_jwt": false,
-      "reason": "cron-only Fetch v2 sweeps (x-cron-secret): payments (Step 5) and driver-verification expiry/reminders/upload clean-up (Step 6), not scheduled; held until iOS Build 148 clears review and Darren approves"
+      "reason": "cron-only Fetch v2 sweeps (x-cron-secret): payments (Step 5), driver-verification expiry/reminders/upload clean-up (Step 6) and the notification outbox drain (Step 8), not scheduled; held until iOS Build 148 clears review and Darren approves"
     },
     "fetch-v2-driver-verification": {
       "step": "Fetch v2 Step 6",
@@ -50,6 +50,14 @@
     "become-driver": {
       "step": "Fetch v2 Step 6",
       "reason": "application can only ever reach pending: logic moved to the audited fetch_v2_apply_driver (refuses suspended accounts, 18+ and restriction checks, vehicle changes re-verified); response shape kept for the existing apply forms. Needs migration 20261203000000 applied first. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
+    },
+    "notify-drivers": {
+      "step": "Fetch v2 Step 8",
+      "reason": "refuses Fetch v2 requests (409 handled_by_fetch_v2) for every caller: v2 jobs are notified only by the database outbox. v1 behaviour unchanged. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
+    },
+    "notify-collected": {
+      "step": "Fetch v2 Step 8",
+      "reason": "refuses Fetch v2 requests (409 handled_by_fetch_v2) for every caller: v2 jobs are notified only by the database outbox. v1 behaviour unchanged. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
     }
   }
 }

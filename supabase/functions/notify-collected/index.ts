@@ -50,6 +50,15 @@ serve(async (req) => {
       });
     }
 
+    // Fetch v2 jobs are announced only by the Fetch v2 outbox (authoritative database events, once per recipient, inbox first),
+    // never through this legacy path — whoever calls it, the service role included.
+    const { data: v2 } = await supabase.from('delivery_requests').select('fetch_version').eq('id', request_id).maybeSingle();
+    if ((v2 as { fetch_version?: number } | null)?.fetch_version === 2) {
+      return new Response(JSON.stringify({ error: 'Fetch notifications for this request are sent by the server', code: 'handled_by_fetch_v2' }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Authorise the ACTION: the caller must be the legitimate actor for THIS entity, and the claimed fact must be true. Recipients are read from
     // the same rows below — nothing in the request body names who gets the push.
     const decision = await authoriseFetchNotify(supabase, caller, { action: 'collected', requestId: request_id });

@@ -828,8 +828,8 @@ Further constraints:
 | 5 | **Payment edge layer** | DONE (see Step 5 status): dedicated v2 functions `fetch-v2-accept`, `-payment`, `-driver`, `-admin`, `-runner`; Fetch v2 hand-off inside the existing `stripe-webhook`; manual capture with partial capture, Stripe's own `capture_before`, generation-based replacement, collection gate, admin payment actions | migration `20261202000000`, `supabase/functions/fetch-v2-*`, `_shared/fetch-v2-{payments,stripe,payment-deps}.ts`, `stripe-webhook` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests against the real SQL; controls proving guards are load-bearing | `stripe-webhook` gains a v2-only branch; deploy as exact deltas | After clearance |
 | 6 | **Driver verification** | DONE (see Step 6 status): application only ever pending; evidence upload to the service-only private bucket with real-type checks; audited review and decisions; `verification_ok_until` derived from the earliest required expiry; live claim and collection gates; expiry sweep, reminder outbox; per-vehicle re-verification | migration `20261203000000`, `fetch-v2-driver-verification`, `fetch-v2-admin` (`area: drivers`), `fetch-v2-runner`, `become-driver` | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating; expiry; controls | Driver application flow; admin approval screens must move to the new actions | After clearance |
 | 7 | **Matching** | DONE (see Step 7 status): board only for claim-eligible drivers; capacity filter with show-all; direction- and ferry-aware run fit; tiers and plain-English reasons; requester hint; once-only recipient selection; admin diagnostics (`notify-drivers` moved to Step 8) | migration `20261204000000` | 3, 4, 6 | Low | Matching fixtures; controls | No | After clearance |
-| 8 | **Notifications** | Exact scope in "Step 8 scope" below: outbox over match selections, verification events and lifecycle events; L categories; server-side sends; `notify-drivers` internal-only on the SQL recipient list; deep links | outbox migration, push callers, `notify-drivers`, constants | 5, 6, 7 | Low | `notification_log` assertions | `notify-drivers` behaviour | After clearance |
-| 9 | **Messages, issues, photos** | Threads, issues, item/delivery/return photos | migration, functions | 3 | Low–Medium | Party-only and write-once | No | After clearance |
+| 8 | **Notifications** | DONE (see Step 8 status): one server-fed outbox; Notification Centre row first, then push; opportunity vs activity policy; four time-critical kinds; deep-link contract; legacy `notify-drivers`/`notify-collected` refuse v2 | migration `20261205000000`, `fetch-v2-runner`, `notify-drivers`, `notify-collected`, `_shared/fetch-v2-notify.ts`, `_shared/fetch-v2-push-gateway.ts` | 5, 6, 7 | Low | `notification_log` assertions; controls | Legacy notifiers refuse v2 | After clearance |
+| 9 | **Messages, issues, photos** | Exact scope in "Step 9 scope" below: party messages with admin hide and a collapsed `message` notice; party issue reporting; item/delivery/return photos by signed upload, write-once, evidence hold | migration, functions | 3, 8 | Low–Medium | Party-only and write-once | No | After clearance |
 | 10 | **Admin controls** | Verification queue, driver decisions, request oversight, cancel-request and return resolution, issue queue, counters | RPCs; web admin rebuilt | 5, 6, 9 | Medium | Admin action tests | Web admin only | After clearance |
 | 11 | **Web UI** | Requester and driver flows on `lib/fetch-api.ts`; bulky inputs; ferry line; cancel request; return flow; verification upload; copy fixes (A.1, K.0) | web `fetch-v2` | 5–10 | Medium | Contract tests; scripted run | Behind the flag | No |
 | 12 | **Mobile UI** | The same flows, on `fetch-v2-mobile` derived from the post-148 line; remove client price, status and notify writes and hardcoded production URLs; Android directions fix | mobile branch | 5–10 | Medium | Contract tests; simulator | **Next native build only** | **No**: Build 148 untouched |
@@ -1351,6 +1351,165 @@ It never includes addresses, phone or the requester.
    - outbox rerun safety;
    - rollback.
 7. **Not in Step 8:** UI (Steps 11–12), email (unless section L requires it), message threads and photos (Step 9).
+
+**Step 8 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing was sent.**
+
+**Files**
+- Migration `20261205000000_fetch_v2_notifications.sql` and rollback `supabase/rollbacks/20261205000000_fetch_v2_notifications.down.sql`. The rollback refuses while the outbox holds anything; otherwise it restores the catalogue exactly. Inbox rows already written stay.
+- `_shared/fetch-v2-notify.ts` (the drain), `_shared/fetch-v2-push-gateway.ts` (production Expo gateway).
+- `fetch-v2-runner` drains the outbox after its sweeps.
+- `notify-drivers` and `notify-collected` now refuse Fetch v2 jobs. Both are deployed functions, so the manifest lists them as `modified`.
+- Tests:
+  - `supabase/tests/fetch-v2-notifications.node.test.ts`: 26 isolated tests, using the real `notification_log`, real Step 3–7 functions and a fake push gateway.
+  - `_shared/fetch-v2-push-gateway.node.test.ts`: 5 tests with a fake `fetch`, in the offline lane.
+
+**Architecture: one outbox, fed only by the server**
+- **The outbox.** `fetch_notifications` holds one row per logical notice, unique on `dedupe_key`.
+- **Producers.** Rows are written only by AFTER INSERT triggers on the authoritative append-only tables:
+
+  | Table | Produces |
+  |---|---|
+  | `fetch_match_notifications` | Step 7 selection; matching now runs automatically on `created` and whenever a job returns to the board |
+  | `fetch_request_events` | job lifecycle |
+  | `driver_verification_events` | Step 6 `notify_kind` events, each accepted document, and a daily admin review nudge |
+  | `fetch_issues` | issue opened / resolved |
+
+  A producer failure is logged and swallowed, so a notice can never undo a Fetch action (tested).
+- **Content.** Kind, audience, urgency, category, wording and link all come from the server (`fetch_v2_notice_meta`, `fetch_v2_notice_copy`, `fetch_v2_notice_route`).
+- **No client entry point.** No client can create, claim, settle or read outbox rows, or write an inbox row (tested).
+
+**Notification Centre first** (`fetch_v2_claim_notifications`, inside the database)
+1. **Opportunities that no longer stand are dropped.** A pending opportunity whose job is no longer open, or whose driver can no longer take jobs, is closed as `job_closed`, with no inbox row.
+2. **The inbox row is written before any push.** This is `public.notification_log`, the existing Notification Centre inbox. The clients (including iOS Build 148) show statuses `sent`, `no_token` and `skipped_quiet`:
+
+   | Situation | Inbox status | `error` |
+   |---|---|---|
+   | Push allowed | `no_token` (visible while pending) | `push_pending` |
+   | Quiet hours | `skipped_quiet` (visible) | — |
+   | Member muted Fetch or all notifications: an **opportunity** | `skipped_pref` (hidden: their choice, as for every module) | — |
+   | Member muted Fetch or all notifications: an **activity / verification / admin** notice | `no_token` (visible) | `push_off` |
+   | Opportunity push cap reached | `no_token` (visible) | `opportunity_limit` |
+
+3. **Then pushes are leased.** Pushes that are due are leased (re-offered after 5 minutes if a worker dies).
+4. **`fetch_v2_settle_notification` records the result.** `accepted` turns the inbox row into `sent`. Anything else leaves it visible as `no_token`, with the reason in `error`. The inbox row is never removed. Producers are stamped (`fetch_match_notifications.notified_at`, `driver_verification_events.notified_at`).
+
+**Delivery results** (`push_result`):
+- `accepted`: Expo accepted the push ticket. This is never reported as "delivered".
+- `no_token`, `opted_out`, `quiet_hours`, `rate_limited`, `job_closed`.
+- `invalid_token`: every device unregistered; the tokens are pruned.
+- `push_unavailable`: push isn't configured for the device, e.g. Android without push credentials.
+- `provider_error`.
+
+A retryable failure (network, 5xx, 429, MessageRateExceeded) is retried with back-off (5 · attempts² minutes), up to `fetch.notify.max_push_attempts` (4) attempts in all, then `provider_error`. One member's failure never stops another's.
+
+**Push gateway.** It uses the same Expo API, token sources (`push_tokens`, then legacy `profiles.push_token`) and pruning as `_shared/send-push.ts`. `send-push.ts` is left untouched because about 40 deployed functions bundle it, and its `sendUserPush` writes its own log row after pushing, which would break the inbox-first rule.
+
+**Opportunity vs active-job notices**
+- **Opportunities** (`new_request_run`, `new_request_area`, `new_request_broad`, `back_on_board`):
+  - only Step 7's chosen drivers, each told at most once per job and kind;
+  - never time-critical;
+  - respect the Fetch switch, the master switch and quiet hours;
+  - push-capped per driver at `fetch.notify.opportunity_hourly_max` (3) and `opportunity_daily_max` (8); beyond that they still reach the inbox;
+  - dropped if the job closes first.
+- **Activity, verification and admin notices** are never capped and are always kept in the inbox.
+
+**Time-critical** (passes quiet hours, never a member's opt-out). Exactly four:
+- `payment_action_needed` (the 2-hour timeout);
+- `cancel_requested` (the driver must answer);
+- `undeliverable`;
+- `verification_blocks_collection` (an uncollected job that the driver's lapsed verification blocks).
+
+Nothing else, and never an opportunity (a CHECK constraint enforces this).
+
+**Preferences.** The existing single `fetch_enabled` switch plus the master `enabled` and quiet hours, through `should_notify`. The P0 split between opportunities and activity is enforced by policy (muted opportunities are hidden opt-outs; activity always reaches the inbox). Separate "Fetch opportunities" and "Fetch activity" toggles are a later settings change. They would need a new preference column and client settings UI.
+
+**Event kinds** (event → recipient):
+
+| Event | Recipient | Kind |
+|---|---|---|
+| `claimed` | requester | `driver_accepted` |
+| `payment_requires_action` / `requires_payment_method` | requester | `payment_action_needed`, once per hold generation |
+| `payment_authorised` | driver | `payment_ready`, **only** after the requester had to act and only when `fetch_v2_hold_ready` is true; an instant authorisation is not announced |
+| `payment_timeout` | requester; released driver | `payment_not_completed`; `job_released_payment` (plus `back_on_board` matching) |
+| `released` | requester | `driver_released` (plus matching; never to the driver who let it go) |
+| `returned_to_board` | requester; driver | `returned_to_board_requester` / `_driver` |
+| `cancellation_requested` | driver | `cancel_requested` |
+| `cancellation_agreed` / `cancellation_declined` | requester | |
+| `cancellation_resolved` / `admin_cancelled` | both | `job_cancelled` or `cancellation_kept` |
+| `cancellation_escalated` | admins | `admin_cancel_review` |
+| `expired` | requester | |
+| `collected` / `delivered` | requester | |
+| `undeliverable` | requester; admins | `undeliverable`; `admin_undeliverable` |
+| `return_resolved` | both | |
+| `payment_escalated` | admins | `admin_payment` |
+| issue opened | admins | `admin_issue`; plus the driver's `verification_blocks_collection` for a verification issue on a matched job |
+| issue resolved | reporter | `issue_resolved` |
+| verification events | driver | `evidence_approved`, `evidence_rejected`, `replacement_required`, `evidence_expiring` (once per document), `evidence_expired` (once per document), `driver_approved` / `_rejected` / `_suspended` / `_reinstated` |
+| application or evidence received | admins | `admin_review`, at most once per driver per day |
+
+`message` is reserved (contract only) for Step 9.
+
+**Privacy.** Wording uses only region names, a weekday, a size word and the destination region. It never includes:
+- addresses, the pickup name, phone, notes or access instructions;
+- the item description;
+- payment, provider or card detail;
+- anything from a verification document.
+
+Data is `{screen:'fetch', route, kind, request_id?}` and nothing else (tested).
+
+**Deep-link contract** (Steps 11–12 implement these routes; today's clients open the Fetch section from `screen`/`request_id`):
+
+| Who | Route |
+|---|---|
+| Opportunity | `/fetch/board/<request>` |
+| Requester | `/fetch/requests/<request>` (payment: `/fetch/requests/<request>/payment`) |
+| Driver | `/fetch/jobs/<request>` |
+| Verification | `/fetch/driver/verification` |
+| Admin | `/admin/fetch/requests/<request>`, `/admin/fetch/drivers/<driver>` |
+
+No private data and no query strings appear in links.
+
+**Android / no push.** The inbox row is written regardless. A member with no device is `no_token`; an Expo `InvalidCredentials` answer (push not configured) is `push_unavailable`. Neither fails the event or blocks others.
+
+**Legacy paths.** `notify-drivers` and `notify-collected` refuse any v2 request with `409 handled_by_fetch_v2`, for every caller, before authorising or sending. Their v1 behaviour is unchanged. This includes the shop's v1 Fetch-lane ping, which calls `notify-drivers` with the buyer's sign-in, so I did not make it service-only.
+
+**Diagnostics.** `fetch_v2_notification_diagnostics(request?, recipient?)` (admin) lists each notice with kind, audience, urgency, state, inbox status, push result (`pending` while leased), attempts, last error and timestamps.
+
+**Dedupe identities:**
+
+| Notice | Key |
+|---|---|
+| Match | `match:<kind>:<request>:<driver>` |
+| Lifecycle | `ev:<event id>:<r\|d\|admin id>` |
+| Payment prompt / ready | `pay:<request>:g<generation>:action\|ready` |
+| Verification | `verif:<event id>`; expiring and expired: `verif:<kind>:<item>` |
+| Admin review | `admin_review:<driver>:<UK date>:<admin>` |
+| Issues | `issue:<id>:open:<admin>`, `issue:<id>:driver`, `issue:<id>:resolved` |
+
+**Concerns carried forward**
+- **Latency.** Notices go out when `fetch-v2-runner` drains, so it should be scheduled about every minute when deployed. Until then nothing is pushed, though the inbox rows are still written on drain.
+- **Muted members.** A member who muted Fetch still gets activity notices in their inbox, with no push. This is by design (it is their own job) but differs from other modules.
+- **Shop Fetch lane.** It creates v1 requests that v2 drivers cannot see once Step 2 is deployed. Business requests are P2; that lane should be switched off or migrated before the v2 deploy.
+- **Generic Notification Centre gap (not Fetch-specific).** `sendUserPush` logs provider errors as `error`, which every client hides. Other modules can lose a notice on a provider error. Fetch avoids this; fixing it for everyone needs a client change.
+- **Single preference switch.** There is only one Fetch toggle; the opportunity/activity split needs a settings change.
+
+**Step 9 scope (exact): messages, issues, photos**
+1. **Messages**
+   - `fetch_v2_send_message(request, body)`: parties only, while the job is live and for the participant window. Body ≤ 1000 characters; rate-limited; no links to phone numbers enforced in the UI.
+   - Party read RPC.
+   - Admin hide (`hidden_at`/`hidden_by`, audited).
+   - A `safety` issue route to admin.
+   - The `message` notice: collapsed to one unread notice per request and recipient, with no message text in the push.
+2. **Issues.** A client `fetch_v2_report_issue(request, kind, detail)` for parties within the issue window, plus an admin resolve action. Both feed the Step 8 outbox, which already handles opened and resolved issues.
+3. **Photos**
+   - Signed uploads to the private `fetch-photos` bucket, at server-generated paths, with real-type checks (as Step 6).
+   - Item photos from the requester, with `matching_visible` (bulky jobs need one before claim).
+   - Delivery and return photos from the driver, write-once.
+   - `fetch_v2_delivery_precheck`'s `delivery_photo_required` honoured.
+   - Party and admin read through short-lived links; admin removal is audited.
+   - Evidence is held while an issue is open (`fetch_v2_evidence_held`).
+4. **Tests.** Isolated tests: party-only access, write-once, windows, hide and remove audit, notice collapsing, storage access matrix, rollback.
+5. **Not in Step 9:** UI (Steps 11–12), retention deletion (S.18), the admin console (Step 10).
 
 **Changes from revision 1 caused by the decisions:**
 
