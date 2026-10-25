@@ -29,18 +29,27 @@
     "fetch-v2-admin": {
       "step": "Fetch v2 Step 5",
       "verify_jwt": true,
-      "reason": "administrator Fetch v2 payment actions; held until iOS Build 148 clears review and Darren approves"
+      "reason": "administrator Fetch v2 payment actions (Step 5) and driver verification review/decisions (Step 6, area \"drivers\"); held until iOS Build 148 clears review and Darren approves"
     },
     "fetch-v2-runner": {
       "step": "Fetch v2 Step 5",
       "verify_jwt": false,
-      "reason": "cron-only Fetch v2 sweeps (x-cron-secret), not scheduled; held until iOS Build 148 clears review and Darren approves"
+      "reason": "cron-only Fetch v2 sweeps (x-cron-secret): payments (Step 5) and driver-verification expiry/reminders/upload clean-up (Step 6), not scheduled; held until iOS Build 148 clears review and Darren approves"
+    },
+    "fetch-v2-driver-verification": {
+      "step": "Fetch v2 Step 6",
+      "verify_jwt": true,
+      "reason": "driver's own verification: status, vehicle, evidence upload to the private bucket via signed upload, own short-lived link; held until iOS Build 148 clears review and Darren approves"
     }
   },
   "modified": {
     "stripe-webhook": {
       "step": "Fetch v2 Step 5",
       "reason": "adds the scoped Fetch v2 PaymentIntent hand-off (metadata.fetch_v2_request_id); v1 branches unchanged. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
+    },
+    "become-driver": {
+      "step": "Fetch v2 Step 6",
+      "reason": "application can only ever reach pending: logic moved to the audited fetch_v2_apply_driver (refuses suspended accounts, 18+ and restriction checks, vehicle changes re-verified); response shape kept for the existing apply forms. Needs migration 20261203000000 applied first. Held until iOS Build 148 clears review and Darren approves; regenerate the manifest after the reviewed deploy."
     }
   }
 }

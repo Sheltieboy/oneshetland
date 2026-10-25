@@ -40,6 +40,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUS: Record<string, number> = {
   already_taken: 409, not_claimable: 409, own_request: 403, vehicle_confirmation_required: 400, too_large_for_vehicle: 409,
   item_photo_required: 409, driver_not_approved: 403, driver_verification_expired: 403, driver_payouts_not_enabled: 403,
+  driver_suspended: 403, driver_verification_incomplete: 403, driver_vehicle_missing: 403,
   age_confirmation_required: 403, member_restricted: 403, reason_required: 400, invalid_request: 400, invalid_transition: 409,
   invalid_state: 409, already_collected: 409, no_cancellation_request: 409, safe_place_not_allowed: 409, delivery_photo_required: 409,
   payment_not_captured: 409, override_reason_required: 400, override_required: 400, override_out_of_range: 400, use_return_resolution: 409,
