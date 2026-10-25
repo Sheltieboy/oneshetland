@@ -85,6 +85,7 @@ const SUITES = [
   'supabase/tests/fetch-v2-driver-verification.node.test.ts',
   'supabase/tests/fetch-v2-matching.node.test.ts',
   'supabase/tests/fetch-v2-notifications.node.test.ts',
+  'supabase/tests/fetch-v2-messages-issues-photos.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.

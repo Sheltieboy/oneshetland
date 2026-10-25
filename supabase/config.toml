@@ -195,6 +195,9 @@ verify_jwt = false
 [functions.fetch-v2-driver-verification]
 verify_jwt = true
 
+[functions.fetch-v2-photos]
+verify_jwt = true
+
 [functions.confirm-boost]
 verify_jwt = true
 

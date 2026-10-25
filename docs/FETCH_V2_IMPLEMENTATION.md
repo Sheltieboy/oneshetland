@@ -829,8 +829,8 @@ Further constraints:
 | 6 | **Driver verification** | DONE (see Step 6 status): application only ever pending; evidence upload to the service-only private bucket with real-type checks; audited review and decisions; `verification_ok_until` derived from the earliest required expiry; live claim and collection gates; expiry sweep, reminder outbox; per-vehicle re-verification | migration `20261203000000`, `fetch-v2-driver-verification`, `fetch-v2-admin` (`area: drivers`), `fetch-v2-runner`, `become-driver` | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating; expiry; controls | Driver application flow; admin approval screens must move to the new actions | After clearance |
 | 7 | **Matching** | DONE (see Step 7 status): board only for claim-eligible drivers; capacity filter with show-all; direction- and ferry-aware run fit; tiers and plain-English reasons; requester hint; once-only recipient selection; admin diagnostics (`notify-drivers` moved to Step 8) | migration `20261204000000` | 3, 4, 6 | Low | Matching fixtures; controls | No | After clearance |
 | 8 | **Notifications** | DONE (see Step 8 status): one server-fed outbox; Notification Centre row first, then push; opportunity vs activity policy; four time-critical kinds; deep-link contract; legacy `notify-drivers`/`notify-collected` refuse v2 | migration `20261205000000`, `fetch-v2-runner`, `notify-drivers`, `notify-collected`, `_shared/fetch-v2-notify.ts`, `_shared/fetch-v2-push-gateway.ts` | 5, 6, 7 | Low | `notification_log` assertions; controls | Legacy notifiers refuse v2 | After clearance |
-| 9 | **Messages, issues, photos** | Exact scope in "Step 9 scope" below: party messages with admin hide and a collapsed `message` notice; party issue reporting; item/delivery/return photos by signed upload, write-once, evidence hold | migration, functions | 3, 8 | Low–Medium | Party-only and write-once | No | After clearance |
-| 10 | **Admin controls** | Verification queue, driver decisions, request oversight, cancel-request and return resolution, issue queue, counters | RPCs; web admin rebuilt | 5, 6, 9 | Medium | Admin action tests | Web admin only | After clearance |
+| 9 | **Messages, issues, photos** | DONE (see Step 9 status): participant-only messages with admin hide and a collapsed notice; 72-hour issue reporting and audited resolution; five photo roles by signed upload with real-type checks and metadata stripping; stricter delivery/return evidence; service-only photo bucket | migration `20261206000000`, `fetch-v2-photos`, `fetch-v2-admin` (`area: support`), `fetch-v2-runner` | 3, 8 | Low–Medium | Party-only, write-once, storage matrix; controls | No | After clearance |
+| 10 | **Admin controls** | Exact scope in "Step 10 scope" below: web admin console on the `fetch-v2` branch over the `fetch-v2-admin` areas (queues, job page, driver page); new audited RPCs to redact an item description, restrict a member, and a counters view; old direct-write approval screen replaced | RPCs; web admin rebuilt | 5, 6, 8, 9 | Medium | Admin action tests; render/contract | Web admin only | After clearance |
 | 11 | **Web UI** | Requester and driver flows on `lib/fetch-api.ts`; bulky inputs; ferry line; cancel request; return flow; verification upload; copy fixes (A.1, K.0) | web `fetch-v2` | 5–10 | Medium | Contract tests; scripted run | Behind the flag | No |
 | 12 | **Mobile UI** | The same flows, on `fetch-v2-mobile` derived from the post-148 line; remove client price, status and notify writes and hardcoded production URLs; Android directions fix | mobile branch | 5–10 | Medium | Contract tests; simulator | **Next native build only** | **No**: Build 148 untouched |
 | 13 | **Port legacy tests** | Rewrite the 7 production-touching suites as isolated-PG | `supabase/tests` | 3–5 | Low | — | No | No |
@@ -1510,6 +1510,129 @@ No private data and no query strings appear in links.
    - Evidence is held while an issue is open (`fetch_v2_evidence_held`).
 4. **Tests.** Isolated tests: party-only access, write-once, windows, hide and remove audit, notice collapsing, storage access matrix, rollback.
 5. **Not in Step 9:** UI (Steps 11–12), retention deletion (S.18), the admin console (Step 10).
+
+**Step 9 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing was sent.**
+
+**Files**
+- Migration `20261206000000_fetch_v2_messages_issues_photos.sql` and rollback `supabase/rollbacks/20261206000000_fetch_v2_messages_issues_photos.down.sql`. The rollback refuses while any Step 9 record exists; otherwise it restores the catalogue exactly (functions, table and storage policies) and re-applies (proved).
+- `_shared/fetch-v2-photos.ts` (photo and support handlers), `_shared/fetch-v2-photo-deps.ts` (Deno wiring), `_shared/image-metadata.ts` (metadata removal).
+- New edge function `fetch-v2-photos` (staged). `fetch-v2-admin` gains `area: "support"`; `fetch-v2-runner` removes abandoned photo uploads.
+- Tests:
+  - `supabase/tests/fetch-v2-messages-issues-photos.node.test.ts`: 27 isolated tests (real SQL, real Step 8 outbox, real storage RLS).
+  - `_shared/image-metadata.node.test.ts`: 4 tests, in the offline lane.
+
+**Access model.** Direct table reads of `fetch_messages`, `fetch_issues` and `fetch_request_photos` are now administrator-only (the Step 2 pattern). Participants use the functions below, which apply the windows.
+- `fetch_v2_participant_role(request, user)` gives the requester or the *current* assigned driver, while the job is live and for `participant_history_secs` (30 days) after it closes. Administrators always.
+- A released driver is no longer a participant. A driver who has not accepted never is.
+- Exact addresses (72h) and phone (live and shared only) are unchanged; a message or photo outlasting them exposes neither (tested).
+
+**Messages**
+- **Sending.** `fetch_v2_send_message(request, body, client_ref?)`, client RPC:
+  - only the requester and the assigned driver, once a driver exists (`no_driver_yet`), within the window (`message_window_closed`);
+  - plain text, trimmed of whitespace, 1–1000 characters (`message_empty` / `message_too_long`), stored exactly as sent (markup is text);
+  - a retry with the same `client_ref` returns the original message;
+  - at most 20 per job in 10 minutes and 200 a day per sender (`rate_limited`).
+- **Reading.** `fetch_v2_messages(request)`: oldest first, with `from` = you / requester / driver. A hidden message shows only `hidden: true`. Administrators see the text, who hid it, when and why.
+- **Never edited or deleted.** Clients have no write access, and Step 1's trigger refuses any rewrite, including by the service role.
+- **Hiding.** An administrator hides with `fetch_v2_hide_message(admin, message, reason)`, reason required. The record stays; participants lose the text.
+- **Audit.** `message_sent` and `message_hidden` events carry the message id only.
+- **Notice.** "New message about your Fetch" (Step 8 kind `message`) goes to the other party. At most one stands per job and recipient until its inbox row is read. The text is never in the notice.
+
+**Issues**
+- **Reporting.** `fetch_v2_report_issue(request, kind, detail, client_ref?)`, client RPC:
+  - only the requester or the assigned driver, while the job is live or within `issue_window_secs` (72 hours) of it closing (`issue_window_closed`);
+  - kinds: `not_delivered`, `damaged`, `wrong_item`, `payment`, `safety`, `other`, plus `driver_conduct` (requester only) or `requester_conduct` (driver only). `cancellation`, `return`, `driver_verification` remain system kinds;
+  - detail is at most 2000 characters;
+  - a retry with the same `client_ref` is the same issue;
+  - at most 3 open issues per job per reporter and 10 a day (`rate_limited`).
+- **Following up.** `fetch_v2_my_issues(request)` shows the reporter their issues and the recorded outcome.
+- **Immutable.** The reporter cannot change kind, detail or time (no grants, plus Step 1's trigger). A resolved issue stays resolved.
+- **Resolving.** `fetch_v2_resolve_issue(admin, issue, resolution)`, resolution required, records who and when.
+- **Notices** (existing Step 8 producers): administrators on open, and the reporter on resolution. Neither the detail nor the kind wording is in any notice.
+
+**Photos and evidence**
+
+| Role | Who | When |
+|---|---|---|
+| `item` | requester | job open and unclaimed; at most 6 |
+| `collection` | assigned driver | matched or collected; at most 4 |
+| `delivery` | assigned driver | collected (or a delivery retry from undeliverable); at most 4 |
+| `return` | assigned driver | undeliverable; at most 4 |
+| `issue` | the issue's reporter | while the issue is open; at most 5 |
+
+`fetch_v2_photo_problem` is the one rule, checked when the upload starts and again when it is registered (with the job row locked).
+
+**Upload security** (`fetch-v2-photos`, `begin_upload` → signed one-use upload → `submit`)
+- The server fixes request, kind, uploader and path (`requests/<request>/<kind>/<uuid>.<ext>`; a CHECK ties path to request and kind). The signed upload never overwrites, and lapses after 15 minutes.
+- JPEG, PNG and WEBP only. HEIC is refused; the clients convert. Size ≤ 10 MB.
+- On submit, the edge reads the object back: the real size, and the real type from the first bytes. A renamed executable is refused, deleted and forgotten.
+- Embedded metadata is then stripped and the clean bytes written back before the photo is registered (`image-metadata.ts`):
+  - JPEG: EXIF/XMP including GPS, IPTC, comments and maker data are removed; orientation is kept;
+  - PNG: text and EXIF chunks;
+  - WEBP: EXIF and XMP.
+- Registering twice returns the same photo. At most 20 upload starts an hour per member, plus the `fetch_v2_photos` limiter (60/hour).
+- Abandoned uploads are removed by the runner (object first, then the record).
+
+**Board photos.** Only `item` photos the requester marked (`show_on_board` at upload, or `fetch_v2_set_item_photo(show_on_board | hide_from_board | withdraw)` before the job is claimed) appear in Step 7's `matching_photo_ids`.
+- They are viewable only with `view_board`, by a driver who can take jobs, while the job is open and not their own.
+- Collection, delivery, return and issue evidence never reach the board.
+- Withdrawing keeps the record (`removed_*`, "Withdrawn by the requester").
+
+**Viewing.** There are no client storage policies on `fetch-photos` any more: nobody, administrators included, reads, lists or deletes the bucket directly.
+- Links come only from `fetch_v2_photo_for_view`:
+  - `party`: participants within the window, not removed;
+  - `board`: as above;
+  - `admin`: always, including removed photos and after the windows.
+- Lifetimes: 60 seconds for members, 120 for administrators. Storage paths never appear in responses.
+- A Supabase signed link necessarily embeds the object path in its URL; that path holds only the job id the participant already knows.
+
+**Evidence rules** (`fetch_v2_has_evidence`):
+- **Safe-place delivery** (`fetch_v2_delivery_precheck`, `fetch_v2_complete_delivery`) needs a `delivery` photo from the assigned driver, taken after collection, and not removed.
+- **Reporting a return** (`fetch_v2_report_return`) needs a `return` photo from the assigned driver, taken after the job became undeliverable.
+- An old photo, a requester's photo or a removed photo does not count (tested).
+
+**Evidence is write-once.** Step 1's trigger refuses any rewrite of a photo record, and clients have no write access.
+- Administrators remove from view with `fetch_v2_remove_photo(admin, photo, reason)`, reason required. Who, when and why are recorded and the stored object stays.
+- Physical deletion is the outstanding retention decision (S.18).
+
+**Retention and evidence hold.** Participants lose messages, photos and issue views at their window; administrators keep everything.
+- `fetch_v2_evidence_held(request)` (an open issue) is shown in the admin views. It is the signal any future purge must honour. No purge exists and none is added.
+
+**Administrator support** (`fetch-v2-admin`, `area: "support"`):
+- `record`: every message (hidden included), issue and photo record of a job, ids only, no paths;
+- `hide_message`, `resolve_issue`, `remove_photo` (reasons required);
+- `view_photo` (120-second link, with removed and evidence-held flags).
+
+**Audit.** Every material action is a `fetch_request_events` row carrying ids and safe metadata only:
+- `message_sent`, `message_hidden`;
+- `issue_reported`, `issue_resolved`;
+- `photo_added`, `photo_visibility_changed`, `photo_withdrawn`, `photo_removed`.
+
+It never contains message text, issue detail, paths or image data.
+
+**Concerns carried forward**
+- Hiding a message keeps its text for administrators by design (disputes). The retention period for that text is part of S.18.
+- `tg_fetch_v2_notice_from_message` collapses notices by the inbox row's `read_at`. A member who never opens the inbox gets one message notice per job until they read it.
+- HEIC is refused for Fetch photos; the Steps 11–12 clients must convert to JPEG before upload.
+- Metadata stripping keeps the image bytes, so a photo can still show a house number. The requester warning (section J) and admin removal remain the controls.
+
+**Step 10 scope (exact): admin controls**
+1. **Admin console** on the web `fetch-v2` branch (admin-gated routes under `/admin/fetch`), calling only the `fetch-v2-admin` edge areas (payments, `drivers`, `support`) and the admin RPCs. There are no direct table writes anywhere. The old `components/admin/DriverApprovals.tsx` (direct `driver_status` write, refused since Step 6) is replaced.
+2. **Queues:**
+   - driver verification (Step 6 `queue`);
+   - open issues by kind and age, payment issues, unanswered cancellation requests, undeliverable jobs awaiting a return decision;
+   - lapsed drivers with live jobs, and stuck notifications (Step 8 diagnostics).
+3. **Job page:**
+   - timeline (`fetch_request_events`), support record (messages, issues, photos with 120-second links);
+   - payment state and actions (Step 5), match diagnostics (Step 7), notification diagnostics (Step 8);
+   - the cancel / return-to-board / resolve-cancellation / resolve-return actions.
+4. **Driver page:** verification record, decisions (approve / reject / suspend / reinstate), requirements editor.
+5. **New audited admin RPCs:**
+   - redact or edit a job's `item_description` (Step 2 carry-over), with reason and event;
+   - restrict or unrestrict a member (`fetch_member_stats.restricted_at`/`restricted_reason`), with reason and event;
+   - a read-only counters view (`fetch_member_stats`, driver release and fault-return counts).
+6. **Tests:** isolated SQL tests for the new RPCs (admin-only, reasons, events, rollback), and web render/contract tests for the console. No production calls.
+7. **Not in Step 10:** requester and driver UI (Steps 11–12), live payment gate (Step 14).
 
 **Changes from revision 1 caused by the decisions:**
 
