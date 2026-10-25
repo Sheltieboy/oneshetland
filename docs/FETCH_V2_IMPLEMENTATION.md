@@ -832,8 +832,8 @@ Further constraints:
 | 9 | **Messages, issues, photos** | DONE (see Step 9 status): participant-only messages with admin hide and a collapsed notice; 72-hour issue reporting and audited resolution; five photo roles by signed upload with real-type checks and metadata stripping; stricter delivery/return evidence; service-only photo bucket | migration `20261206000000`, `fetch-v2-photos`, `fetch-v2-admin` (`area: support`), `fetch-v2-runner` | 3, 8 | Low–Medium | Party-only, write-once, storage matrix; controls | No | After clearance |
 | 10 | **Admin controls** | DONE (see Step 10 status): web Fetch operations console at `/admin/fetch` (queues, jobs, job page, driver review, members, notifications) over admin-gated reads and the audited `fetch-v2-admin` actions; item-description redaction; Fetch restriction; counters | migration `20261207000000`, `fetch-v2-admin` support area; web `app/admin/fetch`, `lib/fetch-admin`, `components/admin/fetch` | 5, 6, 8, 9 | Medium | Admin action tests (isolated); web contract tests; build | Web admin only; old driver-approval screen replaced | After clearance |
 | 11 | **Web UI** | DONE (see Step 11 status): web requester and driver product on `lib/fetch-api.ts` — landing, 5-step create with server quote and hold explained, 18+, 3DS, job pages, messages, problems, photos, driver apply/verification/board/journeys/accept/active job, history, Step 8 deep links; old v1 routes forward; Shop Fetch stays hidden | web `app/fetch/**`, `components/fetch/v2`, `lib/fetch-api.ts`, `lib/fetch/*`; migration `20261208000000` (member lists) | 5–10 | Medium | Web contract + logic + scenario tests (33); isolated member-lists tests; build; fixture preview | Behind the flag | No |
-| 12 | **Mobile UI** | Exact scope in "Step 12 scope" below: the same flows in the app on a shared `lib/fetch-api.ts`; remove v1 client writes, client price, notify calls and hardcoded URLs; HEIC→JPEG on device; push routing on `data.route`; Android directions fix | branch `fetch-v2-mobile` from the post-148 line | 5–11 | Medium | Contract tests; simulator against a local backend | **Next native build only** | **No**: Build 148 untouched |
-| 13 | **Port legacy tests** | Rewrite the 7 production-touching suites as isolated-PG | `supabase/tests` | 3–5 | Low | — | No | No |
+| 12 | **Mobile UI** | DONE (see Step 12 status): the Fetch v2 requester and driver product in the app on the web's shared modules (byte-identical), server-flag gating, 3DS on the hold, HEIC→JPEG on device, Step 8 push routing, Android directions; v1 screens moved to `legacy/fetch-v1/` with forwarding stubs; admin driver/waiting decisions sent to the web console | app branch `fetch-v2-mobile` from Build 148 `7317508` | 5–11 | Medium | 34 new app tests (logic + guards); offline suites unchanged vs Build 148; iOS simulator fixture preview | **Next native build only** | **No**: Build 148 untouched |
+| 13 | **Port legacy tests** | Exact scope in "Step 13 scope" below: port or retire the 7 production-touching Fetch suites against v2; stop the 72 linked-production app suites running by default | `supabase/tests`, `scripts/isolated-pg.mjs`, app lane list | 3–5, 12 | Low | Isolated lane; replay; manifest | No | No |
 | 14 | **Payments live gate** | One real-card admin run incl. a ferry supplement and a return resolution, reconciled in Stripe | — | 11 or 12; deploys done | **High** (live money) | Reconciliation checklist | Live, admins only | After clearance |
 | 15 | **Real-device acceptance** | Section Q on iPhone, Android and web with testers | — | 12, 14 | — | Q | Testers only | No |
 | 16 | **Enable** | Audience `testers` → `everyone`; nav restored. **Public driver onboarding** additionally needs the insurance/legal advice applied to the requirements table (S.19) and a retention period chosen (S.18) | config | 15 + Darren + S.18 + S.19 | Medium | Smoke | Yes, by decision | No |
@@ -1961,6 +1961,214 @@ Tested by `fetch-v2-member-lists` (6 isolated tests).
 9. **Android directions fix** (from the plan) on the driver job's addresses.
 10. **Tests:** the shared-client contract tests, pure flow/present tests (shared with the web), and source contracts (no direct Fetch table writes; no client money). Simulator checks of scenarios A–J against a local or isolated backend only.
 11. **Not in Step 12:** deploys, live payments (Step 14), App Store submission or metadata, Build 148.
+
+**Step 12 status (25 Oct 2026): DONE, local only. Nothing deployed, built for release, submitted or published (no TestFlight, Play or OTA). Build 148 untouched.**
+
+**Base and branch.**
+- **Base:** `7317508`, Build 148's own commit ("Build 148: remove the unapproved referral programme from the app"). No branch or worktree contains a later commit built on it, so there is no accepted post-148 line to prefer.
+- **Branch and worktree:** new branch `fetch-v2-mobile`, worktree `~/Claude/oneshetland-mobile-fetch-v2`.
+- **Build 148 untouched:** the checkout `~/Claude/oneshetland-build148` is still at `7317508` with only its own earlier `.DS_Store` and image edits.
+- **The Step 1–11 backend is not on this branch.** This branch is the app line. The migrations and functions stay on backend `fetch-v2`, so the two lines must be reconciled before a release build; see the concerns below.
+
+**Architecture: one contract and one vocabulary with the website.**
+- **Shared modules, byte for byte.** `lib/fetch-api.ts`, `lib/fetch/present.ts`, `lib/fetch/flow.ts` and `lib/fetch/scenarios.ts` are the website's Step 11 modules, copied unchanged. `fetch-v2-mobile-logic` fails if they drift from the web worktree.
+- **The client.** It is the same allow-listed client (26 database functions, 8 edge functions, no client money, stable refusal codes in plain English), with the same statuses, timeline, money lines, hold note, actions per state and scenarios A–J.
+- **App-only pieces:**
+  - **`lib/fetch/transport.ts`:** the transport. It runs every call with the member's own session through the shared Supabase client and reads an edge refusal's code from its JSON body. It is the only module that talks to Supabase for Fetch.
+  - **`lib/fetch/mobile.ts`:** pure rules, node-tested:
+    - the flag answer → `on`/`off` (fails closed);
+    - "lost access" codes;
+    - notification route mapping;
+    - per-platform directions URL;
+    - the photo plan;
+    - v1 → v2 forwarding.
+  - **`lib/fetch/device.ts`:** photo pick/prepare/upload, directions, the bank's check.
+  - **`lib/fetch/load.ts`:** screen loaders, mirroring the web's `load.server.ts`.
+  - **`hooks/useFetchV2.ts`:**
+    - `useFetchAccess` asks `fetch_v2_enabled()` each time a Fetch screen comes into view;
+    - `useFetchLoad` loads, reloads on focus and on returning to the foreground, polls while in view, and leaves Fetch if access is lost.
+- **Views:** `components/fetch/v2/*`:
+  - `ui.tsx`: accessible primitives on the app theme;
+  - `Frame.tsx`;
+  - `Wizard.tsx`, `Jobs.tsx`, `JobParts.tsx`, `Driving.tsx`, `Home.tsx`.
+
+**Routes.** These are the website's paths, so Step 8's `route` opens the same screen:
+
+| Route | Screen |
+|---|---|
+| `(tabs)/fetch` | The Fetch tab |
+| `app/fetch/_layout.tsx` | Gate: signed in, and the server flag on |
+| `/fetch/new` | Ask for a Fetch |
+| `/fetch/requests/[id]` (and `/payment`) | The requester's Fetch |
+| `/fetch/history` | History |
+| `/fetch/drive`, `/fetch/drive/apply` | Driving and applying |
+| `/fetch/driver/verification` | Driver details and documents |
+| `/fetch/board`, `/fetch/board/[id]` | The board and one Fetch |
+| `/fetch/journeys/new` | Post a journey |
+| `/fetch/jobs/[id]` | The driver's job |
+
+The requester and driver job screens redirect to each other by viewer. Back with nothing behind it (opened from a notification) goes to the Fetch home.
+
+**Feature gating.**
+- **The Fetch tab** asks the server flag every time it comes into view: off for this member → "Coming soon"; on and signed out → the proposition and sign-in; on and signed in → the home.
+- **Every `/fetch/*` screen** sits under a layout that requires a session and an `on` answer, or shows "Coming soon".
+- **Mid-Fetch:** a refusal meaning access is gone (`fetch_unavailable`, `unauthorised`, `member_restricted`) sends the member to the Fetch home, which shows why.
+- **No local flag exists.**
+
+**Requester flow.** The same five steps and checks as the web, with native controls:
+- radio-style choices with plain-words hints; date/time pickers (inline on iOS, the system dialog on Android);
+- number pad for measurements, phone pad, address and postcode content types;
+- keyboard-avoiding scroll (`FormScrollView`).
+
+Server behaviour, as on the web:
+- **Location:** the server geocodes. A location refusal returns to that step with its message; there is never a fallback price.
+- **Posting:** one `expo-crypto` key per draft, so a repeated tap or a retry is the same Fetch.
+- **No card:** "Add a card" opens `/payment-setup`, the app's add-a-card screen.
+
+**Quote and payment.**
+- **The quote:** driver payment / ferry journey extra / OneShetland fee / expected total, then separately "Expected charge if everything goes normally" and "Temporary card authorisation: up to …" with the R.2 sentence. R.2 stays open; the app only displays the server's figures.
+- **3D Secure:**
+  - `fetch-v2-payment complete` returns the server's client secret;
+  - `settleSavedCardPayment` (Stripe RN `handleNextAction`, return URL `oneshetland-fetch://payment-return`);
+  - then `fetch-v2-payment refresh`, whose state decides the message (`bankCheckResult`).
+
+  **Fixed on both platforms:** a Fetch payment is a manual-capture hold, so a successful check leaves the PaymentIntent at `requires_capture`. The generic helper calls that "cancelled", and Step 11's web screen therefore said "You closed your bank's check" after a successful check. Fixed on the web branch in `9279fd9` and done the same way in the app.
+- **Declined card (`requires_payment_method`):** the member is pointed at their payments; a new card can't attach to the existing hold in P0.
+- **Timeout:** if the refresh doesn't answer, "Your bank is still checking", and the screen polls.
+
+**Photos and HEIC.** Every pick (camera or library) goes through `expo-image-manipulator` (new dependency `~55.0.21`, a native module, so next native build only) and is re-encoded as a JPEG of at most 2048 px at quality 0.8:
+- HEIC/HEIF from an iPhone becomes JPEG;
+- orientation is baked in;
+- files stay small;
+- EXIF/location is neither requested (`exif: false`) nor carried over by the re-encode.
+
+iOS also asks the picker for the compatible representation. Uploads go to the one-use signed address with `PUT` (binary), then the server checks the real bytes again; its type check (JPEG/PNG/WEBP) is unchanged. A conversion failure says so in words. **Not yet exercised on real HEIC/Android camera files** (see the concerns below).
+
+**Requester job, driver flow, board, journeys, claim, active job, waiting, delivery, cannot deliver/return, messages, issues, photos, history.** Native ports of the Step 11 behaviour, with the same words:
+- statuses, the "isn't a booking yet" hint, only valid actions, each action confirmed in a sheet that shows the server's answer, and the timeline;
+- the board ("Suits you" / "Show all", run matches with a heavy orange border and "★ FITS YOUR SATURDAY JOURNEY");
+- accept, with the fit confirmation and every refusal in words, plus links to driver details or payouts;
+- active-job actions; "Waiting started … Any waiting charge is calculated automatically"; the arrive button disappears after arrival;
+- deliver by hand or in a safe place (photo first); capture failure is never shown as delivered;
+- cannot deliver (structured reason); "Return reported — OneShetland will review this.";
+- pay line by line, with payouts at `/(driver)/connect-bank`;
+- messages polled every 15 s; problems within 72 h, with an optional photo; history with the safe summary.
+
+**Directions** use `directionsUrl(address, Platform.OS)`:
+- iOS: `maps://?daddr=…`;
+- Android: `geo:0,0?q=…` (the user's maps app);
+- otherwise, or if the app can't open, Google Maps on the web.
+
+The old v1 driver screen offered an "Apple Maps" `maps://` option on Android too. The existing Android pattern (`BusinessLocationMap`, `Platform.select` with `geo:`) is followed and not changed. Directions appear for the collection while matched, and for the delivery while collected or undeliverable.
+
+**Notification routing.** `notificationRoute` calls `fetchRouteFor` first:
+- **Known Fetch v2 routes** open their screen: requests/<id>, requests/<id>/payment, jobs/<id>, board/<id>, driver/verification, plus board, history, drive and new.
+- **Anything else** opens the Fetch home: an admin route, a malformed id, an outside URL, or a v1 payload with no route. The home checks the flag, so a stale notification fails safely.
+
+The same function serves taps on push notifications and on inbox rows. iOS push configuration is unchanged. Android push is not required: with no token the inbox still shows Fetch activity.
+
+**Old v1 Fetch removed from the app.**
+- **Moved out of the app:**
+  - `app/(customer)/{dashboard, request-detail, previous-requests, apply-driver, request/*}`;
+  - `app/(driver)/{dashboard, create-run, request-detail}`;
+  - `app/fetch-about*.tsx`.
+
+  They now live in `legacy/fetch-v1/` (kept for reference; not routed, bundled or typechecked).
+- **What they did:**
+  - priced on the phone (95p/mile, a haversine estimate, a client minimum and service fee, a hard-coded production `calculate-fee` URL);
+  - inserted `delivery_requests`/`runs` rows and cleared run links directly;
+  - called `notify-drivers`.
+- **Their old addresses** are one-line stubs; the group layouts forward them to v2 (`v1Forward`). Saved addresses and payouts (`connect-bank`) stay.
+- **Links updated:** Me, Account and Wallet now point at `/fetch/history` and `/fetch/drive/apply`.
+- **The Account screen's vehicle and "typical routes" editors** wrote `driver_profiles` directly; the Step 6 trigger refuses `vehicle_reg`. They are replaced by links to the v2 driver details and journeys.
+- **Admin screens:**
+  - "Driver approvals" wrote `driver_status` directly; it now opens the driver's page in the web Fetch console.
+  - "Disputes" edited `waiting_events` (waiting fees) directly; it now opens the job in the web console.
+
+  Both open `${WEB_BASE_URL}/admin/fetch/...`.
+
+**Privacy (proved by `fetch-v2-mobile-guards`).**
+- **Board / accept:** never requester identity, exact address, phone or notes; board photos go through the board-safe view.
+- **Requester screen:** never a phone, and the driver only by first name and vehicle.
+- **Driver screen:** the phone only under `phone_shared`; addresses only while `addresses_visible`.
+- **History:** the safe summary only.
+- **Documents:** only the owner's short-lived link; no storage paths or Supabase URLs in Fetch code.
+- **No subscriptions** to protected tables.
+
+**Accessibility and layout.**
+- **Controls:**
+  - `FButton` has `accessibilityRole="button"`, a label and a disabled/busy state, with a 48pt target and no animation (the shared `Button` scales on press and exposes no state);
+  - choices are radios and checkboxes with their checked state.
+- **Status** is an icon plus words, with a full spoken label.
+- **Notices** are live regions (errors assertive).
+- **Text** headers are marked; button text caps its scale at 1.6× and everything else follows Dynamic Type and font scale.
+- **Layout:**
+  - keyboard avoidance and safe areas;
+  - pull-to-refresh;
+  - tablet centring through `useAppLayout().sidePadding`;
+  - one column everywhere.
+
+**Tests.**
+- **`supabase/tests/fetch-v2-mobile-logic.node.test.ts` (16):**
+  - web parity of the four shared modules;
+  - the client contract with a fake transport (allow-lists, no money, retries reuse the key, refusals in words);
+  - flag, lost access, notification routing, Android directions, the photo plan (HEIC, rotation, PNG), v1 forwarding;
+  - quote and hold, create, 3DS outcome, statuses and actions, scenarios A–J.
+- **`supabase/tests/fetch-v2-mobile-guards.node.test.ts` (18) source guards across everything that ships:**
+  - no direct writes to protected Fetch tables;
+  - no Fetch-table reads or Supabase calls outside the client;
+  - no old pricing, 95p or `calculate-fee`;
+  - no `notify-drivers`, and no client amount;
+  - the flag on the tab and the layout; v1 stubs forward;
+  - admin decisions go to the web;
+  - board, history and phone privacy;
+  - HEIC → JPEG, the PUT upload, directions, 3DS;
+  - notification order and polling;
+  - accessibility and shared copy.
+- **Controls:** a planted write, a planted price and a weakened board-photo view each make the guards fail.
+- **Registered in `npm test`'s list.**
+- **Existing app suites:**
+  - 84 fully offline suites plus the new two: 2,173 tests, 2,149 pass, 1 skipped, 23 fail. The **same 23 fail on a pristine `7317508`** (2,139 tests): suites that read the sibling web checkout, and lane-registration suites (one listed suite doesn't exist at `7317508`). No regressions.
+  - 72 suites query the production database through `supabase db query --linked` (see the concern below) and were excluded.
+
+**Simulator.** A local iOS development build (Debug, `expo run:ios` into the iPhone 17e simulator; no version or build number changed; native folders generated only in the git-ignored `ios/`) ran with a git-ignored `.env` pointing Supabase at `http://127.0.0.1:9` and an empty Stripe key, so nothing could reach production or Stripe.
+- **The Fetch tab** shows "Coming soon": the flag check gets no answer and fails closed, which is correct.
+- **The real screens** were viewed through a dev-only preview route, `app/fetch-preview/[scenario].tsx`. It exists only when `__DEV__` and `EXPO_PUBLIC_FETCH_PREVIEW=1`; otherwise it forwards to the Fetch tab. It renders the shared scenario fixtures A–J and home.
+- **Viewed:** A (price & review), B (journey match), D (bank check), F (waiting), I (expired document), J (already taken) and home all render as on the web.
+- **Not yet run:** Android emulator (no `adb` or emulator on the path), and nothing against a live or local Fetch v2 backend.
+
+**Mandatory acceptance items before deploy** (unchanged and still open):
+1. The Step 10 admin console, browser-checked against real Fetch v2 data.
+2. The Step 11 web member UI against a real Fetch v2 backend.
+3. **New:** the app on real iPhone and Android devices against a local or isolated Fetch v2 backend, covering:
+   - scenarios A–J;
+   - real HEIC, PNG and Android camera photos;
+   - Stripe test-mode 3DS;
+   - notification taps for each route;
+   - directions on Android and iPhone.
+
+**Concerns**
+- **Tests reach production through the link.** Every worktree of this repo carries the tracked `supabase/.temp/project-ref`, so `supabase db query --linked` in any of 72 app suites reaches production.
+  - During Step 12, 31 such suites ran before the run was stopped. Every write in them is inside `begin … rollback`, and none create users, so nothing can have been committed, but production was queried.
+  - **Step 13 should stop app suites from defaulting to production.**
+- **Backend and app on different lines.** `fetch-v2` (backend, from `origin/main`) and `fetch-v2-mobile` (app, from Build 148) must be brought together before a release build.
+- **Stale v1 reads.** Home and wallet-hub statistics (`lib/home-data.ts`, `lib/wallet-hub.ts`) and the admin delivery-requests, runs and payments lists still read v1 `delivery_requests`/`runs`. They are read-only, but after the v2 deploy they show v1 numbers or nothing for v2 rows.
+- **Saved addresses** still describe themselves as "for Fetch", but the v2 wizard doesn't use them.
+- **Admin waiting-fee disputes for v1 rows** can no longer be resolved in the app. There are no real v1 Fetch rows in production, but if any appear they need a web route.
+- **Deep links:** `oneshetland.com/fetch/...` universal and app links are not added (AASA and Android intent filters). Push routing is enough for P0.
+- **`events/[id].tsx`** (not Fetch) still opens `maps://` on Android.
+- **Board item lookup:** `/fetch/board/<id>` finds the item in `fetch_v2_board(true)` (as on the web).
+
+**Step 13 scope (exact): port the legacy Fetch tests and stop app suites defaulting to production** (backend `fetch-v2`; app `fetch-v2-mobile` for the lane list only)
+1. **For each of the 7 production-touching Fetch suites, decide port or retire against Fetch v2:**
+   - `fetch-price-authority`, `fetch-price-lock`: price authority and terms lock. Port to isolated-PG against `fetch_v2_price` / `fetch_v2_terms`, or retire where Steps 4–5 suites already prove it.
+   - `fetch-authorisation-truth`, `fetch-authorisation-idempotency`, `fetch-hold-expiry`, `fetch-first-card`, `fetch-capture-recovery`: v1 authorise, capture and hold behaviour. Port the still-relevant guarantees to the v2 handlers with mocked Stripe and isolated PG; retire the v1-only ones with a note.
+
+   Nothing in them may read `service_key.txt` or reach production.
+2. **Remove** the retired and ported suites from `npm test` / `test:fixtures`, and register the replacements in `scripts/isolated-pg.mjs`.
+3. **Stop app suites defaulting to production.** Make the linked-database suites require an explicit opt-in (for example `ALLOW_LINKED_PROD_READS=1`) and skip otherwise, so a fresh worktree's `npm test` cannot query production. Add a guard test for the opt-in.
+4. **Keep:** the full isolated lane green; replay, manifest and migration-history checks.
+5. **Not in Step 13:** live payments (Step 14), deploys, app builds.
 
 **Changes from revision 1 caused by the decisions:**
 
