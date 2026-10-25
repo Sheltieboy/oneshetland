@@ -47,9 +47,8 @@ const SUPABASE = join(REPO_ROOT, 'supabase');
  * with a reason someone can check. Removing a file from the run is a
  * decision, not an oversight, so it has to be written down.
  *
- * rate-limit-concurrency is NOT here: it is not excluded, it lives in the
- * committed-fixture lane, which is where a suite needing genuinely separate OS
- * processes belongs.
+ * rate-limit-concurrency is NOT here: its proof lives in
+ * production-concurrency-proofs, in the isolated lane (Step 14A).
  */
 const EXCLUDED: Record<string, string> = {
   'booking-capacity-concurrency.node.test.ts':
@@ -64,9 +63,9 @@ const EXCLUDED: Record<string, string> = {
 
 /** Suites that must never join the routine lane, and why. */
 const FIXTURE_ONLY: Record<string, string> = {
-  'rate-limit-concurrency.node.test.ts':
-    'Needs genuinely separate OS processes to prove two callers contend; the ' +
-    'file documents this itself.',
+  // Step 14A: rate-limit-concurrency is gone. The app line deleted it on 9 Sep (b744b1b) when its proof — "ten simultaneous
+  // connections cannot exceed a ceiling of six" — moved into production-concurrency-proofs in the isolated lane; the backend line
+  // still carried the old production-fixture copy. The release candidate keeps the deletion.
   'wallet-attempts.node.test.ts': 'Two connections must contend over one wallet.',
   'booking-terminal-state.node.test.ts':
     'Builds an INACTIVE fixture business with its own bookings and removes it; ' +

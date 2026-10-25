@@ -21,7 +21,6 @@
     "supabase/tests/local-offer-presentation.node.test.ts :: the row still fills its width rather than leaving a hole",
     "supabase/tests/local-offer-presentation.node.test.ts :: the statistic appears, counting the real offers",
     "supabase/tests/shift-management-and-boost-visibility.node.test.ts :: the main nav Work item still points at /jobs — that is the page to fix",
-    "supabase/tests/ticket-live-checkin.node.test.ts :: supabase/tests/ticket-live-checkin.node.test.ts",
     "supabase/tests/transactions-ledger-economics-display.node.test.ts :: the breakdown Text is gated on hasDeduction — it does not render at all when gross already equals net"
   ],
   "removedInStep13": {
@@ -43,5 +42,11 @@
         "supabase/tests/test-registration.node.test.ts :: the lanes are the ones this file knows about"
       ]
     }
+  },
+  "removedInStep14A": {
+    "reason": "On origin/main 312f7fc this suite failed to load because it reads app files the backend repository does not contain. The release candidate has the app, and the suite runs and passes in the offline lane, so the entry is removed.",
+    "entries": [
+      "supabase/tests/ticket-live-checkin.node.test.ts :: supabase/tests/ticket-live-checkin.node.test.ts"
+    ]
   }
 }

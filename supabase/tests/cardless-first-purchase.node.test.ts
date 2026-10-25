@@ -62,7 +62,9 @@ describe('a first-time buyer reaches the card form', () => {
     });
 
     test(`${name} runs the saved-card path only when there IS a card`, () => {
-      assert.match(src, /if \(customerId && pmId\) \{/, `${name} does not gate on both`);
+      // Step 14A: the gift's production-canonical function (purchase attempts, deployed) chooses the saved-card path through
+      // payModeFor; donation and pass/unit still branch directly. Either way: only when BOTH a Customer and a chargeable card exist.
+      assert.match(src, /if \(customerId && pmId\) \{|savedCard: !!\(customerId && pmId\)/, `${name} does not gate on both`);
       assert.match(src, /pmId = customerId \? await listSavedCard\(customerId\) : null/);
     });
 
@@ -162,7 +164,8 @@ describe('the payment safety of each route is untouched', () => {
   });
 
   test('gift and pass keep their own fulfilment', () => {
-    assert.match(gift, /`gift-\$\{gift\.id\}`/);
+    // Step 14A: the key is the claimed gift row's id (purchase attempts, deployed) — still one gift, one Stripe key.
+    assert.match(gift, /`gift-\$\{giftId\}`/);
     assert.match(unit, /unit_item_id|book_unit/);
   });
 });
