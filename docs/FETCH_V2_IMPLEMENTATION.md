@@ -827,8 +827,8 @@ Further constraints:
 | 4 | **Pricing + ferry (edge and frozen terms)** | The SQL price is done (Step 3). Step 4: `fetch-create`/`fetch-quote` edge functions (server geocoding with the Google server key, postcode fallback, refuse when unresolved, card-on-file check, then `fetch_v2_create_request`); extend Paygate frozen terms (`claim_fetch_authorisation`, `fetch_capture_total_pence`) with the ferry supplement, minimum applied, return rate and return max; make one service-fee source; retire `calculate-fee` from Fetch | edge functions, Paygate term functions | 3 | **High** (terms tables) | Quote, freeze, capture-total tests with controls | Changes quote behaviour | After clearance |
 | 5 | **Payment edge layer** | DONE (see Step 5 status): dedicated v2 functions `fetch-v2-accept`, `-payment`, `-driver`, `-admin`, `-runner`; Fetch v2 hand-off inside the existing `stripe-webhook`; manual capture with partial capture, Stripe's own `capture_before`, generation-based replacement, collection gate, admin payment actions | migration `20261202000000`, `supabase/functions/fetch-v2-*`, `_shared/fetch-v2-{payments,stripe,payment-deps}.ts`, `stripe-webhook` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests against the real SQL; controls proving guards are load-bearing | `stripe-webhook` gains a v2-only branch; deploy as exact deltas | After clearance |
 | 6 | **Driver verification** | DONE (see Step 6 status): application only ever pending; evidence upload to the service-only private bucket with real-type checks; audited review and decisions; `verification_ok_until` derived from the earliest required expiry; live claim and collection gates; expiry sweep, reminder outbox; per-vehicle re-verification | migration `20261203000000`, `fetch-v2-driver-verification`, `fetch-v2-admin` (`area: drivers`), `fetch-v2-runner`, `become-driver` | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating; expiry; controls | Driver application flow; admin approval screens must move to the new actions | After clearance |
-| 7 | **Matching** | Exact scope in "Step 7 scope" below: board admits only claim-eligible (verified) drivers; capacity and ferry-aware fits; run hint; notification recipient tiers in SQL; `notify-drivers` internal-only | migration, `notify-drivers` | 3, 4, 6 | Low | Matching fixtures | No | After clearance |
-| 8 | **Notifications** | L categories, server-side sends, deep links | push callers, constants | 5 | Low | `notification_log` assertions | No | After clearance |
+| 7 | **Matching** | DONE (see Step 7 status): board only for claim-eligible drivers; capacity filter with show-all; direction- and ferry-aware run fit; tiers and plain-English reasons; requester hint; once-only recipient selection; admin diagnostics (`notify-drivers` moved to Step 8) | migration `20261204000000` | 3, 4, 6 | Low | Matching fixtures; controls | No | After clearance |
+| 8 | **Notifications** | Exact scope in "Step 8 scope" below: outbox over match selections, verification events and lifecycle events; L categories; server-side sends; `notify-drivers` internal-only on the SQL recipient list; deep links | outbox migration, push callers, `notify-drivers`, constants | 5, 6, 7 | Low | `notification_log` assertions | `notify-drivers` behaviour | After clearance |
 | 9 | **Messages, issues, photos** | Threads, issues, item/delivery/return photos | migration, functions | 3 | Low–Medium | Party-only and write-once | No | After clearance |
 | 10 | **Admin controls** | Verification queue, driver decisions, request oversight, cancel-request and return resolution, issue queue, counters | RPCs; web admin rebuilt | 5, 6, 9 | Medium | Admin action tests | Web admin only | After clearance |
 | 11 | **Web UI** | Requester and driver flows on `lib/fetch-api.ts`; bulky inputs; ferry line; cancel request; return flow; verification upload; copy fixes (A.1, K.0) | web `fetch-v2` | 5–10 | Medium | Contract tests; scripted run | Behind the flag | No |
@@ -1221,6 +1221,136 @@ Each submission is a new item with a `version`; nothing is overwritten. At most 
 5. `notify-drivers`: internal-only (service or cron), calling that function; client callers removed. Sends happen in Step 8, so Step 7 stops at the recipient list.
 6. Isolated tests: board admission (lapsed, suspended and incomplete drivers refused), capacity filter, ferry fits, ordering, the recipient tiers, once-per-request, and rollback.
 7. Not in Step 7: notification sending and templates (Step 8), corridors, capacity counting and recurrence (P1), UI.
+
+**Step 7 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing sends.**
+
+**Files.**
+- Migration `20261204000000_fetch_v2_matching.sql` and rollback `supabase/rollbacks/20261204000000_fetch_v2_matching.down.sql`. The rollback refuses while any recipient record exists; otherwise it restores the catalogue exactly (proved, then re-applied).
+- Suite `supabase/tests/fetch-v2-matching.node.test.ts`: 32 isolated tests, using real island geography and the real create, run, claim and release functions.
+- `_shared/fetch-v2-payments.ts` gains one status code (`two_person_lift_required`).
+
+**One eligibility rule, one capacity rule.**
+- `fetch_v2_driver_eligibility_problem(driver)` means: Fetch v2 is on for them, they are 18+, not restricted, approved, verified, not suspended, and payouts are on. It is built from the same pieces as the claim gate.
+- `fetch_v2_capacity_problem(driver, size, flags)` checks the size class against the driver's maximum, and a `heavy_two_person` item against `can_two_person_lift`.
+- Both rules are used by the board, public journeys, the requester hint, recipient selection and the diagnostics. The claim now uses the capacity rule too; the two-person check is new there.
+- Board, matching and notification eligibility therefore cannot drift apart.
+
+**Run fit (`fetch_v2_run_fit(run, request)` → `run_match` or the first reason it fails).** A run fits only when every check below passes, in this order:
+
+| Check | Fails as |
+|---|---|
+| The run is open and not finished | `run_closed` |
+| The pickup and destination islands are both on the run's island route | `off_route` |
+| ...and in the run's direction | `wrong_direction` |
+| The pickup region is the run's origin, **or** the destination region is the run's destination (section I) | `region_mismatch` |
+| The run sets off before the request's deadline | `timing_mismatch` |
+| The category is accepted (an empty list accepts all) | `category_mismatch` |
+| The item fits the run's size limit and the driver's vehicle | `capacity_mismatch` |
+
+The run's best fit for a driver is their earliest-departing matching run.
+
+**Islands and ferries.**
+- Routes come from a fixed tree of the ferry links, not from distance:
+  - Mainland – Yell;
+  - Yell – Unst and Yell – Fetlar;
+  - Mainland – Bressay, Whalsay, Out Skerries, Papa Stour, Foula, Fair Isle.
+- `fetch_v2_island_route(from, to)` lists the islands a journey passes through, in order. For example, Lerwick → Unst is Mainland, Yell, Unst.
+- So a Lerwick → Unst journey carries Mainland → Yell jobs. A Lerwick → Yell journey never reaches Unst. Yell → Lerwick is the reverse journey and does not fit a Lerwick → Yell run.
+- A Mainland-only journey never fits Whalsay or Bressay, however close they are across the water.
+- The £2 ferry supplement stays a pricing rule. It is not a matching score.
+- There is no explicit return-journey field, so a run is one-way. A driver going both ways posts two runs.
+
+**Timing.**
+- Every open request is claimable until `expires_at`: 24 hours for as-soon-as-possible, the deadline for "by", and the end of the window for "flexible". A run fits if it sets off before that.
+- Flexible requests (up to 7 days) therefore match more easily, by construction.
+- There is no minute-level route planning.
+
+**The board: `fetch_v2_board(p_show_all default false)`.**
+- **Admission.** Only drivers with no eligibility problem get the board. Anyone else gets a 42501 error that names the claim gate's own reason. The old `fetch_v2_board()` admitted any `approved` driver; it is replaced.
+- **Jobs shown.** Only open jobs: v2, `pending`, unassigned, not expired, and not the driver's own.
+- **Tiers.** Each job is placed in one tier:
+  1. `your_run`: fits one of the driver's runs and their vehicle.
+  2. `your_area`: the pickup or destination is in the driver's `areas`, and it fits their vehicle.
+  3. `other`: fits their vehicle.
+  4. `beyond_vehicle`: does not fit their vehicle. Shown only with `show_all`, with `can_claim` false, and the claim refuses it anyway.
+- **Order.** Tier, then deadline (`expires_at`), then newest, then id. It is deterministic.
+- **Default view.** Demand is never hidden: the default view shows tiers 1–3. `show_all` adds tier 4. This is how the brief's "show all" is interpreted: it widens capacity, not area.
+- **What each row says.** `match` (category), `match_reasons` (codes) and `match_summary` (plain English), plus `fits_run_id` (the driver's own run) and `can_claim`. No scores. For example: "Fits your Lerwick → Yell journey · Fits your vehicle · Flexible timing".
+- **Reason codes.**
+  - `fits_your_run`, `in_your_area`;
+  - `fits_your_vehicle`, `too_large_for_vehicle`, `two_person_lift_required`;
+  - `flexible_timing`, `needed_today`, `needed_by_date`, `as_soon_as_possible`.
+- **Privacy.** The Step 2 matching-safe fields only: no addresses, phone, pickup name, notes, coordinates or requester identity (tested).
+
+**Requester hint: `fetch_v2_heading_that_way(request)`.**
+- Only the requester can call it, and only for an open job.
+- It is true when some *eligible* driver (not the requester) has an open run that fits. It returns only the day and the sentence "A Fetch driver may be heading that way today / tomorrow / on Saturday. This isn't a booking: a driver still needs to accept your request."
+- It never returns a driver, run, vehicle, registration or time.
+- It is computed on every read, so it disappears as soon as the run is cancelled or expires, or the driver lapses. It reserves nothing.
+
+**Public journeys (`fetch_public_runs`, Step 2).**
+- Now only from drivers who can take jobs; an expired or suspended driver's journeys vanish.
+- Ordered by date, part of day, origin, destination and opaque key, instead of by exact departure time. The old order let a reader infer relative times within a part of day.
+- Fields are unchanged: regions, islands, date, part of day, size, categories, crosses water, and an opaque `run_key`.
+- Residual (accepted for P0): in a very small community, a recurring route on a given day may itself be recognisable. The list shows no more precision than a part of day.
+
+**Notification recipients: `fetch_v2_select_recipients(request, kind)`. Service-only; selects, never sends.**
+- **Candidates** must be eligible, able to carry the item, not the requester, and the job must be open. For `back_on_board`, any driver who previously claimed the job is also excluded.
+- **Tiers:**
+  - `run`: an open run fits.
+  - `area`: the driver's `areas` include either end.
+  - `broad`: used only when nobody is in `run` or `area`. At most `fetch.matching.broad_max` (default 15) other eligible drivers, in a fixed order (driver id).
+- **At most once.** Each choice is a row in `fetch_match_notifications`, unique on (request, driver, kind). The function returns only the drivers newly chosen by this call, so a rerun, retry or runner rerun chooses nobody twice. A later new run can add a newly fitting driver.
+- **Kinds.** `new_request` and `back_on_board` are separate notices.
+- **Sending.** `notified_at` is for Step 8 to stamp after sending.
+
+**Admin diagnostics: `fetch_v2_match_diagnostics(request, driver)`.** Admin-only. It answers "why did this driver see or hear about this request, or not?" with codes:
+- `job_open` / `job_not_open`;
+- the driver's eligibility code;
+- capacity;
+- `in_area`;
+- `board_match`;
+- each of the driver's runs (route, day, `run_fit` result);
+- any selection records.
+
+It never includes addresses, phone or the requester.
+
+**Performance.**
+- `delivery_requests_v2_board_idx` (deadline and age of open v2 jobs);
+- `runs_open_driver_idx` and `runs_open_departure_idx` (open runs);
+- the recipient table's unique key, plus `(driver_id, selected_at)` and an unsent-rows index.
+- The board evaluates each open job against the caller's own runs (a few jobs × at most 10 runs).
+- Recipient selection evaluates approved drivers against one job.
+- This is fine at Shetland scale. There is no search infrastructure; a GIN index on `areas` is not needed yet.
+
+**Not in P0:** route corridors, optimisation, recurring runs, multi-stop loads, capacity consumption across jobs, AI matching, automatic assignment. Matching informs; drivers choose.
+
+**Scope change against the earlier Step 7 line: `notify-drivers` is untouched.** Making it internal-only means rewriting the function that sends pushes, and sending is Step 8. The SQL recipient list it needs exists now. Until Step 8, the deployed `notify-drivers` still fans out to approved drivers for v1 requests only; v2 requests never reach it.
+
+**Concerns carried forward**
+- `fetch_v2_select_recipients` is not called by anything yet. Step 8 wires it to job creation and to "back on the board".
+- The section I endpoint rule (either end must be the run's own) is permissive for detours, such as a Scalloway pickup on a Lerwick → Yell run. That is as approved; corridors are P1.
+- A driver with no `areas` and no runs is reached only by the broad tier. Onboarding (Steps 11–12) should ask for areas.
+
+**Step 8 scope (exact): notifications**
+1. **Outbox.** A server-side outbox drains three sources:
+   - `fetch_match_notifications` (`new_request` → `fetch.new_request` / `fetch.request_on_route` by tier; `back_on_board` → `fetch.released`);
+   - `driver_verification_events` (`notify_kind` → `fetch.driver_verification` / `fetch.driver_decision`);
+   - the lifecycle events in section L (driver matched, payment needed, payment ready, cancel requested / resolved, released, collected, delivered, undeliverable, returned, issue, message).
+
+   Each is sent once and stamped (`notified_at` / an equivalent per-event record).
+2. **Sending.** Through the existing Notification Centre (`sendUserPush` plus a `notification_log` inbox row, always written), honouring the `fetch_enabled` preference and quiet hours, with `urgent` for payment action needed, cancel requested and undeliverable.
+3. **Calls.** `fetch_v2_select_recipients` is called at job creation (`fetch-v2-create`) and when a job returns to the board. The runner retries unsent items, repeat-safe.
+4. **`notify-drivers`.** Made internal-only (service or cron), sending to the SQL recipient list. Client callers and the v1 fan-out are removed. `notify-collected`'s client path is removed.
+5. **Content.** Deep links open the request (web and app routes per section L). Copy contains no addresses or phone numbers.
+6. **Tests.** Isolated tests with a fake push sender and real `notification_log` rows:
+   - once per event;
+   - preferences and quiet hours;
+   - urgent bypass;
+   - no notice to ineligible or non-party users;
+   - outbox rerun safety;
+   - rollback.
+7. **Not in Step 8:** UI (Steps 11–12), email (unless section L requires it), message threads and photos (Step 9).
 
 **Changes from revision 1 caused by the decisions:**
 

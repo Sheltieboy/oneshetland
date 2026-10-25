@@ -39,6 +39,7 @@ const SERVER_ERROR = refuse(500, 'server_error', { error: 'Something went wrong.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUS: Record<string, number> = {
   already_taken: 409, not_claimable: 409, own_request: 403, vehicle_confirmation_required: 400, too_large_for_vehicle: 409,
+  two_person_lift_required: 409,
   item_photo_required: 409, driver_not_approved: 403, driver_verification_expired: 403, driver_payouts_not_enabled: 403,
   driver_suspended: 403, driver_verification_incomplete: 403, driver_vehicle_missing: 403,
   age_confirmation_required: 403, member_restricted: 403, reason_required: 400, invalid_request: 400, invalid_transition: 409,
