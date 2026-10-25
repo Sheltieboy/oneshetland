@@ -76,6 +76,7 @@ const SUITES = [
   'supabase/tests/referral-disabled.node.test.ts',
   'supabase/tests/launch-test-centre.node.test.ts',
   'supabase/tests/launch-test-centre-web.node.test.ts',
+  'supabase/tests/fetch-v2-flag.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.

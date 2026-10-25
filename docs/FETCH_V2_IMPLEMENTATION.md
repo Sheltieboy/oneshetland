@@ -838,6 +838,12 @@ Further constraints:
 | 15 | **Real-device acceptance** | Section Q on iPhone, Android and web with testers | — | 12, 14 | — | Q | Testers only | No |
 | 16 | **Enable** | Audience `testers` → `everyone`; nav restored. **Public driver onboarding** additionally needs the insurance/legal advice applied to the requirements table (S.19) and a retention period chosen (S.18) | config | 15 + Darren + S.18 + S.19 | Medium | Smoke | Yes, by decision | No |
 
+**Step 0 status (25 Oct 2026): DONE, local only. Nothing applied or deployed.**
+
+- **0b:** migration `20261127000000_fetch_v2_feature_flag.sql`, the edge helper `_shared/fetch-v2-flag.ts`, and tests, on `fetch-v2` (this repo).
+- **0a:** the web hide, on branch `fetch-v2` of `oneshetland-web` (worktree `~/Claude/oneshetland-web-fetch-v2`).
+- **Mobile part of 0a:** deferred to Step 12 on `fetch-v2-mobile`, per Darren's Step 0 instruction (web only now).
+
 **Changes from revision 1 caused by the decisions:**
 
 - Step 0 is split: 0a is *prepared, not deployed*.
@@ -890,15 +896,27 @@ Pricing, bulky, returns, ferries and timeouts are decided (S.12–S.16). What re
 | Verification document retention period, a privacy/data-retention decision (S.18) | **Public driver onboarding.** Until then, no automatic deletion; admin can delete on request | Darren |
 | Production timing of hiding the current public Fetch (S.17) | Deploy of Step 0a only. Not before Build 148 clears | Darren |
 | Who the first `fetch-v2` testers are | Step 15 (acceptance) | Darren |
+| **Payment-authorisation amount: product/UX review** (recorded 25 Oct; see R.2) | **Public launch** (Step 16). Not Step 0 or development | Darren |
 
 These are implementation details I will settle and record in the PRs, not product decisions:
 - config key names;
 - the default number of "+24h" extends (proposed: 2);
 - the copy wording for the "up to" disclosures.
 
+### R.2 Review item: payment-authorisation amount (recorded, not solved)
+
+The plan can hold substantially more than the visible delivery quote, to cover waiting time and a possible return journey. For example, Darren's £12.60 Yell job holds about £27.70: +£6 waiting, +£9.10 return.
+
+Before Fetch launches publicly, review:
+1. whether the full worst-case return amount needs to be authorised up front;
+2. how the maximum authorisation is explained to the requester;
+3. whether a staged or incremental authorisation model (e.g. hold the quote plus waiting, and authorise a return amount only when a return arises) would give a better experience.
+
+This does not block Step 0 or any development step. Steps 4–5 implement the K.1 model as written, unless the review changes it first. The terms columns (K.2.9) already record the return headroom separately, so a staged model would be a change to the hold amount, not to the data model.
+
 **Still open from the 30 Aug blueprint, not needed for P0:** where goods wait between legs, handover form, loss during handover, carrier-set prices (assumed no), person-to-person sending scope, ratings, Aberdeen. Revisit before P2.
 
-### R.2 Risks
+### R.3 Risks
 
 | Risk | Mitigation |
 |---|---|
