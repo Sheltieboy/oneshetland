@@ -445,11 +445,16 @@ describe('7 · PRIVACY and SECURITY', () => {
       /row-level security|permission denied/);
     fails(asClient('REQ', `insert into public.fetch_request_events (request_id, actor_role, event) values ('${j}', 'system', 'undeliverable')`), /permission denied|row-level/);
   });
-  test('the legacy notify-drivers / notify-collected paths refuse Fetch v2 jobs before authorising or sending anything', () => {
+  test('the legacy notify-drivers / notify-collected paths refuse Fetch v2 jobs right after authorising the caller, before reading recipients or sending', () => {
+    // Step 13: the refusal moved after the caller's authorisation gate (notify-entity-authorisation requires the gate before any lookup),
+    // so an unauthorised caller cannot use the distinct answer to learn which requests are Fetch v2. Either way nothing is sent.
     for (const fn of ['notify-drivers', 'notify-collected']) {
       const src = readFileSync(join(REPO_ROOT, `supabase/functions/${fn}/index.ts`), 'utf8');
       const refuse = src.indexOf("fetch_version === 2");
-      assert.ok(refuse > 0 && refuse < src.indexOf('authoriseFetchNotify(supabase') && refuse < src.indexOf('await sendUserPush'), fn);
+      const gate = src.indexOf('authoriseFetchNotify(supabase');
+      const nextRead = src.indexOf(".from('delivery_requests')", refuse);
+      assert.ok(gate > 0 && refuse > gate, `${fn}: the v2 refusal must come after the authorisation gate`);
+      assert.ok(refuse < src.indexOf('await sendUserPush') && (nextRead < 0 || refuse < nextRead), `${fn}: the v2 refusal must come before recipients are read or anything is sent`);
       assert.match(src, /handled_by_fetch_v2/);
     }
   });

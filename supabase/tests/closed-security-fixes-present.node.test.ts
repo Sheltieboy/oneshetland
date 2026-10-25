@@ -14,7 +14,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const has = (p: string) => existsSync(join(ROOT, p));
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const runner = read('scripts/isolated-pg.mjs');
-const pkgTest = read('package.json');
+// Step 13: `npm test` reads its suites from supabase/tests/lanes.json (offline lane) instead of listing them in package.json.
+const pkgTest = read('package.json') + '\n' + (JSON.parse(read('supabase/tests/lanes.json')) as { offline: string[] }).offline.join('\n');
 
 const FIXES: { name: string; migrations: string[]; code: string[]; isolated: string[]; hermetic: string[]; marker?: [string, RegExp] }[] = [
   { name: '1 email-table lockdown', migrations: ['20261115000000_email_tables_lock_down'], code: [], isolated: ['email-tables-lockdown'], hermetic: [] },

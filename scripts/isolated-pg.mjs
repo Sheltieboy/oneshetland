@@ -20,6 +20,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cleanEnv } from './test-safety/env.mjs';
 
 const PG_HOME = '/opt/homebrew/opt/postgresql@17';   // production is 17.x
 const bin = (n) => (existsSync(join(PG_HOME, 'bin', n)) ? join(PG_HOME, 'bin', n) : n);
@@ -88,6 +89,8 @@ const SUITES = [
   'supabase/tests/fetch-v2-messages-issues-photos.node.test.ts',
   'supabase/tests/fetch-v2-admin-controls.node.test.ts',
   'supabase/tests/fetch-v2-member-lists.node.test.ts',
+  'supabase/tests/fetch-v2-legacy-guarantees.node.test.ts',
+  'supabase/tests/fetch-v2-scenarios.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
@@ -133,7 +136,9 @@ try {
 
   const r = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...selected], {
     stdio: 'inherit',
-    env: { ...process.env, PASS_PROOF_DSN: dsn, PASS_PROOF_PSQL: bin('psql') },
+    // Fetch v2 Step 13: a clean environment and the test guard in every process — the isolated suites reach this throwaway cluster over
+    // its unix socket and nothing else (no hosted Supabase, Stripe, Expo or Google; no linked CLI).
+    env: cleanEnv('isolated', { PASS_PROOF_DSN: dsn, PASS_PROOF_PSQL: bin('psql') }),
   });
   code = r.status ?? 1;
 } catch (e) {
