@@ -833,8 +833,8 @@ Further constraints:
 | 10 | **Admin controls** | DONE (see Step 10 status): web Fetch operations console at `/admin/fetch` (queues, jobs, job page, driver review, members, notifications) over admin-gated reads and the audited `fetch-v2-admin` actions; item-description redaction; Fetch restriction; counters | migration `20261207000000`, `fetch-v2-admin` support area; web `app/admin/fetch`, `lib/fetch-admin`, `components/admin/fetch` | 5, 6, 8, 9 | Medium | Admin action tests (isolated); web contract tests; build | Web admin only; old driver-approval screen replaced | After clearance |
 | 11 | **Web UI** | DONE (see Step 11 status): web requester and driver product on `lib/fetch-api.ts` — landing, 5-step create with server quote and hold explained, 18+, 3DS, job pages, messages, problems, photos, driver apply/verification/board/journeys/accept/active job, history, Step 8 deep links; old v1 routes forward; Shop Fetch stays hidden | web `app/fetch/**`, `components/fetch/v2`, `lib/fetch-api.ts`, `lib/fetch/*`; migration `20261208000000` (member lists) | 5–10 | Medium | Web contract + logic + scenario tests (33); isolated member-lists tests; build; fixture preview | Behind the flag | No |
 | 12 | **Mobile UI** | DONE (see Step 12 status): the Fetch v2 requester and driver product in the app on the web's shared modules (byte-identical), server-flag gating, 3DS on the hold, HEIC→JPEG on device, Step 8 push routing, Android directions; v1 screens moved to `legacy/fetch-v1/` with forwarding stubs; admin driver/waiting decisions sent to the web console | app branch `fetch-v2-mobile` from Build 148 `7317508` | 5–11 | Medium | 34 new app tests (logic + guards); offline suites unchanged vs Build 148; iOS simulator fixture preview | **Next native build only** | **No**: Build 148 untouched |
-| 13 | **Port legacy tests** | Exact scope in "Step 13 scope" below: port or retire the 7 production-touching Fetch suites against v2; stop the 72 linked-production app suites running by default | `supabase/tests`, `scripts/isolated-pg.mjs`, app lane list | 3–5, 12 | Low | Isolated lane; replay; manifest | No | No |
-| 14 | **Payments live gate** | One real-card admin run incl. a ferry supplement and a return resolution, reconciled in Stripe | — | 11 or 12; deploys done | **High** (live money) | Reconciliation checklist | Live, admins only | After clearance |
+| 13 | **Test safety & legacy tests** | DONE (see Step 13 status): hard production guard in every test process; safe offline `npm test` with base-baseline reporting; guarded isolated lane; opt-in read-only production lane; write-capable production suites quarantined; seven v1 Fetch suites retired (91 proven / 15 ported / 48 retired); A–J isolated scenarios; web/app contract hashes; fresh-worktree check | app 10c5e68 + 35dec22; web f3a3832; backend 1d2a370 | 3–5, 12 | Low | Offline + isolated lanes; fresh-worktree check | No | No |
+| 14 | **Deploy behind the flag + live acceptance gate** | Exact scope in "Step 14 scope" below: reconcile the lines; Darren-approved backend and web deploy with the flag off then admins; admin-console and member-UI browser checks; A–J on real devices; one real-card admin run (ferry, waiting, return) reconciled in Stripe | backend, web, app dev build | 11–13; Build 148 cleared | **High** (live money) | Reconciliation checklist | Live, admins only | **Each gate on Darren's go-ahead** |
 | 15 | **Real-device acceptance** | Section Q on iPhone, Android and web with testers | — | 12, 14 | — | Q | Testers only | No |
 | 16 | **Enable** | Audience `testers` → `everyone`; nav restored. **Public driver onboarding** additionally needs the insurance/legal advice applied to the requirements table (S.19) and a retention period chosen (S.18) | config | 15 + Darren + S.18 + S.19 | Medium | Smoke | Yes, by decision | No |
 
@@ -2169,6 +2169,158 @@ The same function serves taps on push notifications and on inbox rows. iOS push 
 3. **Stop app suites defaulting to production.** Make the linked-database suites require an explicit opt-in (for example `ALLOW_LINKED_PROD_READS=1`) and skip otherwise, so a fresh worktree's `npm test` cannot query production. Add a guard test for the opt-in.
 4. **Keep:** the full isolated lane green; replay, manifest and migration-history checks.
 5. **Not in Step 13:** live payments (Step 14), deploys, app builds.
+
+**Step 13 status (25 Oct 2026): DONE, local only.**
+- **Commits:** app `fetch-v2-mobile` 10c5e68 and 35dec22, web `fetch-v2` f3a3832, backend `fetch-v2` 1d2a370 (plus this record).
+- **Nothing deployed, built for release or published.** No production integration suite was run.
+
+**The incident this fixes (Step 12).** An "offline" run of the app suites queried the production database. Every worktree of this repository carries the tracked `supabase/.temp/project-ref`, and 86 app suites shell out to `supabase db query --linked`. 31 linked suites ran before the run was stopped; all their writes were inside `begin … rollback`, so nothing was committed. Nothing in the test set-up said no:
+- Build 148's own `npm test` deliberately ran 88 production-capable suites ("read-only or wrapped in a transaction that is never committed").
+- `test:fixtures` committed rows in production.
+- The backend branch's `npm test` still ran 6 production-capable suites.
+
+**Inventory (static only; nothing was run to build it).** `scripts/test-safety/inventory.mjs` produces `supabase/tests/PRODUCTION-ACCESS.md`, which gives every suite's mechanism, whether it writes, its class (A Fetch / B other / C read / D write / E isolated-port candidate / F explicit read-only integration) and whether it ran in Step 12.
+
+| Branch | Suites | Can reach production | Write-capable | Read-only | Fetch-related |
+|---|---|---|---|---|---|
+| App `fetch-v2-mobile` | 234 | 96 | 76 | 20 | 9 |
+| Backend `fetch-v2` | 205 + 7 retired | 79 at the start (6 in its old `npm test`, the rest in the opt-in fixture lane, which wrote when run) | 66 (7 retired, 59 quarantined) | 12 | 9 (7 retired) |
+
+How the app suites reach production:
+- 86 via the linked CLI;
+- 26 via a configured hosted API;
+- 4 via the service-role key;
+- 1 via the live website.
+
+**The safety boundary.**
+1. **A hard guard.** `scripts/test-safety/guard.mjs` (with `production.mjs` and `env.mjs`) is loaded into every test process and every child process through `NODE_OPTIONS=--import`, and re-arms itself in children given an environment without it.
+   - Before any test runs, it refuses an environment that points at production or holds live credentials (exit 78).
+   - **Sockets and fetch:** before anything connects, it refuses any socket or `fetch()` to a host other than localhost or a unix socket. That covers hosted Supabase, Stripe, Expo push, Google, the website and any outside host.
+   - **Child processes:** it refuses child processes that act on the linked project or a live host: `supabase … --linked`, `db push`, `functions deploy`, `link`, `secrets`, remote `psql`/`pg_dump`, `curl`/`wget` to a live host, and EAS build/submit/update.
+   - **Positive identification:** production is identified by its project ref (API and database hosts, pooler login), live Stripe key prefixes, and the push, Google and website hosts.
+   - **Logging:** every refusal is logged against the suite that caused it.
+2. **A clean environment.** Every lane starts tests from an allow-list of variables. Supabase, Stripe, Expo, Google and database variables in the developer's shell never reach a test. Offline and isolated lanes get a placeholder CLI token.
+3. **Lanes.** `supabase/tests/lanes.json` is the single source; the runner is `scripts/test-lanes.mjs`.
+   - **`npm test`:** the safe offline lane. App: 92 suites; backend: 54.
+   - **`npm run test:isolated`:** the throwaway Postgres lane, now guarded too. App: 27 suites; backend: 65.
+   - **`npm run test:integration:production-readonly`:** the opt-in read-only lane. App: 20 suites; backend: 12. It requires `ONESHETLAND_ALLOW_PRODUCTION_READS=yes` typed by hand (no script or CI job sets it) and prints a warning. It runs only allow-listed suites and refuses any suite whose source has write SQL or a write HTTP method. The guard then allows only:
+     - a plain read through `supabase db query --linked`, with the session also forced `default_transaction_read_only = on`, so Postgres refuses a write hidden in a function;
+     - `GET`/`HEAD` to the production REST API.
+
+     **It was not run in Step 13.**
+   - **`npm run test:quarantined`:** only lists the write-capable production suites (app: 68; backend: 59). Nothing runs them, and `test:fixtures` is gone.
+   - **A rolled-back transaction is no longer accepted as a safety boundary.** Those suites need porting to the isolated lane, mocks or read-only assertions before they run anywhere.
+4. **Reporting.** `npm test` prints, separately:
+   - safe offline results;
+   - external access attempts blocked;
+   - **known baseline failures**: the same lane run on the untouched base commit (app: Build 148 `7317508`, 19 entries; backend: `origin/main` `312f7fc`, 1 entry), in `baseline/offline.json`;
+   - **expected on this branch**: `expectedOnBranch`, with its stated condition (backend: the three migration-history guard tests, until the Fetch v2 migrations are applied);
+   - **NEW failures**, the only ones that fail the run (alongside any blocked attempt);
+   - stale entries to prune;
+   - the suites deliberately not run here.
+
+   **Pre-existing unregistered suites** (app: 21 since Build 148; backend: 14 since 312f7fc) are recorded in `unregisteredAtBase`. They are not fixed in Step 13, and the list may not grow.
+5. **Tests of the boundary.**
+   - **`test-safety.node.test.ts` (13 tests):** uses a fake production ref and stand-in programs, so a broken guard could reach nothing. It proves the start-up refusal, the socket/fetch/CLI/psql refusals, the localhost pass, re-arming in children, the read-only lane's rewrite and refusals, and the allow-listed environment.
+   - **`test-registration.node.test.ts`:** reads `lanes.json`. Every suite sits in exactly one place, the offline lane has no way to reach a hosted service, and the read-only lane has no write.
+   - **Controls:** a planted direct write, price or board-photo change fails the guards.
+6. **Fresh-worktree check (mandatory before merging lane changes):** `node scripts/test-safety/fresh-worktree-check.mjs`. It creates a brand-new worktree (tracked production link present, no `.env`) and runs `npm test` with the developer's real shell plus a planted production URL and a live-looking Stripe key.
+   - **App 35dec22: PASS.** The guarded process refused to start (exit 78); `npm test` ran 2,420 tests with 0 external attempts and 0 new failures; the worktree was removed.
+   - **Backend 1d2a370: PASS.** Exit 78; `npm test` ran 1,340 tests with 0 external attempts and 0 new failures; the worktree was removed.
+
+**The seven v1 Fetch production suites are retired on both branches.**
+- **Removed:** `fetch-price-authority`, `-price-lock`, `-authorisation-truth`, `-authorisation-idempotency`, `-hold-expiry`, `-capture-recovery`, `-first-card` (git history keeps them).
+- **Their 154 guarantees, one by one:**
+  - **91 already proven for v2** by isolated suites;
+  - **15 ported** to the new isolated `fetch-v2-legacy-guarantees` (11 tests):
+    - 20-connection races for hold claims, driver claims and capture claims;
+    - the Stripe-status truth table, with unknown failing closed;
+    - collection refused for every non-hold state, including a hold inside the expiry margin;
+    - captured never walked back;
+    - member writes to money, price, terms, payment or status refused;
+    - a mid-delivery price rise still captures the frozen terms;
+    - deterministic Stripe keys;
+    - a requester with no Stripe Customer gets a refused accept, the job back on the board, and no orphan intent;
+  - **(the guarantee-by-guarantee table is `docs/FETCH_V2_STEP13_LEGACY_DISPOSITION.md`)**
+  - **48 retired:** v1-only (client preview, the v1 trigger shape, the web `DriverActions`/`RequestComposer` contracts, v1 functions) or not Fetch-specific (the generic Stripe-customer registry).
+
+**Isolated A–J (backend, `fetch-v2-scenarios`, 12 tests; all pass).** A whole-backend test world (`_support/fetch-v2-world.ts`) replays every migration and adds in-memory Stripe, storage and push; nothing touches a network.
+
+| Scenario | Asserted |
+|---|---|
+| A sofa Lerwick→Yell | Server price with ferry; client price ignored; hold above the total. Accept refused until a photo is shown to drivers; the board shows the area only |
+| B | A Lerwick→Yell run makes it `your_run`; the outbox offers it to that driver only |
+| C Unst parcel | One £2 ferry; minimum; fee |
+| D 3DS | `requester_action_required`; collection `payment_not_ready`; a requester notice routed to `/payment`; after the check, authorised then collected |
+| E | Cancel request blocks collection; driver agrees; cancelled; intent cancelled; no capture |
+| F | Waiting measured by the server (a client write is refused) |
+| G | Cannot deliver opens an issue; return refused without a photo; reported with one; admin resolve captures once |
+| H | Safe place refused without a photo; delivered with one; a repeat is `already`; one capture of exactly the total |
+| I | Lapsed insurance: collection refused `driver_verification_expired`, the job stays matched, eligibility shows the problem; renewal unblocks |
+| J | Two simultaneous accepts: one wins, the other `already_taken`, one hold. Handler level; true database concurrency is in the legacy-guarantees race |
+| Along the way | Messages (an outsider refused), an issue with a photo, photo GPS stripped, the outbox drained to push with no contact details, admin resolution |
+
+**Shared web/app contract.**
+- **Hashes:** `lib/fetch/contract.json` (web and app) records SHA-256 hashes of the four modules shared byte for byte. Each side's tests fail if a module changes on one side only, and the two contracts must match when both checkouts are present.
+- **Backend contract test:** `fetch-v2-client-contract` (backend offline lane, 4 tests) checks the web client against the backend:
+  - every allow-listed RPC exists in its latest definition;
+  - every argument the client sends is a real parameter;
+  - every edge function exists;
+  - the create body is a subset of what `fetch-v2-create` forwards, with no money, state or coordinates.
+
+  Control: a renamed argument fails it.
+
+**Fixes found by the now-safe lanes.**
+1. **`notify-drivers` / `notify-collected`.** Step 8's "refuse Fetch v2" check read the table before the caller's authorisation gate, breaking the established rule (`notify-entity-authorisation`) that authorisation comes before any lookup. An authorised-but-wrong caller could have learnt which request ids are v2 from the distinct answer.
+   - **Fix:** the refusal now runs right after the gate and before recipients are read or anything is sent. Step 8's test is updated to the corrected order.
+   - **Status:** both functions were already staged as `modified`; the manifest is consistent.
+2. **`closed-security-fixes-present`** looked for suites in the `npm test` script text and now reads `lanes.json`. Every security-proof suite is in the offline or isolated lane, so no coverage was lost.
+3. **Verification expiry before collection (web and app):** the screen said "Ready for collection — You can collect the item" above "You can't collect the item until this is sorted". A blocking driver problem now overrides the headline with **"Collection is paused"** ("The requester's payment is confirmed, but you can't collect the item until your driver details are sorted.") and removes arrive/collect. This is shared presentation, with a regression test on both sides.
+4. **`requester_has_no_payment_profile`,** which `fetch-v2-accept` can return, now has plain words instead of "Something went wrong" (found by the contract test).
+
+**Results.**
+- **App:**
+  - `npm test`: 2,420 tests, 0 new failures, 0 blocked, 19 Build 148 baseline failures;
+  - `test:isolated`: 860/860 under the guard;
+  - typecheck clean (the app repo has no lint configuration).
+- **Web:** 675/675; typecheck and touched-file lint clean.
+- **Backend:**
+  - `npm test`: 1,340 tests, 0 new failures, 0 blocked (1 base failure; 3 expected until deploy);
+  - `test:isolated`: 2,154/2,154 under the guard (2,131 + 12 A–J + 11 legacy guarantees);
+  - replay unchanged (the same 6 known rows, 18 only-in-production, 883 only-in-replay, no migration errors); manifest consistent.
+- **The guard was corrected once during the work.** It judged child processes by words in their arguments: `psql` running SQL that contained a URL was refused, which cancelled 23 tests of an unrelated suite. It now judges the program actually being run (35dec22).
+
+**Step 14 scope (exact): deploy behind the flag and the live acceptance gate.** Every deploy, apply or live action needs Darren's explicit go-ahead at that gate. Build 148 must have cleared Apple review, or Darren must explicitly waive the hold.
+1. **Reconcile the lines** before any deploy or release build:
+   - the backend `fetch-v2` (from `origin/main`) with the app `fetch-v2-mobile` (from Build 148), so one branch carries the Fetch v2 backend and app;
+   - the web `fetch-v2` with web `main`;
+   - the Step 13 test boundary on the merged line, re-running the fresh-worktree check there.
+2. **Backend deploy behind the flag,** with `fetch.v2.audience = off`:
+   - apply migrations 20261127–20261208 in order (migration-history guard and replay first; rollbacks ready);
+   - deploy the staged functions in the manifest, and the `modified` ones (incl. `notify-drivers`/`notify-collected`, `stripe-webhook`);
+   - verify read-only that the catalogue matches the replay; then set the audience to `admins`.
+3. **Web deploy** of `fetch-v2` behind the server flag, so the public sees "Coming soon".
+4. **Acceptance with admins only, Stripe test mode where the flow allows, then live:**
+   - **Browser checks against real Fetch v2 data:** the Step 10 admin console (mandatory pre-deploy item) and the Step 11 member UI.
+   - **The app as a development build on real devices** (iPhone and Android), not Build 148:
+     - scenarios A–J against the deployed backend;
+     - real HEIC, PNG and Android camera photos;
+     - 3DS with a test card;
+     - a notification tap for each route (iOS push; Android without push, through the inbox);
+     - directions on both platforms;
+     - an Android emulator or device run.
+5. **Payments live gate:**
+   - **The run:** one real-card admin run, including a ferry supplement, a waiting charge and a return resolution, reconciled line by line in Stripe (hold, capture, application fee, transfer to the driver's connected account), plus a 3DS card and a declined card.
+   - **R.2 stays open:** the hold size is presented as it is.
+6. **Carried forward, unless Step 14 touches them:**
+   - website links do not open the app;
+   - stale v1 Fetch statistics;
+   - saved-address copy;
+   - Android map in Events;
+   - rejected or paused driver re-application;
+   - swapping a card on an existing hold;
+   - porting the quarantined write-capable suites (68 app, 59 backend; none Fetch-specific beyond the retired seven).
+7. **Not in Step 14:** opening Fetch to `testers` or `everyone`; App Store / Play submission or OTA; business requests (P2).
 
 **Changes from revision 1 caused by the decisions:**
 
