@@ -91,19 +91,25 @@ const CLI_REMOTE = [/(^|\s)--linked(\s|=|$)/, /(^|\s)--db-url(\s|=|$)/, /(^|\s)-
 export function childProcessRisk(cmd, args = []) {
   const parts = [String(cmd ?? ''), ...args.map(String)];
   const line = parts.join(' ');
-  const bin = parts.map((p) => p.split('/').pop());
-  const isSupabase = bin.includes('supabase') || /\bsupabase\b/.test(bin.slice(0, 3).join(' '));
-  if (isSupabase && CLI_REMOTE.some((re) => re.test(line))) return `the Supabase CLI against the linked/remote project (${line.slice(0, 80)}…)`;
-  if (/(^|\s|\/)(psql|pg_dump|pg_restore|pg_dumpall)(\s|$)/.test(line)) {
-    const host = /(?:-h\s+|host=|@)([A-Za-z0-9.-]+)/.exec(line)?.[1];
-    if (mentionsProduction(line) || (host && !isLocalHost(host) && !host.startsWith('/') && liveService(host))) return `a database client pointed at ${liveService(host ?? '') ?? 'production'}`;
+  const base = (p) => String(p).split('/').pop();
+  // The programs actually being run: the command itself, what a package runner runs (npx supabase …), and the first word of a shell
+  // script (sh -c "psql …"). Arguments are NOT programs — SQL or JSON that merely contains "http" or "curl" is not a request.
+  const exe = [base(cmd)];
+  if (['npx', 'pnpm', 'yarn', 'bunx', 'pnpx'].includes(exe[0])) exe.push(base(parts.find((p, i) => i > 0 && !p.startsWith('-')) ?? ''));
+  if (['sh', 'bash', 'zsh', 'dash'].includes(exe[0])) { const i = parts.indexOf('-c'); if (i > 0 && parts[i + 1]) exe.push(...parts[i + 1].split(/[;&|]+/).map((c) => base(c.trim().split(/\s+/)[0] ?? ''))); }
+  const runs = (names) => exe.some((e) => names.includes(e));
+  if (runs(['supabase']) && CLI_REMOTE.some((re) => re.test(line))) return `the Supabase CLI against the linked/remote project (${line.slice(0, 80)}…)`;
+  if (runs(['psql', 'pg_dump', 'pg_restore', 'pg_dumpall'])) {
+    const target = parts.find((p) => /^postgres(ql)?:\/\//.test(p)) ?? '';
+    const host = /(?:^|\s)-h\s+(\S+)/.exec(line)?.[1] ?? /host=([^\s&]+)/.exec(target)?.[1] ?? /@([A-Za-z0-9.-]+)/.exec(target)?.[1];
+    if (mentionsProduction(target) || mentionsProduction(host ?? '') || (host && !host.startsWith('/') && !isLocalHost(host) && liveService(host))) return `a database client pointed at ${liveService(host ?? '') ?? 'production'}`;
   }
-  if (/(^|\s|\/)(curl|wget|http|httpie)(\s|$)/.test(line)) {
-    const host = /https?:\/\/([^/\s:]+)/.exec(line)?.[1];
+  if (runs(['curl', 'wget', 'http', 'https', 'httpie'])) {
+    const host = /https?:\/\/([^/\s:'"]+)/.exec(line)?.[1];
     if (host && !isLocalHost(host)) return `an HTTP client to ${host}`;
   }
-  if (/(^|\s|\/)(eas)(\s|$)/.test(line) && /\b(build|submit|update|channel|secret|env)\b/.test(line)) return 'EAS (build / submit / update)';
-  if (/\bexpo\s+(publish|upload)\b/.test(line) || /\beas-cli\b/.test(line)) return 'Expo publishing';
+  if (runs(['eas']) && /\b(build|submit|update|channel|secret|env)\b/.test(line)) return 'EAS (build / submit / update)';
+  if (runs(['expo']) && /\b(publish|upload)\b/.test(line)) return 'Expo publishing';
   return null;
 }
 

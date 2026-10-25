@@ -15,15 +15,15 @@
  *   · the lane environment is built from an allow-list, so a dirty shell hands a test nothing
  *
  * SAFETY
- * Uses a FAKE production ref (zzfakeprodrefzz) and stand-in programs (/usr/bin/false, /bin/echo) everywhere a real call would go, so even
- * a broken guard could not reach anything: the fake hosts do not exist and the stand-ins do nothing.
+ * Uses a FAKE production ref (zzfakeprodrefzz) and FAKE `supabase`, `psql` and `curl` programs (shell scripts that only print their
+ * arguments) placed first on PATH, so even a broken guard could not reach anything: the fake hosts do not exist and the fakes do nothing.
  *
  * Run: npm test
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,10 +36,13 @@ const FAKE = 'zzfakeprodrefzz';
 /** Run a snippet in a fresh node with the guard, a fake production ref and a chosen lane. */
 function guarded(code: string, env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'guard-test-'));
-  const file = join(dir, 'probe.mjs'), log = join(dir, 'blocked.tsv');
+  const file = join(dir, 'probe.mjs'), log = join(dir, 'blocked.tsv'), bin = join(dir, 'bin');
   writeFileSync(file, code); writeFileSync(log, '');
+  // Harmless stand-ins for the real programs: each prints its arguments and exits 0.
+  mkdirSync(bin);
+  for (const p of ['supabase', 'psql', 'curl']) { writeFileSync(join(bin, p), `#!/bin/sh\necho ${p} "$@"\n`); chmodSync(join(bin, p), 0o755); }
   const r = spawnSync(process.execPath, [`--import=${GUARD}`, file], {
-    encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ONESHETLAND_EXTRA_PRODUCTION_REFS: FAKE, ONESHETLAND_TEST_LANE: 'offline', ONESHETLAND_TEST_BLOCK_LOG: log, ...env },
+    encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH ?? ''}`, HOME: process.env.HOME ?? '', ONESHETLAND_EXTRA_PRODUCTION_REFS: FAKE, ONESHETLAND_TEST_LANE: 'offline', ONESHETLAND_TEST_BLOCK_LOG: log, ...env },
   });
   const blocked = readFileSync(log, 'utf8');
   rmSync(dir, { recursive: true, force: true });
@@ -68,7 +71,10 @@ describe('production is identified positively', () => {
       ['supabase', ['link', '--project-ref', 'x']], ['supabase', ['secrets', 'list']], ['psql', ['-h', 'db.nkrtmakxygkvxuxriiil.supabase.co']],
       ['curl', ['https://api.stripe.com/v1/charges']], ['eas', ['update', '--channel', 'production']], ['bash', ['-c', 'supabase db query --linked "select 1"']]] as const)
       assert.ok(childProcessRisk(cmd, [...args]), `${cmd} ${args.join(' ')}`);
-    for (const [cmd, args] of [['supabase', ['db', 'query', 'select 1']], ['psql', ['postgresql://proof@/proof?host=/tmp/x']], ['git', ['status']], ['node', ['-e', '1']]] as const)
+    for (const [cmd, args] of [['supabase', ['db', 'query', 'select 1']], ['psql', ['postgresql://proof@/proof?host=/tmp/x']], ['git', ['status']], ['node', ['-e', '1']],
+      // SQL or scripts that merely mention a URL, curl or psql are not requests (a real false positive in launch-partner-enrichment)
+      ['/opt/homebrew/opt/postgresql@17/bin/psql', ['postgresql://proof@/proof?host=/tmp/x', '-c', "select 'https://example.com/http curl')),"]],
+      ['node', ['-e', 'console.log("curl https://api.stripe.com")']]] as const)
       assert.equal(childProcessRisk(cmd, [...args]), null, `${cmd} ${args.join(' ')} is local`);
   });
   test('only a plain read passes the read-only lane\'s SQL check', () => {
@@ -94,8 +100,8 @@ describe('the guard refuses before anything connects', () => {
       try { await fetch('https://${FAKE}.supabase.co/rest/v1/profiles'); out.push('fetch:through'); } catch (e) { out.push('fetch:' + e.code); }
       try { https.get('https://${FAKE}.supabase.co/'); out.push('https:through'); } catch (e) { out.push('https:' + e.code); }
       try { await fetch('https://api.stripe.com/v1/charges', { method: 'POST' }); out.push('stripe:through'); } catch (e) { out.push('stripe:' + e.code); }
-      try { execFileSync('/usr/bin/false', ['supabase', 'db', 'query', '--linked', 'select 1']); out.push('cli:through'); } catch (e) { out.push('cli:' + e.code); }
-      try { spawnSync('/usr/bin/false', ['psql', '-h', 'db.${FAKE}.supabase.co']); out.push('psql:through'); } catch (e) { out.push('psql:' + e.code); }
+      try { execFileSync('supabase', ['db', 'query', '--linked', 'select 1']); out.push('cli:through'); } catch (e) { out.push('cli:' + e.code); }
+      try { spawnSync('psql', ['-h', 'db.${FAKE}.supabase.co']); out.push('psql:through'); } catch (e) { out.push('psql:' + e.code); }
       console.log(out.join(' '));`);
     assert.equal(r.out.trim(), 'fetch:ONESHETLAND_TEST_GUARD https:ONESHETLAND_TEST_GUARD stripe:ONESHETLAND_TEST_GUARD cli:ONESHETLAND_TEST_GUARD psql:ONESHETLAND_TEST_GUARD');
     assert.equal(r.blocked.trim().split('\n').length, 5);
@@ -122,16 +128,16 @@ describe('the guard refuses before anything connects', () => {
 describe('the opt-in read-only lane', () => {
   const RO = { ONESHETLAND_TEST_LANE: 'production-readonly', ONESHETLAND_PRODUCTION_READONLY: 'yes-read-only-production' };
   test('a plain read is allowed and the session is forced read-only', () => {
-    // /bin/echo stands in for the CLI: it prints the arguments the guard let through.
+    // The fake `supabase` prints the arguments the guard let through.
     const r = guarded(`import { execFileSync } from 'node:child_process';
-      console.log(execFileSync('/bin/echo', ['supabase', 'db', 'query', '--linked', 'select 1', '--output-format', 'json'], { encoding: 'utf8' }).trim());`, RO);
+      console.log(execFileSync('supabase', ['db', 'query', '--linked', 'select 1', '--output-format', 'json'], { encoding: 'utf8' }).trim());`, RO);
     assert.match(r.out, /--linked set default_transaction_read_only = on;\nselect 1 --output-format json/);
   });
   test('writes, rolled-back transactions and other remote CLI actions stay refused', () => {
     const r = guarded(`import { execFileSync } from 'node:child_process';
       const out = [];
-      for (const args of [['supabase','db','query','--linked','begin; insert into t values (1); rollback;'], ['supabase','db','push'], ['supabase','functions','deploy','x']]) {
-        try { execFileSync('/usr/bin/false', args); out.push('through'); } catch (e) { out.push(e.code); }
+      for (const args of [['db','query','--linked','begin; insert into t values (1); rollback;'], ['db','push'], ['functions','deploy','x']]) {
+        try { execFileSync('supabase', args); out.push('through'); } catch (e) { out.push(e.code); }
       }
       try { await fetch('https://${FAKE}.supabase.co/rest/v1/rpc/f', { method: 'POST' }); out.push('through'); } catch (e) { out.push(e.code); }
       try { await fetch('https://api.stripe.com/v1/x'); out.push('through'); } catch (e) { out.push(e.code); }
@@ -140,7 +146,7 @@ describe('the opt-in read-only lane', () => {
   });
   test('without the runner\'s token the lane is just offline', () => {
     const r = guarded(`import { execFileSync } from 'node:child_process';
-      try { execFileSync('/bin/echo', ['supabase','db','query','--linked','select 1']); console.log('through'); } catch (e) { console.log(e.code); }`, { ONESHETLAND_TEST_LANE: 'production-readonly' });
+      try { execFileSync('supabase', ['db','query','--linked','select 1']); console.log('through'); } catch (e) { console.log(e.code); }`, { ONESHETLAND_TEST_LANE: 'production-readonly' });
     assert.equal(r.out.trim(), 'ONESHETLAND_TEST_GUARD');
   });
 });
