@@ -69,6 +69,14 @@ export function geographyScope(r: GeoResolution | null | undefined): "shetland_w
   return r.is_shetland_wide ? "shetland_wide" : "area";
 }
 
+/** A canonical record as returned by public.geography_area(). Pending places (Foula, Papa Stour) and inactive rows are never returned. */
+export interface GeoArea {
+  id: string; slug: string; name_official: string; name_display: string;
+  type: "shetland" | "locality" | "settlement" | "island" | "area" | "site";
+  parent_id: string | null; locality_id: string | null; is_physical: boolean; is_shetland_wide: boolean;
+  confidence: "high" | "medium" | "low"; boundary_ref: string | null;
+}
+
 /** Any client with a Supabase-style rpc(), injected so this file stays dependency-free. */
 export type GeoRpcClient = { rpc(fn: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: unknown }> };
 
@@ -83,4 +91,20 @@ export async function resolveGeography(client: GeoRpcClient, input: string | nul
     if (error || !data || typeof data !== "object") return fallback;
     return data as GeoResolution;
   } catch { return fallback; }
+}
+
+/** Fetch one canonical area (and, through locality_id, its Level 1 parent). null when unknown, inactive or pending. */
+export async function getCanonicalArea(client: GeoRpcClient, id: string): Promise<GeoArea | null> {
+  try {
+    const { data, error } = await client.rpc("geography_area", { p_id: id });
+    return !error && data && typeof data === "object" ? (data as GeoArea) : null;
+  } catch { return null; }
+}
+
+/** The Level 1 locality ID for an area ID, or null (shetland_wide has none; neither does a pending place). */
+export async function getParentLocality(client: GeoRpcClient, id: string): Promise<string | null> {
+  try {
+    const { data, error } = await client.rpc("geography_locality", { p_id: id });
+    return !error && typeof data === "string" ? data : null;
+  } catch { return null; }
 }

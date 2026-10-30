@@ -24,6 +24,7 @@ import { normaliseGeoText, GEO_LOCALITIES, SHETLAND_WIDE } from '../../lib/geogr
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PREFIX = readFileSync(join(ROOT, 'supabase/tests/_support/geography-prefix-schema.sql'), 'utf8');
 const MIGRATION = readFileSync(join(ROOT, 'supabase/migrations/20261127000000_canonical_geography_foundation.sql'), 'utf8');
+const MIGRATION2 = readFileSync(join(ROOT, 'supabase/migrations/20261127010000_geography_alias_ambiguity.sql'), 'utf8');
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 if (!DSN) throw new Error('PASS_PROOF_DSN is required (isolated database only) — run via `npm run test:isolated`');
@@ -66,6 +67,7 @@ before(() => {
         insert into delivery_requests (destination_region_id, destination_address) select id, 'Roadside, Hamnavoe ZE2 9LA' from regions limit 1;`);
   BEFORE = { fp: fingerprint(), cat: catalogue(), rel: relations(), fn: functions() };
   const m = file(MIGRATION); assert.doesNotMatch(m, /ERROR/i, `migration failed:\n${m.slice(0, 1500)}`);
+  const m2 = file(MIGRATION2); assert.doesNotMatch(m2, /ERROR/i, `follow-up migration failed:\n${m2.slice(0, 1500)}`);
 });
 
 describe('existing content is untouched; only new objects appear', () => {
@@ -79,7 +81,7 @@ describe('existing content is untouched; only new objects appear', () => {
   });
   test('the only new functions are the geography helpers; no existing function changed', () => {
     const now = new Set(functions().split(',')), was = new Set(BEFORE.fn.split(','));
-    assert.deepEqual([...now].filter((f) => !was.has(f)).sort(), ['geo_normalise', 'resolve_geography', 'tg_areas_validate', 'tg_geo_touch', 'tg_place_aliases_validate']);
+    assert.deepEqual([...now].filter((f) => !was.has(f)).sort(), ['geo_normalise', 'geography_area', 'geography_locality', 'resolve_geography', 'tg_areas_validate', 'tg_geo_touch', 'tg_place_aliases_validate']);
   });
   test('no existing content table gained a policy or trigger', () => {
     assert.equal(scalar(`select count(*) from pg_policies where tablename in (${TABLES.map((t) => `'${t}'`).join(',')})`), '0');
@@ -221,8 +223,9 @@ describe('invalid / test values and category labels', () => {
 });
 
 describe('seed integrity', () => {
-  test('aliases: exactly one active meaning per normalised spelling; every place/area/scope alias has a live target', () => {
-    assert.equal(scalar(`select count(*) from (select alias_normalised from place_aliases where is_active group by 1 having count(*)>1) d`), '0');
+  test('aliases: a spelling may have several targets but never the same target twice; every place/area/scope alias has a live target', () => {
+    assert.equal(scalar(`select count(*) from (select alias_normalised, kind, coalesce(area_id,'') from place_aliases where is_active group by 1,2,3 having count(*)>1) d`), '0');
+    assert.equal(scalar(`select count(*) from (select alias_normalised from place_aliases where is_active group by 1 having count(*)>1) d`), '1', 'only "Isles" has several active meanings');
     assert.equal(scalar(`select count(*) from place_aliases p where kind in ('place','area','scope') and not exists (select 1 from areas a where a.id=p.area_id)`), '0');
     assert.ok(Number(scalar(`select count(*) from place_aliases`)) >= 100);
   });
@@ -239,6 +242,97 @@ describe('seed integrity', () => {
     const seen = new Set(['Westside', 'Atlantis', 'Hamnavoe', 'London', 'Remote'].map((v) => R(v).status));
     assert.deepEqual([...seen].sort(), ['ambiguous', 'invalid', 'non_geographic', 'resolved', 'unresolved']);
   });
+});
+
+
+describe('Stage 2: all 37 High places, compound alias uniqueness, multi-target ambiguity, fetch helpers', () => {
+  const HIGH: [string, string][] = [
+    ['lerwick', 'lerwick_bressay'],
+    ['bressay', 'lerwick_bressay'],
+    ['scalloway', 'shetland_central'],
+    ['burra', 'shetland_central'],
+    ['trondra', 'shetland_central'],
+    ['tingwall', 'shetland_central'],
+    ['whiteness', 'shetland_central'],
+    ['weisdale', 'shetland_central'],
+    ['brae', 'shetland_north'],
+    ['voe', 'shetland_north'],
+    ['vidlin', 'shetland_north'],
+    ['mossbank', 'shetland_north'],
+    ['firth', 'shetland_north'],
+    ['nesting', 'shetland_north'],
+    ['hillswick', 'shetland_north'],
+    ['north_roe', 'shetland_north'],
+    ['ollaberry', 'shetland_north'],
+    ['northmavine', 'shetland_north'],
+    ['delting', 'shetland_north'],
+    ['sandwick', 'shetland_south'],
+    ['cunningsburgh', 'shetland_south'],
+    ['bigton', 'shetland_south'],
+    ['boddam', 'shetland_south'],
+    ['virkie', 'shetland_south'],
+    ['gulberwick', 'shetland_south'],
+    ['fair_isle', 'shetland_south'],
+    ['walls', 'shetland_west'],
+    ['sandness', 'shetland_west'],
+    ['aith', 'shetland_west'],
+    ['bixter', 'shetland_west'],
+    ['skeld', 'shetland_west'],
+    ['tresta', 'shetland_west'],
+    ['whalsay', 'whalsay_skerries'],
+    ['out_skerries', 'whalsay_skerries'],
+    ['yell', 'yell_unst_fetlar'],
+    ['unst', 'yell_unst_fetlar'],
+    ['fetlar', 'yell_unst_fetlar'],
+  ];
+  test('every one of the 37 High-confidence workbook places is seeded, active, with the workbook parent — and nothing else is active', () => {
+    assert.equal(HIGH.length, 37);
+    for (const [id, parent] of HIGH) assert.equal(scalar(`select parent_id||'|'||is_active||'|'||confidence from areas where id='${id}'`), `${parent}|true|high`, id);
+    assert.equal(scalar(`select count(*) from areas where type in ('settlement','island','area','site') and is_active and confidence='high'`), '37');
+  });
+  test('Foula and Papa Stour carry NO Level 1 parent and are not returned by the fetch helpers', () => {
+    assert.equal(scalar(`select count(*) from areas where id in ('foula','papa_stour') and parent_id is null and not is_active and confidence='low'`), '2');
+    assert.equal(scalar(`select coalesce(public.geography_area('foula')::text,'NULL')`), 'NULL');
+    assert.equal(scalar(`select coalesce(public.geography_locality('papa_stour'),'NULL')`), 'NULL');
+  });
+  test('case, punctuation and ", Shetland" normalisation all reach the same canonical match', () => {
+    for (const v of ['WESTSIDE', 'westside', ' Westside ', 'Westside, Shetland', 'WESTSIDE,SHETLAND', 'Westside, Shetland Islands, Scotland']) assert.equal(R(v).area_id, 'shetland_west', v);
+    for (const v of ['Out Skerries', 'out-skerries', 'OUT  SKERRIES.', 'Skerries, Shetland']) assert.equal(R(v).area_id, 'out_skerries', v);
+    assert.equal(R('Whalsay & Skerries').area_id, 'whalsay_skerries'); assert.equal(R('whalsay and skerries').area_id, 'whalsay_skerries');
+  });
+  test('legacy strings for one canonical area: Westside, West Mainland and Shetland West share it', () => {
+    assert.deepEqual(['Westside', 'West Mainland', 'Shetland West'].map((v) => R(v).area_id), ['shetland_west', 'shetland_west', 'shetland_west']);
+  });
+  test('the same spelling may point at several targets, but never twice at the same one', () => {
+    assert.ok(ok(as('admin', `insert into place_aliases (alias,kind,area_id,confidence) values ('Zz Dup','place','lerwick','high'), ('ZZ  dup','place','unst','high')`)), 'two targets allowed');
+    assert.ok(!ok(as('admin', `insert into place_aliases (alias,kind,area_id,confidence) values ('zz dup!','place','lerwick','high')`)), 'same spelling + same target refused');
+  });
+  test('a spelling with several plausible targets is AMBIGUOUS with every candidate — the resolver never picks', () => {
+    const r = R('zz dup'); assert.equal(r.status, 'ambiguous'); assert.equal(r.reason, 'multiple_targets'); assert.equal(r.area_id, null); assert.deepEqual([...r.candidate_ids].sort(), ['lerwick', 'unst']);
+    const i = R('Isles'); assert.equal(i.status, 'ambiguous'); assert.equal(i.reason, 'multiple_targets'); assert.deepEqual([...i.candidate_ids].sort(), ['whalsay_skerries', 'yell_unst_fetlar']);
+  });
+  test('a High meaning plus a Medium meaning for the same spelling is still ambiguous (never "the High one")', () => {
+    raw(`insert into place_aliases (alias,kind,area_id,confidence) values ('zz mixed','place','lerwick','high'), ('zz mixed','place','sumburgh','medium')`);
+    assert.equal(R('zz mixed').status, 'ambiguous');
+  });
+  test('a place mixed with a non-geographic meaning is ambiguous too; cleaning up the test aliases restores "unresolved"', () => {
+    raw(`insert into place_aliases (alias,kind,area_id,confidence) values ('zz context','place','lerwick','high'), ('zz context','non_geographic',null,'high')`);
+    assert.equal(R('zz context').status, 'ambiguous');
+    raw(`delete from place_aliases where alias_normalised like 'zz %'`);
+    assert.equal(R('zz dup').status, 'unresolved');
+  });
+  test('Medium aliases do not auto-resolve; unknown aliases are unresolved', () => {
+    for (const v of ['Sumburgh', 'Levenwick', 'Quendale', 'Muckle Roe']) { const r = R(v); assert.equal(r.status, 'unresolved', v); assert.equal(r.area_id, null); assert.equal(r.reason, 'confidence_below_high'); }
+    assert.equal(R('Atlantis').reason, 'no_match');
+  });
+  test('geography_area() returns the canonical record and its Level 1 parent; shetland_wide has no locality and is flagged as the scope', () => {
+    const a = JSON.parse(scalar(`select public.geography_area('nesting')::text`)); assert.deepEqual([a.id, a.parent_id, a.locality_id, a.type, a.is_shetland_wide], ['nesting', 'shetland_north', 'shetland_north', 'area', false]);
+    const l = JSON.parse(scalar(`select public.geography_area('shetland_west')::text`)); assert.deepEqual([l.name_official, l.name_display, l.locality_id], ['Shetland West', 'West Mainland / Westside', 'shetland_west']);
+    const w = JSON.parse(scalar(`select public.geography_area('shetland_wide')::text`)); assert.deepEqual([w.is_shetland_wide, w.is_physical, w.locality_id], [true, false, null]);
+    assert.equal(scalar(`select public.geography_locality('unst')`), 'yell_unst_fetlar');
+    assert.equal(scalar(`select coalesce(public.geography_area('nope')::text,'NULL')`), 'NULL');
+  });
+  test('the fetch helpers are readable by anon', () => assert.equal(scalar(`set role anon; select public.geography_locality('aith')`), 'shetland_west'));
 });
 
 describe('security', () => {

@@ -62,6 +62,19 @@ describe('resolveGeography', () => {
   });
 });
 
+describe('fetch helpers', () => {
+  test('getCanonicalArea / getParentLocality use the database helpers and degrade to null', async () => {
+    const calls: string[] = [];
+    const ok = { rpc: async (fn: string, a: Record<string, unknown>) => { calls.push(fn + ':' + a.p_id); return fn === 'geography_area' ? { data: { id: 'nesting', locality_id: 'shetland_north' }, error: null } : { data: 'shetland_north', error: null }; } };
+    assert.equal((await G.getCanonicalArea(ok, 'nesting'))?.locality_id, 'shetland_north');
+    assert.equal(await G.getParentLocality(ok, 'nesting'), 'shetland_north');
+    assert.deepEqual(calls, ['geography_area:nesting', 'geography_locality:nesting']);
+    const bad = { rpc: async () => ({ data: null, error: { message: 'x' } }) };
+    assert.equal(await G.getCanonicalArea(bad, 'foula'), null); assert.equal(await G.getParentLocality(bad, 'foula'), null);
+    assert.equal(await G.getCanonicalArea({ rpc: async () => { throw new Error('n'); } }, 'x'), null);
+  });
+});
+
 test('the edge-function copy is byte-identical to the app copy', () => {
   assert.equal(readFileSync(join(ROOT, 'supabase/functions/_shared/geography.ts'), 'utf8'), readFileSync(join(ROOT, 'lib/geography.ts'), 'utf8'));
 });
