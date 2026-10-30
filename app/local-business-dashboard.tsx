@@ -599,7 +599,10 @@ export default function BusinessDashboardScreen() {
      (every business at launch) has never used anything yet, so gating this
      on the listing being "good" would hide it from exactly the businesses
      that need it most. */
-  const DISCOVERABLE = [1, 2, 3, 4] as const;
+  // Events (3) is deliberately not here: while it is 'available' its own card is
+  // already shown (see the Events card guard below), so listing it again in
+  // "Add to your business" would be a duplicate entry for the same capability.
+  const DISCOVERABLE = [1, 2, 4] as const;
   const discovery = home
     ? DISCOVERABLE.filter((i) => outcomes[i]?.state === 'available')
     : [];
@@ -998,7 +1001,14 @@ export default function BusinessDashboardScreen() {
         </OutcomeCard>
         )}
 
-        {isWorking(3) && (
+        {/* Events is a free capability with its own screens, so its card is shown
+            even for a business that has never created an event (state
+            'available' — outcomes[3].status reads "No events yet"). Without
+            this a freshly claimed business had no Events card, and "New event"
+            was reachable only through the chooser. The other cards keep the
+            plain isWorking(N) gate. The count of upcoming events is already in
+            the status line ("3 upcoming events"); the fact adds the next date. */}
+        {(isWorking(3) || outcomes[3]?.state === 'available') && (
         <OutcomeCard
           outcome={outcomes[3]} accent={S.color}
           fact={nextBizEvent
@@ -1007,11 +1017,13 @@ export default function BusinessDashboardScreen() {
           actions={[
             // Manage events means manage ALL of this business's events, not
             // whichever one is "next" — it always opens the management list
-            // (app/business-events.tsx), never a single event directly. The
-            // card only renders once isWorking(3) is true, which needs at
-            // least one event to exist at all (see eventsOutcome), so this
-            // never opens on a business with nothing to manage.
-            { label: 'Manage events', onPress: () => router.push({ pathname: '/business-events', params: { businessId: activeBusiness.id } }) },
+            // (app/business-events.tsx), never a single event directly. A
+            // business in state 'available' has no events at all (see
+            // eventsOutcome), so it is offered only "New event" — never a
+            // Manage list with nothing in it.
+            ...(outcomes[3]?.state !== 'available' ? [
+              { label: 'Manage events', onPress: () => router.push({ pathname: '/business-events', params: { businessId: activeBusiness.id } }) },
+            ] : []),
             { label: 'New event', onPress: () => router.push({ pathname: '/event-create', params: { businessId: activeBusiness.id } }) },
             // event-scanner is a per-EVENT screen: it reads `id`, and genuinely
             // needs the nearest in-progress-or-upcoming event (never a past one

@@ -171,9 +171,12 @@ describe('the Run events card: Manage events is unconditional; Scan tickets stil
 
   test('1. Manage events is unconditional — it opens the management list, not nextBizEvent directly, regardless of whether nextBizEvent exists', () => {
     const block = runEventsCard();
+    // UPDATE — the zero-event Events card: Manage events is withheld only when the
+    // outcome is 'available' (the business has no events at all). It is still never
+    // guarded on nextBizEvent, and still opens the list with businessId.
     assert.match(block,
-      /\{ label: 'Manage events', onPress: \(\) => router\.push\(\{ pathname: '\/business-events', params: \{ businessId: activeBusiness\.id \} \}\) \},/,
-      'Manage events must be a plain, unconditional entry targeting the management list with businessId, never a single event id');
+      /\.\.\.\(outcomes\[3\]\?\.state !== 'available' \? \[\s*\{ label: 'Manage events', onPress: \(\) => router\.push\(\{ pathname: '\/business-events', params: \{ businessId: activeBusiness\.id \} \}\) \},\s*\] : \[\]\),/,
+      'Manage events must target the management list with businessId, never a single event id, and only be withheld for a business with no events');
     assert.doesNotMatch(block, /label: 'Manage events'[\s\S]{0,120}nextBizEvent/,
       'Manage events must not be guarded on, or reference, nextBizEvent at all');
   });
@@ -198,7 +201,7 @@ describe('the Run events card: Manage events is unconditional; Scan tickets stil
   test('4. New event sits between the unconditional Manage events entry and the guarded Scan tickets entry', () => {
     const block = runEventsCard();
     assert.match(block,
-      /\{ label: 'Manage events'.*?\},\s*\{ label: 'New event', onPress: \(\) => router\.push\(\{ pathname: '\/event-create', params: \{ businessId: activeBusiness\.id \} \}\) \},\s*\.\.\.\(nextBizEvent \? \[/s,
+      /label: 'Manage events'.*?\] : \[\]\),\s*\{ label: 'New event', onPress: \(\) => router\.push\(\{ pathname: '\/event-create', params: \{ businessId: activeBusiness\.id \} \}\) \},\s*\.\.\.\(nextBizEvent \? \[/s,
       'New event must sit as a plain, unconditional array entry right after Manage events and before the Scan tickets guard');
   });
 

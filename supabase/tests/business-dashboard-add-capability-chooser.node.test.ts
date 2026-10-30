@@ -74,8 +74,8 @@ describe('a newly claimed business sees "Add to your business" even when Be foun
 /* ── 2/3. All four unused capabilities appear, with correct copy/plan/route ── */
 
 describe('all four capabilities are discoverable when unused, each with its existing copy, plan label and route', () => {
-  test('DISCOVERABLE covers exactly outcomes 1-4 (Be found, index 0, is never in the chooser)', () => {
-    assert.match(dashboardSrc, /const DISCOVERABLE = \[1, 2, 3, 4\] as const;/);
+  test('DISCOVERABLE covers outcomes 1, 2 and 4 — Be found (0) is never in the chooser, and Events (3) shows its own card instead', () => {
+    assert.match(dashboardSrc, /const DISCOVERABLE = \[1, 2, 4\] as const;/);
   });
 
   test('the sheet receives exactly discovery.map(i => DISCOVERY_ITEMS[i]) — nothing hand-picked, nothing extra', () => {
@@ -114,7 +114,9 @@ describe('an already-active capability appears only as its full dashboard card, 
   test('the four dashboard cards are still gated on isWorking(N), independent of the chooser', () => {
     assert.match(dashboardSrc, /\{isWorking\(1\) && \(/);
     assert.match(dashboardSrc, /\{isWorking\(2\) && \(/);
-    assert.match(dashboardSrc, /\{isWorking\(3\) && \(/);
+    // Events (3) additionally admits the 'available' state, so a business with no
+    // events still sees its card (see business-dashboard-events-card.node.test.ts).
+    assert.match(dashboardSrc, /\{\(isWorking\(3\) \|\| outcomes\[3\]\?\.state === 'available'\) && \(/);
     assert.match(dashboardSrc, /\{isWorking\(4\) && \(/);
   });
 });
@@ -152,12 +154,13 @@ describe('when every capability is already active, the "Add to your business" ro
 /* ── 7. Events: chooser item while unused, normal card once active ─────── */
 
 describe('Run events moves itself from the chooser to a normal card the moment it becomes active — no separate code path', () => {
-  test('Events (index 3) is covered by the same DISCOVERABLE/isWorking mechanism as the other three — no Events-only branch remains', () => {
-    assert.match(dashboardSrc, /const DISCOVERABLE = \[1, 2, 3, 4\] as const;/);
-    assert.doesNotMatch(dashboardSrc, /isWorking\(3\)\s*\|\|\s*outcomes\[3\]\?\.state === 'available'/);
+  test('Events (index 3) is NOT in DISCOVERABLE: its card shows while "available", so the chooser must not list it a second time', () => {
+    assert.match(dashboardSrc, /const DISCOVERABLE = \[1, 2, 4\] as const;/);
+    assert.doesNotMatch(dashboardSrc, /const DISCOVERABLE = \[[^\]]*\b3\b[^\]]*\]/);
+    assert.match(dashboardSrc, /\(isWorking\(3\) \|\| outcomes\[3\]\?\.state === 'available'\)/);
   });
 
-  test('DISCOVERY_ITEMS still defines the Events entry the chooser shows while outcomes[3].state === "available"', () => {
+  test('DISCOVERY_ITEMS keeps its Events definition (unchanged, now simply never selected by the chooser)', () => {
     assert.match(dashboardSrc, /3: \{ title: 'Run events'/);
   });
 });

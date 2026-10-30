@@ -564,7 +564,7 @@ describe('add to your business', () => {
   const READY = { phone: '01595', lat: 60.15, lng: -1.15 };
   const shelfFor = (business: Record<string, unknown>, data: OutcomeData) => {
     const o = businessOutcomes({ ...business, id: 'b', slug: 's' } as never, data, '');
-    const discovery = [1, 2, 3, 4].filter((i) => o[i].state === 'available');
+    const discovery = [1, 2, 4].filter((i) => o[i].state === 'available');   // Events (3) has its own card while available
     return { show: discovery.length > 0, discovery, outcomes: o };
   };
 
@@ -578,13 +578,13 @@ describe('add to your business', () => {
   test('3. and just the same once Be found is good — Be found never decides this', () => {
     const r = shelfFor(GOOD, NONE);
     assert.equal(r.show, true);
-    assert.deepEqual(r.discovery, [1, 2, 3, 4]);
+    assert.deepEqual(r.discovery, [1, 2, 4]);
   });
 
   test('4 & 9. only the canonical never-used state qualifies, and never twice', () => {
     // Products saved but unpublished is real work, not discovery.
     const r = shelfFor(GOOD, d({ products: 3, meetsPremium: true }));
-    assert.deepEqual(r.discovery, [2, 3, 4]);
+    assert.deepEqual(r.discovery, [2, 4]);
     assert.equal(r.outcomes[1].state, 'saved');
     // A capability is either working or discoverable. This used to pin the
     // expression that coupled isWorking to showDiscovery — which was the bug —
@@ -640,9 +640,9 @@ describe('add to your business', () => {
     assert.equal(r.show, false);
   });
 
-  test('11 & 12. only the four capabilities are ever discoverable', () => {
-    // Be found is index 0 and is never in the list the screen builds from.
-    assert.match(src(), /const DISCOVERABLE = \[1, 2, 3, 4\] as const;/);
+  test('11 & 12. only Sell, Bookings and Retention are ever discoverable (Events shows its own card instead)', () => {
+    // Be found is index 0 and is never in the list the screen builds from; Events (3) is excluded because its card is always visible.
+    assert.match(src(), /const DISCOVERABLE = \[1, 2, 4\] as const;/);
     const items = src().slice(src().indexOf('DISCOVERY_ITEMS'), src().indexOf('const editBusiness'));
     for (const never of ['Be found', 'Money', 'Grow', 'Counter', 'Jobs', 'Job leads', 'Analytics',
                          'Boost', 'Urgent alerts', 'Wallet', 'transactions']) {
@@ -754,7 +754,7 @@ describe('what the dashboard actually renders', () => {
     const r = scene('incomplete', FOUR_UNUSED);
     assert.deepEqual(r.working, [0], 'only Be found may render as a working card');
     assert.equal(r.showAddToYourBusiness, true, 'a freshly claimed business must see it right away');
-    assert.deepEqual(r.discovery, [1, 2, 3, 4]);
+    assert.deepEqual(r.discovery, [1, 2, 4], 'Events is not duplicated here: it has its own card');
   });
 
   test('2. ready + four never used → identical: the trigger does not wait for a better profile', () => {
@@ -767,7 +767,7 @@ describe('what the dashboard actually renders', () => {
     const r = scene('good', FOUR_UNUSED);
     assert.deepEqual(r.working, [0]);
     assert.equal(r.showAddToYourBusiness, true);
-    assert.deepEqual(r.discovery, [1, 2, 3, 4]);
+    assert.deepEqual(r.discovery, [1, 2, 4]);
   });
 
   test('4. a configured capability stays working, whatever Be found says', () => {
