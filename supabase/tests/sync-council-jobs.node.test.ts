@@ -30,14 +30,18 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadModule, readRepo } from './_support/load-source.ts';
+import { areaForLocation, JOB_AREAS } from '../../lib/job-taxonomy.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = readFileSync(join(HERE, 'fixtures', 'myjobscotland-search-2026-10.html'), 'utf8');
+const VACANCY = readFileSync(join(HERE, 'fixtures', 'myjobscotland-vacancy-2026-10.html'), 'utf8');
 const EMPTY_PAGE = '<html><body><main><div class="mjs-search-results"></div></main></body></html>';
 
 type Row = Record<string, any>;
 let calls: { fetches: string[]; upserts: Row[][]; deletes: { source?: string; keep?: string }[]; logs: Row[]; logPurges: number };
 let held: number;
+let existing: Row[];
+let vacancyFor: (url: string) => { status: number; body: string } | 'throw';
 let pageFor: (params: URLSearchParams) => { status: number; body: string } | 'throw';
 let logThrows: boolean;
 let authDenied: Response | null;
@@ -55,7 +59,7 @@ function fakeDb() {
       }
       assert.equal(table, 'jobs');
       return {
-        select: () => ({ eq: async () => ({ count: held }) }),
+        select: (_cols?: string, o?: { head?: boolean }) => ({ eq: async () => (o?.head ? { count: held } : { data: existing }) }),
         upsert: async (rows: Row[]) => { calls.upserts.push(rows); return { error: null }; },
         delete: () => {
           const rec: { source?: string; keep?: string } = {};
@@ -73,13 +77,20 @@ function fakeDb() {
 
 beforeEach(() => {
   calls = { fetches: [], upserts: [], deletes: [], logs: [], logPurges: 0 };
-  held = 8; logThrows = false; authDenied = null;
+  held = 8; existing = []; logThrows = false; authDenied = null;
+  vacancyFor = () => ({ status: 200, body: VACANCY });
   // Both searches return the fixture on page 0 and an empty page after it.
   pageFor = (p) => ({ status: 200, body: p.get('page') === '0' ? FIXTURE : EMPTY_PAGE });
   (globalThis as any).fetch = async (url: string) => {
     const u = new URL(url);
     calls.fetches.push(`${u.pathname}?${u.searchParams}`);
-    assert.equal(u.origin + u.pathname, 'https://www.myjobscotland.gov.uk/search-jobs', 'only ever reads the public search');
+    if (u.pathname.startsWith('/councils/shetland-islands-council/jobs/')) {   // a vacancy page: only its header facts are read
+      assert.equal(u.origin, 'https://www.myjobscotland.gov.uk');
+      const v = vacancyFor(url);
+      if (v === 'throw') throw new Error('network down');
+      return { ok: v.status < 400, status: v.status, text: async () => v.body };
+    }
+    assert.equal(u.origin + u.pathname, 'https://www.myjobscotland.gov.uk/search-jobs', 'only ever reads the public search and council vacancy pages');
     const r = pageFor(u.searchParams);
     if (r === 'throw') throw new Error('network down');
     return { ok: r.status < 400, status: r.status, text: async () => r.body };
@@ -88,6 +99,7 @@ beforeEach(() => {
     'https://deno.land/std@0.168.0/http/server.ts': { serve: (h: any) => { handler = h; } },
     '../_shared/send-push.ts': { createServiceClient: () => fakeDb() },
     '../_shared/cron-auth.ts': { requireCronSecret: () => authDenied },
+    '../_shared/job-taxonomy.ts': loadModule('supabase/functions/_shared/job-taxonomy.ts', {}),
   });
 });
 
@@ -127,7 +139,7 @@ describe('A — the real post-upgrade markup', () => {
     assert.equal(c['Director of Place'], 'full-time');
     assert.equal(Object.entries(c).find(([t]) => t.startsWith('Modern Apprentice'))![1], 'apprenticeship');
     assert.equal(Object.entries(c).find(([t]) => t.startsWith('Supply for Early Learning'))![1], 'casual');
-    assert.equal(Object.entries(c).find(([t]) => t.startsWith('Social Care Worker (Predominantly Nights)'))![1], 'casual', 'Temporary maps as before');
+    assert.equal(Object.entries(c).find(([t]) => t.startsWith('Social Care Worker (Predominantly Nights)'))![1], 'temporary', "the source's Temporary stays Temporary (it used to be filed as casual)");
   });
   test('closing dates become end-of-day timestamps, and locations are kept', () => {
     const j = parse().jobs.find((x: Row) => x.title === 'Teacher of English - Anderson High School');
@@ -168,9 +180,10 @@ describe('C — a good run', () => {
   test('reads both searches, pages until a page is empty, and merges duplicates', async () => {
     const res = await run();
     assert.equal(res.status, 200);
-    const searches = new Set(calls.fetches.map((f) => new URL('https://x/' + f).searchParams.has('keyword') ? 'keyword' : 'location'));
+    const searchFetches = calls.fetches.filter((f) => f.startsWith('/search-jobs'));
+    const searches = new Set(searchFetches.map((f) => new URL('https://x/' + f).searchParams.has('keyword') ? 'keyword' : 'location'));
     assert.deepEqual([...searches].sort(), ['keyword', 'location']);
-    assert.equal(calls.fetches.length, 4, 'page 0 and the empty page 1 of each search');
+    assert.equal(searchFetches.length, 4, 'page 0 and the empty page 1 of each search');
     assert.equal(calls.upserts.length, 1);
     assert.equal(calls.upserts[0].length, 7, 'the same 7 from both searches are merged, not doubled');
   });
@@ -296,5 +309,88 @@ describe('the schedule and table are in place', () => {
   test('the function stays cron-only (no JWT, secret required)', () => {
     assert.match(readRepo('supabase/config.toml'), /\[functions\.sync-council-jobs\]\s*\nverify_jwt = false/);
     assert.match(readRepo('supabase/functions/sync-council-jobs/index.ts'), /requireCronSecret\(req, corsHeaders\)/);
+  });
+});
+
+describe('G — Stage 2: multi-source facts, Temporary, locality, reference and publication date', () => {
+  const rowsFor = async () => { await run(); return calls.upserts[0] as Row[]; };
+  const byTitle = (rows: Row[], start: string) => rows.find((r) => r.title.startsWith(start))!;
+
+  test('the vacancy page header yields the council reference and publication date — nothing else is read', () => {
+    const f = mod.parseVacancyPage(VACANCY);
+    assert.equal(f.reference, 'SIC09079');
+    assert.equal(f.published_at, '2026-10-28T00:00:00Z');
+    assert.deepEqual(Object.keys(f).sort(), ['published_at', 'reference']);
+  });
+  test('a vacancy page that changes shape degrades to unknown, never a wrong value', () => {
+    assert.deepEqual(mod.parseVacancyPage('<html>nothing here</html>'), { reference: null, published_at: null });
+    assert.deepEqual(mod.parseVacancyPage('<span class="mjs-tag mjs-tag__secondary">Ref: </span>'), { reference: null, published_at: null });
+  });
+  test('Temporary stays Temporary; Supply/Relief/Casual stay casual; the source wording is kept in source_meta', async () => {
+    const rows = await rowsFor();
+    const t = byTitle(rows, 'Social Care Worker (Predominantly Nights)');
+    assert.equal(t.contract_type, 'temporary');
+    assert.match(String(t.source_meta.contract_label), /temporary/i);
+    assert.equal(byTitle(rows, 'Supply for Early Learning').contract_type, 'casual');
+    assert.equal(mod.mapContract('Temporary Part Time', 'Temporary Part Time'), 'temporary');
+    assert.equal(mod.mapContract('Permanent', 'Part Time'), 'part-time');
+    assert.equal(mod.mapContract('Relief', 'Relief'), 'casual');
+  });
+  test('every row records its own listing page as source_url, equal to the apply link, and carries the source wording', async () => {
+    for (const r of await rowsFor()) {
+      assert.equal(r.source_url, r.apply_url);
+      assert.ok('contract_label' in r.source_meta && 'hours_label' in r.source_meta);
+    }
+  });
+  test('reference and source publication date are stored; first-seen posted_at and category are never touched by the sync', async () => {
+    const rows = await rowsFor();
+    for (const r of rows) {
+      assert.equal(r.source_reference, 'SIC09079');
+      assert.equal(r.source_published_at, '2026-10-28T00:00:00Z');
+      assert.ok(!('posted_at' in r), 'posted_at is first-seen: the sync never writes it');
+      assert.ok(!('category' in r), 'no category is invented by the sync');
+      assert.ok(!('description' in r), 'descriptions are never copied');
+    }
+  });
+  test('locality comes from explicit place names only; unknown places stay null', async () => {
+    const rows = await rowsFor();
+    for (const r of rows) assert.equal(r.locality, areaForLocation(r.location), r.location);
+    assert.ok(rows.some((r) => r.locality !== null), 'the fixture has places the dictionary knows');
+    assert.ok(rows.every((r) => r.locality === null || (JOB_AREAS as readonly string[]).includes(r.locality)));
+  });
+  test('an existing locality and an existing reference/date are carried over, not overwritten, and not re-fetched', async () => {
+    const first = (await rowsFor())[0];
+    calls.upserts.length = 0; calls.fetches.length = 0;
+    existing = [{ source_ref: first.source_ref, locality: 'Yell', source_reference: 'SIC-KEEP', source_published_at: '2026-01-02T00:00:00Z' }];
+    vacancyFor = () => ({ status: 200, body: VACANCY });
+    await run();
+    const r = (calls.upserts[0] as Row[]).find((x) => x.source_ref === first.source_ref)!;
+    assert.equal(r.locality, 'Yell');
+    assert.equal(r.source_reference, 'SIC-KEEP');
+    assert.equal(r.source_published_at, '2026-01-02T00:00:00Z');
+    assert.ok(!calls.fetches.some((f) => f.includes(`-${first.source_ref}`)), 'no vacancy page is read for a listing whose facts we already hold');
+  });
+  test('a vacancy page that cannot be read is non-fatal: the run succeeds, facts stay as held (or null), and it is counted', async () => {
+    vacancyFor = () => 'throw';
+    existing = [];
+    const res = await run();
+    assert.equal(res.status, 200);
+    const rows = calls.upserts[0] as Row[];
+    assert.equal(rows.length, 7);
+    assert.ok(rows.every((r) => r.source_reference === null && r.source_published_at === null));
+    const body = await res.json();
+    assert.equal(body.results[0].detail_failed, 7);
+  });
+  test('a 404 on a vacancy page is also non-fatal', async () => {
+    vacancyFor = () => ({ status: 404, body: 'gone' });
+    assert.equal((await run()).status, 200);
+  });
+  test('prune and fail-safes are unchanged: dropped listings are removed, a half-read feed is not pruned', async () => {
+    await run();
+    assert.equal(calls.deletes.length, 1);
+    calls.deletes.length = 0; held = 100;
+    const res = await run();
+    assert.equal((await res.json()).results[0].prune_skipped, true);
+    assert.equal(calls.deletes.length, 0);
   });
 });
