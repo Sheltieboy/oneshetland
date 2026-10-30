@@ -32,7 +32,8 @@ const CONTRACTS: ContractType[] = ['full-time', 'part-time', 'casual', 'apprenti
 const REMOTES:   RemoteMode[]   = ['on_site', 'hybrid', 'remote'];
 const PERIODS:   PayPeriod[]    = ['hour', 'day', 'week', 'month', 'year'];
 const PERIOD_LABEL: Record<PayPeriod, string> = { hour: 'per hour', day: 'per day', week: 'per week', month: 'per month', year: 'per year', total: 'total' };
-const EXPIRY = [{ label: 'No close date', days: 0 }, { label: '30 days', days: 30 }, { label: '60 days', days: 60 }, { label: '90 days', days: 90 }];
+// Every listing closes: no "no close date". 30 days is the default (the database applies the same default if a date is ever missing).
+const EXPIRY = [{ label: '30 days', days: 30 }, { label: '60 days', days: 60 }, { label: '90 days', days: 90 }];
 
 export default function JobPostScreen() {
   const { businessId, jobId } = useLocalSearchParams<{ businessId: string; jobId?: string }>();
@@ -62,7 +63,9 @@ export default function JobPostScreen() {
   const [seasonLabel, setSeasonLabel] = useState('');
   const [applyUrl, setApplyUrl] = useState('');
   const [applyEmail, setApplyEmail] = useState('');
-  const [expiryDays, setExpiryDays] = useState(0);
+  const [expiryDays, setExpiryDays] = useState(30);
+  // Editing never silently changes an existing closing date: it is only sent if the employer picks a new one.
+  const [expiryTouched, setExpiryTouched] = useState(false);
 
   const load = useCallback(async () => {
     if (!jobId) return;
@@ -120,7 +123,7 @@ export default function JobPostScreen() {
     if (!profile) return;
     setSaving(true);
     try {
-      const expires = expiryDays > 0 ? new Date(Date.now() + expiryDays * 86_400_000).toISOString() : null;
+      const expires = new Date(Date.now() + (expiryDays > 0 ? expiryDays : 30) * 86_400_000).toISOString();
       const payload: JobInput = {
         posted_as_business_id: businessId,
         title: title.trim(),
@@ -141,7 +144,7 @@ export default function JobPostScreen() {
         season_label: seasonal ? (seasonLabel.trim() || null) : null,
         apply_url: applyUrl.trim() || null,
         apply_email: applyEmail.trim() || null,
-        expires_at: expires,
+        ...(!isEdit || expiryTouched ? { expires_at: expires } : {}),
         is_hidden: false,
         status: 'open',
       };
@@ -212,7 +215,7 @@ export default function JobPostScreen() {
           <Toggle label="Seasonal role" hint="Tourism / fishing season etc." value={seasonal} onChange={setSeasonal} />
           {seasonal ? <Field label="Season"><TextInput style={styles.input} value={seasonLabel} onChangeText={setSeasonLabel} placeholder="e.g. Summer 2026" placeholderTextColor={colors.textLight} /></Field> : null}
 
-          <Field label="Auto-close listing"><ChipRow items={EXPIRY.map(e => String(e.days))} value={String(expiryDays)} label={(d) => EXPIRY.find(e => String(e.days) === d)!.label} onPick={(v) => setExpiryDays(Number(v))} /></Field>
+          <Field label="Closes automatically after"><ChipRow items={EXPIRY.map(e => String(e.days))} value={String(expiryDays)} label={(d) => EXPIRY.find(e => String(e.days) === d)!.label} onPick={(v) => { setExpiryTouched(true); setExpiryDays(Number(v)); }} /></Field>
 
           <Field label="Apply on a website (optional)"><TextInput style={styles.input} value={applyUrl} onChangeText={setApplyUrl} autoCapitalize="none" placeholder="https://…" placeholderTextColor={colors.textLight} /></Field>
           <Field label="Apply by email (optional)"><TextInput style={styles.input} value={applyEmail} onChangeText={setApplyEmail} autoCapitalize="none" keyboardType="email-address" placeholder="jobs@…" placeholderTextColor={colors.textLight} /></Field>

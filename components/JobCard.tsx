@@ -8,6 +8,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { SECTIONS } from '@/constants/sections';
+import { closingLabel } from '@/lib/job-taxonomy';
 import { Job, CONTRACT_LABELS, REMOTE_LABELS, formatJobPay, payIsShown, jobDisplayBusiness } from '@/lib/jobs-api';
 
 const S = SECTIONS.jobs;
@@ -60,7 +61,7 @@ export function JobCard({
         </Text>
 
         <View style={styles.chips}>
-          <Chip icon="file-signature" label={CONTRACT_LABELS[job.contract_type]} />
+          <Chip icon="file-signature" label={CONTRACT_LABELS[job.contract_type] ?? job.contract_type} />
           {job.locality || job.location ? <Chip icon="map-marker-alt" label={(job.locality ?? job.location)!} /> : null}
           {job.remote_mode !== 'on_site' ? <Chip icon="laptop-house" label={REMOTE_LABELS[job.remote_mode]} /> : null}
         </View>
@@ -68,7 +69,8 @@ export function JobCard({
         <View style={styles.footer}>
           <Text style={[styles.pay, payIsShown(job) && { color: S.color }]}>{formatJobPay(job)}</Text>
           <Text style={styles.dot}>·</Text>
-          <Text style={styles.posted}>{postedAgo(job.posted_at)}</Text>
+          <Text style={styles.posted}>{postedAgo(job.listed_at ?? job.posted_at)}</Text>
+          {closingLabel(job.expires_at) ? <><Text style={styles.dot}>·</Text><Text style={styles.posted}>{closingLabel(job.expires_at)}</Text></> : null}
           {job.relocation_support ? <View style={styles.perk}><FontAwesome5 name="suitcase-rolling" size={9} color={S.color} solid /><Text style={styles.perkText}>Relocation</Text></View> : null}
           {job.housing_available ? <View style={styles.perk}><FontAwesome5 name="home" size={9} color={S.color} solid /><Text style={styles.perkText}>Housing</Text></View> : null}
         </View>

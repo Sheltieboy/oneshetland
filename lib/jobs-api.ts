@@ -11,19 +11,18 @@
 
 import { supabase } from './supabase';
 
+import { JOB_CONTRACT_LABELS, normaliseJobCategory } from '@/lib/job-taxonomy';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ContractType   = 'full-time' | 'part-time' | 'casual' | 'apprenticeship' | 'volunteer' | 'freelance';
+export type ContractType   = 'full-time' | 'part-time' | 'casual' | 'temporary' | 'apprenticeship' | 'volunteer' | 'freelance';
 export type RemoteMode      = 'on_site' | 'hybrid' | 'remote';
 export type PayPeriod       = 'hour' | 'day' | 'week' | 'month' | 'year' | 'total';
 export type JobStatus       = 'open' | 'closed' | 'filled';
 export type ApplicationStatus =
   | 'applied' | 'viewed' | 'shortlisted' | 'interview' | 'offer' | 'hired' | 'declined' | 'withdrawn';
 
-export const CONTRACT_LABELS: Record<ContractType, string> = {
-  'full-time': 'Full-time', 'part-time': 'Part-time', casual: 'Casual',
-  apprenticeship: 'Apprenticeship', volunteer: 'Volunteer', freelance: 'Freelance',
-};
+export const CONTRACT_LABELS: Record<ContractType, string> = JOB_CONTRACT_LABELS;
 export const REMOTE_LABELS: Record<RemoteMode, string> = {
   on_site: 'On-site', hybrid: 'Hybrid', remote: 'Remote',
 };
@@ -77,6 +76,12 @@ export interface Job {
   updated_at:          string;
   source:              string | null;
   source_label:        string | null;
+  /** Source's own listing page, its human reference (e.g. SIC09073), when the source published it, and our sort date (published, else first seen). */
+  source_url:          string | null;
+  source_reference:    string | null;
+  source_published_at: string | null;
+  listed_at:           string | null;
+  source_meta:         Record<string, unknown> | null;
   external_employer_name: string | null;
   external_employer_logo_url: string | null;
   business?:           { id: string; name: string; logo_url: string | null; brand_color: string | null; slug: string | null; is_verified: boolean } | null;
@@ -211,9 +216,11 @@ export async function fetchJobs(opts: JobFilter = {}): Promise<Job[]> {
     .eq('status', 'open')
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order('is_featured', { ascending: false })
-    .order('posted_at',   { ascending: false });
+    .order('listed_at',   { ascending: false });   // source's publication date when known, else first seen
 
-  if (opts.category)      q = q.eq('category', opts.category);
+  // A category outside the vocabulary (stale link, typo) is ignored rather than emptying the list.
+  const cat = normaliseJobCategory(opts.category);
+  if (cat)                q = q.eq('category', cat);
   if (opts.contract_type) q = q.eq('contract_type', opts.contract_type);
   if (opts.remote_mode)   q = q.eq('remote_mode', opts.remote_mode);
   if (opts.locality)      q = q.eq('locality', opts.locality);

@@ -64,7 +64,7 @@ export async function fetchBusinessHome(
 
   // Job applications are keyed by job, so the job ids come first. Everything
   // else goes in one parallel batch behind it — two waves, not eighteen.
-  const jobIds = await supabase.from('jobs').select('id').eq('business_id', businessId)
+  const jobIds = await supabase.from('jobs').select('id').eq('posted_as_business_id', businessId)
     .then(({ data }) => (data ?? []).map((j: { id: string }) => j.id), () => [] as string[]);
 
   const [
