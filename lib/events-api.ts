@@ -7,6 +7,8 @@ import { uploadAsync as fsUploadAsync } from 'expo-file-system/legacy';
 import { supabase, SUPABASE_URL } from './supabase';
 import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
 import { HISTORY_TICKET_STATUSES, type HistoryOrder } from './ticket-lifecycle';
+import { currentEventsFilter } from './event-currency';
+import { storedValuesFor } from './event-categories';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -344,6 +346,14 @@ export const UPDATE_KIND_LABELS: Record<UpdateKind, string> = {
 
 // ── Events CRUD ───────────────────────────────────────────────────────────────
 
+/**
+ * Published events.
+ *
+ * With no `from` this is the CURRENT list — upcoming plus still running (see lib/event-currency.ts:
+ * ends_at >= now, or no end and starts_at >= now) — so a festival or exhibition does not vanish the
+ * moment it starts. With an explicit `from` it is a plain by-start-date range (the month calendar).
+ * `category` matches every stored spelling of that logical category (legacy names included).
+ */
 export async function fetchPublishedEvents(opts: {
   category?: string;
   businessId?: string;
@@ -361,10 +371,11 @@ export async function fetchPublishedEvents(opts: {
     .or('organiser_hub_id.is.null,calendar_approved.eq.true')
     .order('starts_at', { ascending: true });
 
-  const now = new Date().toISOString();
-  q = q.gte('starts_at', opts.from ?? now);
+  if (opts.from) q = q.gte('starts_at', opts.from);
+  else           q = q.or(currentEventsFilter(new Date().toISOString()));
   if (opts.to)         q = q.lte('starts_at', opts.to);
-  if (opts.category)   q = q.eq('category', opts.category);
+  const stored = storedValuesFor(opts.category);
+  if (stored.length > 0) q = q.in('category', stored);
   if (opts.businessId) q = q.eq('organiser_business_id', opts.businessId);
   if (opts.limit)      q = q.limit(opts.limit);
   if (opts.offset)     q = q.range(opts.offset, (opts.offset + (opts.limit ?? 20)) - 1);

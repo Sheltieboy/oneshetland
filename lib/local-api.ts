@@ -10,6 +10,7 @@ export { WalletUnavailableError, walletFailureNotice } from './wallet-outcome';
 export type { PaymentNotice } from './wallet-outcome';
 import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
 import { retryAfterSecsFrom } from './retry-after';
+import { currentEventsFilter } from './event-currency';
 
 /**
  * Decode the real error from a supabase.functions.invoke failure.
@@ -1987,7 +1988,7 @@ export async function fetchLocalFeed(area?: string): Promise<{
     .select('id,title,starts_at,venue,cover_url,has_tickets,locality')
     .eq('status', 'published')
     .or('organiser_hub_id.is.null,calendar_approved.eq.true')
-    .gte('starts_at', now)
+    .or(currentEventsFilter(now))
     .order('starts_at', { ascending: true })
     .limit(12);
   if (area) evQ = evQ.ilike('locality', `%${area}%`);

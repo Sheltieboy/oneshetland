@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { isCurrentEvent } from '@/lib/event-currency';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Switch, Linking, RefreshControl, Alert, Modal,
@@ -299,7 +300,7 @@ export default function BusinessDashboardScreen() {
     const now = new Date();
     setBizEvents(
       (evRows as OsEvent[])
-        .filter(e => e.status === 'published' && !e.is_hidden && new Date(e.starts_at) > now)
+        .filter(e => e.status === 'published' && !e.is_hidden && (new Date(e.starts_at) > now || isCurrentEvent(e, now)))
         .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
         .slice(0, 5),
     );

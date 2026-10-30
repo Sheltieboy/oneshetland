@@ -19,6 +19,7 @@
 import { supabase } from '@/lib/supabase';
 import { fetchEffectiveTier, NO_ENTITLEMENT, type Effective } from '@/lib/entitlement';
 import type { OutcomeData } from '@/lib/business-outcomes';
+import { currentEventsFilter } from '@/lib/event-currency';
 
 /** One thing genuinely waiting on the owner. */
 export type AttentionItem = {
@@ -94,7 +95,7 @@ export async function fetchBusinessHome(
       .eq('organiser_business_id', businessId),
     supabase.from('events').select('id', { count: 'exact', head: true })
       .eq('organiser_business_id', businessId).eq('status', 'published')
-      .eq('is_hidden', false).gt('starts_at', now),
+      .eq('is_hidden', false).or(currentEventsFilter(now)),
     count('local_offers', (q) => q),
     count('local_offers', (q) => q.eq('is_active', true).lte('valid_from', now).gte('valid_until', now)),
     count('local_loyalty_programs', (q) => q),

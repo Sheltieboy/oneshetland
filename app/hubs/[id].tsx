@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { isCurrentEvent } from '@/lib/event-currency';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   ActivityIndicator, Linking,
@@ -505,7 +506,7 @@ export default function HubDetailScreen() {
   );
 
   const upcomingEvents = events.filter(e =>
-    new Date(e.starts_at).getTime() >= Date.now() - 6 * 3600_000
+    (new Date(e.starts_at).getTime() >= Date.now() - 6 * 3600_000 || isCurrentEvent(e))
     && e.status !== 'cancelled' && e.status !== 'draft',
   ).slice(0, 6);
 

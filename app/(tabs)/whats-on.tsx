@@ -16,6 +16,8 @@ import { SECTIONS } from '@/constants/sections';
 import { TabScreenHeader } from '@/components/TabScreenHeader';
 import { SECTION_HEROES } from '@/constants/section-heroes';
 import { EventsCalendar, dayKey } from '@/components/EventsCalendar';
+import { londonRangeEnd } from '@/lib/event-currency';
+import { normaliseCategory, sameCategory } from '@/lib/event-categories';
 import {
   fetchPublishedEvents,
   formatShortDate, formatTime,
@@ -33,19 +35,9 @@ const FILTER_DATES = [
   { label: 'All upcoming', kind: 'all'   as const },
 ];
 
-/** Upper bound for a date filter — a real calendar week/month, not a rolling window. */
+/** Upper bound for a date filter — a real calendar week/month in SHETLAND time (lib/event-currency.ts). */
 function rangeUpperBound(kind: 'today' | 'week' | 'month' | 'all'): string | undefined {
-  if (kind === 'all') return undefined;
-  const d = new Date();
-  if (kind === 'today') {
-    d.setHours(23, 59, 59, 999);
-  } else if (kind === 'week') {
-    d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); // through this Sunday
-    d.setHours(23, 59, 59, 999);
-  } else {
-    return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
-  }
-  return d.toISOString();
+  return londonRangeEnd(kind);
 }
 
 export default function WhatsOnTab() {
@@ -80,11 +72,10 @@ export default function WhatsOnTab() {
 
   const buildQueryOpts = useCallback((offset = 0) => {
     const fd = FILTER_DATES[dateFilter];
-    const from = new Date().toISOString();
     const to   = rangeUpperBound(fd.kind);
+    // No `from`: the list is "upcoming + still running", not "starts after now" (see fetchPublishedEvents).
     return {
       category: categoryFilter ?? undefined,
-      from,
       to,
       limit:  PAGE,
       offset,
@@ -149,7 +140,7 @@ export default function WhatsOnTab() {
   const featured = highlights.filter(e => e.is_featured).slice(0, 8);
   const ticketed = highlights.filter(e => e.has_tickets).slice(0, 12);
 
-  const monthEventsCat = categoryFilter ? monthEvents.filter(e => e.category === categoryFilter) : monthEvents;
+  const monthEventsCat = categoryFilter ? monthEvents.filter(e => sameCategory(e.category, categoryFilter)) : monthEvents;
   const monthCounts: Record<string, number> = {};
   for (const e of monthEventsCat) {
     const k = dayKey(new Date(e.starts_at));
@@ -471,7 +462,7 @@ function EventCard({ event, onPress }: { event: OsEvent; onPress: () => void }) 
 
         <View style={styles.cardMeta}>
           {event.category && (
-            <Text style={[styles.cardCategory, { color: S.color }]}>{event.category}</Text>
+            <Text style={[styles.cardCategory, { color: S.color }]}>{normaliseCategory(event.category)}</Text>
           )}
           <Text style={styles.cardTitle} numberOfLines={2}>{event.title}</Text>
           <View style={styles.cardInfoRow}>

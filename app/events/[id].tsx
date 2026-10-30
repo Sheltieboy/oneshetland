@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { normaliseCategory } from '@/lib/event-categories';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   ActivityIndicator, Linking, Share,
@@ -254,7 +255,7 @@ export default function EventDetailScreen() {
   const titleBlock = (
     <View style={styles.titleBlock}>
       {event.category && (
-        <Text style={[styles.category, { color: accent }]}>{event.category}</Text>
+        <Text style={[styles.category, { color: accent }]}>{normaliseCategory(event.category)}</Text>
       )}
       <Text style={styles.title}>{event.title}</Text>
       {event.business && (

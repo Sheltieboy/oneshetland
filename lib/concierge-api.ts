@@ -7,6 +7,7 @@
 
 import { supabase } from './supabase';
 import { todaysSpik } from './seed-content';
+import { currentEventsFilter } from './event-currency';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,8 @@ export async function fetchHomeEvents(limit = 6): Promise<HomeEvent[]> {
       .eq('is_hidden', false)
       // Hub events only reach the islands-wide calendar once approved.
       .or('organiser_hub_id.is.null,calendar_approved.eq.true')
-      .gte('starts_at', new Date().toISOString())
+      // Still on, not just not-yet-started (lib/event-currency.ts).
+      .or(currentEventsFilter(new Date().toISOString()))
       .order('is_featured', { ascending: false })
       .order('starts_at',   { ascending: true })
       .limit(limit);
