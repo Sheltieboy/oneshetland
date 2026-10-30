@@ -135,7 +135,7 @@ export function defaultExpiryIso(from: Date | number = new Date(), days: number 
   return new Date(t + days * 86_400_000).toISOString();
 }
 
-/** "Closes 6 Nov" / "Closes today" / "Closes tomorrow" / "Closed 2 Nov"; "" when there is no closing date (nothing is invented). */
+/** "Closes 6 Nov" / "Closes in 3 days" (2-5 days out) / "Closes today" / "Closes tomorrow" / "Closed 2 Nov"; "" when there is no closing date (nothing is invented). */
 export function closingLabel(expiresAt: unknown, now: Date | number = new Date()): string {
   if (typeof expiresAt !== "string" || !expiresAt) return "";
   const e = new Date(expiresAt).getTime();
@@ -146,6 +146,9 @@ export function closingLabel(expiresAt: unknown, now: Date | number = new Date()
   const today = dayKey(n), closes = dayKey(e), tomorrow = dayKey(n + 86_400_000);
   if (closes === today) return "Closes today";
   if (closes === tomorrow) return "Closes tomorrow";
+  // Subtle urgency inside the last working week; further out it is just the date.
+  const days = Math.round((Date.parse(closes) - Date.parse(today)) / 86_400_000);
+  if (days >= 2 && days <= 5) return `Closes in ${days} days`;
   return `Closes ${short}`;
 }
 

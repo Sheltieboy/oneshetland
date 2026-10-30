@@ -126,6 +126,12 @@ describe('closing dates', () => {
     assert.equal(T.closingLabel('2026-10-31T10:00:00Z', NOW), 'Closes tomorrow');
     assert.equal(T.closingLabel('2026-10-28T10:00:00Z', NOW), 'Closed 28 Oct');
   });
+  test('subtle urgency: "Closes in N days" for 2-5 days out, plain date beyond', () => {
+    assert.equal(T.closingLabel('2026-11-02T23:59:00Z', NOW), 'Closes in 3 days');
+    assert.equal(T.closingLabel('2026-11-04T23:59:00Z', NOW), 'Closes in 5 days');
+    assert.equal(T.closingLabel('2026-11-05T23:59:00Z', NOW), 'Closes 5 Nov');
+    assert.equal(T.closingLabel('2026-11-06T23:59:00Z', NOW), 'Closes 6 Nov');
+  });
   test('no closing date -> nothing is invented; garbage -> nothing', () => {
     for (const v of [null, undefined, '', 'not a date', 5]) assert.equal(T.closingLabel(v, NOW), '');
   });
