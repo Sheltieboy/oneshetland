@@ -198,7 +198,7 @@ begin
     raise exception 'Unknown notice status' using errcode = '22023';
   end if;
   select * into n from public.notices where id = p_notice for update;
-  if not found then raise exception 'Notice not found' using errcode = '42501'; end if;   -- same answer as "not yours": no probing
+  if not found then raise exception 'You do not manage that notice' using errcode = '42501'; end if;   -- word for word what "not yours" says: no id-probing
   v_staff := public.attribution_staff();
   if not v_staff then
     if n.is_platform_notice then raise exception 'You do not manage that notice' using errcode = '42501'; end if;
@@ -228,7 +228,7 @@ declare n public.notices%rowtype;
 begin
   if auth.uid() is null then raise exception 'Sign in to manage notices' using errcode = '42501'; end if;
   select * into n from public.notices where id = p_notice;
-  if not found then raise exception 'Notice not found' using errcode = '42501'; end if;
+  if not found then raise exception 'You do not manage that notice' using errcode = '42501'; end if;   -- identical to the not-yours message
   if not (
        exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
        or (not n.is_platform_notice

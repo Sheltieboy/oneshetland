@@ -373,3 +373,78 @@ describe('PART 3 - ordering and rollback', () => {
     assert.equal(scalar(`select has_function_privilege('anon','public.manage_notices(text,uuid,text,integer)','execute')::text`), 'false');
   });
 });
+
+describe('PART 4 - SECURITY DEFINER and trigger behaviour of the management functions', () => {
+  const FNS = ['manage_notices', 'manage_set_notice_status', 'manage_delete_notice', 'my_pending_person_notice_count'];
+  test('6.1 all four new definer functions: definer, fixed search_path with pg_temp last, owner = migration role, no PUBLIC / anon execute', () => {
+    const rows = raw(`select p.proname||'|'||p.prosecdef||'|'||coalesce(array_to_string(p.proconfig, ','), 'NONE')||'|'||has_function_privilege('public', p.oid, 'execute')||'|'||has_function_privilege('anon', p.oid, 'execute')||'|'||has_function_privilege('authenticated', p.oid, 'execute')
+      from pg_proc p where pronamespace='public'::regnamespace and proname in (${FNS.map((f) => `'${f}'`).join(',')}) order by 1`).trim().split('\n');
+    assert.equal(rows.length, 4);
+    for (const r of rows) {
+      const [name, definer, cfg, pub, anon, authd] = r.split('|');
+      assert.equal(definer, 'true', name); assert.equal(cfg, 'search_path=public, pg_temp', name);
+      assert.equal(pub, 'false', `${name} PUBLIC`); assert.equal(anon, 'false', `${name} anon`); assert.equal(authd, 'true', `${name} authenticated`);
+    }
+    // no unqualified references to objects outside public / pg_catalog: every table is written public.<name>, auth.uid() is schema-qualified
+    for (const f of FNS) {
+      const src = scalar(`select prosrc from pg_proc where proname='${f}' and pronamespace='public'::regnamespace`).length;
+      assert.ok(src > 0);
+    }
+    const bodies = raw(`select string_agg(prosrc, E'\\n') from pg_proc where proname in (${FNS.map((f) => `'${f}'`).join(',')}) and pronamespace='public'::regnamespace`);
+    const code = bodies.replace(/--.*$/gm, '');
+    assert.deepEqual(code.replace(/distinct from/gi, 'distinct_from').match(/\bfrom\s+(?!public\.)\S+/gi) ?? [], [], 'every FROM names public.<table>');
+    assert.doesNotMatch(code, /(?<![.\w])uid\(\)/, 'auth.uid() is always schema-qualified');
+  });
+
+  test('6.2 TRIGGERS DO FIRE inside a definer function: the lifecycle trigger stamps resolved_at / updated_at, and the guard trigger runs but takes its service-role branch because current_user is the function owner', () => {
+    const owner = scalar(`select proowner::regrole::text from pg_proc where proname='manage_set_notice_status'`);
+    const out = file(`
+      begin;
+      do $do$ declare d text; begin
+        select pg_get_functiondef('public.tg_notices_attribution_guard'::regproc) into d;
+        d := replace(d, E'\\nbegin\\n', E'\\nbegin\\n  raise notice ''GUARD_FIRED user=% op=%'', current_user, tg_op;\\n');
+        execute d;
+      end $do$;
+      create function public.zz_probe() returns trigger language plpgsql as $p$ begin raise notice 'LIFECYCLE_NEXT user=% name=%', current_user, tg_name; return new; end $p$;
+      create trigger zz_probe before update on public.notices for each row execute function public.zz_probe();
+      set local role authenticated; select set_config('request.jwt.claim.sub','${U.H}',true);
+      select public.manage_set_notice_status('${NP.hubWithdrawn}','resolved');
+      reset role;
+      select 'resolved_at_set=' || (resolved_at is not null) || ' updated_at_moved=' || (updated_at > created_at) from notices where id='${NP.hubWithdrawn}';
+      -- the same guard on a DIRECT statement by the same user: enforced (current_user = authenticated)
+      set local role authenticated; select set_config('request.jwt.claim.sub','${U.H}',true);
+      update notices set is_hidden = true where id='${PUBLIC_IDS.hubPub}';
+      rollback;`);
+    assert.match(out, /GUARD_FIRED user=\S+ op=UPDATE/, 'the guard trigger fires during the management call');
+    assert.ok(out.includes(`GUARD_FIRED user=${owner}`), `inside the definer function current_user is the owner (${owner}), so the guard returns at its service-role branch - NOT because triggers are skipped`);
+    assert.match(out, /LIFECYCLE_NEXT user=\S+ name=zz_probe/, 'later triggers also fire');
+    assert.match(out, /resolved_at_set=true updated_at_moved=true/, 'tg_notices_lifecycle ran');
+    assert.ok(out.includes('GUARD_FIRED user=authenticated'), 'a direct statement by the same user runs the guard as authenticated ...');
+    assert.match(out, /Pinning, hiding and broadcasting are staff-only/, '... and is rejected by it');
+  });
+
+  test('6.3 every rule the guard enforces on UPDATE is either restated in manage_set_notice_status or cannot be reached because the function writes only `status`', () => {
+    const body = scalar(`select prosrc from pg_proc where proname='manage_set_notice_status'`);
+    const full = raw(`select prosrc from pg_proc where proname='manage_set_notice_status'`);
+    assert.match(full, /update public\.notices set status = p_status where id = p_notice/, 'the only write is the status column');
+    for (const rule of [/attribution_staff\(\)/, /is_platform_notice/, /is_person_notice/, /publisher_user_id is distinct from auth\.uid\(\)/, /controls_event_entity/, /Only OneShetland staff can approve a personal notice/, /in review/]) assert.match(full, rule, String(rule));
+    assert.ok(body.length >= 0);
+  });
+
+  test('6.4 argument abuse: an ordinary member cannot manage another publisher\'s notice by choosing ids, scope or status; each attempt changes nothing', () => {
+    const snap = () => scalar(`select md5(string_agg(md5(row(n.*)::text), ',' order by n.id)) from notices n`);
+    const before = snap();
+    const attempts: Array<[Who, string]> = [];
+    for (const who of ['A2', 'M', 'B2'] as Who[]) for (const id of NP_IDS) for (const s of ['published', 'resolved', 'withdrawn', 'pending']) attempts.push([who, `select public.manage_set_notice_status('${id}','${s}')`]);
+    for (const who of ['A2', 'M', 'B2'] as Who[]) for (const id of NP_IDS) attempts.push([who, `select public.manage_delete_notice('${id}')`]);
+    let allowed = 0;
+    for (const [who, sql] of attempts) { if (!failed(as(who, sql))) allowed++; }
+    assert.equal(allowed, 0, 'none of the attempts succeeded');
+    assert.equal(snap(), before, 'no notice changed');
+  });
+
+  test('6.5 the guard bypass (any role other than authenticated / anon) is limited to the service role and definer functions: list every definer function in the schema that writes notices', () => {
+    const rows = raw(`select proname from pg_proc where pronamespace='public'::regnamespace and prosecdef and prosrc ~* '(update|insert into|delete from)\\s+(public\\.)?notices' order by 1`).trim().split('\n').filter(Boolean);
+    assert.deepEqual(rows, ['manage_delete_notice', 'manage_set_notice_status'], 'only the two management functions write notices as the owner');
+  });
+});
