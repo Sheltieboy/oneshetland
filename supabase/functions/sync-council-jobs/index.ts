@@ -47,7 +47,8 @@ const UA = 'OneShetlandJobsBot/1.0 (+https://oneshetland.com; jobs aggregation, 
 const BASE = 'https://www.myjobscotland.gov.uk';
 const COUNCIL = 'Shetland Islands Council';
 const COUNCIL_PATH = '/councils/shetland-islands-council/jobs/';
-const COUNCIL_LOGO = 'https://admin.myjobscotland.gov.uk/sites/default/files/styles/logo/public/organisations/SIC_mjs.png';
+// Square-safe (512x512, padded) copy of the council's official logo, uploaded once; job cards crop to a square so the source's 177x200 image lost its wording.
+const COUNCIL_LOGO = 'https://nkrtmakxygkvxuxriiil.supabase.co/storage/v1/object/public/employer-logos/external/shetland-islands-council.png';
 const PAGE_CAP = 8; // 25 results a page: 200 per search is far more than the council ever posts
 
 export type Parsed = {

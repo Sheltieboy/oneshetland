@@ -192,7 +192,7 @@ describe('C — a good run', () => {
     for (const r of calls.upserts[0]) {
       assert.equal(r.source, 'myjobscotland'); assert.equal(r.status, 'open'); assert.equal(r.is_hidden, false);
       assert.equal(r.employer_id, null); assert.equal(r.external_employer_name, 'Shetland Islands Council');
-      assert.match(r.external_employer_logo_url, /SIC_mjs\.png$/);
+      assert.match(r.external_employer_logo_url, /shetland-islands-council\.png$/);
       assert.equal(r.pay_hidden, !r.pay_text);
       assert.ok(r.title.length > 0 && r.title.length <= 200);
     }
