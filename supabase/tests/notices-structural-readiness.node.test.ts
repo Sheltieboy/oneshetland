@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { noticePublisher } from '../../lib/notice-publisher.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -28,6 +29,7 @@ const ATTRIBUTION = rd('supabase/migrations/20261121000000_event_notice_attribut
 const GEO1 = rd('supabase/migrations/20261127000000_canonical_geography_foundation.sql');
 const GEO2 = rd('supabase/migrations/20261127010000_geography_alias_ambiguity.sql');
 const MIGRATION = rd('supabase/migrations/20261128000000_notices_structural_readiness.sql');
+const MIGRATION2 = rd('supabase/migrations/20261128010000_notices_read_protection.sql');
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 if (!DSN) throw new Error('PASS_PROOF_DSN is required (isolated database only) — run via `npm run test:isolated`');
@@ -68,8 +70,13 @@ const n = (sql: string) => scalar(sql);
 const clear = (u: keyof typeof U) => file(`delete from notices where is_person_notice and publisher_user_id='${U[u]}'`);
 let seq = 0;
 const T = (p: string) => `${p}-${++seq}`;
-/** insert a notice as `who`; returns the raw output (the new id on success). */
-const ins = (who: Who, cols: string, vals: string) => as(who, `insert into notices (${cols}) values (${vals}) returning id`);
+/**
+ * insert a notice as `who` WITHOUT RETURNING (a pending / scheduled row is not readable by its publisher any more - Stage 3A read protection);
+ * returns the new id on success, the error text on failure. The legacy `.insert().select()` shape is covered in notices-read-protection.
+ */
+const ins = (who: Who, cols: string, vals: string) => { const id = randomUUID(); const o = as(who, `insert into notices (id, ${cols}) values ('${id}', ${vals})`); return failed(o) ? o : id; };
+/** a publisher's own view through the management function (non-public rows are not readable directly any more) */
+const managed = (who: Who, scope: string, id: string | null, where = 'true') => Number(last(as(who, `select count(*) from public.manage_notices('${scope}', ${id ? `'${id}'` : 'null'}) m where ${where}`)));
 const idOf = (o: string) => (o.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []).pop() ?? '';
 const statusOf = (id: string) => n(`select status from notices where id='${id}'`);
 
@@ -109,6 +116,7 @@ before(() => {
   OTHER_BEFORE = n(`select md5(coalesce(string_agg(md5(to_jsonb(x)::text), ',' order by md5(to_jsonb(x)::text)),'')) from (select * from hubs) x`)
     + n(`select md5(coalesce(string_agg(md5(to_jsonb(x)::text), ',' order by md5(to_jsonb(x)::text)),'')) from (select * from local_businesses) x`);
   o = file(MIGRATION); assert.doesNotMatch(o, /ERROR/i, `notices migration failed:\n${o.slice(0, 800)}`);
+  o = file(MIGRATION2); assert.doesNotMatch(o, /ERROR/i, `read-protection migration failed:\n${o.slice(0, 800)}`);
 });
 
 describe('the live notice and existing publishers are untouched', () => {
@@ -183,28 +191,33 @@ describe('person publisher', () => {
     clear('A');
     const id = idOf(person('A'));
     assert.equal(count('anon', `id='${id}'`), 0);
-    assert.equal(count('A', `id='${id}'`), 1);
+    assert.equal(count('A', `id='${id}'`), 0, 'not even the author reads it directly (Stage 3A): it would surface in feeds of released builds');
     assert.equal(count('A2', `id='${id}'`), 0);
     assert.equal(count('H', `id='${id}'`), 0);
-    assert.equal(count('S', `id='${id}'`), 1);
+    assert.equal(count('S', `id='${id}'`), 0, 'staff use the management function');
+    assert.equal(managed('A', 'mine', null, `m.id='${id}'`), 1, 'the author still manages it');
+    assert.equal(managed('S', 'all', null, `m.id='${id}'`), 1, 'staff still review it');
+    assert.equal(managed('A2', 'mine', null, `m.id='${id}'`), 0);
+    assert.equal(managed('H', 'hub', HUB_V, `m.id='${id}'`), 0);
   });
   test('12 only staff approve; the author can withdraw; an approved edit returns to review; the cap is 5 pending', () => {
     const id = idOf(person('A2'));
     assert.equal(last(as('A2', `with u as (update notices set status='published' where id='${id}' returning 1) select count(*) from u`)) === '1' ? 'self-approved' : 'blocked', 'blocked');
     assert.equal(statusOf(id), 'pending');
-    assert.ok(!failed(as('S', `update notices set status='published' where id='${id}'`)));
+    assert.equal(last(as('S', `select public.manage_set_notice_status('${id}','published')`)), 'published');
     assert.equal(count('anon', `id='${id}'`), 1, 'staff approval makes it public');
-    as('A2', `update notices set title='edited after approval' where id='${id}'`);
-    assert.equal(statusOf(id), 'pending', 'content edit goes back to review');
-    as('S', `update notices set status='published' where id='${id}'`);
-    as('A2', `update notices set status='withdrawn' where id='${id}'`);
+    assert.ok(failed(as('A2', `update notices set title='edited after approval' where id='${id}'`)), 'Stage 3A: the edit would send it back to review (non-public), which a direct UPDATE is refused; the guard rule itself still holds for the service role');
+    assert.equal(n(`select title from notices where id='${id}'`) !== 'edited after approval', true, 'approved content cannot be changed behind the moderators');
+    assert.equal(statusOf(id), 'published');
+    file(`update notices set title='edited by service' where id='${id}'`);
+    as('A2', `select public.manage_set_notice_status('${id}','withdrawn')`);
     assert.equal(statusOf(id), 'withdrawn');
     assert.equal(count('anon', `id='${id}'`), 0);
     assert.equal(n(`select (withdrawn_at is not null)::text from notices where id='${id}'`), 'true');
     clear('M');
     for (let i = 0; i < 5; i++) assert.ok(!failed(person('M')), 'within cap');
     assert.ok(failed(person('M')), 'the 6th pending notice is refused');
-    assert.equal(count('M', `is_person_notice and status='pending'`), 5);
+    assert.equal(n(`select count(*) from notices where is_person_notice and status='pending' and publisher_user_id='${U.M}'`), '5');
     clear('M');
   });
   test('13 another person cannot edit or delete the notice', () => {
@@ -215,7 +228,7 @@ describe('person publisher', () => {
   });
   test('14 account deletion leaves a valid notice labelled "Former member"', () => {
     const id = idOf(person('A2'));
-    as('S', `update notices set status='published' where id='${id}'`);
+    as('S', `select public.manage_set_notice_status('${id}','published')`);
     file(`delete from profiles where id='${U.A2}'`);
     assert.equal(n(`select publisher_user_id is null from notices where id='${id}'`), 't');
     assert.equal(n(`select (public.notice_publisher_display('${id}')->>'label')`), 'Former member');
@@ -264,8 +277,9 @@ describe('lifecycle and read rule', () => {
     const future = idOf(ins('H', 'publisher_hub_id, title, starts_at', `'${HUB_V}','${T('later')}', now()+interval '1 day'`));
     const past = idOf(ins('H', 'publisher_hub_id, title, starts_at', `'${HUB_V}','${T('now')}', now()-interval '1 minute'`));
     assert.equal(count('anon', `id='${future}'`), 0); assert.equal(count('anon', `id='${past}'`), 1);
-    assert.equal(count('H', `id='${future}'`), 1, 'the owner still sees their own scheduled notice');
-    assert.equal(count('A', `id='${future}'`), 0, 'a stranger does not');
+    assert.equal(count('H', `id='${future}'`), 0, 'the owner does not read their own scheduled notice directly (Stage 3A)');
+    assert.equal(managed('H', 'hub', HUB_V, `m.id='${future}'`), 1, 'but manages it through the management function');
+    assert.equal(managed('A', 'mine', null, `m.id='${future}'`), 0, 'a stranger does not');
   });
   test('20 expired notices are hidden from the public but kept', () => {
     const id = idOf(as('service', `insert into notices (publisher_hub_id, title, expires_at) values ('${HUB_V}','${T('old')}', now()-interval '1 minute') returning id`));
@@ -278,21 +292,23 @@ describe('lifecycle and read rule', () => {
     assert.equal(count('anon', `id='${id}'`), 1);
     as('service', `update notices set status='resolved' where id='${id}'`);
     assert.equal(n(`select title||'|'||source_label||'|'||source_reference||'|'||(resolved_at is not null)||'|'||(expires_at > now()) from notices where id='${id}'`), `Prescription request system unavailable|NHS Shetland|${ref}|true|true`);
-    assert.equal(count('anon', `id='${id}'`), 0); assert.equal(count('S', `id='${id}'`), 1);
+    assert.equal(count('anon', `id='${id}'`), 0); assert.equal(count('S', `id='${id}'`), 0); assert.equal(managed('S', 'all', null, `m.id='${id}'`), 1);
     const hubId = idOf(ins('H', 'publisher_hub_id, title', `'${HUB_V}','${T('hres')}'`));
-    as('H', `update notices set status='resolved' where id='${hubId}'`);
-    assert.equal(statusOf(hubId), 'resolved'); assert.equal(count('H', `id='${hubId}'`), 1, 'hub owner still sees its own resolved notice'); assert.equal(count('anon', `id='${hubId}'`), 0);
-    assert.equal(count('M', `id='${hubId}'`), 0, 'a plain member does not');
+    assert.ok(failed(as('H', `update notices set status='resolved' where id='${hubId}'`)), 'a direct UPDATE that makes a notice non-public is refused (Stage 3A) ...');
+    as('H', `select public.manage_set_notice_status('${hubId}','resolved')`);
+    assert.equal(statusOf(hubId), 'resolved', '... the management function does it'); assert.equal(count('H', `id='${hubId}'`), 0); assert.equal(managed('H', 'hub', HUB_V, `m.id='${hubId}'`), 1, 'hub owner manages its own resolved notice'); assert.equal(count('anon', `id='${hubId}'`), 0);
+    assert.equal(managed('A2', 'mine', null, `m.id='${hubId}'`), 0, 'a stranger does not');
   });
   test('22 withdrawn and updated_at: withdrawn is not public; updated_at moves on edit', () => {
     const id = idOf(ins('B', 'publisher_business_id, title', `'${BIZ_B}','${T('w')}'`));
     const t0 = n(`select updated_at from notices where id='${id}'`);
     file(`select pg_sleep(0.05)`);
-    as('B', `update notices set status='withdrawn' where id='${id}'`);
-    assert.equal(count('anon', `id='${id}'`), 0); assert.notEqual(n(`select updated_at from notices where id='${id}'`), t0);
-    assert.equal(n(`select (withdrawn_at is not null)::text from notices where id='${id}'`), 'true');
     assert.ok(failed(as('B', `update notices set status='bogus' where id='${id}'`)));
     assert.ok(failed(as('B', `update notices set status='pending' where id='${id}'`)), 'only staff place a hub/business notice in review');
+    assert.ok(failed(as('B', `update notices set status='withdrawn' where id='${id}'`)), 'a direct withdraw is refused (Stage 3A) ...');
+    assert.ok(!failed(as('B', `select public.manage_set_notice_status('${id}','withdrawn')`)), '... the management function withdraws');
+    assert.equal(count('anon', `id='${id}'`), 0); assert.notEqual(n(`select updated_at from notices where id='${id}'`), t0);
+    assert.equal(n(`select (withdrawn_at is not null)::text from notices where id='${id}'`), 'true');
   });
 });
 
@@ -364,7 +380,8 @@ describe('generated notices, display, compatibility', () => {
     assert.equal(label(idOf(ins('B', 'publisher_business_id, title', `'${BIZ_B}','${T('l')}'`))), 'Bea Bakery');
     const pid = idOf(ins('A', 'is_person_notice, title', `true,'${T('l')}'`));
     assert.equal(label(pid), 'A OneShetland member', 'a pending notice does not disclose the name to anyone else');
-    assert.equal(last(as('A', `select public.notice_publisher_display('${pid}')->>'label'`)), 'Ann', 'the author sees their own name');
+    assert.equal(last(as('A', `select public.notice_person_label('${U.A}')`)), 'Ann', 'the author sees their own name');
+    assert.equal(last(as('A', `select public.notice_publisher_display('${pid}') is null`)), 't', 'a pending notice is not readable, so the display function returns nothing');
     file(`update notices set status='published' where id='${pid}'`);
     assert.equal(label(pid), 'Ann');
     assert.equal(last(as('anon', `select public.notice_publisher_display('${pid}')->>'label'`)), 'Ann', 'public once approved');
@@ -424,11 +441,12 @@ describe('TypeScript helper matches the SQL helper', () => {
 
 describe('rollback', () => {
   test('35 the rollback restores the pre-Stage-2 shape (and refuses while person / non-published notices exist)', () => {
-    const RB = rd('supabase/rollbacks/20261128000000_notices_structural_readiness_rollback.sql');
-    const refused = file(RB.replace(/commit;\s*$/, 'rollback;'));
+    const RB2 = rd('supabase/rollbacks/20261128010000_notices_read_protection_rollback.sql').replace(/^begin;/m, '').replace(/commit;\s*$/, '');
+    const RB = rd('supabase/rollbacks/20261128000000_notices_structural_readiness_rollback.sql').replace(/^begin;/m, '');
+    const refused = file('begin;' + RB2 + RB.replace(/commit;\s*$/, 'rollback;'));
     assert.match(refused, /rollback refused/);
     file(`delete from notices where is_person_notice or status <> 'published'`);
-    const o = file(RB.replace(/commit;\s*$/, `select 'cols:' || count(*) from information_schema.columns where table_name='notices' and column_name in ('status','source','starts_at','is_person_notice','updated_at');
+    const o = file('begin;' + RB2 + RB.replace(/commit;\s*$/, `select 'cols:' || count(*) from information_schema.columns where table_name='notices' and column_name in ('status','source','starts_at','is_person_notice','updated_at');
       select 'tables:' || count(*) from pg_tables where tablename in ('notice_areas','notice_categories');
       select 'legacy:' || count(*) from notices where id='${N_LEGACY}';
       select 'policies:' || count(*) from pg_policies where tablename='notices';
