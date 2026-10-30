@@ -394,3 +394,78 @@ describe('G — Stage 2: multi-source facts, Temporary, locality, reference and 
     assert.equal(calls.deletes.length, 0);
   });
 });
+
+describe('H — Stage 3: the council sync is source-scoped (external jobs survive it)', () => {
+  // A stateful in-memory jobs table that EXECUTES upsert-on-(source,source_ref) and delete .eq(source).not(source_ref in …),
+  // so what survives is decided by the function's real queries, not by assertions about their shape.
+  function statefulDb(rows: Row[]) {
+    const log: Row[] = [];
+    return {
+      rows, log,
+      from(table: string) {
+        if (table === 'job_sync_runs') return { insert: async (r: Row) => { log.push(r); return {}; }, delete: () => ({ lt: async () => ({}) }) };
+        return {
+          select: (_c?: string, o?: { head?: boolean }) => ({ eq: async (_col: string, v: string) => {
+            const mine = rows.filter((r) => r.source === v);
+            return o?.head ? { count: mine.length } : { data: mine };
+          } }),
+          upsert: async (batch: Row[]) => {
+            for (const b of batch) {
+              const i = rows.findIndex((r) => r.source === b.source && r.source_ref === b.source_ref);
+              if (i >= 0) rows[i] = { ...rows[i], ...b }; else rows.push({ ...b });
+            }
+            return { error: null };
+          },
+          delete: () => {
+            let src = ''; let keep: string[] = [];
+            const q: any = {
+              eq: (_c: string, v: string) => { src = v; return q; },
+              not: (_c: string, _op: string, v: string) => { keep = [...v.matchAll(/"([^"]*)"/g)].map((m) => m[1]); return q; },
+              select: async () => {
+                const gone = rows.filter((r) => r.source === src && !keep.includes(r.source_ref));
+                for (const g of gone) rows.splice(rows.indexOf(g), 1);
+                return { data: gone.map((g) => ({ id: g.id })), error: null };
+              },
+            };
+            return q;
+          },
+        };
+      },
+    };
+  }
+  const load = (db: any) => {
+    let h: any;
+    loadModule('supabase/functions/sync-council-jobs/index.ts', {
+      'https://deno.land/std@0.168.0/http/server.ts': { serve: (fn: any) => { h = fn; } },
+      '../_shared/send-push.ts': { createServiceClient: () => db },
+      '../_shared/cron-auth.ts': { requireCronSecret: () => null },
+      '../_shared/job-taxonomy.ts': loadModule('supabase/functions/_shared/job-taxonomy.ts', {}),
+    });
+    return h;
+  };
+  const ext = (source: string, ref: string, extra: Row = {}) => ({ id: `${source}-${ref}`, source, source_ref: ref, title: `External ${ref}`, is_hidden: true, expires_at: '2026-12-01T00:00:00Z', ...extra });
+
+  test('a run updates and removes council jobs, and leaves every other source exactly as it was', async () => {
+    const stale = { id: 'sic-stale', source: 'myjobscotland', source_ref: '111111', title: 'Council job that dropped off the feed' };
+    const externals = [ext('nhs-scotland-jobs', '262985'), ext('myjobscotland-other', '494589'), ext('shetland-news', 'ramp-agent'), ext('rfa-greenhouse', '5000366101', { is_hidden: false })];
+    const snapshot = JSON.stringify(externals);
+    const db = statefulDb([stale, ...externals.map((e) => ({ ...e }))]);
+    const res = await load(db)(new Request('https://x.supabase.co/functions/v1/sync-council-jobs', { method: 'POST', headers: { 'x-cron-secret': 's' } }));
+    assert.equal(res.status, 200);
+    assert.ok(!db.rows.some((r: Row) => r.source_ref === '111111'), 'the dropped council listing is removed (existing behaviour)');
+    assert.equal(db.rows.filter((r: Row) => r.source === 'myjobscotland').length, 7, 'the 7 live council cards are upserted');
+    assert.equal(JSON.stringify(db.rows.filter((r: Row) => r.source !== 'myjobscotland')), snapshot, 'external rows (hidden or live) are byte-identical afterwards');
+  });
+  test('the sync only ever writes rows whose source is its own, and the delete is scoped to that source', async () => {
+    const db = statefulDb([]);
+    await load(db)(new Request('https://x.supabase.co/functions/v1/sync-council-jobs', { method: 'POST', headers: { 'x-cron-secret': 's' } }));
+    assert.ok(db.rows.length > 0 && db.rows.every((r: Row) => r.source === 'myjobscotland'));
+    const src = readRepo('supabase/functions/sync-council-jobs/index.ts');
+    assert.match(src, /\.delete\(\)\s*\.eq\('source', src\.source\)/);
+  });
+  test('an external job that merely shares a source_ref number with a council job is a different row', async () => {
+    const db = statefulDb([ext('nhs-scotland-jobs', '494359')]);
+    await load(db)(new Request('https://x.supabase.co/functions/v1/sync-council-jobs', { method: 'POST', headers: { 'x-cron-secret': 's' } }));
+    assert.ok(db.rows.some((r: Row) => r.source === 'nhs-scotland-jobs' && r.source_ref === '494359'));
+  });
+});
