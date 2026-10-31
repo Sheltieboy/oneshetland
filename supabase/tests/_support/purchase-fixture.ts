@@ -212,6 +212,21 @@ class Query implements PromiseLike<Result> {
     else throw new Error(`not(${op}) unsupported by the test adapter`);
     return this;
   }
+  gt(c: string, v: unknown) { this.filters.push(`${ident(c)} > ${lit(v)}`); return this; }
+  gte(c: string, v: unknown) { this.filters.push(`${ident(c)} >= ${lit(v)}`); return this; }
+  lte(c: string, v: unknown) { this.filters.push(`${ident(c)} <= ${lit(v)}`); return this; }
+  /** PostgREST or(): flat `col.op.value` terms joined by commas (is / eq / gt / gte / lt / lte). */
+  or(expr: string) {
+    const ops: Record<string, string> = { eq: '=', gt: '>', gte: '>=', lt: '<', lte: '<=' };
+    const terms = expr.split(',').map((t) => {
+      const m = t.trim().match(/^([a-z_][a-z0-9_]*)\.(is|eq|gt|gte|lt|lte)\.(.+)$/i);
+      if (!m) throw new Error(`or(${t}) unsupported by the test adapter`);
+      const [, col, op, val] = m;
+      if (op === 'is') return `${ident(col)} is ${val === 'null' ? 'null' : lit(val)}`;
+      return `${ident(col)} ${ops[op]} ${lit(val)}`;
+    });
+    this.filters.push(`(${terms.join(' or ')})`); return this;
+  }
   lt(c: string, v: unknown) { this.filters.push(`${ident(c)} < ${lit(v)}`); return this; }
   order(c: string, o: { ascending?: boolean } = {}) { this.orderBy = `${ident(c)} ${o.ascending === false ? 'desc' : 'asc'}`; return this; }
   limit(n: number) { this.lim = n; return this; }
