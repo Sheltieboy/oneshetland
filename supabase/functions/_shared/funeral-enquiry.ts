@@ -78,24 +78,45 @@ function expandV6(s: string): string[] | null {
   return parts.length === 8 && parts.every((x) => /^[0-9a-f]{1,4}$/.test(x)) ? parts : null;
 }
 
-/** A client is keyed by its IPv4 address, or by the /64 of an IPv6 address (one home can rotate the rest of the address at will). */
+/**
+ * A client is keyed by its IPv4 address (canonical dotted decimal only), or by the /64 of an IPv6 address (one home can rotate the rest of the address at will).
+ * Returns null for anything that is not a usable client address, and for addresses that would put UNRELATED visitors in one bucket:
+ *   - IPv4-mapped (::ffff:a.b.c.d or ::ffff:aabb:ccdd) and NAT64 well-known-prefix (64:ff9b::a.b.c.d) addresses are keyed by the embedded IPv4 address;
+ *   - an IPv6 address whose first 64 bits are zero (::, ::1, IPv4-compatible) is refused: every such address would share one /64 key.
+ */
 export function normaliseIp(raw: string): string | null {
   const s = raw.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/%.*$/, '');
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s) && s.split('.').every((p) => Number(p) <= 255)) return s;
-  const mapped = s.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
-  if (mapped) return normaliseIp(mapped[1]);
+  if (s === '' || s.length > 45) return null;
+  const v4 = (t: string): string | null => {
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(t)) return null;
+    const parts = t.split('.');
+    if (parts.some((x) => x.length > 1 && x.startsWith('0'))) return null;   // 010 is octal to some parsers: never guess, refuse the non-canonical form
+    return parts.every((x) => Number(x) <= 255) ? parts.join('.') : null;
+  };
+  const direct = v4(s);
+  if (direct) return direct;
+  const dotted = s.match(/^(?:::ffff:|64:ff9b::)(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (dotted) return v4(dotted[1]);
   const v6 = expandV6(s);
-  return v6 ? `${v6.slice(0, 4).map((x) => x.padStart(4, '0')).join(':')}::/64` : null;
+  if (!v6) return null;
+  const g = v6.map((x) => parseInt(x, 16));
+  const embedded = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) return embedded(g[6], g[7]);                                   // ::ffff:aabb:ccdd
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return embedded(g[6], g[7]);                 // 64:ff9b::/96 (NAT64)
+  if (g.slice(0, 4).every((x) => x === 0)) return null;                                                                       // ::, ::1, ::a.b.c.d: no usable /64
+  return `${v6.slice(0, 4).map((x) => x.padStart(4, '0')).join(':')}::/64`;
 }
 
-/** Trusted address: Supabase's edge sits behind Cloudflare, which sets cf-connecting-ip and cannot be overridden by the caller. The LAST entry of
- *  x-forwarded-for (added by the nearest proxy) is the fallback; the first entry is client-supplied and is never used. */
+/**
+ * The client address, from ONE header only: cf-connecting-ip, a single address set by Cloudflare in front of Supabase's edge.
+ * x-forwarded-for is NEVER used. Its first entry is client-supplied (a forged value is passed through, with the real address appended), and its last entry
+ * could be one of the platform's own proxy hops, which would put every visitor in one rate-limit bucket. Neither can be relied on without testing the hosted
+ * platform, so a missing or malformed cf-connecting-ip means "no trusted address" and the request is refused (see docs/notices-funeral-enquiry-protection.md,
+ * "Release verification"). Several comma-joined values are not a single address and are refused too.
+ */
 export function clientIp(req: Request): string | null {
   const cf = req.headers.get('cf-connecting-ip');
-  if (cf) return cf.trim();
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) { const parts = xff.split(',').map((p) => p.trim()).filter(Boolean); if (parts.length) return parts[parts.length - 1]; }
-  return null;
+  return cf && cf.trim() !== '' ? cf.trim() : null;
 }
 
 async function hmacKey(salt: string, value: string): Promise<string> {
@@ -143,7 +164,9 @@ export async function handleFuneralEnquiry(req: Request, deps: EnquiryDeps): Pro
 
   const rawIp = clientIp(req);
   const ip = rawIp ? normaliseIp(rawIp) : null;
-  if (!rawIp || !ip) { log('no_client_address'); return reply(400, 'verification_failed'); }   // cannot rate-limit what we cannot identify: refuse
+  // No trusted address (header absent or not a single valid address): we cannot tell visitors apart, so nothing is accepted. This is a platform/configuration
+  // fault, not the visitor's, hence 503 and a distinct log code the release checks look for.
+  if (!rawIp || !ip) { log('client_address_untrusted'); return reply(503, 'unavailable'); }
   const key = await hmacKey(salt, ip);
 
   const claim = async (subject: string, actions: string[]): Promise<{ allowed: boolean; retry: number } | null> => {

@@ -92,3 +92,6 @@ STILL OPEN (reported, not built): admins add organisation members by pasting a u
 
 ## Funeral enquiry spam protection (31 Oct 2026)
 The "anonymous form can lock families out" blocker is FIXED locally (see `notices-funeral-enquiry-protection.md`). Still required before release: the production secrets/settings listed there; confirmation that the hosted edge supplies `cf-connecting-ip`; a decision on Turnstile widget domain settings. An attacker with many distinct addresses and solved challenges can still consume an announcement's shared 15/day (documented residual risk).
+
+## Funeral enquiry: client address trust (31 Oct 2026) — RELEASE CHECK REQUIRED
+Hosted behaviour of `cf-connecting-ip` (present? overwritten when forged?) is NOT verified and cannot be without a deployment. The code uses only that header and refuses (503) when it is absent or malformed. Checks A–F in `notices-funeral-enquiry-protection.md` ("Release verification") must pass before the form is released; A, B and D are release blockers.

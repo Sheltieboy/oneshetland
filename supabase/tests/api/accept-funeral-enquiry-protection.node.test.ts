@@ -9,7 +9,7 @@ import { describe, test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { rpc, owner, URL_, ANON } from './_accept-client.ts';
 import { handleLocal, localDeps } from './accept-functions.ts';
-import { handleFuneralEnquiry, normaliseIp, clientIp, ENQUIRY_ACTION } from '../../functions/_shared/funeral-enquiry.ts';
+import { handleFuneralEnquiry, normaliseIp, ENQUIRY_ACTION } from '../../functions/_shared/funeral-enquiry.ts';
 import { resetMock, state, token, makeFetch } from './_mock-turnstile.ts';
 
 const RUN = process.env.ACCEPT_RUN === '1';
@@ -205,13 +205,20 @@ d('submit-funeral-enquiry: server-side verification, bypass closed, per-client l
       for (let i = 0; i < 3; i++) assert.equal((await send(id, `${p}::${i + 1}`)).status, 200);
       assert.equal((await send(id, `${p}:0:0:0:ffff`)).status, 429);
       assert.equal((await send(id, newIp())).status, 200);
-      assert.equal(normaliseIp('::ffff:192.0.2.5'), '192.0.2.5'); assert.equal(normaliseIp('2001:db8::1')?.endsWith('::/64'), true); assert.equal(normaliseIp('not-an-ip'), null);
+      assert.equal(normaliseIp('::ffff:192.0.2.5'), '192.0.2.5'); assert.equal(normaliseIp('2001:db8::1')?.endsWith('::/64'), true); assert.equal(normaliseIp('not-an-ip'), null); assert.equal(normaliseIp('::ffff:c000:205'), '192.0.2.5');
     });
-    test('23 the client address comes from the trusted header; a spoofed x-forwarded-for first entry is ignored and no address means refusal', async () => {
-      const real = '203.0.113.9'; const req = new Request('http://x', { headers: { 'x-forwarded-for': `198.51.100.1, ${real}` } });
-      assert.equal(clientIp(req), real, 'last entry (added by the nearest proxy), never the first');
-      assert.equal(clientIp(new Request('http://x', { headers: { 'cf-connecting-ip': '192.0.2.77', 'x-forwarded-for': '1.1.1.1' } })), '192.0.2.77');
-      const none = await handleLocal(mk(body(A), null)); assert.deepEqual([none.status, (await none.json()).error], [400, 'verification_failed']);
+    test('23 the client address comes ONLY from cf-connecting-ip: a spoofed x-forwarded-for neither helps nor hurts, and with no trusted address nothing is accepted (503, nothing filed, Cloudflare not called)', async () => {
+      resetMock(); const id = await announcement('Lima Person'), ip = newIp(), n = rows(id);
+      // the attacker rotates forged x-forwarded-for values hoping to look like a new visitor each time: it is still ONE client (3 per announcement)
+      let ok = 0; for (let i = 0; i < 6; i++) { const r = await send(id, ip, {}, { headers: { 'x-forwarded-for': `198.51.100.${i}, 203.0.113.${i}` } }); if (r.status === 200) ok++; }
+      assert.equal(ok, 3, 'forged x-forwarded-for does not create new clients'); assert.equal(rows(id), n + 3);
+      // and a forged value cannot make a DIFFERENT real visitor share this client's identity or allowance
+      assert.equal((await send(id, newIp(), {}, { headers: { 'x-forwarded-for': ip } })).status, 200);
+      const calls = state.calls.length;
+      const none = await handleLocal(mk(body(id), null, { headers: { 'x-forwarded-for': '203.0.113.9' } })); assert.deepEqual([none.status, (await none.json()).error], [503, 'unavailable']);
+      const bad = await handleLocal(mk(body(id), 'not-an-address')); assert.equal(bad.status, 503);
+      const multi = await handleLocal(mk(body(id), '192.0.2.1, 192.0.2.2')); assert.equal(multi.status, 503);
+      assert.equal(state.calls.length, calls, 'no Cloudflare call for a request with no trusted address'); assert.equal(rows(id), n + 4);
     });
     test('24 the shared per-announcement and site-wide circuit breakers still work (tested with lowered local ceilings), and the DB backstop catches the same contact', async () => {
       const id = await announcement('Hotel Person');
