@@ -17,7 +17,20 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "APP_VARIANT": "preview"
+      }
+    },
+    "preview-demo": {
+      "distribution": "internal",
+      "environment": "development",
+      "channel": "preview-demo",
+      "env": {
+        "APP_VARIANT": "preview-demo",
+        "EXPO_PUBLIC_SUPABASE_URL": "http://Darrens-MacBook-Pro.local:54790",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "demo-backend-ignores-this-key"
+      }
     },
     "production": {
       "autoIncrement": true,

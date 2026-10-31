@@ -49,3 +49,9 @@ plus those two linear commits, so nothing else shipped from outside the base. Th
   `app/(tabs)/me.tsx` and `account-hub-navigation.node.test.ts` are now byte-identical to build 148. `lib/referrals.ts` (unused, as in build 148) remains.
 * The local `home-redesign` is still 88 commits ahead of `origin/home-redesign` (45dddf6); none are pushed.
 
+
+## A1 / A2 / A3 — Android emulator findings (31 Oct 2026, source 5a5bf3b, local fixture backend)
+- **A1 — Android crash without a Maps key.** `components/BusinessLocationMap.tsx` mounts `MapView`; with no `com.google.android.geo.API_KEY` in the manifest the native SDK throws and JavaScript cannot catch it. Seen on business detail for a business with coordinates. Mitigated at build time (EAS Android builds now fail when no key is present — `app.config.js`); the app code is unchanged and a keyless local build still crashes. Whether the production key is valid and enabled for "Maps SDK for Android" is NOT verified (values are sensitive; Google console not inspected).
+- **A2 — Back chip overlaps the "ALL SHETLAND" label** on the legacy `/local-combined-feed` header. Not fixed.
+- **A3 — event-generated notices open their hub, not the event.** `app/notices.tsx` orders destinations campaign, hub, business. Intended behaviour (event first) not implemented; the data model already supports it (`notices.event_id`, ownership enforced by `notice_event_belongs`; the loader already joins `events(... calendar_approved)` and hides unapproved events). A small routing change plus a rule for finished/cancelled events is needed; awaiting approval.
+- Still outstanding: physical-Android verification, business detail against legitimate real data, empty/error states, Home Events card.

@@ -11,10 +11,21 @@
  * otherwise fall back to the existing Google key (which must have
  * "Maps SDK for Android" enabled in the Google Cloud console).
  */
-module.exports = ({ config }) => {
+const { applyVariant } = require('./config/app-variant');
+
+module.exports = ({ config: baseConfig }) => {
+  // APP_VARIANT unset = production: returns app.json's config untouched (see config/app-variant.js).
+  const config = applyVariant(baseConfig, process.env);
+
   const mapsKey =
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY ||
     process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY;
+
+  // A keyless Android build installs fine and then dies at the first <MapView> (a native crash JavaScript cannot catch). On EAS the platform is
+  // known, so refuse to build one rather than ship it. iOS (Apple Maps), local runs and config-only commands are unaffected.
+  if (process.env.EAS_BUILD_PLATFORM === 'android' && !mapsKey) {
+    throw new Error('Android builds need EXPO_PUBLIC_GOOGLE_MAPS_KEY (or EXPO_PUBLIC_GOOGLE_PLACES_KEY) in the build environment; without it the app crashes on any map.');
+  }
 
   return {
     ...config,
