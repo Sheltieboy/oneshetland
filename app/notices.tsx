@@ -8,7 +8,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  RefreshControl,
+  RefreshControl, Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -26,6 +26,13 @@ import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.notices;
+
+/** The identity mark when a publisher has no logo: a person is a generic member, an official source is its own mark, everything else the megaphone. */
+function markIcon(mark: HomeNotice['attribution']['mark']): string {
+  if (mark === 'person') return 'user';
+  if (mark === 'official-source') return 'landmark';
+  return 'bullhorn';
+}
 
 function tint(hex?: string | null): string {
   if (!hex || !/^#?[0-9a-fA-F]{6}/.test(hex)) return SECTIONS.community.color;
@@ -118,6 +125,7 @@ export default function NoticesScreen() {
           const open = () => {
             if (n.campaign_id) router.push(`/hub-campaign?id=${n.campaign_id}` as any);
             else if (n.hub_id) router.push(`/hubs/${n.hub_id}` as any);
+            else if (n.business_id) router.push({ pathname: '/local-business-detail', params: { id: n.business_id } } as any);
             else router.push('/(tabs)/whats-on');
           };
           return (
@@ -125,15 +133,20 @@ export default function NoticesScreen() {
               <View style={styles.cardTop}>
                 <View style={[styles.logo, { backgroundColor: accent }]}>
                   {n.logo_url ? <Image source={{ uri: n.logo_url }} style={styles.logoImg} />
-                    : <FontAwesome5 name={c ? 'hand-holding-heart' : 'bullhorn'} size={14} color="#fff" solid />}
+                    : <FontAwesome5 name={c ? 'hand-holding-heart' : markIcon(n.attribution.mark)} size={14} color="#fff" solid />}
                 </View>
                 <View style={{ flex: 1 }}>
                   {isUrgent ? <Text style={styles.urgent}>URGENT</Text> : null}
                   <Text style={styles.title} numberOfLines={2}>{n.title}</Text>
-                  <Text style={styles.meta} numberOfLines={1}>{n.publisher}{n.locality ? `  ·  ${n.locality}` : ''}</Text>
+                  <Text style={styles.meta} numberOfLines={1}>{n.attribution.byline}{n.locality ? `  ·  ${n.locality}` : ''}</Text>
                 </View>
               </View>
               {n.body ? <Text style={styles.body} numberOfLines={3}>{n.body}</Text> : null}
+              {n.attribution.source_url ? (
+                <TouchableOpacity onPress={() => { Linking.openURL(n.attribution.source_url as string).catch(() => {}); }} hitSlop={8} accessibilityRole="link">
+                  <Text style={styles.sourceLink}>View at source</Text>
+                </TouchableOpacity>
+              ) : null}
 
               {/* Admin only: push an urgent notice to every device. */}
               {isAdmin && isUrgent ? (
@@ -184,6 +197,7 @@ const styles = StyleSheet.create({
   urgent: { fontSize: 10, fontWeight: '900', color: colors.error, letterSpacing: 0.5 },
   title: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary },
   meta: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 1 },
+  sourceLink: { fontSize: fontSize.xs, color: S.color, fontWeight: '700', marginTop: 6, textDecorationLine: 'underline' },
   body: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20, marginTop: spacing.sm },
 
   broadcastBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: spacing.sm, backgroundColor: colors.error, borderRadius: radius.md, paddingVertical: 11 },

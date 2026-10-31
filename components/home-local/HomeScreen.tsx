@@ -355,7 +355,7 @@ export default function HomeScreen() {
           <View style={{ paddingHorizontal: SIDE, gap: 12 }}>
             {(data?.notices ?? []).map((n) => (
               <Pressable key={n.id} onPress={() => router.push('/notices')} style={{ borderRadius: 22, padding: 18, backgroundColor: '#DDD6FE' }}>
-                <Text style={{ color: '#6D28D9', fontSize: 10.5, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>{n.publisher}</Text>
+                <Text style={{ color: '#6D28D9', fontSize: 10.5, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>{n.attribution.is_official_source ? n.attribution.byline : n.attribution.label}</Text>
                 <DisplayText weight="bold" style={{ color: '#2E1065', fontSize: 23, lineHeight: 26, marginTop: 4 }}>{n.title}</DisplayText>
                 <Text numberOfLines={3} style={{ color: '#4C1D95', fontSize: 13.5, lineHeight: 19, marginTop: 6 }}>{n.body}</Text>
               </Pressable>
