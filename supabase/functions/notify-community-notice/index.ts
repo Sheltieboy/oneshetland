@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPushBulk } from '../_shared/send-push.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { broadcastRefusal } from '../_shared/notice-broadcast.ts';
 
 /**
  * notify-community-notice — the island-wide urgent channel.
@@ -15,7 +16,12 @@ import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
  *   • platform admins only (profiles.role = 'admin');
  *   • the notice must already be published, public, visible and unexpired,
  *     with severity 'urgent' — you broadcast an existing notice rather than
- *     composing a new message here, so what people get is what they'll read;
+ *     composing a new message here, so what people get is what they'll read.
+ *     "Published" means status = 'published' AND started (starts_at null or
+ *     past), checked here on the authoritative row (this function reads with
+ *     the service role, so row-level security does not do it for us), and
+ *     checked AGAIN inside the claim so a notice withdrawn a moment after the
+ *     first read is not sent. Nothing in the request but notice_id is trusted;
  *   • `broadcast_at` is claimed before sending, so a double-tap or a retry
  *     can't push the island twice;
  *   • sent urgent, which bypasses quiet hours. That is the whole point of the
@@ -69,30 +75,40 @@ serve(async (req) => {
 
     const { data: notice } = await svc
       .from('notices')
-      .select('id, title, body, severity, visibility, is_hidden, expires_at, locality, broadcast_at')
+      .select('id, title, body, severity, visibility, is_hidden, status, starts_at, expires_at, locality, broadcast_at')
       .eq('id', notice_id)
       .maybeSingle();
 
     if (!notice) return json({ error: 'Notice not found' }, 404);
-    if (notice.broadcast_at) return json({ error: 'Already sent to everyone', sent: 0 }, 409);
-    if (notice.severity !== 'urgent') return json({ error: 'Only urgent notices go island-wide' }, 400);
-    if (notice.visibility !== 'public' || notice.is_hidden) return json({ error: 'That notice is not public' }, 400);
-    if (notice.expires_at && new Date(notice.expires_at).getTime() < Date.now()) {
-      return json({ error: 'That notice has expired' }, 400);
-    }
+    // One clock reading for both the check and the claim, as an absolute instant.
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const refusal = broadcastRefusal(notice, nowMs);
+    if (refusal) return json(refusal.status === 409 ? { error: refusal.error, sent: 0 } : { error: refusal.error }, refusal.status);
 
     // Claim it BEFORE sending. If the send then fails we've lost a broadcast
     // rather than sent two — the safer way round when the whole island is on
     // the other end.
     const { data: claimed, error: claimErr } = await svc
       .from('notices')
-      .update({ broadcast_at: new Date().toISOString(), broadcast_by: user.id })
+      .update({ broadcast_at: nowIso, broadcast_by: user.id })
       .eq('id', notice.id)
       .is('broadcast_at', null)
+      // Same eligibility, enforced by the database in the same statement as the claim: if the notice was withdrawn, hidden,
+      // expired or made non-public between the read above and now, nothing is claimed and nothing is sent.
+      .eq('severity', 'urgent').eq('visibility', 'public').eq('is_hidden', false).eq('status', 'published')
+      .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
       .select('id')
       .maybeSingle();
     if (claimErr) return json({ error: claimErr.message }, 500);
-    if (!claimed) return json({ error: 'Already sent to everyone', sent: 0 }, 409);
+    if (!claimed) {
+      // Lost the claim: either it was already sent, or it stopped being eligible a moment ago.
+      const { data: again } = await svc.from('notices').select('broadcast_at').eq('id', notice.id).maybeSingle();
+      if (!again) return json({ error: 'Notice not found' }, 404);
+      if (again.broadcast_at) return json({ error: 'Already sent to everyone', sent: 0 }, 409);
+      return json({ error: 'That notice is no longer available to send', sent: 0 }, 409);
+    }
 
     // Everyone with a device: the legacy profiles.push_token and the
     // multi-device push_tokens table both count.
