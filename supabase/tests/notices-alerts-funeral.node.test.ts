@@ -235,6 +235,10 @@ describe('notifications (selection only): what the family approved, to those who
     for (const who of ['A', 'S', 'O', 'anon'] as const) for (const fn of [`funeral_dispatch_recipients('${A_}')`, `funeral_claim_dispatch('${A_}')`, `funeral_dispatchable('${A_}')`, `funeral_notification_text('${A_}')`]) {
       assert.match(as(who, `select * from public.${fn}`), /permission denied/, `${who} ${fn}`);
     }
+    assert.equal(as('service', `select public.can_dispatch_funeral('${U.O}')`).includes('t'), true, 'a moderator may announce');
+    assert.equal(as('service', `select public.can_dispatch_funeral('${U.S}')`).includes('t'), true, 'an administrator may announce');
+    assert.equal(as('service', `select public.can_dispatch_funeral('${U.A}')`).split('\n').pop()!.trim(), 'f', 'an ordinary member may not');
+    assert.match(as('A', `select public.can_dispatch_funeral('${U.A}')`), /permission denied/);
     const id = approve(submit('M', { full_name: 'Survives Account Deletion' }));
     file(`delete from hub_members where user_id='${U.M}'`);
     const del = file(`delete from profiles where id='${U.M}'`); assert.ok(!failed(del), del);

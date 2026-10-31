@@ -125,6 +125,26 @@ describe('what may be announced, and who may ask', () => {
     const pend = idOf(file(`insert into notices (publisher_hub_id, title, body, status) values ('${HUB_V}','Pending hub notice','b','pending') returning id`));
     assert.match(scalar(`select public.notice_dispatchable('${pend}','hub')`), /not published/);
   });
+  test('6b R2: notify-hub-content may announce ONLY a live hub notice — pending, withdrawn, resolved, hidden, scheduled, expired, committee-only, imported, platform, person, a deleted id and a made-up id are all refused; the legitimate hub notice passes', () => {
+    const base = (cols: string, vals: string) => idOf(file(`insert into notices (publisher_hub_id, title, body, ${cols}) values ('${HUB_V}', 'R2 probe', 'body', ${vals}) returning id`));
+    const reason = (id: string) => scalar(`select coalesce(public.notice_dispatchable('${id}','hub'),'OK')`);
+    const live = base('visibility', `'public'`);
+    assert.equal(reason(live), 'OK', 'a legitimate hub notice');
+    assert.equal(reason(base('visibility', `'members'`)), 'OK', 'a members-only hub notice may be announced to the members');
+    const refused: [string, string][] = [
+      ['pending', base('status', `'pending'`)], ['withdrawn', base('status', `'withdrawn'`)], ['resolved', base('status', `'resolved'`)], ['hidden', base('is_hidden', 'true')],
+      ['scheduled', base('starts_at', `now() + interval '1 hour'`)], ['expired', base('expires_at', `now() - interval '1 minute'`)], ['committee-only', base('visibility', `'committee'`)],
+    ];
+    for (const [label, id] of refused) assert.notEqual(reason(id), 'OK', label);
+    assert.match(reason(IMP), /never announced/, 'imported');
+    assert.match(reason(PERSON), /not a hub notice/, 'person');
+    assert.match(reason(ESS), /not a hub notice/, 'platform / organisation');
+    assert.match(reason(uuid()), /does not exist/, 'made-up id');
+    // withdrawn after the fact, and an edit after announcing: the once-only claim holds
+    const d = idOf(svc(`select public.notice_claim_dispatch('${live}','hub')`)); svc(`select public.notice_complete_dispatch('${d}')`);
+    file(`update notices set title = 'R2 probe, edited' where id='${live}'`);
+    assert.match(svc(`select public.notice_claim_dispatch('${live}','hub')`), /Already announced/);
+  });
   test('7 who may dispatch follows the real relationships (publisher member with the entitlement; delegate for official only; hub owner for own hub; administrator any)', () => {
     const can = (u: keyof typeof U, n: string, k: string) => scalar(`select public.can_dispatch_notice('${U[u]}','${n}','${k}')`);
     assert.equal(can('P', ESS, 'essential'), 't'); assert.equal(can('D', ESS, 'essential'), 'f', 'a delegate cannot announce an essential alert');

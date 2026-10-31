@@ -119,6 +119,11 @@ create function public.funeral_staff() returns boolean language sql stable secur
   select auth.uid() is not null and (public.attribution_staff() or public.notices_admin());
 $$;
 
+-- who may ANNOUNCE an approved funeral notice (explicit user: the edge function passes the verified caller, nothing is trusted from the request)
+create function public.can_dispatch_funeral(p_user uuid) returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select p_user is not null and exists (select 1 from public.profiles p where p.id = p_user and (p.role in ('admin', 'moderator') or coalesce(p.is_platform_owner, false)));
+$$;
+
 create function public.admin_set_funeral_director(p_name text, p_user uuid, p_verify boolean default true) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_id uuid;
@@ -403,13 +408,13 @@ revoke all on function public.funeral_staff(), public.admin_set_funeral_director
   public.request_funeral_notice_change(uuid, text, text, text), public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text),
   public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(), public.admin_funeral_resolve_change(uuid, text, text, jsonb),
   public.funeral_notification_text(uuid), public.funeral_dispatchable(uuid), public.funeral_claim_dispatch(uuid, uuid), public.funeral_dispatch_recipients(uuid, integer),
-  public.funeral_record_delivery(uuid, uuid, text, text) from public, anon, authenticated;
+  public.funeral_record_delivery(uuid, uuid, text, text), public.can_dispatch_funeral(uuid) from public, anon, authenticated;
 grant execute on function public.get_funeral_notices(text[], integer, integer), public.get_funeral_notice(uuid) to anon, authenticated, service_role;
 grant execute on function public.funeral_staff(), public.admin_set_funeral_director(text, uuid, boolean), public.submit_funeral_notice(jsonb), public.my_funeral_submissions(),
   public.update_my_funeral_submission(uuid, jsonb), public.withdraw_my_funeral_notice(uuid), public.request_funeral_notice_change(uuid, text, text, text),
   public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text), public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(),
   public.admin_funeral_resolve_change(uuid, text, text, jsonb) to authenticated;
 grant execute on function public.funeral_notification_text(uuid), public.funeral_dispatchable(uuid), public.funeral_claim_dispatch(uuid, uuid),
-  public.funeral_dispatch_recipients(uuid, integer), public.funeral_record_delivery(uuid, uuid, text, text) to service_role;
+  public.funeral_dispatch_recipients(uuid, integer), public.funeral_record_delivery(uuid, uuid, text, text), public.can_dispatch_funeral(uuid) to service_role;
 
 commit;
