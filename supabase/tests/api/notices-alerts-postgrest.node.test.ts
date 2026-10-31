@@ -184,6 +184,16 @@ describe('members, funeral notices, and the service-role path', () => {
     for (const k of ['essential', 'official', 'community', 'hub']) assert.match(String((await rpc('service', 'notice_dispatchable', { p_notice: 'f9000000-0000-4000-8000-000000000001', p_kind: k })).data), /never announced/, k);
     assert.match((await rpc('service', 'notice_claim_dispatch', { p_notice: 'f9000000-0000-4000-8000-000000000001', p_kind: 'official' })).error?.message ?? '', /never announced/);
   });
+  test('9b the single-notice read, the organisation list and the funeral edit read behave through the API', async () => {
+    const live = (await rpc('anon', 'get_public_notices', { p_level: 'community', p_limit: 1 })).data as { id: string }[];
+    assert.equal(((await rpc('anon', 'get_public_notice', { p_id: live[0].id })).data as unknown[]).length, 1);
+    assert.equal(((await rpc('anon', 'get_public_notice', { p_id: '00000000-0000-4000-8000-000000000000' })).data as unknown[]).length, 0);
+    const own = await rpc('P', 'my_official_notices', { p_publisher: COUNCIL }); assert.equal(own.error, null, own.error?.message); assert.ok((own.data as unknown[]).length >= 1);
+    for (const who of ['anon', 'A', 'H'] as const) assert.ok((await rpc(who, 'my_official_notices', { p_publisher: COUNCIL })).error, who);
+    const mine = (await rpc('A', 'my_funeral_submissions')).data as { id: string }[]; assert.ok(mine.length >= 1);
+    assert.ok((await rpc('A', 'my_funeral_submission', { p_id: mine[0].id })).data);
+    assert.equal((await rpc('H', 'my_funeral_submission', { p_id: mine[0].id })).data, null, 'only the submitter');
+  });
   test('10 the released-build and live-website read shapes are unchanged and leak nothing non-public (pending person, withdrawn, unapproved funeral, resolved alert, members-only)', async () => {
     pg(`insert into notices (is_person_notice, publisher_user_id, title, body, status) values (true,'${U.A}','NEVER pending person','b','pending');
         insert into notices (publisher_hub_id, title, body, status) values ('${HUB_V}','NEVER withdrawn','b','withdrawn');
