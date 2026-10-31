@@ -4,7 +4,7 @@
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 const PORT = Number(process.env.PROXY_PORT ?? 54790), REST = Number(process.env.REST_PORT ?? 54782), DELAY = Number(process.env.DELAY_RPC_MS ?? 0);
-const FORWARD = new Set(['notices', 'hubs', 'local_businesses', 'hub_campaigns', 'events', 'notice_areas', 'notice_categories', 'hub_members', 'profiles']);
+const FORWARD = new Set(['notices', 'hubs', 'local_businesses', 'hub_campaigns', 'events', 'notice_areas', 'notice_categories', 'hub_members', 'profiles', 'local_businesses_public']);
 let rpcCount = 0;
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x'); const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };

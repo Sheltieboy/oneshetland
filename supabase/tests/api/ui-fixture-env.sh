@@ -33,6 +33,16 @@ alter table notices add column lat numeric, add column lng numeric; alter table 
 alter table hubs add column logo_url text, add column brand_color text, add column type text default 'community', add column description text, add column cover_url text, add column contact_email text, add column contact_phone text, add column website text, add column area text, add column join_mode text default 'open', add column memberships_enabled boolean default false, add column directory_enabled boolean default false, add column is_charity boolean default false, add column charity_number text, add column created_at timestamptz default now(); alter table local_businesses add column logo_url text, add column brand_color text;
 alter table hub_campaigns add column raised_pence int default 0, add column goal_pence int default 0, add column donor_count int default 0, add column ends_at timestamptz, add column status text default 'active';
 alter table notices add constraint notices_campaign_id_fkey foreign key (campaign_id) references hub_campaigns(id) on delete cascade;
+-- the public business view the app's business detail screen reads (lib/local-api.ts BUSINESS_PUBLIC_SOURCE), with just enough columns for the fixtures
+alter table local_businesses add column category text, add column description text, add column address text, add column lat numeric, add column lng numeric, add column cover_url text,
+  add column is_verified boolean default false, add column is_active boolean default true, add column is_claimed boolean default false, add column created_at timestamptz default now(),
+  add column accepts_wallet boolean default false, add column accepts_bookings boolean default false, add column subscription_tier text, add column subscription_until timestamptz;
+create view local_businesses_public as select id, name, category, description, address, lat, lng, logo_url, cover_url, brand_color, null::text[] as tags, null::text as phone, null::text as website,
+  null::text as email, slug, null::jsonb as opening_hours, null::date as opening_hours_until, is_verified, is_active, is_claimed, null::timestamptz as claimed_at, null::timestamptz as verified_at, created_at,
+  accepts_wallet, false as wallet_live, accepts_bookings, 0::numeric as cashback_percent, payout_enabled, subscription_tier, subscription_until, can_publish_urgent, null::boolean as planner_visitor_ready,
+  null::int as planner_dwell_minutes, null::text as planner_setting, null::text[] as planner_good_for, null::text as planner_booking, null::text as planner_note, null::text as planner_context_source,
+  null::text[] as trade_categories, null::text as trade_availability, null::timestamptz as trade_availability_set_at, null::int as trade_min_job_pence, null::jsonb as trade_credentials from local_businesses;
+grant select on local_businesses_public to anon, authenticated, service_role;
 create table regions (id uuid primary key default gen_random_uuid(), slug text unique not null, name text not null, display_order int);
 create table jobs (id uuid primary key default gen_random_uuid(), title text, locality text, location text);
 create table runs (id uuid primary key default gen_random_uuid(), origin_region_id uuid references regions(id), destination_region_id uuid references regions(id));
