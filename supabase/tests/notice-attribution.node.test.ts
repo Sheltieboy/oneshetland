@@ -118,7 +118,7 @@ describe('publisher helper - authority and incomplete data', () => {
   test('the shared helper files are byte-pinned: the website repo holds identical copies and pins the same hashes', async () => {
     const { createHash } = await import('node:crypto'); const sha = (f: string) => createHash('sha256').update(rd(f)).digest('hex');
     assert.equal(sha('lib/notice-publisher.ts'), '21ce1afc4438948ce6e529b161180871ccee74f51e12afe5a5d9904b3376120c');
-    assert.equal(sha('lib/notice-feed.ts'), '40859ef8e8a0d0b326652efa189cb3364e11f28e4c00cda4d31d3e9b4d9388f7');
+    assert.equal(sha('lib/notice-feed.ts'), 'f113f53c6647a9c863341f311d63a3b177f2c081b94fc7b2d88f6908264fc5da');
   });
   test('the edge copy is byte-identical (no competing attribution system)', () => { assert.equal(rd('supabase/functions/_shared/notice-publisher.ts'), rd('lib/notice-publisher.ts')); });
 });
@@ -166,7 +166,7 @@ const noopStubs = (client: unknown) => ({ './supabase': { supabase: client }, '.
 describe('person names come only from the authorised RPC (privacy)', () => {
   test('loadPersonNames asks only for person notices that still have an author, never for hub / business / platform / former-member rows', async () => {
     const f = fakeSupabase({}, APPROVED);
-    const names = await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), ROWS as never);
+    const names = await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), ROWS as never, { cache: null });
     assert.deepEqual(f.rpcCalls.map((c) => c.args.p_notice).sort(), ['n-person', 'n-person-noname']);
     assert.ok(f.rpcCalls.every((c) => c.fn === 'notice_publisher_display'));
     assert.deepEqual(names, { 'n-person': 'Ann', 'n-person-noname': 'A OneShetland member' });
@@ -174,12 +174,12 @@ describe('person names come only from the authorised RPC (privacy)', () => {
   test('an unapproved / non-public person notice yields no name (the RPC answers generically); a failing RPC leaves the approved fallback', async () => {
     const f = fakeSupabase({}, {});   // nothing approved
     const rows = [{ id: 'n-pending', publisher_kind: 'person', publisher_user_id: 'u-ann' }];
-    const names = await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), rows);
+    const names = await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), rows, { cache: null });
     assert.equal(feed.attributionFor({ ...rows[0], publisher_kind: 'person' } as never, names).label, 'A OneShetland member', 'the real name is never in the answer');
     f.setFailRpc(true);
-    const none = await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), rows); assert.deepEqual(none, {});
+    const none = await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), rows, { cache: null }); assert.deepEqual(none, {});
     assert.equal(feed.attributionFor(rows[0] as never, none).label, 'A OneShetland member');
-    assert.deepEqual(await feed.loadPersonNames(async () => { throw new Error('network'); }, rows), {}, 'a thrown error is contained');
+    assert.deepEqual(await feed.loadPersonNames(async () => { throw new Error('network'); }, rows, { cache: null }), {}, 'a thrown error is contained');
   });
   test('the readers never query profiles', () => {
     for (const f of ['lib/concierge-api.ts', 'lib/hubs-api.ts', 'lib/notice-feed.ts']) {
@@ -188,9 +188,66 @@ describe('person names come only from the authorised RPC (privacy)', () => {
     }
     const api = loadModule('lib/concierge-api.ts', noopStubs(fakeSupabase({}, {}).client)); assert.ok(api.fetchHomeNotices);
   });
-  test('the cap bounds how many RPC calls one page can make', async () => {
-    const f = fakeSupabase({}, {}); const many = Array.from({ length: 80 }, (_, i) => ({ id: `p${i}`, publisher_kind: 'person', publisher_user_id: 'u' }));
-    await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), many as never); assert.equal(f.rpcCalls.length, 30);
+  test('the cap bounds how many RPC calls one page can make (distinct authors)', async () => {
+    const f = fakeSupabase({}, {}); const many = Array.from({ length: 80 }, (_, i) => ({ id: `p${i}`, publisher_kind: 'person', publisher_user_id: `author-${i}` }));
+    await feed.loadPersonNames((fn, args) => f.client.rpc(fn, args), many as never, { cache: null }); assert.equal(f.rpcCalls.length, 30);
+  });
+});
+
+describe('person-name lookups: cost control (Stage 3A.2 review)', () => {
+  const person = (i: number, author = `author-${i}`) => ({ id: `n${i}`, publisher_kind: 'person', publisher_user_id: author });
+  const run = (rows: any[], rpc: any, opts: any = {}) => feed.loadPersonNames(rpc, rows, { cache: null, ...opts });
+  test('no person notices -> no requests at all', async () => {
+    const f = fakeSupabase({}, {});
+    assert.deepEqual(await run(ROWS.filter((r) => r.publisher_kind !== 'person'), (fn: string, a: any) => f.client.rpc(fn, a)), {}); assert.equal(f.rpcCalls.length, 0);
+  });
+  test('one lookup per DISTINCT AUTHOR: ten notices by one person cost one request and all ten get the name', async () => {
+    const f = fakeSupabase({}, Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`n${i}`, 'Ann'])));
+    const rows = Array.from({ length: 10 }, (_, i) => person(i, 'same-author'));
+    const names = await run(rows, (fn: string, a: any) => f.client.rpc(fn, a));
+    assert.equal(f.rpcCalls.length, 1); assert.equal(Object.keys(names).length, 10); assert.ok(Object.values(names).every((v) => v === 'Ann'));
+  });
+  test('a page of 30 person notices by 30 authors costs 30 parallel requests, no more', async () => {
+    const f = fakeSupabase({}, {}); let inFlight = 0, peak = 0;
+    const rpc = async (fn: string, a: any) => { inFlight++; peak = Math.max(peak, inFlight); await new Promise((r) => setTimeout(r, 15)); inFlight--; return f.client.rpc(fn, a); };
+    const t0 = Date.now(); await run(Array.from({ length: 30 }, (_, i) => person(i)), rpc); const ms = Date.now() - t0;
+    assert.equal(f.rpcCalls.length, 30); assert.equal(peak, 30, 'all in parallel'); assert.ok(ms < 200, `30 x 15ms lookups finished in ${ms}ms (parallel), not 450ms`);
+  });
+  test('a SLOW lookup is abandoned after the timeout: the feed is not held up, that notice keeps the approved fallback, the others still get names', async () => {
+    const f = fakeSupabase({}, { n1: 'Ann' });
+    const rpc = (fn: string, a: any) => a.p_notice === 'n0' ? new Promise<any>(() => {}) /* never answers */ : f.client.rpc(fn, a);
+    const t0 = Date.now(); const names = await run([person(0), person(1)], rpc, { timeoutMs: 60 }); const ms = Date.now() - t0;
+    assert.ok(ms < 400, `returned in ${ms}ms despite a lookup that never answers`); assert.deepEqual(names, { n1: 'Ann' });
+    assert.equal(feed.attributionFor({ ...person(0), is_person_notice: true } as never, names).label, 'A OneShetland member');
+  });
+  test('a FAILED, erroring or throwing lookup leaves the approved fallback and never throws or retries', async () => {
+    let calls = 0;
+    for (const rpc of [async () => { calls++; return { data: null, error: { message: 'boom' } }; }, async () => { calls++; throw new Error('network'); }, async () => { calls++; return { data: { label: '' }, error: null }; }, async () => { calls++; return { data: 'x', error: null }; }]) {
+      assert.deepEqual(await run([person(1)], rpc as never), {});
+    }
+    assert.equal(calls, 4, 'exactly one attempt each - no retry loop');
+  });
+  test('a name is reused for the cache lifetime, so refreshing or re-rendering does not repeat the request; it expires', async () => {
+    const f = fakeSupabase({}, { n1: 'Ann' }); const cache = new Map(); let t = 1000; const rpc = (fn: string, a: any) => f.client.rpc(fn, a);
+    const opts = { cache, ttlMs: 60_000, now: () => t };
+    assert.deepEqual(await feed.loadPersonNames(rpc, [person(1)], opts), { n1: 'Ann' }); assert.equal(f.rpcCalls.length, 1);
+    for (let i = 0; i < 25; i++) await feed.loadPersonNames(rpc, [person(1)], opts);
+    assert.equal(f.rpcCalls.length, 1, '25 refreshes within the lifetime made no further request');
+    t += 60_001; await feed.loadPersonNames(rpc, [person(1)], opts); assert.equal(f.rpcCalls.length, 2, 'refreshed after expiry');
+  });
+  test('the cache is bounded and keyed by NOTICE id: a name remembered for one notice is never offered for another', async () => {
+    const cache = new Map(); const f = fakeSupabase({}, {});
+    for (let i = 0; i < 260; i++) await feed.loadPersonNames((fn: string, a: any) => f.client.rpc(fn, a), [person(i)], { cache, ttlMs: 60_000, now: () => 1 });
+    assert.ok(cache.size <= 200, `cache size ${cache.size}`);
+    // same author, different (unapproved) notice: the remembered name is NOT reused
+    const f2 = fakeSupabase({}, { 'n-approved': 'Ann' }); const c2 = new Map();
+    await feed.loadPersonNames((fn: string, a: any) => f2.client.rpc(fn, a), [{ id: 'n-approved', publisher_kind: 'person', publisher_user_id: 'ann' }], { cache: c2, now: () => 1 });
+    const other = await feed.loadPersonNames((fn: string, a: any) => f2.client.rpc(fn, a), [{ id: 'n-pending', publisher_kind: 'person', publisher_user_id: 'ann' }], { cache: c2, now: () => 2 });
+    assert.equal(f2.rpcCalls.length, 2); assert.equal(feed.attributionFor({ id: 'n-pending', publisher_kind: 'person', publisher_user_id: 'ann' } as never, other).label, 'A OneShetland member');
+  });
+  test('no request loop: lookups happen once per call, from loadPersonNames only (the readers call it once per fetch)', () => {
+    assert.equal((rd('lib/concierge-api.ts').match(/loadPersonNames\(/g) ?? []).length, 1); assert.equal((rd('lib/hubs-api.ts').match(/loadPersonNames\(/g) ?? []).length, 1);
+    assert.doesNotMatch(rd('lib/notice-feed.ts'), /while\s*\(|setInterval|for\s*\(;;\)/);
   });
 });
 
@@ -276,7 +333,6 @@ describe('screens use the shared attribution (contract)', () => {
   });
   test('the Notices screen shows the byline, links a business, and offers "View at source" only from the attribution', () => {
     assert.match(notices, /n\.attribution\.byline/); assert.match(notices, /n\.business_id/); assert.match(notices, /View at source/); assert.match(notices, /n\.attribution\.source_url/);
-    assert.match(notices, /router\.push\('\/\(tabs\)\/whats-on'\)/, 'the existing fallback destination is preserved');
   });
   test('NoticeCard renders attribution for every kind and only links an existing hub / business page', () => {
     assert.match(feedScreen, /notice\.attribution/); assert.match(feedScreen, /disabled=\{!hasDestination\}/); assert.match(feedScreen, /a\.byline/);
@@ -295,5 +351,28 @@ describe('screens use the shared attribution (contract)', () => {
   test('account-deletion function and broadcast client are untouched by this stage', () => {
     assert.match(rd('supabase/functions/delete-account/index.ts'), /svc\.from\('notices'\)\.delete\(\)\.eq\('publisher_user_id', uid\)/);
     assert.match(rd('lib/notices-broadcast.ts'), /notify-community-notice/);
+  });
+});
+
+describe('navigation: a notice goes to its own destination or nowhere (Stage 3A.2 review)', () => {
+  const notices = rd('app/notices.tsx'), feedScreen = rd('app/local-combined-feed.tsx');
+  test('the What\'s On fallback is gone from the Notices screen; a notice without a destination is not a button', () => {
+    assert.doesNotMatch(notices, /whats-on/); assert.match(notices, /const Card: any = open \? TouchableOpacity : View;/);
+    assert.match(notices, /n\.campaign_id \? \(\) => router\.push\(`\/hub-campaign\?id=\$\{n\.campaign_id\}`/); assert.match(notices, /n\.hub_id \? \(\) => router\.push\(`\/hubs\/\$\{n\.hub_id\}`/);
+    assert.match(notices, /n\.business_id \? \(\) => router\.push\(\{ pathname: '\/local-business-detail'/);
+  });
+  test('a card with nowhere to go shows the WHOLE notice (no line clamp) so nothing is hidden behind a missing link', () => {
+    assert.match(notices, /numberOfLines=\{open \? 2 : undefined\}/); assert.match(notices, /numberOfLines=\{open \? 3 : undefined\}/);
+    assert.match(feedScreen, /numberOfLines=\{hasDestination \? 3 : undefined\}/); assert.match(feedScreen, /styles\.hubName\} numberOfLines=\{hasDestination \? 2 : undefined\}\>\{a\.byline\}/); assert.match(rd('app/notices.tsx'), /styles\.meta\} numberOfLines=\{open \? 2 : undefined\}/); assert.match(feedScreen, /activeOpacity=\{hasDestination \? 0\.85 : 1\}/);
+  });
+  test('the admin broadcast action is untouched (still admin-only, still on urgent notices)', () => {
+    assert.match(notices, /isAdmin && isUrgent/); assert.match(notices, /Send to everyone/); assert.match(notices, /broadcast\(n\)/);
+  });
+  test('the Home card still opens the Notices list (a notice-specific destination), unchanged', () => { assert.match(rd('components/home-local/HomeScreen.tsx'), /router\.push\('\/notices'\)/); });
+  test('destinations by publisher kind, from the mapper: hub -> hub, business -> business, person / platform / official -> none', async () => {
+    const f = fakeSupabase({ notices: ROWS }, APPROVED); const out = await loadModule('lib/concierge-api.ts', noopStubs(f.client)).fetchHomeNotices({ limit: 50 });
+    const dest = (id: string) => { const n = out.find((x: any) => x.id === id); return [n.hub_id, n.business_id, n.campaign_id]; };
+    assert.deepEqual(dest('n-hub'), ['hub-1', null, null]); assert.deepEqual(dest('n-biz'), [null, 'biz-1', null]); assert.deepEqual(dest('n-fund'), ['hub-1', null, 'camp1']);
+    for (const id of ['n-person', 'n-person-noname', 'n-former', 'n-plat', 'n-nhs']) assert.deepEqual(dest(id), [null, null, null], id);
   });
 });

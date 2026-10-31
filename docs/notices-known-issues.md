@@ -28,3 +28,8 @@ send nothing. Never call it with a genuine eligible production notice.
 ## R2 — still open after Stage 3A.2
 Stage 3A.2 only changes how notices are displayed and read; `notify-hub-content` is untouched. R2 must still be assessed and resolved before any new notice lifecycle or
 management interface is introduced.
+
+## T1 — two app tests read a stale website checkout (not a Notices defect)
+*Recorded: Notices Stage 3A.2 review (31 Oct 2026).* `supabase/tests/book-service-first-discovery.node.test.ts` and `local-passes-discovery.node.test.ts` read website source from `../oneshetland-web`,
+a local `main` checkout that is 65 commits behind `origin/main` (105bbd4 vs 8904ced). Against it they fail (2 of 31); pointed at a current website baseline they pass 31/31 (verified with throwaway copies,
+nothing committed). They fail identically on the unmodified app baseline. Suggested maintenance (not done here): fast-forward that stale checkout, or let the tests read the website root from an environment variable.
