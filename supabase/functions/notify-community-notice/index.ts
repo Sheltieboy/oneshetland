@@ -22,6 +22,9 @@ import { broadcastRefusal } from '../_shared/notice-broadcast.ts';
  *     the service role, so row-level security does not do it for us), and
  *     checked AGAIN inside the claim so a notice withdrawn a moment after the
  *     first read is not sent. Nothing in the request but notice_id is trusted;
+ *   • an official IMPORTED notice (notices.source IS NOT NULL) can never be
+ *     sent, in any state — imports are silent by product rule — and that is
+ *     checked on the authoritative row and again inside the claim;
  *   • `broadcast_at` is claimed before sending, so a double-tap or a retry
  *     can't push the island twice;
  *   • sent urgent, which bypasses quiet hours. That is the whole point of the
@@ -75,7 +78,7 @@ serve(async (req) => {
 
     const { data: notice } = await svc
       .from('notices')
-      .select('id, title, body, severity, visibility, is_hidden, status, starts_at, expires_at, locality, broadcast_at')
+      .select('id, title, body, severity, visibility, is_hidden, status, starts_at, expires_at, source, locality, broadcast_at')
       .eq('id', notice_id)
       .maybeSingle();
 
@@ -96,6 +99,7 @@ serve(async (req) => {
       .is('broadcast_at', null)
       // Same eligibility, enforced by the database in the same statement as the claim: if the notice was withdrawn, hidden,
       // expired or made non-public between the read above and now, nothing is claimed and nothing is sent.
+      .is('source', null)   // official imports are silent: the same rule, enforced in the claim itself
       .eq('severity', 'urgent').eq('visibility', 'public').eq('is_hidden', false).eq('status', 'published')
       .or(`starts_at.is.null,starts_at.lte.${nowIso}`)
       .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
