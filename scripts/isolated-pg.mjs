@@ -77,6 +77,7 @@ const SUITES = [
   'supabase/tests/notices-alerts-audience.node.test.ts',
   'supabase/tests/notices-alerts-funeral.node.test.ts',
   'supabase/tests/notices-alerts-imports.node.test.ts',
+  'supabase/tests/notices-alerts-performance.node.test.ts',
   'supabase/tests/notices-read-protection.node.test.ts',
   'supabase/tests/notice-broadcast-eligibility.node.test.ts',
 ];
