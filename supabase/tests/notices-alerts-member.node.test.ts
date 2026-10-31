@@ -4,7 +4,7 @@
  * expiry is theirs to set (never urgent / essential / hub / business / platform / event); required fields, categories, areas and expiry are validated; at most five
  * pending; staff (and only staff) approve or decline, a decline carries a reason the member is shown; editing a published notice returns it to moderation and out
  * of every public read; withdrawal removes it; one member never sees or touches another's; AREA TARGETING keeps its three states (specific / explicit
- * Shetland-wide / unspecified) - unspecified is read in general feeds but is never Shetland-wide and never a push audience; and a deleted account leaves
+ * Shetland-wide / unspecified) - unspecified is read in general feeds but is never Shetland-wide and never a push audience; and an orphaned record (never produced by the real account deletion, which deletes personal notices) reads
  * "Former member" with nothing identifying. SAFETY - ISOLATED DATABASE ONLY (see the harness).
  */
 import { test, describe, before } from 'node:test';
@@ -139,7 +139,7 @@ describe('area targeting keeps three distinct states; deletion; privacy', () => 
     scalar(`insert into notice_areas (notice_id, area_id) values ('${hubWide}', 'shetland_wide')`);
     assert.deepEqual(recips(hubNone), [], 'unspecified area: nobody is pushed'); assert.ok(recips(hubWide).includes(U.A2), 'explicit Shetland-wide: every opted-in member');
   });
-  test('10 account deletion: the notice survives as "Former member" with nothing identifying; a pending one stays hidden', () => {
+  test('10 DEFENSIVE FALLBACK only (the real delete-account function deletes personal notices outright; this is the record left if a profile row were ever removed by other means): "Former member", nothing identifying, a pending one stays hidden', () => {
     const pubId = sub('F', 'Notice from a member who later leaves'); assert.equal(failed(as('O', `select public.staff_approve_person_notice('${pubId}')`)), false);
     const pendingId = sub('F', 'Still pending when they leave');
     scalar(`delete from profiles where id='${U.F}'`);

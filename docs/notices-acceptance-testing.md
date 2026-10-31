@@ -8,6 +8,8 @@ ACCEPT_ANON="$(...anon key...)" node supabase/tests/api/accept-seed.mjs   # nine
 echo "<anon key>" > /tmp/accept-anon.txt
 ACCEPT_RUN=1 node --test supabase/tests/api/accept-signed-in.node.test.ts  # 43 signed-in tests, every call made with that user's own JWT (RLS applies)
 ```
+Run the acceptance suites ONE AT A TIME (they share one database; `node --test a b` runs files in parallel and they interfere): `accept-signed-in.node.test.ts` (49 tests) and `accept-delete-account.node.test.ts` (6 tests: executes the REAL `delete-account` function body against the backend and checks what is left).
+
 Accounts (`<name>@accept.test`): `member`, `member2`, `hubowner`, `bizowner`, `official` (publisher of a verified organisation), `unverified` (publisher of an unverified one), `moderator`, `admin`, `funeralrep`.
 
 Website against it (the real sign-in page works with Cloudflare's published always-pass test key):

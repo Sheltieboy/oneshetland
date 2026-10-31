@@ -511,7 +511,7 @@ d('G. members publish notices (moderated): submit, moderation, edit, withdraw, a
     assert.equal(owner(`select public.notice_dispatchable('${made[1]}', 'community')`), 'Only hub and business notices go to the community audience');
     assert.equal(owner(`select count(*) from notice_dispatch_recipients('${made[1]}', 'community')`), '0');
   });
-  test('G6 account deletion: a published notice survives as "Former member" with nothing identifying; a pending one stays hidden', async () => {
+  test('G6 DEFENSIVE FALLBACK only (the real account deletion deletes the notices - see accept-delete-account.node.test.ts): if a profile row were ever removed outright, an orphaned published notice reads "Former member" with nothing identifying and a pending one stays hidden', async () => {
     const r = await rpc('bizowner', 'submit_person_notice', { p_title: T('Leaving soon'), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }); ok(r);
     ok(await rpc('moderator', 'staff_approve_person_notice', { p_notice: r.data }));
     const p = await rpc('bizowner', 'submit_person_notice', { p_title: T('Pending when leaving'), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }); ok(p);

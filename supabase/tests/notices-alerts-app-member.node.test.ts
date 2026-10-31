@@ -119,3 +119,13 @@ describe('screens (source)', () => {
     assert.match(readRepo('components/notices/EssentialAlerts.tsx'), /Dismiss Essential Alert/);
   });
 });
+
+describe('account deletion: the original privacy rule is pinned in the delete-account function (the real run is supabase/tests/api/accept-delete-account.node.test.ts)', () => {
+  test('personal notices are deleted whatever their status; hub, business, platform / official notices are not selected', () => {
+    const src = readRepo('supabase/functions/delete-account/index.ts').replace(/\s+/g, ' ');
+    const line = src.match(/svc\.from\('notices'\)\.delete\(\)[^)]*\)[^;]*;/)?.[0] ?? '';
+    assert.match(line, /\.eq\('publisher_user_id', uid\)/); assert.match(line, /\.is\('publisher_business_id', null\)/); assert.match(line, /\.is\('publisher_hub_id', null\)/); assert.match(line, /\.eq\('is_platform_notice', false\)/);
+    assert.doesNotMatch(line, /status/, 'no lifecycle filter: pending, published, withdrawn, declined, expired and resolved notices all go');
+    assert.ok(src.indexOf("svc.from('notices').delete()") < src.indexOf("from('profiles').update"), 'the notices are deleted BEFORE the profile is scrubbed');
+  });
+});

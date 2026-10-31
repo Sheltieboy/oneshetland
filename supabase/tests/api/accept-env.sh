@@ -58,7 +58,8 @@ for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geogra
 dpsql postgres < supabase/tests/api/ui-site-schema.sql
 # the website's account query selects these profile columns (the reduced schema has no use for them otherwise)
 dpsql postgres <<'SQL'
-alter table profiles add column if not exists phone text, add column if not exists avatar_url text, add column if not exists bio text, add column if not exists is_active boolean default true, add column if not exists onboarding_completed_at timestamptz;
+alter table profiles add column if not exists phone text, add column if not exists avatar_url text, add column if not exists bio text, add column if not exists is_active boolean default true, add column if not exists onboarding_completed_at timestamptz,
+  add column if not exists games_handle text, add column if not exists deleted_at timestamptz;     -- the delete-account function scrubs these too
 SQL
 dpsql supabase_admin <<'SQL'
 alter role supabase_auth_admin with password 'proofpw';
