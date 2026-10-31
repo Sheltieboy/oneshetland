@@ -369,10 +369,10 @@ d('E. notification eligibility and delivery: the real dispatch core against the 
     const wide = await essential(`E1 island-wide alert ${R}`, ['shetland_wide']); const w = await dispatch('essential', wide, 'official');
     assert.deepEqual(w.recipients, ['bizowner', 'member', 'member2', 'official'], 'Shetland-wide reaches every opted-in member, including the one with no areas; still not the opted-out member');
   });
-  test('E2 quiet hours / device state are honoured per member: held, never bypassed or re-sent; a withdrawn / resolved / scheduled / imported notice is never announced', async () => {
+  test('E2 quiet hours / device state are honoured per member: skipped with reason quiet_hours, never bypassed or re-sent; a withdrawn / resolved / scheduled / imported notice is never announced', async () => {
     const a = await essential(`E2 quiet ${R}`, ['shetland_wide']); const q = await dispatch('essential', a, 'official', { quiet: ['member'] });
-    assert.deepEqual(q.recipients, ['bizowner', 'member2', 'official'], 'the member in quiet hours was not pushed'); assert.equal((q.out as any).held, 1);
-    assert.equal(owner(`select status from notice_deliveries where subject_id='${a}' and user_id='${SEED.ids.member}'`), 'held_quiet', 'recorded as held (it stays in the member\'s inbox), not lost');
+    assert.deepEqual(q.recipients, ['bizowner', 'member2', 'official'], 'the member in quiet hours was not pushed'); assert.equal((q.out as any).quiet, 1); assert.equal((q.out as any).held, 0, 'nothing is "held": no catch-up exists');
+    assert.equal(owner(`select status || ':' || last_error from notice_deliveries where subject_id='${a}' and user_id='${SEED.ids.member}'`), 'skipped:quiet_hours', 'recorded as a FINAL skip with its reason (it stays in the member\'s inbox), not as a hold that will never be released');
     const wd = await essential(`E2 withdrawn ${R}`, ['shetland_wide']); ok(await rpc('official', 'official_set_notice_status', { p_notice: wd, p_status: 'withdrawn' })); const x1 = await dispatch('essential', wd, 'official'); assert.equal(x1.out.ok, false); assert.deepEqual(x1.recipients, []);
     const rs = await essential(`E2 resolved ${R}`, ['shetland_wide']); ok(await rpc('official', 'official_set_notice_status', { p_notice: rs, p_status: 'resolved' })); assert.equal((await dispatch('essential', rs, 'official')).out.ok, false);
     const sc = await essential(`E2 scheduled ${R}`, ['shetland_wide'], { p_starts_at: iso(5), p_review_at: iso(7), p_expires_at: iso(20) }); const x3 = await dispatch('essential', sc, 'official'); assert.equal(x3.out.ok, false); assert.deepEqual(x3.recipients, []);
