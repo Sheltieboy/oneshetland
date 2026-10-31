@@ -3,7 +3,9 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import * as createHmacLib from 'node:crypto';
+import { assertIsolated } from '../_support/isolation.ts';
 export const URL_ = process.env.ACCEPT_URL ?? 'http://127.0.0.1:54800';
+assertIsolated({ ACCEPT_URL: URL_ });   // fails closed BEFORE any request if this is not the local acceptance backend
 export const ANON = readFileSync('/tmp/accept-anon.txt', 'utf8').trim();
 export const SEED = JSON.parse(readFileSync('/tmp/accept-users.json', 'utf8')) as { password: string; ids: Record<string, string>; hub: string; business: string };
 export type Session = { token: string; id: string };

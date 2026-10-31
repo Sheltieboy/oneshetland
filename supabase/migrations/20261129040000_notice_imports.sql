@@ -85,7 +85,7 @@ begin
   if not public.notices_admin() then raise exception 'Platform administrators only' using errcode = '42501'; end if;
   if p_enabled then
     if p_reuse_note is null or btrim(p_reuse_note) = '' then raise exception 'Record how the source''s reuse conditions were confirmed before enabling it' using errcode = '22023'; end if;
-    update public.notice_import_sources set is_enabled = true, reuse_terms_note = btrim(p_reuse_note), reuse_confirmed_at = now(), approved_by = auth.uid(), approved_at = now(),
+    update public.notice_import_sources set is_enabled = true, reuse_terms_note = btrim(p_reuse_note), reuse_confirmed_at = now(), approved_by = public.active_uid(), approved_at = now(),
            consecutive_failures = 0 where id = p_id and retired_at is null;
   else
     update public.notice_import_sources set is_enabled = false where id = p_id;

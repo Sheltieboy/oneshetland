@@ -8,4 +8,5 @@ drop function if exists public.official_publisher_authority(uuid), public.my_off
 drop trigger if exists notice_audit_log_no_truncate on public.notice_audit_log; drop trigger if exists notice_audit_log_immutable on public.notice_audit_log;
 drop table if exists public.notice_audit_log, public.essential_alert_grants, public.official_publisher_members, public.official_publishers;
 drop function if exists public.tg_notice_audit_immutable();
+drop function if exists public.notices_staff(), public.active_uid(), public.account_is_closed(uuid);   -- (their dependants were dropped above; later migrations' rollbacks run first)
 commit;

@@ -13,7 +13,7 @@ create function public.submit_person_notice(p_title text, p_body text, p_categor
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_id uuid := gen_random_uuid(); v_areas text[];
 begin
-  if auth.uid() is null then raise exception 'Sign in to post a notice' using errcode = '42501'; end if;
+  if public.active_uid() is null then raise exception 'Sign in to post a notice' using errcode = '42501'; end if;
   p_title := btrim(coalesce(p_title, '')); p_body := btrim(coalesce(p_body, ''));
   if char_length(p_title) < 5 or char_length(p_title) > 120 then raise exception 'The title must be 5 to 120 characters' using errcode = '22023'; end if;
   if char_length(p_body) < 10 or char_length(p_body) > 2000 then raise exception 'The text must be 10 to 2000 characters' using errcode = '22023'; end if;
@@ -21,12 +21,12 @@ begin
   v_areas := public.person_notice_clean_areas(p_area_ids);
   if p_expires_at is null then p_expires_at := now() + interval '30 days';
   elsif p_expires_at <= now() or p_expires_at > now() + interval '90 days' then raise exception 'The expiry must be in the future and within 90 days' using errcode = '22023'; end if;
-  perform 1 from public.profiles where id = auth.uid() for update;                      -- serialise this member's submissions so the limit cannot be raced
-  if (select count(*) from public.notices where is_person_notice and publisher_user_id = auth.uid() and status = 'pending') >= 5 then
+  perform 1 from public.profiles where id = public.active_uid() for update;                      -- serialise this member's submissions so the limit cannot be raced
+  if (select count(*) from public.notices where is_person_notice and publisher_user_id = public.active_uid() and status = 'pending') >= 5 then
     raise exception 'You already have 5 notices awaiting review' using errcode = '54000';
   end if;
   insert into public.notices (id, title, body, category, is_person_notice, publisher_user_id, status, expires_at)
-  values (v_id, p_title, p_body, p_category, true, auth.uid(), 'pending', p_expires_at);
+  values (v_id, p_title, p_body, p_category, true, public.active_uid(), 'pending', p_expires_at);
   insert into public.notice_areas (notice_id, area_id) select v_id, a from unnest(v_areas) a;
   perform public.notice_audit('person_notice_submitted', null, v_id, null, jsonb_build_object('areas', v_areas));
   return v_id;
@@ -54,7 +54,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     left join public.notice_categories c on c.id = n.category
     left join lateral (select l.details ->> 'reason' as reason from public.notice_audit_log l
                         where l.notice_id = n.id and l.event = 'person_notice_declined' order by l.at desc limit 1) d on true
-   where auth.uid() is not null and n.is_person_notice and n.publisher_user_id = auth.uid()
+   where public.active_uid() is not null and n.is_person_notice and n.publisher_user_id = public.active_uid()
    order by n.created_at desc
    limit 100;
 $$;
@@ -63,9 +63,9 @@ create function public.withdraw_my_person_notice(p_notice uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n public.notices%rowtype;
 begin
-  if auth.uid() is null then raise exception 'Sign in to manage your notices' using errcode = '42501'; end if;
+  if public.active_uid() is null then raise exception 'Sign in to manage your notices' using errcode = '42501'; end if;
   select * into n from public.notices where id = p_notice for update;
-  if not found or not n.is_person_notice or n.publisher_user_id is distinct from auth.uid() then raise exception 'You can only withdraw your own notices' using errcode = '42501'; end if;
+  if not found or not n.is_person_notice or n.publisher_user_id is distinct from public.active_uid() then raise exception 'You can only withdraw your own notices' using errcode = '42501'; end if;
   if n.status not in ('pending', 'published') then raise exception 'That notice is already closed' using errcode = '22023'; end if;
   update public.notices set status = 'withdrawn', withdrawn_at = now(), updated_at = now() where id = p_notice;
   perform public.notice_audit('person_notice_withdrawn', null, p_notice, null, jsonb_build_object('was', n.status));
@@ -77,7 +77,7 @@ create function public.staff_pending_person_notices() returns table (
   author_name text, author_pending integer, edited boolean)
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 begin
-  if not public.attribution_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
+  if not public.notices_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
   return query
   select n.id, n.title, n.body, c.label, n.created_at, n.expires_at,
          coalesce((select array_agg(na.area_id order by na.area_id) from public.notice_areas na where na.notice_id = n.id), '{}'),
@@ -95,7 +95,7 @@ create function public.staff_approve_person_notice(p_notice uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n public.notices%rowtype;
 begin
-  if not public.attribution_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
+  if not public.notices_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
   select * into n from public.notices where id = p_notice for update;
   if not found or not n.is_person_notice then raise exception 'Unknown notice' using errcode = 'P0002'; end if;
   if n.status <> 'pending' then raise exception 'Only a notice awaiting approval can be approved' using errcode = '22023'; end if;
@@ -108,7 +108,7 @@ create function public.staff_decline_person_notice(p_notice uuid, p_reason text)
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n public.notices%rowtype;
 begin
-  if not public.attribution_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
+  if not public.notices_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
   p_reason := btrim(coalesce(p_reason, ''));
   if char_length(p_reason) < 5 or char_length(p_reason) > 500 then raise exception 'Say why (5 to 500 characters): the member is shown this' using errcode = '22023'; end if;
   select * into n from public.notices where id = p_notice for update;

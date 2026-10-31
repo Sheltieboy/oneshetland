@@ -39,7 +39,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if not public.notices_admin() then raise exception 'Platform administrators only' using errcode = '42501'; end if;
   if p_note is null or length(btrim(p_note)) < 10 then raise exception 'Record why (release approval reference)' using errcode = '22023'; end if;
-  update public.notice_privacy_settings set value = coalesce(p_enabled, false), note = btrim(p_note), changed_by = auth.uid(), changed_at = now() where key = 'funeral_retention_enabled';
+  update public.notice_privacy_settings set value = coalesce(p_enabled, false), note = btrim(p_note), changed_by = public.active_uid(), changed_at = now() where key = 'funeral_retention_enabled';
   perform public.notice_audit('funeral_retention_run', null, null, null, jsonb_build_object('action', 'setting', 'enabled', coalesce(p_enabled, false)));
 end $$;
 
@@ -109,7 +109,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select f.id, f.status, f.retain_until,
          (f.retain_until <= now() and not f.retention_hold and not (f.status = 'approved' and f.display_until > now())
             and not exists (select 1 from public.funeral_change_requests r where r.funeral_id = f.id and r.status = 'open')),
-         case f.status when 'approved' then 'display period ended + 90 days' when 'withdrawn' then 'withdrawn + 30 days'
+         case f.status when 'approved' then 'end of display period + 90 days' when 'withdrawn' then 'withdrawn + 30 days'
                        when 'rejected' then 'rejected + 90 days' else 'taken down + 90 days' end,
          case when f.retention_hold then 'retention_hold'
               when f.status = 'approved' and f.display_until > now() then 'still_displayed'
@@ -197,7 +197,7 @@ begin
   if p_message is null or length(btrim(p_message)) < 5 or length(btrim(p_message)) > 1000 then raise exception 'Please say what is needed (5 to 1000 characters)' using errcode = '22023'; end if;
   if not exists (select 1 from public.funeral_notices where id = p_id) then raise exception 'Unknown notice' using errcode = 'P0002'; end if;
   insert into public.funeral_change_requests (funeral_id, kind, source, requester_id, contact_name, relationship, contact, message)
-  values (p_id, p_kind, 'staff_logged', auth.uid(), nullif(btrim(coalesce(p_contact_name, '')), ''), nullif(btrim(coalesce(p_relationship, '')), ''), nullif(btrim(coalesce(p_contact, '')), ''), btrim(p_message)) returning id into v_id;
+  values (p_id, p_kind, 'staff_logged', public.active_uid(), nullif(btrim(coalesce(p_contact_name, '')), ''), nullif(btrim(coalesce(p_relationship, '')), ''), nullif(btrim(coalesce(p_contact, '')), ''), btrim(p_message)) returning id into v_id;
   perform public.notice_audit('funeral_enquiry_received', null, null, p_id, jsonb_build_object('kind', p_kind, 'source', 'staff_logged'));
   return v_id;
 end $$;
@@ -250,7 +250,7 @@ begin
   perform set_config('notices.audit_redaction', 'on', true);                               -- transaction-local; only this function sets it
   update public.notice_audit_log set details = v_new where id = p_audit_id;
   perform set_config('notices.audit_redaction', 'off', true);
-  insert into public.notice_audit_redactions (audit_id, keys, reason, redacted_by) values (p_audit_id, v_done, btrim(p_reason), auth.uid());
+  insert into public.notice_audit_redactions (audit_id, keys, reason, redacted_by) values (p_audit_id, v_done, btrim(p_reason), public.active_uid());
   perform public.notice_audit('audit_text_redacted', a.publisher_id, a.notice_id, a.funeral_id, jsonb_build_object('audit_id', p_audit_id, 'keys', to_jsonb(v_done)));
 end $$;
 

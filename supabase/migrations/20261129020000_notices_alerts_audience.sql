@@ -38,8 +38,8 @@ create table public.notice_notification_prefs (
 
 alter table public.member_areas enable row level security;
 alter table public.notice_notification_prefs enable row level security;
-create policy "own areas read" on public.member_areas for select to authenticated using (user_id = auth.uid());
-create policy "own prefs read" on public.notice_notification_prefs for select to authenticated using (user_id = auth.uid());
+create policy "own areas read" on public.member_areas for select to authenticated using (user_id = public.active_uid());
+create policy "own prefs read" on public.notice_notification_prefs for select to authenticated using (user_id = public.active_uid());
 revoke all on public.member_areas, public.notice_notification_prefs from anon, authenticated;
 grant select on public.member_areas, public.notice_notification_prefs to authenticated;      -- writes only through the validating functions below
 
@@ -47,20 +47,20 @@ create function public.set_my_notice_areas(p_areas text[]) returns text[]
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_clean text[];
 begin
-  if auth.uid() is null then raise exception 'Sign in to choose your areas' using errcode = '42501'; end if;
+  if public.active_uid() is null then raise exception 'Sign in to choose your areas' using errcode = '42501'; end if;
   select coalesce(array_agg(distinct a), '{}') into v_clean from unnest(coalesce(p_areas, '{}')) a;
   if cardinality(v_clean) > 12 then raise exception 'Choose at most 12 areas' using errcode = '54000'; end if;
   if exists (select 1 from unnest(v_clean) a where not exists (select 1 from public.areas x where x.id = a and x.is_active and x.is_physical)) then
     raise exception 'Choose real Shetland areas (Shetland-wide notices reach everyone who has opted in)' using errcode = '22023';
   end if;
-  delete from public.member_areas where user_id = auth.uid() and not (area_id = any(v_clean));
-  insert into public.member_areas (user_id, area_id) select auth.uid(), a from unnest(v_clean) a on conflict do nothing;
+  delete from public.member_areas where user_id = public.active_uid() and not (area_id = any(v_clean));
+  insert into public.member_areas (user_id, area_id) select public.active_uid(), a from unnest(v_clean) a on conflict do nothing;
   return v_clean;
 end $$;
 
 create function public.my_notice_areas() returns text[]
 language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce(array_agg(area_id order by area_id), '{}') from public.member_areas where user_id = auth.uid();
+  select coalesce(array_agg(area_id order by area_id), '{}') from public.member_areas where user_id = public.active_uid();
 $$;
 
 -- Preferences: every parameter is optional (NULL = leave unchanged); the row starts with everything OFF. p_all_community_categories = true clears the
@@ -70,27 +70,29 @@ create function public.set_my_notice_prefs(
   p_funeral boolean default null, p_all_community_categories boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if auth.uid() is null then raise exception 'Sign in to choose your notifications' using errcode = '42501'; end if;
+  if public.active_uid() is null then raise exception 'Sign in to choose your notifications' using errcode = '42501'; end if;
   if p_categories is not null and exists (select 1 from unnest(p_categories) c where not exists (select 1 from public.notice_categories x where x.id = c and x.is_active)) then
     raise exception 'Unknown notice category' using errcode = '22023';
   end if;
-  insert into public.notice_notification_prefs (user_id) values (auth.uid()) on conflict do nothing;
+  insert into public.notice_notification_prefs (user_id) values (public.active_uid()) on conflict do nothing;
   update public.notice_notification_prefs set
     essential_alerts  = coalesce(p_essential, essential_alerts), official_notices = coalesce(p_official, official_notices),
     community_notices = coalesce(p_community, community_notices), funeral_notices = coalesce(p_funeral, funeral_notices),
     community_categories = case when p_all_community_categories then null when p_categories is not null then p_categories else community_categories end,
     updated_at = now()
-   where user_id = auth.uid();
+   where user_id = public.active_uid();
   return public.my_notice_prefs();
 end $$;
 
 create function public.my_notice_prefs() returns jsonb
-language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce((select jsonb_build_object('essential_alerts', essential_alerts, 'official_notices', official_notices, 'community_notices', community_notices,
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if public.active_uid() is null then raise exception 'Sign in to see your notification settings' using errcode = '42501'; end if;   -- also refuses a token whose account has been closed
+  return coalesce((select jsonb_build_object('essential_alerts', essential_alerts, 'official_notices', official_notices, 'community_notices', community_notices,
                                              'community_categories', community_categories, 'funeral_notices', funeral_notices)
-                     from public.notice_notification_prefs where user_id = auth.uid()),
+                     from public.notice_notification_prefs where user_id = public.active_uid()),
                   jsonb_build_object('essential_alerts', false, 'official_notices', false, 'community_notices', false, 'community_categories', null, 'funeral_notices', false));
-$$;
+end $$;
 
 -- ── dispatch records ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 create table public.notice_dispatches (

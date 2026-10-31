@@ -246,6 +246,7 @@ describe('no-account correction / takedown / enquiry', () => {
     const ok = as('O', `select public.admin_funeral_resolve_change('${req}','actioned','Verified with the funeral director', null, 'funeral_director_confirmation')`);
     assert.ok(!failed(ok), ok);
     assert.equal(status(live), 'taken_down'); assert.ok(!pub().includes(live));
+    assert.match(scalar(`select details::text from notice_audit_log where event='funeral_change_resolved' and details->>'request'='${req}'`), /funeral_director_confirmation/, 'the audit trail records HOW authority was verified');
     assert.equal(scalar(`select (status='actioned' and authority_check='funeral_director_confirmation' and contact is null and contact_name is null and handled_by is not null)::text from funeral_change_requests where id='${req}'`), 'true', 'the enquirer\'s details are removed once the outcome is recorded');
   });
   test('7 a verified correction applies only the fields staff supply; a declined request changes nothing', () => {
@@ -371,5 +372,33 @@ describe('audit privacy: controlled, authorised, audited redaction', () => {
   });
   test('6 the log stays append-only afterwards (the flag does not linger past the function)', () => {
     assert.match(raw(`update notice_audit_log set details = '{"by":"staff","reason":"again"}' where id=${rid}`), /append-only/);
+  });
+});
+
+describe('closed accounts: a leftover token identifies nobody (every member, staff and organisation path)', () => {
+  const MEM = uuid(), MODX = uuid();
+  before(() => { profile(MEM); profile(MODX, 'moderator'); });
+  const asId = (uid: string, sql: string) => asUid(uid, sql);
+  test('1 a member whose account is closed (notices still present) cannot publish, edit or withdraw, and cannot read or write preferences and areas', () => {
+    const out = asId(MEM, `select public.submit_person_notice('Closed account test','A fictional notice written before the account closed.','other', array[]::text[], null)`); assert.ok(!failed(out), out);
+    const nid = idOf(out); close(MEM);
+    assert.match(asId(MEM, `select public.submit_person_notice('After closing','A fictional notice written after the account closed.','other', array[]::text[], null)`), /Sign in/);
+    assert.match(asId(MEM, `select public.edit_my_person_notice('${nid}','Edited','A fictional edit after the account closed.','other', array[]::text[], null)`), /ERROR/);
+    assert.match(asId(MEM, `select public.withdraw_my_person_notice('${nid}')`), /ERROR/);
+    assert.match(asId(MEM, `select public.my_notice_prefs()`), /Sign in/);
+    assert.match(asId(MEM, `select public.set_my_notice_prefs(true)`), /ERROR/);
+    assert.match(asId(MEM, `select public.set_my_notice_areas(array['shetland_wide'])`), /ERROR/);
+    assert.equal(scalar(`select (select count(*) from member_areas where user_id='${MEM}') + (select count(*) from notice_notification_prefs where user_id='${MEM}')`), '0');
+    assert.equal(asId(MEM, `select count(*) from public.member_areas where user_id = '${MEM}'`).split('\n').pop(), '0', 'the read policy returns nothing for a closed account');
+  });
+  test('2 a moderator whose account is closed cannot approve or decline a member notice or moderate funerals', () => {
+    const author = uuid(); profile(author);
+    const nid = idOf(asId(author, `select public.submit_person_notice('Needs approval','A fictional notice awaiting moderation here.','other', array[]::text[], null)`));
+    assert.match(asId(MODX, `select public.staff_pending_person_notices()`), /^(?!.*Staff only)/s, 'while open, a moderator can');
+    close(MODX);
+    assert.match(asId(MODX, `select public.staff_approve_person_notice('${nid}')`), /Staff only/);
+    assert.match(asId(MODX, `select public.staff_decline_person_notice('${nid}','No')`), /Staff only/);
+    assert.match(asId(MODX, `select * from public.staff_pending_person_notices()`), /Staff only/);
+    assert.equal(scalar(`select status from notices where id='${nid}'`), 'pending');
   });
 });

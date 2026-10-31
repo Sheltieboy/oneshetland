@@ -27,3 +27,10 @@ What the suite proves is listed in the acceptance report; what it cannot (real p
 * Isolated database: `ISOLATED_ONLY=funeral-privacy npm run test:isolated` (43 tests). **Use a substring that matches a listed suite**: an unmatched filter used to fall through to `node --test` discovering every file; `scripts/isolated-pg.mjs` now refuses an empty selection.
 * Real deletion path: `ACCEPT_RUN=1 node --test supabase/tests/api/accept-delete-account.node.test.ts` after `accept-env.sh start` and `accept-seed.mjs` (16 tests: every funeral state, memberships, administrators and moderators, partial failure and recovery, the production sequence).
 * Run acceptance suites one at a time (shared database).
+
+## Isolation guards (31 Oct 2026) — fail closed
+* `supabase/tests/_support/isolation.ts`: every acceptance client calls `assertIsolated`, which refuses to run if (a) any URL is not loopback or names the production project / a hosted Supabase domain / the live site, (b) any environment variable naming a URL, host, DSN or site contains such a marker, or (c) the checkout is linked to a hosted Supabase project (`supabase/.temp/project-ref`). Pinned by `isolation-guard.node.test.ts`.
+* This worktree is **unlinked** (`supabase/.temp/project-ref`, `linked-project.json`, `pooler-url` removed): `supabase ... --linked` has no project to reach. The ~100 older suites that use `--linked` therefore fail instead of querying production. Re-link deliberately, outside this checkout, only when a production check is intended.
+* `scripts/isolated-pg.mjs` refuses an unmatched `ISOLATED_ONLY`. `npm test`, `test:fixtures`, `test:all` and a bare `node --test` must never be run in this worktree.
+* The website for browser acceptance is started only through `supabase/tests/api/accept-web.sh` (loopback check, local anon key, service-role and payment variables unset).
+* Browser sign-in: the production Turnstile gate was left untouched; the acceptance session installs a real local-GoTrue session cookie instead.

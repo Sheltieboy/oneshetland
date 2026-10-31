@@ -172,7 +172,7 @@ declare v_demoted integer;
 begin
   if not public.notices_admin() then raise exception 'Platform administrators only' using errcode = '42501'; end if;
   if p_reason is null or btrim(p_reason) = '' then raise exception 'A reason is required' using errcode = '22023'; end if;
-  update public.essential_alert_grants set revoked_by = auth.uid(), revoked_at = now(), revoked_reason = btrim(p_reason) where publisher_id = p_publisher and revoked_at is null;
+  update public.essential_alert_grants set revoked_by = public.active_uid(), revoked_at = now(), revoked_reason = btrim(p_reason) where publisher_id = p_publisher and revoked_at is null;
   if not found then raise exception 'That organisation holds no active Essential Alert entitlement' using errcode = 'P0002'; end if;
   update public.notices set is_essential = false, severity = 'info' where official_publisher_id = p_publisher and is_essential;
   get diagnostics v_demoted = row_count;
@@ -232,7 +232,7 @@ begin
                               is_essential, essential_set_by, essential_set_at)
   values (true, p_publisher, case when coalesce(p_is_essential, false) then 'urgent' else 'info' end, btrim(p_title), btrim(p_body), p_category, 'public', 'published',
           p_starts_at, p_expires_at, case when coalesce(p_is_essential, false) then p_review_at end, p_link_url, nullif(btrim(coalesce(p_action_text, '')), ''),
-          coalesce(p_is_essential, false), case when coalesce(p_is_essential, false) then auth.uid() end, case when coalesce(p_is_essential, false) then now() end)
+          coalesce(p_is_essential, false), case when coalesce(p_is_essential, false) then public.active_uid() end, case when coalesce(p_is_essential, false) then now() end)
   returning id into v_id;
   foreach v_area in array p_area_ids loop insert into public.notice_areas (notice_id, area_id) values (v_id, v_area); end loop;
   perform public.notice_audit(case when coalesce(p_is_essential, false) then 'essential_published' else 'notice_published' end, p_publisher, v_id, null,
@@ -259,7 +259,7 @@ begin
          expires_at = coalesce(p_expires_at, expires_at), review_at = case when v_ess then coalesce(p_review_at, review_at) else null end,
          link_url = coalesce(p_link_url, link_url), action_text = coalesce(nullif(btrim(coalesce(p_action_text, '')), ''), action_text),
          is_essential = v_ess, severity = case when v_ess then 'urgent' else 'info' end,
-         essential_set_by = case when v_ess and not n.is_essential then auth.uid() else essential_set_by end
+         essential_set_by = case when v_ess and not n.is_essential then public.active_uid() else essential_set_by end
    where id = p_notice;
   if p_area_ids is not null then
     delete from public.notice_areas where notice_id = p_notice;
@@ -378,9 +378,9 @@ create function public.edit_my_person_notice(p_notice uuid, p_title text default
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n public.notices%rowtype; v_areas text[];
 begin
-  if auth.uid() is null then raise exception 'Sign in to edit a notice' using errcode = '42501'; end if;
+  if public.active_uid() is null then raise exception 'Sign in to edit a notice' using errcode = '42501'; end if;
   select * into n from public.notices where id = p_notice for update;
-  if not found or not n.is_person_notice or n.publisher_user_id is distinct from auth.uid() then raise exception 'You can only edit your own notices' using errcode = '42501'; end if;
+  if not found or not n.is_person_notice or n.publisher_user_id is distinct from public.active_uid() then raise exception 'You can only edit your own notices' using errcode = '42501'; end if;
   if n.status not in ('pending', 'published') or (n.expires_at is not null and n.expires_at <= now()) then raise exception 'That notice can no longer be edited' using errcode = '22023'; end if;
   p_title := btrim(coalesce(p_title, n.title)); p_body := btrim(coalesce(p_body, n.body));
   if char_length(p_title) < 5 or char_length(p_title) > 120 then raise exception 'The title must be 5 to 120 characters' using errcode = '22023'; end if;

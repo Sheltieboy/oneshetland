@@ -25,12 +25,27 @@ create or replace function public.account_is_closed(p_user uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce((select p.deleted_at is not null or p.is_active is false from public.profiles p where p.id = p_user), false);
 $$;
+-- The caller's id, or NULL when the account is closed. Every Notices & Alerts function and policy uses THIS instead of auth.uid(), so a token that is still valid
+-- after the account was deleted identifies nobody: it reads nothing of the member, writes nothing for them and holds no authority.
+create or replace function public.active_uid() returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select case when auth.uid() is null or public.account_is_closed(auth.uid()) then null else auth.uid() end;
+$$;
+-- Moderator / administrator staff check that a closed account cannot pass (attribution_staff() belongs to an already-deployed migration and cannot be edited here).
+create or replace function public.notices_staff() returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select public.active_uid() is not null and public.attribution_staff();
+$$;
+revoke all on function public.notices_staff() from public;
+grant execute on function public.notices_staff() to anon, authenticated, service_role;
+revoke all on function public.active_uid() from public;
+grant execute on function public.active_uid() to anon, authenticated, service_role;
 
 -- ── who is a platform administrator (stricter than attribution_staff(), which includes moderators) ───────────────────────────────�
 create or replace function public.notices_admin() returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select auth.uid() is not null and not public.account_is_closed(auth.uid()) and exists (
-    select 1 from public.profiles p where p.id = auth.uid() and (p.role = 'admin' or coalesce(p.is_platform_owner, false)));
+  select public.active_uid() is not null and not public.account_is_closed(auth.uid()) and exists (
+    select 1 from public.profiles p where p.id = public.active_uid() and (p.role = 'admin' or coalesce(p.is_platform_owner, false)));
 $$;
 
 -- ── organisations ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -87,7 +102,7 @@ create table public.notice_audit_log (
     'essential_granted', 'essential_revoked', 'essential_demoted',
     'notice_published', 'essential_published', 'notice_corrected', 'notice_resolved', 'notice_withdrawn',
     'dispatch_claimed', 'dispatch_completed',
-    'funeral_submitted', 'funeral_reviewed', 'funeral_published', 'funeral_corrected', 'funeral_taken_down', 'funeral_change_requested',
+    'funeral_submitted', 'funeral_reviewed', 'funeral_published', 'funeral_corrected', 'funeral_taken_down', 'funeral_change_requested', 'funeral_change_resolved',
     'person_notice_submitted', 'person_notice_edited', 'person_notice_approved', 'person_notice_declined', 'person_notice_withdrawn',
     'audit_text_redacted', 'funeral_submitter_scrubbed', 'member_memberships_deactivated', 'funeral_enquiry_received', 'funeral_retention_run', 'funeral_retention_hold',
     'import_source_changed', 'import_run')),
@@ -141,7 +156,7 @@ begin
   select id into v_id from public.official_publishers where slug = p_slug;
   if v_id is null then
     insert into public.official_publishers (slug, name, kind, website_url, import_source, created_by)
-    values (p_slug, p_name, p_kind, p_website_url, nullif(btrim(p_import_source), ''), auth.uid()) returning id into v_id;
+    values (p_slug, p_name, p_kind, p_website_url, nullif(btrim(p_import_source), ''), public.active_uid()) returning id into v_id;
     perform public.notice_audit('publisher_created', v_id, null, null, jsonb_build_object('slug', p_slug, 'kind', p_kind));
   else
     update public.official_publishers set name = p_name, kind = p_kind, website_url = p_website_url, import_source = nullif(btrim(p_import_source), ''), updated_at = now()
@@ -158,7 +173,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if not public.notices_admin() then raise exception 'Platform administrators only' using errcode = '42501'; end if;
   if p_note is null or btrim(p_note) = '' then raise exception 'Say how the organisation was verified' using errcode = '22023'; end if;
-  update public.official_publishers set verified_at = now(), verified_by = auth.uid(), verification_note = btrim(p_note), updated_at = now() where id = p_publisher;
+  update public.official_publishers set verified_at = now(), verified_by = public.active_uid(), verification_note = btrim(p_note), updated_at = now() where id = p_publisher;
   if not found then raise exception 'Unknown organisation' using errcode = 'P0002'; end if;
   perform public.notice_audit('publisher_verified', p_publisher, null, null, jsonb_build_object('note', btrim(p_note)));
 end $$;
@@ -183,12 +198,12 @@ begin
   if p_active and public.account_is_closed(p_user) then raise exception 'That account has been closed and cannot hold authority' using errcode = '22023'; end if;
   select * into v_old from public.official_publisher_members where publisher_id = p_publisher and user_id = p_user;
   if not found then
-    insert into public.official_publisher_members (publisher_id, user_id, role, is_active, added_by) values (p_publisher, p_user, p_role, p_active, auth.uid());
+    insert into public.official_publisher_members (publisher_id, user_id, role, is_active, added_by) values (p_publisher, p_user, p_role, p_active, public.active_uid());
     perform public.notice_audit(case when p_active then 'member_added' else 'member_removed' end, p_publisher, null, null, jsonb_build_object('user', p_user, 'role', p_role));
   else
     update public.official_publisher_members
        set role = p_role, is_active = p_active,
-           removed_by = case when p_active then null else auth.uid() end, removed_at = case when p_active then null else now() end
+           removed_by = case when p_active then null else public.active_uid() end, removed_at = case when p_active then null else now() end
      where publisher_id = p_publisher and user_id = p_user;
     perform public.notice_audit(case when v_old.is_active and not p_active then 'member_removed' when v_old.role <> p_role then 'member_role_changed' else 'member_added' end,
                                 p_publisher, null, null, jsonb_build_object('user', p_user, 'role', p_role, 'active', p_active));
@@ -207,7 +222,7 @@ begin
   if not exists (select 1 from public.official_publisher_members where publisher_id = p_publisher and role = 'publisher' and is_active) then
     raise exception 'Add at least one authorised publisher before granting the entitlement' using errcode = '22023';
   end if;
-  insert into public.essential_alert_grants (publisher_id, granted_by, reason) values (p_publisher, auth.uid(), btrim(p_reason)) returning id into v_id;   -- unique index: one active grant
+  insert into public.essential_alert_grants (publisher_id, granted_by, reason) values (p_publisher, public.active_uid(), btrim(p_reason)) returning id into v_id;   -- unique index: one active grant
   perform public.notice_audit('essential_granted', p_publisher, null, null, jsonb_build_object('grant', v_id, 'reason', btrim(p_reason)));
   return v_id;
 end $$;
@@ -252,17 +267,17 @@ language sql stable security definer set search_path = public, pg_temp as $$
          (p.verified_at is not null and p.is_active and m.role = 'publisher'
           and exists (select 1 from public.essential_alert_grants g where g.publisher_id = p.id and g.revoked_at is null)) as can_essential
     from public.official_publisher_members m join public.official_publishers p on p.id = m.publisher_id
-   where m.user_id = auth.uid() and m.is_active and not public.account_is_closed(auth.uid());
+   where m.user_id = public.active_uid() and m.is_active and not public.account_is_closed(auth.uid());
 $$;
 
 -- ── the single place that answers "may this caller publish as this organisation, and may they mark it essential?" (used by the next migration) ──────
 create function public.official_publisher_authority(p_publisher uuid) returns text
 language sql stable security definer set search_path = public, pg_temp as $$
   select case
-    when auth.uid() is null or public.account_is_closed(auth.uid()) then 'none'
+    when public.active_uid() is null or public.account_is_closed(auth.uid()) then 'none'
     when not exists (select 1 from public.official_publishers p where p.id = p_publisher and p.verified_at is not null and p.is_active) then 'none'
-    when not exists (select 1 from public.official_publisher_members m where m.publisher_id = p_publisher and m.user_id = auth.uid() and m.is_active) then 'none'
-    when (select m.role from public.official_publisher_members m where m.publisher_id = p_publisher and m.user_id = auth.uid() and m.is_active) = 'publisher'
+    when not exists (select 1 from public.official_publisher_members m where m.publisher_id = p_publisher and m.user_id = public.active_uid() and m.is_active) then 'none'
+    when (select m.role from public.official_publisher_members m where m.publisher_id = p_publisher and m.user_id = public.active_uid() and m.is_active) = 'publisher'
          and exists (select 1 from public.essential_alert_grants g where g.publisher_id = p_publisher and g.revoked_at is null) then 'essential'
     else 'official'
   end;

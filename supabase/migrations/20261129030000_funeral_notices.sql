@@ -128,7 +128,7 @@ create trigger funeral_notices_validate before insert or update on public.funera
 
 -- ── staff = administrator or moderator (the existing moderation rule); directors are administrator-granted only ─────────────────────────────────
 create function public.funeral_staff() returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-  select auth.uid() is not null and not public.account_is_closed(auth.uid()) and (public.attribution_staff() or public.notices_admin());
+  select public.active_uid() is not null and not public.account_is_closed(public.active_uid()) and (public.notices_staff() or public.notices_admin());
 $$;
 
 -- Staff notes are SUPPLEMENTARY and never the evidence record: they must not carry a telephone number or email address (the structured fields record method,
@@ -150,8 +150,8 @@ begin
   if public.account_is_closed(p_user) then raise exception 'That account is closed' using errcode = '22023'; end if;
   select id into v_id from public.funeral_directors where business_name = p_name;
   if v_id is null then insert into public.funeral_directors (business_name) values (p_name) returning id into v_id; end if;
-  if p_verify then update public.funeral_directors set verified_at = now(), verified_by = auth.uid() where id = v_id; end if;
-  insert into public.funeral_director_members (director_id, user_id, added_by) values (v_id, p_user, auth.uid())
+  if p_verify then update public.funeral_directors set verified_at = now(), verified_by = public.active_uid() where id = v_id; end if;
+  insert into public.funeral_director_members (director_id, user_id, added_by) values (v_id, p_user, public.active_uid())
     on conflict (director_id, user_id) do update set is_active = true;
   return v_id;
 end $$;
@@ -161,17 +161,17 @@ create function public.submit_funeral_notice(p jsonb) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_id uuid; v_role text := coalesce(p->>'submitter_role', 'family'); v_dir uuid; v_area text := nullif(p->>'area_id', '');
 begin
-  if auth.uid() is null or public.account_is_closed(auth.uid()) then raise exception 'Sign in to submit a notice' using errcode = '42501'; end if;
-  if (select count(*) from public.funeral_notices where submitter_id = auth.uid() and created_at > now() - interval '24 hours') >= 3 then
+  if public.active_uid() is null or public.account_is_closed(public.active_uid()) then raise exception 'Sign in to submit a notice' using errcode = '42501'; end if;
+  if (select count(*) from public.funeral_notices where submitter_id = public.active_uid() and created_at > now() - interval '24 hours') >= 3 then
     raise exception 'Please wait: you have submitted 3 notices in the last 24 hours' using errcode = '54000';
   end if;
-  if (select count(*) from public.funeral_notices where submitter_id = auth.uid() and status in ('submitted', 'in_review', 'needs_info')) >= 10 then
+  if (select count(*) from public.funeral_notices where submitter_id = public.active_uid() and status in ('submitted', 'in_review', 'needs_info')) >= 10 then
     raise exception 'You already have notices awaiting review' using errcode = '54000';
   end if;
   if v_role not in ('family', 'funeral_director') then raise exception 'Unknown submitter role' using errcode = '22023'; end if;
   if v_role = 'funeral_director' then
     select d.id into v_dir from public.funeral_director_members m join public.funeral_directors d on d.id = m.director_id
-     where m.user_id = auth.uid() and m.is_active and d.is_active and d.verified_at is not null limit 1;
+     where m.user_id = public.active_uid() and m.is_active and d.is_active and d.verified_at is not null limit 1;
     if v_dir is null then raise exception 'Your account is not an authorised funeral director' using errcode = '42501'; end if;
   end if;
   if v_area is not null and not exists (select 1 from public.areas a where a.id = v_area and a.is_active and a.is_physical) then
@@ -187,7 +187,7 @@ begin
     nullif(btrim(p->>'announcement'), ''), coalesce((p->>'service_public')::boolean, false), nullif(p->>'service_kind', ''), nullif(btrim(p->>'service_venue'), ''),
     nullif(p->>'service_at', '')::timestamptz, nullif(btrim(p->>'service_notes'), ''), nullif(btrim(p->>'family_requests'), ''), nullif(btrim(p->>'donation_info'), ''),
     nullif(p->>'donation_url', ''), v_area, coalesce((p->>'announce_in_notifications')::boolean, false), coalesce((p->>'announce_name_in_preview')::boolean, false),
-    auth.uid(), v_role, btrim(p->>'submitter_name'), nullif(btrim(p->>'submitter_relationship'), ''), nullif(btrim(p->>'submitter_phone'), ''),
+    public.active_uid(), v_role, btrim(p->>'submitter_name'), nullif(btrim(p->>'submitter_relationship'), ''), nullif(btrim(p->>'submitter_phone'), ''),
     nullif(btrim(p->>'submitter_email'), ''), v_dir, true)
   returning id into v_id;
   perform public.notice_audit('funeral_submitted', null, null, v_id, jsonb_build_object('role', v_role));
@@ -198,7 +198,7 @@ create function public.my_funeral_submissions()
 returns table (id uuid, status text, full_name text, created_at timestamptz, published_at timestamptz, review_message text)
 language sql stable security definer set search_path = public, pg_temp as $$
   select f.id, f.status, f.full_name, f.created_at, f.published_at, case when f.status in ('needs_info', 'rejected') then f.review_message end
-    from public.funeral_notices f where f.submitter_id = auth.uid() order by f.created_at desc;
+    from public.funeral_notices f where f.submitter_id = public.active_uid() order by f.created_at desc;
 $$;
 
 -- The submitter's own submission with every editable field (to pre-fill the edit form). Private moderator notes are never returned; review_message is the
@@ -209,7 +209,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
          f.service_at, f.service_notes, f.family_requests, f.donation_info, f.donation_url, f.area_id, f.announce_in_notifications, f.announce_name_in_preview,
          f.submitter_name, f.submitter_relationship, f.submitter_phone, f.submitter_email, f.created_at, f.published_at,
          case when f.status in ('needs_info', 'rejected') then f.review_message end as review_message
-    from public.funeral_notices f where f.id = p_id and f.submitter_id = auth.uid()) x;
+    from public.funeral_notices f where f.id = p_id and f.submitter_id = public.active_uid()) x;
 $$;
 
 -- The submitter can amend an UNPUBLISHED submission (it returns to the review queue). A published one is corrected only by staff, on request.
@@ -217,7 +217,7 @@ create function public.update_my_funeral_submission(p_id uuid, p jsonb) returns 
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare f public.funeral_notices%rowtype;
 begin
-  select * into f from public.funeral_notices where id = p_id and submitter_id = auth.uid() for update;
+  select * into f from public.funeral_notices where id = p_id and submitter_id = public.active_uid() for update;
   if not found then raise exception 'Unknown notice' using errcode = 'P0002'; end if;
   if f.status not in ('submitted', 'needs_info') then raise exception 'This notice can no longer be edited; ask for a correction instead' using errcode = '22023'; end if;
   update public.funeral_notices set
@@ -242,7 +242,7 @@ end $$;
 create function public.withdraw_my_funeral_notice(p_id uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  update public.funeral_notices set status = 'withdrawn' where id = p_id and submitter_id = auth.uid() and status in ('submitted', 'in_review', 'needs_info', 'approved');
+  update public.funeral_notices set status = 'withdrawn' where id = p_id and submitter_id = public.active_uid() and status in ('submitted', 'in_review', 'needs_info', 'approved');
   if not found then raise exception 'Unknown notice' using errcode = 'P0002'; end if;
   perform public.notice_audit('funeral_taken_down', null, null, p_id, jsonb_build_object('by', 'submitter', 'kind', 'withdrawn'));
 end $$;
@@ -282,13 +282,13 @@ create function public.request_funeral_notice_change(p_id uuid, p_kind text, p_m
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_id uuid;
 begin
-  if auth.uid() is null then raise exception 'Sign in to send a request' using errcode = '42501'; end if;
+  if public.active_uid() is null then raise exception 'Sign in to send a request' using errcode = '42501'; end if;
   if p_kind not in ('correction', 'takedown') then raise exception 'Unknown request' using errcode = '22023'; end if;
   if not exists (select 1 from public.funeral_notices where id = p_id and status = 'approved') then raise exception 'Unknown notice' using errcode = 'P0002'; end if;
-  if (select count(*) from public.funeral_change_requests where requester_id = auth.uid() and created_at > now() - interval '24 hours') >= 5 then
+  if (select count(*) from public.funeral_change_requests where requester_id = public.active_uid() and created_at > now() - interval '24 hours') >= 5 then
     raise exception 'Too many requests today' using errcode = '54000';
   end if;
-  insert into public.funeral_change_requests (funeral_id, kind, requester_id, contact, message) values (p_id, p_kind, auth.uid(), p_contact, btrim(p_message)) returning id into v_id;
+  insert into public.funeral_change_requests (funeral_id, kind, requester_id, contact, message) values (p_id, p_kind, public.active_uid(), p_contact, btrim(p_message)) returning id into v_id;
   perform public.notice_audit('funeral_change_requested', null, null, p_id, jsonb_build_object('kind', p_kind));
   return v_id;
 end $$;
@@ -313,24 +313,24 @@ begin
   if not found then raise exception 'Unknown notice' using errcode = 'P0002'; end if;
   if p_action = 'start_review' then
     if f.status not in ('submitted', 'needs_info') then raise exception 'Not awaiting review' using errcode = '22023'; end if;
-    update public.funeral_notices set status = 'in_review', reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
+    update public.funeral_notices set status = 'in_review', reviewed_by = public.active_uid(), reviewed_at = now() where id = p_id;
   elsif p_action = 'request_info' then
     if f.status not in ('submitted', 'in_review') then raise exception 'Not under review' using errcode = '22023'; end if;
     if p_note is null or btrim(p_note) = '' then raise exception 'Say what is needed' using errcode = '22023'; end if;
-    update public.funeral_notices set status = 'needs_info', review_message = btrim(p_note), followup_action = coalesce(p_followup, 'awaiting_family_reply'), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
+    update public.funeral_notices set status = 'needs_info', review_message = btrim(p_note), followup_action = coalesce(p_followup, 'awaiting_family_reply'), reviewed_by = public.active_uid(), reviewed_at = now() where id = p_id;
   elsif p_action = 'approve' then
     if f.status not in ('submitted', 'in_review') then raise exception 'Not under review' using errcode = '22023'; end if;
     if p_verification_method is null then raise exception 'Record how the announcement was verified (method) before approving' using errcode = '22023'; end if;
     if p_verification_outcome is not null and p_verification_outcome <> 'confirmed' then raise exception 'A notice can only be approved when the verification outcome is confirmed' using errcode = '22023'; end if;     -- approving IS confirming
     v_until := coalesce(f.service_at, now()) + interval '60 days';
-    update public.funeral_notices set status = 'approved', verification_method = p_verification_method, verification_outcome = 'confirmed', verified_by = auth.uid(), verified_at = now(),
-           verification_note = nullif(btrim(coalesce(p_note, '')), ''), followup_action = coalesce(p_followup, 'none'), reviewed_by = auth.uid(), reviewed_at = now(), published_at = now(),
+    update public.funeral_notices set status = 'approved', verification_method = p_verification_method, verification_outcome = 'confirmed', verified_by = public.active_uid(), verified_at = now(),
+           verification_note = nullif(btrim(coalesce(p_note, '')), ''), followup_action = coalesce(p_followup, 'none'), reviewed_by = public.active_uid(), reviewed_at = now(), published_at = now(),
            display_until = greatest(v_until, now() + interval '14 days'), review_message = null where id = p_id;
   elsif p_action = 'reject' then
     if f.status not in ('submitted', 'in_review', 'needs_info') then raise exception 'Not under review' using errcode = '22023'; end if;
     if p_rejection_code is not null and p_rejection_code not in ('unverifiable', 'duplicate', 'not_a_funeral_announcement', 'inappropriate', 'other') then raise exception 'Unknown rejection reason' using errcode = '22023'; end if;
     update public.funeral_notices set status = 'rejected', review_note = btrim(coalesce(p_note, '')), review_message = nullif(btrim(coalesce(p_note, '')), ''), rejection_code = p_rejection_code,
-           verification_outcome = coalesce(p_verification_outcome, verification_outcome), followup_action = coalesce(p_followup, 'none'), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
+           verification_outcome = coalesce(p_verification_outcome, verification_outcome), followup_action = coalesce(p_followup, 'none'), reviewed_by = public.active_uid(), reviewed_at = now() where id = p_id;
   else
     raise exception 'Unknown action' using errcode = '22023';
   end if;
@@ -343,7 +343,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if not public.funeral_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
   if public.funeral_note_has_contact(p_reason) then raise exception 'Do not put telephone numbers or email addresses in a note' using errcode = '22023'; end if;
-  update public.funeral_notices set status = 'taken_down', review_note = btrim(coalesce(p_reason, '')), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id and status = 'approved';
+  update public.funeral_notices set status = 'taken_down', review_note = btrim(coalesce(p_reason, '')), reviewed_by = public.active_uid(), reviewed_at = now() where id = p_id and status = 'approved';
   if not found then raise exception 'Unknown published notice' using errcode = 'P0002'; end if;
   perform public.notice_audit('funeral_taken_down', null, null, p_id, jsonb_build_object('by', 'staff', 'reason', p_reason));
 end $$;
@@ -382,8 +382,10 @@ begin
      where id = r.funeral_id and status = 'approved';
     perform public.notice_audit('funeral_corrected', null, null, r.funeral_id, jsonb_build_object('by', 'staff', 'request', p_request));
   end if;
-  update public.funeral_change_requests set status = p_outcome, handled_by = auth.uid(), handled_at = now(), outcome_note = p_note, authority_check = p_authority_check,
+  update public.funeral_change_requests set status = p_outcome, handled_by = public.active_uid(), handled_at = now(), outcome_note = p_note, authority_check = p_authority_check,
          contact = null, contact_name = null where id = p_request;     -- the enquirer's details are not needed once the outcome is recorded
+  -- the AUDIT record of the decision, including how the requester's authority was established (no personal data: ids, kind, source, method)
+  perform public.notice_audit('funeral_change_resolved', null, null, r.funeral_id, jsonb_build_object('request', p_request, 'kind', r.kind, 'source', r.source, 'outcome', p_outcome, 'authority', p_authority_check));
 end $$;
 
 -- ── notification: only what the family approved, discreetly; never a name unless they said so ───────────────────────────────────────────────────
