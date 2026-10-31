@@ -31,7 +31,8 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read    = (p: string) => readFileSync(join(REPO, p), 'utf8');
-const webRoot = join(REPO, '..', 'oneshetland-web');
+// Where the website source lives. Defaults to the sibling checkout; set ONESHETLAND_WEB_ROOT to point at a current website baseline (the sibling can be stale).
+const webRoot = process.env.ONESHETLAND_WEB_ROOT ?? join(REPO, '..', 'oneshetland-web');
 const readWeb = (p: string) => readFileSync(join(webRoot, p), 'utf8');
 
 /** The body of one `export (async )?function NAME(` up to the next top-level export. */
