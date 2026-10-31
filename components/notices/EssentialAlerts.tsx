@@ -1,5 +1,5 @@
 /**
- * EssentialAlerts — the reserved top slot of Home, shown as ONE single-line red strip: [!]  ESSENTIAL ALERT  headline  (count)  [×].
+ * EssentialAlerts — the reserved top slot of Home, shown as ONE single-line red strip: [!]  headline  (count)  [×]. There is no visible label: the red strip and the icon say what it is, and "Essential alert" is in the accessible name.
  * The ONLY place in the app with the red / urgent treatment. Driven solely by get_essential_alerts (see lib/notices-alerts.ts composeHome).
  * With nothing to show (none active, or all dismissed) it returns null: no placeholder, no gap.
  *
@@ -56,7 +56,6 @@ export function EssentialAlerts({ alerts, onOpen, onSeeAll, sideInset = 16 }: {
         >
           <View style={s.icon} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><FontAwesome5 name="exclamation" size={12} color={RED} solid /></View>
           <View style={s.row} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <Text style={s.label} numberOfLines={1} maxFontSizeMultiplier={SCALE_CAP}>{narrow ? 'ALERT' : 'ESSENTIAL ALERT'}</Text>
             <Text style={s.title} numberOfLines={1} maxFontSizeMultiplier={SCALE_CAP}>{lead.title}</Text>
             {many ? <Text style={s.count} numberOfLines={1} maxFontSizeMultiplier={SCALE_CAP}>{narrow ? `${shown.length}` : `${shown.length} active`}</Text> : null}
           </View>
@@ -75,7 +74,6 @@ const s = StyleSheet.create({
   main: { flex: 1, minWidth: 0, height: HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 12 },
   icon: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   row: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  label: { flexShrink: 0, color: 'rgba(255,255,255,0.9)', fontSize: 10.5, fontWeight: '900', letterSpacing: 0.8 },
   title: { flex: 1, minWidth: 0, color: '#fff', fontSize: 14.5, fontWeight: '800' },
   count: { flexShrink: 0, color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '800' },
   close: { width: 48, height: HEIGHT, alignItems: 'center', justifyContent: 'center' },

@@ -221,11 +221,11 @@ describe('Home composition', () => {
   test('(source) the strip is ONE LINE always: fixed height, every Text numberOfLines={1}, capped text scaling, no wrapping, no body/what-to-do/source', () => {
     const e = readRepo('components/notices/EssentialAlerts.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.match((e.match(/strip: \{[^}]*\}/) ?? [''])[0], /height: HEIGHT/); assert.match(e, /HEIGHT = 52/);
-    const texts = e.match(/<Text [^>]*>/g) ?? []; assert.ok(texts.length >= 3);
+    const texts = e.match(/<Text [^>]*>/g) ?? []; assert.equal(texts.length, 2, 'headline and count only: no visible label');
     for (const t of texts) { assert.match(t, /numberOfLines=\{1\}/, t); assert.match(t, /maxFontSizeMultiplier=\{SCALE_CAP\}/, t); }
     assert.doesNotMatch(e, /numberOfLines=\{[2-9]\}|flexWrap|minHeight|flexDirection: 'column'/, 'nothing that can wrap or grow');
     assert.doesNotMatch(e, /lead\.body|actionText|attribution/, 'no body, what-to-do or source detail on Home');
-    assert.match(e, /narrow \? 'ALERT' : 'ESSENTIAL ALERT'/, 'the label shortens on narrow screens instead of wrapping');
+    assert.doesNotMatch(e, /ESSENTIAL ALERT|'ALERT'|s\.label/, 'no visible label text'); assert.match(e, /Essential alert, \$\{shown\.length\} active/); assert.match(e, /'Essential alert\. '/, "'Essential alert' stays in the accessible name");
   });
   test('(source) the whole strip opens (one: the alert, several: the list); the x is a SIBLING control that never navigates; names, hint, hit area', () => {
     const e = readRepo('components/notices/EssentialAlerts.tsx');
@@ -286,7 +286,7 @@ describe('Home composition', () => {
   test('(source) the Essential slot renders nothing when empty; the red treatment lives only there', () => {
     const e = readRepo('components/notices/EssentialAlerts.tsx');
     assert.match(e, /if \(shown\.length === 0\) return null;/);
-    assert.match(e, /ESSENTIAL ALERT/); assert.doesNotMatch(e, /What to do|View at source|Affects:|attribution\.byline/, 'the Home strip is a summary only');
+    assert.doesNotMatch(e, /What to do|View at source|Affects:|attribution\.byline/, 'the Home strip is a summary only');
     const cards = readRepo('components/notices/NoticeCards.tsx');
     assert.doesNotMatch(cards.slice(0, cards.indexOf('listCardEssential: {')), /#B3261E|#DC2626|#EF4444/, 'Home cards carry no urgent colour');
   });
