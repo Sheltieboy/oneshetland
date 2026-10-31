@@ -1,0 +1,15 @@
+-- DEPLOYMENT NOTE, NOT A MIGRATION. Do not run until (1) the import-official-notices function is deployed, (2) an administrator has enabled at least one source
+-- through admin_set_import_source_enabled with a recorded reuse confirmation, and (3) the release has been approved. It is deliberately outside
+-- supabase/migrations so applying migrations can never start scheduled imports.
+--
+-- Hourly, at minute 7 (off the hour so it does not collide with other jobs). The function imports nothing for a source that is not enabled, and every run
+-- is rate limited per source by the database (rate_limit_minutes, minimum 15), so a duplicate or overlapping call is harmless.
+--
+-- select cron.schedule('import-official-notices', '7 * * * *', $job$
+--   select net.http_post(
+--     url     := 'https://<project-ref>.functions.supabase.co/import-official-notices',
+--     headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')),
+--     body    := '{}'::jsonb);
+-- $job$);
+--
+-- To stop: select cron.unschedule('import-official-notices');   (or disable the sources; either is sufficient)
