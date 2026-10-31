@@ -193,6 +193,55 @@ export function buildSubmissionPayload(f: SubmissionForm): Record<string, unknow
   return p;
 }
 
+/** ISO date ('YYYY-MM-DD…') -> 'DD/MM/YYYY' for the form. */
+function toUkDate(v: unknown): string {
+  const m = typeof v === 'string' ? v.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+
+/** my_funeral_submission(p_id) -> the edit form. Missing fields become empty; consent flags only ever read as true when the row says true. */
+export function formFromSubmissionRow(row: Record<string, any>): SubmissionForm {
+  const at = typeof row.service_at === 'string' ? new Date(row.service_at) : null;
+  const okAt = at && !Number.isNaN(at.getTime()) ? at : null;
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  return {
+    ...EMPTY_SUBMISSION,
+    fullName: str(row.full_name), preferredName: str(row.preferred_name), photoUrl: str(row.photo_url),
+    bornOn: toUkDate(row.born_on), diedOn: toUkDate(row.died_on), announcement: str(row.announcement), areaId: clean(row.area_id),
+    publishArrangements: row.service_public === true,
+    serviceKind: clean(row.service_kind), serviceVenue: str(row.service_venue),
+    serviceDate: okAt ? `${String(okAt.getDate()).padStart(2, '0')}/${String(okAt.getMonth() + 1).padStart(2, '0')}/${okAt.getFullYear()}` : '',
+    serviceTime: okAt ? `${String(okAt.getHours()).padStart(2, '0')}:${String(okAt.getMinutes()).padStart(2, '0')}` : '',
+    serviceNotes: str(row.service_notes), familyRequests: str(row.family_requests), donationInfo: str(row.donation_info), donationUrl: str(row.donation_url),
+    submitterName: str(row.submitter_name), submitterRelationship: str(row.submitter_relationship), submitterPhone: str(row.submitter_phone), submitterEmail: str(row.submitter_email),
+    familyAuthorised: true,
+    announceInNotifications: row.announce_in_notifications === true, announceNameInPreview: row.announce_in_notifications === true && row.announce_name_in_preview === true,
+  };
+}
+
+/**
+ * The jsonb for update_my_funeral_submission. Unlike a new submission, a blank field is sent as '' so the person can CLEAR it (an omitted key
+ * means "leave as it is"). Arrangements: when the choice is on they are sent (including blanks); when it is off only service_public=false is
+ * sent and the stored service fields are left untouched. The server ignores submitter, area and authorisation fields on an edit, so they are not sent.
+ */
+export function buildUpdatePayload(f: SubmissionForm): Record<string, unknown> {
+  const p: Record<string, unknown> = {
+    full_name: f.fullName.trim(), preferred_name: f.preferredName.trim(), photo_url: httpsUrl(f.photoUrl) ?? '',
+    born_on: f.bornOn.trim() ? (parseUkDate(f.bornOn) ?? '') : '', died_on: f.diedOn.trim() ? (parseUkDate(f.diedOn) ?? '') : '',
+    announcement: f.announcement.trim(), family_requests: f.familyRequests.trim(), donation_info: f.donationInfo.trim(), donation_url: httpsUrl(f.donationUrl) ?? '',
+    service_public: f.publishArrangements === true,
+    announce_in_notifications: f.announceInNotifications === true,
+    announce_name_in_preview: f.announceInNotifications === true && f.announceNameInPreview === true,
+  };
+  if (f.publishArrangements) {
+    p.service_kind = f.serviceKind ?? '';
+    p.service_venue = f.serviceVenue.trim();
+    p.service_at = f.serviceDate.trim() ? (parseServiceInstant(f.serviceDate, f.serviceTime) ?? '') : '';
+    p.service_notes = f.serviceNotes.trim();
+  }
+  return p;
+}
+
 // ── My submissions ───────────────────────────────────────────────────────────
 
 export type SubmissionStatus = 'submitted' | 'in_review' | 'needs_info' | 'approved' | 'rejected' | 'withdrawn' | 'taken_down';
@@ -213,6 +262,8 @@ export type SubmissionModel = {
   /** The staff message (the server releases it only while information is needed). */
   staffMessage: string | null;
   canWithdraw: boolean;
+  /** Only while waiting or when more information is needed (update_my_funeral_submission). */
+  canEdit: boolean;
   /** A published notice is changed by staff on request. */
   canRequestChange: boolean;
 };
@@ -222,6 +273,7 @@ export function mapSubmissionRow(row: Record<string, any>): SubmissionModel {
   return {
     id: String(row.id), status, statusLabel: SUBMISSION_STATUS_LABEL[status], fullName: clean(row.full_name) ?? 'Notice',
     createdAt: clean(row.created_at), publishedAt: clean(row.published_at), staffMessage: clean(row.review_message),
+    canEdit: status === 'submitted' || status === 'needs_info',
     canWithdraw: status === 'submitted' || status === 'in_review' || status === 'needs_info' || status === 'approved',
     canRequestChange: status === 'approved',
   };

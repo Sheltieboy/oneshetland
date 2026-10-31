@@ -25,19 +25,17 @@ import { NoticeListCard } from '@/components/notices/NoticeCards';
 import { FuneralListCard } from '@/components/notices/FuneralTemplate';
 import { AreaPicker } from '@/components/notices/AreaPicker';
 import {
-  NOTICE_TABS, INITIAL_FILTER, PAGE_SIZE, reduceFilter, appendPage, categoriesFrom,
+  NOTICE_TABS, INITIAL_FILTER, reduceFilter, appendPage, categoriesFrom, filterSummary,
   type NoticeModel, type NoticeTab, type FilterState,
 } from '@/lib/notices-alerts';
 import type { FuneralNoticeModel } from '@/lib/funeral-notices';
-import { loadNoticePage, loadAreas, loadCategories, FALLBACK_CATEGORIES, type AreaOption, type CategoryOption } from '@/lib/notices-alerts-api';
+import { loadNoticePage, loadPublicNotice, loadAreas, loadCategories, FALLBACK_CATEGORIES, type AreaOption, type CategoryOption } from '@/lib/notices-alerts-api';
 import { fetchMyNoticeAreas } from '@/lib/notice-prefs';
 import { broadcastNotice, fetchNoticeBroadcastState } from '@/lib/notices-broadcast';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 
 const S = SECTIONS.notices;
-/** Auto-fetch further pages (at most this many extra) while a linked notice is not yet on screen. */
-const FIND_LINKED_PAGES = 3;
 
 const EMPTY_COPY: Record<NoticeTab, { title: string; body: string }> = {
   all: { title: 'No notices right now.', body: 'When something is posted for your area it will appear here.' },
@@ -66,7 +64,9 @@ export default function NoticesScreen() {
 
   const initialTab = (NOTICE_TABS.some((t) => t.key === params.tab) ? params.tab : 'all') as NoticeTab;
   const openId = typeof params.open === 'string' && params.open ? params.open : null;
-  const [filter, dispatch] = useReducer(reduceFilter, { ...INITIAL_FILTER, tab: initialTab } as FilterState);
+  const [filter, dispatchFilter] = useReducer(reduceFilter, { ...INITIAL_FILTER, tab: initialTab } as FilterState);
+  // Changing a filter ends the deep-linked view: the linked notice was shown on top only to land the reader on it.
+  const dispatch = (a: Parameters<typeof reduceFilter>[1]) => { setLinked(null); setLinkedGone(false); dispatchFilter(a); };
 
   const [notices, setNotices] = useState<NoticeModel[]>([]);
   const [funeral, setFuneral] = useState<FuneralNoticeModel[]>([]);
@@ -79,10 +79,12 @@ export default function NoticesScreen() {
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [categories, setCategories] = useState<CategoryOption[]>(FALLBACK_CATEGORIES);
   const [picker, setPicker] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
   const [sentMap, setSentMap] = useState<Record<string, string | null>>({});
   const request = useRef(0);
-  const extraPages = useRef(0);
+  const [linked, setLinked] = useState<NoticeModel | null>(null);
+  const [linkedGone, setLinkedGone] = useState(false);
   // Paging reads the latest lists through refs, so "Show more" never appends to a stale list.
   const noticesRef = useRef<NoticeModel[]>([]); noticesRef.current = notices;
   const funeralRef = useRef<FuneralNoticeModel[]>([]); funeralRef.current = funeral;
@@ -142,10 +144,10 @@ export default function NoticesScreen() {
       const page = await loadNoticePage(filter, scopeAreas, offset);
       if (mine !== request.current) return;
       if (filter.tab === 'funeral') {
-        const r = appendPage(offset === 0 ? [] : funeralRef.current, page.funeral, PAGE_SIZE);
+        const r = appendPage(offset === 0 ? [] : funeralRef.current, page.funeral, page.hasMore);
         setFuneral(r.items); setHasMore(r.hasMore);
       } else {
-        const r = appendPage(offset === 0 ? [] : noticesRef.current, page.notices, PAGE_SIZE);
+        const r = appendPage(offset === 0 ? [] : noticesRef.current, page.notices, page.hasMore);
         setNotices(r.items); setHasMore(r.hasMore);
         if (isAdmin && offset === 0) {
           const urgent = r.items.filter(n => n.severity === 'urgent' && !n.isEssential).map(n => n.id);
@@ -161,7 +163,6 @@ export default function NoticesScreen() {
 
   useEffect(() => {
     let alive = true;
-    extraPages.current = 0;
     setLoading(true); setNotices([]); setFuneral([]); setHasMore(false);
     fetchPage(0).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -175,13 +176,13 @@ export default function NoticesScreen() {
     setLoadingMore(false);
   }, [fetchPage, hasMore, loadingMore, filter.tab]);
 
-  // A notice linked from Home that is not in the first page: look a few pages further.
+  // A deep link (?open=<id>) fetches that one notice with get_public_notice and shows it on top, whatever page or filter it would be in.
   useEffect(() => {
-    if (!openId || loading || loadingMore || !hasMore || filter.tab === 'funeral') return;
-    if (notices.some((n) => n.id === openId) || extraPages.current >= FIND_LINKED_PAGES) return;
-    extraPages.current += 1;
-    showMore();
-  }, [openId, loading, loadingMore, hasMore, notices, filter.tab, showMore]);
+    if (!openId) return;
+    let alive = true;
+    loadPublicNotice(openId).then((n) => { if (alive) { setLinked(n); setLinkedGone(!n); } }).catch(() => {});
+    return () => { alive = false; };
+  }, [openId]);
 
   const onRefresh = useCallback(async () => { setRefreshing(true); await fetchPage(0); setRefreshing(false); }, [fetchPage]);
 
@@ -190,6 +191,8 @@ export default function NoticesScreen() {
     : (areas.find((a) => a.id === (filter.scope as { areaId: string }).areaId)?.name ?? 'One area');
   const categoryOptions = categories.length ? categories : categoriesFrom(notices);
   const isFuneral = filter.tab === 'funeral';
+  const categoryLabel = !isFuneral && filter.category ? (categoryOptions.find((c) => c.id === filter.category)?.label ?? filter.category) : null;
+  const summary = filterSummary(filter.scope.mode === 'all' ? null : scopeLabel, categoryLabel);
   const listLength = isFuneral ? funeral.length : notices.length;
 
   return (
@@ -207,26 +210,42 @@ export default function NoticesScreen() {
         contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={S.color} />}>
 
-        {/* Filters stay in view while the list scrolls. */}
+        {/* Only the type tabs stay in view while the list scrolls (sticky child 0). */}
         <View style={styles.filters}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} accessibilityRole="tablist">
             {NOTICE_TABS.map((t) => <FilterChip key={t.key} label={t.label} on={filter.tab === t.key} onPress={() => dispatch({ type: 'tab', tab: t.key })} />)}
           </ScrollView>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            <FilterChip icon="map-marker-alt" label={filter.scope.mode === 'area' ? scopeLabel : 'Choose area'} on={filter.scope.mode === 'area'} onPress={() => setPicker(true)} />
-            {signedIn && myAreas.length > 0 ? (
-              <FilterChip label="My areas" on={filter.scope.mode === 'mine'} onPress={() => dispatch({ type: 'scope', scope: filter.scope.mode === 'mine' ? { mode: 'all' } : { mode: 'mine' } })} />
-            ) : null}
-            {filter.scope.mode !== 'all' ? <FilterChip label="All Shetland" on={false} onPress={() => dispatch({ type: 'scope', scope: { mode: 'all' } })} /> : null}
-          </ScrollView>
-          {!isFuneral ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              <FilterChip label="Any category" on={filter.category === null} onPress={() => dispatch({ type: 'category', category: null })} />
-              {categoryOptions.map((c) => <FilterChip key={c.id} label={c.label} on={filter.category === c.id} onPress={() => dispatch({ type: 'category', category: filter.category === c.id ? null : c.id })} />)}
-            </ScrollView>
+        </View>
+
+        {/* Area and category live in a collapsible Filters row that scrolls away with the content. Its summary stays visible while a filter is active. */}
+        <View style={styles.filterBox}>
+          <Pressable onPress={() => setFiltersOpen((v) => !v)} accessibilityRole="button" accessibilityState={{ expanded: filtersOpen }}
+            accessibilityLabel={summary ? `Filters: ${summary}. ${filtersOpen ? 'Hide' : 'Show'} filters` : `${filtersOpen ? 'Hide' : 'Show'} filters`} style={styles.filterHead}>
+            <FontAwesome5 name="sliders-h" size={13} color={colors.navy} />
+            <Text style={styles.filterTitle}>Filters</Text>
+            <Text style={[styles.filterSummary, !summary && { color: colors.textLight }]} numberOfLines={1}>{summary || 'All Shetland, any category'}</Text>
+            <FontAwesome5 name={filtersOpen ? 'chevron-up' : 'chevron-down'} size={11} color={colors.textLight} />
+          </Pressable>
+          {filtersOpen ? (
+            <View style={{ gap: 6, paddingBottom: 10 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                <FilterChip icon="map-marker-alt" label={filter.scope.mode === 'area' ? scopeLabel : 'Choose area'} on={filter.scope.mode === 'area'} onPress={() => setPicker(true)} />
+                {signedIn && myAreas.length > 0 ? (
+                  <FilterChip label="My areas" on={filter.scope.mode === 'mine'} onPress={() => dispatch({ type: 'scope', scope: filter.scope.mode === 'mine' ? { mode: 'all' } : { mode: 'mine' } })} />
+                ) : null}
+                {filter.scope.mode !== 'all' ? <FilterChip label="All Shetland" on={false} onPress={() => dispatch({ type: 'scope', scope: { mode: 'all' } })} /> : null}
+              </ScrollView>
+              {!isFuneral ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                  <FilterChip label="Any category" on={filter.category === null} onPress={() => dispatch({ type: 'category', category: null })} />
+                  {categoryOptions.map((c) => <FilterChip key={c.id} label={c.label} on={filter.category === c.id} onPress={() => dispatch({ type: 'category', category: filter.category === c.id ? null : c.id })} />)}
+                </ScrollView>
+              ) : null}
+            </View>
           ) : null}
         </View>
 
+        {linkedGone && !isFuneral ? <Text style={styles.inlineError}>That notice is no longer current. It may have ended or been withdrawn.</Text> : null}
         {isFuneral ? (
           <View style={styles.funeralActions}>
             <Pressable onPress={() => router.push('/funeral-notice-submit' as any)} accessibilityRole="button" style={styles.fAction}>
@@ -244,11 +263,11 @@ export default function NoticesScreen() {
           <LoadingState accent={S.color} />
         ) : error && listLength === 0 ? (
           <EmptyState icon="exclamation-circle" title="Notices did not load" body={error} accent={S.color} variant="card" actionLabel="Try again" onAction={() => { setLoading(true); fetchPage(0).finally(() => setLoading(false)); }} />
-        ) : listLength === 0 ? (
+        ) : listLength === 0 && !linked ? (
           <EmptyState icon="bullhorn" title={EMPTY_COPY[filter.tab].title} body={EMPTY_COPY[filter.tab].body} accent={S.color} variant="card" />
         ) : isFuneral ? (
           funeral.map((f) => <FuneralListCard key={f.id} f={f} onPress={() => router.push({ pathname: '/funeral-notice', params: { id: f.id } } as any)} />)
-        ) : notices.map((n) => {
+        ) : (linked && !isFuneral ? [linked, ...notices.filter((x) => x.id !== linked.id)] : notices).map((n) => {
           const isUrgent = n.severity === 'urgent' && !n.isEssential;
           return (
             <NoticeListCard
@@ -274,7 +293,7 @@ export default function NoticesScreen() {
           );
         })}
 
-        {!loading && listLength > 0 && hasMore ? (
+        {!loading && hasMore ? (
           <Pressable onPress={showMore} disabled={loadingMore} accessibilityRole="button" accessibilityLabel="Show more notices" style={styles.more}>
             {loadingMore ? <ActivityIndicator color={S.color} /> : <Text style={styles.moreText}>Show more</Text>}
           </Pressable>
@@ -297,6 +316,10 @@ export default function NoticesScreen() {
 
 const styles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.sm },
+  filterBox: { backgroundColor: '#fff', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  filterHead: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14 },
+  filterTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.navy },
+  filterSummary: { flex: 1, fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '600' },
   filters: { backgroundColor: colors.screenBackground, paddingBottom: 4, gap: 6, marginHorizontal: -spacing.md, paddingHorizontal: spacing.md },
   chipRow: { gap: 8, paddingVertical: 2, paddingRight: spacing.md },
   chip: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, borderRadius: 99, borderWidth: 1, borderColor: colors.border, backgroundColor: '#fff' },

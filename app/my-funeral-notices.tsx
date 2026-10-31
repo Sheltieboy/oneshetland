@@ -83,6 +83,7 @@ export default function MyFuneralNoticesScreen() {
             ) : null}
             <View style={styles.row}>
               {r.status === 'approved' ? <Pressable onPress={() => router.push({ pathname: '/funeral-notice', params: { id: r.id } } as any)} accessibilityRole="button" style={styles.btn}><Text style={styles.btnText}>View</Text></Pressable> : null}
+              {r.canEdit ? <Pressable onPress={() => router.push({ pathname: '/funeral-notice-submit', params: { edit: r.id } } as any)} accessibilityRole="button" style={styles.btn}><Text style={styles.btnText}>{r.status === 'needs_info' ? 'Add the information' : 'Edit'}</Text></Pressable> : null}
               {r.canRequestChange ? <Pressable onPress={() => { setChange({ id: r.id, kind: 'correction' }); setMessage(''); }} accessibilityRole="button" style={styles.btn}><Text style={styles.btnText}>Ask for a correction</Text></Pressable> : null}
               {r.canRequestChange ? <Pressable onPress={() => { setChange({ id: r.id, kind: 'takedown' }); setMessage(''); }} accessibilityRole="button" style={styles.btn}><Text style={styles.btnText}>Ask for it to be taken down</Text></Pressable> : null}
               {r.canWithdraw ? <Pressable onPress={() => withdraw(r)} disabled={busy === r.id} accessibilityRole="button" style={styles.btn}>{busy === r.id ? <ActivityIndicator /> : <Text style={styles.btnText}>Withdraw</Text>}</Pressable> : null}

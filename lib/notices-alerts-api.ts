@@ -6,10 +6,10 @@
  */
 import { supabase } from './supabase';
 import {
-  mapRows, mapEssentialRow, mapNoticeRow, homeAreaArgs, buildQuery, HOME_CARD_MAX, composeHome,
+  mapRows, mapEssentialRow, mapNoticeRow, homeAreaArgs, buildQuery, HOME_CARD_MAX, composeHome, trimPage, PAGE_SIZE,
   type NoticeModel, type FilterState, type HomeComposition,
 } from './notices-alerts';
-import { mapFuneralRows, mapFuneralRow, mapSubmissionRows, buildChangeRequest, buildSubmissionPayload, type SubmissionForm, type ChangeKind, type FuneralNoticeModel, type SubmissionModel } from './funeral-notices';
+import { mapFuneralRows, mapFuneralRow, mapSubmissionRows, buildChangeRequest, buildSubmissionPayload, buildUpdatePayload, formFromSubmissionRow, type SubmissionForm, type ChangeKind, type FuneralNoticeModel, type SubmissionModel } from './funeral-notices';
 
 export type AreaOption = { id: string; name: string; type: string; parentId: string | null };
 export type CategoryOption = { id: string; label: string };
@@ -31,11 +31,21 @@ export async function loadEssentialAlerts(areaIds: string[] | null): Promise<Not
 }
 
 /** One page of the Notices list (or, for the funeral tab, the funeral list). */
-export async function loadNoticePage(state: FilterState, myAreas: string[] | null, offset: number): Promise<{ notices: NoticeModel[]; funeral: FuneralNoticeModel[] }> {
-  const q = buildQuery(state, myAreas, offset);
+export async function loadNoticePage(state: FilterState, myAreas: string[] | null, offset: number): Promise<{ notices: NoticeModel[]; funeral: FuneralNoticeModel[]; hasMore: boolean }> {
+  // One row more than a page: its presence is the only "there is more" signal (no empty Show more after an exact multiple).
+  const q = buildQuery(state, myAreas, offset, PAGE_SIZE + 1);
   const { data, error } = await supabase.rpc(q.fn, q.args);
   if (error) throw error;
-  return q.fn === 'get_funeral_notices' ? { notices: [], funeral: mapFuneralRows(data) } : { notices: mapRows(data, mapNoticeRow), funeral: [] };
+  if (q.fn === 'get_funeral_notices') { const t = trimPage(mapFuneralRows(data), PAGE_SIZE); return { notices: [], funeral: t.rows, hasMore: t.hasMore }; }
+  const t = trimPage(mapRows(data, mapNoticeRow), PAGE_SIZE);
+  return { notices: t.rows, funeral: [], hasMore: t.hasMore };
+}
+
+/** One public notice by id (deep links, ?open=<id>). null when it is not public (resolved, scheduled, hidden, withdrawn or unknown). */
+export async function loadPublicNotice(id: string): Promise<NoticeModel | null> {
+  const { data, error } = await supabase.rpc('get_public_notice', { p_id: id });
+  if (error) throw error;
+  return mapRows(data, mapNoticeRow)[0] ?? null;
 }
 
 /** Home: the Essential slot and the card grid, each failing independently to "nothing". */
@@ -46,7 +56,7 @@ export async function loadHomeNotices(myAreas: string[] | null): Promise<HomeCom
     supabase.rpc('get_public_notices', { p_level: 'all', p_area_ids: areas, p_category: null, p_limit: 20, p_offset: 0 })
       .then(({ data, error }) => (error ? [] : mapRows(data, mapNoticeRow)), () => [] as NoticeModel[]),
   ]);
-  return composeHome(essential, notices, HOME_CARD_MAX);
+  return composeHome(essential, notices, HOME_CARD_MAX, myAreas);
 }
 
 export async function loadFuneralNotice(id: string): Promise<FuneralNoticeModel | null> {
@@ -77,6 +87,18 @@ export async function submitFuneralNotice(form: SubmissionForm): Promise<string>
   const { data, error } = await supabase.rpc('submit_funeral_notice', { p: buildSubmissionPayload(form) });
   if (error) throw error;
   return String(data);
+}
+
+export async function loadMyFuneralSubmission(id: string): Promise<{ form: SubmissionForm; status: string; staffMessage: string | null } | null> {
+  const { data, error } = await supabase.rpc('my_funeral_submission', { p_id: id });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return row && row.id ? { form: formFromSubmissionRow(row), status: String(row.status), staffMessage: typeof row.review_message === 'string' && row.review_message.trim() ? row.review_message.trim() : null } : null;
+}
+
+export async function updateFuneralSubmission(id: string, form: SubmissionForm): Promise<void> {
+  const { error } = await supabase.rpc('update_my_funeral_submission', { p_id: id, p: buildUpdatePayload(form) });
+  if (error) throw error;
 }
 
 export async function loadMyFuneralSubmissions(): Promise<SubmissionModel[]> {

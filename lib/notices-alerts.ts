@@ -160,10 +160,17 @@ export function resolveDestination(d: DestinationInput): NoticeDestination | nul
 
 // ── Row -> model ─────────────────────────────────────────────────────────────
 
+/** The database returns `level` as an integer (1 essential, 2 official, 3 community); the contract text and older callers use the words. Both are read. */
+export function levelOf(v: unknown): NoticeLevel {
+  if (v === 1 || v === '1' || v === 'essential') return 'essential';
+  if (v === 2 || v === '2' || v === 'official') return 'official';
+  return 'community';
+}
+
 export function mapNoticeRow(row: Record<string, any>): NoticeModel {
   const attribution = adaptPublisher(row.publisher, row);
-  const level: NoticeLevel = row.level === 'essential' || row.level === 'official' ? row.level : 'community';
-  const isEssential = row.is_essential_active === true || (row.level === 'essential' && row.is_essential_active !== false);
+  const level = levelOf(row.level);
+  const isEssential = row.is_essential_active === true || (level === 'essential' && row.is_essential_active !== false);
   const hubId = clean(row.publisher_hub_id), businessId = clean(row.publisher_business_id);
   const eventId = clean(row.event_id), campaignId = clean(row.campaign_id);
   return {
@@ -274,6 +281,11 @@ export function reduceFilter(s: FilterState, a: FilterAction): FilterState {
   return s.tab === 'funeral' ? s : { ...s, category: a.category };
 }
 
+/** "Voe, Health" - what the collapsed Filters row says while a filter is active; '' when none is. */
+export function filterSummary(areaLabel: string | null, categoryLabel: string | null): string {
+  return [areaLabel, categoryLabel].filter((x): x is string => !!x).join(', ');
+}
+
 export function levelForTab(tab: NoticeTab): 'all' | 'essential' | 'official' | 'community' {
   return tab === 'funeral' ? 'all' : tab;
 }
@@ -289,9 +301,17 @@ export function buildQuery(state: FilterState, myAreas: string[] | null | undefi
 }
 
 /** Appends a page without repeating a row the server returned twice across pages; `hasMore` is true while a page came back full. */
-export function appendPage<T extends { id: string }>(prev: T[], incoming: T[], pageSize = PAGE_SIZE): { items: T[]; hasMore: boolean } {
+export function appendPage<T extends { id: string }>(prev: T[], incoming: T[], hasMore: boolean): { items: T[]; hasMore: boolean } {
   const seen = new Set(prev.map((x) => x.id));
-  return { items: [...prev, ...incoming.filter((x) => !seen.has(x.id))], hasMore: incoming.length >= pageSize };
+  return { items: [...prev, ...incoming.filter((x) => !seen.has(x.id))], hasMore };
+}
+
+/**
+ * Ask for pageSize + 1 rows; the extra row only proves there is another page. An exact multiple of the page size therefore ends cleanly
+ * (no empty "Show more").
+ */
+export function trimPage<T>(rows: T[], pageSize = PAGE_SIZE): { rows: T[]; hasMore: boolean } {
+  return { rows: rows.slice(0, pageSize), hasMore: rows.length > pageSize };
 }
 
 /** Distinct categories present in the rows already loaded, for the chip row when the category list could not be fetched. */
@@ -319,7 +339,8 @@ const time = (n: NoticeModel) => (n.publishedAt ? new Date(n.publishedAt).getTim
  * Essential alerts live ONLY in the top slot (from get_essential_alerts). The card grid is get_public_notices('all') minus every active
  * essential alert (by flag, level or id), newest first, capped at six.
  */
-export function composeHome(essential: NoticeModel[], notices: NoticeModel[], max = HOME_CARD_MAX): HomeComposition {
+export function composeHome(essentialIn: NoticeModel[], notices: NoticeModel[], max = HOME_CARD_MAX, myAreas: string[] | null = null): HomeComposition {
+  const essential = orderEssential(essentialIn, myAreas);
   const slotIds = new Set(essential.map((e) => e.id));
   const cards = notices
     .filter((n) => !n.isEssential && n.level !== 'essential' && !slotIds.has(n.id))
@@ -328,6 +349,23 @@ export function composeHome(essential: NoticeModel[], notices: NoticeModel[], ma
     .map((x) => x.n)
     .slice(0, max);
   return { essential, showEssential: essential.length > 0, cards };
+}
+
+/**
+ * Which essential alert leads the slot: alerts for the member's own areas first, then Shetland-wide ones, then the rest; within a group,
+ * newest first (stable). With no areas saved, only recency counts. The first element is shown in full, the others as compact rows.
+ */
+export function orderEssential(alerts: NoticeModel[], myAreas: string[] | null = null): NoticeModel[] {
+  const mine = new Set(myAreas ?? []);
+  const rank = (n: NoticeModel) => (mine.size === 0 ? 0 : n.areaIds.some((a) => mine.has(a)) ? 0 : n.areaIds.includes('shetland_wide') ? 1 : 2);
+  return alerts.map((n, i) => ({ n, i }))
+    .sort((a, b) => rank(a.n) - rank(b.n) || time(b.n) - time(a.n) || a.i - b.i)
+    .map((x) => x.n);
+}
+
+/** The slot: one alert in full, the rest as one-line rows. */
+export function splitEssential(ordered: NoticeModel[]): { lead: NoticeModel | null; others: NoticeModel[] } {
+  return { lead: ordered[0] ?? null, others: ordered.slice(1) };
 }
 
 /**
