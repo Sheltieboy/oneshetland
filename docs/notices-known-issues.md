@@ -59,3 +59,12 @@ plus those two linear commits, so nothing else shipped from outside the base. Th
 
 ## R2 — STATUS UPDATE (31 Oct 2026): remediated IN CODE, awaiting deployment
 `notify-hub-content` now reads the notice it announces and announces it only if the database says it is dispatchable to hub members (`notice_dispatchable(…, 'hub')`: published, started, unexpired, not hidden, a hub notice, public or members-only, never an official import), from the stored text (the caller's `title` is ignored), to active hub members, once (`notice_claim_dispatch`: a repeat call or a call after an edit returns 409). Proven: isolated-PG R2 matrix (audience suite 6b), dispatch-core tests with a mocked sender, source guards. **Not deployed to production**: until the function is redeployed (and migration `20261129020000` applied) the live function still has the old behaviour. The `event` branch of the same function is unchanged.
+
+
+## Acceptance testing, 31 Oct 2026 (signed-in, writable backend) - findings
+FIXED locally (not deployed):
+* **F1 (important).** A notice with no area rows matched NO area filter, so a member who chose areas stopped seeing almost every hub and business notice (their forms have no area control). Reading now treats "no area" as island-wide (`notice_matches_areas`); push is unchanged (a notice with no area still notifies nobody).
+* **F2.** A member could not edit their own person notice: the edit returns it to pending and Postgres refuses an UPDATE whose new row the author cannot read. Added `edit_my_person_notice` (additive, inside the unapplied core migration).
+* **F3.** Mobile Essential Alert ordering ignored parent/child areas (an alert for North Mainland ranked below an island-wide one for a Voe member). The app now mirrors `area_neighbourhood`.
+* **F4.** The admin console left the grant reason typed in the box and re-used it as the revoke reason; it is cleared after every success.
+STILL OPEN (reported, not built): there is no member-facing screen on the website or in the app to POST a person notice (only the database path exists); admins add organisation members by pasting a user id (no lookup by email); the Notify buttons call edge functions that are not deployed, so they were not exercised; real push, quiet-hours decisions (`should_notify`) and email are not exercised; the app's funeral screens were not driven on the device (sign-in and preferences were); a signed-in iPhone was not tested.

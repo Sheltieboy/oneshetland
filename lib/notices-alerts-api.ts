@@ -7,7 +7,7 @@
 import { supabase } from './supabase';
 import {
   mapRows, mapEssentialRow, mapNoticeRow, homeAreaArgs, buildQuery, HOME_CARD_MAX, composeHome, trimPage, PAGE_SIZE,
-  type NoticeModel, type FilterState, type HomeComposition,
+  type NoticeModel, type FilterState, type HomeComposition, type AreaParents,
 } from './notices-alerts';
 import { mapFuneralRows, mapFuneralRow, mapSubmissionRows, buildChangeRequest, buildSubmissionPayload, buildUpdatePayload, formFromSubmissionRow, type SubmissionForm, type ChangeKind, type FuneralNoticeModel, type SubmissionModel } from './funeral-notices';
 
@@ -56,7 +56,9 @@ export async function loadHomeNotices(myAreas: string[] | null): Promise<HomeCom
     supabase.rpc('get_public_notices', { p_level: 'all', p_area_ids: areas, p_category: null, p_limit: 20, p_offset: 0 })
       .then(({ data, error }) => (error ? [] : mapRows(data, mapNoticeRow)), () => [] as NoticeModel[]),
   ]);
-  return composeHome(essential, notices, HOME_CARD_MAX, myAreas);
+  // the area hierarchy lets the slot rank an alert for a parent / child of the member's area above an island-wide one (as the database matches them)
+  const parents = myAreas && myAreas.length ? await loadAreas().then((a) => Object.fromEntries(a.map((x) => [x.id, x.parentId])) as AreaParents, () => null) : null;
+  return composeHome(essential, notices, HOME_CARD_MAX, myAreas, parents);
 }
 
 export async function loadFuneralNotice(id: string): Promise<FuneralNoticeModel | null> {

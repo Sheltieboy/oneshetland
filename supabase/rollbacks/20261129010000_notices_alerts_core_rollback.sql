@@ -17,6 +17,7 @@ create or replace function public.notice_publisher_display(p_notice uuid) return
     when n.publisher_hub_id is not null then jsonb_build_object('kind', 'hub', 'label', coalesce((select name from public.hubs h where h.id = n.publisher_hub_id), 'Community hub'), 'is_official_source', false, 'source_label', null, 'source_url', null, 'byline', 'Posted by ' || coalesce((select name from public.hubs h where h.id = n.publisher_hub_id), 'Community hub'))
     else jsonb_build_object('kind', 'business', 'label', coalesce((select name from public.local_businesses b where b.id = n.publisher_business_id), 'Local business'), 'is_official_source', false, 'source_label', null, 'source_url', null, 'byline', 'Posted by ' || coalesce((select name from public.local_businesses b where b.id = n.publisher_business_id), 'Local business'))
   end from public.notices n where n.id = p_notice; $f$;
+drop function if exists public.edit_my_person_notice(uuid, text, text);
 drop function if exists public.official_publisher_label(uuid), public.notice_matches_areas(uuid, text[]), public.area_neighbourhood(text[]), public.notice_essential_active(public.notices), public.notice_is_public(public.notices);
 drop index if exists public.notices_feed_idx, public.notices_essential_idx, public.notices_official_idx;
 alter table public.notices drop constraint if exists notices_review_before_expiry, drop constraint if exists notices_essential_check, drop constraint if exists notices_link_url_check, drop constraint if exists notices_official_publisher_check;

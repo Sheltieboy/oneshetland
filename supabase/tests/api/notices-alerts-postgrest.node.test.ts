@@ -22,7 +22,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const rd = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const IMAGE = process.env.POSTGREST_IMAGE ?? 'public.ecr.aws/supabase/postgrest:v14.5';
 const PG = 'notices-alerts-pg', REST = 'notices-alerts-rest', NET = 'notices-alerts-proof';
-const REST_PORT = 54802, PROXY_PORT = 54803, SECRET = 'a-proof-only-secret-that-is-at-least-32-characters-long';
+const PORT_BASE = Number(process.env.API_PORT_BASE ?? 54801), REST_PORT = PORT_BASE + 1, PROXY_PORT = PORT_BASE + 2, SECRET = 'a-proof-only-secret-that-is-at-least-32-characters-long';
 const docker = (args: string[], input?: string) => spawnSync('docker', args, { input, encoding: 'utf8', timeout: 300_000 });
 const psql = (user: string, sql: string) => { const r = docker(['exec', '-i', PG, 'psql', '-U', user, '-h', 'localhost', '-d', 'postgres', '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1'], sql); return `${r.stdout ?? ''}${r.stderr ?? ''}`.trim(); };
 const pg = (sql: string) => psql('postgres', sql);

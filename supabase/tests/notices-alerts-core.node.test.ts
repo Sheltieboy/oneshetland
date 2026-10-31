@@ -369,3 +369,28 @@ describe('old clients and existing behaviour', () => {
 });
 
 function now_plus(i: string) { return `now() + interval '${i}'`; }
+
+describe('acceptance-test findings (31 Oct): reading a notice with no area, and editing your own person notice', () => {
+  test('30 a notice with NO area rows is island-wide for READING (members who chose areas still see hub / business notices); a notice with areas matches only its neighbourhood; notifications are unaffected', () => {
+    const id = idOf(as('H', `insert into notices (id, publisher_hub_id, title, body) values (gen_random_uuid(), '${HUB_V}', 'Hub notice with no area', 'No areas chosen at all') returning id`));
+    assert.equal(scalar(`select count(*) from notice_areas where notice_id='${id}'`), '0');
+    assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array['${CHILD}']::text[], null, 50, 0) where id = '${id}'`), '1', 'seen by a member who follows an area');
+    assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array[]::text[], null, 50, 0) where id = '${id}'`), '1', 'and by a member with no areas (island-wide only)');
+    scalar(`insert into notice_areas (notice_id, area_id) values ('${id}', '${CHILD}')`);
+    assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array['${CHILD}']::text[], null, 50, 0) where id = '${id}'`), '1');
+    assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array['${AREAS.find((a) => a !== CHILD && a !== CHILD_PARENT && a !== 'shetland_wide')}']::text[], null, 50, 0) where id = '${id}'`), '0', 'once it names an area, an unrelated area no longer sees it');
+  });
+  test('31 edit_my_person_notice: only the author, only while pending / published, text only, back to pending; a direct table edit is refused by Postgres (the unreadable new row); others are refused', () => {
+    scalar(`insert into notices (id, title, body, is_person_notice, publisher_user_id, status) values ('99999999-0000-4000-8000-000000000031', 'My original notice', 'The original wording of my notice', true, '${U.A}', 'published')`);
+    const id = '99999999-0000-4000-8000-000000000031';
+    assert.match(as('A', `update notices set body = 'edited directly' where id = '${id}'`), /row-level security/, 'the table route cannot work: the new row would be pending, which the read policy hides from the author');
+    assert.match(as('A2', `select public.edit_my_person_notice('${id}', 'Hijacked title', 'Somebody else rewrites it')`), /only edit your own/);
+    assert.match(as('anon', `select public.edit_my_person_notice('${id}', 'Anonymous edit', 'No account at all')`), /permission denied/);
+    assert.match(as('A', `select public.edit_my_person_notice('${id}', 'No', 'short')`), /title must be 5 to 120|text must be 10/);
+    assert.equal(as('A', `select public.edit_my_person_notice('${id}', 'My corrected notice', 'The corrected wording of my notice')`).includes('ERROR'), false);
+    assert.equal(status(id), 'pending'); assert.equal(scalar(`select title from notices where id='${id}'`), 'My corrected notice');
+    assert.equal(asScalar('anon', `select count(*) from notices where id='${id}'`), '0', 'no longer public until staff approve it again');
+    scalar(`update notices set status = 'withdrawn' where id = '${id}'`);
+    assert.match(as('A', `select public.edit_my_person_notice('${id}', 'Too late to edit', 'This notice was already withdrawn')`), /can no longer be edited/);
+  });
+});

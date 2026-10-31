@@ -339,8 +339,8 @@ const time = (n: NoticeModel) => (n.publishedAt ? new Date(n.publishedAt).getTim
  * Essential alerts live ONLY in the top slot (from get_essential_alerts). The card grid is get_public_notices('all') minus every active
  * essential alert (by flag, level or id), newest first, capped at six.
  */
-export function composeHome(essentialIn: NoticeModel[], notices: NoticeModel[], max = HOME_CARD_MAX, myAreas: string[] | null = null): HomeComposition {
-  const essential = orderEssential(essentialIn, myAreas);
+export function composeHome(essentialIn: NoticeModel[], notices: NoticeModel[], max = HOME_CARD_MAX, myAreas: string[] | null = null, parents: AreaParents | null = null): HomeComposition {
+  const essential = orderEssential(essentialIn, myAreas, parents);
   const slotIds = new Set(essential.map((e) => e.id));
   const cards = notices
     .filter((n) => !n.isEssential && n.level !== 'essential' && !slotIds.has(n.id))
@@ -351,13 +351,39 @@ export function composeHome(essentialIn: NoticeModel[], notices: NoticeModel[], 
   return { essential, showEssential: essential.length > 0, cards };
 }
 
+/** area id -> parent area id (null for a root): what the app reads from `areas`, so the client can mirror the database's parent/child matching. */
+export type AreaParents = Record<string, string | null>;
+
 /**
- * Which essential alert leads the slot: alerts for the member's own areas first, then Shetland-wide ones, then the rest; within a group,
- * newest first (stable). With no areas saved, only recency counts. The first element is shown in full, the others as compact rows.
+ * The areas "near" a set of areas, exactly as the database's area_neighbourhood(): each area itself, every ancestor and every descendant - never the
+ * Shetland-wide root. A parent area therefore matches its children and a child matches its parent; siblings do not match each other.
  */
-export function orderEssential(alerts: NoticeModel[], myAreas: string[] | null = null): NoticeModel[] {
+export function areaNeighbourhood(ids: readonly string[], parents: AreaParents): Set<string> {
+  const out = new Set<string>();
+  const kids = new Map<string, string[]>();
+  for (const [id, parent] of Object.entries(parents)) if (parent) kids.set(parent, [...(kids.get(parent) ?? []), id]);
+  for (const id of ids) {
+    out.add(id);
+    for (let p = parents[id]; p; p = parents[p]) out.add(p);                  // ancestors
+    const stack = [...(kids.get(id) ?? [])];                                   // descendants
+    while (stack.length) { const c = stack.pop() as string; if (!out.has(c)) { out.add(c); stack.push(...(kids.get(c) ?? [])); } }
+  }
+  out.delete('shetland_wide');
+  return out;
+}
+
+/**
+ * Which essential alert leads the slot: alerts for the member's own areas first, then alerts for a parent or child of them (the same relation the
+ * database uses to decide who sees an alert), then Shetland-wide ones, then the rest; within a group, newest first (stable). With no areas saved only
+ * recency counts. Without the area hierarchy (`parents` omitted) only an exact area counts as "own". The first element is shown, the rest are counted.
+ */
+export function orderEssential(alerts: NoticeModel[], myAreas: string[] | null = null, parents: AreaParents | null = null): NoticeModel[] {
   const mine = new Set(myAreas ?? []);
-  const rank = (n: NoticeModel) => (mine.size === 0 ? 0 : n.areaIds.some((a) => mine.has(a)) ? 0 : n.areaIds.includes('shetland_wide') ? 1 : 2);
+  const near = parents && mine.size ? areaNeighbourhood([...mine], parents) : mine;
+  const rank = (n: NoticeModel) => (mine.size === 0 ? 0
+    : n.areaIds.some((a) => mine.has(a)) ? 0
+    : n.areaIds.some((a) => near.has(a)) ? 1
+    : n.areaIds.includes('shetland_wide') ? 2 : 3);
   return alerts.map((n, i) => ({ n, i }))
     .sort((a, b) => rank(a.n) - rank(b.n) || time(b.n) - time(a.n) || a.i - b.i)
     .map((x) => x.n);

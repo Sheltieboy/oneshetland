@@ -218,6 +218,20 @@ describe('Home composition', () => {
     assert.deepEqual([lead.title, ids(others)], ['Alert 2', ['Alert 1', 'Alert 3']]);
     assert.deepEqual(na.splitEssential([]), { lead: null, others: [] });
   });
+  test('area hierarchy: the slot ranks an alert for a PARENT or CHILD of the member\'s area above an island-wide one, exactly as the database matches them; siblings do not match', () => {
+    const parents = { shetland_wide: null, shetland_north: 'shetland_wide', voe: 'shetland_north', brae: 'shetland_north', lerwick_bressay: 'shetland_wide', lerwick: 'lerwick_bressay', bressay: 'lerwick_bressay' };
+    assert.deepEqual([...na.areaNeighbourhood(['voe'], parents)].sort(), ['shetland_north', 'voe'], 'self + ancestors (never the island-wide root)');
+    assert.deepEqual([...na.areaNeighbourhood(['shetland_north'], parents)].sort(), ['brae', 'shetland_north', 'voe'], 'a parent reaches its children');
+    assert.deepEqual([...na.areaNeighbourhood(['lerwick'], parents)].sort(), ['lerwick', 'lerwick_bressay'], 'a sibling (bressay) is not included');
+    const mk = (id: string, areaIds: string[], at: string) => na.mapNoticeRow(row({ id: U(Number(id)), area_ids: areaIds, area_names: areaIds, published_at: at, level: 1, is_essential_active: true }));
+    const wide = mk('1', ['shetland_wide'], '2026-10-31T10:00:00Z'), parent = mk('2', ['shetland_north'], '2026-10-31T08:00:00Z'), exact = mk('3', ['voe'], '2026-10-31T07:00:00Z'), sibling = mk('4', ['brae'], '2026-10-31T11:00:00Z');
+    const order = (areas: string[], p: unknown) => na.orderEssential([wide, parent, exact, sibling], areas, p).map((n: any) => n.id);
+    assert.deepEqual(order(['voe'], parents), [exact.id, parent.id, wide.id, sibling.id], 'own area, then a parent/child area, then island-wide, then the rest');
+    assert.deepEqual(order(['voe'], null), [exact.id, wide.id, sibling.id, parent.id], 'without the hierarchy only an exact area counts (the previous behaviour, kept as the fallback)');
+    assert.deepEqual(order(['shetland_north'], parents), [parent.id, sibling.id, exact.id, wide.id], 'a parent-area member: the parent-area alert, then its children newest first, then island-wide');
+    assert.deepEqual(order([], parents), [sibling.id, wide.id, parent.id, exact.id], 'no areas: only recency counts');
+    assert.equal(na.composeHome([wide, parent, exact], [], 6, ['voe'], parents).essential[0].id, exact.id);
+  });
   test('(source) the strip is ONE LINE always: fixed height, every Text numberOfLines={1}, capped text scaling, no wrapping, no body/what-to-do/source', () => {
     const e = readRepo('components/notices/EssentialAlerts.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.match((e.match(/strip: \{[^}]*\}/) ?? [''])[0], /height: HEIGHT/); assert.match(e, /HEIGHT = 52/);

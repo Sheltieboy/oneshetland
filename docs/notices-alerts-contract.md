@@ -17,7 +17,7 @@ Priority, publisher authority and notification permission are separate. `can_pub
 
 ## Public reads (callable by anon; no auth needed)
 
-All return only publicly visible rows. Pass `p_area_ids`: **null = unfiltered; `[]` = Shetland-wide notices only; `['voe', …]` = those areas, anything inside them, any area containing them, plus Shetland-wide.**
+All return only publicly visible rows. Pass `p_area_ids`: **null = unfiltered; `[]` = Shetland-wide notices only; `['voe', …]` = those areas, anything inside them, any area containing them, plus Shetland-wide. A notice with NO area at all (hubs and businesses cannot choose one) is treated as island-wide for READING: it appears under every filter. It is never announced by push (dispatch recipients still require an area).**
 The Shetland-wide root (`shetland_wide`) is never a member area.
 
 * `get_essential_alerts(p_area_ids text[] default null)` → rows `{id,title,body,action_text,category,published_at,expires_at,review_at,link_url,publisher,area_ids,area_names}`. ONLY active essential alerts. Empty array = render nothing and leave no gap.
@@ -40,6 +40,7 @@ Publishing as a verified organisation (web only)
 * `my_official_publishers()` → `{publisher_id,slug,name,kind,role,can_publish,can_essential}`. Empty for ordinary users: hide the publisher UI.
 * `official_publish_notice(p_publisher, p_title, p_body, p_category, p_area_ids, p_expires_at, p_starts_at, p_link_url, p_action_text, p_is_essential, p_review_at)` → id. Essential rules (the server enforces all; mirror them in the form for guidance only): title 5–120, body 20–4000, action text 10–500, ≥1 area (or `shetland_wide` alone), expiry after start and ≤ 7 days from start, `review_at` between start and expiry, link plain `https`. Non-essential official notices need an expiry ≤ 180 days. A delegate cannot mark essential; neither can an organisation without the live grant.
 * `my_official_notices(p_publisher uuid)` (authenticated; members of that organisation and administrators only) → `{id,title,body,status,severity,is_essential,category,starts_at,expires_at,review_at,published_at,action_text,link_url,area_ids,announced}` in EVERY state (scheduled, resolved, withdrawn included). `announced` = a notification dispatch has completed (hide the notify button).
+* `edit_my_person_notice(p_notice, p_title, p_body)` (authenticated) — a member edits THEIR OWN person notice (pending or published, text only); it returns to pending for staff approval. Editing through the table is impossible by design (Postgres refuses an UPDATE whose new row the author cannot read).
 * `official_update_notice(p_notice, …)` (null = keep), `official_set_notice_status(p_notice, 'resolved'|'withdrawn')`. Editing never sends a notification.
 * Notifications for an alert are a SEPARATE, explicit, once-only request: `POST /functions/v1/notify-notice-audience {notice_id, kind}` (edge function, not deployed). Never offer "notify again".
 
