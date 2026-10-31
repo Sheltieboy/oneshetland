@@ -237,6 +237,7 @@ describe('notifications (selection only): what the family approved, to those who
     assert.match(scalar(`select public.funeral_dispatchable('${B_}')`), /family has not approved/);
     assert.equal(scalar(`select coalesce(public.funeral_dispatchable('${A_}'),'OK')`), 'OK');
     assert.deepEqual(recips(A_), [M1], 'M1: opted in + follows the area. M2: opted in, other area. M3: not opted in. A: essential only');
+    assert.equal(scalar(`select count(*) from public.funeral_dispatch_recipients('${A_}') r where not exists (select 1 from notice_notification_prefs p where p.user_id = r.user_id and p.funeral_notices)`), '0', 'every recipient has an explicit funeral opt-in row');
     assert.deepEqual(recips(B_), []);
     const wide = approve(submit('O', { full_name: 'Area-less notice', announce_in_notifications: true }));
     assert.deepEqual(recips(wide), [M1, M2].sort(), 'no area on the notice = every opted-in member');

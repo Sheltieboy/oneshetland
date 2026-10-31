@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createServiceClient, sendUserPushBulk } from '../_shared/send-push.ts';
+import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';

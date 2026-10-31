@@ -41,3 +41,17 @@ test('7 reminder-runner leaves reminders unstamped when the preference check fai
   assert.ok((s.match(/checkFailed > 0/g) ?? []).length >= 4);
   assert.match(s, /deferred_preference_check/);
 });
+test('8 the two raw sendPush callers only ever address platform ADMIN devices (staff operational alerts), never members', () => {
+  for (const f of ['wallet-liquidity-monitor/index.ts', 'notify-business-claim/index.ts']) {
+    assert.match(files[f], /\.eq\(\s*'role'\s*,\s*'admin'\s*\)/, f);
+    assert.doesNotMatch(files[f], /sendUserPush/, f);
+    assert.doesNotMatch(files[f], /\.from\(\s*'(?:push_tokens|notice_notification_prefs|hub_members|event_tickets)'/, f);
+  }
+});
+test('9 every file that calls sendUserPush / sendUserPushBulk imports it (a missing import is a ReferenceError for every recipient: notify-hub-content once had this)', () => {
+  for (const f of senders) {
+    for (const fn of ['sendUserPush', 'sendUserPushBulk']) {
+      if (new RegExp(`\\b${fn}\\s*\\(`).test(files[f])) assert.match(files[f], new RegExp(`import\\s*\\{[^}]*\\b${fn}\\b[^}]*\\}\\s*from\\s*'[^']*send-push\\.ts'`), `${f} uses ${fn} without importing it`);
+    }
+  }
+});

@@ -125,20 +125,24 @@ serve(async (req) => {
         const { data: dr } = await svc.from('delivery_requests').select('status').eq('id', o.delivery_request_id).maybeSingle();
         if (dr?.status !== 'pending') continue; // matched/moving — no nudge needed
         const { data: biz } = await svc.from('local_businesses').select('name, owner_id').eq('id', o.business_id).maybeSingle();
-        await sendUserPush(svc, {
+        const toBuyer = await sendUserPush(svc, {
           userId: o.buyer_id, module: 'wallet', categoryId: 'wallet.order_update',
           title: 'Still looking for a driver',
           body: `No Fetch driver has picked up your order from ${biz?.name ?? 'the shop'} yet. You could arrange collection with the shop instead.`,
           data: { screen: 'my-orders', product_order_id: o.id },
         });
+        let toOwner: { status: string; reason?: string } | null = null;
         if (biz?.owner_id) {
-          await sendUserPush(svc, {
+          toOwner = await sendUserPush(svc, {
             userId: biz.owner_id, module: 'business', categoryId: 'business.order',
             title: 'Fetch order still waiting',
             body: 'A shop order has waited 2 days for a driver. You may want to offer the buyer collection or post instead.',
             data: { screen: 'business-orders', product_order_id: o.id, business_id: o.business_id },
           });
         }
+        // Nobody reached AND an unreadable preference check was the cause: leave it unstamped (retried next run). If either side was reached, stamp, so that side is never nudged twice.
+        const sides = [toBuyer, toOwner].filter(Boolean) as { status: string; reason?: string }[];
+        if (sides.some(x => x.reason === 'preference_check_failed') && !sides.some(x => x.status === 'sent')) { result.deferred_preference_check++; continue; }
         await svc.from('product_orders').update({ fetch_nudged_at: nowIso }).eq('id', o.id);
         result.fetch_orders_nudged++;
       }
@@ -481,7 +485,7 @@ serve(async (req) => {
         const left = needed - (c as any).stamps_collected;
         if (needed <= 0 || left !== 1) continue;   // exactly one to go
         const reward = (prog.stamp_reward as string | null)?.trim();
-        await sendUserPush(svc, {
+        const pushed = await sendUserPush(svc, {
           userId:     (c as { user_id: string }).user_id,
           module:     'loyalty',
           categoryId: 'loyalty.almost_there',
@@ -491,6 +495,7 @@ serve(async (req) => {
             : `You're one stamp away from your reward at ${bizName}.`,
           data:       { screen: 'local-my-cards', card_id: (c as { id: string }).id },
         });
+        if (pushed.reason === 'preference_check_failed') { result.deferred_preference_check++; continue; }
         await svc.from('local_loyalty_cards').update({ nudge_reminded_at: nowIso }).eq('id', (c as { id: string }).id);
         result.loyalty_nudge++;
       }
@@ -517,7 +522,7 @@ serve(async (req) => {
         // deno-lint-ignore no-explicit-any
         if (needed <= 0 || (c as any).stamps_collected < needed) continue;
         const reward = (prog.stamp_reward as string | null)?.trim();
-        await sendUserPush(svc, {
+        const pushed = await sendUserPush(svc, {
           userId:     (c as { user_id: string }).user_id,
           module:     'loyalty',
           categoryId: 'loyalty.reward_ready',
@@ -527,6 +532,7 @@ serve(async (req) => {
             : `Your loyalty reward at ${bizName} is ready. Show your phone at the till to redeem.`,
           data:       { screen: 'local-my-cards', card_id: (c as { id: string }).id },
         });
+        if (pushed.reason === 'preference_check_failed') { result.deferred_preference_check++; continue; }
         await svc.from('local_loyalty_cards').update({ reward_reminded_at: nowIso }).eq('id', (c as { id: string }).id);
         result.loyalty_reward++;
       }
@@ -553,7 +559,7 @@ serve(async (req) => {
         const bizName = (p as any).business?.name ?? 'a Shetland business';
         // deno-lint-ignore no-explicit-any
         const itemName = (p as any).item?.name ?? 'pass';
-        await sendUserPush(svc, {
+        const pushed = await sendUserPush(svc, {
           userId:     (p as { owner_id: string }).owner_id,
           module:     'wallet',
           categoryId: 'wallet.pass_expiring',
@@ -561,6 +567,7 @@ serve(async (req) => {
           body:       `Your ${itemName} at ${bizName} expires within 48 hours — use it before you lose it.`,
           data:       { screen: 'local-my-passes', purchase_id: (p as { id: string }).id },
         });
+        if (pushed.reason === 'preference_check_failed') { result.deferred_preference_check++; continue; }
         await svc.from('book_unit_purchases').update({ expiry_reminded_at: nowIso }).eq('id', (p as { id: string }).id);
         result.pass_expiring++;
       }

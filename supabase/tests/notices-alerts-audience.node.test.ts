@@ -227,6 +227,24 @@ describe('who is in the audience (server-selected, once each)', () => {
     file(`update notice_notification_prefs set community_categories = null where user_id = '${U6}'`);
     assert.deepEqual(recips(hubn, 'community'), [U6], 'no category filter = every community category');
   });
+  test('13b OPT-IN POLICY MATRIX: a member with NO preference row, or a row with everything off, or only areas chosen, is in NO audience; each flag opens exactly its own audience and nothing else', () => {
+    file(`drop table if exists _prefs_bak; create table _prefs_bak as select * from notice_notification_prefs; delete from notice_notification_prefs`);
+    try {
+      // U1: no preference row | U2: a row, everything off | U3: essential only | U4: official only | U5: community only. All follow a place and have a device.
+      file(`insert into notice_notification_prefs (user_id) values ('${U2}')`);
+      file(`insert into notice_notification_prefs (user_id, essential_alerts) values ('${U3}', true)`);
+      file(`insert into notice_notification_prefs (user_id, official_notices) values ('${U4}', true)`);
+      file(`insert into notice_notification_prefs (user_id, community_notices) values ('${U5}', true)`);
+      file(`delete from member_areas where user_id in ('${U1}','${U2}','${U3}','${U4}','${U5}'); insert into member_areas (user_id, area_id) select u, '${PARENT}' from unnest(array['${U1}','${U2}','${U3}','${U4}','${U5}']::uuid[]) u`);
+      const ess = publish('P', { title: 'Matrix essential alert' }), ord = publish('P', { ess: false, title: 'Matrix routine official notice', cat: 'public_services' });
+      const hubn = idOf(as('H', `insert into notices (id, publisher_hub_id, title, body, category) values (gen_random_uuid(), '${HUB_V}', 'Matrix hall notice', 'Body', 'community') returning id`));
+      file(`insert into notice_areas (notice_id, area_id) values ('${hubn}', 'shetland_wide')`);
+      assert.deepEqual(recips(ess, 'essential'), [U3], 'essential alerts: only the member who chose them');
+      assert.deepEqual(recips(ord, 'official'), [U4], 'official notices: only the member who chose them');
+      assert.deepEqual(recips(hubn, 'community'), [U5], 'community notices: only the member who chose them');
+      for (const [id, kind] of [[ess, 'essential'], [ord, 'official'], [hubn, 'community']] as const) for (const none of [U1, U2]) assert.ok(!recips(id, kind).includes(none), `${none} (no row / all off) must not qualify for ${kind}`);
+    } finally { file(`delete from notice_notification_prefs; insert into notice_notification_prefs select * from _prefs_bak; drop table _prefs_bak`); }
+  });
   test('14 hub notices go to that hub\'s ACTIVE members only (not other hubs, not lapsed or removed members)', () => {
     const hubn = idOf(as('H', `insert into notices (id, publisher_hub_id, title, body) values (gen_random_uuid(), '${HUB_V}', 'Hub only news', 'Body') returning id`));
     file(`insert into hub_members (hub_id, user_id, role, status, paid_until) values ('${HUB_V}','${U1}','member','active', null), ('${HUB_V}','${U2}','member','active', now() - interval '1 day'),
