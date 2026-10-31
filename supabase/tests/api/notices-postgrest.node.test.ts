@@ -426,15 +426,16 @@ describe('API 4 - Stage 3A.2: the NEW reader helpers through real PostgREST (exp
   test('4.3 person names through the real RPC: an approved public notice releases the name, a pending / withdrawn one never does', async () => {
     pg(`update notices set status='published', is_hidden=false, starts_at=null, expires_at=null, visibility='public' where id='${PUBLIC_IDS.personPub}'`);
     const rpcOf = (who: Who) => (fn: string, args: Record<string, unknown>) => client(who).rpc(fn, args as never) as never;
+    const lookup = (who: Who, rows: unknown) => feed.loadPersonNames(rpcOf(who), rows, { cache: null });   // no cache: this test flips the notice's state between calls
     const rows = [{ id: PUBLIC_IDS.personPub, publisher_kind: 'person', publisher_user_id: U.A }];
-    assert.deepEqual(await feed.loadPersonNames(rpcOf('anon'), rows), { [PUBLIC_IDS.personPub]: 'Ann' });
+    assert.deepEqual(await lookup('anon', rows), { [PUBLIC_IDS.personPub]: 'Ann' });
     pg(`update notices set status='pending' where id='${PUBLIC_IDS.personPub}'`);
     for (const who of ['anon', 'A2', 'H'] as Who[]) {
-      const n = await feed.loadPersonNames(rpcOf(who), rows);
+      const n = await lookup(who, rows);
       assert.equal(feed.attributionFor(rows[0], n).label, 'A OneShetland member', `${who}: pending notice does not disclose the name`);
     }
     pg(`update notices set status='withdrawn' where id='${PUBLIC_IDS.personPub}'`);
-    assert.equal(feed.attributionFor(rows[0], await feed.loadPersonNames(rpcOf('anon'), rows)).label, 'A OneShetland member');
+    assert.equal(feed.attributionFor(rows[0], await lookup('anon', rows)).label, 'A OneShetland member');
     pg(`update notices set status='published' where id='${PUBLIC_IDS.personPub}'`);
   });
 

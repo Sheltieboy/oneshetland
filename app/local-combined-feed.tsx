@@ -655,7 +655,8 @@ function NoticeCard({ notice, style, onPress }: {
   const a = notice.attribution;
   const hasDestination = !!a?.destination;
   return (
-    <TouchableOpacity style={[styles.noticeCard, style]} onPress={onPress} activeOpacity={0.85} disabled={!hasDestination}>
+    <TouchableOpacity style={[styles.noticeCard, style]} onPress={onPress} activeOpacity={hasDestination ? 0.85 : 1} disabled={!hasDestination}
+      accessibilityRole={hasDestination ? 'button' : undefined}>
       {a && (
         <View style={styles.noticeHub}>
           <View style={[styles.hubLogo, a.brand_color ? { backgroundColor: a.brand_color } : null]}>
@@ -665,12 +666,13 @@ function NoticeCard({ notice, style, onPress }: {
                 ? <Text style={styles.hubInitial}>{a.label.slice(0, 1)}</Text>
                 : <FontAwesome5 name={a.mark === 'person' ? 'user' : a.mark === 'official-source' ? 'landmark' : 'bullhorn'} size={10} color={colors.textMuted} solid />}
           </View>
-          <Text style={styles.hubName} numberOfLines={1}>{a.byline}</Text>
+          <Text style={styles.hubName} numberOfLines={hasDestination ? 2 : undefined}>{a.byline}</Text>
           <View style={[styles.noticeDot, { backgroundColor: NOTICES_COLOR }]} />
         </View>
       )}
-      <Text style={styles.noticeTitle} numberOfLines={2}>{notice.title}</Text>
-      {notice.body && <Text style={styles.noticeBody} numberOfLines={3}>{notice.body}</Text>}
+      {/* A card with nowhere to go shows the whole notice; one that opens its hub / business keeps the short preview. */}
+      <Text style={styles.noticeTitle} numberOfLines={hasDestination ? 2 : undefined}>{notice.title}</Text>
+      {notice.body && <Text style={styles.noticeBody} numberOfLines={hasDestination ? 3 : undefined}>{notice.body}</Text>}
       {a?.source_url ? (
         <TouchableOpacity onPress={() => { Linking.openURL(a.source_url as string).catch(() => {}); }} hitSlop={8} accessibilityRole="link">
           <Text style={styles.noticeSourceLink}>View at source</Text>

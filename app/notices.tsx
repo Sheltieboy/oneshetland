@@ -122,14 +122,17 @@ export default function NoticesScreen() {
           const c = n.campaign && n.campaign.status === 'active' ? n.campaign : null;
           const pct = c && c.goal_pence > 0 ? Math.min(1, c.raised_pence / c.goal_pence) : 0;
           const isUrgent = n.severity === 'urgent';
-          const open = () => {
-            if (n.campaign_id) router.push(`/hub-campaign?id=${n.campaign_id}` as any);
-            else if (n.hub_id) router.push(`/hubs/${n.hub_id}` as any);
-            else if (n.business_id) router.push({ pathname: '/local-business-detail', params: { id: n.business_id } } as any);
-            else router.push('/(tabs)/whats-on');
-          };
+          // Only a real destination makes a card tappable: its fundraiser, its hub, its business. A person, OneShetland or an official source
+          // has none, so the card is a plain (non-tappable) block that shows the whole notice instead of a trimmed preview.
+          const open: (() => void) | null =
+            n.campaign_id ? () => router.push(`/hub-campaign?id=${n.campaign_id}` as any)
+            : n.hub_id ? () => router.push(`/hubs/${n.hub_id}` as any)
+            : n.business_id ? () => router.push({ pathname: '/local-business-detail', params: { id: n.business_id } } as any)
+            : null;
+          const Card: any = open ? TouchableOpacity : View;
+          const cardProps = open ? { onPress: open, activeOpacity: 0.85, accessibilityRole: 'button' as const } : {};
           return (
-            <TouchableOpacity key={n.id} style={styles.card} onPress={open} activeOpacity={0.85}>
+            <Card key={n.id} style={styles.card} {...cardProps}>
               <View style={styles.cardTop}>
                 <View style={[styles.logo, { backgroundColor: accent }]}>
                   {n.logo_url ? <Image source={{ uri: n.logo_url }} style={styles.logoImg} />
@@ -137,11 +140,11 @@ export default function NoticesScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   {isUrgent ? <Text style={styles.urgent}>URGENT</Text> : null}
-                  <Text style={styles.title} numberOfLines={2}>{n.title}</Text>
-                  <Text style={styles.meta} numberOfLines={1}>{n.attribution.byline}{n.locality ? `  ·  ${n.locality}` : ''}</Text>
+                  <Text style={styles.title} numberOfLines={open ? 2 : undefined}>{n.title}</Text>
+                  <Text style={styles.meta} numberOfLines={open ? 2 : undefined}>{n.attribution.byline}{n.locality ? `  ·  ${n.locality}` : ''}</Text>
                 </View>
               </View>
-              {n.body ? <Text style={styles.body} numberOfLines={3}>{n.body}</Text> : null}
+              {n.body ? <Text style={styles.body} numberOfLines={open ? 3 : undefined}>{n.body}</Text> : null}
               {n.attribution.source_url ? (
                 <TouchableOpacity onPress={() => { Linking.openURL(n.attribution.source_url as string).catch(() => {}); }} hitSlop={8} accessibilityRole="link">
                   <Text style={styles.sourceLink}>View at source</Text>
@@ -178,7 +181,7 @@ export default function NoticesScreen() {
                   </View>
                 </View>
               ) : null}
-            </TouchableOpacity>
+            </Card>
           );
         })}
         <View style={{ height: 40 }} />
