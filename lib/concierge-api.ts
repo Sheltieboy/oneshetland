@@ -7,6 +7,8 @@
 
 import { supabase } from './supabase';
 import { todaysSpik } from './seed-content';
+import type { NoticePublisher } from './notice-publisher';
+import { NOTICE_PUBLISHER_COLUMNS, applyPublicNoticeFilters, attributionFor, loadPersonNames } from './notice-feed';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -31,10 +33,13 @@ export interface HomeNotice {
   posted_at:    string;
   publisher:    string;
   source:       'db';
+  /** Who posted it and how to show that (label, byline, mark, official source, destination) - see lib/notice-publisher.ts. `publisher` is its label. */
+  attribution:  NoticePublisher;
   // Publisher branding (hub or business) + optional linked campaign.
   logo_url?:    string | null;
   brand_color?: string | null;
   hub_id?:      string | null;
+  business_id?: string | null;
   campaign_id?: string | null;
   campaign?:    { id: string; raised_pence: number; goal_pence: number; donor_count: number; status: string } | null;
   event_id?:    string | null;
@@ -94,7 +99,7 @@ export async function fetchHomeNotices(opts: {
   const limit = opts.limit ?? 3;
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await applyPublicNoticeFilters(supabase
       .from('notices')
       // broadcast_at is deliberately NOT selected: PostgREST fails the whole
       // request on an unknown column, so asking for it here would empty the
@@ -102,13 +107,14 @@ export async function fetchHomeNotices(opts: {
       // Admins read it separately (lib/notices-broadcast).
       .select(`id, severity, title, body, locality, published_at,
                publisher_business_id, publisher_user_id, publisher_hub_id, campaign_id, event_id,
+               ${NOTICE_PUBLISHER_COLUMNS},
                hub:hubs ( id, name, logo_url, brand_color ),
-               business:local_businesses ( name, logo_url, brand_color ),
+               business:local_businesses ( id, name, logo_url, brand_color ),
                campaign:hub_campaigns ( id, raised_pence, goal_pence, donor_count, status ),
                event:events ( id, title, starts_at, venue, cover_url, has_tickets, calendar_approved )`)
       .eq('is_hidden', false)
-      .eq('visibility', 'public')   // never surface members-only hub notices in the public feed
-      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .eq('visibility', 'public'))   // never surface members-only hub notices in the public feed
+      // + published, started, unexpired (lib/notice-feed.ts); RLS remains the security boundary
       .order('is_pinned',    { ascending: false })
       .order('published_at', { ascending: false })
       .limit(40);
@@ -128,19 +134,25 @@ export async function fetchHomeNotices(opts: {
         });
       }
 
-      return ranked.slice(0, limit).map(r => ({
+      const shown = ranked.slice(0, limit);
+      // Person names come from the authorised attribution RPC, never from profiles.
+      const personNames = await loadPersonNames((fn, args) => supabase.rpc(fn, args), shown);
+      return shown.map(r => {
+        const a = attributionFor(r, personNames);
+        return {
         id:        r.id,
         severity:  r.severity,
         title:     r.title,
         body:      r.body ?? '',
         locality:  r.locality,
         posted_at: r.published_at,
-        // Real publisher name + branding (hub or business), falling back to a label.
-        publisher: r.hub?.name ?? r.business?.name
-                 ?? (r.publisher_hub_id ? 'Community hub' : r.publisher_business_id ? 'Local business' : 'Member'),
-        logo_url:    r.hub?.logo_url ?? r.business?.logo_url ?? null,
-        brand_color: r.hub?.brand_color ?? r.business?.brand_color ?? null,
-        hub_id:      r.hub?.id ?? null,
+        // The publisher the DATABASE names (hub / business / person / OneShetland / official source) - see lib/notice-publisher.ts.
+        publisher: a.label,
+        attribution: a,
+        logo_url:    a.logo_url,
+        brand_color: a.brand_color,
+        hub_id:      a.destination?.type === 'hub' ? a.destination.id : null,
+        business_id: a.destination?.type === 'business' ? a.destination.id : null,
         campaign_id: r.campaign_id ?? null,
         campaign:    r.campaign ?? null,
         event_id:    r.event_id ?? null,
@@ -149,7 +161,8 @@ export async function fetchHomeNotices(opts: {
           venue: r.event.venue, cover_url: r.event.cover_url, has_tickets: r.event.has_tickets,
         } : null,
         source:    'db' as const,
-      }));
+        };
+      });
     }
   } catch { /* nothing to show */ }
 

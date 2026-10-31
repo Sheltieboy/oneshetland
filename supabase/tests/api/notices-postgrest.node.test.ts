@@ -21,6 +21,7 @@ import http from 'node:http';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
+import { loadModule } from '../_support/load-source.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const rd = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -389,5 +390,57 @@ describe('API 3 - management RPCs through PostgREST', () => {
     const g = Object.fromEntries(rows.map((r) => { const [n, roles] = r.split(':'); return [n, roles]; }));
     for (const f of ['manage_notices', 'manage_set_notice_status', 'manage_delete_notice', 'my_pending_person_notice_count']) assert.equal(g[f], 'authenticated,service_role', f);
     for (const f of ['can_edit_notice', 'notice_person_label', 'notice_publisher_display']) assert.equal(g[f], 'anon,authenticated,service_role', f);
+  });
+});
+
+describe('API 4 - Stage 3A.2: the NEW reader helpers through real PostgREST (explicit filters, independent of RLS)', () => {
+  const pubMod = loadModule('lib/notice-publisher.ts'); const feed = loadModule('lib/notice-feed.ts', { './notice-publisher': pubMod }) as any;
+  const eligibleSql = `status = 'published' and (starts_at is null or starts_at <= now()) and (expires_at is null or expires_at > now())`;
+
+  test('4.1 the SERVICE ROLE bypasses RLS, yet the helper alone returns only published, started, unexpired rows (two or() filters are both honoured)', async () => {
+    const q = feed.applyPublicNoticeFilters(client('service').from('notices').select('id').eq('is_hidden', false).eq('visibility', 'public').limit(500));
+    const { data, error } = await q; assert.equal(error, null, error?.message);
+    const got = (data as Row[]).map((r) => r.id).sort();
+    const want = pg(`select id from notices where is_hidden = false and visibility = 'public' and ${eligibleSql} order by id`).trim().split('\n').filter(Boolean).sort();
+    assert.deepEqual(got, want, 'exactly the eligible public rows');
+    const everything = Number(scalar(`select count(*) from notices where is_hidden = false and visibility = 'public'`));
+    assert.ok(everything > got.length, `RLS-free table holds ${everything} public non-hidden rows, helper returned ${got.length}: the filter, not RLS, removed the rest`);
+    assert.ok(!got.some((i) => NP_IDS.includes(i) && scalar(`select (${eligibleSql})::text from notices where id='${i}'`) !== 'true'));
+  });
+
+  test('4.2 the app reader shapes with the helper return the live-notice attribution over the API (hub embed incl. brand colour, business embed with id)', async () => {
+    const home = await feed.applyPublicNoticeFilters(client('anon').from('notices').select(`id, severity, title, body, publisher_business_id, publisher_user_id, publisher_hub_id, campaign_id, event_id,
+      ${feed.NOTICE_PUBLISHER_COLUMNS}, hub:hubs ( id, name, logo_url, brand_color ), business:local_businesses ( id, name, logo_url, brand_color ),
+      campaign:hub_campaigns ( id, raised_pence, goal_pence, donor_count, status ), event:events ( id, title, starts_at, venue, cover_url, has_tickets, calendar_approved )`)
+      .eq('is_hidden', false).eq('visibility', 'public')).order('published_at', { ascending: false }).limit(40);
+    assert.equal(home.error, null, home.error?.message);
+    const rows = home.data as Row[]; const legacy = rows.find((r) => r.id === PUBLIC_IDS.legacy)!; assert.ok(legacy);
+    const a = feed.attributionFor(legacy);
+    assert.deepEqual([a.kind, a.label, a.byline, a.destination.type, a.destination.id], ['hub', 'OneShetland', 'Posted by OneShetland', 'hub', HUB_L]);
+    const biz = rows.find((r) => r.id === PUBLIC_IDS.bizPub)!; const ab = feed.attributionFor(biz);
+    assert.deepEqual([ab.kind, ab.label, ab.destination.type, ab.destination.id], ['business', 'Bea Bakery', 'business', BIZ_B]);
+    const plat = feed.attributionFor(rows.find((r) => r.id === PUBLIC_IDS.platPub)!); assert.deepEqual([plat.kind, plat.label, plat.byline], ['platform', 'OneShetland', 'Posted by OneShetland']);
+    assert.ok(rows.every((r) => feed.attributionFor(r).label !== 'Member'));
+  });
+
+  test('4.3 person names through the real RPC: an approved public notice releases the name, a pending / withdrawn one never does', async () => {
+    pg(`update notices set status='published', is_hidden=false, starts_at=null, expires_at=null, visibility='public' where id='${PUBLIC_IDS.personPub}'`);
+    const rpcOf = (who: Who) => (fn: string, args: Record<string, unknown>) => client(who).rpc(fn, args as never) as never;
+    const rows = [{ id: PUBLIC_IDS.personPub, publisher_kind: 'person', publisher_user_id: U.A }];
+    assert.deepEqual(await feed.loadPersonNames(rpcOf('anon'), rows), { [PUBLIC_IDS.personPub]: 'Ann' });
+    pg(`update notices set status='pending' where id='${PUBLIC_IDS.personPub}'`);
+    for (const who of ['anon', 'A2', 'H'] as Who[]) {
+      const n = await feed.loadPersonNames(rpcOf(who), rows);
+      assert.equal(feed.attributionFor(rows[0], n).label, 'A OneShetland member', `${who}: pending notice does not disclose the name`);
+    }
+    pg(`update notices set status='withdrawn' where id='${PUBLIC_IDS.personPub}'`);
+    assert.equal(feed.attributionFor(rows[0], await feed.loadPersonNames(rpcOf('anon'), rows)).label, 'A OneShetland member');
+    pg(`update notices set status='published' where id='${PUBLIC_IDS.personPub}'`);
+  });
+
+  test('4.4 members-only and committee-only visibility is unchanged for the hub reader shape (helper adds no visibility filter)', async () => {
+    const read = async (who: Who) => (await feed.applyPublicNoticeFilters(client(who).from('notices').select('id').eq('publisher_hub_id', HUB_V).eq('is_hidden', false)).limit(100)).data.map((r: Row) => r.id);
+    assert.ok(!(await read('anon')).includes(PUBLIC_IDS.hubMembers)); assert.ok((await read('M')).includes(PUBLIC_IDS.hubMembers)); assert.ok(!(await read('M')).includes(PUBLIC_IDS.hubCommittee));
+    assert.ok((await read('C')).includes(PUBLIC_IDS.hubCommittee)); assert.ok((await read('H')).includes(PUBLIC_IDS.hubMembers));
   });
 });

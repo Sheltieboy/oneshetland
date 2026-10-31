@@ -7,6 +7,8 @@
 
 import { supabase } from './supabase';
 import { settleSavedCardPayment, type PaymentStart } from './stripe-sca';
+import type { NoticePublisher } from './notice-publisher';
+import { applyPublicNoticeFilters, attributionFor, loadPersonNames } from './notice-feed';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -151,7 +153,16 @@ export interface HubNotice {
   // joined: live progress for a campaign-linked notice
   campaign?:        Pick<HubCampaign, 'id' | 'title' | 'raised_pence' | 'goal_pence' | 'donor_count' | 'ends_at' | 'status'> | null;
   // joined when fetched via fetchPublicNotices
-  hub?:             { id: string; name: string; logo_url: string | null; slug: string | null } | null;
+  hub?:             { id: string; name: string; logo_url: string | null; slug: string | null; brand_color?: string | null } | null;
+  business?:        { id: string; name: string; logo_url: string | null; brand_color?: string | null } | null;
+  // Publisher fields (Notices Stage 2) and the publisher resolved from them (set by fetchPublicNotices).
+  publisher_kind?:     'platform' | 'hub' | 'business' | 'person' | null;
+  is_platform_notice?: boolean | null;
+  is_person_notice?:   boolean | null;
+  source?:             string | null;
+  source_label?:       string | null;
+  source_url?:         string | null;
+  attribution?:        NoticePublisher;
 }
 
 // ── Slug ────────────────────────────────────────────────────────────────────────
@@ -589,13 +600,12 @@ export async function createBusinessNotice(businessId: string, input: NoticeInpu
 
 /** Notices for a hub's page. RLS returns public ones to anyone, members-only to members. */
 export async function fetchHubNotices(hubId: string, limit = 30): Promise<HubNotice[]> {
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
+  // Public readers filter explicitly (published, started, unexpired) on top of RLS - see lib/notice-feed.ts.
+  const { data, error } = await applyPublicNoticeFilters(supabase
     .from('notices')
     .select('*, campaign:hub_campaigns ( id, title, raised_pence, goal_pence, donor_count, ends_at, status )')
     .eq('publisher_hub_id', hubId)
-    .eq('is_hidden', false)
-    .or(`expires_at.is.null,expires_at.gt.${now}`)
+    .eq('is_hidden', false))
     .order('is_pinned', { ascending: false })
     .order('published_at', { ascending: false })
     .limit(limit);
@@ -950,17 +960,18 @@ export function formatMembershipPrice(pricePence: number, period: MembershipPeri
 }
 
 export async function fetchPublicNotices(limit = 10): Promise<HubNotice[]> {
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
+  const { data, error } = await applyPublicNoticeFilters(supabase
     .from('notices')
-    .select('*, hub:hubs(id,name,logo_url,slug)')
+    .select('*, hub:hubs(id,name,logo_url,slug,brand_color), business:local_businesses(id,name,logo_url,brand_color)')
     .eq('visibility', 'public')
-    .eq('is_hidden', false)
-    .or(`expires_at.is.null,expires_at.gt.${now}`)
+    .eq('is_hidden', false))
     .order('published_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []) as HubNotice[];
+  const rows = (data ?? []) as HubNotice[];
+  // Who posted each notice, from the database's own publisher fields; person names via the authorised RPC (never profiles).
+  const personNames = await loadPersonNames((fn, args) => supabase.rpc(fn, args), rows);
+  return rows.map((r) => ({ ...r, attribution: attributionFor(r, personNames) }));
 }
 
 /* ── My donations ─────────────────────────────────────────────────────────────

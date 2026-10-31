@@ -16,3 +16,15 @@ Proposed direction (NOT implemented): look the notice up by `ref_id` with the se
 `_shared/notice-broadcast.ts`, take the title from the row rather than the request, and claim a once-only marker. Needs its own tests and a coordinated app/edge change.
 
 The characterisation test `8.1` in `supabase/tests/notice-broadcast-eligibility.node.test.ts` fails when someone starts fixing this, so the record is updated.
+
+## V1 — authenticated-admin smoke test of `notify-community-notice` v14 not performed
+*Recorded: Notices Stage 3A.2 (31 Oct 2026). Status: verification limitation, NOT a deployment blocker (accepted by Darren).*
+
+When Stage 3A.1 was deployed, the planned "authorised admin request with a non-existent notice id -> 404, no push" production check could not be run: it needs a
+signed-in admin session. Instead v14 was verified by bundle comparison with commit 3ba5bdd, the gateway 401 (no header), the function's own 401 (anon key), and CORS
+preflight, plus 54 isolated tests of the real source. If a manual check is ever wanted: an admin-signed call with a made-up id should return 404 `Notice not found` and
+send nothing. Never call it with a genuine eligible production notice.
+
+## R2 — still open after Stage 3A.2
+Stage 3A.2 only changes how notices are displayed and read; `notify-hub-content` is untouched. R2 must still be assessed and resolved before any new notice lifecycle or
+management interface is introduced.
