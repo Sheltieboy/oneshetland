@@ -357,11 +357,14 @@ describe('compatibility with the Stage 3A.1 migration, and what remains', () => 
   });
 });
 
-describe('KNOWN OUTSTANDING ISSUE R2 - notify-hub-content (deliberately NOT changed in Stage 3A.1)', () => {
-  test('8.1 pinned as a known gap: notify-hub-content still never reads the notice it announces, so it cannot check status / starts_at / source', () => {
-    const fnSrc = rd('supabase/functions/notify-hub-content/index.ts') + rd('supabase/functions/_shared/hub-content-notify-auth.ts');
-    assert.doesNotMatch(fnSrc, /from\(['"]notices['"]\)/, 'if this fails, someone has started fixing R2: update this test, docs/notices-known-issues.md and the Stage 3A.1 report');
-    assert.match(fnSrc, /const \{ event, hub_id, ref_id, title \} = await req\.json\(\);/, 'the title comes from the request');
-    assert.match(rd('docs/notices-known-issues.md'), /R2/, 'the issue is recorded in the repository');
+describe('R2 - notify-hub-content now reads and validates the notice it announces (remediated in code 31 Oct 2026; NOT DEPLOYED)', () => {
+  test('8.1 notify-hub-content announces a notice only through the database eligibility rule, from the STORED text, once - and the known-issues record says so', () => {
+    const fnSrc = rd('supabase/functions/notify-hub-content/index.ts');
+    assert.match(fnSrc, /from\(['"]notices['"]\)\.select\('id, title, publisher_hub_id'\)/, 'the notice is read');
+    assert.match(fnSrc, /runDispatch/, 'eligibility, the once-only claim and the audience are the database\'s (notice_dispatchable / notice_claim_dispatch / notice_dispatch_recipients)');
+    assert.match(fnSrc, /noticePushText\('hub', notice/, 'the push text comes from the stored notice, not the request');
+    assert.match(fnSrc, /authoriseHubContentNotify/, 'the hub owner / admin gate is unchanged');
+    const doc = rd('docs/notices-known-issues.md');
+    assert.match(doc, /R2/); assert.match(doc, /remediated in code/i, 'the record must say R2 is remediated in code and still awaiting deployment');
   });
 });

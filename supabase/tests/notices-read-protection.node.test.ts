@@ -345,7 +345,7 @@ describe('PART 2 - person identity cannot be revealed before approval', () => {
 
 describe('PART 3 - ordering and rollback', () => {
   test('5.1 migration order: the new migration sorts after Stage 2, nothing sits between, and the Stage 2 file is unchanged from its committed version', () => {
-    const files = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f >= '20261128');
+    const files = readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => f >= '20261128' && f < '20261129');   // the Notices & Alerts migrations (20261129*) come AFTER these two
     assert.deepEqual(files, ['20261128000000_notices_structural_readiness.sql', '20261128010000_notices_read_protection.sql']);
     const r = spawnSync('git', ['diff', '--quiet', 'HEAD', '--', 'supabase/migrations/20261128000000_notices_structural_readiness.sql'], { cwd: ROOT });
     assert.equal(r.status, 0, 'Stage 2 migration must be byte-identical to the committed (and production-applied) file');
