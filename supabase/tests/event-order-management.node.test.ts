@@ -19,6 +19,7 @@
  * Nothing here moves money, creates a user, or touches any real order.
  */
 
+import './_support/production-lane-guard.ts';   // fail closed: this file can contact production (see that module)
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';

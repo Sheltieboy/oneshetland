@@ -23,6 +23,7 @@
  *     instead, and the web key/restrictions are untouched.
  */
 
+import './_support/production-lane-guard.ts';   // fail closed: this file can contact production (see that module)
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

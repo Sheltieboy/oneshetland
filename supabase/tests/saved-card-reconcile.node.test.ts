@@ -22,6 +22,7 @@
  * checks are read-only SELECTs through the Supabase CLI and skip when it is unavailable.
  */
 
+import './_support/production-lane-guard.ts';   // fail closed: this file can contact production (see that module)
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
