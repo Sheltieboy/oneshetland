@@ -13,7 +13,7 @@ import { fetchFreshProducts } from '@/lib/products-api';
 import { fetchActiveBookableServices } from '@/lib/book-api';
 import { fetchTodaySnapshot, describeWeather, type TodaySnapshot } from '@/lib/shetland-today';
 import { getCruiseHomeCard } from '@/lib/cruise-api';
-import { fetchHomeEvents, fetchHomeNotices, fetchTodaysSpik, type HomeEvent, type HomeNotice } from '@/lib/concierge-api';
+import { fetchHomeEvents, fetchTodaysSpik, type HomeEvent } from '@/lib/concierge-api';
 import { fetchFixtureIds, NO_FIXTURES, type FixtureIds } from '@/lib/discovery-fixtures';
 import { fetchOpenShifts, shiftDisplayBusiness, formatPay } from '@/lib/shifts-api';
 import { EXPERIENCE_ROUTE, type Merch, type Pillar } from './model';
@@ -29,7 +29,6 @@ export interface HomeLocalData {
   businesses: LocalBusiness[];
   jobs: WorkJob[];
   shifts: WorkShift[];
-  notices: HomeNotice[];
   spik: { word: string; meaning: string } | null;
   commerce: Record<Pillar, Merch[]>;
   /** Test fixtures (administrators only; empty for everyone else) so the screens can label them. */
@@ -98,7 +97,7 @@ async function loadShifts(): Promise<WorkShift[]> {
 }
 
 export async function loadHomeLocalData(viewerParish?: string | null, userId?: string | null): Promise<HomeLocalData> {
-  const [fixtures, today, cruise, events, businesses, jobs, shifts, notices, spik, products, offers, passes, services] = await Promise.all([
+  const [fixtures, today, cruise, events, businesses, jobs, shifts, spik, products, offers, passes, services] = await Promise.all([
     soft(fetchFixtureIds(userId), NO_FIXTURES),
     soft(fetchTodaySnapshot(), null),
     soft(getCruiseHomeCard(), null),
@@ -106,7 +105,6 @@ export async function loadHomeLocalData(viewerParish?: string | null, userId?: s
     loadBusinesses(undefined, 9),
     soft(loadJobs(), [] as WorkJob[]),
     soft(loadShifts(), [] as WorkShift[]),
-    soft(fetchHomeNotices({ limit: 2, viewerParish }), [] as HomeNotice[]),
     soft(fetchTodaysSpik(), null),
     soft(fetchFreshProducts(12), [] as Awaited<ReturnType<typeof fetchFreshProducts>>),
     soft(fetchActiveOffers(), [] as Awaited<ReturnType<typeof fetchActiveOffers>>),
@@ -118,7 +116,7 @@ export async function loadHomeLocalData(viewerParish?: string | null, userId?: s
     ? (`Lerwick ${today.tempC != null ? Math.round(today.tempC) + '°' : ''} ${describeWeather(today.weatherCode).label}`.replace(/\s+/g, ' ').trim() + (today.sunset ? ` · Sunset ${today.sunset}` : ''))
     : null;
   return {
-    fixtures, today, weather, ships, events, businesses, jobs, shifts, notices,
+    fixtures, today, weather, ships, events, businesses, jobs, shifts,
     spik: spik ? { word: spik.word, meaning: spik.meaning } : null,
     commerce: {
       shop: products.map((p) => ({ id: p.id, pillar: 'shop' as const, title: p.title, business: p.business_name, price: gbp(p.price_pence), uri: p.photo, route: { pathname: '/product-detail', params: { id: p.id } }, test: fixtures.business.has(p.business_id) })),

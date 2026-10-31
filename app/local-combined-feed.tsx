@@ -116,6 +116,9 @@ export default function LocalCombinedFeed() {
           photo={SECTION_HEROES.local}
           title="Local"
           eyebrow={areaLabel ?? 'All Shetland'}
+          // The Back pill floats at the top-left (38pt tall from inset + 12). With the default 138pt hero the eyebrow line
+          // started ~7pt inside it; 152pt moves the bottom-anchored title block clear of the pill.
+          height={152}
         />
         {router.canGoBack() && (
           <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
