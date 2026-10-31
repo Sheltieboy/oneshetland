@@ -322,7 +322,10 @@ describe('Plan my day — visitors only on Home, with a second way in', () => {
 describe('Home top and Local gateway (approved structure)', () => {
   test('Home keeps identity, wallet, notifications, profile, search, audience and Shetland-now — wired to the real thing', () => {
     const h = src('components/home-local/HomeScreen.tsx');
-    for (const needle of ['OneShetland', 'fetchWalletBalance', '<NotificationBell', "'/(tabs)/me'", "'/search'", 'saveAudience', 'data?.weather', '<AlertPill']) assert.ok(h.includes(needle), needle);
+    for (const needle of ['OneShetland', 'fetchWalletBalance', '<NotificationBell', "'/(tabs)/me'", "'/search'", 'saveAudience', 'data?.weather', '<EssentialAlerts']) assert.ok(h.includes(needle), needle);
+    // Deliberate change (Notices & Alerts UI): the floating emergency-coloured AlertPill no longer claims the top of Home. The only red slot is
+    // <EssentialAlerts> (get_essential_alerts); a business's partner_alerts update is a calm strip lower down.
+    assert.ok(!h.includes('<AlertPill'));
   });
   test('Local keeps all six pillars, Featured locally (with a directory route and a fallback), commerce, Work and For businesses', () => {
     const l = src('components/home-local/LocalScreen.tsx');
