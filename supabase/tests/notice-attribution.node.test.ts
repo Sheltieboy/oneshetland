@@ -326,19 +326,20 @@ describe('business notice compatibility (createBusinessNotice has no caller toda
 });
 
 describe('screens use the shared attribution (contract)', () => {
-  const notices = rd('app/notices.tsx'), feedScreen = rd('app/local-combined-feed.tsx'), home = rd('components/home-local/HomeScreen.tsx'), api = rd('lib/concierge-api.ts'), hubs = rd('lib/hubs-api.ts');
+  const notices = rd('app/notices.tsx') + rd('components/notices/NoticeCards.tsx'), feedScreen = rd('app/local-combined-feed.tsx'), home = rd('components/home-local/HomeScreen.tsx') + rd('components/notices/NoticeCards.tsx'), api = rd('lib/concierge-api.ts'), hubs = rd('lib/hubs-api.ts');
   test('no notice reader or screen falls back to the literal "Member"', () => {
     for (const [name, src] of [['concierge-api', api], ['notices.tsx', notices], ['local-combined-feed', feedScreen], ['HomeScreen', home]] as const) assert.doesNotMatch(src, /:\s*'Member'\)|\?\?\s*'Member'|'Member'\)/, name);
     assert.doesNotMatch(api, /'Community hub' : r\.publisher_business_id/);
   });
   test('the Notices screen shows the byline, links a business, and offers "View at source" only from the attribution', () => {
-    assert.match(notices, /n\.attribution\.byline/); assert.match(notices, /n\.business_id/); assert.match(notices, /View at source/); assert.match(notices, /n\.attribution\.source_url/);
+    // Notices & Alerts UI: the card (components/notices/NoticeCards.tsx) draws the RPC publisher's byline; a business destination comes from lib/notices-alerts.ts resolveDestination.
+    assert.match(notices, /n\.attribution\.byline/); assert.match(rd('lib/notices-alerts.ts'), /d\.kind === 'business'/); assert.match(notices, /View at source/); assert.match(notices, /n\.attribution\.source_url/);
   });
   test('NoticeCard renders attribution for every kind and only links an existing hub / business page', () => {
     assert.match(feedScreen, /notice\.attribution/); assert.match(feedScreen, /disabled=\{!hasDestination\}/); assert.match(feedScreen, /a\.byline/);
     assert.match(feedScreen, /d\?\.type === 'business'/); assert.doesNotMatch(feedScreen, /disabled=\{!hub\}/);
   });
-  test('Home screen header shows the label, or "Source: …" for an official import', () => { assert.match(home, /is_official_source \? n\.attribution\.byline : n\.attribution\.label/); });
+  test('Home notice cards show the publisher / source line from the RPC publisher ("Posted by …", "Issued by …", "Source: …")', () => { assert.match(home, /n\.attribution\.byline/); });
   test('every public reader applies the shared filters; the old expiry-only filter is gone from them', () => {
     assert.equal((api.match(/applyPublicNoticeFilters\(/g) ?? []).length, 1); assert.equal((hubs.match(/applyPublicNoticeFilters\(/g) ?? []).length, 2);
     assert.doesNotMatch(api + hubs, /expires_at\.is\.null,expires_at\.gt\.\$\{now\}/);
@@ -355,15 +356,18 @@ describe('screens use the shared attribution (contract)', () => {
 });
 
 describe('navigation: a notice goes to its own destination or nowhere (Stage 3A.2 review)', () => {
-  const notices = rd('app/notices.tsx'), feedScreen = rd('app/local-combined-feed.tsx');
+  const notices = rd('app/notices.tsx') + rd('components/notices/NoticeCards.tsx'), feedScreen = rd('app/local-combined-feed.tsx');
   test('the What\'s On fallback is gone from the Notices screen; a notice without a destination is not a button', () => {
-    assert.doesNotMatch(notices, /whats-on/); assert.match(notices, /const Card: any = open \? TouchableOpacity : View;/);
-    assert.match(notices, /n\.campaign_id \? \(\) => router\.push\(`\/hub-campaign\?id=\$\{n\.campaign_id\}`/); assert.match(notices, /n\.hub_id \? \(\) => router\.push\(`\/hubs\/\$\{n\.hub_id\}`/);
-    assert.match(notices, /n\.business_id \? \(\) => router\.push\(\{ pathname: '\/local-business-detail'/);
+    // Deliberate change (Notices & Alerts UI): the screen is now NoticeListCard + lib/notices-alerts.ts resolveDestination, with the approved order
+    // campaign > EVENT > hub > business > none (an event notice used to open its hub). Full precedence tests: notices-alerts-app-ui.node.test.ts.
+    assert.doesNotMatch(notices, /whats-on/); assert.match(notices, /const Card: any = open \? Pressable : View;/);
+    const dest = rd('lib/notices-alerts.ts');
+    assert.match(dest, /pathname: '\/hub-campaign'/); assert.match(dest, /pathname: '\/events\/\[id\]'/); assert.match(dest, /pathname: '\/hubs\/\[id\]'/); assert.match(dest, /pathname: '\/local-business-detail'/);
   });
   test('a card with nowhere to go shows the WHOLE notice (no line clamp) so nothing is hidden behind a missing link', () => {
-    assert.match(notices, /numberOfLines=\{open \? 2 : undefined\}/); assert.match(notices, /numberOfLines=\{open \? 3 : undefined\}/);
-    assert.match(feedScreen, /numberOfLines=\{hasDestination \? 3 : undefined\}/); assert.match(feedScreen, /styles\.hubName\} numberOfLines=\{hasDestination \? 2 : undefined\}\>\{a\.byline\}/); assert.match(rd('app/notices.tsx'), /styles\.meta\} numberOfLines=\{open \? 2 : undefined\}/); assert.match(feedScreen, /activeOpacity=\{hasDestination \? 0\.85 : 1\}/);
+    // (clamped = open && !expanded: a card WITH a destination is trimmed until "Read in full"; one without is always shown whole.)
+    assert.match(notices, /const clamped = open && !expanded;/); assert.match(notices, /numberOfLines=\{clamped \? 2 : undefined\}/); assert.match(notices, /numberOfLines=\{clamped \? 3 : undefined\}/);
+    assert.match(feedScreen, /numberOfLines=\{hasDestination \? 3 : undefined\}/); assert.match(feedScreen, /styles\.hubName\} numberOfLines=\{hasDestination \? 2 : undefined\}\>\{a\.byline\}/); assert.match(notices, /s\.meta\} numberOfLines=\{clamped \? 2 : undefined\}/); assert.match(feedScreen, /activeOpacity=\{hasDestination \? 0\.85 : 1\}/);
   });
   test('the admin broadcast action is untouched (still admin-only, still on urgent notices)', () => {
     assert.match(notices, /isAdmin && isUrgent/); assert.match(notices, /Send to everyone/); assert.match(notices, /broadcast\(n\)/);
