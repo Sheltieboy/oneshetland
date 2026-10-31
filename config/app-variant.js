@@ -51,6 +51,9 @@ function assertDemoBackend(env) {
   if (raw.includes(PRODUCTION_PROJECT_REF) || /supabase\.(co|in|net)$/i.test(u.hostname) || !isPrivateHost(u.hostname)) {
     throw new Error('APP_VARIANT=preview-demo refuses a backend that is not on a private network (hosted Supabase and production are never allowed).');
   }
+  if (env.EXPO_PUBLIC_APP_VARIANT !== 'preview-demo') {
+    throw new Error('APP_VARIANT=preview-demo needs EXPO_PUBLIC_APP_VARIANT=preview-demo (it switches off the sign-in check that would open the production site).');
+  }
   if (env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
     throw new Error('APP_VARIANT=preview-demo must not carry a Stripe key (the demonstration build has no payment capability).');
   }

@@ -28,6 +28,7 @@
       "channel": "preview-demo",
       "env": {
         "APP_VARIANT": "preview-demo",
+        "EXPO_PUBLIC_APP_VARIANT": "preview-demo",
         "EXPO_PUBLIC_SUPABASE_URL": "http://Darrens-MacBook-Pro.local:54790",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "demo-backend-ignores-this-key"
       }

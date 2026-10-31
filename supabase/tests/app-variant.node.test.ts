@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { loadModule } from './_support/load-source.ts';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -23,7 +24,7 @@ const { applyVariant, VARIANTS, PRODUCTION_PROJECT_REF } = require(path.join(roo
 const appJson = JSON.parse(readFileSync(path.join(root, 'app.json'), 'utf8')).expo;
 const eas = JSON.parse(readFileSync(path.join(root, 'eas.json'), 'utf8'));
 
-const DEMO_ENV = { APP_VARIANT: 'preview-demo', EXPO_PUBLIC_SUPABASE_URL: 'http://Darrens-MacBook-Pro.local:54790' };
+const DEMO_ENV = { APP_VARIANT: 'preview-demo', EXPO_PUBLIC_APP_VARIANT: 'preview-demo', EXPO_PUBLIC_SUPABASE_URL: 'http://Darrens-MacBook-Pro.local:54790' };
 const live = (o: Record<string, string> = {}) => applyVariant(appJson, { APP_VARIANT: 'preview', ...o });
 const demo = (o: Record<string, string> = {}) => applyVariant(appJson, { ...DEMO_ENV, ...o });
 
@@ -196,7 +197,7 @@ test('eas.json: the demonstration profile pulls no server-side variables and poi
   assert.equal(p.environment, 'development'); // the EAS "development" environment holds no variables (checked by name, 31 Oct)
   assert.ok(!p.developmentClient);
   const keys = Object.keys(p.env).sort();
-  assert.deepEqual(keys, ['APP_VARIANT', 'EXPO_PUBLIC_SUPABASE_ANON_KEY', 'EXPO_PUBLIC_SUPABASE_URL']);
+  assert.deepEqual(keys, ['APP_VARIANT', 'EXPO_PUBLIC_APP_VARIANT', 'EXPO_PUBLIC_SUPABASE_ANON_KEY', 'EXPO_PUBLIC_SUPABASE_URL']);
   assert.doesNotThrow(() => applyVariant(appJson, { ...p.env }));
   assert.ok(!/^eyJ/.test(p.env.EXPO_PUBLIC_SUPABASE_ANON_KEY), 'no real JWT is committed; the demo proxy supplies the anonymous role itself');
 });
@@ -204,4 +205,38 @@ test('eas.json: the demonstration profile pulls no server-side variables and poi
 test('eas.json: the real-data preview profile is the isolated one, not the production identity', () => {
   assert.equal(eas.build.preview.env.APP_VARIANT, 'preview');
   assert.equal(eas.build.preview.environment, 'preview');
+});
+
+test('guard: the demonstration build must also switch off the production-site sign-in check', () => {
+  const { EXPO_PUBLIC_APP_VARIANT: _omit, ...without } = DEMO_ENV;
+  assert.throws(() => applyVariant(appJson, without), /EXPO_PUBLIC_APP_VARIANT/);
+  assert.throws(() => applyVariant(appJson, { ...DEMO_ENV, EXPO_PUBLIC_APP_VARIANT: 'preview' }), /EXPO_PUBLIC_APP_VARIANT/);
+});
+
+test('demonstration build: the sign-in check refuses before opening the production site or using its scheme', async () => {
+  const native = { opens: 0 };
+  const logs: string[] = [];
+  const mod = loadModule('lib/turnstile.ts', {
+    'react-native': { Platform: { OS: 'ios' }, Keyboard: {}, AppState: { currentState: 'active' } },
+    'expo-web-browser': { openAuthSessionAsync: () => { native.opens++; return Promise.resolve({ type: 'cancel' }); }, dismissAuthSession() {} },
+    './with-deadline': { withDeadline: (p: Promise<unknown>) => p, TIMED_OUT: Symbol('t') },
+    './auth-diagnostics': { logAuthStage: (s: string) => { logs.push(s); } },
+  });
+  const saved = process.env.EXPO_PUBLIC_APP_VARIANT;
+  process.env.EXPO_PUBLIC_APP_VARIANT = 'preview-demo';
+  try {
+    assert.deepEqual(await mod.getTurnstileToken(), { ok: false, reason: 'unavailable' });
+    assert.equal(native.opens, 0);
+    assert.deepEqual(logs, []);
+  } finally {
+    if (saved === undefined) delete process.env.EXPO_PUBLIC_APP_VARIANT; else process.env.EXPO_PUBLIC_APP_VARIANT = saved;
+  }
+});
+
+test('production source: the demo switch is the first statement and is keyed only on the demonstration variant', () => {
+  const src = readFileSync(path.join(root, 'lib/turnstile.ts'), 'utf8');
+  const body = src.slice(src.indexOf('export async function getTurnstileToken'));
+  const first = body.split('\n').filter((l) => l.trim() && !l.trim().startsWith('//'))[1].trim();
+  assert.equal(first, "if (process.env.EXPO_PUBLIC_APP_VARIANT === 'preview-demo') return { ok: false, reason: 'unavailable' };");
+  assert.equal((src.match(/EXPO_PUBLIC_APP_VARIANT/g) ?? []).length, 2); // the one comment mention and the one check; nothing else in the module
 });

@@ -265,6 +265,9 @@ async function runChallenge(startedAt: number, attempt: 1 | 2, gate: UiGate): Pr
  * without one.
  */
 export async function getTurnstileToken(): Promise<TurnstileResult> {
+  // The private "OneShetland Preview" demonstration build (config/app-variant.js) must never open the production website or use the production
+  // oneshetland-fetch:// scheme, so it refuses before any native call. Production builds have no EXPO_PUBLIC_APP_VARIANT: this line never fires there.
+  if (process.env.EXPO_PUBLIC_APP_VARIANT === 'preview-demo') return { ok: false, reason: 'unavailable' };
   const startedAt = Date.now();
   // Order matters for reading the diagnostics. This first sample is taken
   // synchronously in the button-press tick: before setLoading has re-rendered,
