@@ -45,7 +45,7 @@ const FX: Record<string, Fx> = {};
 const add = (key: string, label: string, eligible: boolean, cols: string, vals: string) => { FX[key] = { id: nid(), label, eligible, cols, vals }; };
 const P = `is_platform_notice, severity, title, body, locality`;
 const pv = (t: string) => `true, 'urgent', '${t}', 'Body of ${t}', 'Sumburgh'`;
-add('active', '1 published and currently active', true, P, pv('active'));
+add('active', '1 published and currently active (platform, no source)', true, P, pv('active'));
 add('activeWindow', '1b published, started 1h ago, expires in 1h', true, `${P}, starts_at, expires_at`, `${pv('window')}, now() - interval '1 hour', now() + interval '1 hour'`);
 add('activeOffset', '1c eligible, timestamps written with a +05:00 offset', true, `${P}, starts_at, expires_at`, `${pv('offset')}, (now() - interval '1 hour') at time zone 'UTC' at time zone 'Asia/Karachi', (now() + interval '1 hour')`);
 add('pending', '2 pending approval', false, `${P}, status`, `${pv('pending')}, 'pending'`);
@@ -59,8 +59,16 @@ add('members', '9 members-only hub notice', false, `publisher_hub_id, severity, 
 add('committee', '10 committee-only hub notice', false, `publisher_hub_id, severity, title, body, visibility`, `'${HUB}', 'urgent', 'committee', 'Body', 'committee'`);
 add('community', 'not urgent (community)', false, `is_platform_notice, severity, title, body`, `true, 'community', 'community', 'Body'`);
 add('already', 'already broadcast', false, `${P}, broadcast_at, broadcast_by`, `${pv('already')}, now() - interval '1 day', '${ADMIN}'`);
-add('business', 'eligible urgent notice from an approved business', true, `publisher_business_id, severity, title, body`, `'${BIZ}', 'urgent', 'business', 'Body'`);
-add('imported', 'official import (source set), otherwise eligible - see risk R1', true, `${P}, source, source_reference, source_label, expires_at`, `${pv('imported')}, 'nhs_shetland', 'r1', 'NHS Shetland', now() + interval '2 day'`);
+add('business', 'valid urgent business notice (approved business, no source)', true, `publisher_business_id, severity, title, body`, `'${BIZ}', 'urgent', 'business', 'Body'`);
+const IMP = `${P}, source, source_reference, source_label, source_url, expires_at`;
+const imp = (t: string, more = '', moreVals = '') => ({ cols: `${IMP}${more}`, vals: `${pv(t)}, 'nhs_shetland', 'ref-${t}', 'NHS Shetland', 'https://nhs.example/${t}', now() + interval '2 day'${moreVals}` });
+add('impPublished', 'imported, published, urgent, active, with source_reference + source_label', false, imp('impPub').cols, imp('impPub').vals);
+add('impPending', 'imported, pending', false, imp('impPend', ', status', ", 'pending'").cols, imp('impPend', ', status', ", 'pending'").vals);
+add('impScheduled', 'imported, scheduled in the future', false, imp('impSched', ', starts_at', ", now() + interval '1 day'").cols, imp('impSched', ', starts_at', ", now() + interval '1 day'").vals);
+add('impResolved', 'imported, resolved', false, imp('impRes', ', status', ", 'resolved'").cols, imp('impRes', ', status', ", 'resolved'").vals);
+add('impWithdrawn', 'imported, withdrawn', false, imp('impWd', ', status', ", 'withdrawn'").cols, imp('impWd', ', status', ", 'withdrawn'").vals);
+add('impHidden', 'imported, hidden', false, imp('impHid', ', is_hidden', ', true').cols, imp('impHid', ', is_hidden', ', true').vals);
+add('hubNative', 'valid urgent hub notice (no source)', true, `publisher_hub_id, severity, title, body`, `'${HUB}', 'urgent', 'hubNative', 'Body'`);
 const LIFECYCLE_GAP = ['pending', 'withdrawn', 'resolved', 'scheduled', 'notStarted'];   // what the ORIGINAL function wrongly sent
 
 const ENV: Record<string, string> = { SUPABASE_URL: 'http://db', SUPABASE_ANON_KEY: 'anon-key', SUPABASE_SERVICE_ROLE_KEY: 'service-key' };
@@ -148,6 +156,11 @@ describe('the finding: what the ORIGINAL deployed function did (control)', () =>
     }
     resetClaims(); pushCalls.length = 0;
   });
+  test('0.2 control: the original function would also have broadcast an active official import', async () => {
+    resetClaims(); pushCalls.length = 0;
+    const r = await call(OLD, FX.impPublished.id); assert.equal(r.status, 200); assert.equal(pushCalls.length, 1);
+    resetClaims(); pushCalls.length = 0;
+  });
 });
 
 describe('the safeguard: ineligible notices never initiate a delivery', () => {
@@ -218,8 +231,50 @@ describe('atomic claim: a notice that stops being eligible after the first read 
   });
 });
 
+describe('DECISION R1 - official imported notices are silent, in every state and in both layers', () => {
+  const IMPORTS = ['impPublished', 'impPending', 'impScheduled', 'impResolved', 'impWithdrawn', 'impHidden'];
+  for (const k of IMPORTS) {
+    test(`7.${k} ${FX[k].label}: rejected, no push, no broadcast_at / broadcast_by claim`, async () => {
+      resetClaims(); pushCalls.length = 0;
+      const r = await call(NEW, FX[k].id);
+      assert.equal(r.status, 400, k); assert.equal(r.body.error, 'Official source notices are not sent as alerts');
+      assert.equal(pushCalls.length, 0, 'no delivery'); assert.equal(claimed(FX[k].id), false);
+      assert.equal(scalar(`select (broadcast_by is null)::text from notices where id='${FX[k].id}'`), 'true');
+    });
+  }
+  test('7.identification: imports carry a source_reference and source_label and are still refused (they are identified by `source`, nothing else)', () => {
+    assert.equal(scalar(`select (source is not null and source_reference is not null and source_label is not null)::text from notices where id='${FX.impPublished.id}'`), 'true');
+    assert.equal(scalar(`select count(*) from notices where source is not null`), String(IMPORTS.length));
+    for (const k of ['active', 'business', 'hubNative']) assert.equal(scalar(`select (source is null)::text from notices where id='${FX[k].id}'`), 'true', `${k} is native`);
+  });
+  test('7.request: the invocation cannot declare a notice native - source / is_import fields in the body are ignored', async () => {
+    resetClaims(); pushCalls.length = 0;
+    const r = await call(NEW, FX.impPublished.id, 'admin', { source: null, source_label: null, source_reference: null, is_import: false, native: true, force: true });
+    assert.equal(r.status, 400); assert.equal(pushCalls.length, 0); assert.equal(claimed(FX.impPublished.id), false);
+  });
+  test('7.race: a notice whose source is set AFTER validation but BEFORE the claim is refused by the claim itself - no push, no claim', async () => {
+    const id = nid(); must(`insert into notices (id, ${FX.active.cols}) values ('${id}', ${FX.active.vals})`);
+    pushCalls.length = 0;
+    afterFirstNoticeRead = () => must(`update notices set source='nhs_shetland', source_reference='late', source_label='NHS Shetland', expires_at = now() + interval '1 day' where id='${id}'`);
+    const r = await call(NEW, id);
+    assert.equal(r.status, 409); assert.equal(r.body.error, 'That notice is no longer available to send');
+    assert.equal(pushCalls.length, 0, 'no delivery'); assert.equal(claimed(id), false, 'not claimed');
+  });
+  test('7.layers: both layers are present in the source (the helper rule, and the claim filter that 7.race proves is enforced)', () => {
+    const helper = rd('supabase/functions/_shared/notice-broadcast.ts'); const fn = rd(FN);
+    assert.match(helper, /n\.source !== null/); assert.match(fn, /\.is\('source', null\)/); assert.match(fn, /id, title, body, severity, visibility, is_hidden, status, starts_at, expires_at, source,/);
+  });
+  test('7.fail-closed: a row that does not report `source` is refused, never assumed native', () => {
+    const mod = loadModule('supabase/functions/_shared/notice-broadcast.ts') as { broadcastRefusal: (n: any, now: number) => { error: string } | null };
+    const live = { severity: 'urgent', visibility: 'public', is_hidden: false, status: 'published', starts_at: null, expires_at: null, broadcast_at: null };
+    assert.equal(mod.broadcastRefusal({ ...live, source: null }, Date.now()), null);
+    assert.ok(mod.broadcastRefusal({ ...live }, Date.now()), 'source missing from the row');
+    assert.ok(mod.broadcastRefusal({ ...live, source: 'nhs_shetland' }, Date.now()));
+  });
+});
+
 describe('eligible notices: behaviour is unchanged from the deployed function', () => {
-  for (const k of ['active', 'activeWindow', 'activeOffset', 'business']) {
+  for (const k of ['active', 'activeWindow', 'activeOffset', 'business', 'hubNative']) {
     test(`4.${k} ${FX[k].label}: sent once, to the same recipients, with the same payload and response as the original`, async () => {
       resetClaims(); pushCalls.length = 0; const a = await call(OLD, FX[k].id); const oldPush = pushCalls.splice(0);
       resetClaims(); const b = await call(NEW, FX[k].id); const newPush = pushCalls.splice(0);
@@ -240,7 +295,7 @@ describe('eligible notices: behaviour is unchanged from the deployed function', 
 describe('boundaries and timestamps (the helper against explicit instants; the database is the authority)', () => {
   const T = Date.parse('2026-11-01T12:00:00.000Z');
   const mod = loadModule('supabase/functions/_shared/notice-broadcast.ts') as { broadcastRefusal: (n: any, now: number) => { error: string } | null };
-  const base = { severity: 'urgent', visibility: 'public', is_hidden: false, status: 'published', starts_at: null, expires_at: null, broadcast_at: null };
+  const base = { source: null, severity: 'urgent', visibility: 'public', is_hidden: false, status: 'published', starts_at: null, expires_at: null, broadcast_at: null };
   test('5.1 starts_at: live AT the start instant, not a millisecond before', () => {
     assert.equal(mod.broadcastRefusal({ ...base, starts_at: new Date(T).toISOString() }, T), null);
     assert.ok(mod.broadcastRefusal({ ...base, starts_at: new Date(T + 1).toISOString() }, T));
@@ -295,14 +350,18 @@ describe('compatibility with the Stage 3A.1 migration, and what remains', () => 
     assert.equal(triggers, 'aa_notices_attribution_guard,notices_lifecycle');
     assert.equal(Number(scalar(`select count(*) from pg_proc where pronamespace='public'::regnamespace and proname in ('tg_notices_attribution_guard','tg_notices_lifecycle') and prosrc ~* '(net\\.http|pg_notify|http_request|push|notification)'`)), 0);
   });
-  test('6.3 RISK R1 (characterisation): an official import that is otherwise eligible CAN be broadcast if an admin deliberately asks; no code path does it automatically', async () => {
-    resetClaims(); pushCalls.length = 0; const r = await call(NEW, FX.imported.id);
-    assert.equal(r.status, 200, 'documented, admin-initiated only'); assert.equal(pushCalls.length, 1);
-    resetClaims();
-  });
   test('6.4 the function only ever reads the notice id from the request', () => {
     const src = rd(FN);
     assert.match(src, /const \{ notice_id \} = await req\.json\(\);/);
     assert.doesNotMatch(src, /\b(body|payload)\.(status|starts_at|severity|visibility)\b/);
+  });
+});
+
+describe('KNOWN OUTSTANDING ISSUE R2 - notify-hub-content (deliberately NOT changed in Stage 3A.1)', () => {
+  test('8.1 pinned as a known gap: notify-hub-content still never reads the notice it announces, so it cannot check status / starts_at / source', () => {
+    const fnSrc = rd('supabase/functions/notify-hub-content/index.ts') + rd('supabase/functions/_shared/hub-content-notify-auth.ts');
+    assert.doesNotMatch(fnSrc, /from\(['"]notices['"]\)/, 'if this fails, someone has started fixing R2: update this test, docs/notices-known-issues.md and the Stage 3A.1 report');
+    assert.match(fnSrc, /const \{ event, hub_id, ref_id, title \} = await req\.json\(\);/, 'the title comes from the request');
+    assert.match(rd('docs/notices-known-issues.md'), /R2/, 'the issue is recorded in the repository');
   });
 });
