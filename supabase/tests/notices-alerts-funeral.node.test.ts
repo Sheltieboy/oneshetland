@@ -121,6 +121,20 @@ describe('what the public sees (and never sees)', () => {
     assert.ok(!pub().includes(PRIV), 'expired');
     assert.equal(asScalar('anon', `select count(*) from public.get_funeral_notice('${PRIV}')`), '0');
   });
+  test('8b a single notice is found however many newer ones exist (not limited to the 50 newest); an unpublished or expired id is never returned', () => {
+    const old = approve(submit('P', { full_name: 'Oldest Notice' }));
+    raw(`update funeral_notices set published_at = now() - interval '30 days', display_until = now() + interval '10 days' where id='${old}'`);
+    file(`insert into funeral_notices (status, full_name, submitter_role, submitter_name, submitter_phone, family_authorised, verification_method, verified_at, published_at, display_until)
+      select 'approved','Filler ' || g,'family','S','01595 000000',true,'phone_callback',now(), now() - make_interval(mins => g), now() + interval '30 days' from generate_series(1, 80) g`);
+    assert.equal(asScalar('anon', `select count(*) from public.get_funeral_notice('${old}')`), '1', 'found though 80 newer notices exist');
+    const pending = submit('D', { full_name: 'Not Public Yet' });
+    assert.equal(asScalar('anon', `select count(*) from public.get_funeral_notice('${pending}')`), '0');
+    raw(`update funeral_notices set display_until = now() - interval '1 minute' where id='${old}'`);
+    assert.equal(asScalar('anon', `select count(*) from public.get_funeral_notice('${old}')`), '0');
+    const rej = submit('N', { full_name: 'To Reject With Reason' });
+    review('O', rej, 'reject', 'We could not confirm the details; please contact us.');
+    assert.equal(asScalar('N', `select review_message from public.my_funeral_submissions() where id='${rej}'`), 'We could not confirm the details; please contact us.', 'a rejected submitter is told why');
+  });
   test('9 a funeral notice is NEVER a row in `notices`, never essential, no level or feed function returns one, and the nine canonical categories are untouched', () => {
     assert.equal(scalar(`select count(*) from notices where title ilike '%Arrangements%' or body ilike '%Arrangements%'`), '0');
     assert.equal(scalar(`select count(*) from public.get_public_notices('all', null, null, 50) where title ilike '%Arrangements%'`), '0');

@@ -178,7 +178,7 @@ end $$;
 create function public.my_funeral_submissions()
 returns table (id uuid, status text, full_name text, created_at timestamptz, published_at timestamptz, review_message text)
 language sql stable security definer set search_path = public, pg_temp as $$
-  select f.id, f.status, f.full_name, f.created_at, f.published_at, case when f.status = 'needs_info' then f.review_message end
+  select f.id, f.status, f.full_name, f.created_at, f.published_at, case when f.status in ('needs_info', 'rejected') then f.review_message end
     from public.funeral_notices f where f.submitter_id = auth.uid() order by f.created_at desc;
 $$;
 
@@ -240,7 +240,11 @@ create function public.get_funeral_notice(p_id uuid)
 returns table (id uuid, full_name text, preferred_name text, photo_url text, born_on date, died_on date, announcement text, service_kind text, service_venue text,
                service_at timestamptz, service_notes text, family_requests text, donation_info text, donation_url text, area_id text, area_name text, published_at timestamptz)
 language sql stable security definer set search_path = public, pg_temp as $$
-  select g.* from public.get_funeral_notices(null, 50, 0) g where g.id = p_id;
+  select f.id, f.full_name, f.preferred_name, f.photo_url, f.born_on, f.died_on, f.announcement,
+         case when f.service_public then f.service_kind end, case when f.service_public then f.service_venue end, case when f.service_public then f.service_at end,
+         case when f.service_public then f.service_notes end, f.family_requests, f.donation_info, f.donation_url, f.area_id, a.name_display, f.published_at
+    from public.funeral_notices f left join public.areas a on a.id = f.area_id
+   where f.id = p_id and f.status = 'approved' and f.published_at <= now() and f.display_until > now();
 $$;
 
 -- ── corrections and takedown requests ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -292,7 +296,7 @@ begin
            review_message = null where id = p_id;
   elsif p_action = 'reject' then
     if f.status not in ('submitted', 'in_review', 'needs_info') then raise exception 'Not under review' using errcode = '22023'; end if;
-    update public.funeral_notices set status = 'rejected', review_note = btrim(coalesce(p_note, '')), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
+    update public.funeral_notices set status = 'rejected', review_note = btrim(coalesce(p_note, '')), review_message = nullif(btrim(coalesce(p_note, '')), ''), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
   else
     raise exception 'Unknown action' using errcode = '22023';
   end if;
