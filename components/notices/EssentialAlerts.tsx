@@ -1,55 +1,82 @@
 /**
- * EssentialAlerts — the reserved top slot of Home, shown as ONE compact red strip. The ONLY place in the app with the red / urgent treatment.
- * Driven solely by get_essential_alerts (see lib/notices-alerts.ts composeHome). With nothing to show it returns null: no heading, no gap.
- * The strip carries a headline, the area and a count only; the full text, "what to do" and source live on the Notices screen it opens.
+ * EssentialAlerts — the reserved top slot of Home, shown as ONE single-line red strip: [!]  ESSENTIAL ALERT  headline  (count)  [×].
+ * The ONLY place in the app with the red / urgent treatment. Driven solely by get_essential_alerts (see lib/notices-alerts.ts composeHome).
+ * With nothing to show (none active, or all dismissed) it returns null: no placeholder, no gap.
+ *
+ * ONE LINE, always: every Text is numberOfLines={1}, the height is fixed, and text scaling inside the strip is capped so it cannot grow.
+ * The full title, areas and everything else are in the accessibility label and on the notice / Notices screen it opens. Dismissal is
+ * presentation only (lib/essential-dismiss.ts) and is stored on this device; it never changes the notice or any preference.
  */
-import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { splitEssential, type NoticeModel } from '@/lib/notices-alerts';
+import { DISMISSED_KEY, parseDismissed, undismissed, dismissAll } from '@/lib/essential-dismiss';
 
-const RED = '#B3261E';
+const RED = '#B3261E', HEIGHT = 52, NARROW = 360;
+const SCALE_CAP = 1.15; // the strip stays one line: the full text is in the accessibility label
 
 /**
- * One alert: the strip opens that alert. Several: the strip shows the lead alert (the member's areas first, then newest) with an
- * "N active alerts" count and opens the essential list, where every alert is reachable. The height is the same either way.
+ * One undismissed alert: the strip opens it. Several: the strip shows the lead (the member's areas first, then newest) with the count and
+ * opens the essential list. The × is a separate control and never navigates.
  */
 export function EssentialAlerts({ alerts, onOpen, onSeeAll, sideInset = 16 }: {
   alerts: NoticeModel[]; onOpen: (n: NoticeModel) => void; onSeeAll: () => void; sideInset?: number;
 }) {
-  if (!alerts || alerts.length === 0) return null;
-  const { lead, others } = splitEssential(alerts);
+  const [dismissed, setDismissed] = useState<string[] | null>(null); // null = not read yet: render nothing rather than flash
+  const { width } = useWindowDimensions();
+  useEffect(() => {
+    let live = true;
+    AsyncStorage.getItem(DISMISSED_KEY).then((raw) => { if (live) setDismissed(parseDismissed(raw)); }).catch(() => { if (live) setDismissed([]); });
+    return () => { live = false; };
+  }, []);
+  const active = alerts ?? [];
+  const shown = dismissed ? undismissed(active, dismissed) : [];
+  const onDismiss = useCallback(() => {
+    const next = dismissAll(dismissed ?? [], active);
+    setDismissed(next);
+    AsyncStorage.setItem(DISMISSED_KEY, JSON.stringify(next)).catch(() => {});
+  }, [dismissed, active]);
+
+  if (shown.length === 0) return null;
+  const { lead, others } = splitEssential(shown);
   if (!lead) return null;
   const many = others.length > 0;
-  const area = lead.areaNames[0] ? (lead.areaNames.length > 1 ? `${lead.areaNames[0]} +${lead.areaNames.length - 1}` : lead.areaNames[0]) : '';
+  const area = lead.areaNames.join(', ');
+  const narrow = width < NARROW;
+  const name = `${many ? `Essential alert, ${shown.length} active. Latest: ` : 'Essential alert. '}${lead.title}${area ? `. ${area}` : ''}`;
   return (
     <View style={{ paddingHorizontal: sideInset, paddingTop: 12 }}>
-      <Pressable
-        onPress={() => (many ? onSeeAll() : onOpen(lead))}
-        accessibilityRole="button"
-        accessibilityLabel={`${many ? `Essential alert, ${alerts.length} active. Latest: ` : 'Essential alert. '}${lead.title}${area ? `. ${area}` : ''}`}
-        accessibilityHint={many ? 'Opens all essential alerts' : 'Opens the full alert'}
-        hitSlop={4}
-        style={({ pressed }) => [s.strip, pressed && { opacity: 0.88 }]}
-      >
-        {/* Everything inside is covered by the label above; hide the parts so a screen reader never repeats them or reads the icon. */}
-        <View style={s.icon} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><FontAwesome5 name="exclamation" size={12} color={RED} solid /></View>
-        <View style={s.text} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <Text style={s.label} numberOfLines={2}>{many ? `ESSENTIAL ALERT · ${alerts.length} ACTIVE` : 'ESSENTIAL ALERT'}</Text>
-          <Text style={s.title} numberOfLines={2}>{lead.title}</Text>
-          {area ? <Text style={s.area} numberOfLines={2}>{area}</Text> : null}
-        </View>
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><FontAwesome5 name="chevron-right" size={12} color="#fff" /></View>
-      </Pressable>
+      <View style={s.strip}>
+        <Pressable
+          onPress={() => (many ? onSeeAll() : onOpen(lead))}
+          accessibilityRole="button" accessibilityLabel={name} accessibilityHint={many ? 'Opens all essential alerts' : 'Opens the full alert'}
+          style={({ pressed }) => [s.main, pressed && { opacity: 0.88 }]}
+        >
+          <View style={s.icon} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><FontAwesome5 name="exclamation" size={12} color={RED} solid /></View>
+          <View style={s.row} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <Text style={s.label} numberOfLines={1} maxFontSizeMultiplier={SCALE_CAP}>{narrow ? 'ALERT' : 'ESSENTIAL ALERT'}</Text>
+            <Text style={s.title} numberOfLines={1} maxFontSizeMultiplier={SCALE_CAP}>{lead.title}</Text>
+            {many ? <Text style={s.count} numberOfLines={1} maxFontSizeMultiplier={SCALE_CAP}>{narrow ? `${shown.length}` : `${shown.length} active`}</Text> : null}
+          </View>
+        </Pressable>
+        <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss Essential Alert" accessibilityHint="Hides this strip on Home. The alert stays in Notices."
+          hitSlop={{ top: 4, bottom: 4, left: 0, right: 4 }} style={({ pressed }) => [s.close, pressed && { opacity: 0.7 }]}>
+          <FontAwesome5 name="times" size={15} color="#fff" />
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  strip: { minHeight: 52, /* a floor only: larger text grows the strip */ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: RED, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
+  strip: { height: HEIGHT, flexDirection: 'row', alignItems: 'center', backgroundColor: RED, borderRadius: 14, overflow: 'hidden' },
+  main: { flex: 1, minWidth: 0, height: HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 12 },
   icon: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  text: { flex: 1 },
-  label: { color: 'rgba(255,255,255,0.88)', fontSize: 10.5, fontWeight: '900', letterSpacing: 1 },
-  title: { color: '#fff', fontSize: 14.5, lineHeight: 19, fontWeight: '800' },
-  area: { color: 'rgba(255,255,255,0.88)', fontSize: 12, lineHeight: 16 },
+  row: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  label: { flexShrink: 0, color: 'rgba(255,255,255,0.9)', fontSize: 10.5, fontWeight: '900', letterSpacing: 0.8 },
+  title: { flex: 1, minWidth: 0, color: '#fff', fontSize: 14.5, fontWeight: '800' },
+  count: { flexShrink: 0, color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '800' },
+  close: { width: 48, height: HEIGHT, alignItems: 'center', justifyContent: 'center' },
 });

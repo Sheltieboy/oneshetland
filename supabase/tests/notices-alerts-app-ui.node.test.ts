@@ -218,15 +218,41 @@ describe('Home composition', () => {
     assert.deepEqual([lead.title, ids(others)], ['Alert 2', ['Alert 1', 'Alert 3']]);
     assert.deepEqual(na.splitEssential([]), { lead: null, others: [] });
   });
-  test('(source) the slot is ONE compact strip: headline, area and count only; one alert opens it, several open the essential list', () => {
-    const e = readRepo('components/notices/EssentialAlerts.tsx');
-    assert.match(e, /splitEssential\(alerts\)/); assert.match(e, /ACTIVE/); assert.match(e, /minHeight: 52/);
-    assert.match(e, /many \? onSeeAll\(\) : onOpen\(lead\)/); assert.match(e, /accessibilityRole="button"/);
-    assert.equal((e.match(/<Pressable/g) ?? []).length, 1, 'one strip, never a stack');
-    assert.match(e, /accessibilityHint=\{many \? 'Opens all essential alerts' : 'Opens the full alert'\}/); assert.match(e, /Essential alert, \$\{alerts\.length\} active\. Latest: /);
-    assert.ok((e.match(/importantForAccessibility="no-hide-descendants"/g) ?? []).length >= 3, 'icon, text and chevron are hidden from the screen reader (the label covers them)');
-    assert.doesNotMatch((e.match(/strip: \{[^}]*\}/) ?? [''])[0], /(^|[^n])height:/i, 'the strip has a minimum, never a fixed height'); assert.match(e, /minHeight: 52/); assert.match(e, /numberOfLines=\{2\}\>\{lead\.title\}/);
+  test('(source) the strip is ONE LINE always: fixed height, every Text numberOfLines={1}, capped text scaling, no wrapping, no body/what-to-do/source', () => {
+    const e = readRepo('components/notices/EssentialAlerts.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.match((e.match(/strip: \{[^}]*\}/) ?? [''])[0], /height: HEIGHT/); assert.match(e, /HEIGHT = 52/);
+    const texts = e.match(/<Text [^>]*>/g) ?? []; assert.ok(texts.length >= 3);
+    for (const t of texts) { assert.match(t, /numberOfLines=\{1\}/, t); assert.match(t, /maxFontSizeMultiplier=\{SCALE_CAP\}/, t); }
+    assert.doesNotMatch(e, /numberOfLines=\{[2-9]\}|flexWrap|minHeight|flexDirection: 'column'/, 'nothing that can wrap or grow');
     assert.doesNotMatch(e, /lead\.body|actionText|attribution/, 'no body, what-to-do or source detail on Home');
+    assert.match(e, /narrow \? 'ALERT' : 'ESSENTIAL ALERT'/, 'the label shortens on narrow screens instead of wrapping');
+  });
+  test('(source) the whole strip opens (one: the alert, several: the list); the x is a SIBLING control that never navigates; names, hint, hit area', () => {
+    const e = readRepo('components/notices/EssentialAlerts.tsx');
+    assert.match(e, /many \? onSeeAll\(\) : onOpen\(lead\)/);
+    const main = e.slice(e.indexOf('<Pressable\n          onPress={() => (many'), e.indexOf('</Pressable>'));
+    assert.doesNotMatch(main, /onDismiss|Dismiss Essential Alert/, 'the dismiss control is not inside the navigating pressable');
+    assert.match(e, /onPress=\{onDismiss\} accessibilityRole="button" accessibilityLabel="Dismiss Essential Alert"/); assert.match(e, /close: \{ width: 48, height: HEIGHT/);
+    assert.match(e, /accessibilityHint=\{many \? 'Opens all essential alerts' : 'Opens the full alert'\}/); assert.match(e, /Essential alert, \$\{shown\.length\} active\. Latest: /);
+    assert.ok((e.match(/importantForAccessibility="no-hide-descendants"/g) ?? []).length >= 2, 'icon and text are hidden from the screen reader (the label covers them)');
+    assert.equal((e.match(/<Pressable/g) ?? []).length, 2, 'the strip and the x; never a stack of cards');
+  });
+  test('dismissal logic: ids not a global switch; the whole active set is dismissed (no promotion of the 2nd); a NEW id brings the strip back; dismissed ids never return', () => {
+    const D = loadModule('lib/essential-dismiss.ts') as any;
+    const three = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const after = D.dismissAll([], three);
+    assert.deepEqual(after, ['a', 'b', 'c']); assert.deepEqual(D.undismissed(three, after), []);
+    assert.deepEqual(D.undismissed([...three, { id: 'd' }], after).map((x: any) => x.id), ['d']);
+    assert.deepEqual(D.undismissed([{ id: 'a' }, { id: 'e' }], D.dismissAll(after, [{ id: 'd' }])).map((x: any) => x.id), ['e']);
+    assert.deepEqual(D.dismissAll(['x'], [{ id: 'x' }, { id: 'y' }]), ['x', 'y']); assert.deepEqual(D.undismissed(null, []), []);
+    for (const bad of [null, undefined, '', 'nope', '{}', '[1]']) assert.deepEqual(D.parseDismissed(bad), []);
+    assert.deepEqual(D.parseDismissed('["ok",""]'), ['ok']); assert.equal(D.dismissAll([], Array.from({ length: 500 }, (_, i) => ({ id: 'n' + i }))).length, 200);
+  });
+  test('(source) dismissal is device storage only: AsyncStorage, no network, no notice/preference call; nothing renders until the stored list is read', () => {
+    const e = readRepo('components/notices/EssentialAlerts.tsx');
+    assert.match(e, /AsyncStorage\.getItem\(DISMISSED_KEY\)/); assert.match(e, /AsyncStorage\.setItem\(DISMISSED_KEY/);
+    assert.doesNotMatch(e, /supabase|fetch\(|rpc\(|notice_notification_prefs|set_my_notice|manage_|official_set/, 'presentation only');
+    assert.match(e, /dismissed \? undismissed\(active, dismissed\) : \[\]/); assert.match(e, /if \(shown\.length === 0\) return null;/);
   });
   test('loadHomeNotices: queries the essential list and get_public_notices("all"), applies the member areas, and a failure of either collapses just that part', async () => {
     const ok = load({ get_essential_alerts: [row({ id: U(1), level: undefined })], get_public_notices: [row({ id: U(1), level: 'essential', is_essential_active: true }), row({ id: U(2), level: 'community' })] });
@@ -259,7 +285,7 @@ describe('Home composition', () => {
   });
   test('(source) the Essential slot renders nothing when empty; the red treatment lives only there', () => {
     const e = readRepo('components/notices/EssentialAlerts.tsx');
-    assert.match(e, /if \(!alerts \|\| alerts\.length === 0\) return null;/);
+    assert.match(e, /if \(shown\.length === 0\) return null;/);
     assert.match(e, /ESSENTIAL ALERT/); assert.doesNotMatch(e, /What to do|View at source|Affects:|attribution\.byline/, 'the Home strip is a summary only');
     const cards = readRepo('components/notices/NoticeCards.tsx');
     assert.doesNotMatch(cards.slice(0, cards.indexOf('listCardEssential: {')), /#B3261E|#DC2626|#EF4444/, 'Home cards carry no urgent colour');
@@ -570,7 +596,7 @@ describe('scope: JS-only, no publishing UI, no new native surface', () => {
       assert.doesNotMatch(readRepo(f), /official_publish_notice|official_update_notice|official_set_notice_status|admin_(?!notice_audit_never)\w+\(|notify-notice-audience/, f);
   });
   test('the new files import only modules the app already uses', () => {
-    const allowed = /^(react|react-native|expo-router|expo-haptics|@expo\/vector-icons|@\/.*|\.\/.*)$/;
+    const allowed = /^(react|react-native|expo-router|expo-haptics|@expo\/vector-icons|@react-native-async-storage\/async-storage|@\/.*|\.\/.*)$/;
     for (const f of ['components/notices/EssentialAlerts.tsx', 'components/notices/NoticeCards.tsx', 'components/notices/AreaPicker.tsx', 'components/notices/FuneralTemplate.tsx', 'components/notices/NoticePreferences.tsx', 'app/notices.tsx', 'app/funeral-notice.tsx', 'app/funeral-notice-submit.tsx', 'app/my-funeral-notices.tsx']) {
       for (const m of readRepo(f).matchAll(/^import[\s\S]*?from\s+'([^']+)'/gm)) assert.match(m[1], allowed, `${f}: ${m[1]}`);
     }
