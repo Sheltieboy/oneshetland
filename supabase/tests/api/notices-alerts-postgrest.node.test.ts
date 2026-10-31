@@ -80,6 +80,8 @@ before(async () => {
   assert.ok(!failedSql(o), `setup: ${o.slice(0, 600)}`);
   const migs = ['20261121000000_event_notice_attribution', '20261127000000_canonical_geography_foundation', '20261127010000_geography_alias_ambiguity', '20261128000000_notices_structural_readiness', '20261128010000_notices_read_protection',
     ...readdirSync(join(ROOT, 'supabase/migrations')).filter((f) => /^20261129\d{6}_.*\.sql$/.test(f)).sort().map((f) => f.replace(/\.sql$/, ''))];
+  // production already has the shared rate limiter (20260821280000); apply it without its pg_cron schedule line
+  o = pg(rd('supabase/migrations/20260821280000_rate_limits.sql').split('-- Scheduled outside the transaction')[0]); assert.ok(!failedSql(o), `rate limits fixture: ${o.slice(0, 500)}`);
   for (const m of migs) { o = pg(rd(`supabase/migrations/${m}.sql`)); assert.ok(!failedSql(o), `${m}: ${o.slice(0, 700)}`); }
   docker(['rm', '-f', REST]);
   const r = docker(['run', '-d', '--name', REST, '--network', NET, '-p', `127.0.0.1:${REST_PORT}:3000`, '-e', `PGRST_DB_URI=postgres://authenticator:proofpw@${PG}:5432/postgres`, '-e', 'PGRST_DB_SCHEMAS=public',

@@ -96,6 +96,9 @@ export function buildDatabase(through: number = NEW_MIGRATIONS.length) {
     insert into notices (id, publisher_hub_id, severity, title, body, visibility, published_at, created_at)
       values ('${N_LEGACY}','${HUB_V}','info','OneShetland is getting ready to launch','Legacy body','public','2026-10-04 11:20:42+00','2026-10-04 11:20:42+00');`);
   if (/ERROR/i.test(o)) throw new Error(`seed failed:\n${o.slice(0, 600)}`);
+  // production already has the shared rate limiter (20260821280000); the isolated database has no pg_cron, so apply it WITHOUT its schedule line
+  o = file(rd('supabase/migrations/20260821280000_rate_limits.sql').split('-- Scheduled outside the transaction')[0]);
+  if (/ERROR/i.test(o)) throw new Error(`rate limits fixture failed:\n${o.slice(0, 600)}`);
   for (const f of [
     'supabase/migrations/20261121000000_event_notice_attribution.sql', 'supabase/migrations/20261127000000_canonical_geography_foundation.sql',
     'supabase/migrations/20261127010000_geography_alias_ambiguity.sql', 'supabase/migrations/20261128000000_notices_structural_readiness.sql',

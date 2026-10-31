@@ -210,8 +210,10 @@ describe('no-account correction / takedown / enquiry', () => {
   let live = '', hidden = '';
   before(() => { live = approve(submit('A')); hidden = submit('A'); });
   const enquire = (id: string, kind = 'takedown', msg = 'Please remove this notice', contact = 'rel@family.example', name = 'R Relative', rel = 'Son') =>
-    as('anon', `select public.submit_funeral_enquiry('${id}','${kind}','${q(msg)}','${q(contact)}','${q(name)}','${q(rel)}')`);
-  test('1 a signed-out person can send a request about a PUBLISHED announcement; nothing changes by itself', () => {
+    as('service', `select public.submit_funeral_enquiry('${id}','${kind}','${q(msg)}','${q(contact)}','${q(name)}','${q(rel)}')`);   // the Edge Function's identity
+  test('1 ONLY the trusted server-side caller can file an enquiry: anon, signed-in members, staff and administrators are refused (the PostgREST bypass is closed); nothing changes by itself', () => {
+    for (const who of ['anon', 'A', 'O', 'S'] as const) assert.match(as(who, `select public.submit_funeral_enquiry('${live}','takedown','Please remove this notice','x@family.example')`), /permission denied/, who);
+    assert.equal(scalar(`select count(*) from funeral_change_requests where funeral_id='${live}'`), '0', 'the refused calls filed nothing');
     const out = enquire(live); assert.ok(!failed(out), out);
     assert.equal(status(live), 'approved'); assert.ok(pub().includes(live));
     assert.equal(scalar(`select (source='public' and requester_id is null and status='open')::text from funeral_change_requests where id='${idOf(out)}'`), 'true');
@@ -223,13 +225,17 @@ describe('no-account correction / takedown / enquiry', () => {
   test('3 validation: kind, message, a way to reply', () => {
     assert.match(enquire(live, 'delete'), /Unknown request/); assert.match(enquire(live, 'takedown', 'no'), /what you need/); assert.match(enquire(live, 'takedown', 'Please remove', ''), /telephone number or email/);
   });
-  test('4 abuse prevention: per notice, per contact and overall rate limits', () => {
-    const id = approve(submit('A2', { full_name: 'Rate Limited' }));
-    for (let i = 0; i < 3; i++) assert.ok(!failed(enquire(id, 'enquiry', `Question number ${i}`, `person${i}@example.test`)));
-    assert.match(enquire(id, 'enquiry', 'A fourth question', 'person9@example.test'), /Too many requests/);
-    const id2 = approve(submit('A2', { full_name: 'Contact Limited' })), id3 = approve(submit('A2', { full_name: 'Contact Limited Two' })), id4 = approve(submit('A2', { full_name: 'Contact Limited Three' })), id5 = approve(submit('A2', { full_name: 'Contact Limited Four' }));
-    for (const x of [id2, id3, id4]) assert.ok(!failed(enquire(x, 'enquiry', 'Same person asking', 'same@example.test')));
-    assert.match(enquire(id5, 'enquiry', 'Same person asking again', 'SAME@example.test'), /Too many requests/);
+  test('4 database BACKSTOPS (the per-client allowances are enforced before this call, by the Edge Function): the same contact is limited, but one announcement or the whole site is no longer lockable by a handful of calls', () => {
+    const id = approve(submit('A2', { full_name: 'Backstop Limited' }));
+    for (let i = 0; i < 8; i++) assert.ok(!failed(enquire(id, 'enquiry', `Question number ${i}`, `person${i}@example.test`)), `request ${i}: 3 per announcement is no longer a shared quota`);
+    for (const c of ['same@example.test', 'SAME@example.test', 'Same@Example.test']) assert.ok(!failed(enquire(id, 'enquiry', 'Same person asking', c)));
+    assert.match(enquire(id, 'enquiry', 'Same person asking again', 'SAME@example.test'), /Too many requests/, 'one contact: 3 a day');
+    // the announcement backstop is 30 a day (reached only by a flood that already beat every per-client allowance)
+    const flood = approve(submit('A2', { full_name: 'Flooded' }));
+    file(`insert into funeral_change_requests (funeral_id, kind, source, contact, message) select '${flood}', 'enquiry', 'public', 'bot' || g || '@x.test', 'flood message ' || g from generate_series(1, 30) g`);
+    assert.match(enquire(flood, 'enquiry', 'A genuine family request', 'family@real.test'), /Too many requests/, 'backstop: 30 per announcement per day');
+    const other = approve(submit('A2', { full_name: 'Unrelated Family' }));
+    assert.ok(!failed(enquire(other, 'enquiry', 'A genuine family request elsewhere', 'family2@real.test')), 'a flooded announcement does not stop an unrelated one');
   });
   test('5 the request is private: no client can read it; staff see it in the queue', () => {
     for (const who of ['anon', 'A', 'A2', 'F'] as const) assert.match(as(who, `select * from public.admin_funeral_change_requests()`), /Staff only|permission denied/, who);
@@ -276,7 +282,7 @@ describe('retention: scheduled, dry-run first, gated', () => {
     displayed = approve(submit('A', { full_name: 'Retention Displayed' }));
     held = approve(submit('A', { full_name: 'Retention Held' })); aged(held, 200);
     disputed = approve(submit('A', { full_name: 'Retention Disputed' }));
-    assert.ok(!failed(as('anon', `select public.submit_funeral_enquiry('${disputed}','enquiry','Open question about this notice','q@example.test')`)));   // raised while the notice was still displayed
+    assert.ok(!failed(as('service', `select public.submit_funeral_enquiry('${disputed}','enquiry','Open question about this notice','q@example.test')`)));   // raised while the notice was still displayed
     aged(disputed, 200);
     wd = submit('A', { full_name: 'Retention Withdrawn' }); as('A', `select public.withdraw_my_funeral_notice('${wd}')`); file(`update funeral_notices set retain_until = now() - interval '1 minute' where id='${wd}'`);
     wdFresh = submit('A', { full_name: 'Retention Fresh Withdrawn' }); as('A', `select public.withdraw_my_funeral_notice('${wdFresh}')`);

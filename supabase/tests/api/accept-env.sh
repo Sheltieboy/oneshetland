@@ -54,7 +54,9 @@ create table jobs (id uuid primary key default gen_random_uuid(), title text, lo
 create table runs (id uuid primary key default gen_random_uuid(), origin_region_id uuid references regions(id), destination_region_id uuid references regions(id));
 create table delivery_requests (id uuid primary key default gen_random_uuid(), destination_region_id uuid references regions(id), destination_address text);
 SQL
-for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection 20261129000000_notices_alerts_publishers 20261129010000_notices_alerts_core 20261129020000_notices_alerts_audience 20261129030000_funeral_notices 20261129040000_notice_imports 20261129050000_member_notices 20261129060000_funeral_privacy; do dpsql postgres < supabase/migrations/$m.sql; done
+# production already has the shared rate limiter; apply it without its pg_cron schedule line
+sed '/^-- Scheduled outside the transaction/,$d' supabase/migrations/20260821280000_rate_limits.sql | dpsql postgres
+for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection 20261129000000_notices_alerts_publishers 20261129010000_notices_alerts_core 20261129020000_notices_alerts_audience 20261129030000_funeral_notices 20261129040000_notice_imports 20261129050000_member_notices 20261129060000_funeral_privacy 20261129070000_funeral_enquiry_protection; do dpsql postgres < supabase/migrations/$m.sql; done
 dpsql postgres < supabase/tests/api/ui-site-schema.sql
 # the existing production notification tables (shapes copied from the baseline / spine migrations): the delete-account function removes the member's rows from them
 dpsql postgres <<'SQL'
