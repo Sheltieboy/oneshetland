@@ -196,6 +196,34 @@ describe('Home composition', () => {
     const c = na.composeHome([], [mk(1, { published_at: t }), mk(2, { published_at: t }), mk(3, { published_at: t })]);
     assert.deepEqual(c.cards.map((n: any) => n.title), ['Notice 1', 'Notice 2', 'Notice 3']);
   });
+  test('the database returns level as an integer (1 essential, 2 official, 3 community); the words work too', () => {
+    assert.deepEqual([1, 2, 3, '1', 'essential', 'official', 'community', null, 9].map((l) => na.levelOf(l)), ['essential', 'official', 'community', 'essential', 'essential', 'official', 'community', 'community', 'community']);
+    assert.equal(na.mapNoticeRow(row({ level: 1, is_essential_active: true })).level, 'essential');
+    assert.equal(na.mapNoticeRow(row({ level: 2 })).level, 'official');
+    assert.equal(na.mapNoticeRow(row({ level: 3 })).level, 'community');
+    const c = na.composeHome([], [na.mapNoticeRow(row({ id: U(1), level: 1, is_essential_active: true })), na.mapNoticeRow(row({ id: U(2), level: 3 }))]);
+    assert.deepEqual(c.cards.map((n: any) => n.id), [U(2)]);
+  });
+  test('several essential alerts: the member\'s areas lead, then Shetland-wide, then the rest; newest first within a group; one in full, the rest as rows', () => {
+    const e = (i: number, areas: string[], at: string) => na.mapEssentialRow(row({ id: U(600 + i), title: `Alert ${i}`, area_ids: areas, area_names: areas, published_at: at }));
+    const road = e(1, ['voe', 'brae'], '2026-10-30T08:00:00Z'), power = e(2, ['hillswick'], '2026-10-31T08:00:00Z'), ferry = e(3, ['yell_unst_fetlar'], '2026-10-29T08:00:00Z'), wide = e(4, ['shetland_wide'], '2026-10-01T08:00:00Z'), road2 = e(5, ['brae'], '2026-10-31T09:00:00Z');
+    const ids = (a: any[]) => a.map((n) => n.title);
+    assert.deepEqual(ids(na.orderEssential([road, power, ferry], ['voe'])), ['Alert 1', 'Alert 2', 'Alert 3'], 'mine first, then newest of the rest');
+    assert.deepEqual(ids(na.orderEssential([ferry, power, wide, road2, road], ['voe', 'brae'])), ['Alert 5', 'Alert 1', 'Alert 4', 'Alert 2', 'Alert 3']);
+    assert.deepEqual(ids(na.orderEssential([road, power, ferry], null)), ['Alert 2', 'Alert 1', 'Alert 3'], 'no areas: newest first');
+    assert.deepEqual(ids(na.orderEssential([road, power, ferry], [])), ['Alert 2', 'Alert 1', 'Alert 3']);
+    const input = [road, power, ferry]; na.orderEssential(input, ['voe']); assert.deepEqual(ids(input), ['Alert 1', 'Alert 2', 'Alert 3'], 'does not mutate');
+    const c = na.composeHome([road, power, ferry], [], 6, ['hillswick']);
+    const { lead, others } = na.splitEssential(c.essential);
+    assert.deepEqual([lead.title, ids(others)], ['Alert 2', ['Alert 1', 'Alert 3']]);
+    assert.deepEqual(na.splitEssential([]), { lead: null, others: [] });
+  });
+  test('(source) the slot shows one full card and one-line rows (44pt, labelled, chevron) under "N essential alerts"', () => {
+    const e = readRepo('components/notices/EssentialAlerts.tsx');
+    assert.match(e, /splitEssential\(alerts\)/); assert.match(e, /essential alerts<\/Text>/); assert.match(e, /minHeight: 44/);
+    assert.match(e, /accessibilityLabel=\{`Essential alert: \$\{n\.title\}/); assert.match(e, /chevron-right/); assert.match(e, /onPress=\{\(\) => onOpen\(n\)\}/);
+    assert.equal((e.match(/<EssentialAlertCard /g) ?? []).length, 1, 'exactly one full card is rendered');
+  });
   test('loadHomeNotices: queries the essential list and get_public_notices("all"), applies the member areas, and a failure of either collapses just that part', async () => {
     const ok = load({ get_essential_alerts: [row({ id: U(1), level: undefined })], get_public_notices: [row({ id: U(1), level: 'essential', is_essential_active: true }), row({ id: U(2), level: 'community' })] });
     const c = await ok.api.loadHomeNotices(['voe']);
@@ -275,20 +303,29 @@ describe('Notices screen: filter and pagination state', () => {
     assert.equal(na.reduceFilter(f, { type: 'category', category: 'health' }).category, null);
     assert.equal(na.reduceFilter(s, { type: 'tab', tab: 'community' }).category, 'health');
   });
-  test('appendPage: appends, de-duplicates across pages, and hasMore follows a full page', () => {
+  test('appendPage appends and de-duplicates across pages; trimPage turns limit+1 into hasMore (an exact multiple of 20 ends cleanly)', () => {
     const a = Array.from({ length: 20 }, (_, i) => ({ id: `n${i}` }));
-    const p1 = na.appendPage([], a, 20);
+    const p1 = na.appendPage([], a, true);
     assert.deepEqual([p1.items.length, p1.hasMore], [20, true]);
-    const p2 = na.appendPage(p1.items, [{ id: 'n19' }, { id: 'n20' }, { id: 'n21' }], 20);
+    const p2 = na.appendPage(p1.items, [{ id: 'n19' }, { id: 'n20' }, { id: 'n21' }], false);
     assert.deepEqual([p2.items.length, p2.hasMore], [22, false]);
-    assert.deepEqual(na.appendPage([], [], 20), { items: [], hasMore: false });
+    assert.deepEqual(na.appendPage([], [], false), { items: [], hasMore: false });
+    const t = (n: number) => na.trimPage(Array.from({ length: n }, (_, i) => i), 20);
+    assert.deepEqual([t(20).rows.length, t(20).hasMore], [20, false], 'exactly 20 rows: no empty Show more');
+    assert.deepEqual([t(21).rows.length, t(21).hasMore], [20, true]);
+    assert.deepEqual([t(0).rows.length, t(0).hasMore, t(7).hasMore], [0, false, false]);
   });
   test('loadNoticePage sends the built query and maps the result; an error is thrown for the error state', async () => {
     const t = load({ get_public_notices: [row()], get_funeral_notices: [{ id: U(1), full_name: 'A B' }] });
     const n = await t.api.loadNoticePage({ ...na.INITIAL_FILTER, tab: 'official' }, [], 20);
-    assert.deepEqual([t.calls[0].fn, t.calls[0].args.p_level, t.calls[0].args.p_offset, n.notices.length, n.funeral.length], ['get_public_notices', 'official', 20, 1, 0]);
+    assert.deepEqual([t.calls[0].fn, t.calls[0].args.p_level, t.calls[0].args.p_offset, t.calls[0].args.p_limit, n.notices.length, n.funeral.length, n.hasMore], ['get_public_notices', 'official', 20, 21, 1, 0, false]);
+    const full = load({ get_public_notices: Array.from({ length: 21 }, (_, i) => row({ id: U(500 + i) })) });
+    const pg = await full.api.loadNoticePage(na.INITIAL_FILTER, [], 0);
+    assert.deepEqual([pg.notices.length, pg.hasMore], [20, true]);
+    const exact = load({ get_public_notices: Array.from({ length: 20 }, (_, i) => row({ id: U(500 + i) })) });
+    assert.equal((await exact.api.loadNoticePage(na.INITIAL_FILTER, [], 0)).hasMore, false);
     const f = await t.api.loadNoticePage({ ...na.INITIAL_FILTER, tab: 'funeral' }, [], 0);
-    assert.deepEqual([t.calls[1].fn, f.notices.length, f.funeral.length], ['get_funeral_notices', 0, 1]);
+    assert.deepEqual([t.calls[1].fn, f.notices.length, f.funeral.length, t.calls[1].args.p_limit], ['get_funeral_notices', 0, 1, 21]);
     await assert.rejects(load({ get_public_notices: new Error('boom') }).api.loadNoticePage(na.INITIAL_FILTER, [], 0));
   });
   test('categories fall back to the nine canonical ones when the table cannot be read; areas come from active physical areas', async () => {
@@ -297,6 +334,25 @@ describe('Notices screen: filter and pagination state', () => {
     const ok = load({ 'table:notice_categories': [{ id: 'health', label: 'Health' }], 'table:areas': [{ id: 'voe', name_display: 'Voe', type: 'settlement', parent_id: 'delting' }] });
     assert.deepEqual(await ok.api.loadCategories(), [{ id: 'health', label: 'Health' }]);
     assert.deepEqual(await ok.api.loadAreas(), [{ id: 'voe', name: 'Voe', type: 'settlement', parentId: 'delting' }]);
+  });
+  test('Filters row: summary text while a filter is active; only the type tabs are sticky (source)', () => {
+    assert.equal(na.filterSummary(null, null), ''); assert.equal(na.filterSummary('Voe', null), 'Voe'); assert.equal(na.filterSummary('Voe', 'Health'), 'Voe, Health'); assert.equal(na.filterSummary(null, 'Health'), 'Health');
+    const s = readRepo('app/notices.tsx');
+    assert.match(s, /stickyHeaderIndices=\{\[0\]\}/);
+    const sticky = s.slice(s.indexOf('<View style={styles.filters}>'), s.indexOf('styles.filterBox'));
+    assert.match(sticky, /NOTICE_TABS\.map/); assert.doesNotMatch(sticky, /Choose area|Any category|categoryOptions/, 'area and category are not in the sticky block');
+    assert.match(s, /accessibilityState=\{\{ expanded: filtersOpen \}\}/); assert.match(s, /minHeight: 48/); assert.match(s, /filterSummary\(/);
+    assert.ok(s.indexOf('Choose area') > s.indexOf('filtersOpen ? ('), 'area chips only inside the collapsible');
+  });
+  test('deep link: get_public_notice(p_id) by id; not public -> null; no paging scan remains', async () => {
+    const t = load({ get_public_notice: [row({ id: U(77), level: 1, is_essential_active: true })] });
+    const n = await t.api.loadPublicNotice(U(77));
+    assert.deepEqual([t.calls[0].fn, t.calls[0].args, n.id, n.isEssential], ['get_public_notice', { p_id: U(77) }, U(77), true]);
+    assert.equal(await load({ get_public_notice: [] }).api.loadPublicNotice(U(1)), null);
+    await assert.rejects(load({ get_public_notice: new Error('down') }).api.loadPublicNotice(U(1)));
+    const s = readRepo('app/notices.tsx');
+    assert.match(s, /loadPublicNotice\(openId\)/); assert.doesNotMatch(s, /FIND_LINKED_PAGES|extraPages/);
+    assert.match(s, /no longer current/);
   });
   test('(source) the screen uses get_public_notices through the API, keeps the back handler, admin broadcast and no What\'s On fallback', () => {
     const s = readRepo('app/notices.tsx');
@@ -405,6 +461,36 @@ describe('Deaths & funeral', () => {
     assert.deepEqual(t.calls[1].args, { p_id: U(1), p_kind: 'takedown', p_message: 'The family has asked.', p_contact: '07700 900123' });
     await assert.rejects(t.api.requestFuneralChange(U(1), 'correction', '  ', ''), /corrected/);
     assert.equal(t.calls.length, 2, 'nothing was sent for the empty message');
+  });
+  test('edit: the form is pre-filled from my_funeral_submission; the update payload can clear fields and never sends submitter or area data', async () => {
+    const row = { id: U(1), status: 'needs_info', full_name: 'A B', preferred_name: null, photo_url: null, born_on: '1940-02-01', died_on: '2026-10-03', announcement: 'Peacefully.', service_public: true,
+      service_kind: 'burial', service_venue: 'Voe Kirkyard', service_at: new Date(2026, 9, 9, 13, 5).toISOString(), service_notes: null, family_requests: null, donation_info: null, donation_url: null,
+      area_id: 'voe', announce_in_notifications: false, announce_name_in_preview: true, submitter_name: 'C D', submitter_relationship: 'son', submitter_phone: '0159', submitter_email: null, review_message: 'Please confirm the date.' };
+    const f = fn.formFromSubmissionRow(row);
+    assert.deepEqual([f.bornOn, f.diedOn, f.publishArrangements, f.serviceKind, f.serviceDate, f.serviceTime, f.areaId, f.submitterPhone, f.familyAuthorised], ['01/02/1940', '03/10/2026', true, 'burial', '09/10/2026', '13:05', 'voe', '0159', true]);
+    assert.equal(f.announceNameInPreview, false, 'name-in-preview cannot be on without the notification choice');
+    assert.deepEqual(fn.validateSubmission(f, new Date(2026, 9, 31)), []);
+    const t = load({ my_funeral_submission: row, update_my_funeral_submission: null });
+    const got = await t.api.loadMyFuneralSubmission(U(1));
+    assert.deepEqual([got.status, got.staffMessage, got.form.fullName], ['needs_info', 'Please confirm the date.', 'A B']);
+    const edited = { ...f, announcement: '', serviceVenue: 'Voe Kirk', donationInfo: 'Hospice' };
+    await t.api.updateFuneralSubmission(U(1), edited);
+    const sent = t.calls.find((c: Call) => c.fn === 'update_my_funeral_submission')!;
+    assert.equal(sent.args.p_id, U(1));
+    assert.deepEqual([sent.args.p.announcement, sent.args.p.service_venue, sent.args.p.donation_info, sent.args.p.service_public, sent.args.p.preferred_name], ['', 'Voe Kirk', 'Hospice', true, '']);
+    for (const k of ['submitter_name', 'submitter_phone', 'submitter_email', 'area_id', 'family_authorised', 'submitter_role']) assert.ok(!(k in sent.args.p), k);
+    const off = fn.buildUpdatePayload({ ...f, publishArrangements: false });
+    assert.equal(off.service_public, false); for (const k of ['service_kind', 'service_venue', 'service_at', 'service_notes']) assert.ok(!(k in off), k);
+    assert.equal(await load({ my_funeral_submission: null }).api.loadMyFuneralSubmission(U(1)), null);
+    await assert.rejects(load({ update_my_funeral_submission: new Error('This notice can no longer be edited') }).api.updateFuneralSubmission(U(1), f), /no longer be edited/);
+  });
+  test('edit is offered only while submitted or needs_info; the staff message shows for rejected submissions too', () => {
+    const r = (status: string, m: any = null) => fn.mapSubmissionRow({ id: U(1), status, full_name: 'A', review_message: m });
+    assert.deepEqual(['submitted', 'needs_info', 'in_review', 'approved', 'rejected', 'withdrawn'].map((s) => r(s).canEdit), [true, true, false, false, false, false]);
+    assert.equal(r('rejected', 'We could not verify this notice.').staffMessage, 'We could not verify this notice.');
+    assert.match(readRepo('app/my-funeral-notices.tsx'), /r\.canEdit/); assert.match(readRepo('app/my-funeral-notices.tsx'), /params: \{ edit: r\.id \}/);
+    const s = readRepo('app/funeral-notice-submit.tsx');
+    assert.match(s, /updateFuneralSubmission\(editId, f\)/); assert.match(s, /Message from our team/); assert.match(s, /\{!editId \? \(/);
   });
   test('(source) the submission screen: sign-in required, plain explanation, arrangements behind the switch, consent switches default from EMPTY_SUBMISSION', () => {
     const s = readRepo('app/funeral-notice-submit.tsx');
