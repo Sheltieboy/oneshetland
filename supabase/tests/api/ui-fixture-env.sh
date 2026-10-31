@@ -52,10 +52,11 @@ create table jobs (id uuid primary key default gen_random_uuid(), title text, lo
 create table runs (id uuid primary key default gen_random_uuid(), origin_region_id uuid references regions(id), destination_region_id uuid references regions(id));
 create table delivery_requests (id uuid primary key default gen_random_uuid(), destination_region_id uuid references regions(id), destination_address text);
 SQL
-for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection; do dpsql postgres < supabase/migrations/$m.sql; done
+for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection 20261129000000_notices_alerts_publishers 20261129010000_notices_alerts_core 20261129020000_notices_alerts_audience 20261129030000_funeral_notices 20261129040000_notice_imports; do dpsql postgres < supabase/migrations/$m.sql; done
 dpsql postgres < supabase/tests/api/ui-site-schema.sql
 dpsql postgres < supabase/tests/api/ui-fixtures.sql
 dpsql postgres < supabase/tests/api/ui-site-fixtures.sql
+dpsql postgres < supabase/tests/api/ui-alerts-fixtures.sql
 docker run -d --name $REST --network $NET -p 127.0.0.1:54782:3000 -e PGRST_DB_URI=postgres://authenticator:proofpw@$PG:5432/postgres -e PGRST_DB_SCHEMAS=public \
   -e PGRST_DB_ANON_ROLE=anon -e PGRST_JWT_SECRET="$SECRET" -e PGRST_DB_POOL=4 public.ecr.aws/supabase/postgrest:v14.5 >/dev/null
 sleep 3

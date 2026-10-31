@@ -16,7 +16,7 @@ const FORWARD = new Set(['notices', 'hubs', 'local_businesses', 'hub_campaigns',
 const ASSET_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-assets');
 const ASSET_TYPES = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 const DEMO = process.env.DEMO_LAN === '1', ANON_JWT = process.env.PROXY_ANON_JWT ?? '';
-const READONLY_RPCS = new Set((process.env.READONLY_RPCS ?? 'notice_publisher_display,spik_daily').split(','));
+const READONLY_RPCS = new Set((process.env.READONLY_RPCS ?? 'notice_publisher_display,spik_daily,get_public_notices,get_essential_alerts,get_funeral_notices,get_funeral_notice').split(','));
 if (DEMO && !ANON_JWT) { console.error('DEMO_LAN=1 needs PROXY_ANON_JWT'); process.exit(1); }
 let rpcCount = 0;
 http.createServer(async (req, res) => {
