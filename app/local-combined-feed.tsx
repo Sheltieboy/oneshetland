@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, FlatList, TouchableOpacity,
-  Image, ActivityIndicator, RefreshControl, useWindowDimensions,
+  Image, ActivityIndicator, RefreshControl, useWindowDimensions, Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -116,6 +116,9 @@ export default function LocalCombinedFeed() {
           photo={SECTION_HEROES.local}
           title="Local"
           eyebrow={areaLabel ?? 'All Shetland'}
+          // The Back pill floats at the top-left (38pt tall from inset + 12). With the default 138pt hero the eyebrow line
+          // started ~7pt inside it; 152pt moves the bottom-anchored title block clear of the pill.
+          height={152}
         />
         {router.canGoBack() && (
           <View style={{ position: 'absolute', top: insets.top + 12, left: spacing.md }}>
@@ -314,7 +317,12 @@ export default function LocalCombinedFeed() {
                 {notices.map(n => (
                   <NoticeCard key={n.id} notice={n}
                     style={isTablet ? { flex: 1, minWidth: 0 } : undefined}
-                    onPress={() => n.hub && router.push({ pathname: '/hubs/[id]', params: { id: n.hub!.id } })} />
+                    onPress={() => {
+                      // Only an existing hub or business page is a destination; a person, OneShetland or an official source has none.
+                      const d = n.attribution?.destination;
+                      if (d?.type === 'hub') router.push({ pathname: '/hubs/[id]', params: { id: d.id } });
+                      else if (d?.type === 'business') router.push({ pathname: '/local-business-detail', params: { id: d.id } });
+                    }} />
                 ))}
               </View>
             </>
@@ -646,22 +654,33 @@ function JobCard({ job, onPress }: { job: LocalFeedJob; onPress: () => void }) {
 function NoticeCard({ notice, style, onPress }: {
   notice: HubNotice; style?: object; onPress: () => void;
 }) {
-  const hub = notice.hub ?? null;
+  // Who posted it comes from the database's publisher fields (lib/notice-publisher.ts), not from whichever join returned a row.
+  const a = notice.attribution;
+  const hasDestination = !!a?.destination;
   return (
-    <TouchableOpacity style={[styles.noticeCard, style]} onPress={onPress} activeOpacity={0.85} disabled={!hub}>
-      {hub && (
+    <TouchableOpacity style={[styles.noticeCard, style]} onPress={onPress} activeOpacity={hasDestination ? 0.85 : 1} disabled={!hasDestination}
+      accessibilityRole={hasDestination ? 'button' : undefined}>
+      {a && (
         <View style={styles.noticeHub}>
-          <View style={styles.hubLogo}>
-            {hub.logo_url
-              ? <Image source={{ uri: hub.logo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-              : <Text style={styles.hubInitial}>{hub.name.slice(0, 1)}</Text>}
+          <View style={[styles.hubLogo, a.brand_color ? { backgroundColor: a.brand_color } : null]}>
+            {a.logo_url
+              ? <Image source={{ uri: a.logo_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              : a.mark === 'hub' || a.mark === 'business'
+                ? <Text style={styles.hubInitial}>{a.label.slice(0, 1)}</Text>
+                : <FontAwesome5 name={a.mark === 'person' ? 'user' : a.mark === 'official-source' ? 'landmark' : 'bullhorn'} size={10} color={colors.textMuted} solid />}
           </View>
-          <Text style={styles.hubName} numberOfLines={1}>{hub.name}</Text>
+          <Text style={styles.hubName} numberOfLines={hasDestination ? 2 : undefined}>{a.byline}</Text>
           <View style={[styles.noticeDot, { backgroundColor: NOTICES_COLOR }]} />
         </View>
       )}
-      <Text style={styles.noticeTitle} numberOfLines={2}>{notice.title}</Text>
-      {notice.body && <Text style={styles.noticeBody} numberOfLines={3}>{notice.body}</Text>}
+      {/* A card with nowhere to go shows the whole notice; one that opens its hub / business keeps the short preview. */}
+      <Text style={styles.noticeTitle} numberOfLines={hasDestination ? 2 : undefined}>{notice.title}</Text>
+      {notice.body && <Text style={styles.noticeBody} numberOfLines={hasDestination ? 3 : undefined}>{notice.body}</Text>}
+      {a?.source_url ? (
+        <TouchableOpacity onPress={() => { Linking.openURL(a.source_url as string).catch(() => {}); }} hitSlop={8} accessibilityRole="link">
+          <Text style={styles.noticeSourceLink}>View at source</Text>
+        </TouchableOpacity>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -862,6 +881,7 @@ const styles = StyleSheet.create({
   hubInitial:  { fontSize: 11, fontWeight: '800', color: colors.textMuted },
   hubName:     { fontSize: 11, fontWeight: '700', color: colors.textMuted, flex: 1 },
   noticeDot:   { width: 7, height: 7, borderRadius: 4 },
+  noticeSourceLink: { fontSize: 11, fontWeight: '700', color: NOTICES_COLOR, marginTop: 6, textDecorationLine: 'underline' },
   noticeTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, lineHeight: 19 },
   noticeBody:  { fontSize: 12, color: colors.textMuted, marginTop: 5, lineHeight: 17 },
 

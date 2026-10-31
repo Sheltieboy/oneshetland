@@ -492,10 +492,7 @@ export default function MeTab() {
 
           </SectionCard>
 
-          {/* ── Your OneShetland ────────────────────────────────────────────────
-               Was a one-row "Invite & earn" card. Referrals still lives here —
-               it has just stopped being a section of its own, alongside the two
-               other things you hold rather than buy. */}
+          {/* ── Your OneShetland — the things you hold rather than buy ───────── */}
           <SectionCard title="Your OneShetland" accentColor={SECTIONS.community.color}>
             <MenuRow
               icon="users"
@@ -517,13 +514,6 @@ export default function MeTab() {
               label="Game stats"
               sublabel="Your XP, streaks and leaderboard places"
               onPress={() => { Haptics.selectionAsync(); router.push('/games/stats'); }}
-            />
-            <MenuRow
-              icon="user-plus"
-              iconColor={SECTIONS.local.color}
-              label="Invite friends"
-              sublabel="Give £5, get £5 when a friend joins and spends"
-              onPress={() => { Haptics.selectionAsync(); router.push('/referrals'); }}
               last
             />
           </SectionCard>

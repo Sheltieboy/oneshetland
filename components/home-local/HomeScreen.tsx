@@ -13,7 +13,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { FontAwesome5 } from '@expo/vector-icons';
 import DisplayText from '@/components/DisplayText';
-import AlertPill from '@/components/AlertPill';
 import { NotificationBell } from '@/components/NotificationBell';
 import { useAuth } from '@/context/AuthContext';
 import { useAppLayout } from '@/hooks/useAppLayout';
@@ -24,6 +23,11 @@ import { fetchWalletBalance, formatPence } from '@/lib/local-api';
 import { fetchHomeData, type HomeData } from '@/lib/home-data';
 import { fetchMyUpcomingEventTickets } from '@/lib/events-api';
 import { fetchNearbyOffers, type NearbyOffer } from '@/lib/concierge-api';
+import { loadHomeNotices } from '@/lib/notices-alerts-api';
+import { fetchMyNoticeAreas } from '@/lib/notice-prefs';
+import { composeHome, partnerStripText, type HomeComposition, type NoticeModel } from '@/lib/notices-alerts';
+import { EssentialAlerts } from '@/components/notices/EssentialAlerts';
+import { HomeNoticeCard } from '@/components/notices/NoticeCards';
 import { loadSavedBoats, type VesselStub } from '@/lib/boats-prefs';
 import { TestBadge } from '@/components/TestBadge';
 import { CropImage, Scrim, fade, MerchCard, Rail, SectionHead, GatewayTile, Chip, SIDE } from './ui';
@@ -82,7 +86,15 @@ export default function HomeScreen() {
     void saveAudience(profile?.id, next);
   }, [audience, profile?.id]);
 
-  // ── Partner alerts: the floating pill, live (unchanged behaviour). ──
+  // ── Notices & alerts: the Essential slot (top) and the equal-card grid, from get_essential_alerts / get_public_notices. ──
+  // The member's areas narrow both when they have chosen some; otherwise everything is shown (lib/notices-alerts.ts homeAreaArgs).
+  const [noticeHome, setNoticeHome] = useState<HomeComposition>(() => composeHome([], []));
+  const loadNotices = useCallback(async () => {
+    const mine = profile?.id ? await fetchMyNoticeAreas().catch(() => null) : null;
+    setNoticeHome(await loadHomeNotices(mine));
+  }, [profile?.id]);
+
+  // ── Partner alerts (a business's own update): a calm strip lower on the page. It never takes the top: only an Essential Alert does. ──
   const [alerts, setAlerts] = useState<PartnerAlert[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -107,6 +119,7 @@ export default function HomeScreen() {
     const parish = (profile as { parish?: string | null } | null)?.parish ?? null;
     const tasks: Promise<unknown>[] = [
       loadHomeLocalData(parish, profile?.id).then(setData),
+      loadNotices(),
       loadSavedBoats().then(setSavedBoats).catch(() => {}),
     ];
     if (profile?.id) {
@@ -128,7 +141,7 @@ export default function HomeScreen() {
       })());
     }
     await Promise.all(tasks);
-  }, [profile]);
+  }, [profile, loadNotices]);
   useFocusEffect(useCallback(() => { void loadAll(); }, [loadAll]));
   const onRefresh = useCallback(async () => { setRefreshing(true); await loadAll(); setRefreshing(false); }, [loadAll]);
 
@@ -152,7 +165,15 @@ export default function HomeScreen() {
   const tlabel = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const openEvent = (id: string) => router.push({ pathname: '/events/[id]', params: { id } } as never);
   const openBusiness = (id: string) => router.push({ pathname: '/local-business-detail', params: { id } } as never);
-  const urgentNotice = (data?.notices ?? []).find((n) => n.severity === 'urgent') ?? null;
+  const openNotice = (n: NoticeModel) => {
+    // A card goes to its own destination (campaign > event > hub > business). One without a destination opens the Notices screen
+    // at that notice, where it is shown in full.
+    if (n.destination) router.push(n.destination.route as never);
+    else router.push({ pathname: '/notices', params: { open: n.id } } as never);
+  };
+  const openEssential = (n: NoticeModel) => router.push({ pathname: '/notices', params: { tab: 'essential', open: n.id } } as never);
+  const noticeCols = width >= 600 ? 2 : 1;
+  const noticeW = (width - SIDE * 2 - 12 * (noticeCols - 1)) / noticeCols;
 
   const initials = profile?.full_name ? profile.full_name.trim().split(/\s+/).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase() : '?';
   const walletLabel = walletPence == null ? null : walletPence % 100 === 0 ? `£${Math.round(walletPence / 100)}` : formatPence(walletPence);
@@ -160,7 +181,6 @@ export default function HomeScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#F6F1E8' }}>
       <Stack.Screen options={{ headerShown: false }} />
-      {visibleAlert && <AlertPill alert={visibleAlert} onDismiss={(id) => setDismissed((prev) => new Set([...prev, id]))} />}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#12B3D6" />}>
         {/* 1–4 · compact top: identity · wallet · alerts · profile / search + audience / Shetland now ───────── */}
         <View style={{ backgroundColor: '#032F4C', paddingHorizontal: SIDE, paddingTop: insets.top + 6, paddingBottom: 10 }}>
@@ -191,13 +211,11 @@ export default function HomeScreen() {
             <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 12, fontWeight: '700', flex: 1 }} numberOfLines={1}>{data?.weather ?? 'Lerwick'}</Text>
             {data?.ships && <View style={s.nowChip}><Text style={s.nowChipText}>⚓ {data.ships.count} {data.ships.count === 1 ? 'ship' : 'ships'} in port</Text></View>}
           </View>
-          {urgentNotice && (
-            <Pressable onPress={() => router.push('/notices')} style={s.urgentChip}>
-              <FontAwesome5 name="exclamation-triangle" size={10} color="#fff" solid />
-              <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '800', flex: 1 }} numberOfLines={1}>{urgentNotice.title}</Text>
-            </Pressable>
-          )}
         </View>
+
+        {/* 4a · ESSENTIAL ALERT — the one reserved slot at the top of Home (get_essential_alerts). The only red/urgent treatment on this screen;
+            it renders nothing, and leaves no gap, when there is no active alert. */}
+        <EssentialAlerts alerts={noticeHome.essential} onOpen={openEssential} onSeeAll={() => router.push({ pathname: '/notices', params: { tab: 'essential' } } as never)} sideInset={SIDE} />
 
         {/* 4b · PLAN MY DAY — visitors only. Someone who lives here doesn't need an itinerary, so in "Live here" mode this does not render. */}
         {audience === 'visiting' && <PlanDayCard onPress={() => router.push('/plan-day')} />}
@@ -349,23 +367,42 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* 10 · COMMUNITY / NOTICES — real only ──────────────────────────────────── */}
+        {/* 9b · PARTNER UPDATE — a business's own alert (partner_alerts), shown calmly and low on the page; dismissible for the session. */}
+        {visibleAlert && (() => {
+          const t = partnerStripText(visibleAlert);
+          return (
+            <View style={s.partnerStrip} accessibilityRole="summary">
+              <FontAwesome5 name="store" size={12} color="#475569" solid />
+              <View style={{ flex: 1 }}>
+                <Text style={s.partnerWho} numberOfLines={1}>{t.who}</Text>
+                {!!t.text && <Text style={s.partnerText} numberOfLines={2}>{t.text}</Text>}
+              </View>
+              <Pressable onPress={() => setDismissed((prev) => new Set([...prev, visibleAlert.id]))} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss this update" style={s.partnerClose}>
+                <FontAwesome5 name="times" size={13} color="#64748B" />
+              </Pressable>
+            </View>
+          );
+        })()}
+
+        {/* 10 · COMMUNITY / NOTICES — equal-sized cards (at most six, newest first) from get_public_notices('all'), never repeating an active
+            essential alert (those live in the slot at the top). ───────────────────────────── */}
         <View style={{ paddingTop: 26 }}>
           <SectionHead eyebrow="Community" title="From the community" color="#6B47BF" action="Hubs" onAction={() => router.push('/hubs')} />
-          <View style={{ paddingHorizontal: SIDE, gap: 12 }}>
-            {(data?.notices ?? []).map((n) => (
-              <Pressable key={n.id} onPress={() => router.push('/notices')} style={{ borderRadius: 22, padding: 18, backgroundColor: '#DDD6FE' }}>
-                <Text style={{ color: '#6D28D9', fontSize: 10.5, fontWeight: '900', letterSpacing: 1, textTransform: 'uppercase' }}>{n.publisher}</Text>
-                <DisplayText weight="bold" style={{ color: '#2E1065', fontSize: 23, lineHeight: 26, marginTop: 4 }}>{n.title}</DisplayText>
-                <Text numberOfLines={3} style={{ color: '#4C1D95', fontSize: 13.5, lineHeight: 19, marginTop: 6 }}>{n.body}</Text>
-              </Pressable>
-            ))}
-            {(data?.notices ?? []).length === 0 && (
+          <View style={{ paddingHorizontal: SIDE, flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            {noticeHome.cards.map((n) => <HomeNoticeCard key={n.id} n={n} width={noticeW} onPress={() => openNotice(n)} />)}
+          </View>
+          {noticeHome.cards.length > 0 ? (
+            <Pressable onPress={() => router.push('/notices')} accessibilityRole="button" accessibilityLabel="View all notices" style={s.allNotices}>
+              <Text style={s.allNoticesText}>View all notices</Text>
+              <FontAwesome5 name="arrow-right" size={11} color="#4C1D95" solid />
+            </Pressable>
+          ) : (
+            <View style={{ paddingHorizontal: SIDE }}>
               <Pressable onPress={() => router.push('/hubs')} style={{ borderRadius: 22, padding: 18, backgroundColor: '#EDE9FE' }}>
                 <DisplayText weight="bold" style={{ color: '#2E1065', fontSize: 20 }}>Hubs bring clubs, groups and good causes together.</DisplayText>
               </Pressable>
-            )}
-          </View>
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -412,7 +449,12 @@ const s = StyleSheet.create({
   nowStrip: { marginTop: 8, flexDirection: 'row', alignItems: 'center', height: 26, gap: 8 },
   nowChip: { backgroundColor: 'rgba(125,211,252,0.25)', borderRadius: 99, paddingHorizontal: 9, paddingVertical: 3 },
   nowChipText: { color: '#E0F2FE', fontSize: 11, fontWeight: '800' },
-  urgentChip: { marginTop: 6, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#DC2626', borderRadius: 99, paddingHorizontal: 11, paddingVertical: 6, maxWidth: '100%' },
+  partnerStrip: { marginHorizontal: SIDE, marginTop: 20, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F1F5F9', borderRadius: 14, paddingLeft: 14, paddingRight: 4, paddingVertical: 8 },
+  partnerWho: { color: '#334155', fontSize: 12, fontWeight: '800' },
+  partnerText: { color: '#475569', fontSize: 12.5, lineHeight: 17, marginTop: 1 },
+  partnerClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  allNotices: { alignSelf: 'center', minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, borderRadius: 99, borderWidth: 1, borderColor: '#C4B5FD', paddingHorizontal: 20 },
+  allNoticesText: { color: '#4C1D95', fontSize: 13.5, fontWeight: '800' },
   fy: { width: 176, height: 150, borderRadius: 20, overflow: 'hidden', padding: 14, justifyContent: 'space-between' },
   fyLine: { color: 'rgba(255,255,255,0.88)', fontSize: 11.5, fontWeight: '600', marginTop: 3 },
   logoTile: { width: 58, height: 58, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
