@@ -26,3 +26,8 @@ The host name in `eas.json` (`<LocalHostName>.local`) must match the Mac's.
 
 ## Android
 Android builds on EAS now fail at config time when no Maps key is present (`app.config.js`). The preview package name differs from production, so a Google key restricted to `com.oneshetland.app` will show blank map tiles in a preview Android build (no crash).
+
+## Website demonstration data
+`ui-fixture-env.sh start` now also loads `ui-site-schema.sql` + `ui-site-fixtures.sql` (fictional events, businesses in the real category taxonomy, offers, products, jobs, shifts, alert, hubs, fundraisers, home content) and `ui-proxy.mjs` serves `demo-assets/` images. Run the website with `NEXT_PUBLIC_SUPABASE_URL=<proxy origin>`; no `.env` file is needed or read. Fixture gaps are visible in `/tmp/ui-proxy.log` (every 4xx/5xx the backend returns is logged).
+Not populated: boats, memories/stories, word list beyond one entry, passes, bookable services, ticketing (no event has tickets, by design).
+Production's anonymous role cannot read `profiles`; this fixture's can. The demo therefore proves less about profile privacy than the real backend does.

@@ -13,7 +13,9 @@ docker network create $NET >/dev/null 2>&1 || true
 docker rm -f $PG $REST >/dev/null 2>&1 || true
 docker run -d --name $PG --network $NET -e POSTGRES_PASSWORD=proofpw -p 127.0.0.1:54781:5432 public.ecr.aws/supabase/postgres:17.6.1.121 >/dev/null
 for i in $(seq 1 60); do docker exec $PG pg_isready -U postgres -h localhost >/dev/null 2>&1 && break; sleep 2; done
-dpsql() { docker exec -i $PG psql -U "$1" -h localhost -d postgres -X -q -v ON_ERROR_STOP=1; }
+# :base in the SQL fixtures = where ui-proxy.mjs serves /demo-assets (the proxy's own origin: loopback unless PROXY_HOST / ASSET_BASE say otherwise)
+ASSET_BASE="${ASSET_BASE:-http://${PROXY_HOST:-127.0.0.1}:54790}"
+dpsql() { docker exec -i $PG psql -U "$1" -h localhost -d postgres -X -q -v ON_ERROR_STOP=1 -v base="$ASSET_BASE"; }
 dpsql supabase_admin <<'SQL'
 alter role authenticator with password 'proofpw';
 create or replace function auth.uid() returns uuid language sql stable as $f$
@@ -51,7 +53,9 @@ create table runs (id uuid primary key default gen_random_uuid(), origin_region_
 create table delivery_requests (id uuid primary key default gen_random_uuid(), destination_region_id uuid references regions(id), destination_address text);
 SQL
 for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection; do dpsql postgres < supabase/migrations/$m.sql; done
+dpsql postgres < supabase/tests/api/ui-site-schema.sql
 dpsql postgres < supabase/tests/api/ui-fixtures.sql
+dpsql postgres < supabase/tests/api/ui-site-fixtures.sql
 docker run -d --name $REST --network $NET -p 127.0.0.1:54782:3000 -e PGRST_DB_URI=postgres://authenticator:proofpw@$PG:5432/postgres -e PGRST_DB_SCHEMAS=public \
   -e PGRST_DB_ANON_ROLE=anon -e PGRST_JWT_SECRET="$SECRET" -e PGRST_DB_POOL=4 public.ecr.aws/supabase/postgrest:v14.5 >/dev/null
 sleep 3

@@ -6,10 +6,17 @@
 //   PROXY_ANON_JWT, so the app needs no real key and no client-minted token can reach a more privileged role. The /__pin helper is disabled.
 import http from 'node:http';
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 const PORT = Number(process.env.PROXY_PORT ?? 54790), REST = Number(process.env.REST_PORT ?? 54782), DELAY = Number(process.env.DELAY_RPC_MS ?? 0);
-const FORWARD = new Set(['notices', 'hubs', 'local_businesses', 'hub_campaigns', 'events', 'notice_areas', 'notice_categories', 'hub_members', 'profiles', 'local_businesses_public']);
+const FORWARD = new Set(['notices', 'hubs', 'local_businesses', 'hub_campaigns', 'events', 'notice_areas', 'notice_categories', 'hub_members', 'profiles', 'local_businesses_public',
+  // the website demonstration (ui-site-schema.sql / ui-site-fixtures.sql): every table below exists in the fixture database and holds fictional rows only
+  'local_offers', 'products', 'jobs', 'shifts', 'partner_alerts', 'home_content', 'spik_dictionary', 'event_ticket_types', 'event_updates', 'shift_employer_profiles', ...(process.env.FORWARD_EXTRA ?? '').split(',').filter(Boolean)]);
+const ASSET_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-assets');
+const ASSET_TYPES = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 const DEMO = process.env.DEMO_LAN === '1', ANON_JWT = process.env.PROXY_ANON_JWT ?? '';
-const READONLY_RPCS = new Set((process.env.READONLY_RPCS ?? 'notice_publisher_display').split(','));
+const READONLY_RPCS = new Set((process.env.READONLY_RPCS ?? 'notice_publisher_display,spik_daily').split(','));
 if (DEMO && !ANON_JWT) { console.error('DEMO_LAN=1 needs PROXY_ANON_JWT'); process.exit(1); }
 let rpcCount = 0;
 http.createServer(async (req, res) => {
@@ -19,6 +26,11 @@ http.createServer(async (req, res) => {
     const rpcName = url.pathname.match(/^\/rest\/v1\/rpc\/([a-z_]+)$/)?.[1];
     const ok = ['GET', 'HEAD'].includes(req.method ?? '') || (req.method === 'POST' && rpcName && READONLY_RPCS.has(rpcName));
     if (!ok) { res.writeHead(403, { ...cors, 'content-type': 'application/json' }); return res.end('{"message":"read-only demonstration backend"}'); }
+  }
+  const asset = url.pathname.match(/^\/demo-assets\/([a-z0-9_-]+\.(?:jpg|png|webp))$/);
+  if (asset && req.method === 'GET') {
+    try { const body = await readFile(path.join(ASSET_DIR, asset[1])); res.writeHead(200, { ...cors, 'content-type': ASSET_TYPES[path.extname(asset[1])], 'cache-control': 'public, max-age=300' }); return res.end(body); }
+    catch { res.writeHead(404, cors); return res.end(); }
   }
   if (url.pathname === '/__stats') { res.writeHead(200, { ...cors, 'content-type': 'application/json' }); return res.end(JSON.stringify({ rpcCount })); }
   // fixture-only helper: /__pin/<notice id> makes that notice the pinned (so first) one, to look at each publisher kind in turn
@@ -34,6 +46,6 @@ http.createServer(async (req, res) => {
   if (table !== 'rpc' && !FORWARD.has(table)) { res.writeHead(200, { ...cors, 'content-type': 'application/json', 'content-range': '*/0' }); return res.end(req.method === 'HEAD' ? undefined : '[]'); }
   if (table === 'rpc') { rpcCount++; if (DELAY) await new Promise((r) => setTimeout(r, DELAY)); }
   const up = http.request({ host: '127.0.0.1', port: REST, path: url.pathname.replace(/^\/rest\/v1/, '') + url.search, method: req.method, headers: { ...req.headers, host: `127.0.0.1:${REST}`, ...(DEMO ? { apikey: ANON_JWT, authorization: `Bearer ${ANON_JWT}` } : {}) } },
-    (r) => { res.writeHead(r.statusCode ?? 500, { ...r.headers, ...cors }); r.pipe(res); });
+    (r) => { if ((r.statusCode ?? 500) >= 400) console.log(`[${r.statusCode}] ${req.method} ${url.pathname}${url.search.slice(0, 160)}`); res.writeHead(r.statusCode ?? 500, { ...r.headers, ...cors }); r.pipe(res); });
   up.on('error', () => { res.writeHead(502, cors); res.end(); }); req.pipe(up);
 }).listen(PORT, process.env.PROXY_HOST ?? (DEMO ? '0.0.0.0' : '127.0.0.1'), () => console.log(`ui-proxy on ${PORT} -> PostgREST ${REST}${DEMO ? ' (DEMO: read-only, anon-only)' : ''}`));
