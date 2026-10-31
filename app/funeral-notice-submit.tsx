@@ -1,13 +1,16 @@
 /**
  * funeral-notice-submit.tsx — submit a Deaths & Funeral Notice for checking (submit_funeral_notice). Sign-in required.
  *
+ * With ?edit=<id> it edits a submission that is still waiting or needs more information (my_funeral_submission pre-fills it, the staff message
+ * is shown, update_my_funeral_submission saves and returns it to the review queue). Submitter and area details are not editable then.
+ *
  * Everything is optional except what the contract requires (the name, who you are, a private way to reach you, and your authority to
  * announce). Funeral arrangements are asked for, and sent, ONLY behind the explicit "publish the funeral arrangements" choice.
  * Notification choices default to OFF. Nothing is public until our team has checked it with the family.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, TextInput, Switch, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
 import { ScreenScaffold } from '@/components/ui/ScreenScaffold';
@@ -15,7 +18,7 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { FUNERAL } from '@/components/notices/FuneralTemplate';
 import { AreaPicker } from '@/components/notices/AreaPicker';
 import { EMPTY_SUBMISSION, SERVICE_KIND_LABEL, validateSubmission, type SubmissionForm } from '@/lib/funeral-notices';
-import { submitFuneralNotice, loadAreas, type AreaOption } from '@/lib/notices-alerts-api';
+import { submitFuneralNotice, updateFuneralSubmission, loadMyFuneralSubmission, loadAreas, type AreaOption } from '@/lib/notices-alerts-api';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/components/BrandedAlert';
 
@@ -34,6 +37,11 @@ export default function FuneralNoticeSubmitScreen() {
   const { screenWidth } = useAppLayout();
   const { profile } = useAuth();
   const { alert } = useAlert();
+  const params = useLocalSearchParams<{ edit?: string }>();
+  const editId = typeof params.edit === 'string' && params.edit ? params.edit : null;
+  const [staffMessage, setStaffMessage] = useState<string | null>(null);
+  const [loadingEdit, setLoadingEdit] = useState(!!editId);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [f, setF] = useState<SubmissionForm>(EMPTY_SUBMISSION);
   const [areas, setAreas] = useState<AreaOption[]>([]);
   const [picker, setPicker] = useState(false);
@@ -44,6 +52,16 @@ export default function FuneralNoticeSubmitScreen() {
   );
   const areaName = areas.find((a) => a.id === f.areaId)?.name ?? null;
 
+  useEffect(() => {
+    if (!editId || !profile) return;
+    let alive = true;
+    loadMyFuneralSubmission(editId)
+      .then((r) => { if (!alive) return; if (r && (r.status === 'submitted' || r.status === 'needs_info')) { setF(r.form); setStaffMessage(r.staffMessage); } else setLoadFailed(true); })
+      .catch(() => { if (alive) setLoadFailed(true); })
+      .finally(() => { if (alive) setLoadingEdit(false); });
+    return () => { alive = false; };
+  }, [editId, profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const openPicker = () => { if (areas.length === 0) loadAreas().then(setAreas).catch(() => {}); setPicker(true); };
 
   const submit = async () => {
@@ -51,10 +69,10 @@ export default function FuneralNoticeSubmitScreen() {
     if (problems.length) { alert({ title: 'Please check the form', message: problems.join('\n\n') }); return; }
     setBusy(true);
     try {
-      await submitFuneralNotice(f);
+      if (editId) await updateFuneralSubmission(editId, f); else await submitFuneralNotice(f);
       alert({
         title: 'Thank you',
-        message: 'Your notice has been received. It is checked with the family or funeral director before anything is published, and nothing appears until then. You can follow it under My submissions.',
+        message: editId ? 'Your changes have been saved and the notice has gone back to be checked. Nothing is published until it has been checked.' : 'Your notice has been received. It is checked with the family or funeral director before anything is published, and nothing appears until then. You can follow it under My submissions.',
         actions: [{ label: 'View my submissions', style: 'primary', onPress: () => router.replace('/my-funeral-notices' as any) }],
       });
     } catch (e) {
@@ -63,16 +81,30 @@ export default function FuneralNoticeSubmitScreen() {
   };
 
   return (
-    <ScreenScaffold header={<ScreenHeader title="Submit a funeral notice" accent={FUNERAL.burgundy} onBack={() => (router.canGoBack() ? router.back() : router.replace('/notices' as any))} />}>
+    <ScreenScaffold header={<ScreenHeader title={editId ? 'Edit your notice' : 'Submit a funeral notice'} accent={FUNERAL.burgundy} onBack={() => (router.canGoBack() ? router.back() : router.replace('/notices' as any))} />}>
       {!profile ? (
         <View style={styles.center}>
           <Text style={styles.big}>Sign in to submit a notice</Text>
           <Text style={styles.hint}>We ask you to sign in so that notices can be checked with a real person, and so you can follow or withdraw yours.</Text>
           <Pressable onPress={() => router.push('/(auth)/sign-in' as any)} accessibilityRole="button" style={[styles.btn, styles.btnPrimary]}><Text style={[styles.btnText, { color: '#fff' }]}>Sign in</Text></Pressable>
         </View>
+      ) : editId && loadingEdit ? (
+        <View style={styles.center}><ActivityIndicator /></View>
+      ) : editId && loadFailed ? (
+        <View style={styles.center}>
+          <Text style={styles.big}>This notice cannot be edited</Text>
+          <Text style={styles.hint}>It may already have been checked or withdrawn. If it is published, you can ask for a correction from My submissions.</Text>
+          <Pressable onPress={() => router.replace('/my-funeral-notices' as any)} accessibilityRole="button" style={styles.btn}><Text style={styles.btnText}>My submissions</Text></Pressable>
+        </View>
       ) : (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]} keyboardShouldPersistTaps="handled">
+            {editId && staffMessage ? (
+              <View style={[styles.notice, { borderLeftWidth: 4, borderLeftColor: FUNERAL.burgundy }]}>
+                <Text style={styles.noticeTitle}>Message from our team</Text>
+                <Text style={styles.noticeText}>{staffMessage}</Text>
+              </View>
+            ) : null}
             <View style={styles.notice}>
               <Text style={styles.noticeTitle}>Before you begin</Text>
               <Text style={styles.noticeText}>
@@ -86,10 +118,10 @@ export default function FuneralNoticeSubmitScreen() {
             <Field label="Known as (optional)">{text('preferredName', 'Known as')}</Field>
             <Field label="Date of birth (optional)" hint="DD/MM/YYYY">{text('bornOn', 'Date of birth', { keyboardType: 'numbers-and-punctuation', maxLength: 10 })}</Field>
             <Field label="Date of death (optional)" hint="DD/MM/YYYY">{text('diedOn', 'Date of death', { keyboardType: 'numbers-and-punctuation', maxLength: 10 })}</Field>
-            <Field label="Area (optional)">
+            {!editId ? <Field label="Area (optional)">
               <Pressable onPress={openPicker} accessibilityRole="button" style={[styles.input, { justifyContent: 'center' }]}><Text style={{ fontSize: fontSize.md, color: areaName ? colors.textPrimary : colors.textLight }}>{areaName ?? 'Choose an area'}</Text></Pressable>
               {f.areaId ? <Pressable onPress={() => set('areaId', null)} accessibilityRole="button" style={styles.textBtn}><Text style={styles.textBtnText}>Clear area</Text></Pressable> : null}
-            </Field>
+            </Field> : null}
             <Field label="Announcement (optional)" hint="A few words in the family's own voice. Please leave web links out.">
               {text('announcement', 'Announcement', { multiline: true, style: [styles.input, { minHeight: 110 }], maxLength: 1500 })}
             </Field>
@@ -127,11 +159,15 @@ export default function FuneralNoticeSubmitScreen() {
             <Field label="Donations (optional)" hint="A charity or cause, in words.">{text('donationInfo', 'Donation details', { multiline: true, style: [styles.input, { minHeight: 80 }] })}</Field>
             <Field label="Donation link (optional)" hint="A link starting https://">{text('donationUrl', 'Donation link', { autoCapitalize: 'none', keyboardType: 'url' })}</Field>
 
-            <Text style={styles.section}>About you (private)</Text>
-            <Field label="Your name (required)">{text('submitterName', 'Your name')}</Field>
-            <Field label="Your relationship (optional)" hint="For example, daughter, or funeral director.">{text('submitterRelationship', 'Your relationship')}</Field>
-            <Field label="Phone (a phone or an email is required)">{text('submitterPhone', 'Phone number', { keyboardType: 'phone-pad' })}</Field>
-            <Field label="Email">{text('submitterEmail', 'Email address', { autoCapitalize: 'none', keyboardType: 'email-address' })}</Field>
+            {!editId ? (
+              <>
+                <Text style={styles.section}>About you (private)</Text>
+                <Field label="Your name (required)">{text('submitterName', 'Your name')}</Field>
+                <Field label="Your relationship (optional)" hint="For example, daughter, or funeral director.">{text('submitterRelationship', 'Your relationship')}</Field>
+                <Field label="Phone (a phone or an email is required)">{text('submitterPhone', 'Phone number', { keyboardType: 'phone-pad' })}</Field>
+                <Field label="Email">{text('submitterEmail', 'Email address', { autoCapitalize: 'none', keyboardType: 'email-address' })}</Field>
+              </>
+            ) : null}
 
             <Text style={styles.section}>Notifications</Text>
             <View style={styles.switchRow}>
@@ -151,6 +187,7 @@ export default function FuneralNoticeSubmitScreen() {
               </View>
             ) : null}
 
+            {!editId ? (<>
             <Text style={styles.section}>Confirmation</Text>
             <View style={styles.switchRow}>
               <View style={{ flex: 1 }}>
@@ -159,9 +196,10 @@ export default function FuneralNoticeSubmitScreen() {
               </View>
               <Switch value={f.familyAuthorised} onValueChange={(v) => set('familyAuthorised', v)} accessibilityLabel="I am authorised to make this announcement" trackColor={{ false: colors.border, true: FUNERAL.slate }} />
             </View>
+            </>) : null}
 
             <Pressable onPress={submit} disabled={busy} accessibilityRole="button" style={[styles.btn, styles.btnPrimary, { alignSelf: 'stretch' }]}>
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={[styles.btnText, { color: '#fff' }]}>Send for checking</Text>}
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={[styles.btnText, { color: '#fff' }]}>{editId ? 'Save and send for checking again' : 'Send for checking'}</Text>}
             </Pressable>
             <Text style={styles.hint}>Sending does not publish anything. We will check the notice first.</Text>
           </ScrollView>
