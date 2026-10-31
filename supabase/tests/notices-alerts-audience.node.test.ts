@@ -237,6 +237,20 @@ describe('who is in the audience (server-selected, once each)', () => {
   });
 });
 
+describe('an organisation\'s own list', () => {
+  test('24c my_official_notices: members of the organisation (and administrators) see ALL its notices in every state, including scheduled and resolved; nobody else, and nobody for another organisation', () => {
+    const sched = (() => { const o = as('P', `select public.official_publish_notice(p_publisher => '${COUNCIL}', p_title => 'Own list scheduled', p_body => '${BODY}', p_category => 'travel_transport', p_area_ids => array['shetland_wide'], p_expires_at => now() + interval '2 days', p_starts_at => now() + interval '2 hours', p_action_text => '${ACT}', p_is_essential => true, p_review_at => now() + interval '1 day')`); assert.ok(!failed(o), o); return idOf(o); })();
+    const done = publish('P', { title: 'Own list resolved' }); as('P', `select public.official_set_notice_status('${done}','resolved')`);
+    for (const who of ['P', 'D', 'S'] as const) {
+      const ids = as(who, `select id from public.my_official_notices('${COUNCIL}')`);
+      assert.ok(ids.includes(sched) && ids.includes(done), `${who} sees scheduled and resolved`);
+    }
+    assert.equal(asScalar('P', `select announced::text from public.my_official_notices('${COUNCIL}') where id='${done}'`), 'false');
+    for (const who of ['A', 'H', 'O', 'N', 'anon'] as const) assert.match(as(who, `select * from public.my_official_notices('${COUNCIL}')`), /not authorised|permission denied/, who);
+    assert.match(as('P', `select * from public.my_official_notices('${NHS}')`), /not authorised/, 'not another organisation\'s');
+  });
+});
+
 describe('idempotent, resumable dispatch', () => {
   test('15 one dispatch per notice per audience: claim, in-progress refused, complete, then NEVER again — whatever is edited afterwards', () => {
     const id = publish('P', { title: 'One-shot alert for dispatch test' });

@@ -182,6 +182,17 @@ language sql stable security definer set search_path = public, pg_temp as $$
     from public.funeral_notices f where f.submitter_id = auth.uid() order by f.created_at desc;
 $$;
 
+-- The submitter's own submission with every editable field (to pre-fill the edit form). Private moderator notes are never returned; review_message is the
+-- staff message meant for the submitter.
+create function public.my_funeral_submission(p_id uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select to_jsonb(x) from (select f.id, f.status, f.full_name, f.preferred_name, f.photo_url, f.born_on, f.died_on, f.announcement, f.service_public, f.service_kind, f.service_venue,
+         f.service_at, f.service_notes, f.family_requests, f.donation_info, f.donation_url, f.area_id, f.announce_in_notifications, f.announce_name_in_preview,
+         f.submitter_name, f.submitter_relationship, f.submitter_phone, f.submitter_email, f.created_at, f.published_at,
+         case when f.status in ('needs_info', 'rejected') then f.review_message end as review_message
+    from public.funeral_notices f where f.id = p_id and f.submitter_id = auth.uid()) x;
+$$;
+
 -- The submitter can amend an UNPUBLISHED submission (it returns to the review queue). A published one is corrected only by staff, on request.
 create function public.update_my_funeral_submission(p_id uuid, p jsonb) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -407,14 +418,14 @@ begin
 end $$;
 
 -- ── grants ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-revoke all on function public.funeral_staff(), public.admin_set_funeral_director(text, uuid, boolean), public.submit_funeral_notice(jsonb), public.my_funeral_submissions(),
+revoke all on function public.funeral_staff(), public.admin_set_funeral_director(text, uuid, boolean), public.submit_funeral_notice(jsonb), public.my_funeral_submissions(), public.my_funeral_submission(uuid),
   public.update_my_funeral_submission(uuid, jsonb), public.withdraw_my_funeral_notice(uuid), public.get_funeral_notices(text[], integer, integer), public.get_funeral_notice(uuid),
   public.request_funeral_notice_change(uuid, text, text, text), public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text),
   public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(), public.admin_funeral_resolve_change(uuid, text, text, jsonb),
   public.funeral_notification_text(uuid), public.funeral_dispatchable(uuid), public.funeral_claim_dispatch(uuid, uuid), public.funeral_dispatch_recipients(uuid, integer),
   public.funeral_record_delivery(uuid, uuid, text, text), public.can_dispatch_funeral(uuid) from public, anon, authenticated;
 grant execute on function public.get_funeral_notices(text[], integer, integer), public.get_funeral_notice(uuid) to anon, authenticated, service_role;
-grant execute on function public.funeral_staff(), public.admin_set_funeral_director(text, uuid, boolean), public.submit_funeral_notice(jsonb), public.my_funeral_submissions(),
+grant execute on function public.funeral_staff(), public.admin_set_funeral_director(text, uuid, boolean), public.submit_funeral_notice(jsonb), public.my_funeral_submissions(), public.my_funeral_submission(uuid),
   public.update_my_funeral_submission(uuid, jsonb), public.withdraw_my_funeral_notice(uuid), public.request_funeral_notice_change(uuid, text, text, text),
   public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text), public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(),
   public.admin_funeral_resolve_change(uuid, text, text, jsonb) to authenticated;

@@ -135,6 +135,16 @@ describe('what the public sees (and never sees)', () => {
     review('O', rej, 'reject', 'We could not confirm the details; please contact us.');
     assert.equal(asScalar('N', `select review_message from public.my_funeral_submissions() where id='${rej}'`), 'We could not confirm the details; please contact us.', 'a rejected submitter is told why');
   });
+  test('8c my_funeral_submission returns the submitter\'s own editable fields (never moderator notes) and nothing to anyone else', () => {
+    const id = submit('C', { full_name: 'Editable Demoson', announcement: 'Peacefully.', service_public: true, service_venue: 'Voe Kirk (demo)', area_id: AREA });
+    const mine = JSON.parse(asScalar('C', `select public.my_funeral_submission('${id}')::text`));
+    assert.equal(mine.full_name, 'Editable Demoson'); assert.equal(mine.service_venue, 'Voe Kirk (demo)'); assert.equal(mine.submitter_phone, '01595 000000');
+    for (const k of Object.keys(mine)) assert.doesNotMatch(k, /review_note|verification|verified_by|reviewed_by|funeral_director/, k);
+    review('O', id, 'request_info', 'Please confirm the date');
+    assert.equal(JSON.parse(asScalar('C', `select public.my_funeral_submission('${id}')::text`)).review_message, 'Please confirm the date');
+    assert.equal(asScalar('A', `select coalesce(public.my_funeral_submission('${id}')::text, 'NULL')`), 'NULL', 'another member gets nothing');
+    assert.match(as('anon', `select public.my_funeral_submission('${id}')`), /permission denied/);
+  });
   test('9 a funeral notice is NEVER a row in `notices`, never essential, no level or feed function returns one, and the nine canonical categories are untouched', () => {
     assert.equal(scalar(`select count(*) from notices where title ilike '%Arrangements%' or body ilike '%Arrangements%'`), '0');
     assert.equal(scalar(`select count(*) from public.get_public_notices('all', null, null, 50) where title ilike '%Arrangements%'`), '0');

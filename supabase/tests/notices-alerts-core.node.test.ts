@@ -318,6 +318,20 @@ describe('the public read functions', () => {
   });
 });
 
+describe('single-notice read and the organisation\'s own list', () => {
+  test('24b get_public_notice returns exactly one PUBLIC notice in the list shape and nothing for a resolved, scheduled, hidden or unknown id', () => {
+    const live = publish('P', { ess: true, title: 'Single read live alert' });
+    assert.equal(asScalar('anon', `select count(*) from public.get_public_notice('${live}')`), '1');
+    assert.equal(asScalar('anon', `select level from public.get_public_notice('${live}')`), '1');
+    assert.equal(asScalar('anon', `select publisher->>'byline' from public.get_public_notice('${live}')`), 'Issued by Shetland Islands Council');
+    for (const [label, set] of [['resolved', `status='resolved'`], ['scheduled', `starts_at = now() + interval '1 hour'`], ['hidden', `is_hidden=true`], ['withdrawn', `status='withdrawn'`]]) {
+      const id = publish('P', { ess: true, title: `Single read ${label}` }); raw(`update notices set ${set} where id='${id}'`);
+      assert.equal(asScalar('anon', `select count(*) from public.get_public_notice('${id}')`), '0', label);
+    }
+    assert.equal(asScalar('anon', `select count(*) from public.get_public_notice('${U.A}')`), '0');
+  });
+});
+
 describe('old clients and existing behaviour', () => {
   test('25 the legacy notice is byte-identical in every original column and still public', () => {
     assert.equal(scalar(`select md5(row(${ORIG})::text) from notices where id='${N_LEGACY}'`), LEGACY_BEFORE);

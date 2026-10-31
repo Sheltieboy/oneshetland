@@ -1,7 +1,7 @@
 -- Rollback of 20261129010000_notices_alerts_core. Essential designations and organisation notices lose their special columns (the notices themselves stay,
 -- as ordinary platform notices). Roll back 20261129020000+ first (they depend on these columns and functions).
 begin;
-drop function if exists public.get_essential_alerts(text[]), public.get_public_notices(text, text[], text, integer, integer), public.official_set_notice_status(uuid, text),
+drop function if exists public.get_public_notice(uuid), public.get_essential_alerts(text[]), public.get_public_notices(text, text[], text, integer, integer, uuid), public.official_set_notice_status(uuid, text),
   public.official_update_notice(uuid, text, text, text, text[], timestamptz, text, text, boolean, timestamptz),
   public.official_publish_notice(uuid, text, text, text, text[], timestamptz, timestamptz, text, text, boolean, timestamptz),
   public.official_validate_notice(uuid, text, text, text, text[], timestamptz, timestamptz, timestamptz, text, text, boolean), public.is_safe_https_url(text),

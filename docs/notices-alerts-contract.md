@@ -1,6 +1,7 @@
 # Notices & Alerts — backend contract for the app and website
 
 Status: LOCAL ONLY. None of this is applied to production, deployed or pushed. Migrations: `supabase/migrations/20261129000000` … `20261129040000`.
+`get_funeral_notice(p_id)` now finds any published notice (not just the 50 newest). The demo proxy now forwards `areas` and allows the read-only `get_public_notice` / `my_official_publishers`.
 Everything below is proven by the isolated-Postgres suites `supabase/tests/notices-alerts-{core,audience,funeral,imports}.node.test.ts` (80 tests).
 
 ## The model in one page
@@ -24,6 +25,7 @@ The Shetland-wide root (`shetland_wide`) is never a member area.
   `p_level` ∈ `all | essential | official | community`. Rows: `{id,title,body,action_text,severity,category,category_label,published_at,starts_at,expires_at,review_at,link_url,level,is_essential_active,publisher,area_ids,area_names,publisher_hub_id,publisher_business_id,event_id,campaign_id,image_url,publisher_logo_url,publisher_brand_color,hub_slug,business_slug}`.
   Order: active essential first, then pinned, then newest. `limit` is clamped to 50.
   `publisher` is the authoritative attribution object `{kind,label,is_official_source,source_label,source_url,byline}`; `kind` ∈ `hub|business|person|platform|official`. **Use `publisher.label`/`byline`; never infer identity from joins.** `official` = a verified organisation ("Issued by …"); `platform` with `is_official_source=true` = an import ("Source: …"). Person names are only ever released for currently-public notices; the label is already privacy-safe ("A OneShetland member", "Former member").
+* `get_public_notice(p_id uuid)` → the same row shape as `get_public_notices`, for exactly one PUBLIC notice (empty for anything resolved, scheduled, hidden, withdrawn or unknown). Use it for detail pages and deep links instead of scanning a list.
 * `get_funeral_notices(p_area_ids text[] default null, p_limit int default 20, p_offset int default 0)` and `get_funeral_notice(p_id uuid)` → `{id,full_name,preferred_name,photo_url,born_on,died_on,announcement,service_kind,service_venue,service_at,service_notes,family_requests,donation_info,donation_url,area_id,area_name,published_at}`. Arrangement fields are null unless the family approved publishing them. No contact/verification data is ever returned. A notice with no area appears under every area filter.
 
 ## Signed-in (authenticated) functions
@@ -37,12 +39,13 @@ Member preferences — **areas never imply consent; every audience is default OF
 Publishing as a verified organisation (web only)
 * `my_official_publishers()` → `{publisher_id,slug,name,kind,role,can_publish,can_essential}`. Empty for ordinary users: hide the publisher UI.
 * `official_publish_notice(p_publisher, p_title, p_body, p_category, p_area_ids, p_expires_at, p_starts_at, p_link_url, p_action_text, p_is_essential, p_review_at)` → id. Essential rules (the server enforces all; mirror them in the form for guidance only): title 5–120, body 20–4000, action text 10–500, ≥1 area (or `shetland_wide` alone), expiry after start and ≤ 7 days from start, `review_at` between start and expiry, link plain `https`. Non-essential official notices need an expiry ≤ 180 days. A delegate cannot mark essential; neither can an organisation without the live grant.
+* `my_official_notices(p_publisher uuid)` (authenticated; members of that organisation and administrators only) → `{id,title,body,status,severity,is_essential,category,starts_at,expires_at,review_at,published_at,action_text,link_url,area_ids,announced}` in EVERY state (scheduled, resolved, withdrawn included). `announced` = a notification dispatch has completed (hide the notify button).
 * `official_update_notice(p_notice, …)` (null = keep), `official_set_notice_status(p_notice, 'resolved'|'withdrawn')`. Editing never sends a notification.
 * Notifications for an alert are a SEPARATE, explicit, once-only request: `POST /functions/v1/notify-notice-audience {notice_id, kind}` (edge function, not deployed). Never offer "notify again".
 
 Funeral notices
 * `submit_funeral_notice(p jsonb)` → id. Required: `full_name`, `submitter_name`, a phone or email (private), `family_authorised: true`. Everything else optional: `preferred_name, photo_url (https), born_on, died_on, announcement (≤1500, no links), service_public, service_kind (funeral|burial|cremation|memorial|private), service_venue, service_at, service_notes, family_requests, donation_info, donation_url (https), area_id, announce_in_notifications, announce_name_in_preview, submitter_relationship, submitter_role ('family'|'funeral_director')`. Nothing is public until staff verify.
-* `my_funeral_submissions()`, `update_my_funeral_submission(p_id, p jsonb)` (only while submitted/needs_info), `withdraw_my_funeral_notice(p_id)`, `request_funeral_notice_change(p_id, 'correction'|'takedown', p_message, p_contact)`.
+* `my_funeral_submission(p_id)` → jsonb of the submitter's OWN editable fields (pre-fills the edit form; `review_message` is the staff message for `needs_info` AND `rejected`). `my_funeral_submissions()`, `update_my_funeral_submission(p_id, p jsonb)` (only while submitted/needs_info), `withdraw_my_funeral_notice(p_id)`, `request_funeral_notice_change(p_id, 'correction'|'takedown', p_message, p_contact)`.
 
 Platform administration (administrators; moderators for funeral/person review only — the functions enforce it)
 * Organisations & entitlement: `admin_list_official_publishers()`, `admin_upsert_official_publisher`, `admin_verify_official_publisher(id, note)`, `admin_set_official_publisher_active`, `admin_set_official_publisher_member(pub, user, role, active)`, `admin_list_official_publisher_members(pub)`, `admin_grant_essential_alert(pub, reason)`, `admin_revoke_essential_alert(pub, reason)` (demotes live alerts), `admin_notice_audit(limit, before)`, `admin_notice_dispatch_history(notice)`.

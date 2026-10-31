@@ -277,7 +277,7 @@ end $$;
 
 -- ── public reads (the same public predicate as the RLS policy, applied explicitly because these are definer functions) ───────────────────────────
 create function public.get_public_notices(
-  p_level text default 'all', p_area_ids text[] default null, p_category text default null, p_limit integer default 20, p_offset integer default 0)
+  p_level text default 'all', p_area_ids text[] default null, p_category text default null, p_limit integer default 20, p_offset integer default 0, p_id uuid default null)
 returns table (id uuid, title text, body text, action_text text, severity text, category text, category_label text, published_at timestamptz, starts_at timestamptz,
                expires_at timestamptz, review_at timestamptz, link_url text, level integer, is_essential_active boolean, publisher jsonb, area_ids text[], area_names text[],
                publisher_hub_id uuid, publisher_business_id uuid, event_id uuid, campaign_id uuid, image_url text,
@@ -295,6 +295,7 @@ begin
              case when public.notice_essential_active(n) then 1 when n.source is not null or n.official_publisher_id is not null then 2 else 3 end as lvl
         from public.notices n
        where public.notice_is_public(n)
+         and (p_id is null or n.id = p_id)
          and (p_category is null or n.category = p_category)
          and (p_area_ids is null or public.notice_matches_areas(n.id, v_nb)))
     select b.id, b.title, b.body, b.action_text, b.severity, b.category, c.label, b.published_at, b.starts_at, b.expires_at, b.review_at, b.link_url, b.lvl, b.ess,
@@ -319,15 +320,25 @@ language sql stable security definer set search_path = public, pg_temp as $$
     from public.get_public_notices('essential', p_area_ids, null, 10, 0) g;
 $$;
 
+-- One public notice by id (the detail page): the same public rule and shape as the list, and nothing non-public.
+create function public.get_public_notice(p_id uuid)
+returns table (id uuid, title text, body text, action_text text, severity text, category text, category_label text, published_at timestamptz, starts_at timestamptz,
+               expires_at timestamptz, review_at timestamptz, link_url text, level integer, is_essential_active boolean, publisher jsonb, area_ids text[], area_names text[],
+               publisher_hub_id uuid, publisher_business_id uuid, event_id uuid, campaign_id uuid, image_url text,
+               publisher_logo_url text, publisher_brand_color text, hub_slug text, business_slug text)
+language sql stable security definer set search_path = public, pg_temp as $$
+  select * from public.get_public_notices('all', null, null, 1, 0, p_id);
+$$;
+
 revoke all on function public.notice_is_public(public.notices), public.notice_essential_active(public.notices), public.area_neighbourhood(text[]),
   public.notice_matches_areas(uuid, text[]), public.official_publisher_label(uuid), public.is_safe_https_url(text),
   public.official_validate_notice(uuid, text, text, text, text[], timestamptz, timestamptz, timestamptz, text, text, boolean),
   public.official_publish_notice(uuid, text, text, text, text[], timestamptz, timestamptz, text, text, boolean, timestamptz),
   public.official_update_notice(uuid, text, text, text, text[], timestamptz, text, text, boolean, timestamptz), public.official_set_notice_status(uuid, text),
-  public.get_public_notices(text, text[], text, integer, integer), public.get_essential_alerts(text[]) from public, anon;
+  public.get_public_notices(text, text[], text, integer, integer, uuid), public.get_essential_alerts(text[]), public.get_public_notice(uuid) from public, anon;
 grant execute on function public.notice_is_public(public.notices), public.notice_essential_active(public.notices), public.area_neighbourhood(text[]),
   public.notice_matches_areas(uuid, text[]), public.official_publisher_label(uuid), public.is_safe_https_url(text),
-  public.get_public_notices(text, text[], text, integer, integer), public.get_essential_alerts(text[]) to anon, authenticated, service_role;
+  public.get_public_notices(text, text[], text, integer, integer, uuid), public.get_essential_alerts(text[]), public.get_public_notice(uuid) to anon, authenticated, service_role;
 grant execute on function public.official_validate_notice(uuid, text, text, text, text[], timestamptz, timestamptz, timestamptz, text, text, boolean),
   public.official_publish_notice(uuid, text, text, text, text[], timestamptz, timestamptz, text, text, boolean, timestamptz),
   public.official_update_notice(uuid, text, text, text, text[], timestamptz, text, text, boolean, timestamptz), public.official_set_notice_status(uuid, text) to authenticated, service_role;

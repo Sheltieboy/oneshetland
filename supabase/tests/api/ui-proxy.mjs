@@ -10,13 +10,13 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 const PORT = Number(process.env.PROXY_PORT ?? 54790), REST = Number(process.env.REST_PORT ?? 54782), DELAY = Number(process.env.DELAY_RPC_MS ?? 0);
-const FORWARD = new Set(['notices', 'hubs', 'local_businesses', 'hub_campaigns', 'events', 'notice_areas', 'notice_categories', 'hub_members', 'profiles', 'local_businesses_public',
+const FORWARD = new Set(['notices', 'hubs', 'local_businesses', 'hub_campaigns', 'events', 'notice_areas', 'notice_categories', 'hub_members', 'profiles', 'local_businesses_public', 'areas',
   // the website demonstration (ui-site-schema.sql / ui-site-fixtures.sql): every table below exists in the fixture database and holds fictional rows only
   'local_offers', 'products', 'jobs', 'shifts', 'partner_alerts', 'home_content', 'spik_dictionary', 'event_ticket_types', 'event_updates', 'shift_employer_profiles', ...(process.env.FORWARD_EXTRA ?? '').split(',').filter(Boolean)]);
 const ASSET_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'demo-assets');
 const ASSET_TYPES = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 const DEMO = process.env.DEMO_LAN === '1', ANON_JWT = process.env.PROXY_ANON_JWT ?? '';
-const READONLY_RPCS = new Set((process.env.READONLY_RPCS ?? 'notice_publisher_display,spik_daily,get_public_notices,get_essential_alerts,get_funeral_notices,get_funeral_notice').split(','));
+const READONLY_RPCS = new Set((process.env.READONLY_RPCS ?? 'notice_publisher_display,spik_daily,get_public_notices,get_essential_alerts,get_funeral_notices,get_funeral_notice,get_public_notice,my_official_publishers').split(','));
 if (DEMO && !ANON_JWT) { console.error('DEMO_LAN=1 needs PROXY_ANON_JWT'); process.exit(1); }
 let rpcCount = 0;
 http.createServer(async (req, res) => {

@@ -280,13 +280,27 @@ begin
                  from public.notice_dispatches d where d.subject_type = 'notice' and d.subject_id = p_notice order by d.claimed_at;
 end $$;
 
+-- An organisation's OWN notices in every state (including scheduled, resolved and withdrawn, which are not public), for its members and platform administrators.
+create function public.my_official_notices(p_publisher uuid)
+returns table (id uuid, title text, body text, status text, severity text, is_essential boolean, category text, starts_at timestamptz, expires_at timestamptz, review_at timestamptz,
+               published_at timestamptz, action_text text, link_url text, area_ids text[], announced boolean)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if public.official_publisher_authority(p_publisher) = 'none' and not public.notices_admin() then raise exception 'You are not authorised to see that organisation''s notices' using errcode = '42501'; end if;
+  return query
+    select n.id, n.title, n.body, n.status, n.severity, n.is_essential, n.category, n.starts_at, n.expires_at, n.review_at, n.published_at, n.action_text, n.link_url,
+           coalesce((select array_agg(na.area_id order by na.area_id) from public.notice_areas na where na.notice_id = n.id), '{}'),
+           exists (select 1 from public.notice_dispatches d where d.subject_type = 'notice' and d.subject_id = n.id and d.status = 'completed')
+      from public.notices n where n.official_publisher_id = p_publisher order by n.created_at desc limit 200;
+end $$;
+
 -- ── grants ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 revoke all on function public.set_my_notice_areas(text[]), public.my_notice_areas(), public.set_my_notice_prefs(boolean, boolean, boolean, text[], boolean, boolean),
   public.my_notice_prefs(), public.notice_dispatchable(uuid, text), public.can_dispatch_notice(uuid, uuid, text), public.notice_claim_dispatch(uuid, text, uuid),
   public.notice_dispatch_recipients(uuid, text, integer), public.notice_record_delivery(uuid, uuid, text, text, text), public.notice_complete_dispatch(uuid),
-  public.notice_fail_dispatch(uuid, text), public.admin_notice_dispatch_history(uuid) from public, anon, authenticated;
+  public.notice_fail_dispatch(uuid, text), public.admin_notice_dispatch_history(uuid), public.my_official_notices(uuid) from public, anon, authenticated;
 grant execute on function public.set_my_notice_areas(text[]), public.my_notice_areas(), public.set_my_notice_prefs(boolean, boolean, boolean, text[], boolean, boolean),
-  public.my_notice_prefs(), public.admin_notice_dispatch_history(uuid) to authenticated;
+  public.my_notice_prefs(), public.admin_notice_dispatch_history(uuid), public.my_official_notices(uuid) to authenticated;
 -- dispatch machinery: the service role (edge functions) only. Not callable by any client, so no client can choose recipients or mark anything delivered.
 grant execute on function public.notice_dispatchable(uuid, text), public.can_dispatch_notice(uuid, uuid, text), public.notice_claim_dispatch(uuid, text, uuid),
   public.notice_dispatch_recipients(uuid, text, integer), public.notice_record_delivery(uuid, uuid, text, text, text), public.notice_complete_dispatch(uuid),
