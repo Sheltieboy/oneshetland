@@ -21,6 +21,7 @@ import { colors, fontSize, spacing, radius } from '@/constants/theme';
 import { useAlert } from '@/components/BrandedAlert';
 import { useAuth } from '@/context/AuthContext';
 import { getAnalyticsConsent, setAnalyticsConsent } from '@/lib/analytics';
+import { NoticePreferences } from '@/components/notices/NoticePreferences';
 import {
   fetchPreferences, updatePreferences, NOTIFICATION_GROUPS, modulesInGroup,
   type NotificationPreferences, type ModuleInfo,
@@ -193,6 +194,18 @@ export default function NotificationPreferencesScreen() {
             </View>
           );
         })}
+
+        {/* ── Notices & alerts: areas + four independent opt-ins (all off until chosen) ── */}
+        <View style={styles.sectionLabelWrap}>
+          <Text style={styles.sectionLabel}>Notices &amp; alerts</Text>
+          <Text style={styles.sectionHint}>
+            Choose which notices can send you a notification. You can always read every notice in the app.
+          </Text>
+        </View>
+        <NoticePreferences
+          masterOn={prefs.enabled}
+          onError={(message) => alert({ title: 'Could not save', message })}
+        />
 
         {/* ── Quiet hours ── */}
         <View style={styles.sectionLabelWrap}>
