@@ -27,25 +27,26 @@ export function EssentialAlerts({ alerts, onOpen, onSeeAll, sideInset = 16 }: {
       <Pressable
         onPress={() => (many ? onSeeAll() : onOpen(lead))}
         accessibilityRole="button"
-        accessibilityLabel={many
-          ? `${alerts.length} active essential alerts. Latest: ${lead.title}${area ? `. ${area}` : ''}. Opens all essential alerts.`
-          : `Essential alert: ${lead.title}${area ? `. ${area}` : ''}. Opens the full alert.`}
+        accessibilityLabel={`${many ? `Essential alert, ${alerts.length} active. Latest: ` : 'Essential alert. '}${lead.title}${area ? `. ${area}` : ''}`}
+        accessibilityHint={many ? 'Opens all essential alerts' : 'Opens the full alert'}
+        hitSlop={4}
         style={({ pressed }) => [s.strip, pressed && { opacity: 0.88 }]}
       >
-        <View style={s.icon}><FontAwesome5 name="exclamation" size={12} color={RED} solid /></View>
-        <View style={s.text}>
-          <Text style={s.label} numberOfLines={1}>{many ? `ESSENTIAL ALERT · ${alerts.length} ACTIVE` : 'ESSENTIAL ALERT'}</Text>
-          <Text style={s.title} numberOfLines={1}>{lead.title}</Text>
-          {area ? <Text style={s.area} numberOfLines={1}>{area}</Text> : null}
+        {/* Everything inside is covered by the label above; hide the parts so a screen reader never repeats them or reads the icon. */}
+        <View style={s.icon} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><FontAwesome5 name="exclamation" size={12} color={RED} solid /></View>
+        <View style={s.text} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Text style={s.label} numberOfLines={2}>{many ? `ESSENTIAL ALERT · ${alerts.length} ACTIVE` : 'ESSENTIAL ALERT'}</Text>
+          <Text style={s.title} numberOfLines={2}>{lead.title}</Text>
+          {area ? <Text style={s.area} numberOfLines={2}>{area}</Text> : null}
         </View>
-        <FontAwesome5 name="chevron-right" size={12} color="#fff" />
+        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><FontAwesome5 name="chevron-right" size={12} color="#fff" /></View>
       </Pressable>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  strip: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: RED, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
+  strip: { minHeight: 52, /* a floor only: larger text grows the strip */ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: RED, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
   icon: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1 },
   label: { color: 'rgba(255,255,255,0.88)', fontSize: 10.5, fontWeight: '900', letterSpacing: 1 },

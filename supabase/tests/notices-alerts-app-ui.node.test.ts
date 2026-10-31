@@ -223,6 +223,9 @@ describe('Home composition', () => {
     assert.match(e, /splitEssential\(alerts\)/); assert.match(e, /ACTIVE/); assert.match(e, /minHeight: 52/);
     assert.match(e, /many \? onSeeAll\(\) : onOpen\(lead\)/); assert.match(e, /accessibilityRole="button"/);
     assert.equal((e.match(/<Pressable/g) ?? []).length, 1, 'one strip, never a stack');
+    assert.match(e, /accessibilityHint=\{many \? 'Opens all essential alerts' : 'Opens the full alert'\}/); assert.match(e, /Essential alert, \$\{alerts\.length\} active\. Latest: /);
+    assert.ok((e.match(/importantForAccessibility="no-hide-descendants"/g) ?? []).length >= 3, 'icon, text and chevron are hidden from the screen reader (the label covers them)');
+    assert.doesNotMatch((e.match(/strip: \{[^}]*\}/) ?? [''])[0], /(^|[^n])height:/i, 'the strip has a minimum, never a fixed height'); assert.match(e, /minHeight: 52/); assert.match(e, /numberOfLines=\{2\}\>\{lead\.title\}/);
     assert.doesNotMatch(e, /lead\.body|actionText|attribution/, 'no body, what-to-do or source detail on Home');
   });
   test('loadHomeNotices: queries the essential list and get_public_notices("all"), applies the member areas, and a failure of either collapses just that part', async () => {
