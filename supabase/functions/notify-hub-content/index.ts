@@ -1,9 +1,11 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createServiceClient, sendUserPushBulk } from '../_shared/send-push.ts';
+import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
 import { requireCaller } from '../_shared/require-caller.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { authoriseHubContentNotify } from '../_shared/hub-content-notify-auth.ts';
+import { isUuid } from '../_shared/notify-decision.ts';
+import { runDispatch, noticePushText } from '../_shared/notice-dispatch.ts';
 
 /**
  * notify-hub-content
@@ -13,6 +15,11 @@ import { authoriseHubContentNotify } from '../_shared/hub-content-notify-auth.ts
  *   event 'event'  { hub_id, ref_id, title } → "{hub} has a new event"
  *
  * Module 'hubs'. Members can mute via the Hubs toggle. Fire-and-forget.
+ *
+ * R2 (Notices & Alerts): the 'notice' event used to announce WHATEVER ref_id and title the caller sent, with no check that the notice exists, belongs to the
+ * hub, or is live. It now announces only a notice the DATABASE says is dispatchable to hub members (published, started, unexpired, not hidden, public or
+ * members-only, a hub notice - never an official import, never a pending / withdrawn / resolved / scheduled / committee-only one), takes the text from the
+ * stored notice (the caller's `title` is ignored), and announces it ONCE (a repeat call, or one after an edit, is refused with 409). The 'event' event is unchanged.
  */
 
 const corsHeaders = {
@@ -42,6 +49,7 @@ serve(async (req) => {
 
     const { event, hub_id, ref_id, title } = await req.json();
     if (!event || !hub_id) return json({ error: 'event and hub_id required' }, 400);
+    if (event !== 'notice' && event !== 'event') return json({ error: 'Unknown event' }, 400);
     const svc = createServiceClient();
 
     // Only the hub's owner or admin may push to its whole membership.
@@ -50,6 +58,22 @@ serve(async (req) => {
 
     const { data: hub } = await svc.from('hubs').select('name').eq('id', hub_id).maybeSingle();
     const hubName = (hub as { name?: string } | null)?.name ?? 'your hub';
+
+    if (event === 'notice') {
+      if (!isUuid(ref_id)) return json({ error: 'ref_id (the notice) is required' }, 400);
+      const { data: notice } = await svc.from('notices').select('id, title, publisher_hub_id').eq('id', ref_id).maybeSingle();
+      if (!notice) return json({ error: 'That notice does not exist' }, 404);
+      if ((notice as { publisher_hub_id?: string }).publisher_hub_id !== hub_id) return json({ error: 'That notice does not belong to this hub' }, 400);
+      const text = noticePushText('hub', notice as { title: string }, hubName);
+      const outcome = await runDispatch({
+        rpc: (fn, args) => svc.rpc(fn, args) as never,
+        authorise: async () => ({ ok: true as const }),                       // the hub-owner / admin check above already ran
+        send: (userId) => sendUserPush(svc, {
+          userId, module: 'hubs', categoryId: 'hubs.new_notice', title: text.title, body: text.body, data: { hub_id, notice_id: ref_id }, urgent: false,
+        }),
+      }, { type: 'notice', id: ref_id, kind: 'hub', by: caller.isServiceRole ? null : caller.userId });
+      return outcome.ok ? json({ ok: true, notified: outcome.sent }) : json({ error: outcome.error }, outcome.status);
+    }
 
     // Active, non-expired members.
     const nowIso = new Date().toISOString();

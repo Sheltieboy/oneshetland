@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createServiceClient, sendUserPush, sendUserPushBulk } from '../_shared/send-push.ts';
+import { createServiceClient, sendUserPush, type SendUserPushInput } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
 import { safeError } from '../_shared/safe-error.ts';
 
@@ -72,7 +72,11 @@ serve(async (req) => {
 
     const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, cruise_today: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0, bookings_metered: 0,
       // Metering is the one step whose failure used to be invisible.
-      premium_marked: 0, metering_error: null as string | null };
+      premium_marked: 0, metering_error: null as string | null,
+      // Reminders NOT stamped as sent because the member's notification preferences could not be read (the sender fails closed): retried by the next run.
+      deferred_preference_check: 0,
+      // Set when the delivery ledger (reminder_claim_many) could not be used: nothing is sent without a claim, so this is loud rather than silent.
+      ledger_error: null as string | null };
 
     // ── Shop orders: expire unpaid checkouts + release their reserved stock ──
     // A pending product_order holds stock (reserved) so nobody else can buy
@@ -123,20 +127,20 @@ serve(async (req) => {
         const { data: dr } = await svc.from('delivery_requests').select('status').eq('id', o.delivery_request_id).maybeSingle();
         if (dr?.status !== 'pending') continue; // matched/moving — no nudge needed
         const { data: biz } = await svc.from('local_businesses').select('name, owner_id').eq('id', o.business_id).maybeSingle();
-        await sendUserPush(svc, {
-          userId: o.buyer_id, module: 'wallet', categoryId: 'wallet.order_update',
+        // Buyer and shop owner are tracked separately: a side that was reached or finally skipped is never nudged again; only a side whose preference check could not be read is retried.
+        const toBuyer = await deliver(svc, result, 'fetch_order_buyer', o.id, [o.buyer_id], {
+          module: 'wallet', categoryId: 'wallet.order_update',
           title: 'Still looking for a driver',
           body: `No Fetch driver has picked up your order from ${biz?.name ?? 'the shop'} yet. You could arrange collection with the shop instead.`,
           data: { screen: 'my-orders', product_order_id: o.id },
         });
-        if (biz?.owner_id) {
-          await sendUserPush(svc, {
-            userId: biz.owner_id, module: 'business', categoryId: 'business.order',
-            title: 'Fetch order still waiting',
-            body: 'A shop order has waited 2 days for a driver. You may want to offer the buyer collection or post instead.',
-            data: { screen: 'business-orders', product_order_id: o.id, business_id: o.business_id },
-          });
-        }
+        const toOwner = biz?.owner_id ? await deliver(svc, result, 'fetch_order_owner', o.id, [biz.owner_id], {
+          module: 'business', categoryId: 'business.order',
+          title: 'Fetch order still waiting',
+          body: 'A shop order has waited 2 days for a driver. You may want to offer the buyer collection or post instead.',
+          data: { screen: 'business-orders', product_order_id: o.id, business_id: o.business_id },
+        }) : null;
+        if (!toBuyer.complete || (toOwner && !toOwner.complete)) continue;
         await svc.from('product_orders').update({ fetch_nudged_at: nowIso }).eq('id', o.id);
         result.fetch_orders_nudged++;
       }
@@ -160,7 +164,7 @@ serve(async (req) => {
     const soonIso = new Date(now.getTime() + 2 * 60 * 60_000).toISOString();
     const { data: expiringReq } = await svc
       .from('delivery_requests')
-      .select('id, customer_id, category_slug')
+      .select('id, customer_id, category_slug, expires_at')
       .eq('status', 'pending')
       .is('reminder_sent_at', null)
       .not('expires_at', 'is', null)
@@ -168,14 +172,11 @@ serve(async (req) => {
       .lt('expires_at', soonIso)
       .limit(200);
     for (const r of expiringReq ?? []) {
-      await sendUserPush(svc, {
-        userId:     r.customer_id,
-        module:     'fetch',
-        categoryId: 'fetch.expiring',
-        title:      'Still need this delivery?',
-        body:       `No driver has taken your ${r.category_slug ?? 'delivery'} yet. Tap to keep looking or cancel.`,
-        data:       { request_id: r.id, event: 'expiring' },
-      });
+      const out = await deliver(svc, result, 'fetch_expiring', r.id, [r.customer_id], {
+        module: 'fetch', categoryId: 'fetch.expiring', title: 'Still need this delivery?',
+        body: `No driver has taken your ${r.category_slug ?? 'delivery'} yet. Tap to keep looking or cancel.`, data: { request_id: r.id, event: 'expiring' },
+      }, { deadline: r.expires_at });
+      if (!out.complete) continue;   // an unreadable preference check (or another worker mid-send): leave it unstamped, the next run finishes it
       await svc.from('delivery_requests').update({ reminder_sent_at: nowIso }).eq('id', r.id);
       result.fetch_reminded++;
     }
@@ -194,8 +195,9 @@ serve(async (req) => {
       .limit(200);
     if (dueRequests && dueRequests.length > 0) {
       const ids = dueRequests.map((r) => r.id);
-      await svc.from('delivery_requests').update({ status: 'expired' }).in('id', ids).eq('status', 'pending');
-      for (const r of dueRequests) {
+      // The UPDATE itself is the atomic claim: an overlapping run that loses the race flips (and notifies) nobody.
+      const { data: flipped } = await svc.from('delivery_requests').update({ status: 'expired' }).in('id', ids).eq('status', 'pending').select('id, customer_id, category_slug');
+      for (const r of (flipped ?? []) as { id: string; customer_id: string; category_slug?: string | null }[]) {
         await sendUserPush(svc, {
           userId:     r.customer_id,
           module:     'fetch',
@@ -226,14 +228,11 @@ serve(async (req) => {
 
     for (const b of soon ?? []) {
       const where = await businessName(svc, b.business_id);
-      await sendUserPush(svc, {
-        userId:     b.customer_id,
-        module:     'bookings',
-        categoryId: 'bookings.reminder',
-        title:      'Appointment soon',
-        body:       `Your appointment${where ? ` at ${where}` : ''} is at ${londonTime(b.starts_at)} today.`,
-        data:       { screen: 'local-my-bookings', booking_id: b.id },
-      });
+      const out = await deliver(svc, result, 'booking_1h', b.id, [b.customer_id], {
+        module: 'bookings', categoryId: 'bookings.reminder', title: 'Appointment soon',
+        body: `Your appointment${where ? ` at ${where}` : ''} is at ${londonTime(b.starts_at)} today.`, data: { screen: 'local-my-bookings', booking_id: b.id },
+      }, { deadline: b.starts_at });
+      if (!out.complete) continue;
       await svc.from('book_bookings')
         .update({ reminder_1h_sent_at: nowIso, reminder_24h_sent_at: nowIso })
         .eq('id', b.id);
@@ -251,14 +250,11 @@ serve(async (req) => {
 
     for (const b of tomorrow ?? []) {
       const where = await businessName(svc, b.business_id);
-      await sendUserPush(svc, {
-        userId:     b.customer_id,
-        module:     'bookings',
-        categoryId: 'bookings.reminder',
-        title:      'Appointment reminder',
-        body:       `Mind your appointment${where ? ` at ${where}` : ''} on ${londonDay(b.starts_at)} at ${londonTime(b.starts_at)}.`,
-        data:       { screen: 'local-my-bookings', booking_id: b.id },
-      });
+      const out = await deliver(svc, result, 'booking_24h', b.id, [b.customer_id], {
+        module: 'bookings', categoryId: 'bookings.reminder', title: 'Appointment reminder',
+        body: `Mind your appointment${where ? ` at ${where}` : ''} on ${londonDay(b.starts_at)} at ${londonTime(b.starts_at)}.`, data: { screen: 'local-my-bookings', booking_id: b.id },
+      }, { deadline: b.starts_at });
+      if (!out.complete) continue;
       await svc.from('book_bookings').update({ reminder_24h_sent_at: nowIso }).eq('id', b.id);
       result.booking_24h++;
     }
@@ -279,24 +275,37 @@ serve(async (req) => {
         .eq('status', 'valid');
       const holders = [...new Set((tickets ?? []).map(t => t.holder_id).filter(Boolean) as string[])];
 
-      if (holders.length) {
-        await sendUserPushBulk(svc, holders, {
-          module:     'events',
-          categoryId: 'events.reminder',
-          title:      'Event tomorrow 🎟',
-          body:       `${ev.title} is on ${londonDay(ev.starts_at)} at ${londonTime(ev.starts_at)}. Your tickets are in My Wallet.`,
-          data:       { screen: 'my-event-tickets', event_id: ev.id },
-        });
-      }
+      // Each holder is claimed, sent and recorded on their own (reminder_deliveries). The event is stamped complete only when NO holder is still retryable
+      // (an unreadable preference check) or mid-send elsewhere, so a holder whose check failed is retried and the holders already done are never sent again.
+      const out = await deliver(svc, result, 'event_24h', ev.id, holders, {
+        module: 'events', categoryId: 'events.reminder', title: 'Event tomorrow 🎟',
+        body: `${ev.title} is on ${londonDay(ev.starts_at)} at ${londonTime(ev.starts_at)}. Your tickets are in My Wallet.`, data: { screen: 'my-event-tickets', event_id: ev.id },
+      }, { deadline: ev.starts_at });
+      if (!out.complete) continue;
       // Stamp even when there are no holders, so we don't re-scan it each run.
       await svc.from('events').update({ reminder_sent_at: nowIso }).eq('id', ev.id);
       result.event_24h++;
     }
 
+    // ── Once-a-day digests ───────────────────────────────────────────────────
+    // Each is claimed per recipient with the London DATE as the subject, so a late retry cannot repeat anyone who was already done, and the deadline is the end of
+    // that London day (a digest is never sent into the next day). admin_config holds the "done for today" marker, written only when no recipient is still retryable.
+    const endOfLondonDay = new Date(now.getTime() + ((24 - london.getHours()) * 60 - london.getMinutes()) * 60_000).toISOString();
+    const deviceUsers = async () => {
+      const recipients = new Set<string>();
+      const { data: withCol } = await svc.from('profiles').select('id').not('push_token', 'is', null);
+      for (const r of withCol ?? []) recipients.add(r.id);
+      const { data: toks } = await svc.from('push_tokens').select('user_id');
+      for (const r of toks ?? []) if (r.user_id) recipients.add(r.user_id as string);
+      return [...recipients];
+    };
+    const markDone = (key: string) => svc.from('admin_config').upsert({ key, value: todayStr, category: 'notifications' }, { onConflict: 'key' });
+
     // ── Wird o' da day (once per London day, to anyone with a device) ────────
     const { data: wirdCfg } = await svc
       .from('admin_config').select('value').eq('key', 'last_daily_wird_date').maybeSingle();
     if (wirdCfg?.value !== todayStr) {
+      let complete = true;
       const { count } = await svc
         .from('spik_dictionary').select('id', { count: 'exact', head: true })
         .in('word_status', ['approved', 'published']);
@@ -308,33 +317,27 @@ serve(async (req) => {
           .in('word_status', ['approved', 'published']).order('id').range(offset, offset);
         const w = words?.[0] as { word?: string; short_meaning?: string } | undefined;
         if (w?.word) {
-          const recipients = new Set<string>();
-          const { data: withCol } = await svc.from('profiles').select('id').not('push_token', 'is', null);
-          for (const r of withCol ?? []) recipients.add(r.id);
-          const { data: toks } = await svc.from('push_tokens').select('user_id');
-          for (const r of toks ?? []) if (r.user_id) recipients.add(r.user_id as string);
           const body = w.short_meaning ? `${w.word} — ${w.short_meaning}` : w.word;
-          const res = await sendUserPushBulk(svc, [...recipients], {
-            module: 'spik', categoryId: 'spik.daily_wird',
-            title: "Wird o' da day", body, data: { screen: 'spik' },
-          });
-          result.daily_wird = res.sent;
+          const out = await deliver(svc, result, 'daily_wird', todayStr, await deviceUsers(), {
+            module: 'spik', categoryId: 'spik.daily_wird', title: "Wird o' da day", body, data: { screen: 'spik' },
+          }, { deadline: endOfLondonDay });
+          result.daily_wird = out.accepted; complete = out.complete;
         }
       }
-      // Stamp regardless, so a quiet day doesn't retry every 15 min.
-      await svc.from('admin_config')
-        .upsert({ key: 'last_daily_wird_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
+      // Stamp regardless, so a quiet day doesn't retry every 15 min, EXCEPT while a recipient is still retryable (unreadable preference check).
+      if (complete) await markDone('last_daily_wird_date');
     }
 
     // ── Cruise: ships in today (morning, once per London day) ────────────────
     // Opt-in without needing its own opt-in flag: the `cruise` module defaults
     // to OFF in notification_preferences, so should_notify() inside
-    // sendUserPushBulk only lets this through for people who switched it on.
+    // the sender only lets this through for people who switched it on.
     // Aimed at 7am so shops and taxi drivers know before they open up.
     if (londonHour >= 7) {
       const { data: cruiseCfg } = await svc
         .from('admin_config').select('value').eq('key', 'last_cruise_today_date').maybeSingle();
       if (cruiseCfg?.value !== todayStr) {
+        let complete = true;
         const { data: day } = await svc
           .from('cruise_day_summary')
           .select('visit_date, ships_count, total_est_pax')
@@ -362,23 +365,16 @@ serve(async (req) => {
             : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
           const paxPart = pax > 0 ? ` — around ${pax.toLocaleString('en-GB')} passengers ashore` : '';
 
-          const recipients = new Set<string>();
-          const { data: withCol } = await svc.from('profiles').select('id').not('push_token', 'is', null);
-          for (const r of withCol ?? []) recipients.add(r.id);
-          const { data: toks } = await svc.from('push_tokens').select('user_id');
-          for (const r of toks ?? []) if (r.user_id) recipients.add(r.user_id as string);
-
-          const res = await sendUserPushBulk(svc, [...recipients], {
+          const out = await deliver(svc, result, 'cruise_today', todayStr, await deviceUsers(), {
             module: 'cruise', categoryId: 'cruise.in_port_today',
             title: ships === 1 ? 'Ship in today 🚢' : `${ships} ships in today 🚢`,
             body: shipList ? `${shipList}${paxPart}.` : `Lerwick has ${ships} cruise calls today${paxPart}.`,
             data: { screen: 'cruise-day', visit_date: todayStr },
-          });
-          result.cruise_today = res.sent;
+          }, { deadline: endOfLondonDay });
+          result.cruise_today = out.accepted; complete = out.complete;
         }
-        // Stamp even on a no-ship day, so it doesn't re-scan every run.
-        await svc.from('admin_config')
-          .upsert({ key: 'last_cruise_today_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
+        // Stamp even on a no-ship day, so it doesn't re-scan every run (but not while a recipient is still retryable).
+        if (complete) await markDone('last_cruise_today_date');
       }
     }
 
@@ -391,15 +387,14 @@ serve(async (req) => {
           .from('games_user_stats').select('user_id')
           .gt('current_streak_days', 0).lt('last_played_date', todayStr);
         const ids = [...new Set((atRisk ?? []).map(s => s.user_id).filter(Boolean) as string[])];
-        const res = await sendUserPushBulk(svc, ids, {
+        const out = await deliver(svc, result, 'streak_nudge', todayStr, ids, {
           module: 'games', categoryId: 'games.streak',
           title: 'Keep your streak going! 🔥',
           body: "You've a daily streak on the go — play a game today so you don't lose it.",
           data: { screen: 'games' },
-        });
-        result.streak_nudge = res.sent;
-        await svc.from('admin_config')
-          .upsert({ key: 'last_streak_nudge_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
+        }, { deadline: endOfLondonDay });
+        result.streak_nudge = out.accepted;
+        if (out.complete) await markDone('last_streak_nudge_date');
       }
     }
 
@@ -466,8 +461,8 @@ serve(async (req) => {
         const left = needed - (c as any).stamps_collected;
         if (needed <= 0 || left !== 1) continue;   // exactly one to go
         const reward = (prog.stamp_reward as string | null)?.trim();
-        await sendUserPush(svc, {
-          userId:     (c as { user_id: string }).user_id,
+        // nudge_reminded_at re-arms on every fill, so a finished delivery record is reusable after an hour (long enough to cover any overlapping run).
+        const out = await deliver(svc, result, 'loyalty_nudge', (c as { id: string }).id, [(c as { user_id: string }).user_id], {
           module:     'loyalty',
           categoryId: 'loyalty.almost_there',
           title:      'Just one more stamp ⭐️',
@@ -475,7 +470,8 @@ serve(async (req) => {
             ? `One more visit to ${bizName} and ${reward} is yours.`
             : `You're one stamp away from your reward at ${bizName}.`,
           data:       { screen: 'local-my-cards', card_id: (c as { id: string }).id },
-        });
+        }, { reuseAfter: '1 hour' });
+        if (!out.complete) continue;
         await svc.from('local_loyalty_cards').update({ nudge_reminded_at: nowIso }).eq('id', (c as { id: string }).id);
         result.loyalty_nudge++;
       }
@@ -502,8 +498,7 @@ serve(async (req) => {
         // deno-lint-ignore no-explicit-any
         if (needed <= 0 || (c as any).stamps_collected < needed) continue;
         const reward = (prog.stamp_reward as string | null)?.trim();
-        await sendUserPush(svc, {
-          userId:     (c as { user_id: string }).user_id,
+        const out = await deliver(svc, result, 'loyalty_reward', (c as { id: string }).id, [(c as { user_id: string }).user_id], {
           module:     'loyalty',
           categoryId: 'loyalty.reward_ready',
           title:      'Your reward is waiting 🎁',
@@ -511,7 +506,8 @@ serve(async (req) => {
             ? `You've earned ${reward} at ${bizName}. Show your phone at the till to redeem.`
             : `Your loyalty reward at ${bizName} is ready. Show your phone at the till to redeem.`,
           data:       { screen: 'local-my-cards', card_id: (c as { id: string }).id },
-        });
+        }, { reuseAfter: '1 hour' });
+        if (!out.complete) continue;
         await svc.from('local_loyalty_cards').update({ reward_reminded_at: nowIso }).eq('id', (c as { id: string }).id);
         result.loyalty_reward++;
       }
@@ -523,7 +519,7 @@ serve(async (req) => {
       const expiryWindow = new Date(now.getTime() + 48 * 60 * 60_000).toISOString();
       const { data: passes } = await svc
         .from('book_unit_purchases')
-        .select('id, owner_id, business:local_businesses(name), item:book_unit_items(name)')
+        .select('id, owner_id, expires_at, business:local_businesses(name), item:book_unit_items(name)')
         .gt('uses_remaining', 0)
         // A refunded pass keeps its uses, so it would otherwise be chased with
         // "use it before you lose it" for something already paid back.
@@ -538,18 +534,21 @@ serve(async (req) => {
         const bizName = (p as any).business?.name ?? 'a Shetland business';
         // deno-lint-ignore no-explicit-any
         const itemName = (p as any).item?.name ?? 'pass';
-        await sendUserPush(svc, {
-          userId:     (p as { owner_id: string }).owner_id,
+        const out = await deliver(svc, result, 'pass_expiring', (p as { id: string }).id, [(p as { owner_id: string }).owner_id], {
           module:     'wallet',
           categoryId: 'wallet.pass_expiring',
           title:      'Your pass expires soon ⏳',
           body:       `Your ${itemName} at ${bizName} expires within 48 hours — use it before you lose it.`,
           data:       { screen: 'local-my-passes', purchase_id: (p as { id: string }).id },
-        });
+        }, { deadline: (p as { expires_at: string }).expires_at });
+        if (!out.complete) continue;
         await svc.from('book_unit_purchases').update({ expiry_reminded_at: nowIso }).eq('id', (p as { id: string }).id);
         result.pass_expiring++;
       }
     } catch (e) { console.error('[reminder-runner] pass expiry reminders failed', e); }
+
+    // Finished delivery records are only needed to stop repeats; keep two weeks. Best effort.
+    try { await svc.rpc('reminder_purge', { p_older_than: '14 days' }); } catch (e) { console.error('[reminder-runner] ledger purge failed', e); }
 
     return json({ ok: true, ran_at: nowIso, ...result });
   } catch (err) {
@@ -557,6 +556,65 @@ serve(async (req) => {
     return json({ error: safeError('reminder-runner', err) }, 500);
   }
 });
+
+// ── Per-recipient delivery with a database claim ─────────────────────────────
+// reminder_claim_many() (migration 20261129090000) is the ONLY thing that decides who sends: it hands each (family, subject, recipient) to exactly one worker at a
+// time, remembers every outcome, and keeps finished recipients from being sent again. Nothing is sent without a claim, so if the ledger is unavailable the run
+// sends nothing and reports ledger_error (fail closed) instead of falling back to the old unprotected path.
+//   complete = nobody is left to retry and nobody is mid-send in another worker: only then may the caller mark the parent reminder done.
+//   Retryable: an unreadable preference check, and an expired lease on a send that never reached the provider. NOT retryable: opted out, quiet hours, no device,
+//   provider failure, and any send interrupted after the provider may have been contacted (recorded 'uncertain': a duplicate push is worse than a missed one).
+const LEASE_SECONDS = 600;
+const MAX_ATTEMPTS = 12;
+const SEND_CONCURRENCY = 25;
+const OUTCOME_OF: Record<string, string> = { opted_out: 'opted_out', preference_blocked: 'opted_out', quiet_hours: 'quiet_hours', no_device: 'no_device', provider_error: 'provider_error', preference_check_failed: 'check_failed' };
+type ReminderPush = Omit<SendUserPushInput, 'userId' | 'beforeProvider'>;
+
+async function deliver(
+  svc: ReturnType<typeof createServiceClient>,
+  result: { deferred_preference_check: number; ledger_error: string | null },
+  family: string, subject: string, userIds: string[], body: ReminderPush,
+  opts: { deadline?: string | null; reuseAfter?: string | null } = {},
+): Promise<{ complete: boolean; accepted: number }> {
+  const users = [...new Set(userIds.filter(Boolean))];
+  if (users.length === 0) return { complete: true, accepted: 0 };
+  const claim = await svc.rpc('reminder_claim_many', { p_family: family, p_subject: subject, p_users: users, p_lease_seconds: LEASE_SECONDS, p_deadline: opts.deadline ?? null, p_max_attempts: MAX_ATTEMPTS, p_reuse_after: opts.reuseAfter ?? null });
+  if (claim.error || !Array.isArray(claim.data)) {
+    result.ledger_error = (claim.error as { message?: string } | null)?.message ?? 'reminder_claim_many returned no rows';
+    console.error('[reminder-runner] delivery ledger unavailable; sending nothing:', result.ledger_error);
+    return { complete: false, accepted: 0 };
+  }
+  const rows = claim.data as { r_user: string; r_token: string | null; r_state: string }[];
+  let incomplete = rows.some((r) => r.r_state === 'in_progress' || r.r_state === 'retryable');
+  const mine = rows.filter((r) => r.r_state === 'claimed' && r.r_token);
+  let accepted = 0;
+  for (let i = 0; i < mine.length; i += SEND_CONCURRENCY) {
+    const finished: { user: string; token: string; status: string; error: string | null }[] = [];
+    const settled = await Promise.allSettled(mine.slice(i, i + SEND_CONCURRENCY).map(async (r) => ({
+      r,
+      res: await sendUserPush(svc, {
+        ...body, userId: r.r_user,
+        beforeProvider: async () => (await svc.rpc('reminder_mark_dispatching', { p_family: family, p_subject: subject, p_user: r.r_user, p_token: r.r_token, p_lease_seconds: LEASE_SECONDS })).data === true,
+      }),
+    })));
+    for (const s of settled) {
+      if (s.status === 'rejected') { incomplete = true; continue; }   // outcome unknown: the claim is left to expire (never resent if a send had begun)
+      const { r, res } = s.value;
+      if (res.reason === 'claim_lost') { incomplete = true; continue; }
+      if (res.reason === 'accepted') { accepted++; finished.push({ user: r.r_user, token: r.r_token!, status: 'sent', error: null }); continue; }
+      const status = OUTCOME_OF[res.reason] ?? 'provider_error';
+      if (status === 'check_failed') incomplete = true;
+      finished.push({ user: r.r_user, token: r.r_token!, status, error: res.error ?? null });
+    }
+    // Recorded per batch of 25, so an interruption part-way through a large audience keeps everything already done.
+    if (finished.length) {
+      const fin = await svc.rpc('reminder_finish_many', { p_family: family, p_subject: subject, p_results: finished });
+      if (fin.error) { console.error('[reminder-runner] could not record outcomes:', fin.error); incomplete = true; }
+    }
+  }
+  if (incomplete) result.deferred_preference_check++;
+  return { complete: !incomplete, accepted };
+}
 
 // Best-effort business display name (null if not found).
 async function businessName(

@@ -18,6 +18,22 @@ const corsHeaders = {
  * What it does (service role, caller's own id only):
  *   1. Deletes the user's own UGC (memories, comments, pins, boat comments,
  *      community notices) — "right to be forgotten" from public surfaces.
+ *   1b. Deletes the user's own notice areas, notification preferences and
+ *      delivery history: the Notices & Alerts tables via the service-role-only
+ *      function delete_member_notice_data(uid) (those tables are locked even to
+ *      direct service-role access), and notification_preferences. In an
+ *      environment that has this function but not the Notices & Alerts migrations
+ *      the RPC does not exist: that step is reported as "skipped", never as a
+ *      failure, and the rest of the deletion proceeds.
+ *   1c. Funeral notices and organisation memberships (migration 20261129060000):
+ *      delete_member_funeral_data removes the submitter's private details from every
+ *      funeral submission (an approved announcement stays public and unchanged) and
+ *      delete_member_memberships deactivates their official-publisher and
+ *      funeral-director seats. Same "not present yet" tolerance, but ONLY for an
+ *      environment that lacks the function: once it exists, any other failure is a
+ *      CRITICAL failure. The deletion then stops BEFORE anything irreversible
+ *      (profile scrub, auth soft-delete), answers 500 with the steps, and is safe
+ *      to retry (every step is idempotent).
  *   2. Deletes their push tokens + block relationships.
  *   3. Deactivates any business they own (kept for transactional integrity).
  *   4. Scrubs PII from their profile + stamps deleted_at.
@@ -59,6 +75,25 @@ serve(async (req) => {
       }
     };
 
+    // Like run(), but for things that arrive with a later migration (Notices & Alerts): "not found" (PostgREST PGRST205 table / PGRST202 function; Postgres 42P01 / 42883)
+    // means there is nothing of that kind to delete yet, so the step is "skipped" and deletion carries on. Any other error is still reported as an error.
+    const runIfPresent = async (label: string, p: PromiseLike<{ error: unknown } | unknown>) => {
+      try {
+        const e = ((await p) as { error?: { code?: string; message?: string } | null })?.error;
+        steps[label] = !e ? 'ok' : (e.code === 'PGRST205' || e.code === 'PGRST202' || e.code === '42P01' || e.code === '42883') ? 'skipped: not present yet' : `err: ${String(e.message ?? e)}`;
+      } catch (e) {
+        steps[label] = `threw: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    };
+
+    // Critical steps: the same tolerance for "this function does not exist in this environment yet", but any OTHER failure is recorded and stops the deletion
+    // before the profile scrub / auth soft-delete, so a partial cleanup can never be reported as a completed deletion.
+    const failures: string[] = [];
+    const runCritical = async (label: string, p: PromiseLike<{ error: unknown } | unknown>) => {
+      await runIfPresent(label, p);
+      if (steps[label].startsWith('err:') || steps[label].startsWith('threw:')) failures.push(label);
+    };
+
     // 1. Delete the user's own UGC (cascades children where defined).
     await run('memories', svc.from('memories').delete().eq('author_id', uid));
     await run('memory_comments', svc.from('memory_comments').delete().eq('author_id', uid));
@@ -70,6 +105,15 @@ serve(async (req) => {
     // publisher_user_id on those is audit metadata (server-stamped), and its FK nulls it when the profile goes.
     await run('notices', svc.from('notices').delete().eq('publisher_user_id', uid).is('publisher_business_id', null).is('publisher_hub_id', null).eq('is_platform_notice', false));
 
+    // 1b. The member's own notice areas, notification preferences and delivery history - only ever by the authenticated account's id (uid, from the caller's JWT).
+    //     Not selected by anything else: other members' rows, and hub / business / official notices, are not touched.
+    await runCritical('notice_member_data', svc.rpc('delete_member_notice_data', { p_user: uid }));   // member_areas, notice_notification_prefs, notice_deliveries
+    await runIfPresent('notification_preferences', svc.from('notification_preferences').delete().eq('user_id', uid));
+
+    // 1c. Funeral submissions (private submitter details only; approved announcements are preserved) and organisation memberships (deactivated, never deleted).
+    await runCritical('funeral_notices', svc.rpc('delete_member_funeral_data', { p_user: uid }));
+    await runCritical('organisation_memberships', svc.rpc('delete_member_memberships', { p_user: uid }));
+
     // 2. Push tokens + block relationships.
     await run('push_tokens', svc.from('push_tokens').delete().eq('user_id', uid));
     await run('blocks_by', svc.from('blocked_users').delete().eq('blocker_id', uid));
@@ -77,6 +121,14 @@ serve(async (req) => {
 
     // 3. Deactivate any business they own (retain rows for transactional integrity).
     await run('deactivate_businesses', svc.from('local_businesses').update({ is_active: false }).eq('owner_id', uid));
+
+    // 3b. A closed account keeps no staff privilege (the authority checks also refuse a closed account, because a token stays valid until it expires).
+    await runCritical('demote_privileges', svc.from('profiles').update({ role: 'customer', is_platform_owner: false }).eq('id', uid).or('role.in.(admin,moderator),is_platform_owner.eq.true'));
+
+    if (failures.length) {
+      // Nothing irreversible has happened: the profile is intact and the auth user can still sign in, so the person can simply try again.
+      return json({ ok: false, error: 'Your account could not be fully deleted. Nothing was closed, please try again.', failed: failures, steps }, 500);
+    }
 
     // 4. Scrub PII from the profile + stamp deleted_at.
     await run('scrub_profile', svc.from('profiles').update({

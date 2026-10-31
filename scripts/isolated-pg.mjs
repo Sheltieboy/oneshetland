@@ -76,6 +76,21 @@ const SUITES = [
   'supabase/tests/referral-disabled.node.test.ts',
   'supabase/tests/launch-test-centre.node.test.ts',
   'supabase/tests/launch-test-centre-web.node.test.ts',
+  'supabase/tests/my-tickets-privacy.node.test.ts',
+  'supabase/tests/notices-structural-readiness.node.test.ts',
+  'supabase/tests/notices-alerts-core.node.test.ts',
+  'supabase/tests/notices-alerts-audience.node.test.ts',
+  'supabase/tests/notices-alerts-funeral.node.test.ts',
+  'supabase/tests/notices-alerts-funeral-privacy.node.test.ts',
+  'supabase/tests/notices-alerts-member-notifications.node.test.ts',
+  'supabase/tests/notices-alerts-imports.node.test.ts',
+  'supabase/tests/notices-alerts-performance.node.test.ts',
+  'supabase/tests/notices-alerts-member.node.test.ts',
+  'supabase/tests/notices-alerts-rollback.node.test.ts',
+  'supabase/tests/notices-read-protection.node.test.ts',
+  'supabase/tests/notice-broadcast-eligibility.node.test.ts',
+  'supabase/tests/reminder-runner-runtime.node.test.ts',
+  'supabase/tests/reminder-runner-concurrency.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.

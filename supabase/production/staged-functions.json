@@ -1,0 +1,11 @@
+{
+  "_comment": "Edge Functions that exist in the repository but are NOT deployed yet. Each needs an approved deploy; after it, run the manifest generator and remove the entry. The manifest guard fails for any undeployed function not listed here, and for any listed function that production already runs. \"modified\" lists DEPLOYED functions whose source has a reviewed, not-yet-deployed change: the guard skips only their index/bundle comparison and fails if one is listed that is not deployed.",
+  "functions": {
+    "submit-funeral-enquiry": {
+      "step": "Notices & Alerts - funeral enquiry protection",
+      "verify_jwt": false,
+      "reason": "HELD on purpose: not activated until hosted Cloudflare Turnstile verification and trusted client-IP verification have passed; the database function submit_funeral_enquiry is service-role only, so with no function deployed the public endpoint is closed"
+    }
+  },
+  "modified": {}
+}

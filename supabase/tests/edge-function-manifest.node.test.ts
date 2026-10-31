@@ -20,13 +20,38 @@ import { sha256 } from '../../scripts/lib/function-deps.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FN = join(ROOT, 'supabase/functions');
 const manifest = JSON.parse(readFileSync(join(ROOT, 'supabase/production/edge-function-manifest.json'), 'utf8'));
+const stagedFile = JSON.parse(readFileSync(join(ROOT, 'supabase/production/staged-functions.json'), 'utf8'));
+const staged: Record<string, any> = stagedFile.functions;
+const stagedModified: Record<string, any> = stagedFile.modified ?? {};
 const dirs = readdirSync(FN).filter((n) => !n.startsWith('_') && statSync(join(FN, n)).isDirectory());
 
 describe('production Edge Function manifest', () => {
-  test('describes exactly the 100 deployed functions, each with source', () => {
-    assert.equal(Object.keys(manifest.functions).length, 100);
-    assert.deepEqual(Object.keys(manifest.functions).sort(), dirs.sort());
-    assert.equal(manifest.summary.functions, 100);
+  test('describes exactly the 103 deployed functions, each with source', () => {
+    assert.equal(Object.keys(manifest.functions).length, 103);
+    assert.deepEqual(Object.keys(manifest.functions).sort(), dirs.filter((d) => !staged[d]).sort());
+    assert.equal(manifest.summary.functions, 103);
+  });
+
+  test('a staged modification is a deployed function that really differs, with a reason', () => {
+    for (const [n, v] of Object.entries(stagedModified) as [string, any][]) {
+      assert.ok(manifest.functions[n], `${n} is not deployed`);
+      assert.notEqual(sha256(readFileSync(join(FN, n, 'index.ts'))), manifest.functions[n].index_sha256, `${n} no longer differs: remove it from "modified"`);
+      assert.ok(typeof v.reason === 'string' && v.reason.length > 10, `${n} needs a reason`);
+    }
+  });
+
+  test('every other function directory is a reviewed, not-yet-deployed staged function — and nothing deployed is still listed as staged', () => {
+    assert.deepEqual(dirs.filter((d) => !manifest.functions[d]).sort(), Object.keys(staged).sort());
+    for (const n of Object.keys(staged)) {
+      assert.equal(manifest.functions[n], undefined, `${n} is deployed: remove it from staged-functions.json`);
+      assert.ok(typeof staged[n].reason === 'string' && staged[n].reason.length > 10, `${n} needs a reason`);
+    }
+    const toml = readFileSync(join(ROOT, 'supabase/config.toml'), 'utf8');
+    for (const [n, s] of Object.entries(staged) as [string, any][]) {
+      const m = toml.match(new RegExp(`\\[functions\\.${n}\\]\\s*\\nverify_jwt\\s*=\\s*(true|false)`));
+      assert.ok(m, `${n}: config.toml entry missing`);
+      assert.equal(m![1] === 'true', s.verify_jwt, `${n}: config.toml verify_jwt differs from the staged declaration`);
+    }
   });
 
   test('is consistent with the source tree (index.ts exact; shared drift declared, not silent)', () => {
@@ -35,12 +60,13 @@ describe('production Edge Function manifest', () => {
 
   test('every function directory carries index.ts exactly as production runs it', () => {
     for (const [n, m] of Object.entries(manifest.functions) as [string, any][]) {
+      if (stagedModified[n]) continue;   // a reviewed, staged change (see the next suite)
       assert.equal(sha256(readFileSync(join(FN, n, 'index.ts'))), m.index_sha256, `${n}/index.ts differs from the production bundle`);
       assert.equal(m.files[`${n}/index.ts`], m.index_sha256);
     }
   });
 
-  test('config.toml carries the live verify_jwt split (88 true / 12 false) function by function', () => {
+  test('config.toml carries the live verify_jwt split (91 true / 12 false) function by function', () => {
     const toml = readFileSync(join(ROOT, 'supabase/config.toml'), 'utf8');
     const declared = new Map<string, boolean>();
     for (const m of toml.matchAll(/\[functions\.([\w-]+)\]([\s\S]*?)(?=\n\[|$)/g)) {
@@ -51,8 +77,8 @@ describe('production Edge Function manifest', () => {
       assert.equal(declared.get(n) ?? true, m.verify_jwt, `${n}: config.toml and production disagree about verify_jwt`);
       m.verify_jwt ? t++ : f++;
     }
-    assert.deepEqual([t, f], [88, 12]);
-    assert.deepEqual(manifest.summary, { functions: 100, canonical_current: manifest.summary.canonical_current, intentional_shared_drift: manifest.summary.intentional_shared_drift, verify_jwt_true: 88, verify_jwt_false: 12 });
+    assert.deepEqual([t, f], [91, 12]);
+    assert.deepEqual(manifest.summary, { functions: 103, canonical_current: manifest.summary.canonical_current, intentional_shared_drift: manifest.summary.intentional_shared_drift, verify_jwt_true: 91, verify_jwt_false: 12 });
   });
 
   test('every classification is honest: canonical-current means NO drift; intentional-shared-drift lists only _shared files', () => {

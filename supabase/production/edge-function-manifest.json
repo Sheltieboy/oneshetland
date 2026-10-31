@@ -4,10 +4,10 @@
   "captured_on": "2026-10-08",
   "captured_by": "read-only `supabase functions list` + `supabase functions download <name> --use-api` for every function",
   "summary": {
-    "functions": 100,
-    "canonical_current": 42,
-    "intentional_shared_drift": 58,
-    "verify_jwt_true": 88,
+    "functions": 103,
+    "canonical_current": 40,
+    "intentional_shared_drift": 63,
+    "verify_jwt_true": 91,
     "verify_jwt_false": 12
   },
   "functions": {
@@ -36,7 +36,7 @@
       "shared_drift": []
     },
     "authorise-payment": {
-      "version": 72,
+      "version": 73,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "4c2518c91f985736daa56861ffb4c70c07c6bcad5cba517ceae7d79eb3e6776d",
@@ -49,7 +49,7 @@
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
         "_shared/saved-card.ts": "d19d177276d7f35a049f49e016139cb27f9684353053ce39084002a4ae36fd6a",
         "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/stripe-customer.ts": "073c4288e24db1818a13a4868cbe17ae0cc189a422ad9c20fb13cdd5bb9a2bd0",
         "authorise-payment/index.ts": "4c2518c91f985736daa56861ffb4c70c07c6bcad5cba517ceae7d79eb3e6776d"
       },
@@ -96,7 +96,7 @@
       "shared_drift": []
     },
     "capture-payment": {
-      "version": 63,
+      "version": 64,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "b739696e478a354bba8a20b978a22b600c3aff0f887ea3d05c991c73ec15059b",
@@ -107,7 +107,7 @@
         "_shared/fetch-authorisation.ts": "e00d4d8fe3f8cadb1d50f66da34a2470798b482149630d814dd2db56c2b4a84f",
         "_shared/fetch-hold.ts": "a18e3911cf1431f93e80ee1abf38e322aa5cb081fd5d474939a459e33ddba394",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "capture-payment/index.ts": "b739696e478a354bba8a20b978a22b600c3aff0f887ea3d05c991c73ec15059b"
       },
       "shared_drift": [
@@ -129,6 +129,7 @@
       },
       "shared_drift": [
         "_shared/fulfilment.ts",
+        "_shared/send-push.ts",
         "_shared/ticket-payment-binding.ts"
       ]
     },
@@ -148,14 +149,14 @@
       ]
     },
     "confirm-event-tickets": {
-      "version": 47,
+      "version": 48,
       "verify_jwt": true,
       "classification": "canonical-current",
       "index_sha256": "b34919ff4276e3637a1b967ebc0ce23742570f99a8bdf5a69c9d54e123246ce6",
       "files": {
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
         "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/ticket-payment-binding.ts": "0999c1556980a0701b19961acd71e0c076df5ef7da861b0a6039044e4f40c0cc",
         "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
         "confirm-event-tickets/index.ts": "b34919ff4276e3637a1b967ebc0ce23742570f99a8bdf5a69c9d54e123246ce6"
@@ -163,26 +164,26 @@
       "shared_drift": []
     },
     "confirm-gift": {
-      "version": 41,
+      "version": 42,
       "verify_jwt": true,
       "classification": "canonical-current",
       "index_sha256": "e42be8f5333f103f2a937e7a9dd5b587b551ff11abfe5160fabe81057b021011",
       "files": {
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
         "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "confirm-gift/index.ts": "e42be8f5333f103f2a937e7a9dd5b587b551ff11abfe5160fabe81057b021011"
       },
       "shared_drift": []
     },
     "confirm-hub-donation": {
-      "version": 37,
+      "version": 38,
       "verify_jwt": true,
       "classification": "canonical-current",
       "index_sha256": "f226f1232e03049c1e14756cd57743eea208de4f1c3f3d8a9fbbf23bb8215e07",
       "files": {
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "confirm-hub-donation/index.ts": "f226f1232e03049c1e14756cd57743eea208de4f1c3f3d8a9fbbf23bb8215e07"
       },
       "shared_drift": []
@@ -199,13 +200,13 @@
       "shared_drift": []
     },
     "confirm-unit-purchase": {
-      "version": 38,
+      "version": 39,
       "verify_jwt": true,
       "classification": "canonical-current",
       "index_sha256": "4a0a20c178dbe3e24f0842d7f345adecdfcc38087294caf8d12147f25d739cff",
       "files": {
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "confirm-unit-purchase/index.ts": "4a0a20c178dbe3e24f0842d7f345adecdfcc38087294caf8d12147f25d739cff"
       },
       "shared_drift": []
@@ -341,7 +342,7 @@
       ]
     },
     "create-product-order-intent": {
-      "version": 39,
+      "version": 40,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "03597e50c078a8718da70ab8400f93728c10eeee76984f9cdab5a72afe639bab",
@@ -356,7 +357,7 @@
         "_shared/saved-card.ts": "a25e81e37e0d23daa89634550c227fae3d49f89a4c46341340c710521f7cf5f7",
         "_shared/self-payment.ts": "9ac1b2b08a4b1debf0a8856b21f3d5f9b1adec4c52191496f51fbe6498cf0dfb",
         "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/stripe-sca.ts": "c4995d447f533560d451d376bc10ff8328066e7a52ee39bf0d2c488122bd6b73",
         "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
         "_shared/wallet-ledger.ts": "05752f56182445491209cd3e13408f07cdaf62fea798f9b28cbeacafa25d674b",
@@ -406,12 +407,12 @@
       ]
     },
     "delete-account": {
-      "version": 31,
+      "version": 32,
       "verify_jwt": true,
       "classification": "canonical-current",
-      "index_sha256": "a631a1da57faef17542bd44e49bf5f3d0e3449e31cf01e8c81729473c87cc5a8",
+      "index_sha256": "e8d7a4197f77c7c4e0c71422c17733e093293e61bb7045216cd6f6ca74cb4f70",
       "files": {
-        "delete-account/index.ts": "a631a1da57faef17542bd44e49bf5f3d0e3449e31cf01e8c81729473c87cc5a8"
+        "delete-account/index.ts": "e8d7a4197f77c7c4e0c71422c17733e093293e61bb7045216cd6f6ca74cb4f70"
       },
       "shared_drift": []
     },
@@ -436,7 +437,7 @@
       ]
     },
     "fetch-hold-check": {
-      "version": 10,
+      "version": 11,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "13510838d5f44dcd102c6369dd31ec6c7be44c0a3f6daa9a02f8bb04d8dd3ae7",
@@ -445,7 +446,7 @@
         "_shared/fetch-hold.ts": "a18e3911cf1431f93e80ee1abf38e322aa5cb081fd5d474939a459e33ddba394",
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "fetch-hold-check/index.ts": "13510838d5f44dcd102c6369dd31ec6c7be44c0a3f6daa9a02f8bb04d8dd3ae7"
       },
       "shared_drift": [
@@ -482,14 +483,14 @@
       "shared_drift": []
     },
     "hub-broadcast": {
-      "version": 36,
+      "version": 37,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "eddc9ddee0b781d3ab13bbf61b08a7d082d4777440aa2b878b3e0bd6dfe9b7b4",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "hub-broadcast/index.ts": "eddc9ddee0b781d3ab13bbf61b08a7d082d4777440aa2b878b3e0bd6dfe9b7b4"
       },
       "shared_drift": [
@@ -509,6 +510,19 @@
       "shared_drift": [
         "_shared/rate-limit.ts"
       ]
+    },
+    "import-official-notices": {
+      "version": 1,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "8963e7b01ec824cb55da3da8950ad35373c899c3f54568039770a78ade6bc2f6",
+      "files": {
+        "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/notice-import.ts": "13d3a43c5d76a3458e5bb62c893879c9040627e34aa2eaf7c812f8aaed415ab9",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "import-official-notices/index.ts": "8963e7b01ec824cb55da3da8950ad35373c899c3f54568039770a78ade6bc2f6"
+      },
+      "shared_drift": []
     },
     "local-billing-portal": {
       "version": 40,
@@ -550,14 +564,14 @@
       ]
     },
     "local-nfc-stamp": {
-      "version": 47,
+      "version": 48,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "ef1c4e4579961b1775431b18a2a002251d81a5170acce7de7e19b2528010a46b",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "local-nfc-stamp/index.ts": "ef1c4e4579961b1775431b18a2a002251d81a5170acce7de7e19b2528010a46b"
       },
       "shared_drift": [
@@ -612,14 +626,14 @@
       "shared_drift": []
     },
     "local-stamp-collect": {
-      "version": 47,
+      "version": 48,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "b691a2e9a77e27f030c73d5e3ff423eef8f66ab50015845405cae78b8e486a20",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "local-stamp-collect/index.ts": "b691a2e9a77e27f030c73d5e3ff423eef8f66ab50015845405cae78b8e486a20"
       },
       "shared_drift": [
@@ -693,13 +707,13 @@
       "shared_drift": []
     },
     "local-wallet-confirm-topup": {
-      "version": 45,
+      "version": 46,
       "verify_jwt": true,
       "classification": "canonical-current",
       "index_sha256": "e6d35da9694568742a035dae9ac38a3ee5c03950ea9fb8cd93f7bdab32269110",
       "files": {
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "local-wallet-confirm-topup/index.ts": "e6d35da9694568742a035dae9ac38a3ee5c03950ea9fb8cd93f7bdab32269110"
       },
       "shared_drift": []
@@ -723,6 +737,7 @@
       },
       "shared_drift": [
         "_shared/self-payment.ts",
+        "_shared/send-push.ts",
         "_shared/wallet-ledger.ts"
       ]
     },
@@ -741,14 +756,14 @@
       "shared_drift": []
     },
     "loyalty-till": {
-      "version": 33,
+      "version": 34,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "7519da86fe57ca625c08b91376a4754b249024e028097d0753bfd2190f64fee0",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "loyalty-till/index.ts": "7519da86fe57ca625c08b91376a4754b249024e028097d0753bfd2190f64fee0"
       },
       "shared_drift": [
@@ -769,7 +784,7 @@
       "shared_drift": []
     },
     "notify-application-update": {
-      "version": 44,
+      "version": 45,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "70529d20af3af8b1854b7b73801804d126e7845458e8f7c760a66ed7d4384e4f",
@@ -778,7 +793,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/shift-notify-auth.ts": "cfd9f4cdd90c6de48baab272d1da29fa5cb78219c6d8a6813e211920c2bda61c",
         "notify-application-update/index.ts": "70529d20af3af8b1854b7b73801804d126e7845458e8f7c760a66ed7d4384e4f"
       },
@@ -787,7 +802,7 @@
       ]
     },
     "notify-booking": {
-      "version": 33,
+      "version": 34,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "e480c7fb7da29487d6aea1fb9a9f29b1a8cb5fd0f77c908b1c15d8a78d618e18",
@@ -797,7 +812,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-booking/index.ts": "e480c7fb7da29487d6aea1fb9a9f29b1a8cb5fd0f77c908b1c15d8a78d618e18"
       },
       "shared_drift": [
@@ -805,14 +820,14 @@
       ]
     },
     "notify-business-alert": {
-      "version": 34,
+      "version": 35,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "a04b4b13e47472efe4d60eaa9246fc43a2f9305b44b2333de31629c614061728",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-business-alert/index.ts": "a04b4b13e47472efe4d60eaa9246fc43a2f9305b44b2333de31629c614061728"
       },
       "shared_drift": [
@@ -834,11 +849,12 @@
         "notify-business-claim/index.ts": "e4e83953638dc2fc36b7d369e6434b0f81766d69c07d0e50275d4ccaca76d104"
       },
       "shared_drift": [
-        "_shared/rate-limit.ts"
+        "_shared/rate-limit.ts",
+        "_shared/send-push.ts"
       ]
     },
     "notify-claim": {
-      "version": 35,
+      "version": 36,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "60491a1e1323d5507cb99711daa0184b395f327df0f27bfe0189c7498fcb54fc",
@@ -848,7 +864,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-claim/index.ts": "60491a1e1323d5507cb99711daa0184b395f327df0f27bfe0189c7498fcb54fc"
       },
       "shared_drift": [
@@ -856,7 +872,7 @@
       ]
     },
     "notify-collected": {
-      "version": 49,
+      "version": 50,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "a99c3be29bf62e7408dd34998c9846328ae27108c9ae5d6eee0caa6e9969286a",
@@ -866,7 +882,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-collected/index.ts": "a99c3be29bf62e7408dd34998c9846328ae27108c9ae5d6eee0caa6e9969286a"
       },
       "shared_drift": [
@@ -874,22 +890,21 @@
       ]
     },
     "notify-community-notice": {
-      "version": 13,
+      "version": 15,
       "verify_jwt": true,
-      "classification": "intentional-shared-drift",
-      "index_sha256": "b8e2a058db699e3634d8fd22d7972c7ef0446592a12d23c868b8e42e0df8e746",
+      "classification": "canonical-current",
+      "index_sha256": "3800d6984587216aa4bb89585e4f6614e9ee1de60bdc22bad0fe5cdb537e25a1",
       "files": {
-        "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
+        "_shared/notice-broadcast.ts": "b3d941e24e3fbaacf31007e871bc4e5086b7e3bfcdcafa058c26d22de62e00cd",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
-        "notify-community-notice/index.ts": "b8e2a058db699e3634d8fd22d7972c7ef0446592a12d23c868b8e42e0df8e746"
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
+        "notify-community-notice/index.ts": "3800d6984587216aa4bb89585e4f6614e9ee1de60bdc22bad0fe5cdb537e25a1"
       },
-      "shared_drift": [
-        "_shared/rate-limit.ts"
-      ]
+      "shared_drift": []
     },
     "notify-drivers": {
-      "version": 51,
+      "version": 52,
       "verify_jwt": false,
       "classification": "intentional-shared-drift",
       "index_sha256": "9d699ea27ad3f7572579cc4c5bfacec1fd1be617f89c402b047f124c020ea1df",
@@ -899,7 +914,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-drivers/index.ts": "9d699ea27ad3f7572579cc4c5bfacec1fd1be617f89c402b047f124c020ea1df"
       },
       "shared_drift": [
@@ -907,7 +922,7 @@
       ]
     },
     "notify-engagement": {
-      "version": 38,
+      "version": 39,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "d80236a6f484f1408569fe615d28b47ca3c4c4a0d05d30b536cb207e77e5b797",
@@ -917,7 +932,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-engagement/index.ts": "d80236a6f484f1408569fe615d28b47ca3c4c4a0d05d30b536cb207e77e5b797"
       },
       "shared_drift": [
@@ -925,7 +940,7 @@
       ]
     },
     "notify-event-update": {
-      "version": 38,
+      "version": 39,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "656b5d826e597332add6b8ee5895e1b7ddb04df621d7c44630bd436b0436fd66",
@@ -936,15 +951,31 @@
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
         "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-event-update/index.ts": "656b5d826e597332add6b8ee5895e1b7ddb04df621d7c44630bd436b0436fd66"
       },
       "shared_drift": [
         "_shared/rate-limit.ts"
       ]
     },
+    "notify-funeral-notice": {
+      "version": 1,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "f8a21d56a2e4b8beb04e6797ff693f4804d15c207052d50fcbb558adc7d9d36c",
+      "files": {
+        "_shared/notice-dispatch.ts": "99ef578ededd5c8f3ed68824384ad7fddd003fb16576779d18f67a151b20bef8",
+        "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
+        "notify-funeral-notice/index.ts": "f8a21d56a2e4b8beb04e6797ff693f4804d15c207052d50fcbb558adc7d9d36c"
+      },
+      "shared_drift": []
+    },
     "notify-hub": {
-      "version": 36,
+      "version": 37,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "2d57a7ab91da965d28112f6b2c976cc5d2ab85a5be293b7e490e22bf6b0b986c",
@@ -953,7 +984,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-hub/index.ts": "2d57a7ab91da965d28112f6b2c976cc5d2ab85a5be293b7e490e22bf6b0b986c"
       },
       "shared_drift": [
@@ -961,25 +992,26 @@
       ]
     },
     "notify-hub-content": {
-      "version": 35,
+      "version": 36,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
-      "index_sha256": "9de84133b76885a02bae46d8198106875f9a35a3d10e472a1c1f5a36b3427e47",
+      "index_sha256": "00c34326dcce3bd59f1aeaf769fd597cdb2f04f49ba386254edd3aa8cfb9b8d3",
       "files": {
         "_shared/hub-content-notify-auth.ts": "ae7f2d7d72b4d723bc38ccb24554fbfd3c635511420658e4fbc7cfccf0ffcf3e",
+        "_shared/notice-dispatch.ts": "99ef578ededd5c8f3ed68824384ad7fddd003fb16576779d18f67a151b20bef8",
         "_shared/notify-decision.ts": "7458f8c70b2168e99c4f400722205bb15e1e726bbde8b262a1243e5ceec7efc4",
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
-        "notify-hub-content/index.ts": "9de84133b76885a02bae46d8198106875f9a35a3d10e472a1c1f5a36b3427e47"
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
+        "notify-hub-content/index.ts": "00c34326dcce3bd59f1aeaf769fd597cdb2f04f49ba386254edd3aa8cfb9b8d3"
       },
       "shared_drift": [
         "_shared/rate-limit.ts"
       ]
     },
     "notify-job": {
-      "version": 37,
+      "version": 38,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "b86088523d6a41227d95f0372df68a73f956db7d3fb753cacbc4a4e938533672",
@@ -989,7 +1021,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-job/index.ts": "b86088523d6a41227d95f0372df68a73f956db7d3fb753cacbc4a4e938533672"
       },
       "shared_drift": [
@@ -997,7 +1029,7 @@
       ]
     },
     "notify-matching-workers": {
-      "version": 41,
+      "version": 42,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "8340c4250aa6d89c85e14d82359086ac41aaf0a1ddd10a36c05ed17080a2860f",
@@ -1006,7 +1038,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/shift-notify-auth.ts": "cfd9f4cdd90c6de48baab272d1da29fa5cb78219c6d8a6813e211920c2bda61c",
         "notify-matching-workers/index.ts": "8340c4250aa6d89c85e14d82359086ac41aaf0a1ddd10a36c05ed17080a2860f"
       },
@@ -1015,28 +1047,44 @@
       ]
     },
     "notify-new-offer": {
-      "version": 42,
+      "version": 43,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "2f1e6e2dea4db5dd0296922cc4d1bfaf14766c6885bafbb589874d3a2aa58f37",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-new-offer/index.ts": "2f1e6e2dea4db5dd0296922cc4d1bfaf14766c6885bafbb589874d3a2aa58f37"
       },
       "shared_drift": [
         "_shared/rate-limit.ts"
       ]
     },
+    "notify-notice-audience": {
+      "version": 1,
+      "verify_jwt": true,
+      "classification": "canonical-current",
+      "index_sha256": "df407f87b1bcc6a9539dd8743a46a8f86d2d500c53f354e537c5c3ecbccc4757",
+      "files": {
+        "_shared/notice-audience.ts": "d99eb4a77b4d3578eba2ff864559ac8b4aca303dd824d6b7856a5ec479bc458d",
+        "_shared/notice-dispatch.ts": "99ef578ededd5c8f3ed68824384ad7fddd003fb16576779d18f67a151b20bef8",
+        "_shared/rate-limit.ts": "1d5430b092341deab0d544b50090e62a0ead4e8778d0959189c6bac21a93f996",
+        "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
+        "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
+        "notify-notice-audience/index.ts": "df407f87b1bcc6a9539dd8743a46a8f86d2d500c53f354e537c5c3ecbccc4757"
+      },
+      "shared_drift": []
+    },
     "notify-product-order": {
-      "version": 12,
+      "version": 13,
       "verify_jwt": false,
       "classification": "intentional-shared-drift",
       "index_sha256": "80ed24178271f46110fc0fe63c6b6e822a9595b084f23bca48929049f3c9c1a5",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-product-order/index.ts": "80ed24178271f46110fc0fe63c6b6e822a9595b084f23bca48929049f3c9c1a5"
       },
       "shared_drift": [
@@ -1044,7 +1092,7 @@
       ]
     },
     "notify-shift-application": {
-      "version": 43,
+      "version": 44,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "ca9710a4af2d2dc69dd6ad6eeea0a35fdba2b4fdb8a52710d4342c62821ad7e9",
@@ -1053,7 +1101,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/shift-notify-auth.ts": "cfd9f4cdd90c6de48baab272d1da29fa5cb78219c6d8a6813e211920c2bda61c",
         "notify-shift-application/index.ts": "ca9710a4af2d2dc69dd6ad6eeea0a35fdba2b4fdb8a52710d4342c62821ad7e9"
       },
@@ -1062,7 +1110,7 @@
       ]
     },
     "notify-shift-complete": {
-      "version": 42,
+      "version": 43,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "b66d09616636686266939f3377f5e7d775d3cd3e42dd11e2d60ff1c2e564900e",
@@ -1071,7 +1119,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/shift-notify-auth.ts": "cfd9f4cdd90c6de48baab272d1da29fa5cb78219c6d8a6813e211920c2bda61c",
         "notify-shift-complete/index.ts": "b66d09616636686266939f3377f5e7d775d3cd3e42dd11e2d60ff1c2e564900e"
       },
@@ -1080,7 +1128,7 @@
       ]
     },
     "notify-shift-status": {
-      "version": 35,
+      "version": 36,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "87f1375a1968c6f9928840906f5cea16ae86fb605f4ad07823d6917c8f1ad172",
@@ -1089,7 +1137,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/shift-status-notify-auth.ts": "f5c82798d7a9423e5191aa4cf4cd4b6831e5f61eacbf64768b0d0402600dc394",
         "notify-shift-status/index.ts": "87f1375a1968c6f9928840906f5cea16ae86fb605f4ad07823d6917c8f1ad172"
       },
@@ -1098,13 +1146,13 @@
       ]
     },
     "notify-trade-lead": {
-      "version": 13,
+      "version": 14,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "3a556e81ba936b488972c20b88c2d05569a8d8017212b0c56a29ed0f36b6da36",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "notify-trade-lead/index.ts": "3a556e81ba936b488972c20b88c2d05569a8d8017212b0c56a29ed0f36b6da36"
       },
       "shared_drift": [
@@ -1112,7 +1160,7 @@
       ]
     },
     "notify-worker-checkin": {
-      "version": 43,
+      "version": 44,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "32cf3d2fef881e4b92537ebe71b0ff88fa64fa3ad72cd4fc6909b0174683598c",
@@ -1121,7 +1169,7 @@
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/require-caller.ts": "86cc530e7d6ac05ebe29d9626f1ccc1f162183a13a593475c896a57a684e8c52",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/shift-notify-auth.ts": "cfd9f4cdd90c6de48baab272d1da29fa5cb78219c6d8a6813e211920c2bda61c",
         "notify-worker-checkin/index.ts": "32cf3d2fef881e4b92537ebe71b0ff88fa64fa3ad72cd4fc6909b0174683598c"
       },
@@ -1177,7 +1225,7 @@
     "refund-payment": {
       "version": 42,
       "verify_jwt": true,
-      "classification": "canonical-current",
+      "classification": "intentional-shared-drift",
       "index_sha256": "6ba7afc567884ddc543962831a06a541c41d8da5db685eba4e70412672fdf838",
       "files": {
         "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
@@ -1191,7 +1239,9 @@
         "_shared/wallet-event-reconcile-core.ts": "8527f9a714af9e9aa634c58a479390152b894ac992a56356f0e0d8f403c5d97a",
         "refund-payment/index.ts": "6ba7afc567884ddc543962831a06a541c41d8da5db685eba4e70412672fdf838"
       },
-      "shared_drift": []
+      "shared_drift": [
+        "_shared/send-push.ts"
+      ]
     },
     "refund-reconcile": {
       "version": 6,
@@ -1212,7 +1262,7 @@
     "refund-reconcile-sweep": {
       "version": 6,
       "verify_jwt": false,
-      "classification": "canonical-current",
+      "classification": "intentional-shared-drift",
       "index_sha256": "5f2e24daf6bb32a226e68eda79bc7ce36d3664d167dfec72d9b20b8fa0688628",
       "files": {
         "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
@@ -1224,18 +1274,20 @@
         "_shared/wallet-event-reconcile-core.ts": "8527f9a714af9e9aa634c58a479390152b894ac992a56356f0e0d8f403c5d97a",
         "refund-reconcile-sweep/index.ts": "5f2e24daf6bb32a226e68eda79bc7ce36d3664d167dfec72d9b20b8fa0688628"
       },
-      "shared_drift": []
+      "shared_drift": [
+        "_shared/send-push.ts"
+      ]
     },
     "reminder-runner": {
-      "version": 57,
+      "version": 58,
       "verify_jwt": false,
       "classification": "canonical-current",
-      "index_sha256": "d29541a7e62e3586b2bf4ebf3d0595230f1f68ec4854fb61a27761f72e91b2ce",
+      "index_sha256": "f9a20638caeb3efe6ee1adc75cfda9ae2c247b483dd79c3b7ad59655fdadc9a8",
       "files": {
         "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
-        "reminder-runner/index.ts": "d29541a7e62e3586b2bf4ebf3d0595230f1f68ec4854fb61a27761f72e91b2ce"
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
+        "reminder-runner/index.ts": "f9a20638caeb3efe6ee1adc75cfda9ae2c247b483dd79c3b7ad59655fdadc9a8"
       },
       "shared_drift": []
     },
@@ -1319,19 +1371,21 @@
     "social-composer": {
       "version": 28,
       "verify_jwt": false,
-      "classification": "canonical-current",
+      "classification": "intentional-shared-drift",
       "index_sha256": "12a73fca3e5258941cf7deb9fe1d9de83e27d785458498193760fc444e28700a",
       "files": {
         "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
         "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
         "social-composer/index.ts": "12a73fca3e5258941cf7deb9fe1d9de83e27d785458498193760fc444e28700a"
       },
-      "shared_drift": []
+      "shared_drift": [
+        "_shared/send-push.ts"
+      ]
     },
     "social-publisher": {
       "version": 21,
       "verify_jwt": false,
-      "classification": "canonical-current",
+      "classification": "intentional-shared-drift",
       "index_sha256": "37b28d16c853cd23f727ce014f0fc9eaa10028d9d2f972857a63067aaf39e36d",
       "files": {
         "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
@@ -1339,10 +1393,12 @@
         "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
         "social-publisher/index.ts": "37b28d16c853cd23f727ce014f0fc9eaa10028d9d2f972857a63067aaf39e36d"
       },
-      "shared_drift": []
+      "shared_drift": [
+        "_shared/send-push.ts"
+      ]
     },
     "stripe-webhook": {
-      "version": 112,
+      "version": 113,
       "verify_jwt": false,
       "classification": "intentional-shared-drift",
       "index_sha256": "09656932a2c0d5ff4ce88a589dce3344002888759cbf410c8dcdff1e74a48b87",
@@ -1354,7 +1410,7 @@
         "_shared/refund-reconcile-core.ts": "87b07c9a79748833b0ab46ac5fc904d99decdf65d0f5bafa11180950c30c0dee",
         "_shared/refund-reconcile.ts": "7a1d54112f5c09b44c0a7f7cb6fc93ceb242a71d234111cd7e5e81a0e4524fa1",
         "_shared/send-email.ts": "79651987c420aa16a8c3cff9dc1f60ed258b022f2864ad803f02bb58d6a39cf1",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "_shared/subscription-reconcile.ts": "1117a12638d025cf9dae7f03081efb2501a4926b1a61d5c3e627c08c59a88689",
         "_shared/ticket-payment-binding.ts": "0999c1556980a0701b19961acd71e0c076df5ef7da861b0a6039044e4f40c0cc",
         "_shared/ticket-receipt.ts": "aa09c4c78c520553723a60f8979dd5bc2019868d5d5a3d5866c24f075bacb6b8",
@@ -1367,16 +1423,19 @@
       ]
     },
     "sync-council-jobs": {
-      "version": 21,
+      "version": 23,
       "verify_jwt": false,
-      "classification": "canonical-current",
-      "index_sha256": "2f3e00f6fa36d818da8bbf8399f8cfd0725ced5fb95ece660713ebef27384b5b",
+      "classification": "intentional-shared-drift",
+      "index_sha256": "c0f785bee94a7a61b9804cd8230d4681b650d35a0562da1ebde8418a043bf67f",
       "files": {
         "_shared/cron-auth.ts": "647084f843bccc54903e6828e502c85c38e4965ee62ae0c1b245c725e3310fce",
+        "_shared/job-taxonomy.ts": "09e10fc4fc97574d3dce26291b348796dac5c33f3722f591ad413657904aeb53",
         "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
-        "sync-council-jobs/index.ts": "2f3e00f6fa36d818da8bbf8399f8cfd0725ced5fb95ece660713ebef27384b5b"
+        "sync-council-jobs/index.ts": "c0f785bee94a7a61b9804cd8230d4681b650d35a0562da1ebde8418a043bf67f"
       },
-      "shared_drift": []
+      "shared_drift": [
+        "_shared/send-push.ts"
+      ]
     },
     "transcribe-audio": {
       "version": 34,
@@ -1436,6 +1495,7 @@
       },
       "shared_drift": [
         "_shared/self-payment.ts",
+        "_shared/send-push.ts",
         "_shared/wallet-ledger.ts"
       ]
     },
@@ -1451,14 +1511,14 @@
       "shared_drift": []
     },
     "wallet-charge-request": {
-      "version": 27,
+      "version": 28,
       "verify_jwt": true,
       "classification": "intentional-shared-drift",
       "index_sha256": "7b1b36b5a4fcf89a93107519aaf0620055876409e74ac7b317a510984df1cf30",
       "files": {
         "_shared/rate-limit.ts": "9449c79cc6a49779cc87aef44ab6e8cafecc028b27c5e15e164709f7a497efa8",
         "_shared/safe-error.ts": "ed8a38c9684a3ed82a5adf7ef777b60e05f211804e65b3a4b98244ae1e4fcc2e",
-        "_shared/send-push.ts": "647d77bb1885a80cf3666b29fce42f7e560a23d4905c590efcda0ae6111e85d2",
+        "_shared/send-push.ts": "c4a3d66f7cc999b314f2da3f2f49b7a04bf48ca782f277e7aca78c66498ea925",
         "wallet-charge-request/index.ts": "7b1b36b5a4fcf89a93107519aaf0620055876409e74ac7b317a510984df1cf30"
       },
       "shared_drift": [
@@ -1528,7 +1588,7 @@
     "wallet-liquidity-monitor": {
       "version": 9,
       "verify_jwt": false,
-      "classification": "canonical-current",
+      "classification": "intentional-shared-drift",
       "index_sha256": "c5d603988e6123a62498ff71282217f518c52d7661906df34b51f77fb8a433c1",
       "files": {
         "_shared/admin-config.ts": "791c9f35486acc50d0cc474abe99f350ee17014213d30d861208e939c09970e7",
@@ -1539,7 +1599,9 @@
         "_shared/wallet-liquidity.ts": "08f34ed184475de284f112013f16c7a122df6598a103c0fa9670b2923c8473fc",
         "wallet-liquidity-monitor/index.ts": "c5d603988e6123a62498ff71282217f518c52d7661906df34b51f77fb8a433c1"
       },
-      "shared_drift": []
+      "shared_drift": [
+        "_shared/send-push.ts"
+      ]
     },
     "wallet-liquidity-snapshot": {
       "version": 9,
@@ -1569,7 +1631,8 @@
         "wallet-refund-business/index.ts": "196e6b1b069101e0d10c7546785f663c4319454ba16939cbb16015e53de144f4"
       },
       "shared_drift": [
-        "_shared/rate-limit.ts"
+        "_shared/rate-limit.ts",
+        "_shared/send-push.ts"
       ]
     }
   }

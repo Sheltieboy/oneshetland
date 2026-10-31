@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
+import { areaForLocation } from '../_shared/job-taxonomy.ts';
 
 /**
  * sync-council-jobs
@@ -8,8 +9,8 @@ import { requireCronSecret } from '../_shared/cron-auth.ts';
  * Scheduled sync of Shetland public-sector vacancies into the Work section.
  * Source: Shetland Islands Council on myjobscotland (server-rendered HTML).
  * Applications always go OUT to the official listing (apply_url) — we never
- * copy full descriptions, only the facts (title, location, pay, closing date)
- * and link back. Rows are keyed on (source, source_ref) and upserted, so the
+ * copy full descriptions, only the facts (title, location, pay, closing date,
+ * the council's own reference and publication date) and link back. Rows are keyed on (source, source_ref) and upserted, so the
  * feed stays in sync run to run; listings that drop off are removed.
  *
  * SOURCE (since the September 2026 myjobscotland upgrade): the per-council page
@@ -46,7 +47,8 @@ const UA = 'OneShetlandJobsBot/1.0 (+https://oneshetland.com; jobs aggregation, 
 const BASE = 'https://www.myjobscotland.gov.uk';
 const COUNCIL = 'Shetland Islands Council';
 const COUNCIL_PATH = '/councils/shetland-islands-council/jobs/';
-const COUNCIL_LOGO = 'https://admin.myjobscotland.gov.uk/sites/default/files/styles/logo/public/organisations/SIC_mjs.png';
+// Square-safe (512x512, padded) copy of the council's official logo, uploaded once; job cards crop to a square so the source's 177x200 image lost its wording.
+const COUNCIL_LOGO = 'https://nkrtmakxygkvxuxriiil.supabase.co/storage/v1/object/public/employer-logos/external/shetland-islands-council.png';
 const PAGE_CAP = 8; // 25 results a page: 200 per search is far more than the council ever posts
 
 export type Parsed = {
@@ -59,7 +61,13 @@ export type Parsed = {
   expires_at: string | null;
   employer_name: string;
   employer_logo_url: string | null;
+  /** The source's own words, kept so nothing is lost when we map to our vocabulary: "Temporary", "Part Time"… */
+  contract_label: string | null;
+  hours_label: string | null;
 };
+
+/** What only the vacancy page itself says: the council's reference (SIC09079) and the day it was published. */
+export type VacancyFacts = { reference: string | null; published_at: string | null };
 
 const NAMED: Record<string, string> = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”',
@@ -84,11 +92,22 @@ export function ukDateToIso(d: string | null): string | null {
   return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T23:59:00Z`;
 }
 
+// dd/mm/yyyy → ISO at the start of that day (a publication date, not a deadline: no time of day is known)
+export function ukDateToPublishedIso(d: string | null): string | null {
+  const m = d?.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}T00:00:00Z` : null;
+}
+
+/**
+ * Source wording -> our contract vocabulary. "Temporary" is kept as its own type (it was filed as "casual", which told job seekers
+ * something the council never said); the hours wording ("Part Time") is preserved separately in source_meta.
+ */
 export function mapContract(contract: string | null, position: string | null): string {
   const s = `${contract ?? ''} ${position ?? ''}`.toLowerCase();
   if (/apprentice/.test(s)) return 'apprenticeship';
   if (/volunt/.test(s)) return 'volunteer';
-  if (/casual|relief|bank|temporary|fixed.?term|seasonal/.test(s)) return 'casual';
+  if (/temporary|fixed.?term/.test(s)) return 'temporary';
+  if (/casual|relief|bank|supply|seasonal/.test(s)) return 'casual';
   if (/part.?time/.test(s)) return 'part-time';
   return 'full-time';
 }
@@ -136,6 +155,8 @@ export function parseSearchPage(html: string): { jobs: Parsed[]; cards: number }
     const closing = tags.find((t) => /^Closing on/i.test(t)) ?? null;
     const pay = tags.find((t) => t.includes('£')) ?? null;
     const rest = tags.filter((t) => t !== closing && t !== pay);
+    const contract_label = rest.find((t) => /^(permanent|temporary|supply|casual|relief|bank|apprentice|fixed|seasonal|volunt)/i.test(t)) ?? null;
+    const hours_label = rest.find((t) => /^(full|part)[ -]?time/i.test(t)) ?? null;
     const location = strip(b.match(/<div class="mjs-card__description">\s*<p>([\s\S]*?)<\/p>/)?.[1]);
 
     jobs.push({
@@ -148,9 +169,32 @@ export function parseSearchPage(html: string): { jobs: Parsed[]; cards: number }
       expires_at: ukDateToIso(closing),
       employer_name: COUNCIL,
       employer_logo_url: COUNCIL_LOGO,
+      contract_label,
+      hours_label,
     });
   }
   return { jobs, cards: blocks.length };
+}
+
+/**
+ * Parse the header tags of one vacancy page ("Ref: SIC09079", "Published date: 28/10/2026"). Only these two facts are read —
+ * never the description. Anything not found is null, so a changed page degrades to "unknown", not to a wrong value.
+ */
+export function parseVacancyPage(html: string): VacancyFacts {
+  const tags = [...html.matchAll(/<span class="mjs-tag mjs-tag__secondary">([\s\S]*?)<\/span>/g)].map((m) => strip(m[1]) ?? '');
+  const ref = tags.map((t) => t.match(/^Ref:\s*([A-Za-z0-9][A-Za-z0-9\-\/]{1,30})$/)?.[1]).find(Boolean) ?? null;
+  const pub = tags.map((t) => t.match(/^Published date:\s*(\d{1,2}\/\d{1,2}\/\d{4})$/i)?.[1]).find(Boolean) ?? null;
+  return { reference: ref, published_at: ukDateToPublishedIso(pub) };
+}
+
+const DETAIL_CAP = 40; // vacancy pages read per run; only for listings whose reference / publication date we do not hold yet
+
+async function fetchVacancyFacts(url: string): Promise<VacancyFacts | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'text/html' } });
+    if (!res.ok) return null;
+    return parseVacancyPage(await res.text());
+  } catch { return null; }
 }
 
 /** The searches that together cover Shetland. Each is paged until a page holds no council job. */
@@ -212,7 +256,29 @@ serve(async (req) => {
       if (jobs.length === 0) { result.reason = 'parsed 0 — left existing rows untouched'; }
       else if (dry) { Object.assign(result, { ok: true, dry: true, parsed: jobs.length, sample: jobs.slice(0, 3) }); }
       else {
-        const rows = jobs.map((j) => ({
+        // What we already hold, so a run adds facts and never overwrites one with nothing (or an admin's locality with a guess).
+        const { data: heldRows } = await sb.from('jobs')
+          .select('source_ref, locality, source_reference, source_published_at')
+          .eq('source', src.source);
+        const known = new Map<string, { locality: string | null; source_reference: string | null; source_published_at: string | null }>(
+          ((heldRows ?? []) as any[]).map((r) => [String(r.source_ref), r]),
+        );
+        // Read the vacancy page only where the reference or publication date is missing (new listings, first run, or a page that
+        // failed last time). Failures are non-fatal: the facts simply stay unknown until the next run.
+        const facts = new Map<string, VacancyFacts>();
+        let detailFailed = 0;
+        for (const j of jobs) {
+          if (facts.size + detailFailed >= DETAIL_CAP) break;
+          const k = known.get(j.source_ref);
+          if (k?.source_reference && k?.source_published_at) continue;
+          const f = await fetchVacancyFacts(j.apply_url);
+          if (f) facts.set(j.source_ref, f); else detailFailed++;
+        }
+
+        const rows = jobs.map((j) => {
+          const k = known.get(j.source_ref);
+          const f = facts.get(j.source_ref);
+          return {
           source: src.source,
           source_ref: j.source_ref,
           source_label: src.label,
@@ -222,6 +288,11 @@ serve(async (req) => {
           pay_text: j.pay_text,
           pay_hidden: !j.pay_text,
           apply_url: j.apply_url,
+          source_url: j.apply_url,
+          source_reference: f?.reference ?? k?.source_reference ?? null,
+          source_published_at: f?.published_at ?? k?.source_published_at ?? null,
+          source_meta: { contract_label: j.contract_label, hours_label: j.hours_label },
+          locality: k?.locality ?? areaForLocation(j.location),   // explicit place names only; an existing value is kept
           expires_at: j.expires_at,
           external_employer_name: j.employer_name,
           external_employer_logo_url: j.employer_logo_url,
@@ -230,7 +301,8 @@ serve(async (req) => {
           status: 'open',
           is_hidden: false,
           updated_at: new Date().toISOString(),
-        }));
+          };
+        });
 
         const { count: held } = await sb.from('jobs').select('id', { count: 'exact', head: true }).eq('source', src.source);
         const { error: upErr } = await sb.from('jobs').upsert(rows, { onConflict: 'source,source_ref' });
@@ -252,7 +324,7 @@ serve(async (req) => {
               .select('id');
             removed = delErr ? `err: ${delErr.message}` : (data?.length ?? 0);
           }
-          Object.assign(result, { ok: true, synced: rows.length, held: held ?? 0, removed, prune_skipped: suspicious });
+          Object.assign(result, { ok: true, synced: rows.length, held: held ?? 0, removed, prune_skipped: suspicious, detail_read: facts.size, detail_failed: detailFailed });
         }
       }
     } catch (e) {

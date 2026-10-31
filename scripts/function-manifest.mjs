@@ -63,13 +63,28 @@ export function buildManifest(list, bundlesDir) {
   };
 }
 
+/** Reviewed, not-yet-deployed functions (supabase/production/staged-functions.json). */
+export function loadStaged(path = join(dirname(MANIFEST_PATH), 'staged-functions.json')) {
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).functions ?? {} : {};
+}
+/** Deployed functions with a reviewed, not-yet-deployed source change (staged-functions.json "modified"). */
+export function loadStagedModified(path = join(dirname(MANIFEST_PATH), 'staged-functions.json')) {
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).modified ?? {} : {};
+}
+
 /** Problems between a manifest and the source tree; empty = consistent. */
-export function verifyManifest(manifest, functionsDir = FUNCTIONS_DIR) {
+export function verifyManifest(manifest, functionsDir = FUNCTIONS_DIR, staged = loadStaged(), modified = loadStagedModified()) {
   const problems = [];
   const dirs = readdirSync(functionsDir).filter((n) => !n.startsWith('_') && statSync(join(functionsDir, n)).isDirectory() && existsSync(join(functionsDir, n, 'index.ts')));
-  for (const d of dirs) if (!manifest.functions[d]) problems.push(`${d}: has source but is not in the manifest`);
+  for (const d of dirs) if (!manifest.functions[d] && !staged[d]) problems.push(`${d}: has source but is not in the manifest (and is not a reviewed staged function)`);
+  for (const n of Object.keys(staged)) {
+    if (manifest.functions[n]) problems.push(`${n}: is deployed but still listed as staged — remove it from staged-functions.json`);
+    if (!dirs.includes(n)) problems.push(`${n}: is listed as staged but has no source directory`);
+  }
+  for (const n of Object.keys(modified)) if (!manifest.functions[n]) problems.push(`${n}: is listed as a staged modification but is not deployed`);
   for (const n of Object.keys(manifest.functions)) {
     if (!dirs.includes(n)) { problems.push(`${n}: in the manifest but has no source directory`); continue; }
+    if (modified[n]) continue;   // reviewed, staged change: compared again after the deploy regenerates the manifest
     const m = manifest.functions[n]; let src;
     try { src = bundleHashes(functionsDir, n); } catch (e) { problems.push(`${n}: ${e.message}`); continue; }
     // A shared file that production's older copy did not import (or no longer imports) is simply part of the declared drift below.

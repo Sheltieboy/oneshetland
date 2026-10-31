@@ -226,3 +226,13 @@ verify_jwt = false
 # explicit confirmed request — completes a missing merchant transfer reversal.
 [functions.refund-reconcile]
 verify_jwt = true
+
+
+# ── Anonymous funeral enquiries ─────────────────────────────────────────────
+#
+# Visitors are signed out, so there is no JWT to verify. The boundary is the function itself: it refuses to run unless fully configured, verifies a
+# Cloudflare Turnstile token server-side (hostname, action and announcement bound, single use), and applies per-client rate limits before it calls
+# submit_funeral_enquiry, which is service-role only. See supabase/functions/_shared/funeral-enquiry.ts.
+
+[functions.submit-funeral-enquiry]
+verify_jwt = false
