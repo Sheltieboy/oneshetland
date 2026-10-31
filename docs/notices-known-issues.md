@@ -33,3 +33,15 @@ management interface is introduced.
 *Recorded: Notices Stage 3A.2 review (31 Oct 2026).* `supabase/tests/book-service-first-discovery.node.test.ts` and `local-passes-discovery.node.test.ts` read website source from `../oneshetland-web`,
 a local `main` checkout that is 65 commits behind `origin/main` (105bbd4 vs 8904ced). Against it they fail (2 of 31); pointed at a current website baseline they pass 31/31 (verified with throwaway copies,
 nothing committed). They fail identically on the unmodified app baseline. Suggested maintenance (not done here): fast-forward that stale checkout, or let the tests read the website root from an environment variable.
+
+## L1 — Stage 3A.2 verification still outstanding (recorded at integration, 31 Oct 2026)
+Not resolved; do not mark done until each is actually run:
+* **Android emulator and a physical device** have not been run. Only the iOS simulator (iPhone 17e, dev client build 38) and a desktop/375px browser were.
+* **Business detail destination** was reached with the right id but not verified with real data (the fixture lacks the public business view that screen reads).
+* **Slow person-name RPC** can delay a feed by up to 1.5 s when a person notice is in the result (docs/notices-person-attribution-performance.md). No person notices exist in production today.
+* **R2** (notify-hub-content) and **V1** (admin smoke test of notify-community-notice v14) remain open as recorded above.
+
+## B1 — release baseline notes (integration, 31 Oct 2026)
+* The local `home-redesign` is 88 commits ahead of `origin/home-redesign` (45dddf6): none of them are pushed.
+* `build-147` (938e0f1, one `client_request_id` per purchase attempt) and `build-148` (7317508, removes the unapproved referral programme) are NOT ancestors of `home-redesign`. A build cut from
+  `home-redesign` does not contain them. Decide how they reach the baseline before cutting the next build.
