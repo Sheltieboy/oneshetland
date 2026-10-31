@@ -55,3 +55,7 @@ insert into notices (id, publisher_hub_id, title, body, status, starts_at, is_hi
   ('f0000000-0000-4000-8000-0000000000a6','dd000000-0000-4000-8000-0000000000dd','NEVER-SHOWN expired','x','published', null, false, now() - interval '1 day');
 insert into notices (id, is_person_notice, publisher_user_id, title, body, status) values
   ('f0000000-0000-4000-8000-0000000000a7', true, 'a0000000-0000-4000-8000-0000000000a1','NEVER-SHOWN person pending (named Ann Jamieson)','x','pending');
+
+-- business detail fixtures (what the detail screen shows when a business notice is tapped)
+update local_businesses set category = 'Bakery', description = 'Fresh bannocks, bread and cakes baked every morning in Lerwick.', address = 'Commercial Street, Lerwick', lat = 60.1545, lng = -1.1456, is_active = true, is_verified = true where slug = 'bea-bakery';
+update local_businesses set category = 'Knitwear', description = 'Shetland knitwear and gifts.', address = 'Hillswick, Shetland', is_active = true where slug = 'long-biz';
