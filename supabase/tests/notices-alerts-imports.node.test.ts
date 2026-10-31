@@ -25,7 +25,7 @@ const noticeFor = (ref: string) => scalar(`select id from notices where source='
 const resetRate = () => raw(`update notice_import_sources set last_run_at = null where id='${SRC}'`);
 const finish = (run: string, status = 'ok', fetched = 0) => svc(`select public.import_finish_run('${run}','${status}',${fetched},0,0,0,0, null)`);
 
-before(() => { buildDatabase(5); });
+before(() => { buildDatabase(); });
 
 describe('sources are disabled until an administrator approves them', () => {
   test('1 only a platform administrator can configure or enable a source; a source starts DISABLED and cannot import', () => {

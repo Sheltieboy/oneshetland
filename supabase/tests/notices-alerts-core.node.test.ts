@@ -371,11 +371,11 @@ describe('old clients and existing behaviour', () => {
 function now_plus(i: string) { return `now() + interval '${i}'`; }
 
 describe('acceptance-test findings (31 Oct): reading a notice with no area, and editing your own person notice', () => {
-  test('30 a notice with NO area rows is island-wide for READING (members who chose areas still see hub / business notices); a notice with areas matches only its neighbourhood; notifications are unaffected', () => {
+  test('30 a notice with NO area rows is shown in general browsing (a filter naming areas) but is NOT Shetland-wide (the strict [] filter excludes it); a notice with areas matches only its neighbourhood; notifications are unaffected', () => {
     const id = idOf(as('H', `insert into notices (id, publisher_hub_id, title, body) values (gen_random_uuid(), '${HUB_V}', 'Hub notice with no area', 'No areas chosen at all') returning id`));
     assert.equal(scalar(`select count(*) from notice_areas where notice_id='${id}'`), '0');
     assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array['${CHILD}']::text[], null, 50, 0) where id = '${id}'`), '1', 'seen by a member who follows an area');
-    assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array[]::text[], null, 50, 0) where id = '${id}'`), '1', 'and by a member with no areas (island-wide only)');
+    assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array[]::text[], null, 50, 0) where id = '${id}'`), '0', 'but NOT by the strict "Shetland-wide only" filter ([]): unspecified is not Shetland-wide');
     scalar(`insert into notice_areas (notice_id, area_id) values ('${id}', '${CHILD}')`);
     assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array['${CHILD}']::text[], null, 50, 0) where id = '${id}'`), '1');
     assert.equal(asScalar('anon', `select count(*) from public.get_public_notices('all', array['${AREAS.find((a) => a !== CHILD && a !== CHILD_PARENT && a !== 'shetland_wide')}']::text[], null, 50, 0) where id = '${id}'`), '0', 'once it names an area, an unrelated area no longer sees it');

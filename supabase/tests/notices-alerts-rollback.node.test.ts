@@ -13,7 +13,7 @@ const exists = (t: string) => scalar(`select count(*) from information_schema.ta
 const colCount = () => Number(scalar(`select count(*) from information_schema.columns where table_schema='public' and table_name='notices' and column_name in (${NEW_COLS.map((c) => `'${c}'`).join(',')})`));
 const fnCount = () => Number(scalar(`select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname ~ '^(official_|admin_(upsert_official|verify_official|set_official|grant_essential|revoke_essential|list_official|notice_audit|funeral|import|retire|set_funeral|set_import|upsert_import|notice_dispatch)|get_(essential|public_notices|funeral)|set_my_notice|my_notice|my_official|my_funeral|submit_funeral|import_|funeral_|notice_(dispatch|claim|record|complete|fail|audit|essential|is_public|matches|publisher_display$)|can_dispatch|area_neighbourhood|is_safe_https|notices_admin|withdraw_my_funeral|update_my_funeral|request_funeral)'`));
 
-before(() => { buildDatabase(5); });
+before(() => { buildDatabase(); });
 
 test('1 after applying all five migrations the feature objects exist', () => {
   for (const t of NEW_TABLES) assert.ok(exists(t), t);

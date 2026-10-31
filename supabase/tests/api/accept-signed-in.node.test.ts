@@ -454,3 +454,70 @@ d('F. permission boundaries between administrators, moderators and publishers; a
     for (const t of ['funeral_notices', 'notice_audit_log', 'notice_deliveries', 'member_areas', 'notice_notification_prefs', 'essential_alert_grants', 'official_publisher_members']) { const r = await table(null, 'GET', `${t}?limit=1`); assert.ok(r.status >= 400 || (r.data ?? []).length === 0, `${t} must not be readable anonymously`); }
   });
 });
+
+d('G. members publish notices (moderated): submit, moderation, edit, withdraw, area states, limits, privacy', () => {
+  const T = (s: string) => `${s} ${R}`;
+  const text = 'A community notice written by a fictional member for the signed-in acceptance test.';
+  const ids: Record<string, string> = {};
+  const state = async (u: string, id: string) => ((await rpc(u, 'my_person_notices')).data as any[]).find((x) => x.id === id)?.state;
+  const inPublic = async (id: string, areas: string[] | null = null) => ((await rpc(null, 'get_public_notices', { p_area_ids: areas, p_limit: 50 })).data as any[]).some((n) => n.id === id);
+  test('G1 a signed-in member submits; it is pending and private; signed-out and invalid submissions are refused', async () => {
+    denied(await rpc(null, 'submit_person_notice', { p_title: T('Anonymous'), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }));
+    for (const bad of [{ p_title: 'Hi' }, { p_body: 'tiny' }, { p_category: 'nonsense' }, { p_category: null }, { p_area_ids: ['atlantis'] }, { p_area_ids: ['shetland_wide', 'voe'] }, { p_expires_at: iso(24 * 100) }, { p_expires_at: iso(-1) }])
+      denied(await rpc('member', 'submit_person_notice', { p_title: T('Valid title'), p_body: text, p_category: 'other', p_area_ids: ['voe'], ...bad }));
+    const r = await rpc('member', 'submit_person_notice', { p_title: T('Wide notice'), p_body: text, p_category: 'community', p_area_ids: ['shetland_wide'] }); ok(r); ids.wide = r.data;
+    assert.equal(owner(`select concat_ws('|', status, is_person_notice, severity <> 'urgent', not is_essential, publisher_hub_id is null, publisher_business_id is null, event_id is null) from notices where id='${ids.wide}'`), 'pending|t|t|t|t|t|t');
+    assert.equal(await inPublic(ids.wide), false); assert.deepEqual((await rpc(null, 'get_public_notice', { p_id: ids.wide })).data, []);
+    assert.equal(await state('member', ids.wide), 'pending');
+  });
+  test('G2 privacy: another member, a hub owner and an anonymous visitor cannot see, edit, withdraw or approve it', async () => {
+    assert.equal(await state('member2', ids.wide), undefined); denied(await rpc(null, 'my_person_notices'));
+    for (const u of ['member2', 'hubowner', 'official']) {
+      denied(await rpc(u, 'edit_my_person_notice', { p_notice: ids.wide, p_title: 'Hijacked title here' })); denied(await rpc(u, 'withdraw_my_person_notice', { p_notice: ids.wide })); denied(await rpc(u, 'staff_approve_person_notice', { p_notice: ids.wide }));
+      denied(await rpc(u, 'staff_pending_person_notices'));
+    }
+    assert.equal(((await table('member2', 'GET', `notices?id=eq.${ids.wide}`)).data ?? []).length, 0);
+    assert.equal(owner(`select status from notices where id='${ids.wide}'`), 'pending');
+  });
+  test('G3 a moderator approves: public with a person byline and the explicit Shetland-wide label; editing returns it to moderation and out of public; re-approval; withdrawal', async () => {
+    ok(await rpc('moderator', 'staff_approve_person_notice', { p_notice: ids.wide }));
+    const pub = (await rpc(null, 'get_public_notice', { p_id: ids.wide })).data[0]; assert.equal(pub.publisher.kind, 'person'); assert.match(pub.publisher.byline, /^Posted by Morag Member$/); assert.deepEqual(pub.area_ids, ['shetland_wide']); assert.deepEqual(pub.area_names, ['Shetland-wide']);
+    ok(await rpc('member', 'edit_my_person_notice', { p_notice: ids.wide, p_title: T('Wide notice, edited'), p_body: text + ' Edited.', p_category: 'community', p_area_ids: ['voe', 'brae'] }));
+    assert.equal(owner(`select status from notices where id='${ids.wide}'`), 'pending'); assert.equal(await inPublic(ids.wide), false);
+    assert.equal(await state('member', ids.wide), 'pending');
+    ok(await rpc('moderator', 'staff_approve_person_notice', { p_notice: ids.wide }));
+    assert.deepEqual((await rpc(null, 'get_public_notice', { p_id: ids.wide })).data[0].area_ids.sort(), ['brae', 'voe']);
+    ok(await rpc('member', 'withdraw_my_person_notice', { p_notice: ids.wide })); assert.equal(await inPublic(ids.wide), false); assert.equal(await state('member', ids.wide), 'withdrawn');
+  });
+  test('G4 three area states: specific, explicit Shetland-wide, unspecified - filters differ, the unspecified one carries no label and is never a push audience', async () => {
+    const mk = async (title: string, areas: string[]) => { const r = await rpc('member2', 'submit_person_notice', { p_title: T(title), p_body: text, p_category: 'community', p_area_ids: areas }); ok(r); ok(await rpc('moderator', 'staff_approve_person_notice', { p_notice: r.data })); return r.data as string; };
+    const spec = await mk('Specific area', ['voe']), wide = await mk('Explicit wide', ['shetland_wide']), none = await mk('No area stated', []);
+    assert.equal(owner(`select count(*) from notice_areas where notice_id='${none}'`), '0');
+    const seen = async (a: string[] | null) => [await inPublic(spec, a), await inPublic(wide, a), await inPublic(none, a)];
+    assert.deepEqual(await seen(null), [true, true, true]); assert.deepEqual(await seen(['voe']), [true, true, true]); assert.deepEqual(await seen(['lerwick']), [false, true, true]);
+    assert.deepEqual(await seen([]), [false, true, false], 'the strict "Shetland-wide only" filter: unspecified is not Shetland-wide');
+    assert.deepEqual((await rpc(null, 'get_public_notice', { p_id: none })).data[0].area_names, []);
+  });
+  test('G5 at most five awaiting review; a decline carries a reason the member sees; person notices are never announced by push', async () => {
+    owner(`update notices set status='withdrawn', withdrawn_at=now() where is_person_notice and status='pending' and publisher_user_id='${SEED.ids.member}'`);
+    const made: string[] = [];
+    for (let i = 0; i < 5; i++) { const r = await rpc('member', 'submit_person_notice', { p_title: T(`Pending ${i + 1}`), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }); ok(r); made.push(r.data); }
+    const sixth = await rpc('member', 'submit_person_notice', { p_title: T('Pending 6'), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }); denied(sixth); assert.match(sixth.error?.message ?? '', /5 notices awaiting review/);
+    denied(await rpc('member', 'staff_decline_person_notice', { p_notice: made[0], p_reason: 'self decline' })); denied(await rpc('moderator', 'staff_decline_person_notice', { p_notice: made[0], p_reason: 'no' }));
+    ok(await rpc('moderator', 'staff_decline_person_notice', { p_notice: made[0], p_reason: 'Please use the Local section for this.' }));
+    assert.equal(await state('member', made[0]), 'declined'); assert.equal(((await rpc('member', 'my_person_notices')).data as any[]).find((x) => x.id === made[0]).decline_reason, 'Please use the Local section for this.');
+    ok(await rpc('member', 'submit_person_notice', { p_title: T('Room again'), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }));
+    ok(await rpc('moderator', 'staff_approve_person_notice', { p_notice: made[1] }));
+    assert.equal(owner(`select public.notice_dispatchable('${made[1]}', 'community')`), 'Only hub and business notices go to the community audience');
+    assert.equal(owner(`select count(*) from notice_dispatch_recipients('${made[1]}', 'community')`), '0');
+  });
+  test('G6 account deletion: a published notice survives as "Former member" with nothing identifying; a pending one stays hidden', async () => {
+    const r = await rpc('bizowner', 'submit_person_notice', { p_title: T('Leaving soon'), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }); ok(r);
+    ok(await rpc('moderator', 'staff_approve_person_notice', { p_notice: r.data }));
+    const p = await rpc('bizowner', 'submit_person_notice', { p_title: T('Pending when leaving'), p_body: text, p_category: 'other', p_area_ids: ['shetland_wide'] }); ok(p);
+    owner(`update local_businesses set owner_id = null where owner_id = '${SEED.ids.bizowner}'; delete from profiles where id = '${SEED.ids.bizowner}'`);
+    assert.equal((await rpc(null, 'get_public_notice', { p_id: r.data })).data[0].publisher.label, 'Former member');
+    assert.ok(!JSON.stringify((await rpc(null, 'get_public_notice', { p_id: r.data })).data).includes(SEED.ids.bizowner)); assert.deepEqual((await rpc(null, 'get_public_notice', { p_id: p.data })).data, []);
+    owner(`insert into profiles (id, role, display_name, full_name, onboarding_completed_at) values ('${SEED.ids.bizowner}', 'customer', 'Bella Baker', 'Bella Baker', now()) on conflict do nothing; update local_businesses set owner_id = '${SEED.ids.bizowner}' where id = '${SEED.business}'`);
+  });
+});

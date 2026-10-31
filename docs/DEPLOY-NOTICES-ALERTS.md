@@ -10,6 +10,7 @@ STATUS: **NOTHING HAS BEEN APPLIED, DEPLOYED OR PUBLISHED.** Everything below is
 | 3 | `20261129020000` member areas, preferences, dispatch machinery | database | rollback script (destroys areas/opt-ins/delivery history) |
 | 4 | `20261129030000` funeral notices | database | rollback script (destroys submissions: export first if any real exist) |
 | 5 | `20261129040000` official-import framework (all sources disabled) | database | rollback script |
+| 5b | `20261129050000` members publish notices (moderated): submit / list / edit / withdraw / staff approve & decline | database | rollback script (the notices members already posted stay) |
 | 6 | edge: `notify-hub-content` (R2 fix), `notify-notice-audience`, `notify-funeral-notice`, `import-official-notices` | functions | redeploy the previous `notify-hub-content`; delete the three new functions |
 | 7 | website (`notices-alerts-web`) | Netlify | redeploy previous build |
 | 8 | app (`notices-alerts-app-ui`, JS-only) | OTA / next build | OTA rollback to previous bundle |
@@ -22,7 +23,7 @@ Every migration is additive and proven to roll back and re-apply (`notices-alert
 4. Take a backup / confirm PITR window. Record the current deployed versions of `notify-hub-content` and `notify-community-notice`.
 
 ## 2. Apply (staged, with verification after each step)
-Apply 1 → 5 one at a time (`supabase db push` of a single file, or SQL editor), and after each:
+Apply 1 → 5 (and 5b) one at a time (`supabase db push` of a single file, or SQL editor), and after each:
 * `select count(*) from public.notices;` unchanged; `select count(*) from public.official_publishers;` = 0; `select count(*) from public.essential_alert_grants;` = 0 (**no entitlement exists until an administrator grants one**).
 * An anonymous request to `get_public_notices` returns exactly the live notice; `get_essential_alerts` returns `[]`; `get_funeral_notices` returns `[]`.
 * An anonymous request to `admin_list_official_publishers`, `notice_dispatch_recipients`, `can_dispatch_notice` is refused (`42501`). (The PostgREST suite `run-notices-alerts-api.sh` proves these on both PostgREST versions.)

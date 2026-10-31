@@ -74,15 +74,18 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(array_agg(distinct x), '{}'::text[]) from (select id as x from up union select id from down) s where x <> 'shetland_wide';
 $$;
 
--- Does this notice belong in a READ filtered by the given (already expanded) neighbourhood? Shetland-wide notices match everyone, and so does a notice with NO
--- area rows: hubs and businesses post without choosing an area (their forms have no area control), so "unspecified" means "island-wide" for reading. If it
--- meant "nobody", a member who picked their areas would stop seeing nearly every hub and business notice. This is READING only: notifications are chosen by
--- notice_dispatch_recipients, which still treats a notice with no areas as targeting nobody (nothing is announced to anyone by accident).
+-- Does this notice belong in a READ filtered by the given (already expanded) neighbourhood? THREE states, never conflated:
+--   * explicit Shetland-wide (a 'shetland_wide' row)  - matches EVERY filter, including the strict "Shetland-wide only" filter ([] = empty neighbourhood)
+--   * specific areas                                   - match only when one of them is in the neighbourhood
+--   * UNSPECIFIED (no area rows at all)                - hubs and businesses have no area control, so "unspecified" is shown in general browsing (a filter that
+--     names areas): otherwise a member who picked their areas would stop seeing nearly every hub and business notice. It is NOT Shetland-wide: the strict
+--     "Shetland-wide only" filter ([]) excludes it, it carries no geography label, and it never qualifies for an area-based push (notice_dispatch_recipients).
 create function public.notice_matches_areas(p_notice uuid, p_neighbourhood text[]) returns boolean
 language sql stable set search_path = public, pg_temp as $$
-  select not exists (select 1 from public.notice_areas na where na.notice_id = p_notice)
-      or exists (select 1 from public.notice_areas na where na.notice_id = p_notice
-                  and (na.area_id = 'shetland_wide' or na.area_id = any(coalesce(p_neighbourhood, '{}'::text[]))));
+  select exists (select 1 from public.notice_areas na where na.notice_id = p_notice and na.area_id = 'shetland_wide')
+      or (cardinality(coalesce(p_neighbourhood, '{}'::text[])) > 0
+          and (not exists (select 1 from public.notice_areas na where na.notice_id = p_notice)
+               or exists (select 1 from public.notice_areas na where na.notice_id = p_notice and na.area_id = any(p_neighbourhood))));
 $$;
 
 -- ── the publisher label gains one branch: a verified organisation ───────────────────────────────────────────────────────────────────────────────
@@ -346,25 +349,54 @@ grant execute on function public.official_validate_notice(uuid, text, text, text
   public.official_publish_notice(uuid, text, text, text, text[], timestamptz, timestamptz, text, text, boolean, timestamptz),
   public.official_update_notice(uuid, text, text, text, text[], timestamptz, text, text, boolean, timestamptz), public.official_set_notice_status(uuid, text) to authenticated, service_role;
 
--- ── a member edits their OWN person notice ─────────────────────────────────────────────────────────────────────────────────────────────────────
+-- ── a member's own notice: shared validation, and editing ───────────────────────────────────────────────────────────────────────────────────────
+-- AREA TARGETING has THREE distinct states and they are never conflated:
+--   * specific   - one or more physical areas ('voe', 'brae', ...)
+--   * explicit Shetland-wide - the single row 'shetland_wide' (the author chose "everywhere")
+--   * unspecified - NO area rows (hubs and businesses have no area control; a member may leave it out through the API)
+-- Unspecified is shown in general feeds (see notice_matches_areas) but is NOT Shetland-wide: it carries no geography label and never qualifies for an
+-- area-based push (notice_dispatch_recipients requires an area). Only the explicit 'shetland_wide' row reaches everyone who opted in.
+create function public.person_notice_clean_areas(p_areas text[]) returns text[]
+language plpgsql stable set search_path = public, pg_temp as $$
+declare v text[];
+begin
+  select coalesce(array_agg(distinct a order by a), '{}') into v from unnest(coalesce(p_areas, '{}')) a where a is not null and btrim(a) <> '';
+  if cardinality(v) > 8 then raise exception 'Choose at most 8 areas, or Shetland-wide' using errcode = '54000'; end if;
+  if 'shetland_wide' = any(v) and cardinality(v) > 1 then raise exception 'Choose either Shetland-wide or specific areas, not both' using errcode = '22023'; end if;
+  if exists (select 1 from unnest(v) a where a <> 'shetland_wide' and not exists (select 1 from public.areas x where x.id = a and x.is_active and x.is_physical)) then
+    raise exception 'Choose real Shetland areas' using errcode = '22023';
+  end if;
+  return v;
+end $$;
+
 -- Editing through the table is impossible by design: the edit sends a published notice back to review, and the read policy is public-only, so Postgres
 -- refuses an UPDATE whose NEW row the caller could not read ("new row violates row-level security policy"). This is the one sanctioned route: the author,
--- a person notice that is still pending or published, the text only; the notice goes (back) to pending for staff approval. Severity, area, links, status
--- and everything else are untouched.
-create function public.edit_my_person_notice(p_notice uuid, p_title text, p_body text) returns void
+-- a person notice that is still pending or published (and not expired), the wording / category / areas / expiry; the notice goes (back) to pending for
+-- staff approval and stays out of every public read until then. NULL = leave as it is; an empty area array clears the areas (unspecified).
+create function public.edit_my_person_notice(p_notice uuid, p_title text default null, p_body text default null, p_category text default null,
+                                             p_area_ids text[] default null, p_expires_at timestamptz default null) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare n public.notices%rowtype;
+declare n public.notices%rowtype; v_areas text[];
 begin
   if auth.uid() is null then raise exception 'Sign in to edit a notice' using errcode = '42501'; end if;
   select * into n from public.notices where id = p_notice for update;
   if not found or not n.is_person_notice or n.publisher_user_id is distinct from auth.uid() then raise exception 'You can only edit your own notices' using errcode = '42501'; end if;
-  if n.status not in ('pending', 'published') then raise exception 'That notice can no longer be edited' using errcode = '22023'; end if;
+  if n.status not in ('pending', 'published') or (n.expires_at is not null and n.expires_at <= now()) then raise exception 'That notice can no longer be edited' using errcode = '22023'; end if;
   p_title := btrim(coalesce(p_title, n.title)); p_body := btrim(coalesce(p_body, n.body));
   if char_length(p_title) < 5 or char_length(p_title) > 120 then raise exception 'The title must be 5 to 120 characters' using errcode = '22023'; end if;
-  if char_length(p_body) < 10 or char_length(p_body) > 4000 then raise exception 'The text must be 10 to 4000 characters' using errcode = '22023'; end if;
-  update public.notices set title = p_title, body = p_body, status = 'pending', updated_at = now() where id = p_notice;
+  if char_length(p_body) < 10 or char_length(p_body) > 2000 then raise exception 'The text must be 10 to 2000 characters' using errcode = '22023'; end if;
+  if p_category is not null and not exists (select 1 from public.notice_categories c where c.id = p_category and c.is_active) then raise exception 'Choose one of the listed categories' using errcode = '22023'; end if;
+  if p_expires_at is not null and (p_expires_at <= now() or p_expires_at > now() + interval '90 days') then raise exception 'The expiry must be in the future and within 90 days' using errcode = '22023'; end if;
+  if p_area_ids is not null then v_areas := public.person_notice_clean_areas(p_area_ids); end if;
+  update public.notices set title = p_title, body = p_body, category = coalesce(p_category, category), expires_at = coalesce(p_expires_at, expires_at), status = 'pending', updated_at = now()
+   where id = p_notice;
+  if v_areas is not null then
+    delete from public.notice_areas where notice_id = p_notice;
+    insert into public.notice_areas (notice_id, area_id) select p_notice, a from unnest(v_areas) a;
+  end if;
+  perform public.notice_audit('person_notice_edited', null, p_notice, null, jsonb_build_object('was', n.status));
 end $$;
-revoke all on function public.edit_my_person_notice(uuid, text, text) from public, anon;
-grant execute on function public.edit_my_person_notice(uuid, text, text) to authenticated, service_role;
+revoke all on function public.person_notice_clean_areas(text[]), public.edit_my_person_notice(uuid, text, text, text, text[], timestamptz) from public, anon;
+grant execute on function public.edit_my_person_notice(uuid, text, text, text, text[], timestamptz) to authenticated, service_role;
 
 commit;

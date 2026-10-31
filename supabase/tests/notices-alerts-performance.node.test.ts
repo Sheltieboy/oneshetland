@@ -18,7 +18,7 @@ const time = (label: string, sql: string, limitMs: number, runs = 3) => {
 let AREA = '';
 
 before(() => {
-  buildDatabase(5);
+  buildDatabase();
   AREA = areaIds()[0];
   const o = file(`
     insert into profiles (id, role, display_name) select gen_random_uuid(), 'customer', 'M' || g from generate_series(1, 40000) g;

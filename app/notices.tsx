@@ -246,6 +246,18 @@ export default function NoticesScreen() {
         </View>
 
         {linkedGone && !isFuneral ? <Text style={styles.inlineError}>That notice is no longer current. It may have ended or been withdrawn.</Text> : null}
+        {!isFuneral ? (
+          <View style={styles.funeralActions}>
+            <Pressable onPress={() => router.push('/notice-submit' as any)} accessibilityRole="button" style={styles.fAction}>
+              <FontAwesome5 name="pen" size={12} color={colors.navy} />
+              <Text style={styles.fActionText}>Post a notice</Text>
+            </Pressable>
+            <Pressable onPress={() => router.push('/my-notices' as any)} accessibilityRole="button" style={styles.fAction}>
+              <FontAwesome5 name="folder-open" size={12} color={colors.navy} />
+              <Text style={styles.fActionText}>My notices</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {isFuneral ? (
           <View style={styles.funeralActions}>
             <Pressable onPress={() => router.push('/funeral-notice-submit' as any)} accessibilityRole="button" style={styles.fAction}>

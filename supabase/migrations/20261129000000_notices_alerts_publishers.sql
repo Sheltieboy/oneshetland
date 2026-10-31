@@ -80,6 +80,7 @@ create table public.notice_audit_log (
     'notice_published', 'essential_published', 'notice_corrected', 'notice_resolved', 'notice_withdrawn',
     'dispatch_claimed', 'dispatch_completed',
     'funeral_submitted', 'funeral_reviewed', 'funeral_published', 'funeral_corrected', 'funeral_taken_down', 'funeral_change_requested',
+    'person_notice_submitted', 'person_notice_edited', 'person_notice_approved', 'person_notice_declined', 'person_notice_withdrawn',
     'import_source_changed', 'import_run')),
   publisher_id uuid,
   notice_id    uuid,

@@ -3,7 +3,7 @@
  * Single mode picks one and closes; multi mode toggles up to `max` and confirms with Done.
  */
 import React, { useMemo, useState } from 'react';
-import { Modal, View, Text, TextInput, FlatList, Pressable, StyleSheet, SafeAreaView } from 'react-native';
+import { Modal, View, Text, TextInput, FlatList, Pressable, StyleSheet, SafeAreaView, StatusBar, Platform } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import type { AreaOption } from '@/lib/notices-alerts-api';
@@ -58,7 +58,8 @@ export function AreaPicker({ visible, title, areas, selected, multi, max, onClos
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.screenBackground },
-  head: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: 8 },
+  // on Android the sheet draws under the status bar, which swallowed taps on Cancel / Done: keep the header clear of it
+  head: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, paddingTop: spacing.md + (Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0), gap: 8 },
   headBtn: { minWidth: 70, minHeight: 44, justifyContent: 'center' },
   headText: { color: colors.navy, fontSize: fontSize.md },
   title: { flex: 1, textAlign: 'center', fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
