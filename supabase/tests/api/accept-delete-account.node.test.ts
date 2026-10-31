@@ -122,13 +122,114 @@ d('the real delete-account function and the member notices (the original privacy
     assert.equal(owner(`select is_active from local_businesses where id='${S.biz}'`), 'f');
   });
 
-  test('6 what is deliberately KEPT, stated precisely: the append-only audit trail names the (now scrubbed) account id but holds no notice wording; her areas/preferences rows are not removed by the function', async () => {
+  test('6 what is deliberately KEPT, stated precisely: the append-only audit trail names the (now scrubbed) account id but holds no notice wording', async () => {
     assert.ok(Number(owner(`select count(*) from notice_audit_log where actor_id='${S.u.id}'`)) >= 7, 'audit rows remain (append-only)');
     const mine = Object.values(S.ids).map((i) => `'${i}'`).join(',');
     assert.equal(owner(`select count(*) from notice_audit_log where notice_id in (${mine}) and (details::text ilike '%Personal wording%' or details::text ilike '%Deleteme%' or details::text ilike '%Delia %')`), '0', 'no wording, title or name in the audit details of her notices');
     assert.equal(owner(`select count(*) from notice_audit_log where notice_id in (${Object.values(S.ids).map((i) => `'${i}'`).join(',')}) and details::text ilike '%Not suitable%'`), '1', 'a moderator decline reason (staff text) is retained in the audit trail');
-    // REPORTED GAP (not changed here - the brief covers notices): the function does not remove her notice AREAS / PREFERENCES rows; they stay attached to the scrubbed profile id. Flip these two when that is fixed.
-    assert.equal(owner(`select count(*) from member_areas where user_id='${S.u.id}'`), '1'); assert.equal(owner(`select count(*) from notice_notification_prefs where user_id='${S.u.id}'`), '1');
+    // her notice AREAS and PREFERENCES are removed by the function (delete_member_notice_data): they are not 'kept'
+    assert.equal(owner(`select count(*) from member_areas where user_id='${S.u.id}'`), '0'); assert.equal(owner(`select count(*) from notice_notification_prefs where user_id='${S.u.id}'`), '0');
+  });
+});
+
+d('preferences, deliveries, pushes and bystanders (the real function again)', () => {
+  const S: Record<string, any> = {};
+  const snapshot = (excludeUser: string) => owner(`select md5(string_agg(x, '|' order by x)) from (
+      select 'n:' || id::text || coalesce(status, '') || title as x from notices where publisher_user_id is distinct from '${excludeUser}' or publisher_user_id is null
+      union all select 'a:' || user_id::text || area_id from member_areas where user_id <> '${excludeUser}'
+      union all select 'p:' || user_id::text || essential_alerts::text || community_notices::text from notice_notification_prefs where user_id <> '${excludeUser}'
+      union all select 'd:' || user_id::text || subject_id::text from notice_deliveries where user_id <> '${excludeUser}'
+      union all select 'np:' || user_id::text from notification_preferences where user_id <> '${excludeUser}'
+      union all select 't:' || user_id::text || token from push_tokens where user_id <> '${excludeUser}'
+      union all select 'h:' || id::text || name from hubs where owner_id <> '${excludeUser}'
+      union all select 'f:' || id::text || status from funeral_notices where submitter_id is distinct from '${excludeUser}') q`);
+
+  test('7 a member with areas, preferences, delivery history, a push token and an essential-alert subscription; a bystander with the same; a surviving official essential alert', async () => {
+    const u = await signUp(`del2-${R}@accept.test`, 'Dora Deletable'); const v = await signUp(`by-${R}@accept.test`, 'Bea Bystander'); S.u = u; S.v = v;
+    const adm = await token('admin@accept.test'), mod = await staffToken();
+    for (const who of [u, v]) {
+      await rpcAs(who.token, 'set_my_notice_areas', { p_areas: ['voe', 'brae'] }); await rpcAs(who.token, 'set_my_notice_prefs', { p_essential: true, p_community: true, p_official: true, p_funeral: true });
+      owner(`insert into push_tokens (user_id, token) values ('${who.id}', 'ExponentPushToken[fictional-${who.id.slice(0, 8)}]'); insert into notification_preferences (user_id) values ('${who.id}')`);
+    }
+    const org = await rpcAs(adm, 'admin_upsert_official_publisher', { p_slug: `dora-org-${R}`, p_name: `Dora Council ${R}`, p_kind: 'council' }); S.org = org.data;
+    await rpcAs(adm, 'admin_verify_official_publisher', { p_publisher: S.org, p_note: 'Verified for the deletion test (fictional).' });
+    await rpcAs(adm, 'admin_set_official_publisher_member', { p_publisher: S.org, p_user: u.id, p_role: 'publisher' });
+    await rpcAs(adm, 'admin_grant_essential_alert', { p_publisher: S.org, p_reason: 'Deletion test (fictional).' });   // needs an authorised publisher first
+    const al = await rpcAs(u.token, 'official_publish_notice', { p_publisher: S.org, p_title: `Dora essential ${R}`, p_body: 'A fictional emergency published by a member who later deletes their account.', p_category: 'travel_transport', p_area_ids: ['voe'], p_expires_at: iso(12), p_action_text: 'Follow the instructions on the council website.', p_is_essential: true, p_review_at: iso(6) }); assert.equal(al.status, 200, JSON.stringify(al.data)); S.alert = al.data;
+    for (const who of [u, v]) owner(`insert into notice_deliveries (subject_type, subject_id, user_id, kind, status) values ('notice', gen_random_uuid(), '${who.id}', 'essential', 'sent')`);   // history from some EARLIER alert (an already-delivered one would be excluded from the dispatch)
+    const rec = (id: string) => owner(`select string_agg(user_id::text, ',') from public.notice_dispatch_recipients('${id}', 'essential')`);
+    assert.ok(rec(S.alert).includes(u.id) && rec(S.alert).includes(v.id), 'both were eligible for the alert before deletion');
+    // a personal notice of the bystander must be untouched
+    const mk = await rpcAs(v.token, 'submit_person_notice', { p_title: `Bea notice ${R}`, p_body: 'A bystander notice that must survive someone else deleting their account.', p_category: 'other', p_area_ids: ['voe'] }); S.vNotice = mk.data; await rpcAs(mod, 'staff_approve_person_notice', { p_notice: S.vNotice });
+    S.before = snapshot(u.id);
+  });
+  test('8 deleting the account removes ONLY her areas, preferences, delivery history and (existing) push settings; she can no longer be sent a push; everyone else and every hub / business / official notice is unchanged', async () => {
+    const handler = await loadHandler();
+    const res = await handler(new Request('http://local/delete-account', { method: 'POST', headers: { Authorization: `Bearer ${S.u.token}` } })); const body = await res.json() as any;
+    assert.equal(res.status, 200, JSON.stringify(body));
+    for (const step of ['notice_member_data', 'notification_preferences', 'push_tokens', 'notices', 'scrub_profile', 'auth_soft_delete']) assert.equal(body.steps[step], 'ok', `${step}: ${JSON.stringify(body.steps)}`);
+    for (const t of ['member_areas', 'notice_notification_prefs', 'notice_deliveries', 'notification_preferences', 'push_tokens']) assert.equal(owner(`select count(*) from ${t} where user_id='${S.u.id}'`), '0', t);
+    assert.equal(owner(`select count(*) from member_areas where user_id='${S.v.id}'`), '2'); assert.equal(owner(`select count(*) from push_tokens where user_id='${S.v.id}'`), '1');
+    assert.equal(snapshot(S.u.id), S.before, 'nothing else changed anywhere');
+    assert.equal(((await rpcAs(null, 'get_public_notice', { p_id: S.alert })).data as any[]).length, 1, 'the official alert she published survives');
+    const rec = owner(`select string_agg(user_id::text, ',') from public.notice_dispatch_recipients('${S.alert}', 'essential')`);
+    assert.ok(!rec.includes(S.u.id) && rec.includes(S.v.id), 'a dispatch now reaches the bystander and never her: no areas, no opt-in, no token');
+    assert.equal(((await rpcAs(null, 'get_public_notice', { p_id: S.vNotice })).data as any[]).length, 1, "the bystander's own published notice is untouched");
+  });
+  test('9 repeating the deletion cannot remove anything that is not hers: the second call is refused or is a no-op', async () => {
+    const handler = await loadHandler(); const before = snapshot(S.u.id);
+    const res = await handler(new Request('http://local/delete-account', { method: 'POST', headers: { Authorization: `Bearer ${S.u.token}` } })); const body = await res.json() as any;
+    assert.ok(res.status === 401 || (res.status === 200 && body.ok), `second call: ${res.status} ${JSON.stringify(body).slice(0, 200)}`);
+    assert.equal(snapshot(S.u.id), before, 'the database outside her own rows is identical after the repeat');
+    const noAuth = await handler(new Request('http://local/delete-account', { method: 'POST' })); assert.equal(noAuth.status, 401, 'no token: refused');
+    const bogus = await handler(new Request('http://local/delete-account', { method: 'POST', headers: { Authorization: 'Bearer not-a-real-token' } })); assert.equal(bogus.status, 401, 'a bad token: refused');
+    assert.equal(snapshot(S.u.id), before);
+  });
+  test('10 PRODUCTION SEQUENCE: with the Notices & Alerts migrations absent (the function deployed first) deletion still succeeds - that step is reported as skipped and the personal notices are still deleted; and with the migrations in place the same function removes the data (test 8)', async () => {
+    const w = await signUp(`early-${R}@accept.test`, 'Edna Early');
+    const mk = await rpcAs(w.token, 'submit_person_notice', { p_title: `Edna notice ${R}`, p_body: 'A notice by a member whose account is deleted before the new functions exist.', p_category: 'other', p_area_ids: ['voe'] });
+    owner(`alter function public.delete_member_notice_data(uuid) rename to delete_member_notice_data_hidden`);
+    try {
+      const handler = await loadHandler();
+      const res = await handler(new Request('http://local/delete-account', { method: 'POST', headers: { Authorization: `Bearer ${w.token}` } })); const body = await res.json() as any;
+      assert.equal(res.status, 200, JSON.stringify(body)); assert.equal(body.ok, true);
+      assert.match(body.steps.notice_member_data, /^skipped/, body.steps.notice_member_data);
+      assert.equal(body.steps.notices, 'ok'); assert.equal(body.steps.scrub_profile, 'ok'); assert.equal(body.steps.auth_soft_delete, 'ok');
+      assert.equal(owner(`select count(*) from notices where id='${mk.data}'`), '0');
+    } finally { owner(`alter function public.delete_member_notice_data_hidden(uuid) rename to delete_member_notice_data`); }
+    // the lock-down is intact: the function is callable by the service role only
+    assert.equal((await rpcAs(S.v.token, 'delete_member_notice_data', { p_user: S.v.id })).status >= 400, true, 'a member cannot call it, even for themselves');
+    assert.equal((await rpcAs(null, 'delete_member_notice_data', { p_user: S.v.id })).status >= 400, true, 'nor anonymous');
+    assert.equal(owner(`select count(*) from member_areas where user_id='${S.v.id}'`), '2', 'and the bystander still has their areas');
+  });
+});
+
+d('FUNERAL submissions when the submitting member deletes their account: CURRENT behaviour, recorded for the retention decision (nothing here changes funeral records)', () => {
+  test('11 what survives, by status: the account is scrubbed but every funeral row, contact detail, verification note and change request stays', async () => {
+    const f = await signUp(`fun-${R}@accept.test`, 'Fiona Funeralsubmitter'); const mod = await staffToken();
+    const sub = async (name: string) => (await rpcAs(f.token, 'submit_funeral_notice', { p: { full_name: `${name} ${R}`, died_on: '2026-10-29', announcement: 'Peacefully at home.', area_id: 'voe', submitter_name: 'Fiona Funeralsubmitter', submitter_relationship: 'daughter', submitter_phone: '07700 900321', submitter_email: 'fiona.private@accept.test', family_authorised: true } })).data as string;
+    const ids: Record<string, string> = {};
+    ids.withdrawn = await sub('Withdrawn Person'); await rpcAs(f.token, 'withdraw_my_funeral_notice', { p_id: ids.withdrawn });
+    owner(`update funeral_notices set created_at = now() - interval '3 days' where id='${ids.withdrawn}'`);
+    ids.approved = await sub('Approved Person'); await rpcAs(mod, 'admin_funeral_review', { p_id: ids.approved, p_action: 'approve', p_note: 'Rang the family on 07700 900321 and confirmed details with Fiona.', p_verification_method: 'phone_callback' });
+    ids.pending = await sub('Pending Person');
+    ids.rejected = await sub('Rejected Person'); await rpcAs(mod, 'admin_funeral_review', { p_id: ids.rejected, p_action: 'reject', p_note: 'Could not verify: caller would not give a number.' });
+    await rpcAs(f.token, 'request_funeral_notice_change', { p_id: ids.approved, p_kind: 'correction', p_message: 'Please correct the surname.', p_contact: 'fiona.private@accept.test' });
+    const handler = await loadHandler(); const res = await handler(new Request('http://local/delete-account', { method: 'POST', headers: { Authorization: `Bearer ${f.token}` } })); assert.equal(res.status, 200);
+    const rows = owner(`select status || ' | submitter_id=' || coalesce(submitter_id::text, 'NULL') || ' | name=' || coalesce(submitter_name, '-') || ' | phone=' || coalesce(submitter_phone, '-') || ' | email=' || coalesce(submitter_email, '-') || ' | verified_by=' || (verified_by is not null)::text || ' | verification_note=' || coalesce(verification_note, '-') || ' | review_note=' || coalesce(review_note, '-') || ' | public=' || (status = 'approved')::text from funeral_notices where id in ('${Object.values(ids).join("','")}') order by status`);
+    console.log('\nFUNERAL ROWS AFTER THE SUBMITTER DELETED THEIR ACCOUNT (current behaviour):\n' + rows);
+    const cr = owner(`select 'change request: requester_id=' || coalesce(requester_id::text, 'NULL') || ' | contact=' || coalesce(contact, '-') || ' | message=' || message from funeral_change_requests where funeral_id='${ids.approved}'`);
+    console.log(cr);
+    const audit = owner(`select string_agg(distinct event, ',') from notice_audit_log where funeral_id in ('${Object.values(ids).join("','")}')`); console.log('audit events kept: ' + audit);
+    // the characterisation, asserted so it cannot drift unnoticed
+    assert.equal(owner(`select count(*) from funeral_notices where id in ('${Object.values(ids).join("','")}')`), '4', 'every funeral row survives in every status');
+    assert.equal(owner(`select count(*) from funeral_notices where id in ('${Object.values(ids).join("','")}') and submitter_phone is not null and submitter_email is not null`), '4', 'the submitter\'s private phone and email are RETAINED on every row (pending, approved, withdrawn, rejected)');
+    assert.equal(owner(`select submitter_id = '${f.id}' from funeral_notices where id='${ids.approved}'`), 't', 'the submitter id still points at the scrubbed account');
+    assert.equal(owner(`select verification_note like '%07700 900321%' from funeral_notices where id='${ids.approved}'`), 't', 'a staff verification note can itself contain the phone number');
+    assert.equal(owner(`select count(*) from funeral_change_requests where funeral_id='${ids.approved}' and contact is not null`), '1');
+    assert.equal(((await rpcAs(null, 'get_funeral_notice', { p_id: ids.approved })).data as any[]).length, 1, 'the approved announcement is still public');
+    const pub = JSON.stringify((await rpcAs(null, 'get_funeral_notice', { p_id: ids.approved })).data); assert.ok(!/07700|fiona|Fiona|private@/.test(pub), 'and the public data never carried the contact details');
+    for (const k of ['pending', 'withdrawn', 'rejected']) assert.equal(((await rpcAs(null, 'get_funeral_notice', { p_id: ids[k] })).data as any[]).length, 0, `${k} was never public`);
   });
 });
 const idOf = (o: string) => (o.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []).pop() ?? '';

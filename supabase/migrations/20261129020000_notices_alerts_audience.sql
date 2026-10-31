@@ -306,4 +306,21 @@ grant execute on function public.notice_dispatchable(uuid, text), public.can_dis
   public.notice_dispatch_recipients(uuid, text, integer), public.notice_record_delivery(uuid, uuid, text, text, text), public.notice_complete_dispatch(uuid),
   public.notice_fail_dispatch(uuid, text) to service_role;
 
+-- ── account deletion: remove ONE member's notice areas, notice preferences and delivery history ─────────────────────────────────────────────
+-- The delete-account Edge Function soft-deletes (it scrubs the profile and keeps the row), so these tables' ON DELETE CASCADE never fires. The tables are locked
+-- against every client AND the service role's direct table access (RLS, no grants), so the function calls this instead. It acts ONLY on the id it is given, and
+-- only the service role can call it (the function passes the authenticated caller's own id, taken from their JWT). Returns what it removed, for the function's log.
+create function public.delete_member_notice_data(p_user uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare a integer; p integer; d integer;
+begin
+  if p_user is null then raise exception 'A member id is required' using errcode = '22023'; end if;
+  delete from public.member_areas where user_id = p_user; get diagnostics a = row_count;
+  delete from public.notice_notification_prefs where user_id = p_user; get diagnostics p = row_count;
+  delete from public.notice_deliveries where user_id = p_user; get diagnostics d = row_count;
+  return jsonb_build_object('member_areas', a, 'notice_notification_prefs', p, 'notice_deliveries', d);
+end $$;
+revoke all on function public.delete_member_notice_data(uuid) from public, anon, authenticated;
+grant execute on function public.delete_member_notice_data(uuid) to service_role;
+
 commit;

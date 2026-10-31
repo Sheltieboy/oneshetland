@@ -317,3 +317,16 @@ describe('idempotent, resumable dispatch', () => {
     assert.ok(Number(scalar(`select count(*) from notice_dispatches`)) >= 1);
   });
 });
+
+describe('account deletion support: delete_member_notice_data (the delete-account function soft-deletes, so the cascades never fire)', () => {
+  test('a member\'s areas, preferences and delivery history are removed - theirs only, and only by the service role', () => {
+    const fill = (who: 'A' | 'A2') => { assert.ok(!failed(as(who, `select public.set_my_notice_areas(array['${areaIds()[0]}'])`))); assert.ok(!failed(as(who, `select public.set_my_notice_prefs(p_essential => true, p_community => true)`))); scalar(`insert into notice_deliveries (subject_type, subject_id, user_id, kind, status) values ('notice', gen_random_uuid(), '${U[who]}', 'essential', 'sent')`); };
+    fill('A'); fill('A2');
+    for (const who of ['A', 'A2', 'anon'] as const) assert.match(as(who, `select public.delete_member_notice_data('${U.A}')`), /permission denied/, `${who} cannot call it, even about themselves`);
+    assert.match(as('service', `select public.delete_member_notice_data(null)`), /member id is required/);
+    const out = as('service', `select public.delete_member_notice_data('${U.A}')`); assert.match(out, /"member_areas": 1/); assert.match(out, /"notice_notification_prefs": 1/); assert.match(out, /"notice_deliveries": 1/);
+    for (const t of ['member_areas', 'notice_notification_prefs', 'notice_deliveries']) { assert.equal(scalar(`select count(*) from ${t} where user_id='${U.A}'`), '0', t); assert.equal(scalar(`select count(*) from ${t} where user_id='${U.A2}'`), '1', `${t}: another member is untouched`); }
+    assert.equal(as('service', `select public.delete_member_notice_data('${U.A}')`).includes('ERROR'), false, 'repeating it is harmless');
+    assert.match(as('service', `select count(*) from member_areas`), /permission denied/, 'and the tables stay closed to direct service-role access');
+  });
+});

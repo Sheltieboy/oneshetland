@@ -37,6 +37,9 @@ Deploy in this order, each with `verify_jwt = true` (the functions also authoris
 Confirm `notify-community-notice` (the island-wide admin broadcast, deployed in Stage 3A.1) is untouched and still refuses imports.
 Secrets: none new (uses `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` that already exist).
 
+### 3b. delete-account (Edge Function) — ordering
+`supabase/functions/delete-account` now also calls `delete_member_notice_data` (created in migration `20261129020000`). It tolerates the function being absent (reports `skipped: not present yet`), so deploying it before the migrations is safe but does nothing for the new tables. Recommended: apply the migrations, then deploy `delete-account` immediately after `…020000` is applied (before members can have notice areas or preferences, or at the same release). Verify with a throwaway test account on a TEST project: the deletion response's `steps.notice_member_data` must be `ok`. Rollback of `…020000` drops the function; the deployed function then reports `skipped`.
+
 ## 4. Activation (deliberate administrator actions — none is automatic)
 Done by a platform administrator after the release is live; each is audited in `notice_audit_log`.
 1. Create the real Council organisation: `admin_upsert_official_publisher('shetland-islands-council', …)`; **verify** it (`admin_verify_official_publisher` with a note describing how identity was established); add the Council's authorised accounts (`admin_set_official_publisher_member`, role `publisher` for those who may mark alerts essential, `delegate` for the rest); only then `admin_grant_essential_alert`.

@@ -128,4 +128,13 @@ describe('account deletion: the original privacy rule is pinned in the delete-ac
     assert.doesNotMatch(line, /status/, 'no lifecycle filter: pending, published, withdrawn, declined, expired and resolved notices all go');
     assert.ok(src.indexOf("svc.from('notices').delete()") < src.indexOf("from('profiles').update"), 'the notices are deleted BEFORE the profile is scrubbed');
   });
+  test('the notice-data cleanup uses ONLY the authenticated id, through the service-role-only function, and tolerates the migrations not being deployed yet', () => {
+    const src = readRepo('supabase/functions/delete-account/index.ts').replace(/\s+/g, ' ');
+    assert.match(src, /runIfPresent\('notice_member_data', svc\.rpc\('delete_member_notice_data', \{ p_user: uid \}\)\)/);
+    assert.match(src, /runIfPresent\('notification_preferences', svc\.from\('notification_preferences'\)\.delete\(\)\.eq\('user_id', uid\)\)/);
+    assert.doesNotMatch(src, /from\('(member_areas|notice_notification_prefs|notice_deliveries)'\)/, 'the locked Notices tables are never touched directly');
+    assert.match(src, /PGRST202/); assert.match(src, /PGRST205/); assert.match(src, /skipped: not present yet/);
+    assert.ok(src.indexOf("runIfPresent('notice_member_data'") > src.indexOf("svc.from('notices').delete()") && src.indexOf("runIfPresent('notice_member_data'") < src.indexOf("svc.from('profiles').update"), 'after the notices, before the profile scrub');
+    for (const m of src.matchAll(/\.eq\('(\w+)', uid\)/g)) assert.ok(['id' /* the caller's own profile row */, 'author_id', 'suggester_id', 'user_id', 'publisher_user_id', 'blocker_id', 'blocked_id', 'owner_id'].includes(m[1]), `only the caller's own id is ever used as a selector: ${m[1]}`);
+  });
 });

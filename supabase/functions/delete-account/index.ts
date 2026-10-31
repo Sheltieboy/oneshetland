@@ -18,6 +18,13 @@ const corsHeaders = {
  * What it does (service role, caller's own id only):
  *   1. Deletes the user's own UGC (memories, comments, pins, boat comments,
  *      community notices) — "right to be forgotten" from public surfaces.
+ *   1b. Deletes the user's own notice areas, notification preferences and
+ *      delivery history: the Notices & Alerts tables via the service-role-only
+ *      function delete_member_notice_data(uid) (those tables are locked even to
+ *      direct service-role access), and notification_preferences. In an
+ *      environment that has this function but not the Notices & Alerts migrations
+ *      the RPC does not exist: that step is reported as "skipped", never as a
+ *      failure, and the rest of the deletion proceeds.
  *   2. Deletes their push tokens + block relationships.
  *   3. Deactivates any business they own (kept for transactional integrity).
  *   4. Scrubs PII from their profile + stamps deleted_at.
@@ -59,6 +66,17 @@ serve(async (req) => {
       }
     };
 
+    // Like run(), but for things that arrive with a later migration (Notices & Alerts): "not found" (PostgREST PGRST205 table / PGRST202 function; Postgres 42P01 / 42883)
+    // means there is nothing of that kind to delete yet, so the step is "skipped" and deletion carries on. Any other error is still reported as an error.
+    const runIfPresent = async (label: string, p: PromiseLike<{ error: unknown } | unknown>) => {
+      try {
+        const e = ((await p) as { error?: { code?: string; message?: string } | null })?.error;
+        steps[label] = !e ? 'ok' : (e.code === 'PGRST205' || e.code === 'PGRST202' || e.code === '42P01' || e.code === '42883') ? 'skipped: not present yet' : `err: ${String(e.message ?? e)}`;
+      } catch (e) {
+        steps[label] = `threw: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    };
+
     // 1. Delete the user's own UGC (cascades children where defined).
     await run('memories', svc.from('memories').delete().eq('author_id', uid));
     await run('memory_comments', svc.from('memory_comments').delete().eq('author_id', uid));
@@ -69,6 +87,11 @@ serve(async (req) => {
     // Only notices that belong to NO entity. A hub or business notice belongs to the hub / business, not to whoever pressed publish:
     // publisher_user_id on those is audit metadata (server-stamped), and its FK nulls it when the profile goes.
     await run('notices', svc.from('notices').delete().eq('publisher_user_id', uid).is('publisher_business_id', null).is('publisher_hub_id', null).eq('is_platform_notice', false));
+
+    // 1b. The member's own notice areas, notification preferences and delivery history - only ever by the authenticated account's id (uid, from the caller's JWT).
+    //     Not selected by anything else: other members' rows, and hub / business / official notices, are not touched.
+    await runIfPresent('notice_member_data', svc.rpc('delete_member_notice_data', { p_user: uid }));   // member_areas, notice_notification_prefs, notice_deliveries
+    await runIfPresent('notification_preferences', svc.from('notification_preferences').delete().eq('user_id', uid));
 
     // 2. Push tokens + block relationships.
     await run('push_tokens', svc.from('push_tokens').delete().eq('user_id', uid));
