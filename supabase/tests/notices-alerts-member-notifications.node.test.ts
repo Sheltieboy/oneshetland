@@ -207,5 +207,26 @@ describe('the dispatch machinery is not reachable by clients, and approving is s
   });
 });
 
+
+describe('should_notify (the real production function, which the shared sender relies on)', () => {
+  const sn = (u: string, urgent: boolean) => scalar(`select public.should_notify('${u}','notices',${urgent})`);
+  test('15 missing record = the existing defaults (allowed); master off or the notices module off blocks EVERYTHING including urgent; quiet hours block only non-urgent', () => {
+    const none = member({ areas: [K] }); assert.deepEqual([sn(none, false), sn(none, true)], ['t', 't'], 'no preferences row: the existing default is on (nothing is switched on by us)');
+    const master = member({ areas: [K], prefs: 'false, true, null, null' }); assert.deepEqual([sn(master, false), sn(master, true)], ['f', 'f'], 'urgent never bypasses the master switch');
+    const mod = member({ areas: [K], prefs: 'true, false, null, null' }); assert.deepEqual([sn(mod, false), sn(mod, true)], ['f', 'f'], 'urgent never bypasses a module opt-out');
+    const quiet = member({ areas: [K], prefs: `true, true, ${nowWindow(1, 1)}` }); assert.deepEqual([sn(quiet, false), sn(quiet, true)], ['f', 't'], 'urgent bypasses ONLY quiet hours');
+    const later = member({ areas: [K], prefs: `true, true, ${nowWindow(-2, -4)}` }); assert.deepEqual([sn(later, false), sn(later, true)], ['t', 't']);
+    assert.match(as('A', `select public.should_notify('${none}','notices',false)`), /permission denied/, 'clients cannot read anyone\'s settings');
+  });
+  test('16 the gate agrees with the sender\'s two-step reading (quiet hours = blocked normally, allowed if urgent) and the staff list counts quiet hours as NOT sent, final', () => {
+    const quiet = member({ areas: [K], prefs: `true, true, ${nowWindow(1, 1)}` }); assert.equal(gate(quiet), 'quiet_hours');
+    const n = published([K]); file(`insert into notice_deliveries (subject_type, subject_id, user_id, kind, status, last_error) values ('notice','${n}','${quiet}','member','skipped','quiet_hours')`);
+    const old = member({ areas: [K] }); file(`insert into notice_deliveries (subject_type, subject_id, user_id, kind, status) values ('notice','${n}','${old}','member','held_quiet')`);
+    const out = asUid(U.O, `select delivery from public.staff_published_person_notices() where id = '${n}'`); const j = JSON.parse(out.split('\n').find((l) => l.trim().startsWith('{'))!);
+    assert.deepEqual(j, { sent: 0, quiet_hours: 2, skipped: 0, failed: 0 }, 'new skipped/quiet_hours rows and legacy held_quiet rows are both reported as not sent because of quiet hours');
+    assert.ok(!audience(n).has(quiet) && !audience(n).has(old), 'neither is ever selected again: no catch-up');
+  });
+});
+
 function N_LEGACY_ID() { return 'a1000000-0000-4000-8000-000000000001'; }
 void q;

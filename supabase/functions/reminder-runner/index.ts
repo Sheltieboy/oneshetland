@@ -72,7 +72,9 @@ serve(async (req) => {
 
     const result = { booking_24h: 0, booking_1h: 0, event_24h: 0, daily_wird: 0, streak_nudge: 0, cruise_today: 0, fetch_reminded: 0, fetch_expired: 0, loyalty_nudge: 0, loyalty_reward: 0, pass_expiring: 0, ticket_orders_expired: 0, product_orders_expired: 0, fetch_orders_nudged: 0, bookings_metered: 0,
       // Metering is the one step whose failure used to be invisible.
-      premium_marked: 0, metering_error: null as string | null };
+      premium_marked: 0, metering_error: null as string | null,
+      // Reminders NOT stamped as sent because the member's notification preferences could not be read (the sender fails closed): retried by the next run.
+      deferred_preference_check: 0 };
 
     // ── Shop orders: expire unpaid checkouts + release their reserved stock ──
     // A pending product_order holds stock (reserved) so nobody else can buy
@@ -168,7 +170,7 @@ serve(async (req) => {
       .lt('expires_at', soonIso)
       .limit(200);
     for (const r of expiringReq ?? []) {
-      await sendUserPush(svc, {
+      const pushed = await sendUserPush(svc, {
         userId:     r.customer_id,
         module:     'fetch',
         categoryId: 'fetch.expiring',
@@ -176,6 +178,7 @@ serve(async (req) => {
         body:       `No driver has taken your ${r.category_slug ?? 'delivery'} yet. Tap to keep looking or cancel.`,
         data:       { request_id: r.id, event: 'expiring' },
       });
+      if (pushed.reason === 'preference_check_failed') { result.deferred_preference_check++; continue; }   // not read: do NOT stamp, try again next run
       await svc.from('delivery_requests').update({ reminder_sent_at: nowIso }).eq('id', r.id);
       result.fetch_reminded++;
     }
@@ -226,7 +229,7 @@ serve(async (req) => {
 
     for (const b of soon ?? []) {
       const where = await businessName(svc, b.business_id);
-      await sendUserPush(svc, {
+      const pushed = await sendUserPush(svc, {
         userId:     b.customer_id,
         module:     'bookings',
         categoryId: 'bookings.reminder',
@@ -234,6 +237,7 @@ serve(async (req) => {
         body:       `Your appointment${where ? ` at ${where}` : ''} is at ${londonTime(b.starts_at)} today.`,
         data:       { screen: 'local-my-bookings', booking_id: b.id },
       });
+      if (pushed.reason === 'preference_check_failed') { result.deferred_preference_check++; continue; }
       await svc.from('book_bookings')
         .update({ reminder_1h_sent_at: nowIso, reminder_24h_sent_at: nowIso })
         .eq('id', b.id);
@@ -251,7 +255,7 @@ serve(async (req) => {
 
     for (const b of tomorrow ?? []) {
       const where = await businessName(svc, b.business_id);
-      await sendUserPush(svc, {
+      const pushed = await sendUserPush(svc, {
         userId:     b.customer_id,
         module:     'bookings',
         categoryId: 'bookings.reminder',
@@ -259,6 +263,7 @@ serve(async (req) => {
         body:       `Mind your appointment${where ? ` at ${where}` : ''} on ${londonDay(b.starts_at)} at ${londonTime(b.starts_at)}.`,
         data:       { screen: 'local-my-bookings', booking_id: b.id },
       });
+      if (pushed.reason === 'preference_check_failed') { result.deferred_preference_check++; continue; }
       await svc.from('book_bookings').update({ reminder_24h_sent_at: nowIso }).eq('id', b.id);
       result.booking_24h++;
     }
@@ -280,13 +285,16 @@ serve(async (req) => {
       const holders = [...new Set((tickets ?? []).map(t => t.holder_id).filter(Boolean) as string[])];
 
       if (holders.length) {
-        await sendUserPushBulk(svc, holders, {
+        const bulk = await sendUserPushBulk(svc, holders, {
           module:     'events',
           categoryId: 'events.reminder',
           title:      'Event tomorrow 🎟',
           body:       `${ev.title} is on ${londonDay(ev.starts_at)} at ${londonTime(ev.starts_at)}. Your tickets are in My Wallet.`,
           data:       { screen: 'my-event-tickets', event_id: ev.id },
         });
+        // Nobody was reached AND the cause was an unreadable preference check: leave it unstamped for the next run. (Partial success is stamped, so the members
+        // who were notified are never notified twice.)
+        if (bulk.sent === 0 && bulk.checkFailed > 0) { result.deferred_preference_check++; continue; }
       }
       // Stamp even when there are no holders, so we don't re-scan it each run.
       await svc.from('events').update({ reminder_sent_at: nowIso }).eq('id', ev.id);
@@ -297,6 +305,7 @@ serve(async (req) => {
     const { data: wirdCfg } = await svc
       .from('admin_config').select('value').eq('key', 'last_daily_wird_date').maybeSingle();
     if (wirdCfg?.value !== todayStr) {
+      let wirdDeferred = false;
       const { count } = await svc
         .from('spik_dictionary').select('id', { count: 'exact', head: true })
         .in('word_status', ['approved', 'published']);
@@ -319,10 +328,12 @@ serve(async (req) => {
             title: "Wird o' da day", body, data: { screen: 'spik' },
           });
           result.daily_wird = res.sent;
+          if (res.sent === 0 && res.checkFailed > 0) wirdDeferred = true;
         }
       }
-      // Stamp regardless, so a quiet day doesn't retry every 15 min.
-      await svc.from('admin_config')
+      // Stamp regardless, so a quiet day doesn't retry every 15 min, EXCEPT when nobody could be reached because every preference check failed (retry next run).
+      if (wirdDeferred) result.deferred_preference_check++;
+      else await svc.from('admin_config')
         .upsert({ key: 'last_daily_wird_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
     }
 
@@ -335,6 +346,7 @@ serve(async (req) => {
       const { data: cruiseCfg } = await svc
         .from('admin_config').select('value').eq('key', 'last_cruise_today_date').maybeSingle();
       if (cruiseCfg?.value !== todayStr) {
+        let cruiseDeferred = false;
         const { data: day } = await svc
           .from('cruise_day_summary')
           .select('visit_date, ships_count, total_est_pax')
@@ -375,9 +387,11 @@ serve(async (req) => {
             data: { screen: 'cruise-day', visit_date: todayStr },
           });
           result.cruise_today = res.sent;
+          if (res.sent === 0 && res.checkFailed > 0) cruiseDeferred = true;
         }
-        // Stamp even on a no-ship day, so it doesn't re-scan every run.
-        await svc.from('admin_config')
+        // Stamp even on a no-ship day, so it doesn't re-scan every run (but not when every preference check failed).
+        if (cruiseDeferred) result.deferred_preference_check++;
+        else await svc.from('admin_config')
           .upsert({ key: 'last_cruise_today_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
       }
     }
@@ -398,7 +412,8 @@ serve(async (req) => {
           data: { screen: 'games' },
         });
         result.streak_nudge = res.sent;
-        await svc.from('admin_config')
+        if (res.sent === 0 && res.checkFailed > 0) result.deferred_preference_check++;
+        else await svc.from('admin_config')
           .upsert({ key: 'last_streak_nudge_date', value: todayStr, category: 'notifications' }, { onConflict: 'key' });
       }
     }

@@ -70,7 +70,7 @@ describe('delivery, deduplication, failure and resume', () => {
   test('5 happy path: batches until the database returns nobody; one send and one record per member; completes once', async () => {
     const db = fakeDb({ batches: [['u1', 'u2', 'u3'], ['u4'], []] }); const sentTo: string[] = [];
     const out = await runDispatch({ rpc: db.rpc, authorise: ok, send: async (u) => { sentTo.push(u); return { status: 'sent' }; }, batchSize: 3 }, subject);
-    assert.deepEqual(out, { ok: true, dispatch: 'dispatch-1', recipients: 4, sent: 4, held: 0, skipped: 0, failed: 0 });
+    assert.deepEqual(out, { ok: true, dispatch: 'dispatch-1', recipients: 4, sent: 4, held: 0, quiet: 0, skipped: 0, failed: 0 });
     assert.deepEqual(sentTo.sort(), ['u1', 'u2', 'u3', 'u4']);
     assert.equal(db.names().filter((n) => n === 'notice_complete_dispatch').length, 1);
     assert.equal(db.names().filter((n) => n === 'notice_claim_dispatch').length, 1);
@@ -81,13 +81,14 @@ describe('delivery, deduplication, failure and resume', () => {
     await runDispatch({ rpc: db.rpc, authorise: ok, send: async (u) => { sentTo.push(u); return { status: 'sent' }; } }, subject);
     assert.deepEqual(sentTo.sort(), ['u1', 'u2']);
   });
-  test('7 push outcomes map to delivery states: sent / held_quiet (quiet hours) / skipped (opt-out, no token) / failed — quiet hours are held, never forced', async () => {
+  test('7 push outcomes map to delivery states: sent / skipped (opt-out, no token, QUIET HOURS: a final skip with its reason, never a hold) / failed', async () => {
     const outcomes: PushStatus[] = ['sent', 'skipped_quiet', 'skipped_pref', 'no_token', 'error'];
-    assert.deepEqual(outcomes.map(deliveryStatus), ['sent', 'held_quiet', 'skipped', 'skipped', 'failed']);
+    assert.deepEqual(outcomes.map(deliveryStatus), ['sent', 'skipped', 'skipped', 'skipped', 'failed'], 'held_quiet is no longer written: nothing is ever delivered later');
     const db = fakeDb({ batches: [['u1', 'u2', 'u3', 'u4', 'u5'], []] });
     const out = await runDispatch({ rpc: db.rpc, authorise: ok, send: async (u) => ({ status: outcomes[Number(u.slice(1)) - 1] }) }, subject);
-    assert.deepEqual(recorded(db.calls).sort(), ['u1:sent', 'u2:held_quiet', 'u3:skipped', 'u4:skipped', 'u5:failed']);
-    assert.equal(out.ok && out.held, 1); assert.equal(out.ok && out.failed, 1);
+    assert.deepEqual(recorded(db.calls).sort(), ['u1:sent', 'u2:skipped', 'u3:skipped', 'u4:skipped', 'u5:failed']);
+    assert.equal(out.ok && out.held, 0); assert.equal(out.ok && out.quiet, 1, 'quiet hours is counted separately, as not sent'); assert.equal(out.ok && out.skipped, 2); assert.equal(out.ok && out.failed, 1);
+    const rec = db.calls.filter((c) => c.fn === 'notice_record_delivery' && c.args.p_user === 'u2'); assert.equal(rec[0].args.p_error, 'quiet_hours', 'the reason is kept so staff are told why');
   });
   test('8 a sender that throws or rejects marks only that member failed; the rest are delivered and the dispatch still completes', async () => {
     const db = fakeDb({ batches: [['u1', 'u2', 'u3'], []] });

@@ -13,6 +13,20 @@
  * Senders should call the new `sendUserPush` (preferences-aware). The original
  * `sendPush` is kept as a low-level escape hatch that bypasses preferences —
  * use it only for genuinely critical pushes that should never be muted.
+ *
+ * FAILS CLOSED (31 Oct 2026). If the preference check cannot be completed (the rpc errors, throws, times out or answers with anything other than
+ * true/false) NOTHING is sent: the member's opt-in is never assumed. The check is retried once, quickly, so a momentary blip does not drop a legitimate
+ * notification; after that the result is { status: 'error', reason: 'preference_check_failed' } and the attempt is logged as an error, never as sent.
+ * `urgent` still only bypasses QUIET HOURS (inside should_notify, after the master and module switches): it never bypasses an opt-out or a failed check.
+ *
+ * The result carries an additive `reason` so callers can tell the outcomes apart (`status` keeps its existing values):
+ *   accepted              status 'sent'          the push PROVIDER accepted it for at least one device (NOT confirmation that a handset received it)
+ *   preference_check_failed status 'error'        could not read the preferences: not sent
+ *   opted_out             status 'skipped_pref'  master switch or this module is off: not sent
+ *   quiet_hours           status 'skipped_quiet' in quiet hours (non-urgent): not sent, and NOT retried or sent later
+ *   preference_blocked    status 'skipped_pref'  refused, but the reason could not be determined: not sent
+ *   no_device             status 'no_token'      no valid device token: not sent
+ *   provider_error        status 'error'         the provider rejected or could not be reached: not sent
  */
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -21,6 +35,13 @@ export type NotificationModule =
   | 'bookings' | 'shifts' | 'fetch' | 'loyalty' | 'offers' | 'spik' | 'games'
   | 'jobs' | 'events' | 'cruise' | 'wallet' | 'hubs' | 'community'
   | 'notices' | 'business';
+
+export type PushReason = 'accepted' | 'preference_check_failed' | 'opted_out' | 'quiet_hours' | 'preference_blocked' | 'no_device' | 'provider_error';
+export type LogStatus = 'sent' | 'skipped_pref' | 'skipped_quiet' | 'no_token' | 'error';
+export interface SendUserPushResult { status: LogStatus; error?: string; reason: PushReason }
+
+/** The preference check is attempted this many times (one quick retry for a transient fault), each with this timeout. (An object only so tests can shorten the waits.) */
+export const preferenceCheckConfig = { attempts: 2, timeoutMs: 4000, retryDelayMs: 250 };
 
 export interface SendUserPushInput {
   userId:     string;                  // recipient (used for prefs + log)
@@ -41,22 +62,26 @@ export interface SendUserPushInput {
 export async function sendUserPush(
   supabase: SupabaseClient,
   input: SendUserPushInput,
-): Promise<{ status: LogStatus; error?: string }> {
+): Promise<SendUserPushResult> {
 
-  // 1. Check preferences + quiet hours via the DB function
-  const { data: shouldSendData, error: shouldErr } = await supabase
-    .rpc('should_notify', {
-      p_user_id: input.userId,
-      p_module:  input.module,
-      p_urgent:  input.urgent ?? false,
-    });
-
-  if (shouldErr) {
-    console.error('[send-push] should_notify rpc failed:', shouldErr);
-    // Fail-open: deliver if the check itself errored — better to over-notify than miss critical ones
-  } else if (shouldSendData === false) {
+  // 1. Check preferences + quiet hours via the DB function. FAIL CLOSED: a check that cannot be completed is never permission.
+  const decision = await preferenceDecision(supabase, input.userId, input.module, input.urgent ?? false);
+  if (decision === 'failed') {
+    console.error('[send-push] preference check failed; not sending');
+    await logAttempt(supabase, input, 'error', 'preference_check_failed');
+    return { status: 'error', error: 'preference_check_failed', reason: 'preference_check_failed' };
+  }
+  if (decision === 'blocked') {
+    // should_notify answers only true/false. Asked again as URGENT it differs only by ignoring quiet hours, which tells a quiet-hours hold from an opt-out.
+    // (An urgent send that is blocked can only be a master/module opt-out.)
+    const ignoringQuiet = input.urgent ? 'blocked' : await preferenceDecision(supabase, input.userId, input.module, true, 1);
+    if (ignoringQuiet === 'allow') {
+      await logAttempt(supabase, input, 'skipped_quiet');
+      return { status: 'skipped_quiet', error: 'quiet_hours', reason: 'quiet_hours' };
+    }
+    const reason: PushReason = ignoringQuiet === 'blocked' ? 'opted_out' : 'preference_blocked';
     await logAttempt(supabase, input, 'skipped_pref');
-    return { status: 'skipped_pref' };
+    return { status: 'skipped_pref', error: reason, reason };
   }
 
   // 2. Look up every active push token for this user (multi-device), falling
@@ -64,7 +89,7 @@ export async function sendUserPush(
   const tokens = await getUserPushTokens(supabase, input.userId);
   if (tokens.length === 0) {
     await logAttempt(supabase, input, 'no_token');
-    return { status: 'no_token' };
+    return { status: 'no_token', error: 'no_device', reason: 'no_device' };
   }
 
   // 3. Send to each device. Prune any token Expo reports as unregistered.
@@ -93,7 +118,7 @@ export async function sendUserPush(
   //    inbox, so we want one entry the user can see and mark read.
   await logAttempt(supabase, input, anyOk ? 'sent' : 'error', anyOk ? undefined : lastError);
 
-  return { status: anyOk ? 'sent' : 'error', error: anyOk ? undefined : lastError };
+  return anyOk ? { status: 'sent', reason: 'accepted' } : { status: 'error', error: lastError ?? 'provider_error', reason: 'provider_error' };
 }
 
 /**
@@ -153,19 +178,19 @@ export async function sendUserPushBulk(
   supabase: SupabaseClient,
   userIds: string[],
   payload: Omit<SendUserPushInput, 'userId'>,
-): Promise<{ sent: number; skipped: number; errored: number }> {
+): Promise<{ sent: number; skipped: number; errored: number; checkFailed: number }> {
   const results = await Promise.allSettled(
     userIds.map(uid => sendUserPush(supabase, { ...payload, userId: uid })),
   );
-  let sent = 0, skipped = 0, errored = 0;
+  let sent = 0, skipped = 0, errored = 0, checkFailed = 0;
   for (const r of results) {
     if (r.status === 'rejected') { errored++; continue; }
     const s = r.value.status;
     if (s === 'sent')          sent++;
-    else if (s === 'error')    errored++;
+    else if (s === 'error')  { errored++; if (r.value.reason === 'preference_check_failed') checkFailed++; }   // counted in errored too: additive
     else                       skipped++;
   }
-  return { sent, skipped, errored };
+  return { sent, skipped, errored, checkFailed };
 }
 
 // ── Low-level helper (back-compat for existing senders) ──────────────────────
@@ -186,9 +211,31 @@ export async function sendPush(
   });
 }
 
+
+type PreferenceDecision = 'allow' | 'blocked' | 'failed';
+
+/** should_notify with a timeout and a bounded retry. Anything but a clean true/false (error, exception, timeout, null, a string) is 'failed': never 'allow'. */
+async function preferenceDecision(supabase: SupabaseClient, userId: string, module: NotificationModule, urgent: boolean, attempts = preferenceCheckConfig.attempts): Promise<PreferenceDecision> {
+  for (let i = 0; i < attempts; i++) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('preference check timed out')), preferenceCheckConfig.timeoutMs); });
+      const res = await Promise.race([Promise.resolve(supabase.rpc('should_notify', { p_user_id: userId, p_module: module, p_urgent: urgent })), timeout]) as { data: unknown; error: unknown };
+      if (!res.error && res.data === true) return 'allow';
+      if (!res.error && res.data === false) return 'blocked';
+      console.error('[send-push] should_notify gave no usable answer:', res.error ?? typeof res.data);
+    } catch (e) {
+      console.error('[send-push] should_notify threw:', e instanceof Error ? e.message : String(e));
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (i + 1 < attempts) await new Promise((r) => setTimeout(r, preferenceCheckConfig.retryDelayMs));
+  }
+  return 'failed';
+}
+
 // ── Internals ────────────────────────────────────────────────────────────────
 
-type LogStatus = 'sent' | 'skipped_pref' | 'skipped_quiet' | 'no_token' | 'error';
 
 async function sendPushRaw(opts: {
   token:       string | null | undefined;

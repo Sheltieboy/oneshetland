@@ -11,8 +11,8 @@
  *   - eligibility, the once-only claim, the audience, the recipient estimate and the per-member limits are database functions (migration 20261129080000);
  *   - per recipient, in this order: notice_push_gate (account, device, master/notices switches, QUIET HOURS: never overridden, urgent is always false) →
  *     notice_member_reserve (atomic "at most 2 per 24 h": over the limit = skipped, no catch-up) → the push. The outcome is recorded by the shared dispatcher:
- *     sent only when the sender says sent; a quiet-hours hold is held_quiet; a mute / no device / closed account / daily limit is skipped; an error is failed
- *     (retried up to 3 times, never recorded as delivered).
+ *     sent only when the sender says the provider accepted it; quiet hours, a mute, no device, a closed account and the daily limit are all skipped (final, the reason
+ *     in last_error, never retried later); an error, including a preference check that could not be completed, is failed (retried up to 3 times, never counted as sent).
  * Approving a notice never calls this. Editing a notice never calls this.
  */
 import { runDispatch, noticePushText, AUDIENCE_KINDS, type DispatchKind, type PushStatus, type Rpc } from './notice-dispatch.ts';

@@ -20,12 +20,17 @@ Opted in to Community Notices; category preference matches; follows an area that
 * the existing once-only claim: a second request is refused (409); two simultaneous requests: one runs, one is refused; a completed dispatch is never reopened, so **editing and re-approving does not re-notify**; a crashed run resumes without re-pushing anyone;
 * Essential Alerts use their own kind and are not counted by, or blocked by, the member cap.
 
-## Quiet hours and status accuracy
-Quiet hours are never overridden (`urgent: false` always). `notice_push_gate` decides at send time WITH the reason: `quiet_hours` → recorded `held_quiet`; muted/closed/no device/daily limit → `skipped`; an error → `failed` (retried up to 3 times, then final); `sent` only when the sender reports sent. A held notification is never retried later ("catch-up" would need your approval).
-**Discrepancies found in the existing sender (documented, not changed, because 11 production functions use it):**
-1. `sendUserPush` returns `skipped_pref` for BOTH a muted preference and quiet hours (`should_notify` returns only true/false). So for the other audiences (essential, official, community, hub) a quiet-hours refusal is stored in `notice_deliveries` as `skipped`, never `held_quiet`, although the dispatcher has the mapping. The member audience avoids this through the gate. (The notification inbox log is reclassified to `skipped_quiet` by an existing trigger.)
-2. `sendUserPush` **fails open** if its `should_notify` check errors (it sends). The member path checks the gate first and treats an error as a failure, so for members an unreadable decision is never permission; the sender's own second check is then redundant.
-3. `sent` means the provider accepted the message for at least one device. Delivery to the handset is asynchronous and no push receipt is checked by anything here.
+## Quiet hours and status accuracy (updated 31 Oct: shared sender now FAILS CLOSED)
+Quiet hours are never overridden for member notices (`urgent: false` always). Status meanings in `notice_deliveries`:
+- `sent` — the provider (Expo) ACCEPTED the message for at least one device. It is not confirmation that a handset received it (no push receipt is checked).
+- `skipped` — final, nothing will be retried. `last_error` says why: `quiet_hours`, `opted_out`, `no_device`, `preference_blocked`, member daily limit, closed account.
+- `failed` — a provider error or an unreadable preference check; retried by the dispatcher up to 3 attempts, then final. Never counted as delivered.
+- `pending` — a member-cap reservation held while a send is in flight.
+- `held_quiet` — LEGACY. No longer written. Quiet hours is a final `skipped` (`quiet_hours`), because no catch-up exists; staff are shown "quiet hours", not "waiting".
+`sendUserPush` now returns an additive `reason` (`accepted | preference_check_failed | opted_out | quiet_hours | preference_blocked | no_device | provider_error`). If `should_notify` errors, throws, times out (4 s) or answers anything other than true/false it is retried once and then NOTHING is sent: status `error`, reason `preference_check_failed`, logged as `error`. Urgent still bypasses quiet hours only; it never bypasses an opt-out or a failed check. A missing preferences row still means opted in (the existing production default, unchanged).
+Callers that stamp "reminder sent" (`reminder-runner`) leave the item unstamped when the check failed, so the next 15-minute run retries it; `deferred_preference_check` in its result counts these.
+**Remaining notes:**
+3. `sent` means provider acceptance only.
 4. A reservation (`pending`) left by a dispatch that crashed and is never resumed counts toward the member's cap for 24 hours (conservative).
 
 ## Not verified / needs a deployment

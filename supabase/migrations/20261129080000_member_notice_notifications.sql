@@ -10,8 +10,8 @@
 --       opted in to Community Notices; category preference matches; follows an area that matches by parent/child (never siblings, never GPS; an explicit
 --       Shetland-wide notice reaches members who have chosen ANY area); active account; a valid Expo device token; the master switch and the notices module
 --       switch are on and quiet hours are not in force (should_notify, the same function the sender uses); fewer than 2 member notifications in the last 24 h.
---   * notice_push_gate: the same decision at send time, with the REASON, so a quiet-hours hold is recorded as held_quiet (the sender reports every refusal as
---     'skipped_pref'), a muted/closed/no-device recipient as skipped, and an error as failed. Never as sent.
+--   * notice_push_gate: the same decision at send time, with the REASON, so a quiet-hours refusal is recorded as skipped with last_error 'quiet_hours' (final: there
+--     is no catch-up, so it is never described as awaiting later delivery), a muted/closed/no-device recipient as skipped, and an error as failed. Never as sent.
 --   * notice_member_reserve: an atomic per-recipient reservation (advisory lock) enforcing "at most 2 member notifications per recipient in any rolling 24 h"
 --     even when two dispatches run at the same time. A recipient over the cap is recorded as skipped (daily_limit); there is NO catch-up.
 --   * one notification per notice per recipient: notice_deliveries is keyed (notice, user), so several matching areas, retries and several devices give one.
@@ -202,8 +202,9 @@ begin
          coalesce(public.notice_dispatchable(n.id, 'member'), case when d.status = 'completed' then 'Members have already been notified about this notice' when d.status = 'claimed' then 'A notification is in progress' end),
          d.status,
          jsonb_build_object('sent', (select count(*) from public.notice_deliveries l where l.subject_type = 'notice' and l.subject_id = n.id and l.status = 'sent'),
-                            'held_quiet', (select count(*) from public.notice_deliveries l where l.subject_type = 'notice' and l.subject_id = n.id and l.status = 'held_quiet'),
-                            'skipped', (select count(*) from public.notice_deliveries l where l.subject_type = 'notice' and l.subject_id = n.id and l.status = 'skipped'),
+                            -- not sent because the member was in quiet hours: FINAL, never retried (older rows may say held_quiet: same meaning)
+                            'quiet_hours', (select count(*) from public.notice_deliveries l where l.subject_type = 'notice' and l.subject_id = n.id and (l.status = 'held_quiet' or (l.status = 'skipped' and l.last_error = 'quiet_hours'))),
+                            'skipped', (select count(*) from public.notice_deliveries l where l.subject_type = 'notice' and l.subject_id = n.id and l.status = 'skipped' and coalesce(l.last_error, '') <> 'quiet_hours'),
                             'failed', (select count(*) from public.notice_deliveries l where l.subject_type = 'notice' and l.subject_id = n.id and l.status = 'failed'))
     from public.notices n
     left join public.notice_categories c on c.id = n.category
@@ -242,6 +243,9 @@ begin
     'estimate', case when v_reason is null then (select count(*) from public.notice_member_audience(p_notice)) else 0 end,
     'only_opted_in', true, 'daily_limit', 2);
 end $$;
+
+comment on column public.notice_deliveries.status is
+  'sent = the push provider ACCEPTED it (not proof a handset got it); skipped = deliberately not sent, FINAL, reason in last_error (opted_out, quiet_hours, no_device, inactive, daily_limit); failed = retried up to 3 times then final, never counted as sent; pending = a reserved slot while sending (counts toward the member daily cap); held_quiet = LEGACY, no longer written (quiet hours are skipped/quiet_hours: nothing is ever delivered later).';
 
 -- ── privileges ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 revoke all on function public.notice_push_gate(uuid), public.notice_member_audience(uuid), public.notice_member_push_text(uuid), public.notice_member_reserve(uuid, uuid),

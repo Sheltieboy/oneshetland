@@ -10,6 +10,7 @@ import { describe, test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { login, owner, rpc, URL_, ANON } from './_accept-client.ts';
 import { handleAudienceLocal, push, localRpc, LOCAL_ENV } from './accept-functions.ts';
+import { loadSendPush, mockExpo } from '../_support/load-send-push.ts';
 import { handleNoticeAudience } from '../../functions/_shared/notice-audience.ts';
 
 const RUN = process.env.ACCEPT_RUN === '1';
@@ -99,7 +100,7 @@ d('moderator-controlled member notice notifications (mock push; isolated backend
     assert.equal(delivery(id, exact.id).split(':')[0], 'sent');
   });
 
-  test('3 STATUS TRUTH: only what the sender accepted is "sent": no device, provider error and quiet hours are recorded as skipped / failed / held_quiet, never sent', async () => {
+  test('3 STATUS TRUTH: only what the sender accepted is "sent": no device, provider error and quiet hours are recorded as skipped / failed, never sent', async () => {
     push.reset();
     const ok = await subscriber([K]), noDevice = await subscriber([K], { device: false }), muted = await subscriber([K], { prefs: 'false, true, null, null' });
     const noticesOff = await subscriber([K], { prefs: 'true, false, null, null' });
@@ -110,7 +111,7 @@ d('moderator-controlled member notice notifications (mock push; isolated backend
     const r = await ask(modTok, { notice_id: id, kind: 'member' }); assert.equal(r.status, 200, JSON.stringify(r.json));
     assert.ok(sentTo(id).has(ok.id)); for (const [name, u] of Object.entries({ noDevice, muted, noticesOff, quietNow, closed })) assert.ok(!sentTo(id).has(u.id), `${name}: nothing pushed`);
     assert.equal(r.json.recipients, Number(audience), 'only the audience was even attempted');
-    // the same members, if they BECOME ineligible during a run, are recorded truthfully (held / skipped), never as sent: see test 8
+    // the same members, if they BECOME ineligible during a run, are recorded truthfully (skipped with a reason), never as sent: see test 8
     assert.equal(r.json.sent, push.log.filter((p) => p.noticeId === id).length, 'sent == pushes the mock accepted');
   });
 
@@ -172,7 +173,7 @@ d('moderator-controlled member notice notifications (mock push; isolated backend
     assert.ok(!sentTo(id).has(racer.id)); assert.equal(delivery(id, racer.id), 'skipped:daily_limit', 'rate-limited is recorded as skipped, never as delivered');
   });
 
-  test('8 QUIET HOURS are never overridden and never recorded as delivered: a member who enters quiet hours after the audience was read is held_quiet (no push, no catch-up)', async () => {
+  test('8 QUIET HOURS are never overridden and never recorded as delivered: a member who enters quiet hours after the audience was read is SKIPPED with reason quiet_hours (final: no push, no catch-up, not "held")', async () => {
     push.reset(); const sleepy = await subscriber([K]); const awake = await subscriber([K]); const id = await publishNotice([K]); let flipped = false;
     const rpcQuiet = async (fn: string, args: Record<string, unknown>) => {
       const out = await localRpc(fn, args);
@@ -182,7 +183,8 @@ d('moderator-controlled member notice notifications (mock push; isolated backend
     const handler = (req: Request) => handleNoticeAudience(req, { cors: {}, authenticate: async () => ({ caller: { userId: '', isServiceRole: true } }), rpc: rpcQuiet as never, loadNotice: async (x) => ({ id: x, title: 't' }), push: async (u, t, c) => { push.log.push({ userId: u, title: t.title, body: t.body, kind: c.kind, noticeId: c.noticeId }); return { status: 'sent' as const }; } });
     const r = await ask(LOCAL_ENV.SUPABASE_SERVICE_ROLE_KEY, { notice_id: id, kind: 'member' }, handler as never); assert.equal(r.status, 200, JSON.stringify(r.json));
     assert.ok(!sentTo(id).has(sleepy.id), 'no push during quiet hours'); assert.ok(sentTo(id).has(awake.id));
-    assert.equal(delivery(id, sleepy.id), 'held_quiet:quiet_hours'); assert.equal(r.json.held, 1);
+    assert.equal(delivery(id, sleepy.id), 'skipped:quiet_hours'); assert.equal(r.json.quiet, 1); assert.equal(r.json.held, 0, 'nothing is described as held for later');
+    assert.equal(owner(`select count(*) from notice_deliveries where status = 'held_quiet'`), '0', 'held_quiet is never written');
     owner(`delete from notification_preferences where user_id='${sleepy.id}'`);                                 // the quiet window ends: STILL no catch-up
     assert.equal((await ask(modTok, { notice_id: id, kind: 'member' })).status, 409); assert.ok(!sentTo(id).has(sleepy.id), 'there is no next-morning catch-up');
     assert.match(readSrc('supabase/functions/notify-notice-audience/index.ts'), /urgent: false/, 'the real sender is called with urgent:false (quiet hours honoured)');
@@ -222,6 +224,67 @@ d('moderator-controlled member notice notifications (mock push; isolated backend
     assert.equal(owner(`select count(*) from notice_audit_log where notice_id='${id}' and event='dispatch_completed'`), '1');
     const hist = (await rpc('admin', 'admin_notice_dispatch_history', { p_notice: id })).data as any[]; assert.equal(hist[0].kind, 'member'); assert.equal(hist[0].status, 'completed'); assert.ok(hist[0].sent >= 1);
     assert.ok(!(await ask(modTok, { notice_id: id, kind: 'bogus' })).json.ok); assert.equal(owner(`select count(*) from notice_dispatches where kind not in ('essential','official','community','hub','funeral','member')`), '0');
+  });
+
+  describe('the REAL shared sender behind the member path (real should_notify in the database; Expo is a mock)', () => {
+    /** a Supabase-like client for sendUserPush, backed by the local PostgREST + database; `breakFor` makes should_notify fail for those users */
+    const sender = async (breakFor: string[] = []) => {
+      const M = await loadSendPush(); Object.assign(M.preferenceCheckConfig, { attempts: 2, timeoutMs: 1500, retryDelayMs: 1 });
+      const chain = (rows: () => unknown) => { const c: any = { select: () => c, eq: (_c: string, v: string) => { c.arg = v; return c; }, delete: () => c, update: () => c, maybeSingle: () => Promise.resolve({ data: null, error: null }), then: (r: any, j: any) => Promise.resolve(rows()).then(r, j) }; return c; };
+      const client: any = {
+        rpc: (fn: string, args: any) => (fn === 'should_notify' && breakFor.includes(args.p_user_id) ? Promise.resolve({ data: null, error: { message: 'simulated preference outage' } }) : localRpc(fn, args)),
+        from: (table: string) => {
+          if (table === 'push_tokens') { const c: any = chain(() => ({ data: owner(`select token from push_tokens where user_id='${c.arg}'`).split('\n').filter(Boolean).map((token) => ({ token })), error: null })); return c; }
+          if (table === 'notification_log') return { insert: () => Promise.resolve({ error: null }) };
+          return chain(() => ({ data: null, error: null }));
+        },
+      };
+      return { M, client, call: (userId: string, over: Record<string, unknown> = {}) => M.sendUserPush(client, { userId, module: 'notices', categoryId: 'notices.member', title: 'A notice', body: 'Tap to read.', urgent: false, ...over } as never) };
+    };
+    const viaRealSender = (s: Awaited<ReturnType<typeof sender>>) => (req: Request) => handleNoticeAudience(req, { cors: {}, authenticate: async () => ({ caller: { userId: '', isServiceRole: true } }), rpc: localRpc as never, loadNotice: async (x) => ({ id: x, title: 't' }),
+      push: (u, t, c) => s.call(u, { title: t.title, body: t.body, data: { notice_id: c.noticeId } }) });
+
+    test('12 a preference check that FAILS inside the sender: nothing is pushed, the delivery is FAILED (3 attempts) with the reason, never sent; the member\'s daily slot is not consumed; everyone else is unaffected', async () => {
+      push.reset(); const broken = await subscriber([K]), fine = await subscriber([K]); const s = await sender([broken.id]); const expo = mockExpo(); expo.install();
+      try {
+        const id = await publishNotice([K]);
+        const r = await ask(LOCAL_ENV.SUPABASE_SERVICE_ROLE_KEY, { notice_id: id, kind: 'member' }, viaRealSender(s) as never); assert.equal(r.status, 200, JSON.stringify(r.json));
+        assert.equal(delivery(id, broken.id), 'failed:preference_check_failed'); assert.equal(owner(`select attempts from notice_deliveries where subject_id='${id}' and user_id='${broken.id}'`), '3');
+        assert.ok(!expo.sent.some((e) => e.to === `ExponentPushToken[${broken.id.slice(0, 8)}]`), 'NOTHING reached the push provider for the member whose check failed');
+        assert.equal(delivery(id, fine.id).split(':')[0], 'sent'); assert.equal(expo.sent.filter((e) => e.to === `ExponentPushToken[${fine.id.slice(0, 8)}]`).length, 1);
+        assert.equal(owner(`select count(*) from notice_deliveries where user_id='${broken.id}' and kind='member' and status in ('sent','pending')`), '0', 'a failed attempt does not use up the 2-per-day allowance');
+        assert.equal(r.json.failed, 3, 'counted as three failed attempts, not as delivered'); assert.ok(r.json.sent >= 1);
+      } finally { expo.restore(); }
+    });
+    test('13 a provider failure after a successful check: failed (3 attempts), not sent, the slot is released; and a provider acceptance is "sent" but only means the provider accepted it', async () => {
+      push.reset(); const flaky = await subscriber([K]); const dead = await subscriber([K]); const s = await sender();
+      const tok = (u: { id: string }) => `ExponentPushToken[${u.id.slice(0, 8)}]`; const expo = mockExpo({ [tok(flaky)]: ['error', 'ok'], [tok(dead)]: 'error' }); expo.install();
+      try {
+        const id = await publishNotice([K]); const r = await ask(LOCAL_ENV.SUPABASE_SERVICE_ROLE_KEY, { notice_id: id, kind: 'member' }, viaRealSender(s) as never); assert.equal(r.status, 200);
+        assert.equal(delivery(id, flaky.id).split(':')[0], 'sent'); assert.equal(delivery(id, dead.id).split(':')[0], 'failed');
+        assert.equal(owner(`select count(*) from notice_deliveries where user_id='${dead.id}' and kind='member' and status in ('sent','pending')`), '0', 'no quota consumed by a failed send');
+        assert.equal(expo.sent.filter((e) => e.to === tok(flaky)).length, 2, 'attempted twice, accepted once');
+      } finally { expo.restore(); }
+    });
+    test('14 URGENT through the real database function: bypasses quiet hours only. A quiet-hours member gets an urgent push but not an ordinary one; a muted member gets neither; a member with no preference row follows the existing defaults', async () => {
+      const s = await sender(); const expo = mockExpo(); expo.install();
+      try {
+        const quiet = await subscriber([K], { prefs: `true, true, (now() at time zone 'Europe/London' - interval '1 hour')::time, (now() at time zone 'Europe/London' + interval '1 hour')::time` });
+        const muted = await subscriber([K], { prefs: 'false, true, null, null' }); const modOff = await subscriber([K], { prefs: 'true, false, null, null' }); const norow = await subscriber([K]);
+        const ordinary = await s.call(quiet.id); assert.deepEqual([ordinary.status, ordinary.reason], ['skipped_quiet', 'quiet_hours']);
+        const urgent = await s.call(quiet.id, { urgent: true }); assert.deepEqual([urgent.status, urgent.reason], ['sent', 'accepted']);
+        for (const [name, u] of Object.entries({ muted, modOff })) for (const urgentFlag of [false, true]) { const r = await s.call(u.id, { urgent: urgentFlag }); assert.deepEqual([r.status, r.reason], ['skipped_pref', 'opted_out'], `${name} urgent=${urgentFlag}`); }
+        assert.equal(owner(`select count(*) from notification_preferences where user_id='${norow.id}'`), '0'); const d = await s.call(norow.id); assert.deepEqual([d.status, d.reason], ['sent', 'accepted'], 'no preference row = the existing default (on); nothing is switched on by this change');
+        const none = await subscriber([K], { device: false }); const nd = await s.call(none.id); assert.deepEqual([nd.status, nd.reason], ['no_token', 'no_device']);
+        const closed = await subscriber([K]); owner(`delete from push_tokens where user_id='${closed.id}'; update profiles set deleted_at = now(), is_active = false where id='${closed.id}'`);
+        const cl = await s.call(closed.id); assert.equal(cl.status, 'no_token', 'a closed account has no device left (deletion removes tokens)');
+        assert.equal(expo.sent.length, 2, 'only the two legitimate sends reached the provider');
+      } finally { expo.restore(); }
+    });
+    test('15 the staff list reports the final truth in plain counts: accepted, not sent for quiet hours (not retried), skipped, failed', async () => {
+      const row = ((await call(modTok, 'staff_published_person_notices')).data as any[]).find((r) => r.dispatch_status === 'completed');
+      assert.deepEqual(Object.keys(row.delivery).sort(), ['failed', 'quiet_hours', 'sent', 'skipped']);
+    });
   });
 });
 
