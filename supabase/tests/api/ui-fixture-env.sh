@@ -55,6 +55,6 @@ dpsql postgres < supabase/tests/api/ui-fixtures.sql
 docker run -d --name $REST --network $NET -p 127.0.0.1:54782:3000 -e PGRST_DB_URI=postgres://authenticator:proofpw@$PG:5432/postgres -e PGRST_DB_SCHEMAS=public \
   -e PGRST_DB_ANON_ROLE=anon -e PGRST_JWT_SECRET="$SECRET" -e PGRST_DB_POOL=4 public.ecr.aws/supabase/postgrest:v14.5 >/dev/null
 sleep 3
-nohup node supabase/tests/api/ui-proxy.mjs > /tmp/ui-proxy.log 2>&1 & echo $! > /tmp/ui-proxy.pid
 ANON=$(node -e "const c=require('node:crypto');const b=o=>Buffer.from(JSON.stringify(o)).toString('base64url');const h=b({alg:'HS256',typ:'JWT'}),p=b({iss:'proof',role:'anon',exp:Math.floor(Date.now()/1000)+86400*30});console.log(h+'.'+p+'.'+c.createHmac('sha256','$SECRET').update(h+'.'+p).digest('base64url'))")
+DEMO_LAN="${DEMO_LAN:-0}" PROXY_ANON_JWT="$ANON" nohup node supabase/tests/api/ui-proxy.mjs > /tmp/ui-proxy.log 2>&1 & echo $! > /tmp/ui-proxy.pid
 echo "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54790"; echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON"
