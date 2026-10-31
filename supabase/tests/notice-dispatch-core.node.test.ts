@@ -134,13 +134,18 @@ describe('push text and the entry points', () => {
     assert.equal(noticePushText('hub', { title: 'Hall closed' }, 'Voe Hall').title, 'New notice from Voe Hall');
   });
   test('14 the new entry points never set urgent, never read recipients from the request, and use the database authority checks', () => {
-    for (const f of ['notify-notice-audience', 'notify-funeral-notice']) {
-      const s = src(`supabase/functions/${f}/index.ts`);
+    // notify-notice-audience: the Deno wrapper (index.ts: caller, rate limit, the sender with urgent:false) + the shared handler (request parsing, authority, dispatch)
+    const audience = src('supabase/functions/notify-notice-audience/index.ts'), handler = src('supabase/functions/_shared/notice-audience.ts');
+    assert.match(audience, /urgent:\s*false/); assert.doesNotMatch(audience + handler, /urgent:\s*true/);
+    assert.match(audience, /requireCaller/); assert.match(audience, /enforceRateLimit/); assert.match(audience, /handleNoticeAudience/);
+    assert.match(handler, /can_dispatch_notice/); assert.doesNotMatch(handler.replace(/\/\*[\s\S]*?\*\//g, ''), /req\.json\(\)[^;]*(recipients|user_ids|userIds)/);
+    assert.match(handler, /\{ notice_id\?: unknown; kind\?: unknown \}/, 'the request body can name only a notice and an audience');
+    {
+      const f = 'notify-funeral-notice'; const s = src(`supabase/functions/${f}/index.ts`);
       assert.match(s, /urgent:\s*false/, f); assert.doesNotMatch(s, /urgent:\s*true/, f);
       assert.doesNotMatch(s.replace(/\/\*[\s\S]*?\*\//g, ''), /req\.json\(\)[^;]*(recipients|user_ids|userIds)/, f);
       assert.match(s, /requireCaller/, f); assert.match(s, /enforceRateLimit/, f);
     }
-    assert.match(src('supabase/functions/notify-notice-audience/index.ts'), /can_dispatch_notice/);
     assert.match(src('supabase/functions/notify-funeral-notice/index.ts'), /can_dispatch_funeral/);
     assert.match(src('supabase/functions/notify-funeral-notice/index.ts'), /funeral_notification_text/, 'the preview text comes from the database (family-approved), not the request');
   });

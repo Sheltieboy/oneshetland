@@ -29,6 +29,21 @@ http.createServer((req, res) => {
     (async () => { const { state } = await import('./_mock-turnstile.ts'); const u = new URL(req.url, 'http://x'); const o = u.searchParams.get('outage'); state.outage = o === 'throw' || o === 'http500' || o === 'badjson' ? o : null; if (u.searchParams.get('reset')) { state.redeemed.clear(); state.calls.length = 0; } res.writeHead(200, cors); res.end(JSON.stringify({ outage: state.outage, calls: state.calls.length })); })().catch((e) => { res.writeHead(500, cors); res.end(String(e)); });
     return;
   }
+  if ((req.url ?? '').startsWith('/__mock/push-log')) {
+    (async () => { const { push } = await import('./accept-functions.ts'); if ((req.url ?? '').includes('reset=1')) push.reset(); res.writeHead(200, cors); res.end(JSON.stringify(push.log)); })().catch((e) => { res.writeHead(500, cors); res.end(String(e)); });
+    return;
+  }
+  if ((req.url ?? '').startsWith('/functions/v1/notify-notice-audience')) {
+    const chunks = []; req.on('data', (c) => chunks.push(c)); req.on('end', async () => {
+      try {
+        const { handleAudienceLocal } = await import('./accept-functions.ts');
+        const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
+        const r = await handleAudienceLocal(new Request(`http://127.0.0.1:${PORT}${req.url}`, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks) }));
+        res.writeHead(r.status, Object.fromEntries(r.headers.entries())); res.end(Buffer.from(await r.arrayBuffer()));
+      } catch (e) { res.writeHead(500, cors); res.end(JSON.stringify({ error: 'local function error', detail: String(e) })); }
+    });
+    return;
+  }
   if ((req.url ?? '').startsWith('/functions/v1/submit-funeral-enquiry')) {
     const chunks = []; req.on('data', (c) => chunks.push(c)); req.on('end', async () => {
       try {

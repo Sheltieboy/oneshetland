@@ -95,3 +95,6 @@ The "anonymous form can lock families out" blocker is FIXED locally (see `notice
 
 ## Funeral enquiry: client address trust (31 Oct 2026) — RELEASE CHECK REQUIRED
 Hosted behaviour of `cf-connecting-ip` (present? overwritten when forged?) is NOT verified and cannot be without a deployment. The code uses only that header and refuses (503) when it is absent or malformed. Checks A–F in `notices-funeral-enquiry-protection.md` ("Release verification") must pass before the form is released; A, B and D are release blockers.
+
+## Member notice notifications (31 Oct 2026)
+Built and tested locally with a MOCK sender; **no real push has been sent or tested**. Release needs: real-device/Expo verification on a test project (sent vs received, quiet hours, the 2-per-24-hours cap, tap-through to the notice); the existing sender's quiet-hours label (`skipped` instead of `held_quiet`) and fail-open on `should_notify` errors remain for the other audiences (see `notices-member-notifications.md`); no catch-up for held notifications unless approved.

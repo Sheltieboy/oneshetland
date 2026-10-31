@@ -13,6 +13,7 @@ STATUS: **NOTHING HAS BEEN APPLIED, DEPLOYED OR PUBLISHED.** Everything below is
 | 5b | `20261129050000` members publish notices (moderated): submit / list / edit / withdraw / staff approve & decline | database | rollback script (the notices members already posted stay) |
 | 5c | `20261129060000` funeral privacy: account-deletion cleanup, memberships, retention (dry-run, gated OFF), no-account enquiries, audit redaction | database | rollback script (does not restore data already removed by a cleanup) |
 | 5d | `20261129070000` funeral enquiry protection: `submit_funeral_enquiry` becomes service-role only + per-client limit policies (needs `20260821280000`) | database | rollback script (reopens the insecure anon call: only with the old website) |
+| 5e | `20261129080000` member notice notifications: staff-only 'member' audience, preview/list functions, 24-hour cap reservation (needs `should_notify`, `push_tokens`) | database | rollback script (deletes any 'member' dispatch records first) |
 | 6 | edge: `notify-hub-content` (R2 fix), `notify-notice-audience`, `notify-funeral-notice`, `import-official-notices` | functions | redeploy the previous `notify-hub-content`; delete the three new functions |
 | 7 | website (`notices-alerts-web`) | Netlify | redeploy previous build |
 | 8 | app (`notices-alerts-app-ui`, JS-only) | OTA / next build | OTA rollback to previous bundle |
@@ -36,6 +37,7 @@ Deploy in this order, each with `verify_jwt = true` (the functions also authoris
 1. `notify-hub-content` — **the R2 fix**. Verify with a hub owner on a TEST hub: a real new notice announces once to members; calling again returns 409; a made-up `ref_id` returns 404/400. (The old behaviour — announcing any `ref_id` — is gone.) Do not test with real members.
 2. `notify-notice-audience`, `notify-funeral-notice`.
 3. `submit-funeral-enquiry` — deploy ONLY with its secrets set (it answers 503 until all are) and in the same release as `…070000` and the website; see `docs/notices-funeral-enquiry-protection.md`.
+3b. `notify-notice-audience` now also serves the 'member' audience (staff 'Notify opted-in members'); deploy it with `…080000` and the website. See `docs/notices-member-notifications.md` (no real push has been tested).
 4. `import-official-notices` — deploy, but **do not install the cron** (`supabase/deploy/notices-import-cron.sql` stays commented). With every source disabled it does nothing even if called.
 Confirm `notify-community-notice` (the island-wide admin broadcast, deployed in Stage 3A.1) is untouched and still refuses imports.
 Secrets: none new (uses `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` that already exist).

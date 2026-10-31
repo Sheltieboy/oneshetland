@@ -19,7 +19,7 @@
 
 export type PushStatus = 'sent' | 'skipped_pref' | 'skipped_quiet' | 'no_token' | 'error';
 export type DeliveryStatus = 'sent' | 'held_quiet' | 'skipped' | 'failed';
-export type DispatchKind = 'essential' | 'official' | 'community' | 'hub' | 'funeral';
+export type DispatchKind = 'essential' | 'official' | 'community' | 'hub' | 'funeral' | 'member';
 export type Rpc = (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
 export type Authorisation = { ok: true } | { ok: false; status: number; error: string };
 
@@ -110,4 +110,4 @@ export function noticePushText(kind: DispatchKind, n: { title: string; body?: st
   return { title: clamp(n.title, 110), body: clamp(n.body || 'Tap for details.', 150) };
 }
 
-export const AUDIENCE_KINDS = ['essential', 'official', 'community'] as const;
+export const AUDIENCE_KINDS = ['essential', 'official', 'community', 'member'] as const;

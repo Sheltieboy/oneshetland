@@ -56,7 +56,7 @@ create table delivery_requests (id uuid primary key default gen_random_uuid(), d
 SQL
 # production already has the shared rate limiter; apply it without its pg_cron schedule line
 sed '/^-- Scheduled outside the transaction/,$d' supabase/migrations/20260821280000_rate_limits.sql | dpsql postgres
-for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection 20261129000000_notices_alerts_publishers 20261129010000_notices_alerts_core 20261129020000_notices_alerts_audience 20261129030000_funeral_notices 20261129040000_notice_imports 20261129050000_member_notices 20261129060000_funeral_privacy 20261129070000_funeral_enquiry_protection; do dpsql postgres < supabase/migrations/$m.sql; done
+for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection 20261129000000_notices_alerts_publishers 20261129010000_notices_alerts_core 20261129020000_notices_alerts_audience 20261129030000_funeral_notices 20261129040000_notice_imports 20261129050000_member_notices 20261129060000_funeral_privacy 20261129070000_funeral_enquiry_protection 20261129080000_member_notice_notifications; do dpsql postgres < supabase/migrations/$m.sql; done
 dpsql postgres < supabase/tests/api/ui-site-schema.sql
 # the existing production notification tables (shapes copied from the baseline / spine migrations): the delete-account function removes the member's rows from them
 dpsql postgres <<'SQL'
@@ -64,6 +64,8 @@ create table if not exists notification_preferences (user_id uuid primary key, e
 create table if not exists push_tokens (id uuid primary key default gen_random_uuid(), user_id uuid not null, token text not null, created_at timestamptz default now());
 grant select, insert, update, delete on notification_preferences, push_tokens to service_role, authenticated;
 SQL
+# the real should_notify() (verbatim from the notifications spine) so quiet hours / master / module switches are tested for real
+dpsql postgres < supabase/tests/_support/should-notify-fixture.sql
 # the website's account query selects these profile columns (the reduced schema has no use for them otherwise)
 dpsql postgres <<'SQL'
 alter table profiles add column if not exists phone text, add column if not exists avatar_url text, add column if not exists bio text, add column if not exists onboarding_completed_at timestamptz,
