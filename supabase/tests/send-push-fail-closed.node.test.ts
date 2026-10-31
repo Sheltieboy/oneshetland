@@ -77,6 +77,14 @@ describe('the sender: every outcome has an explicit result and only an accepted 
     expo = mockExpo(); expo.install(); const { client } = fakeClient({ should: (a) => (a.p_user_id === 'bad' ? { data: null, error: { message: 'x' } } : a.p_user_id === 'out' ? deny() : allow()) });
     const r = await M.sendUserPushBulk(client, ['ok', 'bad', 'out'], { module: 'notices', categoryId: 'notices.member', title: 't', body: 'b' } as never); assert.deepEqual(r, { sent: 1, skipped: 1, errored: 1, checkFailed: 1 });
   });
+  test('12b beforeProvider: called after the check and device lookup and right before the provider; false or a throw sends nothing (claim_lost); never called when blocked or no device', async () => {
+    let calls = 0; const hook = (v: boolean | 'throw') => async () => { calls++; if (v === 'throw') throw new Error('db down'); return v; };
+    let r = await run({ should: allow }, { beforeProvider: hook(true) }); assert.equal(r.res.status, 'sent'); assert.equal(calls, 1); assert.equal(r.sent.length, 1);
+    calls = 0; r = await run({ should: allow }, { beforeProvider: hook(false) }); assert.deepEqual([r.res.status, r.res.reason], ['error', 'claim_lost']); assert.equal(r.sent.length, 0);
+    r = await run({ should: allow }, { beforeProvider: hook('throw') }); assert.equal(r.res.reason, 'claim_lost'); assert.equal(r.sent.length, 0);
+    calls = 0; r = await run({ should: deny }, { beforeProvider: hook(true) }); assert.equal(calls, 0); r = await run({ should: () => ({ data: null, error: { message: 'x' } }) }, { beforeProvider: hook(true) }); assert.equal(calls, 0);
+    r = await run({ should: allow, tokens: [] }, { beforeProvider: hook(true) }); assert.equal(calls, 0); assert.equal(r.res.reason, 'no_device');
+  });
   test('13 a sender result is never "sent" unless the provider accepted: no code path returns sent after a failed check (source pin)', async () => {
     const { readFileSync } = await import('node:fs'); const src = readFileSync(new URL('../functions/_shared/send-push.ts', import.meta.url), 'utf8');
     assert.doesNotMatch(src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''), /fail-?open|Fail-open/i); assert.match(src, /preference_check_failed/);

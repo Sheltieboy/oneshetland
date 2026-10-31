@@ -1,7 +1,8 @@
 /**
  * reminder-runner-runtime.node.test.ts — RUNTIME proof that the scheduled reminder job behaves correctly now that the shared sender fails closed.
  * Runs the REAL reminder-runner/index.ts + REAL send-push.ts + cron-auth.ts (see _support/load-reminder-runner.ts) against an in-memory database and a MOCK Expo.
- * OFFLINE: nothing here can reach Supabase, Expo or the internet (the mock refuses every other host). No physical device is involved: "sent" here means the MOCK
+ * ISOLATED: run by `npm run test:isolated` (needs PASS_PROOF_DSN): the delivery ledger (reminder_deliveries, migration 20261129090000) is the REAL one in the throwaway Postgres; nothing
+ * here can reach Supabase, Expo or the internet (the mock refuses every other host). No physical device is involved: "sent" here means the MOCK
  * provider accepted a message.
  *
  * For each of the 11 reminder families: A accepted push is stamped | B an unreadable preference check sends nothing and is NOT stamped | C...so the next run
@@ -10,7 +11,7 @@
  */
 import { test, describe, before, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadReminderRunner, makeDb, type Mode } from './_support/load-reminder-runner.ts';
+import { loadReminderRunner, makeDb, resetLedgerDb, clearLedger, ledgerRows, type Mode } from './_support/load-reminder-runner.ts';
 import { mockExpo } from './_support/load-send-push.ts';
 
 const NOW = new Date('2026-11-02T19:00:00.000Z');   // 19:00 London (GMT): after every once-a-day gate
@@ -64,8 +65,8 @@ const FAMILIES: Family[] = [
 const setup = (f: Family, mode: Mode = 'allow', devices = true) => { db = makeDb(); db.table('local_businesses').some((b) => b.id === 'biz') || db.table('local_businesses').push({ id: 'biz', name: 'Shop', owner_id: 'owner' }); f.seed(db); for (const u of f.users) { if (devices) device(db, u); db.setMode(u, mode); } };
 const modeAll = (f: Family, m: Mode) => { for (const u of f.users) db.setMode(u, m); };
 
-before(async () => { R = await loadReminderRunner(); Object.assign(R.sendPush.preferenceCheckConfig, { attempts: 2, timeoutMs: 100, retryDelayMs: 1 }); });
-beforeEach(() => { mock.timers.enable({ apis: ['Date'], now: NOW }); expo = mockExpo(); expo.install(); });
+before(async () => { await resetLedgerDb(); R = await loadReminderRunner(); Object.assign(R.sendPush.preferenceCheckConfig, { attempts: 2, timeoutMs: 100, retryDelayMs: 1 }); });
+beforeEach(async () => { await clearLedger(); mock.timers.enable({ apis: ['Date'], now: NOW }); expo = mockExpo(); expo.install(); });
 afterEach(() => { expo.restore(); mock.timers.reset(); });
 
 test('0 the runner refuses an unauthenticated call (cron secret) before touching anything', async () => { db = makeDb(); assert.equal(await R.runUnauthorised(), 401); assert.equal(db.calls.rpc.length, 0); });
@@ -109,10 +110,12 @@ for (const f of FAMILIES) describe(f.name, () => {
 
 describe('partial outcomes (bulk and two-sided families)', () => {
   const ev = FAMILIES.find((f) => f.name.startsWith('event'))!; const fo = FAMILIES.find((f) => f.name.startsWith('Fetch shop-order'))!;
-  test('P1 event: one holder unreadable, two reachable -> stamped, exactly two sent, never re-sent', async () => {
+  test('P1 event: one holder unreadable, two reachable -> the two are sent ONCE; the event stays open for the third; recovery sends only the third; no duplicate row', async () => {
     setup(ev); db.setMode('h1', 'error'); const r = await R.run(db);
-    assert.equal(expo.sent.length, 2); assert.equal(ev.stamped(db), true); assert.equal(r.json.deferred_preference_check, 0);
-    await R.run(db); assert.equal(expo.sent.length, 2);
+    assert.deepEqual(expo.sent.map((m) => m.to).sort(), [tok('h2'), tok('h3')]); assert.equal(ev.stamped(db), false, 'the event is not complete while a holder is retryable'); assert.ok(r.json.deferred_preference_check >= 1);
+    assert.deepEqual((await ledgerRows()).map((x) => `${x.user}:${x.status}`).sort(), ['h1:check_failed', 'h2:sent', 'h3:sent']);
+    modeAll(ev, 'allow'); await R.run(db); assert.deepEqual(expo.sent.map((m) => m.to).sort(), [tok('h1'), tok('h2'), tok('h3')], 'only h1 was added'); assert.equal(ev.stamped(db), true);
+    await R.run(db); assert.equal(expo.sent.length, 3); assert.deepEqual((await ledgerRows()).map((x) => `${x.user}:${x.status}`).sort(), ['h1:sent', 'h2:sent', 'h3:sent']);
   });
   test('P2 event: all three unreadable -> nothing sent, unstamped; recovery sends three once', async () => {
     setup(ev, 'error'); await R.run(db); assert.equal(expo.sent.length, 0); assert.equal(ev.stamped(db), false);
@@ -122,9 +125,10 @@ describe('partial outcomes (bulk and two-sided families)', () => {
     setup(ev); db.setMode('h1', 'optout'); db.setMode('h2', 'error'); await R.run(db);
     assert.deepEqual(expo.sent.map((m) => m.to), [tok('h3')]);
   });
-  test('P4 shop-order nudge: buyer unreadable but shop owner reachable -> stamped (owner is not nudged twice)', async () => {
-    setup(fo); db.setMode('buyer', 'error'); await R.run(db); assert.deepEqual(expo.sent.map((m) => m.to), [tok('owner')]); assert.equal(fo.stamped(db), true);
-    await R.run(db); assert.equal(expo.sent.length, 1);
+  test('P4 shop-order nudge: buyer unreadable but shop owner reachable -> owner sent once; order stays open for the buyer; recovery sends only the buyer', async () => {
+    setup(fo); db.setMode('buyer', 'error'); await R.run(db); assert.deepEqual(expo.sent.map((m) => m.to), [tok('owner')]); assert.equal(fo.stamped(db), false);
+    modeAll(fo, 'allow'); await R.run(db); assert.deepEqual(expo.sent.map((m) => m.to), [tok('owner'), tok('buyer')]); assert.equal(fo.stamped(db), true);
+    await R.run(db); assert.equal(expo.sent.length, 2);
   });
   test('P5 shop-order nudge: both unreadable -> unstamped; recovers once', async () => {
     setup(fo, 'error'); await R.run(db); assert.equal(fo.stamped(db), false); modeAll(fo, 'allow'); await R.run(db); await R.run(db); assert.equal(expo.sent.length, 2);

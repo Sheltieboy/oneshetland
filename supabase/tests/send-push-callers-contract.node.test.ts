@@ -35,11 +35,14 @@ test('6 raw sendPush bypasses are exactly the two reviewed admin alerts', () => 
   const raw = Object.keys(files).filter(f => /\bsendPush\s*\(/.test(files[f]) && !f.startsWith('_shared/send-push')).sort();
   assert.deepEqual(raw, ['notify-business-claim/index.ts', 'wallet-liquidity-monitor/index.ts']);
 });
-test('7 reminder-runner leaves reminders unstamped when the preference check failed', () => {
+test('7 reminder-runner delivers EVERY reminder through the database claim (reminder_claim_many) and never stamps a parent that still has a retryable recipient', () => {
   const s = files['reminder-runner/index.ts'];
-  assert.ok((s.match(/preference_check_failed/g) ?? []).length >= 3);
-  assert.ok((s.match(/checkFailed > 0/g) ?? []).length >= 4);
-  assert.match(s, /deferred_preference_check/);
+  for (const fam of ['fetch_expiring', 'booking_1h', 'booking_24h', 'event_24h', 'daily_wird', 'cruise_today', 'streak_nudge', 'loyalty_nudge', 'loyalty_reward', 'pass_expiring', 'fetch_order_buyer', 'fetch_order_owner'])
+    assert.match(s, new RegExp(`deliver\\(svc, result, '${fam}'`), fam);
+  assert.equal((s.match(/\bsendUserPush\(/g) ?? []).length, 2, 'only the shared deliver() helper and the one-shot fetch-expired notice (claimed by its UPDATE) may send');
+  assert.match(s, /reminder_claim_many/); assert.match(s, /reminder_mark_dispatching/); assert.match(s, /reminder_finish_many/);
+  assert.equal((s.match(/if \(!(?:out|toBuyer)\.complete/g) ?? []).length >= 8, true);
+  assert.doesNotMatch(s, /sendUserPushBulk/);
 });
 test('8 the two raw sendPush callers only ever address platform ADMIN devices (staff operational alerts), never members', () => {
   for (const f of ['wallet-liquidity-monitor/index.ts', 'notify-business-claim/index.ts']) {

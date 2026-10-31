@@ -8,15 +8,63 @@ import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, readdirSync } from
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
 
 const FN = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'functions');
 type Row = Record<string, any>;
 export type Mode = 'allow' | 'missing' | 'optout' | 'quiet' | 'error' | 'throw';
 
+
+// ── the REAL database ledger (reminder_deliveries) in the ISOLATED Postgres ──────────────────────────────────────────────────────────────────────────────
+// The runner's domain tables stay in memory, but every reminder_* call goes to a real Postgres through psql, so the claim's atomicity is PostgreSQL's own.
+// Names ('u1', 'h2') stand in for user ids: they map to fixed uuids here and back again in results. The controlled clock (Date, mocked by the test) is passed as p_now.
+const pexec = promisify(execFile);
+const DSN = process.env.PASS_PROOF_DSN ?? '', PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
+const ids = new Map<string, string>(), names = new Map<string, string>();
+export const uuidOf = (n: string) => { if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(n)) return n; let u = ids.get(n);
+  if (!u) { const h = createHash('md5').update(`reminder-test:${n}`).digest('hex'); u = `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; ids.set(n, u); names.set(u, n); } return u; };
+export const nameOf = (u: string) => names.get(u) ?? u;
+const q = (v: unknown) => (v === null || v === undefined ? 'null' : `'${String(v).replace(/'/g, "''")}'`);
+const KIND: Record<string, string> = { p_users: 'uuid[]', p_results: 'jsonb', p_deadline: 'timestamptz', p_reuse_after: 'interval', p_older_than: 'interval', p_token: 'uuid', p_user: 'uuid' };
+const lit = (k: string, v: unknown): string => {
+  if (k === 'p_users') return `array[${(v as string[]).map((x) => q(uuidOf(x))).join(',')}]::uuid[]`;
+  if (k === 'p_results') return `${q(JSON.stringify((v as any[]).map((r) => ({ ...r, user: uuidOf(r.user) }))))}::jsonb`;
+  if (k === 'p_user') return `${q(uuidOf(v as string))}::uuid`;
+  if (typeof v === 'number') return String(v);
+  return v === null || v === undefined ? 'null' : `${q(v)}${KIND[k] ? `::${KIND[k]}` : ''}`;
+};
+export const psql = async (sql: string) => (await pexec(PSQL, [DSN, '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', sql], { maxBuffer: 64 * 1024 * 1024 })).stdout.trim();
+export const ledgerRows = async (where = 'true') => (JSON.parse(await psql(`select coalesce(jsonb_agg(to_jsonb(t) order by family, subject_id, user_id), '[]') from reminder_deliveries t where ${where}`)) as Record<string, any>[]).map((r) => ({ ...r, user: nameOf(r.user_id) }));
+export async function resetLedgerDb() {
+  if (!DSN) throw new Error('PASS_PROOF_DSN is required (isolated database only): run via `npm run test:isolated`');
+  if (/supabase/i.test(DSN)) throw new Error('refusing to run against a Supabase DSN');
+  await psql(`drop schema if exists public cascade; create schema public; do $$ begin if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if;
+    if not exists (select 1 from pg_roles where rolname='anon') then create role anon nologin; end if; if not exists (select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if; end $$;`);
+  const out = await pexec(PSQL, [DSN, '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-f', join(FN, '..', 'migrations', '20261129090000_reminder_delivery_ledger.sql')]);
+  await psql('grant usage on schema public to anon, authenticated, service_role');   // as on Supabase: the schema is reachable, so the TABLE and FUNCTION privileges are what is under test
+  return out.stderr;
+}
+export const clearLedger = () => psql('truncate reminder_deliveries');
+async function ledgerRpc(fn: string, args: Record<string, unknown>, nowIso: string, hooks: Hooks) {
+  try {
+    if (hooks.before?.[fn]) await hooks.before[fn](args);
+    const named = Object.entries({ ...args, p_now: nowIso }).map(([k, v]) => `${k} => ${k === 'p_now' ? `${q(v)}::timestamptz` : lit(k, v)}`).join(', ');
+    const set = fn === 'reminder_claim_many';
+    const raw = await psql(set ? `select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb) from public.${fn}(${named}) t` : `select to_jsonb(public.${fn}(${named}))`);
+    let data = JSON.parse(raw || 'null'); if (set) data = data.map((r: any) => ({ ...r, r_user: nameOf(r.r_user) }));
+    if (hooks.after?.[fn]) await hooks.after[fn](args, data);
+    return { data, error: null };
+  } catch (e) { if ((e as Error).message?.startsWith('CRASH')) throw e; return { data: null, error: { message: String((e as any).stderr ?? (e as Error).message).slice(0, 300) } }; }
+}
+export interface Hooks { before?: Record<string, (args: any) => Promise<void>>; after?: Record<string, (args: any, data: any) => Promise<void>> }
+
 export function makeDb() {
   const tables: Record<string, Row[]> = {};
   const modes = new Map<string, Mode>();
   const calls = { should_notify: [] as { user: string; urgent: boolean; mode: Mode }[], rpc: [] as string[], invoke: [] as string[], rpcArgs: [] as { fn: string; args: any }[] };
+  const hooks: Hooks = {};   // fault injection for the ledger: a hook that throws Error('CRASH ...') kills the whole runner pass at that point, like a dead worker
   const rpcHandlers: Record<string, (args: any) => { data: unknown; error: unknown }> = {};   // scripted database functions (dispatch machinery)
   const table = (t: string) => (tables[t] ??= []);
   const cmp = (a: any, b: any) => (a === null || a === undefined ? false : a);
@@ -51,6 +99,7 @@ export function makeDb() {
     from: (t: string) => builder(t),
     rpc: (fn: string, args: any) => {
       calls.rpc.push(fn); calls.rpcArgs.push({ fn, args });
+      if (fn.startsWith('reminder_')) return ledgerRpc(fn, args, new Date().toISOString(), hooks);
       if (rpcHandlers[fn]) return Promise.resolve(rpcHandlers[fn](args));
       if (fn !== 'should_notify') return Promise.resolve({ data: null, error: null });
       const m = modes.get(args.p_user_id) ?? 'allow'; calls.should_notify.push({ user: args.p_user_id, urgent: !!args.p_urgent, mode: m });
@@ -62,7 +111,7 @@ export function makeDb() {
     },
     functions: { invoke: (n: string) => { calls.invoke.push(n); return Promise.resolve({ data: { units: 0 }, error: null }); } },
   };
-  return { tables, table, modes, calls, client, rpcHandlers, setMode: (u: string, m: Mode) => modes.set(u, m) };
+  return { tables, table, modes, calls, client, rpcHandlers, hooks, setMode: (u: string, m: Mode) => modes.set(u, m) };
 }
 
 export async function loadReminderRunner() {

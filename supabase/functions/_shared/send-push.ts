@@ -36,7 +36,7 @@ export type NotificationModule =
   | 'jobs' | 'events' | 'cruise' | 'wallet' | 'hubs' | 'community'
   | 'notices' | 'business';
 
-export type PushReason = 'accepted' | 'preference_check_failed' | 'opted_out' | 'quiet_hours' | 'preference_blocked' | 'no_device' | 'provider_error';
+export type PushReason = 'accepted' | 'claim_lost' | 'preference_check_failed' | 'opted_out' | 'quiet_hours' | 'preference_blocked' | 'no_device' | 'provider_error';
 export type LogStatus = 'sent' | 'skipped_pref' | 'skipped_quiet' | 'no_token' | 'error';
 export interface SendUserPushResult { status: LogStatus; error?: string; reason: PushReason }
 
@@ -52,6 +52,8 @@ export interface SendUserPushInput {
   data?:      Record<string, unknown>;
   urgent?:    boolean;                 // bypass quiet hours (default false)
   sound?:     'default' | null;        // default 'default'
+  /** called after the preference check and device lookup, right before the provider is contacted; returning false (or throwing) stops the send (reason 'claim_lost') */
+  beforeProvider?: () => Promise<boolean | void>;
 }
 
 /**
@@ -90,6 +92,14 @@ export async function sendUserPush(
   if (tokens.length === 0) {
     await logAttempt(supabase, input, 'no_token');
     return { status: 'no_token', error: 'no_device', reason: 'no_device' };
+  }
+
+  // 2b. Callers that coordinate through a database claim (reminder-runner) are asked LAST, immediately before the first byte goes to the provider: it records
+  //     "a send began" so a crash after this point is never mistaken for "nothing was sent". A false answer or a throw means the claim is no longer ours: send nothing.
+  if (input.beforeProvider) {
+    let still = false;
+    try { still = (await input.beforeProvider()) !== false; } catch (e) { console.error('[send-push] beforeProvider failed; not sending', e); }
+    if (!still) return { status: 'error', error: 'claim_lost', reason: 'claim_lost' };
   }
 
   // 3. Send to each device. Prune any token Expo reports as unregistered.
