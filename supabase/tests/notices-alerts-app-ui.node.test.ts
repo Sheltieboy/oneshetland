@@ -218,11 +218,12 @@ describe('Home composition', () => {
     assert.deepEqual([lead.title, ids(others)], ['Alert 2', ['Alert 1', 'Alert 3']]);
     assert.deepEqual(na.splitEssential([]), { lead: null, others: [] });
   });
-  test('(source) the slot shows one full card and one-line rows (44pt, labelled, chevron) under "N essential alerts"', () => {
+  test('(source) the slot is ONE compact strip: headline, area and count only; one alert opens it, several open the essential list', () => {
     const e = readRepo('components/notices/EssentialAlerts.tsx');
-    assert.match(e, /splitEssential\(alerts\)/); assert.match(e, /essential alerts<\/Text>/); assert.match(e, /minHeight: 44/);
-    assert.match(e, /accessibilityLabel=\{`Essential alert: \$\{n\.title\}/); assert.match(e, /chevron-right/); assert.match(e, /onPress=\{\(\) => onOpen\(n\)\}/);
-    assert.equal((e.match(/<EssentialAlertCard /g) ?? []).length, 1, 'exactly one full card is rendered');
+    assert.match(e, /splitEssential\(alerts\)/); assert.match(e, /ACTIVE/); assert.match(e, /minHeight: 52/);
+    assert.match(e, /many \? onSeeAll\(\) : onOpen\(lead\)/); assert.match(e, /accessibilityRole="button"/);
+    assert.equal((e.match(/<Pressable/g) ?? []).length, 1, 'one strip, never a stack');
+    assert.doesNotMatch(e, /lead\.body|actionText|attribution/, 'no body, what-to-do or source detail on Home');
   });
   test('loadHomeNotices: queries the essential list and get_public_notices("all"), applies the member areas, and a failure of either collapses just that part', async () => {
     const ok = load({ get_essential_alerts: [row({ id: U(1), level: undefined })], get_public_notices: [row({ id: U(1), level: 'essential', is_essential_active: true }), row({ id: U(2), level: 'community' })] });
@@ -256,7 +257,7 @@ describe('Home composition', () => {
   test('(source) the Essential slot renders nothing when empty; the red treatment lives only there', () => {
     const e = readRepo('components/notices/EssentialAlerts.tsx');
     assert.match(e, /if \(!alerts \|\| alerts\.length === 0\) return null;/);
-    assert.match(e, /Read full notice/); assert.match(e, /What to do/); assert.match(e, /View at source/); assert.match(e, /Affects:/); assert.match(e, /n\.attribution\.byline/);
+    assert.match(e, /ESSENTIAL ALERT/); assert.doesNotMatch(e, /What to do|View at source|Affects:|attribution\.byline/, 'the Home strip is a summary only');
     const cards = readRepo('components/notices/NoticeCards.tsx');
     assert.doesNotMatch(cards.slice(0, cards.indexOf('listCardEssential: {')), /#B3261E|#DC2626|#EF4444/, 'Home cards carry no urgent colour');
   });
