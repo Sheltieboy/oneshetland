@@ -41,7 +41,11 @@ Not resolved; do not mark done until each is actually run:
 * **Slow person-name RPC** can delay a feed by up to 1.5 s when a person notice is in the result (docs/notices-person-attribution-performance.md). No person notices exist in production today.
 * **R2** (notify-hub-content) and **V1** (admin smoke test of notify-community-notice v14) remain open as recorded above.
 
-## B1 — release baseline notes (integration, 31 Oct 2026)
-* The local `home-redesign` is 88 commits ahead of `origin/home-redesign` (45dddf6): none of them are pushed.
-* `build-147` (938e0f1, one `client_request_id` per purchase attempt) and `build-148` (7317508, removes the unapproved referral programme) are NOT ancestors of `home-redesign`. A build cut from
-  `home-redesign` does not contain them. Decide how they reach the baseline before cutting the next build.
+## B1 — release baseline: builds 147 and 148 reconciled (31 Oct 2026)
+Verified from EAS (read-only build list): iOS 148 = commit 7317508 (9 Oct), 147 = 938e0f1 (8 Oct), 146/145 = 10d1f00, 144 = 5b09e206; Android builds 2 and 3 = 7317508. Each is the shared base 10d1f00
+plus those two linear commits, so nothing else shipped from outside the base. The newest OTA updates on the production channel are about four weeks old (before 147/148).
+* **938e0f1 (one `client_request_id` per purchase attempt)** is ALREADY PRESENT on `home-redesign`: its four mobile files are byte-identical there (they arrived via fd037c4). Not cherry-picked.
+* **7317508 (referral programme removed)** was MISSING from `home-redesign` (the 221-line referrals screen and the "Invite friends" row were still there). Cherry-picked cleanly; `app/referrals.tsx`,
+  `app/(tabs)/me.tsx` and `account-hub-navigation.node.test.ts` are now byte-identical to build 148. `lib/referrals.ts` (unused, as in build 148) remains.
+* The local `home-redesign` is still 88 commits ahead of `origin/home-redesign` (45dddf6); none are pushed.
+
