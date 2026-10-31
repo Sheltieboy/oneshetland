@@ -76,3 +76,12 @@ STILL OPEN (reported, not built): admins add organisation members by pasting a u
 * **Push policy for member notices (APPROVED POLICY, NOT YET BUILT):** member notices are currently refused for push (`notice_dispatchable`) - that exclusion was my design choice, not an approved decision. Approved policy: moderation first; approval alone sends nothing; a moderator may separately authorise a push; only opted-in members following a relevant area are eligible; dedupe and rate limits mandatory; imports stay silent. Details in `notices-account-deletion-and-retention.md` section 5.
 * No photo upload, no link field, no repeat/renew, no member-to-member contact; staff decline is final (the member posts a new notice).
 * Moderators approve in /notices/moderate (website). There is no in-app moderation screen.
+
+## Funeral privacy (31 Oct 2026) — remaining items
+* The retention periods, lawful bases and the `/privacy#funeral-announcements` wording are **proposals awaiting owner review**; nothing is scheduled and the job is off by default.
+* A pending submission whose account is deleted is **withdrawn** (cannot be verified without the family). If the owner prefers a funeral-director route for those, it is a small change in `delete_member_funeral_data`.
+* The no-account contact form has no server-side bot check (the site has no Turnstile verification): honeypot + database rate limits only. Mobile opens the website form in the browser (no native form).
+* Audit redaction is administrator-driven per entry; there is no bulk tool by design.
+* `verification_note` on an approved announcement is retained (it cannot hold a phone number or email, but could still hold a name): the review guidance says not to.
+* Not verified on a physical device or in a hosted environment: the funeral contact page, moderation and Privacy tab were exercised by tests and type-checked, not clicked through a hosted deployment.
+* Member-notification decision recorded, **not built** (see `notices-account-deletion-and-retention.md` §9).

@@ -202,6 +202,7 @@ export default function FuneralNoticeSubmitScreen() {
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={[styles.btnText, { color: '#fff' }]}>{editId ? 'Save and send for checking again' : 'Send for checking'}</Text>}
             </Pressable>
             <Text style={styles.hint}>Sending does not publish anything. We will check the notice first.</Text>
+            {!editId ? <Text style={styles.hint}>We use your name and contact details only to check this announcement and to contact you. They are never shown publicly. If you delete your account they are removed, and a published announcement stays up until its display period ends. See oneshetland.com/privacy.</Text> : null}
           </ScrollView>
         </KeyboardAvoidingView>
       )}

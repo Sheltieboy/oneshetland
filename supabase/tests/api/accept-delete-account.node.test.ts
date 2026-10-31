@@ -204,32 +204,102 @@ d('preferences, deliveries, pushes and bystanders (the real function again)', ()
   });
 });
 
-d('FUNERAL submissions when the submitting member deletes their account: CURRENT behaviour, recorded for the retention decision (nothing here changes funeral records)', () => {
-  test('11 what survives, by status: the account is scrubbed but every funeral row, contact detail, verification note and change request stays', async () => {
+d('FUNERAL submissions and organisation memberships when the member deletes their account (the real function, the real deletion path)', () => {
+  const sub = async (tok: string, name: string, extra: Record<string, unknown> = {}) => (await rpcAs(tok, 'submit_funeral_notice', { p: { full_name: `${name} ${R}`, died_on: '2026-10-29', announcement: 'Peacefully at home.', area_id: 'voe', submitter_name: 'Fiona Funeralsubmitter', submitter_relationship: 'daughter', submitter_phone: '07700 900321', submitter_email: 'fiona.private@accept.test', family_authorised: true, ...extra } })).data as string;
+  const del = async (tok: string) => { const handler = await loadHandler(); const res = await handler(new Request('http://local/delete-account', { method: 'POST', headers: { Authorization: `Bearer ${tok}` } })); return { res, body: await res.json() as any }; };
+  const S2: Record<string, any> = {};
+
+  test('11 every lifecycle state through the REAL deletion: private submitter details are removed, the approved announcement is preserved, the rest is reduced to the minimum', async () => {
     const f = await signUp(`fun-${R}@accept.test`, 'Fiona Funeralsubmitter'); const mod = await staffToken();
-    const sub = async (name: string) => (await rpcAs(f.token, 'submit_funeral_notice', { p: { full_name: `${name} ${R}`, died_on: '2026-10-29', announcement: 'Peacefully at home.', area_id: 'voe', submitter_name: 'Fiona Funeralsubmitter', submitter_relationship: 'daughter', submitter_phone: '07700 900321', submitter_email: 'fiona.private@accept.test', family_authorised: true } })).data as string;
+    const other = await signUp(`funother-${R}@accept.test`, 'Olive Other');
     const ids: Record<string, string> = {};
-    ids.withdrawn = await sub('Withdrawn Person'); await rpcAs(f.token, 'withdraw_my_funeral_notice', { p_id: ids.withdrawn });
+    ids.withdrawn = await sub(f.token, 'Withdrawn Person'); await rpcAs(f.token, 'withdraw_my_funeral_notice', { p_id: ids.withdrawn });
     owner(`update funeral_notices set created_at = now() - interval '3 days' where id='${ids.withdrawn}'`);
-    ids.approved = await sub('Approved Person'); await rpcAs(mod, 'admin_funeral_review', { p_id: ids.approved, p_action: 'approve', p_note: 'Rang the family on 07700 900321 and confirmed details with Fiona.', p_verification_method: 'phone_callback' });
-    ids.pending = await sub('Pending Person');
-    ids.rejected = await sub('Rejected Person'); await rpcAs(mod, 'admin_funeral_review', { p_id: ids.rejected, p_action: 'reject', p_note: 'Could not verify: caller would not give a number.' });
-    await rpcAs(f.token, 'request_funeral_notice_change', { p_id: ids.approved, p_kind: 'correction', p_message: 'Please correct the surname.', p_contact: 'fiona.private@accept.test' });
-    const handler = await loadHandler(); const res = await handler(new Request('http://local/delete-account', { method: 'POST', headers: { Authorization: `Bearer ${f.token}` } })); assert.equal(res.status, 200);
-    const rows = owner(`select status || ' | submitter_id=' || coalesce(submitter_id::text, 'NULL') || ' | name=' || coalesce(submitter_name, '-') || ' | phone=' || coalesce(submitter_phone, '-') || ' | email=' || coalesce(submitter_email, '-') || ' | verified_by=' || (verified_by is not null)::text || ' | verification_note=' || coalesce(verification_note, '-') || ' | review_note=' || coalesce(review_note, '-') || ' | public=' || (status = 'approved')::text from funeral_notices where id in ('${Object.values(ids).join("','")}') order by status`);
-    console.log('\nFUNERAL ROWS AFTER THE SUBMITTER DELETED THEIR ACCOUNT (current behaviour):\n' + rows);
-    const cr = owner(`select 'change request: requester_id=' || coalesce(requester_id::text, 'NULL') || ' | contact=' || coalesce(contact, '-') || ' | message=' || message from funeral_change_requests where funeral_id='${ids.approved}'`);
-    console.log(cr);
-    const audit = owner(`select string_agg(distinct event, ',') from notice_audit_log where funeral_id in ('${Object.values(ids).join("','")}')`); console.log('audit events kept: ' + audit);
-    // the characterisation, asserted so it cannot drift unnoticed
-    assert.equal(owner(`select count(*) from funeral_notices where id in ('${Object.values(ids).join("','")}')`), '4', 'every funeral row survives in every status');
-    assert.equal(owner(`select count(*) from funeral_notices where id in ('${Object.values(ids).join("','")}') and submitter_phone is not null and submitter_email is not null`), '4', 'the submitter\'s private phone and email are RETAINED on every row (pending, approved, withdrawn, rejected)');
-    assert.equal(owner(`select submitter_id = '${f.id}' from funeral_notices where id='${ids.approved}'`), 't', 'the submitter id still points at the scrubbed account');
-    assert.equal(owner(`select verification_note like '%07700 900321%' from funeral_notices where id='${ids.approved}'`), 't', 'a staff verification note can itself contain the phone number');
-    assert.equal(owner(`select count(*) from funeral_change_requests where funeral_id='${ids.approved}' and contact is not null`), '1');
-    assert.equal(((await rpcAs(null, 'get_funeral_notice', { p_id: ids.approved })).data as any[]).length, 1, 'the approved announcement is still public');
-    const pub = JSON.stringify((await rpcAs(null, 'get_funeral_notice', { p_id: ids.approved })).data); assert.ok(!/07700|fiona|Fiona|private@/.test(pub), 'and the public data never carried the contact details');
-    for (const k of ['pending', 'withdrawn', 'rejected']) assert.equal(((await rpcAs(null, 'get_funeral_notice', { p_id: ids[k] })).data as any[]).length, 0, `${k} was never public`);
+    ids.approved = await sub(f.token, 'Approved Person'); await rpcAs(mod, 'admin_funeral_review', { p_id: ids.approved, p_action: 'approve', p_note: 'Confirmed with the funeral director (reference 17).', p_verification_method: 'funeral_director_confirmation', p_verification_outcome: 'confirmed' });
+    ids.pending = await sub(f.token, 'Pending Person');
+    ids.rejected = await sub(f.token, 'Rejected Person'); await rpcAs(mod, 'admin_funeral_review', { p_id: ids.rejected, p_action: 'reject', p_note: 'Could not verify.', p_rejection_code: 'unverifiable' });
+    owner(`update funeral_notices set created_at = now() - interval '3 days' where submitter_id='${f.id}'`);
+    ids.takendown = await sub(f.token, 'Taken Down Person'); await rpcAs(mod, 'admin_funeral_review', { p_id: ids.takendown, p_action: 'approve', p_verification_method: 'phone_callback', p_verification_outcome: 'confirmed' }); await rpcAs(mod, 'admin_funeral_takedown', { p_id: ids.takendown, p_reason: 'The family asked' });
+    ids.bystander = await sub(other.token, 'Bystander Person', { submitter_name: 'Olive Other', submitter_phone: '07700 900777' });
+    Object.assign(S2, { f, ids });
+    const { res, body } = await del(f.token);
+    assert.equal(res.status, 200, JSON.stringify(body)); assert.equal(body.ok, true);
+    assert.equal(body.steps.funeral_notices, 'ok', JSON.stringify(body.steps)); assert.equal(body.steps.organisation_memberships, 'ok'); assert.equal(body.steps.demote_privileges, 'ok');
+    const mine = Object.entries(ids).filter(([k]) => k !== 'bystander').map(([, v]) => v);
+    assert.equal(owner(`select count(*) from funeral_notices where id in ('${mine.join("','")}')`), '5', 'no funeral row is deleted by an account deletion');
+    assert.equal(owner(`select count(*) from funeral_notices where id in ('${mine.join("','")}') and submitter_id is null and submitter_name is null and submitter_phone is null and submitter_email is null and submitter_relationship is null and review_message is null and review_note is null and scrubbed_at is not null`), '5', 'private submitter details are gone from every status');
+    assert.equal(owner(`select status from funeral_notices where id='${ids.approved}'`), 'approved');
+    assert.equal(owner(`select announcement from funeral_notices where id='${ids.approved}'`), 'Peacefully at home.');
+    assert.equal(owner(`select status from funeral_notices where id='${ids.pending}'`), 'withdrawn', 'a pending submission that can no longer be verified is withdrawn, never published');
+    assert.equal(owner(`select full_name from funeral_notices where id='${ids.rejected}'`), '[removed]');
+    assert.equal(owner(`select (verification_method = 'funeral_director_confirmation' and verification_outcome = 'confirmed' and verified_by is not null and verified_at is not null)::text from funeral_notices where id='${ids.approved}'`), 'true', 'the minimum evidence of authority is kept');
+    assert.equal(owner(`select submitter_phone from funeral_notices where id='${ids.bystander}'`), '07700 900777', 'another family\'s submission is untouched');
+    const pub = JSON.stringify((await rpcAs(null, 'get_funeral_notice', { p_id: ids.approved })).data);
+    assert.equal(((await rpcAs(null, 'get_funeral_notice', { p_id: ids.approved })).data as any[]).length, 1, 'the approved announcement is still public'); assert.ok(!/07700|fiona|Fiona|private@/.test(pub));
+    for (const k of ['pending', 'withdrawn', 'rejected', 'takendown']) assert.equal(((await rpcAs(null, 'get_funeral_notice', { p_id: ids[k] })).data as any[]).length, 0, `${k} is not public`);
+    assert.equal(owner(`select count(*) from notice_audit_log where event='funeral_submitter_scrubbed' and funeral_id in ('${mine.join("','")}')`), '5');
+  });
+
+  test('12 repeating the deletion removes nothing more and breaks nothing', async () => {
+    const before = owner(`select count(*) from notice_audit_log where event='funeral_submitter_scrubbed'`);
+    const again = await del(S2.f.token);
+    assert.ok([200, 401].includes(again.res.status), String(again.res.status));
+    assert.equal(owner(`select count(*) from notice_audit_log where event='funeral_submitter_scrubbed'`), before);
+  });
+
+  test('13 organisation memberships: the deleted PUBLISHER and DELEGATE lose their seats, the organisation and the other members keep theirs, and the old token has no authority', async () => {
+    const admin = await token('admin@accept.test');
+    const org = (await rpcAs(admin, 'admin_upsert_official_publisher', { p_slug: `del-org-${R}`, p_name: `Deletion Test Org ${R}`, p_kind: 'council' })).data as string;
+    await rpcAs(admin, 'admin_verify_official_publisher', { p_publisher: org, p_note: 'Verified by call-back to a published number' });
+    const pubr = await signUp(`pub-${R}@accept.test`, 'Pat Publisher'), dele = await signUp(`dlg-${R}@accept.test`, 'Dee Delegate'), stay = await signUp(`stay-${R}@accept.test`, 'Sam Stays');
+    for (const [u, role] of [[pubr, 'publisher'], [dele, 'delegate'], [stay, 'publisher']] as const) assert.equal((await rpcAs(admin, 'admin_set_official_publisher_member', { p_publisher: org, p_user: u.id, p_role: role })).status < 300, true);
+    assert.equal((await rpcAs(pubr.token, 'official_publisher_authority', { p_publisher: org })).data, 'official');
+    const { res, body } = await del(pubr.token); assert.equal(res.status, 200, JSON.stringify(body)); assert.equal(body.steps.organisation_memberships, 'ok');
+    assert.equal((await rpcAs(pubr.token, 'official_publisher_authority', { p_publisher: org })).data, 'none', 'the token is still valid for a while: authority is refused because the account is closed');
+    assert.equal(owner(`select (not is_active)::text from official_publisher_members where publisher_id='${org}' and user_id='${pubr.id}'`), 'true');
+    const d2 = await del(dele.token); assert.equal(d2.res.status, 200);
+    assert.equal(owner(`select (not is_active)::text from official_publisher_members where publisher_id='${org}' and user_id='${dele.id}'`), 'true');
+    assert.equal(owner(`select (is_active)::text from official_publisher_members where publisher_id='${org}' and user_id='${stay.id}'`), 'true', 'the other member is untouched');
+    assert.equal(owner(`select (is_active and verified_at is not null)::text from official_publishers where id='${org}'`), 'true', 'the organisation is untouched');
+    assert.equal((await rpcAs(stay.token, 'official_publisher_authority', { p_publisher: org })).data, 'official');
+    assert.ok((await rpcAs(admin, 'admin_set_official_publisher_member', { p_publisher: org, p_user: pubr.id, p_role: 'publisher' })).status >= 400, 'a deleted account cannot be given authority again');
+  });
+
+  test('14 a deleted ADMINISTRATOR / MODERATOR is demoted and the old token no longer works as staff', async () => {
+    const a = await signUp(`adm-${R}@accept.test`, 'Ada Admin'); owner(`update profiles set role = 'admin' where id='${a.id}'`);
+    assert.ok((await rpcAs(a.token, 'admin_upsert_official_publisher', { p_slug: `adm-org-${R}`, p_name: `Adm Org ${R}`, p_kind: 'other' })).status < 300, 'an administrator can, before deletion');
+    const m = await signUp(`mod-${R}@accept.test`, 'Mo Moderator'); owner(`update profiles set role = 'moderator' where id='${m.id}'`);
+    assert.ok((await rpcAs(m.token, 'admin_funeral_queue', {})).status < 300);
+    assert.equal((await del(a.token)).res.status, 200); assert.equal((await del(m.token)).res.status, 200);
+    assert.equal(owner(`select role from profiles where id in ('${a.id}','${m.id}') group by role`), 'customer', 'role removed');
+    assert.ok((await rpcAs(a.token, 'admin_upsert_official_publisher', { p_slug: `adm-org2-${R}`, p_name: `Adm Org2 ${R}`, p_kind: 'other' })).status >= 400);
+    assert.ok((await rpcAs(m.token, 'admin_funeral_queue', {})).status >= 400);
+  });
+
+  test('15 PARTIAL FAILURE: an unexpected cleanup failure stops the deletion BEFORE anything irreversible (500, account intact, can sign in), and a retry completes it', async () => {
+    const f = await signUp(`part-${R}@accept.test`, 'Pia Partial'); const id = await sub(f.token, 'Partial Person');
+    owner(`create function public.tg_accept_boom() returns trigger language plpgsql as $$ begin raise exception 'simulated failure'; end $$; create trigger accept_boom before update on public.funeral_notices for each row execute function public.tg_accept_boom();`);
+    try {
+      const { res, body } = await del(f.token);
+      assert.equal(res.status, 500, JSON.stringify(body)); assert.equal(body.ok, false); assert.deepEqual(body.failed, ['funeral_notices']);
+      assert.match(body.steps.funeral_notices, /^err:/); assert.equal(body.steps.scrub_profile, undefined, 'the profile scrub never ran'); assert.equal(body.steps.auth_soft_delete, undefined);
+      assert.equal(owner(`select full_name from profiles where id='${f.id}'`), 'Pia Partial', 'profile intact');
+      assert.equal(owner(`select submitter_phone from funeral_notices where id='${id}'`), '07700 900321', 'nothing half-done');
+      assert.ok(await token(`part-${R}@accept.test`), 'the person can still sign in and try again');
+    } finally { owner(`drop trigger accept_boom on public.funeral_notices; drop function public.tg_accept_boom();`); }
+    const ok = await del(await token(`part-${R}@accept.test`)); assert.equal(ok.res.status, 200, JSON.stringify(ok.body)); assert.equal(ok.body.ok, true);
+    assert.equal(owner(`select (submitter_phone is null and scrubbed_at is not null)::text from funeral_notices where id='${id}'`), 'true');
+  });
+
+  test('16 PRODUCTION SEQUENCE: with the funeral / membership functions absent (function deployed first) those steps are skipped and deletion succeeds; once they exist the same function does the cleanup', async () => {
+    const w = await signUp(`late-${R}@accept.test`, 'Lena Late'); const id = await sub(w.token, 'Late Person');
+    owner(`alter function public.delete_member_funeral_data(uuid) rename to delete_member_funeral_data_hidden; alter function public.delete_member_memberships(uuid) rename to delete_member_memberships_hidden`);
+    try {
+      const { res, body } = await del(w.token); assert.equal(res.status, 200, JSON.stringify(body));
+      assert.match(body.steps.funeral_notices, /^skipped/); assert.match(body.steps.organisation_memberships, /^skipped/);
+    } finally { owner(`alter function public.delete_member_funeral_data_hidden(uuid) rename to delete_member_funeral_data; alter function public.delete_member_memberships_hidden(uuid) rename to delete_member_memberships`); }
+    assert.equal(owner(`select submitter_phone from funeral_notices where id='${id}'`), '07700 900321', 'skipped means skipped: nothing was cleaned');
+    assert.equal(owner(`select count(*) from pg_proc where proname in ('delete_member_funeral_data','delete_member_memberships')`), '2');
   });
 });
 const idOf = (o: string) => (o.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []).pop() ?? '';

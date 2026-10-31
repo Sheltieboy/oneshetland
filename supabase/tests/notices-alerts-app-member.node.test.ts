@@ -130,11 +130,23 @@ describe('account deletion: the original privacy rule is pinned in the delete-ac
   });
   test('the notice-data cleanup uses ONLY the authenticated id, through the service-role-only function, and tolerates the migrations not being deployed yet', () => {
     const src = readRepo('supabase/functions/delete-account/index.ts').replace(/\s+/g, ' ');
-    assert.match(src, /runIfPresent\('notice_member_data', svc\.rpc\('delete_member_notice_data', \{ p_user: uid \}\)\)/);
+    assert.match(src, /runCritical\('notice_member_data', svc\.rpc\('delete_member_notice_data', \{ p_user: uid \}\)\)/);
     assert.match(src, /runIfPresent\('notification_preferences', svc\.from\('notification_preferences'\)\.delete\(\)\.eq\('user_id', uid\)\)/);
     assert.doesNotMatch(src, /from\('(member_areas|notice_notification_prefs|notice_deliveries)'\)/, 'the locked Notices tables are never touched directly');
     assert.match(src, /PGRST202/); assert.match(src, /PGRST205/); assert.match(src, /skipped: not present yet/);
-    assert.ok(src.indexOf("runIfPresent('notice_member_data'") > src.indexOf("svc.from('notices').delete()") && src.indexOf("runIfPresent('notice_member_data'") < src.indexOf("svc.from('profiles').update"), 'after the notices, before the profile scrub');
+    assert.ok(src.indexOf("runCritical('notice_member_data'") > src.indexOf("svc.from('notices').delete()") && src.indexOf("runCritical('notice_member_data'") < src.indexOf("svc.from('profiles').update"), 'after the notices, before the profile scrub');
     for (const m of src.matchAll(/\.eq\('(\w+)', uid\)/g)) assert.ok(['id' /* the caller's own profile row */, 'author_id', 'suggester_id', 'user_id', 'publisher_user_id', 'blocker_id', 'blocked_id', 'owner_id'].includes(m[1]), `only the caller's own id is ever used as a selector: ${m[1]}`);
+  });
+  test('funeral and membership cleanup are critical: only the authenticated id, tolerant of an absent function, and any other failure stops the deletion BEFORE anything irreversible', () => {
+    const src = readRepo('supabase/functions/delete-account/index.ts').replace(/\s+/g, ' ');
+    assert.match(src, /runCritical\('funeral_notices', svc\.rpc\('delete_member_funeral_data', \{ p_user: uid \}\)\)/);
+    assert.match(src, /runCritical\('organisation_memberships', svc\.rpc\('delete_member_memberships', \{ p_user: uid \}\)\)/);
+    const abort = src.indexOf('if (failures.length)');
+    assert.ok(abort > src.indexOf("runCritical('organisation_memberships'") && abort > src.indexOf("runCritical('demote_privileges'"), 'checked after every critical step');
+    assert.ok(abort < src.indexOf("run('scrub_profile'") && abort < src.indexOf('auth.admin.deleteUser('), 'checked before the profile scrub and the auth soft-delete');
+    assert.match(src.slice(abort, abort + 400), /ok: false[^;]*\}, 500\)/, 'a failure answers 500, never ok');
+    assert.match(src, /startsWith\('err:'\)/); assert.match(src, /startsWith\('threw:'\)/);
+    assert.doesNotMatch(src, /from\('(funeral_notices|funeral_change_requests|official_publisher_members|funeral_director_members)'\)/, 'the locked tables are only reached through the service-role-only functions');
+    assert.match(src, /role: 'customer', is_platform_owner: false/, 'a closed account keeps no staff role');
   });
 });

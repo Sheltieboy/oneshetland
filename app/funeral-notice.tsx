@@ -1,10 +1,11 @@
 /**
  * funeral-notice.tsx — one published Deaths & Funeral Notice, in the traditional template (components/notices/FuneralTemplate.tsx).
  * Reads get_funeral_notice(p_id): only public fields come back; arrangements only when the family approved them.
- * A signed-in reader can ask for a correction or takedown (request_funeral_notice_change).
+ * A signed-in reader can ask for a correction or takedown (request_funeral_notice_change); anyone, signed in or not, can use the website's
+ * "Contact us about this announcement" page (submit_funeral_enquiry), which opens in the browser.
  */
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, TextInput, ActivityIndicator, Linking } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { colors, fontSize, spacing, radius, contentContainer } from '@/constants/theme';
 import { useAppLayout } from '@/hooks/useAppLayout';
@@ -63,13 +64,19 @@ export default function FuneralNoticeScreen() {
             <FuneralAnnouncement f={f} />
             <View style={styles.change}>
               {!profile ? (
-                <Text style={styles.small}>Sign in if you need to ask for a correction or for this notice to be taken down.</Text>
+                <>
+                  <Text style={styles.small}>If something here is wrong, or the family would like this notice removed, you can contact us without an account. We check every request before anything changes.</Text>
+                  <View style={styles.row}>
+                    <Pressable onPress={() => Linking.openURL(`https://oneshetland.com/notices/funeral/${f.id}/contact`)} accessibilityRole="link" style={styles.btn}><Text style={styles.btnText}>Contact us about this announcement</Text></Pressable>
+                  </View>
+                </>
               ) : kind === null ? (
                 <>
                   <Text style={styles.small}>If something here is wrong, or the family would like this notice removed, you can ask us. A member of our team will check and act.</Text>
                   <View style={styles.row}>
                     <Pressable onPress={() => setKind('correction')} accessibilityRole="button" style={styles.btn}><Text style={styles.btnText}>Ask for a correction</Text></Pressable>
                     <Pressable onPress={() => setKind('takedown')} accessibilityRole="button" style={styles.btn}><Text style={styles.btnText}>Ask for it to be taken down</Text></Pressable>
+                    <Pressable onPress={() => Linking.openURL(`https://oneshetland.com/notices/funeral/${f.id}/contact`)} accessibilityRole="link" style={styles.btn}><Text style={styles.btnText}>Contact us about this announcement</Text></Pressable>
                   </View>
                 </>
               ) : (

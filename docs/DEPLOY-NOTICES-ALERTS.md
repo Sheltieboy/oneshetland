@@ -11,6 +11,7 @@ STATUS: **NOTHING HAS BEEN APPLIED, DEPLOYED OR PUBLISHED.** Everything below is
 | 4 | `20261129030000` funeral notices | database | rollback script (destroys submissions: export first if any real exist) |
 | 5 | `20261129040000` official-import framework (all sources disabled) | database | rollback script |
 | 5b | `20261129050000` members publish notices (moderated): submit / list / edit / withdraw / staff approve & decline | database | rollback script (the notices members already posted stay) |
+| 5c | `20261129060000` funeral privacy: account-deletion cleanup, memberships, retention (dry-run, gated OFF), no-account enquiries, audit redaction | database | rollback script (does not restore data already removed by a cleanup) |
 | 6 | edge: `notify-hub-content` (R2 fix), `notify-notice-audience`, `notify-funeral-notice`, `import-official-notices` | functions | redeploy the previous `notify-hub-content`; delete the three new functions |
 | 7 | website (`notices-alerts-web`) | Netlify | redeploy previous build |
 | 8 | app (`notices-alerts-app-ui`, JS-only) | OTA / next build | OTA rollback to previous bundle |
@@ -37,8 +38,11 @@ Deploy in this order, each with `verify_jwt = true` (the functions also authoris
 Confirm `notify-community-notice` (the island-wide admin broadcast, deployed in Stage 3A.1) is untouched and still refuses imports.
 Secrets: none new (uses `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` that already exist).
 
-### 3b. delete-account (Edge Function) — ordering
-`supabase/functions/delete-account` now also calls `delete_member_notice_data` (created in migration `20261129020000`). It tolerates the function being absent (reports `skipped: not present yet`), so deploying it before the migrations is safe but does nothing for the new tables. Recommended: apply the migrations, then deploy `delete-account` immediately after `…020000` is applied (before members can have notice areas or preferences, or at the same release). Verify with a throwaway test account on a TEST project: the deletion response's `steps.notice_member_data` must be `ok`. Rollback of `…020000` drops the function; the deployed function then reports `skipped`.
+### 3b. delete-account (Edge Function) — ordering and failure rule
+`supabase/functions/delete-account` calls `delete_member_notice_data` (created in `…020000`), `delete_member_funeral_data` and `delete_member_memberships` (both created in `…060000`). **Apply migrations 1 → 5c first, then deploy `delete-account`.** A function that does not exist yet is reported `skipped: not present yet` (so deploying early is safe but does nothing for that data); once the functions exist, any other failure in those steps (or in removing a staff role) is a critical failure: the deletion stops before the profile scrub and auth soft-delete and answers HTTP 500 with the failed steps, the account stays usable, and a retry completes it (all steps are idempotent). Verify with a throwaway account on a TEST project: `steps.notice_member_data`, `steps.funeral_notices`, `steps.organisation_memberships` and `steps.demote_privileges` must each be `ok`. Rolling `…060000` back drops its functions; the deployed function then skips those steps. Full detail and the retention policy: `docs/notices-account-deletion-and-retention.md`.
+
+### 3c. Funeral retention job — NOT scheduled
+`funeral_retention_run` is service-role only, defaults to a dry run, and refuses a real run while `notice_privacy_settings.funeral_retention_enabled` is false (the default). Nothing schedules it. Before enabling: owner approval of the periods, a reviewed dry run (`select funeral_retention_run(true)` as service role, or the Admin → Notices → Privacy report), then `admin_set_funeral_retention_enabled(true, '<release approval reference>')`, then decide the cadence.
 
 ## 4. Activation (deliberate administrator actions — none is automatic)
 Done by a platform administrator after the release is live; each is audited in `notice_audit_log`.

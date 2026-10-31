@@ -65,7 +65,7 @@ before(async () => {
     create function public.is_admin() returns boolean language sql stable security definer set search_path to 'public' as $$ select exists (select 1 from public.profiles where id = auth.uid() and (role = 'admin' or is_platform_owner = true)); $$;
     grant execute on function public.is_admin() to anon, authenticated, service_role;
     grant execute on function public.is_hub_admin(uuid, uuid), public.is_hub_member(uuid, uuid) to anon, authenticated, service_role;
-    alter table notices add column lat numeric, add column lng numeric; alter table profiles add column display_name text; alter table profiles add column location_area text;
+    alter table notices add column lat numeric, add column lng numeric; alter table profiles add column display_name text; alter table profiles add column location_area text; alter table profiles add column deleted_at timestamptz; alter table profiles add column is_active boolean not null default true;
     alter table hubs add column logo_url text, add column brand_color text; alter table local_businesses add column logo_url text, add column brand_color text;
     create table regions (id uuid primary key default gen_random_uuid(), slug text unique not null, name text not null, display_order int);
     create table jobs (id uuid primary key default gen_random_uuid(), title text, locality text, location text);

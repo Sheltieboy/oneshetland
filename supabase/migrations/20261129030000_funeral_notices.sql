@@ -58,7 +58,7 @@ create table public.funeral_notices (
   -- private
   submitter_id      uuid references public.profiles(id) on delete set null,
   submitter_role    text not null check (submitter_role in ('family', 'funeral_director')),
-  submitter_name    text not null check (length(btrim(submitter_name)) between 2 and 120),
+  submitter_name    text check (submitter_name is null or length(btrim(submitter_name)) between 2 and 120),     -- NULL only after the submitter's account is closed (scrubbed_at)
   submitter_relationship text check (submitter_relationship is null or length(submitter_relationship) <= 120),
   submitter_phone   text check (submitter_phone is null or length(submitter_phone) <= 40),
   submitter_email   text check (submitter_email is null or length(submitter_email) <= 200),
@@ -67,17 +67,25 @@ create table public.funeral_notices (
   verification_method text check (verification_method in ('phone_callback', 'funeral_director_confirmation', 'in_person', 'existing_notice_source', 'other')),
   verified_by       uuid references public.profiles(id) on delete set null,
   verified_at       timestamptz,
-  verification_note text,
+  verification_note text,                                                  -- supplementary staff note: guarded (no telephone numbers / email addresses); NOT the evidence record
+  verification_outcome text check (verification_outcome in ('confirmed', 'not_confirmed', 'unable_to_contact')),   -- STRUCTURED moderation record
+  followup_action   text not null default 'none' check (followup_action in ('none', 'callback_later', 'awaiting_funeral_director', 'awaiting_family_reply', 'refer_to_administrator')),
+  rejection_code    text check (rejection_code in ('unverifiable', 'duplicate', 'not_a_funeral_announcement', 'inappropriate', 'other')),
   review_message    text,                                                  -- shown to the submitter ("please confirm the date")
   review_note       text,                                                  -- private moderator note
   reviewed_by       uuid references public.profiles(id) on delete set null,
   reviewed_at       timestamptz,
   published_at      timestamptz,
   display_until     timestamptz,
+  -- retention (see docs/notices-account-deletion-and-retention.md): a record is eligible for the retention job only when retain_until has passed and nothing blocks it
+  retain_until      timestamptz,                                           -- approved: display_until + 90 days; withdrawn: +30 days; rejected / taken down: +90 days; NULL while under review
+  scrubbed_at       timestamptz,                                           -- the submitter's private details were removed (account closed)
+  retention_hold    boolean not null default false,                         -- an administrator-set exception (dispute); blocks the retention job
+  retention_hold_reason text,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now(),
   constraint funeral_dates check (born_on is null or died_on is null or born_on <= died_on),
-  constraint funeral_contact_present check (submitter_phone is not null or submitter_email is not null),
+  constraint funeral_contact_present check (scrubbed_at is not null or (submitter_name is not null and (submitter_phone is not null or submitter_email is not null))),
   constraint funeral_approved_needs_verification check (status <> 'approved' or (verification_method is not null and verified_at is not null and published_at is not null and display_until is not null))
 );
 create index funeral_notices_public_idx on public.funeral_notices (published_at desc) where status = 'approved';
@@ -86,7 +94,11 @@ create index funeral_notices_submitter_idx on public.funeral_notices (submitter_
 create table public.funeral_change_requests (
   id            uuid primary key default gen_random_uuid(),
   funeral_id    uuid not null references public.funeral_notices(id) on delete cascade,
-  kind          text not null check (kind in ('correction', 'takedown')),
+  kind          text not null check (kind in ('correction', 'takedown', 'enquiry')),
+  source        text not null default 'member' check (source in ('member', 'public', 'staff_logged')),   -- 'public' = no account (the website form)
+  contact_name  text check (contact_name is null or length(contact_name) <= 120),
+  relationship  text check (relationship is null or length(relationship) <= 120),
+  authority_check text check (authority_check in ('funeral_director_confirmation', 'independent_contact', 'original_submitter', 'not_verified')),   -- how STAFF established the requester's authority
   requester_id  uuid references public.profiles(id) on delete set null,
   contact       text check (contact is null or length(contact) <= 200),
   message       text not null check (length(btrim(message)) between 5 and 1000),
@@ -116,12 +128,18 @@ create trigger funeral_notices_validate before insert or update on public.funera
 
 -- ── staff = administrator or moderator (the existing moderation rule); directors are administrator-granted only ─────────────────────────────────
 create function public.funeral_staff() returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-  select auth.uid() is not null and (public.attribution_staff() or public.notices_admin());
+  select auth.uid() is not null and not public.account_is_closed(auth.uid()) and (public.attribution_staff() or public.notices_admin());
+$$;
+
+-- Staff notes are SUPPLEMENTARY and never the evidence record: they must not carry a telephone number or email address (the structured fields record method,
+-- outcome, date and reviewer; the family's private contact details stay in the restricted submission, not in free text that is copied around).
+create function public.funeral_note_has_contact(p_text text) returns boolean language sql immutable as $$
+  select p_text is not null and (p_text ~ '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' or p_text ~ '(\+?[0-9][0-9 ().-]{7,}[0-9])');
 $$;
 
 -- who may ANNOUNCE an approved funeral notice (explicit user: the edge function passes the verified caller, nothing is trusted from the request)
 create function public.can_dispatch_funeral(p_user uuid) returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-  select p_user is not null and exists (select 1 from public.profiles p where p.id = p_user and (p.role in ('admin', 'moderator') or coalesce(p.is_platform_owner, false)));
+  select p_user is not null and exists (select 1 from public.profiles p where p.id = p_user and not public.account_is_closed(p_user) and (p.role in ('admin', 'moderator') or coalesce(p.is_platform_owner, false)));
 $$;
 
 create function public.admin_set_funeral_director(p_name text, p_user uuid, p_verify boolean default true) returns uuid
@@ -129,6 +147,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_id uuid;
 begin
   if not public.notices_admin() then raise exception 'Platform administrators only' using errcode = '42501'; end if;
+  if public.account_is_closed(p_user) then raise exception 'That account is closed' using errcode = '22023'; end if;
   select id into v_id from public.funeral_directors where business_name = p_name;
   if v_id is null then insert into public.funeral_directors (business_name) values (p_name) returning id into v_id; end if;
   if p_verify then update public.funeral_directors set verified_at = now(), verified_by = auth.uid() where id = v_id; end if;
@@ -142,7 +161,7 @@ create function public.submit_funeral_notice(p jsonb) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_id uuid; v_role text := coalesce(p->>'submitter_role', 'family'); v_dir uuid; v_area text := nullif(p->>'area_id', '');
 begin
-  if auth.uid() is null then raise exception 'Sign in to submit a notice' using errcode = '42501'; end if;
+  if auth.uid() is null or public.account_is_closed(auth.uid()) then raise exception 'Sign in to submit a notice' using errcode = '42501'; end if;
   if (select count(*) from public.funeral_notices where submitter_id = auth.uid() and created_at > now() - interval '24 hours') >= 3 then
     raise exception 'Please wait: you have submitted 3 notices in the last 24 hours' using errcode = '54000';
   end if;
@@ -282,11 +301,14 @@ begin
   return query select * from public.funeral_notices where p_status is null or status = p_status order by created_at desc limit 200;
 end $$;
 
-create function public.admin_funeral_review(p_id uuid, p_action text, p_note text default null, p_verification_method text default null) returns text
+create function public.admin_funeral_review(p_id uuid, p_action text, p_note text default null, p_verification_method text default null,
+  p_verification_outcome text default null, p_followup text default null, p_rejection_code text default null) returns text
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare f public.funeral_notices%rowtype; v_until timestamptz;
 begin
   if not public.funeral_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
+  if public.funeral_note_has_contact(p_note) then raise exception 'Do not put telephone numbers or email addresses in a note: record how it was verified in the structured fields' using errcode = '22023'; end if;
+  if p_followup is not null and p_followup not in ('none', 'callback_later', 'awaiting_funeral_director', 'awaiting_family_reply', 'refer_to_administrator') then raise exception 'Unknown follow-up' using errcode = '22023'; end if;
   select * into f from public.funeral_notices where id = p_id for update;
   if not found then raise exception 'Unknown notice' using errcode = 'P0002'; end if;
   if p_action = 'start_review' then
@@ -295,23 +317,24 @@ begin
   elsif p_action = 'request_info' then
     if f.status not in ('submitted', 'in_review') then raise exception 'Not under review' using errcode = '22023'; end if;
     if p_note is null or btrim(p_note) = '' then raise exception 'Say what is needed' using errcode = '22023'; end if;
-    update public.funeral_notices set status = 'needs_info', review_message = btrim(p_note), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
+    update public.funeral_notices set status = 'needs_info', review_message = btrim(p_note), followup_action = coalesce(p_followup, 'awaiting_family_reply'), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
   elsif p_action = 'approve' then
     if f.status not in ('submitted', 'in_review') then raise exception 'Not under review' using errcode = '22023'; end if;
-    if p_verification_method is null or p_note is null or btrim(p_note) = '' then
-      raise exception 'Record how the announcement was verified (method and note) before approving' using errcode = '22023';
-    end if;
+    if p_verification_method is null then raise exception 'Record how the announcement was verified (method) before approving' using errcode = '22023'; end if;
+    if p_verification_outcome is not null and p_verification_outcome <> 'confirmed' then raise exception 'A notice can only be approved when the verification outcome is confirmed' using errcode = '22023'; end if;     -- approving IS confirming
     v_until := coalesce(f.service_at, now()) + interval '60 days';
-    update public.funeral_notices set status = 'approved', verification_method = p_verification_method, verified_by = auth.uid(), verified_at = now(),
-           verification_note = btrim(p_note), reviewed_by = auth.uid(), reviewed_at = now(), published_at = now(), display_until = greatest(v_until, now() + interval '14 days'),
-           review_message = null where id = p_id;
+    update public.funeral_notices set status = 'approved', verification_method = p_verification_method, verification_outcome = 'confirmed', verified_by = auth.uid(), verified_at = now(),
+           verification_note = nullif(btrim(coalesce(p_note, '')), ''), followup_action = coalesce(p_followup, 'none'), reviewed_by = auth.uid(), reviewed_at = now(), published_at = now(),
+           display_until = greatest(v_until, now() + interval '14 days'), review_message = null where id = p_id;
   elsif p_action = 'reject' then
     if f.status not in ('submitted', 'in_review', 'needs_info') then raise exception 'Not under review' using errcode = '22023'; end if;
-    update public.funeral_notices set status = 'rejected', review_note = btrim(coalesce(p_note, '')), review_message = nullif(btrim(coalesce(p_note, '')), ''), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
+    if p_rejection_code is not null and p_rejection_code not in ('unverifiable', 'duplicate', 'not_a_funeral_announcement', 'inappropriate', 'other') then raise exception 'Unknown rejection reason' using errcode = '22023'; end if;
+    update public.funeral_notices set status = 'rejected', review_note = btrim(coalesce(p_note, '')), review_message = nullif(btrim(coalesce(p_note, '')), ''), rejection_code = p_rejection_code,
+           verification_outcome = coalesce(p_verification_outcome, verification_outcome), followup_action = coalesce(p_followup, 'none'), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id;
   else
     raise exception 'Unknown action' using errcode = '22023';
   end if;
-  perform public.notice_audit(case p_action when 'approve' then 'funeral_published' else 'funeral_reviewed' end, null, null, p_id, jsonb_build_object('action', p_action, 'method', p_verification_method));
+  perform public.notice_audit(case p_action when 'approve' then 'funeral_published' else 'funeral_reviewed' end, null, null, p_id, jsonb_build_object('action', p_action, 'method', p_verification_method, 'outcome', p_verification_outcome));
   return (select status from public.funeral_notices where id = p_id);
 end $$;
 
@@ -319,6 +342,7 @@ create function public.admin_funeral_takedown(p_id uuid, p_reason text) returns 
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if not public.funeral_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
+  if public.funeral_note_has_contact(p_reason) then raise exception 'Do not put telephone numbers or email addresses in a note' using errcode = '22023'; end if;
   update public.funeral_notices set status = 'taken_down', review_note = btrim(coalesce(p_reason, '')), reviewed_by = auth.uid(), reviewed_at = now() where id = p_id and status = 'approved';
   if not found then raise exception 'Unknown published notice' using errcode = 'P0002'; end if;
   perform public.notice_audit('funeral_taken_down', null, null, p_id, jsonb_build_object('by', 'staff', 'reason', p_reason));
@@ -331,14 +355,20 @@ begin
   return query select * from public.funeral_change_requests where status = 'open' order by created_at;
 end $$;
 
-create function public.admin_funeral_resolve_change(p_request uuid, p_outcome text, p_note text default null, p_correction jsonb default null) returns void
+create function public.admin_funeral_resolve_change(p_request uuid, p_outcome text, p_note text default null, p_correction jsonb default null, p_authority_check text default null) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare r public.funeral_change_requests%rowtype;
 begin
   if not public.funeral_staff() then raise exception 'Staff only' using errcode = '42501'; end if;
   if p_outcome not in ('actioned', 'declined') then raise exception 'Unknown outcome' using errcode = '22023'; end if;
+  if p_authority_check is not null and p_authority_check not in ('funeral_director_confirmation', 'independent_contact', 'original_submitter', 'not_verified') then raise exception 'Unknown authority check' using errcode = '22023'; end if;
+  if public.funeral_note_has_contact(p_note) then raise exception 'Do not put telephone numbers or email addresses in a note' using errcode = '22023'; end if;
   select * into r from public.funeral_change_requests where id = p_request and status = 'open' for update;
   if not found then raise exception 'Unknown open request' using errcode = 'P0002'; end if;
+  -- a NO-ACCOUNT request is never trusted by itself: staff must record how the requester's authority was established independently before anything changes
+  if p_outcome = 'actioned' and r.source in ('public', 'staff_logged') and coalesce(p_authority_check, 'not_verified') = 'not_verified' then
+    raise exception 'Verify the requester independently (funeral director or independent contact) and record how before acting' using errcode = '22023';
+  end if;
   if p_outcome = 'actioned' and r.kind = 'takedown' then perform public.admin_funeral_takedown(r.funeral_id, coalesce(p_note, 'Takedown requested')); end if;
   if p_outcome = 'actioned' and r.kind = 'correction' and p_correction is not null then
     update public.funeral_notices set
@@ -352,7 +382,8 @@ begin
      where id = r.funeral_id and status = 'approved';
     perform public.notice_audit('funeral_corrected', null, null, r.funeral_id, jsonb_build_object('by', 'staff', 'request', p_request));
   end if;
-  update public.funeral_change_requests set status = p_outcome, handled_by = auth.uid(), handled_at = now(), outcome_note = p_note where id = p_request;
+  update public.funeral_change_requests set status = p_outcome, handled_by = auth.uid(), handled_at = now(), outcome_note = p_note, authority_check = p_authority_check,
+         contact = null, contact_name = null where id = p_request;     -- the enquirer's details are not needed once the outcome is recorded
 end $$;
 
 -- ── notification: only what the family approved, discreetly; never a name unless they said so ───────────────────────────────────────────────────
@@ -418,17 +449,18 @@ begin
 end $$;
 
 -- ── grants ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+revoke all on function public.funeral_note_has_contact(text) from public, anon, authenticated;
 revoke all on function public.funeral_staff(), public.admin_set_funeral_director(text, uuid, boolean), public.submit_funeral_notice(jsonb), public.my_funeral_submissions(), public.my_funeral_submission(uuid),
   public.update_my_funeral_submission(uuid, jsonb), public.withdraw_my_funeral_notice(uuid), public.get_funeral_notices(text[], integer, integer), public.get_funeral_notice(uuid),
-  public.request_funeral_notice_change(uuid, text, text, text), public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text),
-  public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(), public.admin_funeral_resolve_change(uuid, text, text, jsonb),
+  public.request_funeral_notice_change(uuid, text, text, text), public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text, text, text, text),
+  public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(), public.admin_funeral_resolve_change(uuid, text, text, jsonb, text),
   public.funeral_notification_text(uuid), public.funeral_dispatchable(uuid), public.funeral_claim_dispatch(uuid, uuid), public.funeral_dispatch_recipients(uuid, integer),
   public.funeral_record_delivery(uuid, uuid, text, text), public.can_dispatch_funeral(uuid) from public, anon, authenticated;
 grant execute on function public.get_funeral_notices(text[], integer, integer), public.get_funeral_notice(uuid) to anon, authenticated, service_role;
 grant execute on function public.funeral_staff(), public.admin_set_funeral_director(text, uuid, boolean), public.submit_funeral_notice(jsonb), public.my_funeral_submissions(), public.my_funeral_submission(uuid),
   public.update_my_funeral_submission(uuid, jsonb), public.withdraw_my_funeral_notice(uuid), public.request_funeral_notice_change(uuid, text, text, text),
-  public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text), public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(),
-  public.admin_funeral_resolve_change(uuid, text, text, jsonb) to authenticated;
+  public.admin_funeral_queue(text), public.admin_funeral_review(uuid, text, text, text, text, text, text), public.admin_funeral_takedown(uuid, text), public.admin_funeral_change_requests(),
+  public.admin_funeral_resolve_change(uuid, text, text, jsonb, text) to authenticated;
 grant execute on function public.funeral_notification_text(uuid), public.funeral_dispatchable(uuid), public.funeral_claim_dispatch(uuid, uuid),
   public.funeral_dispatch_recipients(uuid, integer), public.funeral_record_delivery(uuid, uuid, text, text), public.can_dispatch_funeral(uuid) to service_role;
 

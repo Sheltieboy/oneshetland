@@ -76,6 +76,7 @@ const SUITES = [
   'supabase/tests/notices-alerts-core.node.test.ts',
   'supabase/tests/notices-alerts-audience.node.test.ts',
   'supabase/tests/notices-alerts-funeral.node.test.ts',
+  'supabase/tests/notices-alerts-funeral-privacy.node.test.ts',
   'supabase/tests/notices-alerts-imports.node.test.ts',
   'supabase/tests/notices-alerts-performance.node.test.ts',
   'supabase/tests/notices-alerts-member.node.test.ts',
@@ -86,6 +87,7 @@ const SUITES = [
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
 const selected = process.env.ISOLATED_ONLY ? SUITES.filter((s) => s.includes(process.env.ISOLATED_ONLY)) : SUITES;
+if (selected.length === 0) { console.error(`ISOLATED_ONLY=${process.env.ISOLATED_ONLY} matches no suite: refusing to run (an empty list would make node --test discover every test file).`); process.exit(2); }
 
 // macOS ships a locale that makes the postmaster multithread during startup
 // ("postmaster became multithreaded during startup"), so pin a plain one for

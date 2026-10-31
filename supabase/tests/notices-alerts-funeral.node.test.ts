@@ -55,10 +55,10 @@ describe('submission and verification', () => {
       assert.match(as(who, `select count(*) from ${t}`), /permission denied/, `${who} ${t}`);
     }
   });
-  test('3 approval cannot rest on the tick-box: a verification method AND note are mandatory, only staff may approve, and the database refuses an unverified approval even to its owner', () => {
+  test('3 approval cannot rest on the tick-box: a verification method is mandatory (a note is supplementary), only staff may approve, and the database refuses an unverified approval even to its owner', () => {
     const id = submit('A3', { full_name: 'Needs Verification' });
     assert.match(review('O', id, 'approve'), /Record how the announcement was verified/);
-    assert.match(review('O', id, 'approve', null, 'phone_callback'), /Record how/);
+    assert.match(review('O', id, 'approve', null, null), /Record how/);
     assert.match(review('O', id, 'approve', 'Looks fine'), /Record how/);
     for (const who of ['A3', 'A', 'H', 'anon'] as const) assert.match(review(who, id, 'approve', 'x', 'phone_callback'), /Staff only|permission denied/, who);
     assert.equal(status(id), 'submitted');

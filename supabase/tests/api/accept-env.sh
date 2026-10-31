@@ -33,7 +33,7 @@ dpsql postgres <<'SQL'
 create function public.is_admin() returns boolean language sql stable security definer set search_path to 'public' as $$ select exists (select 1 from public.profiles where id = auth.uid() and (role = 'admin' or is_platform_owner = true)); $$;
 grant execute on function public.is_admin() to anon, authenticated, service_role;
 grant execute on function public.is_hub_admin(uuid, uuid), public.is_hub_member(uuid, uuid) to anon, authenticated, service_role;
-alter table notices add column lat numeric, add column lng numeric; alter table profiles add column display_name text, add column location_area text;
+alter table notices add column lat numeric, add column lng numeric; alter table profiles add column display_name text, add column location_area text, add column deleted_at timestamptz, add column is_active boolean default true;
 alter table hubs add column logo_url text, add column brand_color text, add column type text default 'community', add column description text, add column cover_url text, add column contact_email text, add column contact_phone text, add column website text, add column area text, add column join_mode text default 'open', add column memberships_enabled boolean default false, add column directory_enabled boolean default false, add column is_charity boolean default false, add column charity_number text, add column created_at timestamptz default now(); alter table local_businesses add column logo_url text, add column brand_color text;
 alter table hub_campaigns add column raised_pence int default 0, add column goal_pence int default 0, add column donor_count int default 0, add column ends_at timestamptz, add column status text default 'active';
 create policy "hub_campaigns read" on hub_campaigns for select using (true);
@@ -54,7 +54,7 @@ create table jobs (id uuid primary key default gen_random_uuid(), title text, lo
 create table runs (id uuid primary key default gen_random_uuid(), origin_region_id uuid references regions(id), destination_region_id uuid references regions(id));
 create table delivery_requests (id uuid primary key default gen_random_uuid(), destination_region_id uuid references regions(id), destination_address text);
 SQL
-for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection 20261129000000_notices_alerts_publishers 20261129010000_notices_alerts_core 20261129020000_notices_alerts_audience 20261129030000_funeral_notices 20261129040000_notice_imports 20261129050000_member_notices; do dpsql postgres < supabase/migrations/$m.sql; done
+for m in 20261121000000_event_notice_attribution 20261127000000_canonical_geography_foundation 20261127010000_geography_alias_ambiguity 20261128000000_notices_structural_readiness 20261128010000_notices_read_protection 20261129000000_notices_alerts_publishers 20261129010000_notices_alerts_core 20261129020000_notices_alerts_audience 20261129030000_funeral_notices 20261129040000_notice_imports 20261129050000_member_notices 20261129060000_funeral_privacy; do dpsql postgres < supabase/migrations/$m.sql; done
 dpsql postgres < supabase/tests/api/ui-site-schema.sql
 # the existing production notification tables (shapes copied from the baseline / spine migrations): the delete-account function removes the member's rows from them
 dpsql postgres <<'SQL'
@@ -64,8 +64,8 @@ grant select, insert, update, delete on notification_preferences, push_tokens to
 SQL
 # the website's account query selects these profile columns (the reduced schema has no use for them otherwise)
 dpsql postgres <<'SQL'
-alter table profiles add column if not exists phone text, add column if not exists avatar_url text, add column if not exists bio text, add column if not exists is_active boolean default true, add column if not exists onboarding_completed_at timestamptz,
-  add column if not exists games_handle text, add column if not exists deleted_at timestamptz;     -- the delete-account function scrubs these too
+alter table profiles add column if not exists phone text, add column if not exists avatar_url text, add column if not exists bio text, add column if not exists onboarding_completed_at timestamptz,
+  add column if not exists games_handle text;     -- the delete-account function scrubs these too
 SQL
 dpsql supabase_admin <<'SQL'
 alter role supabase_auth_admin with password 'proofpw';

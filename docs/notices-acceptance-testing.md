@@ -22,3 +22,8 @@ Android emulator: `bash supabase/tests/api/accept-metro.sh start` (patches `metr
 Stop everything: `bash supabase/tests/api/accept-env.sh stop`.
 
 What the suite proves is listed in the acceptance report; what it cannot (real push, quiet-hours decisions, email, the deployed edge functions, a signed-in iPhone) is listed in `docs/notices-known-issues.md`.
+
+## Funeral privacy and deletion (31 Oct 2026)
+* Isolated database: `ISOLATED_ONLY=funeral-privacy npm run test:isolated` (43 tests). **Use a substring that matches a listed suite**: an unmatched filter used to fall through to `node --test` discovering every file; `scripts/isolated-pg.mjs` now refuses an empty selection.
+* Real deletion path: `ACCEPT_RUN=1 node --test supabase/tests/api/accept-delete-account.node.test.ts` after `accept-env.sh start` and `accept-seed.mjs` (16 tests: every funeral state, memberships, administrators and moderators, partial failure and recovery, the production sequence).
+* Run acceptance suites one at a time (shared database).
