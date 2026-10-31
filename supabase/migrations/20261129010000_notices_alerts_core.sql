@@ -280,7 +280,8 @@ create function public.get_public_notices(
   p_level text default 'all', p_area_ids text[] default null, p_category text default null, p_limit integer default 20, p_offset integer default 0)
 returns table (id uuid, title text, body text, action_text text, severity text, category text, category_label text, published_at timestamptz, starts_at timestamptz,
                expires_at timestamptz, review_at timestamptz, link_url text, level integer, is_essential_active boolean, publisher jsonb, area_ids text[], area_names text[],
-               publisher_hub_id uuid, publisher_business_id uuid, event_id uuid, campaign_id uuid, image_url text)
+               publisher_hub_id uuid, publisher_business_id uuid, event_id uuid, campaign_id uuid, image_url text,
+               publisher_logo_url text, publisher_brand_color text, hub_slug text, business_slug text)
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare v_nb text[];
 begin
@@ -300,8 +301,10 @@ begin
            public.notice_publisher_display(b.id),
            coalesce((select array_agg(na.area_id order by na.area_id) from public.notice_areas na where na.notice_id = b.id), '{}'),
            coalesce((select array_agg(a.name_display order by a.name_display) from public.notice_areas na join public.areas a on a.id = na.area_id where na.notice_id = b.id), '{}'),
-           b.publisher_hub_id, b.publisher_business_id, b.event_id, b.campaign_id, b.image_url
+           b.publisher_hub_id, b.publisher_business_id, b.event_id, b.campaign_id, b.image_url,
+           coalesce(h.logo_url, lb.logo_url), coalesce(h.brand_color, lb.brand_color), h.slug, lb.slug
       from base b left join public.notice_categories c on c.id = b.category
+      left join public.hubs h on h.id = b.publisher_hub_id left join public.local_businesses lb on lb.id = b.publisher_business_id
      where (p_level = 'all' or (p_level = 'essential' and b.lvl = 1) or (p_level = 'official' and b.lvl = 2) or (p_level = 'community' and b.lvl = 3))
      order by b.ess desc, b.is_pinned desc, b.published_at desc, b.id
      limit p_limit offset p_offset;

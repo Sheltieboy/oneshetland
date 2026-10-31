@@ -71,6 +71,7 @@ export function buildDatabase(through: number = NEW_MIGRATIONS.length) {
     create function public.is_admin() returns boolean language sql stable security definer set search_path to 'public' as $$
       select exists (select 1 from public.profiles where id = auth.uid() and (role = 'admin' or is_platform_owner = true)); $$;
     alter table notices add column lat numeric, add column lng numeric; alter table profiles add column display_name text; alter table profiles add column location_area text;
+    alter table hubs add column logo_url text, add column brand_color text; alter table local_businesses add column logo_url text, add column brand_color text;
     create table regions (id uuid primary key default gen_random_uuid(), slug text unique not null, name text not null, display_order int);
     create table jobs (id uuid primary key default gen_random_uuid(), title text, locality text, location text);
     create table runs (id uuid primary key default gen_random_uuid(), origin_region_id uuid references regions(id), destination_region_id uuid references regions(id));

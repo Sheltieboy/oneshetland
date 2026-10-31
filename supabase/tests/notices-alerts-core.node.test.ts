@@ -29,7 +29,7 @@ const publish = (who: Parameters<typeof as>[0], o: Partial<{ pub: string; title:
     p_expires_at => ${a.exp}, p_starts_at => ${a.start}, p_link_url => ${a.link === 'null' ? 'null' : `'${a.link}'`}, p_action_text => ${a.act === 'null' ? 'null' : a.act}, p_is_essential => ${a.ess}, p_review_at => ${a.ess ? a.review : 'null'})`);
   return failed(out) ? out : idOf(out);
 };
-const essentialIds = (who: Parameters<typeof as>[0] = 'anon', areas = 'null') => as(who, `select id from public.get_essential_alerts(${areas})`).split('\n').filter((l) => /^[0-9a-f-]{36}$/.test(l.trim()));
+const essentialIds = (who: Parameters<typeof as>[0] = 'anon', areas = 'null') => { const o = as(who, `select id from public.get_essential_alerts(${areas})`); if (failed(o)) throw new Error(o); return o.split('\n').filter((l) => /^[0-9a-f-]{36}$/.test(l.trim())); };
 const status = (id: string) => scalar(`select status from notices where id='${id}'`);
 const audit = (event: string, extra = '') => Number(scalar(`select count(*) from notice_audit_log where event='${event}' ${extra}`));
 
