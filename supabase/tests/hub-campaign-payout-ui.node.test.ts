@@ -98,7 +98,7 @@ describe('donate screen — card and wallet both start here', () => {
   test('replaced by the unavailable state before any form, card button or wallet option renders', () => {
     const guard = src.indexOf('donated == null && !donationActionAvailable(true, payoutReady)');
     assert.ok(guard > 0, 'guard present');
-    assert.ok(guard < src.indexOf('onDonate'), 'before the Donate button');
+    assert.ok(guard < src.indexOf('<Button label={`Donate'), 'before the Donate button');
     assert.ok(guard < src.indexOf('<ConfirmPaymentSheet'), 'before the payment sheet (card and wallet)');
     assert.match(src.slice(guard, guard + 900), /DONATIONS_UNAVAILABLE\.title[\s\S]*DONATIONS_UNAVAILABLE\.body/);
   });
