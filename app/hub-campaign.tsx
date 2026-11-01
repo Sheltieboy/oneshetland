@@ -20,7 +20,8 @@ import { ContentActions } from '@/components/ContentActions';
 import { formatPence } from '@/lib/local-api';
 import {
   fetchCampaign, fetchHub, fetchCampaignDonors,
-  type HubCampaign, type Hub, type DonorWallEntry, campaignAcceptsDonations } from '@/lib/hubs-api';
+  type HubCampaign, type Hub, type DonorWallEntry, campaignAcceptsDonations, fetchCampaignPayoutReady } from '@/lib/hubs-api';
+import { DONATIONS_UNAVAILABLE, donationActionAvailable } from '@/lib/campaign-payout-state';
 
 const S = SECTIONS.community;
 function tint(hex?: string | null): string {
@@ -38,6 +39,8 @@ export default function HubCampaignScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  // null = could not be read: the Donate button stays and the server still decides.
+  const [payoutReady, setPayoutReady] = useState<boolean | null>(null);
 
   const shareUrl = id ? `https://oneshetland.com/give/${id}` : '';
 
@@ -47,8 +50,8 @@ export default function HubCampaignScreen() {
       const c = await fetchCampaign(id);
       setCampaign(c);
       if (c) {
-        const [h, d] = await Promise.all([fetchHub(c.hub_id), fetchCampaignDonors(c.id).catch(() => [])]);
-        setHub(h); setDonors(d);
+        const [h, d, ready] = await Promise.all([fetchHub(c.hub_id), fetchCampaignDonors(c.id).catch(() => []), fetchCampaignPayoutReady(c.id)]);
+        setHub(h); setDonors(d); setPayoutReady(ready);
       }
     } finally { setLoading(false); }
   }, [id]);
@@ -135,12 +138,17 @@ export default function HubCampaignScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {campaignAcceptsDonations(campaign) ? (
+      {donationActionAvailable(campaignAcceptsDonations(campaign), payoutReady) ? (
         <View style={styles.footer}>
           <TouchableOpacity style={[styles.donateBtn, { backgroundColor: accent }]} onPress={() => router.push(`/hub-donate?campaign=${campaign.id}`)} activeOpacity={0.85}>
             <FontAwesome5 name="heart" size={15} color="#fff" solid />
             <Text style={styles.donateText}>Donate</Text>
           </TouchableOpacity>
+        </View>
+      ) : campaignAcceptsDonations(campaign) ? (
+        <View style={styles.footer} accessibilityRole="alert">
+          <Text style={styles.unavailableTitle}>{DONATIONS_UNAVAILABLE.title}</Text>
+          <Text style={styles.closedText}>{DONATIONS_UNAVAILABLE.body}</Text>
         </View>
       ) : (
         <View style={styles.footer}><Text style={styles.closedText}>This fundraiser has closed. Thank you to everyone who gave.</Text></View>
@@ -216,5 +224,6 @@ const styles = StyleSheet.create({
   footer: { padding: spacing.md, paddingBottom: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: '#fff' },
   donateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.lg, paddingVertical: 16 },
   donateText: { color: '#fff', fontSize: fontSize.md, fontWeight: '800' },
+  unavailableTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 },
   closedText: { fontSize: fontSize.sm, color: colors.textMuted, textAlign: 'center' },
 });

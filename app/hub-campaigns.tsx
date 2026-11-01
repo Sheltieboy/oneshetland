@@ -29,10 +29,11 @@ import { useAlert } from '@/components/BrandedAlert';
 import { uploadHubImage, type PickedFile } from '@/lib/image-upload';
 import { formatPence } from '@/lib/local-api';
 import {
-  fetchHub, fetchHubCampaigns, createCampaign, updateCampaign, fetchHubDonations, createHubNotice,
+  fetchHub, fetchHubCampaigns, createCampaign, updateCampaign, fetchHubDonations, createHubNotice, fetchHubPayoutReady,
   type Hub, type HubCampaign,
 } from '@/lib/hubs-api';
 import { track } from '@/lib/analytics';
+import { CAMPAIGN_PUBLISH_BLOCKED, campaignWriteMessage } from '@/lib/campaign-payout-state';
 
 const S = SECTIONS.community;
 const DURATIONS = [
@@ -55,6 +56,8 @@ export default function HubCampaignsScreen() {
   const { alert } = useAlert();
   const [hub, setHub] = useState<Hub | null>(null);
   const [campaigns, setCampaigns] = useState<HubCampaign[]>([]);
+  // hub_payout_ready(): the same rule the database enforces when a fundraiser is published or reopened.
+  const [payoutReady, setPayoutReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -72,8 +75,8 @@ export default function HubCampaignsScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const [h, c] = await Promise.all([fetchHub(id), fetchHubCampaigns(id)]);
-      setHub(h); setCampaigns(c);
+      const [h, c, ready] = await Promise.all([fetchHub(id), fetchHubCampaigns(id), fetchHubPayoutReady(id)]);
+      setHub(h); setCampaigns(c); setPayoutReady(ready);
     } finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -81,7 +84,11 @@ export default function HubCampaignsScreen() {
 
   const accent = tint(hub?.brand_color);
 
-  const openNew = () => { setEditId(null); setTitle(''); setStory(''); setGoalText(''); setDurationIdx(0); setCoverUrl(null); setCoverFile(null); setPostNotice(true); setEditorOpen(true); };
+  const setUpPayouts = () => router.push(`/hub-payouts?id=${id}`);
+  const openNew = () => {
+    if (!payoutReady) { alert({ title: CAMPAIGN_PUBLISH_BLOCKED.title, message: CAMPAIGN_PUBLISH_BLOCKED.body, actions: [{ label: 'Not now', style: 'cancel' }, { label: CAMPAIGN_PUBLISH_BLOCKED.cta ?? 'Set up payouts', onPress: setUpPayouts }] }); return; }
+    setEditId(null); setTitle(''); setStory(''); setGoalText(''); setDurationIdx(0); setCoverUrl(null); setCoverFile(null); setPostNotice(true); setEditorOpen(true);
+  };
   const openEdit = (c: HubCampaign) => {
     setEditId(c.id); setTitle(c.title); setStory(c.story ?? ''); setGoalText((c.goal_pence / 100).toString());
     setDurationIdx(0); setCoverUrl(c.cover_url ?? null); setCoverFile(null); setEditorOpen(true);
@@ -126,13 +133,15 @@ export default function HubCampaignsScreen() {
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditorOpen(false); load();
-    } catch (e: any) { alert({ title: 'Could not save', message: e?.message ?? '' }); }
+    } catch (e: any) { alert({ title: 'Could not save', message: campaignWriteMessage(e) }); }
     finally { setSaving(false); }
   };
 
   const toggleStatus = (c: HubCampaign) => {
     const next = c.status === 'active' ? 'closed' : 'active';
-    updateCampaign(c.id, { status: next }).then(load).catch(e => alert({ title: 'Could not update', message: e?.message ?? '' }));
+    // Closing is always allowed. Reopening publishes again, so it needs payouts (the database enforces this too).
+    if (next === 'active' && !payoutReady) { alert({ title: CAMPAIGN_PUBLISH_BLOCKED.title, message: CAMPAIGN_PUBLISH_BLOCKED.body }); return; }
+    updateCampaign(c.id, { status: next }).then(load).catch(e => alert({ title: 'Could not update', message: campaignWriteMessage(e) }));
   };
 
   const exportGiftAid = async () => {
@@ -170,6 +179,14 @@ export default function HubCampaignsScreen() {
     >
       <ScrollView contentContainerStyle={[styles.content, contentContainer(screenWidth)]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}>
+
+        {!payoutReady ? (
+          <View style={styles.payoutBanner}>
+            <Text style={styles.payoutBannerTitle}>{CAMPAIGN_PUBLISH_BLOCKED.title}</Text>
+            <Text style={styles.payoutBannerBody}>{CAMPAIGN_PUBLISH_BLOCKED.body}</Text>
+            <Button label={CAMPAIGN_PUBLISH_BLOCKED.cta ?? 'Set up payouts'} icon="university" color={accent} onPress={setUpPayouts} fullWidth style={{ marginTop: spacing.sm }} />
+          </View>
+        ) : null}
 
         {hub?.is_charity && hub?.charity_number ? (
           <Button label="Export Gift Aid claim" icon="file-export" variant="outline" color={accent}
@@ -259,6 +276,9 @@ export default function HubCampaignsScreen() {
 const styles = StyleSheet.create({
   content: { padding: spacing.md },
   giftAidBtn: { marginBottom: spacing.md },
+  payoutBanner: { backgroundColor: '#FFF7ED', borderRadius: radius.lg, borderWidth: 1, borderColor: '#FED7AA', padding: spacing.md, marginBottom: spacing.md },
+  payoutBannerTitle: { fontSize: fontSize.md, fontWeight: '800', color: '#9A3412' },
+  payoutBannerBody: { fontSize: fontSize.sm, color: '#7C2D12', marginTop: 4, lineHeight: 20 },
 
   card: { backgroundColor: '#fff', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

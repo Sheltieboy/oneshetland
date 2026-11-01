@@ -938,6 +938,17 @@ export async function fetchHubPayoutReady(hubId: string): Promise<boolean> {
   return data === true;
 }
 
+/**
+ * Can this campaign's hub currently be paid? campaign_payout_ready() — callable signed-out, because campaign
+ * pages are public. DISPLAY ONLY: card and wallet donations keep their own server-side checks. `null` means
+ * the answer could not be read (not "no"), so a transient failure never hides a working campaign.
+ */
+export async function fetchCampaignPayoutReady(campaignId: string): Promise<boolean | null> {
+  const { data, error } = await supabase.rpc('campaign_payout_ready', { p_campaign: campaignId });
+  if (error || typeof data !== 'boolean') return null;
+  return data;
+}
+
 export async function createHubOnboardingLink(hubId: string): Promise<{ url: string }> {
   const { data, error } = await supabase.functions.invoke('hub-onboard', { body: { hub_id: hubId } });
   if (error) {

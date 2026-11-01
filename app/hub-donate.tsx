@@ -27,8 +27,9 @@ import { ConfirmPaymentSheet } from '@/components/ConfirmPaymentSheet';
 import { useAlert } from '@/components/BrandedAlert';
 import { formatPence, fetchWalletBalance, walletCheckout, walletFailureNotice, type PaymentNotice } from '@/lib/local-api';
 import { useAttemptId } from '@/hooks/useAttemptId';
+import { DONATIONS_UNAVAILABLE, donationActionAvailable } from '@/lib/campaign-payout-state';
 import {
-  fetchCampaign, fetchHub, startHubDonation, confirmHubDonation,
+  fetchCampaign, fetchHub, startHubDonation, confirmHubDonation, fetchCampaignPayoutReady,
   type HubCampaign, type Hub, type GiftAidDeclaration,
 } from '@/lib/hubs-api';
 
@@ -52,6 +53,7 @@ export default function HubDonateScreen() {
   const [campaign, setCampaign] = useState<HubCampaign | null>(null);
   const [hub, setHub] = useState<Hub | null>(null);
   const [loading, setLoading] = useState(true);
+  const [payoutReady, setPayoutReady] = useState<boolean | null>(null);   // null = unknown: the server still decides
 
   const [amount, setAmount] = useState<number>(1000);
   const [customText, setCustomText] = useState('');
@@ -79,7 +81,10 @@ export default function HubDonateScreen() {
     try {
       const c = await fetchCampaign(campaignId);
       setCampaign(c);
-      if (c) setHub(await fetchHub(c.hub_id));
+      if (c) {
+        const [h, ready] = await Promise.all([fetchHub(c.hub_id), fetchCampaignPayoutReady(c.id)]);
+        setHub(h); setPayoutReady(ready);
+      }
     } finally { setLoading(false); }
   }, [campaignId]);
   useEffect(() => { load(); }, [load]);
@@ -203,6 +208,20 @@ export default function HubDonateScreen() {
   }
   if (!campaign || !hub) {
     return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.center}><Text style={styles.muted}>Campaign not found.</Text></View></SafeAreaView>;
+  }
+
+  // A deep link or an open screen for a live campaign whose hub has lost payout readiness. Never replaces the
+  // thank-you after a donation that did go through.
+  if (donated == null && !donationActionAvailable(true, payoutReady)) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScreenHeader title="Donate" onClose={() => router.back()} accent={S.color} />
+        <View style={styles.center}>
+          <Text style={[styles.muted, { fontWeight: '800', fontSize: fontSize.md }]}>{DONATIONS_UNAVAILABLE.title}</Text>
+          <Text style={[styles.muted, { textAlign: 'center', marginTop: 6, paddingHorizontal: spacing.lg }]}>{DONATIONS_UNAVAILABLE.body}</Text>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
