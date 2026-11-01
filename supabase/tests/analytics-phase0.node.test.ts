@@ -20,7 +20,7 @@ if (/supabase/i.test(DSN)) throw new Error('refusing to run against a Supabase D
 const MIG = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '20261130000000_analytics_phase0_accuracy.sql');
 const sql = (q: string) => { try { return execFileSync(PSQL, [DSN, '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', q], { encoding: 'utf8' }).trim(); } catch (e) { return `ERROR ${(e as any).stderr ?? e}`; } };
 const file = (q: string) => execFileSync(PSQL, [DSN, '-X', '-q', '-v', 'ON_ERROR_STOP=1'], { input: q, encoding: 'utf8' });
-const U = { admin: 'a0000000-0000-4000-8000-000000000001', m1: 'b0000000-0000-4000-8000-000000000001', m2: 'b0000000-0000-4000-8000-000000000002', m3: 'b0000000-0000-4000-8000-000000000003', test: 'b0000000-0000-4000-8000-000000000004', bot: 'b0000000-0000-4000-8000-000000000005', old: 'b0000000-0000-4000-8000-000000000006' };
+const U = { admin: 'a0000000-0000-4000-8000-000000000001', m1: 'b0000000-0000-4000-8000-000000000001', m2: 'b0000000-0000-4000-8000-000000000002', m3: 'b0000000-0000-4000-8000-000000000003', test: 'b0000000-0000-4000-8000-000000000004', m4: 'b0000000-0000-4000-8000-000000000007', staff: 'b0000000-0000-4000-8000-000000000008', bot: 'b0000000-0000-4000-8000-000000000005', old: 'b0000000-0000-4000-8000-000000000006' };
 const as = (uid: string, q: string) => sql(`begin; select set_config('request.jwt.claim.sub','${uid}',true); set local role authenticated; ${q}; commit;`);
 const json = (fn: string, days = 30) => { const o = as(U.admin, `select ${fn}(${days})::text`); const l = o.split('\n').find((x) => x.startsWith('{')); if (!l) throw new Error(o); return JSON.parse(l); };
 const D = (d: number) => `now() - interval '${d} days'`;
@@ -48,14 +48,15 @@ before(() => {
     create table public.local_boost_purchases (id uuid primary key default gen_random_uuid(), owner_id uuid, status text, amount_pence int, refunded_pence int default 0, created_at timestamptz default now());
     create table public.shift_boost_purchases (id uuid primary key default gen_random_uuid(), employer_id uuid, status text, amount_pence int, purchased_at timestamptz default now());
     create table public.local_wallet_transactions (id uuid primary key default gen_random_uuid(), user_id uuid, type text, amount_pence int, platform_fee_pence int, created_at timestamptz default now());
+    create table public.admin_config (key text primary key, value text);
     create table public.local_businesses (id uuid primary key default gen_random_uuid(), stripe_subscription_id text, subscription_tier text, subscription_until timestamptz);
     grant select on all tables in schema public, auth to authenticated;`);
   file(readFileSync(MIG, 'utf8'));
   file(`
-    insert into profiles (id, role, display_name) values ('${U.admin}','admin','Staff'), ('${U.m1}','customer','Ann'), ('${U.m2}','customer','Bea'), ('${U.m3}','customer','Cal'), ('${U.test}','customer','ZZ TEST Fixture'), ('${U.bot}','customer','Bot'), ('${U.old}','customer','Old');
+    insert into profiles (id, role, display_name) values ('${U.admin}','admin','Staff'), ('${U.m1}','customer','Ann'), ('${U.m2}','customer','Bea'), ('${U.m3}','customer','Cal'), ('${U.test}','customer','ZZ TEST Fixture'), ('${U.bot}','customer','Bot'), ('${U.old}','customer','Old'), ('${U.m4}','customer','Dee'), ('${U.staff}','customer','Staff Two');
     insert into auth.users (id, email, created_at, email_confirmed_at) values
       ('${U.admin}','staff@darrenfullerton.com', ${D(100)}, now()), ('${U.m1}','ann@example-real.co.uk', ${D(5)}, now()), ('${U.m2}','bea@example-real.co.uk', ${D(3)}, null), ('${U.m3}','cal@example-real.co.uk', ${D(2)}, now()),
-      ('${U.test}','zz.fixture@probe.invalid', ${D(2)}, now()), ('${U.bot}','bot@yahoo.com', ${D(1)}, null), ('${U.old}','old@example-real.co.uk', ${D(60)}, now());
+      ('${U.test}','zz.fixture@probe.invalid', ${D(2)}, now()), ('${U.bot}','bot@yahoo.com', ${D(1)}, null), ('${U.old}','old@example-real.co.uk', ${D(60)}, now()), ('${U.m4}','dee@example-real.co.uk', ${D(4)}, now()), ('${U.staff}','colleague@oneshetland.com', ${D(4)}, now());
     -- events: m1 mislabelled 'visitor' on web (the historical bug) but with a user_id; anon browsers; an admin who browsed anonymously first then signed in; a test account; unlabelled server events
     insert into analytics_events (event_name, user_id, anon_id, session_id, platform, user_type, object_type, object_id, is_conversion, category, occurred_at) values
       ('screen_viewed','${U.m1}','anon-m1','s1','web','visitor',null,null,false,'content_interaction', now()),
@@ -68,6 +69,7 @@ before(() => {
       ('screen_viewed','${U.admin}','anon-adm2','s5','app','admin',null,null,false,'content_interaction', now()),
       ('screen_viewed','${U.test}','anon-test','s6','app','user',null,null,false,'content_interaction', now()),
       ('job_applied','${U.m3}','anon-m3','s7','app','user','job','j2',true,'lead', now()),
+      ('content_viewed','${U.m4}','anon-admin','s8','web','visitor','event','e1',false,'content_interaction', now()),   -- a DIFFERENT member who once shared the administrator's browser: keeps their own activity
       ('screen_viewed','${U.m1}','anon-m1','s1','web','visitor',null,null,false,'content_interaction', ${D(45)});`);
   // ledger rows + server events: one real booking (confirmed twice = status toggling), one deleted booking (orphan), one real ticket order
   file(`
@@ -90,11 +92,11 @@ before(() => {
 
 describe('overview', () => {
   test('1 registrations are real new accounts in the window; internal/test accounts excluded; confirmed counted separately', () => {
-    const t = json('analytics_overview').totals; assert.equal(t.signups, 4, 'm1, m2, m3 and the bot account (the admin, the ZZ/probe account and the 60-day-old account are not new registrations)'); assert.equal(t.signups_confirmed, 2);
-    assert.equal(json('analytics_overview', 90).totals.signups, 5, 'the 60-day-old account joins a longer window');
+    const t = json('analytics_overview').totals; assert.equal(t.signups, 5, 'm1, m2, m3, m4 and the bot account (not the admin, the ZZ/probe account, the oneshetland.com colleague, or the 60-day-old account)'); assert.equal(t.signups_confirmed, 3);
+    assert.equal(json('analytics_overview', 90).totals.signups, 6, 'the 60-day-old account joins a longer window');
   });
   test('2 signed-in members are counted by user_id (a "visitor" label does not hide them); admin and test accounts are not members', () => {
-    const t = json('analytics_overview').totals; assert.equal(t.unique_users, 3, 'm1 (labelled visitor), m3 and m2 (whose ticket purchase was recorded); not the admin, not the ZZ account');
+    const t = json('analytics_overview').totals; assert.equal(t.unique_users, 4, 'm1 (labelled visitor), m3, m2 (ticket purchase) and m4 (shared the admin browser); not the admin, not the ZZ account');
   });
   test('3 anonymous visitors exclude anyone who signed in and anyone who is internal', () => {
     const t = json('analytics_overview').totals; assert.equal(t.unique_visitors, 2, 'anon-x and anon-y only: anon-m1 signed in, anon-admin belongs to an administrator');
@@ -102,12 +104,22 @@ describe('overview', () => {
   test('4 exclusion is at read time: nothing is deleted, and the numbers reconcile (raw = reportable + excluded)', () => {
     const o = json('analytics_overview'); const raw = Number(sql(`select count(*) from analytics_events where occurred_at >= ${D(30)}`));
     assert.equal(o.excluded.raw_events, raw); assert.equal(o.totals.events + o.excluded.internal_or_test + o.excluded.unmatched_ledger + o.excluded.duplicate_ledger, raw);
-    assert.equal(Number(sql(`select count(*) from analytics_events`)), 16, 'every row still stored');
+    assert.equal(Number(sql(`select count(*) from analytics_events`)), 17, 'every row still stored');
   });
   test('5 internal = admin user_type, admin/test account, or an anonymous id an administrator used', () => { assert.equal(json('analytics_overview').excluded.internal_or_test, 4, 'anon-admin x2, admin, ZZ account (the user_type admin row shares the admin account)'); });
   test('6 ledger events: a booking recorded twice counts once; events whose booking no longer exists are excluded', () => {
     const o = json('analytics_overview'); assert.equal(o.excluded.duplicate_ledger, 1); assert.equal(o.excluded.unmatched_ledger, 2);
     const t = o.by_category.find((c: any) => c.category === 'lead'); assert.equal(t.conversions, 2, 'one job application + one real booking');
+  });
+  test('5b a member who merely shared an administrator\'s browser keeps their own signed-in activity; only the NOT-signed-in events from that browser are internal', () => {
+    const o = json('analytics_overview'); assert.equal(o.top_content.find((c: any) => c.object_type === 'event')?.count, 1, 'm4 content view counted');
+    assert.equal(sql(`select count(*) from analytics_classified_events(${D(30)}, now() + interval '1 minute') c where c.anon_id = 'anon-admin' and c.user_id is null and c.reason = 'internal'`), '1');
+  });
+  test('5c the owner can add further internal accounts without any code change (admin_config analytics.internal_user_ids); nothing is deleted', () => {
+    sql(`insert into admin_config (key, value) values ('analytics.internal_user_ids', '${U.m4}, not-a-uuid')`);
+    try { const t = json('analytics_overview').totals; assert.equal(t.unique_users, 3); assert.equal(t.signups, 4, 'm4 is no longer a counted registration either'); }
+    finally { sql(`delete from admin_config where key = 'analytics.internal_user_ids'`); }
+    assert.equal(json('analytics_overview').totals.unique_users, 4);
   });
   test('7 the window is honoured (the 45-day-old event is outside 30 days and inside 90)', () => { assert.equal(json('analytics_overview', 90).totals.events - json('analytics_overview', 30).totals.events, 1); });
 });

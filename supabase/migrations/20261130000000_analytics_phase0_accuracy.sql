@@ -2,9 +2,10 @@
 -- Owner analytics, Phase 0: make the EXISTING /admin/analytics figures accurate. Replaces the two admin RPCs (same names, same JSON keys, additive new keys) and adds
 -- internal helpers. No tables, no data and no tracking are changed; analytics history is never deleted — exclusions happen only at READ time.
 --
---  * analytics_internal_users()      who counts as internal/test (administrators, platform owner, 'ZZ…' test profiles, known test e-mail domains)
+--  * analytics_internal_users()      who counts as internal/test (administrators, platform owner, 'ZZ…' test profiles, staff/test e-mail domains, plus an optional owner list in admin_config)
 --  * analytics_classified_events()   every raw event in a window with a reason it is excluded from reporting (or NULL = reportable):
---        internal         user_type 'admin', an internal user, or an anonymous id that was ever used by an internal user
+--        internal         user_type 'admin', an internal user, or a NOT-signed-in event from a browser id an internal user has used (a different member who merely shares that
+--                         device keeps their own activity)
 --        orphan_ledger    a server-recorded ledger event whose ledger row no longer exists (bursts of test/abuse activity that was later deleted)
 --        duplicate        the same ledger event repeated for the same order (status toggling): only the first is kept
 --  * analytics_overview(days)        reportable events only; sign-ups from auth.users (authoritative); signed-in users by user_id; anonymous visitors exclude anyone who signed in
@@ -19,7 +20,11 @@ language sql stable security definer set search_path = public, auth, pg_temp as 
       or coalesce(p.display_name, '') ~* '^zz' or coalesce(p.full_name, '') ~* '^zz'
   union
   select u.id from auth.users u
-   where lower(u.email) ~ '(@probe\.invalid|@testonshetland\.com|@darrenfullerton\.com|@example\.(com|org|net))$' or lower(u.email) ~ '^zz'
+   where lower(u.email) ~ '(@probe\.invalid|@testonshetland\.com|@oneshetland\.com|@darrenfullerton\.com|@example\.(com|org|net))$' or lower(u.email) ~ '^zz'
+  union
+  -- the owner's own list of further internal/test accounts (comma-separated account ids in admin_config 'analytics.internal_user_ids'); nothing is created by this migration
+  select x::uuid from public.admin_config c, regexp_split_to_table(coalesce(c.value, ''), '\s*,\s*') x
+   where c.key = 'analytics.internal_user_ids' and x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 $$;
 
 create or replace function public.analytics_classified_events(p_from timestamptz, p_to timestamptz)
@@ -30,7 +35,7 @@ language sql stable security definer set search_path = public, auth, pg_temp as 
   internal_anon as (select distinct e.anon_id from public.analytics_events e where e.user_id in (select uid from internal) and e.anon_id is not null),
   base as (
     select e.id, e.occurred_at, e.event_name, e.user_id, e.anon_id, e.session_id, e.platform, e.category, e.is_conversion, e.object_type, e.object_id, e.order_id,
-           coalesce(coalesce(e.user_type, '') = 'admin' or e.user_id in (select uid from internal) or e.anon_id in (select anon_id from internal_anon), false) as is_internal,
+           coalesce(coalesce(e.user_type, '') = 'admin' or e.user_id in (select uid from internal) or (e.user_id is null and e.anon_id in (select anon_id from internal_anon)), false) as is_internal,
            case when e.order_id is null then true else case e.event_name
              when 'event_ticket_purchased'    then exists (select 1 from public.event_ticket_orders o   where o.id = e.order_id)
              when 'unit_purchase_completed'   then exists (select 1 from public.book_unit_purchases o   where o.id = e.order_id)
