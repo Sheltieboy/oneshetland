@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
 import { getConfig } from '../_shared/admin-config.ts';
+import { REVALIDATED_KINDS, revalidatePost } from '../_shared/social-recipes.ts';
 
 /**
  * social-publisher — posts due, human-approved social_posts to the OneShetland
@@ -46,6 +47,8 @@ const corsHeaders = {
 
 interface PostRow {
   id: string;
+  kind: string;
+  entity_id: string | null;
   caption: string;
   image_url: string | null;
   link_url: string | null;
@@ -125,7 +128,7 @@ serve(async (req) => {
       return json({ ok: true, configured: false, due: due.length, note: 'Set META_PAGE_ID + META_PAGE_TOKEN to start publishing.' });
     }
 
-    const result = { posted: 0, failed: 0, skipped: 0, errors: [] as string[] };
+    const result = { posted: 0, failed: 0, skipped: 0, deferred: 0, errors: [] as string[] };
 
     for (const post of due) {
       // Stale guard: never dump old backlog onto the page (manual "post now" is exempt).
@@ -136,6 +139,18 @@ serve(async (req) => {
           .eq('id', post.id);
         result.skipped++;
         continue;
+      }
+
+      // The newer recipes are re-checked against live data immediately before sending: a draft may have waited days, and its notice /
+      // alert / visit / permission / fundraiser may have ended since. Invalid => skipped, never sent. A failed lookup => left for the next pass.
+      if (REVALIDATED_KINDS.has(post.kind)) {
+        const v = await revalidatePost(svc, post, now);
+        if (v.state === 'invalid') {
+          await svc.from('social_posts').update({ status: 'skipped', error: `no longer valid: ${v.reason ?? 'changed since drafted'}` }).eq('id', post.id);
+          result.skipped++;
+          continue;
+        }
+        if (v.state === 'unknown') { result.deferred++; continue; }
       }
 
       try {

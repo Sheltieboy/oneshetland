@@ -92,6 +92,7 @@ const SUITES = [
   'supabase/tests/reminder-runner-runtime.node.test.ts',
   'supabase/tests/reminder-runner-concurrency.node.test.ts',
   'supabase/tests/analytics-phase0.node.test.ts',
+  'supabase/tests/social-recipes-migration.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.

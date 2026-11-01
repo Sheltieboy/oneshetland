@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
+import { composeNewRecipes } from '../_shared/social-recipes.ts';
 
 /**
  * social-composer — the "Peerie Press" recipe runner (Phase 1).
@@ -16,6 +17,8 @@ import { requireCronSecret } from '../_shared/cron-auth.ts';
  *                        card never goes out looking empty)
  *   • event_spotlight  — events published by PREMIUM businesses get their own post
  *   • jobs_roundup     — Wednesdays: newest open jobs + total count
+ *   • notice_update · essential_alert · aald_memory · business_spotlight · hub_community ·
+ *     game_challenge · cruise_visit — see _shared/social-recipes.ts (disabled until switched on)
  *
  * Idempotent: social_posts has a unique (kind, entity_id) index, so re-runs
  * (or overlapping runs) can never queue a duplicate.
@@ -365,7 +368,15 @@ serve(async (req) => {
       } catch (e) { result.errors.push(`event_spotlight: ${e}`); }
     }
 
-    return json({ ok: true, ...result });
+    /* ── Newer recipes (notices, alerts, memories, businesses, hubs, games, cruise) ──────────────────
+       Logic lives in _shared/social-recipes.ts so the publisher can re-validate the same rules. All seven are
+       seeded DISABLED with autopilot OFF; essential_alert can never be autopilot. Existing recipes above are unchanged. */
+    let newRecipes: unknown = null;
+    try {
+      newRecipes = await composeNewRecipes({ svc, now, recipes, force, polish: polishCaption });
+    } catch (e) { result.errors.push(`new_recipes: ${e}`); }
+
+    return json({ ok: true, ...result, new_recipes: newRecipes });
   } catch (err) {
     console.error('[social-composer] fatal', err);
     return json({ error: String(err) }, 500);

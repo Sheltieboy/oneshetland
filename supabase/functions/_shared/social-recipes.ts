@@ -1,0 +1,628 @@
+/**
+ * social-recipes — the seven newer Social Studio recipes, as plain functions the composer and the publisher both call.
+ *
+ *   notice_update · essential_alert · aald_memory · business_spotlight · hub_community · game_challenge · cruise_visit
+ *
+ * Why a shared module: (1) the selection / freshness / safety rules are pure functions a test can run, and (2) the publisher
+ * re-asks `revalidatePost` immediately before sending, because a draft can sit in the queue for days and the thing it
+ * describes may have expired, been withdrawn, or lost its permission by then.
+ *
+ * Nothing here publishes. composeNewRecipes only INSERTS rows into social_posts (draft, or 'scheduled' when a recipe's autopilot
+ * is on — never for essential_alert). The publisher is unchanged apart from calling revalidatePost for these kinds.
+ *
+ * No Deno-only globals at module scope, so it also runs under node:test with a mocked client.
+ */
+
+export const SITE = 'https://oneshetland.com';
+export const go = (slug: string) => `${SITE}/go/${slug}`;
+
+export const NEW_KINDS = ['essential_alert', 'notice_update', 'cruise_visit', 'aald_memory', 'business_spotlight', 'hub_community', 'game_challenge'] as const;
+export type NewKind = typeof NEW_KINDS[number];
+/** Kinds the publisher re-checks just before sending. */
+export const REVALIDATED_KINDS = new Set<string>(NEW_KINDS);
+/** Kinds whose caption states facts, so the AI "warm-up" is never applied (it could soften or embellish). */
+const FACTUAL: ReadonlySet<string> = new Set(['essential_alert', 'notice_update', 'cruise_visit']);
+
+/* ── Defaults (the migration seeds the same values into social_recipes.config) ─────────────────────────────────── */
+
+export const DEFAULTS: Record<NewKind, Record<string, unknown>> = {
+  essential_alert:    { max_per_run: 1, min_hours_between: 6, min_remaining_hours: 2, max_pending: 2 },
+  notice_update:      { hour: 12, max_per_run: 1, max_per_week: 4, max_age_days: 7, min_remaining_hours: 24, max_pending: 3, include_person: false },
+  cruise_visit:       { hour: 8, max_per_run: 1, lead_days: 3, max_pending: 2, max_verified_age_days: 365 },
+  aald_memory:        { hour: 19, weekdays: ['Mon', 'Wed', 'Sat'], max_per_run: 1, max_pending: 3, min_body_chars: 80 },
+  business_spotlight: { hour: 13, weekdays: ['Tue', 'Fri'], max_per_run: 1, max_pending: 3, min_description_chars: 60, repeat_after_days: 90 },
+  hub_community:      { hour: 10, weekdays: ['Wed', 'Sat'], max_per_run: 1, max_pending: 2, min_description_chars: 40, repeat_after_days: 30 },
+  game_challenge:     { hour: 17, weekdays: ['Thu', 'Sun'], max_per_run: 1, max_pending: 2, games: ['guess_da_wird', 'spik_sprint', 'spik_snap', 'map_it'] },
+};
+/** Order matters: an alert is considered first so it gets the earliest free slot. */
+const ORDER: NewKind[] = ['essential_alert', 'notice_update', 'cruise_visit', 'aald_memory', 'business_spotlight', 'hub_community', 'game_challenge'];
+
+export type Candidate = {
+  kind: NewKind;
+  entity_type: string;
+  entity_id: string;
+  business_id?: string | null;
+  caption: string;
+  image_url: string | null;
+  link_url: string;
+  context: string;
+};
+
+/** Upper bound on candidates a selector builds per run (each may cost a lookup); a run posts at most a day's worth anyway. */
+const MAX_CANDIDATES = 8;
+
+type Svc = any;   // the Supabase service client; typed loosely so the test can pass a mock
+
+/* ── Europe/London time ────────────────────────────────────────────────────────────────────────────────────────── */
+
+export const londonParts = (d: Date) => {
+  const p = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', weekday: 'short', hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => p.find((x) => x.type === t)?.value ?? '';
+  return { ymd: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) % 24, minute: Number(get('minute')), weekday: get('weekday') };
+};
+
+/** The instant at which London wall-clock reads `ymd hour:minute`. DST-safe (two-step offset correction). */
+export function londonInstant(ymd: string, hour: number, minute = 0): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  let guess = new Date(Date.UTC(y, m - 1, d, hour, minute));
+  for (let i = 0; i < 2; i++) {
+    const lp = londonParts(guess);
+    const [ly, lm, ld] = lp.ymd.split('-').map(Number);
+    const diff = (Date.UTC(y, m - 1, d, hour, minute) - Date.UTC(ly, lm - 1, ld, lp.hour, lp.minute));
+    if (diff === 0) break;
+    guess = new Date(guess.getTime() + diff);
+  }
+  return guess;
+}
+
+const addDays = (ymd: string, n: number): string => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+};
+
+export const isoWeekKey = (d: Date): string => {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return `${t.getUTCFullYear()}-W${String(Math.ceil(((t.getTime() - yearStart.getTime()) / 86400_000 + 1) / 7)).padStart(2, '0')}`;
+};
+
+/* ── Spacing: one allocator for every new recipe ───────────────────────────────────────────────────────────────── */
+
+export type SlotOpts = {
+  now: Date;
+  /** Preferred London hour; null = as soon as allowed (alerts). */
+  preferredHour: number | null;
+  /** scheduled_for of every post already queued or posted around now (old recipes included). */
+  taken: Date[];
+  gapMinutes: number;
+  maxPerDay: number;
+  windowStartHour: number;
+  windowEndHour: number;
+  horizonDays: number;
+  /** Earliest allowed lead time after `now`, minutes. */
+  leadMinutes?: number;
+  /** [0,1) — injected so tests are deterministic. */
+  rand?: () => number;
+};
+
+export function allocateSlot(o: SlotOpts): Date | null {
+  const lead = o.leadMinutes ?? 30;
+  const earliest = o.now.getTime() + lead * 60_000;
+  const todayYmd = londonParts(o.now).ymd;
+  const sameDay = (a: Date, ymd: string) => londonParts(a).ymd === ymd;
+  const okAt = (t: Date, ymd: string): boolean => {
+    if (t.getTime() < earliest) return false;
+    const lp = londonParts(t);
+    if (lp.ymd !== ymd) return false;
+    const mins = lp.hour * 60 + lp.minute;
+    if (mins < o.windowStartHour * 60 || mins > o.windowEndHour * 60) return false;
+    if (o.taken.filter((x) => sameDay(x, ymd)).length >= o.maxPerDay) return false;
+    return o.taken.every((x) => Math.abs(x.getTime() - t.getTime()) >= o.gapMinutes * 60_000);
+  };
+  for (let day = 0; day <= o.horizonDays; day++) {
+    const ymd = addDays(todayYmd, day);
+    // A preferred hour outside the window (or none) means "as early as the window allows".
+    const pref = o.preferredHour != null && o.preferredHour >= o.windowStartHour && o.preferredHour <= o.windowEndHour ? o.preferredHour : o.windowStartHour;
+    const startMin = pref * 60;
+    for (let m = startMin; m <= o.windowEndHour * 60; m += 15) {
+      const base = londonInstant(ymd, Math.floor(m / 60), m % 60);
+      if (!okAt(base, ymd)) continue;
+      // A little human-looking jitter, kept only when it still satisfies every rule.
+      if (o.rand) {
+        const j = new Date(base.getTime() + Math.round((o.rand() * 2 - 1) * 7) * 60_000);
+        if (okAt(j, ymd)) return j;
+      }
+      return base;
+    }
+  }
+  return null;
+}
+
+/* ── Text safety ───────────────────────────────────────────────────────────────────────────────────────────────── */
+
+// Anything bereavement-related, or personal safeguarding, is never promoted automatically. Deliberately broad: a false positive just
+// means a human posts it by hand; a false negative is a distressing public post.
+const SENSITIVE = /\b(funeral|funerals|obituar(y|ies)|death|deaths|died|dies|dying|deceased|passed away|passing of|notice of (the )?passing|has passed|passed on|sad news|bereave\w*|condolence\w*|in memoriam|rest in peace|\bRIP\b|cremation|burial|interment|wake for|memorial service|coroner|fatal\w*|suicid\w*|self[- ]harm|missing person|abuse[sd]?|assault\w*|arrest\w*|court\b|police appeal)\b/i;
+export const isSensitiveText = (...parts: Array<string | null | undefined>): boolean => parts.some((p) => !!p && SENSITIVE.test(p));
+
+export function excerpt(text: string | null | undefined, max: number): string {
+  const t = (text ?? '').replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  if (stop > max * 0.5) return cut.slice(0, stop + 1);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > 0 ? cut.slice(0, sp) : cut).replace(/[,;:\-–—]$/, '') + '…';
+}
+
+export const httpsUrl = (u: unknown): string | null => (typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u) ? u : null);
+const isFixtureName = (n: string | null | undefined) => /^\s*(ZZ|DEMO)\b/i.test(n ?? '');
+
+/* ── Eligibility predicates (pure; the selectors below feed them rows) ─────────────────────────────────────────── */
+
+type Notice = { id: string; title: string; body: string | null; category: string | null; published_at: string; expires_at: string | null; review_at?: string | null; image_url?: string | null; action_text?: string | null; link_url?: string | null; is_essential_active?: boolean; publisher?: any };
+type NoticeMeta = { id: string; is_person_notice: boolean; status: string; is_hidden: boolean; visibility: string; withdrawn_at: string | null; source_label: string | null };
+
+const hoursFrom = (iso: string, now: Date) => (new Date(iso).getTime() - now.getTime()) / 3600_000;
+
+export function noticeEligible(n: Notice, m: NoticeMeta | undefined, cfg: Record<string, unknown>, now: Date): { ok: boolean; reason?: string } {
+  if (!m) return { ok: false, reason: 'no-meta' };
+  if (m.status !== 'published' || m.is_hidden || m.visibility !== 'public' || m.withdrawn_at) return { ok: false, reason: 'not-public' };
+  if (n.is_essential_active) return { ok: false, reason: 'essential-handled-elsewhere' };
+  if (m.is_person_notice && cfg.include_person !== true) return { ok: false, reason: 'person-notice' };
+  if (isSensitiveText(n.title, n.body, n.category, m.source_label)) return { ok: false, reason: 'sensitive' };
+  const age = -hoursFrom(n.published_at, now) / 24;
+  if (age > Number(cfg.max_age_days ?? 7)) return { ok: false, reason: 'too-old' };
+  if (n.expires_at && hoursFrom(n.expires_at, now) < Number(cfg.min_remaining_hours ?? 24)) return { ok: false, reason: 'expiring' };
+  if (!n.title?.trim()) return { ok: false, reason: 'no-title' };
+  return { ok: true };
+}
+
+export function alertEligible(n: Notice, m: NoticeMeta | undefined, cfg: Record<string, unknown>, now: Date): { ok: boolean; reason?: string } {
+  if (!m) return { ok: false, reason: 'no-meta' };
+  if (m.status !== 'published' || m.is_hidden || m.visibility !== 'public' || m.withdrawn_at) return { ok: false, reason: 'not-active' };
+  if (n.is_essential_active !== true) return { ok: false, reason: 'not-essential-active' };
+  if (isSensitiveText(n.title, n.body, n.category)) return { ok: false, reason: 'sensitive' };
+  const min = Number(cfg.min_remaining_hours ?? 2);
+  if (n.expires_at && hoursFrom(n.expires_at, now) < min) return { ok: false, reason: 'expiring' };
+  if (!n.review_at || hoursFrom(n.review_at, now) < min) return { ok: false, reason: 'review-due' };
+  if (!n.title?.trim()) return { ok: false, reason: 'no-title' };
+  return { ok: true };
+}
+
+type Memory = { id: string; title: string | null; body: string | null; era: string | null; place_name: string | null; visibility: string; is_hidden: boolean; parent_id: string | null };
+export function memoryEligible(m: Memory, allowed: boolean, cfg: Record<string, unknown>): { ok: boolean; reason?: string } {
+  if (!allowed) return { ok: false, reason: 'no-permission' };
+  if (m.visibility !== 'public' || m.is_hidden) return { ok: false, reason: 'not-public' };
+  if (m.parent_id) return { ok: false, reason: 'reply' };
+  if ((m.body ?? '').trim().length < Number(cfg.min_body_chars ?? 80)) return { ok: false, reason: 'too-short' };
+  if (!m.title?.trim()) return { ok: false, reason: 'no-title' };
+  if (isSensitiveText(m.title, m.body)) return { ok: false, reason: 'sensitive' };
+  return { ok: true };
+}
+
+type Business = { id: string; name: string; description: string | null; cover_url: string | null; logo_url: string | null; category: string | null; is_claimed: boolean; is_active: boolean };
+export function businessEligible(b: Business, hidden: boolean, optedOut: boolean, cfg: Record<string, unknown>): { ok: boolean; reason?: string } {
+  if (!b.is_claimed) return { ok: false, reason: 'unclaimed' };
+  if (!b.is_active) return { ok: false, reason: 'inactive' };
+  if (hidden) return { ok: false, reason: 'hidden' };
+  if (optedOut) return { ok: false, reason: 'opted-out' };
+  if (isFixtureName(b.name)) return { ok: false, reason: 'fixture' };
+  if ((b.description ?? '').trim().length < Number(cfg.min_description_chars ?? 60)) return { ok: false, reason: 'no-description' };
+  if (!httpsUrl(b.cover_url) && !httpsUrl(b.logo_url)) return { ok: false, reason: 'no-image' };
+  return { ok: true };
+}
+
+type Hub = { id: string; name: string; description: string | null; cover_url: string | null; logo_url: string | null; area: string | null; join_mode: string | null; is_active: boolean; slug: string | null };
+export function hubEligible(h: Hub, hidden: boolean, optedOut: boolean, cfg: Record<string, unknown>): { ok: boolean; reason?: string } {
+  if (!h.is_active) return { ok: false, reason: 'inactive' };
+  if (hidden) return { ok: false, reason: 'hidden' };
+  if (optedOut) return { ok: false, reason: 'opted-out' };
+  if (isFixtureName(h.name)) return { ok: false, reason: 'fixture' };
+  if ((h.description ?? '').trim().length < Number(cfg.min_description_chars ?? 40)) return { ok: false, reason: 'no-description' };
+  return { ok: true };
+}
+
+/** A fundraiser may be mentioned only while it can actually take a donation: open, not past its end date, and its Hub payout-ready. */
+export function campaignMentionable(c: { status: string; ends_at: string | null }, payoutReady: boolean, now: Date): boolean {
+  return c.status === 'active' && (!c.ends_at || new Date(c.ends_at).getTime() > now.getTime()) && payoutReady === true;
+}
+
+type Visit = { id: string; ship_name_cache: string | null; arrival_at: string; departure_at: string | null; visit_date: string; berth: string | null; status: string | null; is_cruise_ship: boolean | null; last_verified: string | null; verification_source: string | null; is_tender?: boolean | null };
+const VISIT_OK_STATUS = new Set(['scheduled', 'confirmed']);
+export function visitEligible(v: Visit, cfg: Record<string, unknown>, now: Date): { ok: boolean; reason?: string } {
+  if (!VISIT_OK_STATUS.has((v.status ?? '').toLowerCase())) return { ok: false, reason: 'status' };   // cancelled / postponed / unknown never
+  if (v.is_cruise_ship === false) return { ok: false, reason: 'not-cruise' };
+  if (!v.verification_source || !v.last_verified) return { ok: false, reason: 'unverified' };
+  const ageDays = (now.getTime() - new Date(v.last_verified).getTime()) / 86400_000;
+  if (ageDays > Number(cfg.max_verified_age_days ?? 365)) return { ok: false, reason: 'verification-stale' };
+  const end = new Date(v.departure_at ?? v.arrival_at).getTime();
+  if (end <= now.getTime()) return { ok: false, reason: 'past' };
+  if (!v.ship_name_cache?.trim()) return { ok: false, reason: 'no-name' };
+  return { ok: true };
+}
+
+/* ── Games ─────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+export const GAME_COPY: Record<string, { label: string; slug: string; lines: string[] }> = {
+  guess_da_wird: { label: 'Guess da Wird', slug: 'games/guess-da-wird', lines: [
+    'A new Shetland dialect word puzzle every day. Can you get it before the clues run out?',
+    'Today’s Guess da Wird is waiting. Progressive clues, a few tries — how many will you need?',
+    'Think you know your Shetland words? Test it with today’s Guess da Wird.' ] },
+  spik_sprint: { label: 'Spik Sprint', slug: 'games/spik-sprint', lines: [
+    'Sixty seconds, as many Shetland word meanings as you can tap. How high can you score?',
+    'Spik Sprint: a one-minute race to match Shetland words to their meanings.' ] },
+  spik_snap: { label: 'Spik Snap', slug: 'games/spik-snap', lines: [
+    'Yes or no — does the meaning match the wird? Quick-fire Spik Snap.',
+    'Spik Snap: spot the right meaning and keep your streak going.' ] },
+  map_it: { label: 'Map It', slug: 'games/map-it', lines: [
+    'Pin Shetland places on the map — ten rounds, and the closer the better.',
+    'Map It: how well do you really know the isles? Ten places to pin.' ] },
+};
+/** True if a game caption could reveal a current answer. Generic copy never does; this guards edits to GAME_COPY and the AI warm-up. */
+export const spoilsAnswer = (caption: string, answers: string[]): boolean => answers.some((a) => a && new RegExp(`\\b${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(caption));
+
+/* ── Selectors: each returns already-filtered Candidates, best first ───────────────────────────────────────────── */
+
+export async function selectNotices(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
+  const { data, error } = await svc.rpc('get_public_notices', { p_level: 'all', p_area_ids: null, p_category: null, p_limit: 50, p_offset: 0 });
+  if (error) throw error;
+  const rows = (data ?? []) as Notice[];
+  if (!rows.length) return [];
+  const { data: metas, error: e2 } = await svc.from('notices')
+    .select('id,is_person_notice,status,is_hidden,visibility,withdrawn_at,source_label').in('id', rows.map((r) => r.id));
+  if (e2) throw e2;
+  const meta = new Map<string, NoticeMeta>(((metas ?? []) as NoticeMeta[]).map((m) => [m.id, m]));
+  return rows.filter((r) => noticeEligible(r, meta.get(r.id), cfg, now).ok).map((r) => {
+    const source = meta.get(r.id)?.source_label;
+    const link = go(`notice/${r.id}`);
+    const body = excerpt(r.body, 220);
+    return {
+      kind: 'notice_update' as const, entity_type: 'notice', entity_id: r.id,
+      caption: `COMMUNITY NOTICE 📣\n\n${r.title.trim()}${body ? `\n\n${body}` : ''}${source ? `\n\nSource: ${source}` : ''}\n\nRead the full notice: ${link}`,
+      image_url: httpsUrl(r.image_url), link_url: link, context: `Public notice: "${r.title}".`,
+    };
+  });
+}
+
+export async function selectAlerts(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
+  const { data, error } = await svc.rpc('get_public_notices', { p_level: 'essential', p_area_ids: null, p_category: null, p_limit: 10, p_offset: 0 });
+  if (error) throw error;
+  const rows = (data ?? []) as Notice[];
+  if (!rows.length) return [];
+  const { data: metas, error: e2 } = await svc.from('notices')
+    .select('id,is_person_notice,status,is_hidden,visibility,withdrawn_at,source_label').in('id', rows.map((r) => r.id));
+  if (e2) throw e2;
+  const meta = new Map<string, NoticeMeta>(((metas ?? []) as NoticeMeta[]).map((m) => [m.id, m]));
+  return rows.filter((r) => alertEligible(r, meta.get(r.id), cfg, now).ok).map((r) => {
+    const link = go(`notice/${r.id}`);
+    const who = r.publisher?.label ?? r.publisher?.source_label ?? meta.get(r.id)?.source_label ?? null;
+    const what = excerpt(r.action_text?.trim() || r.body, 240);
+    return {
+      kind: 'essential_alert' as const, entity_type: 'notice', entity_id: r.id,
+      // Plain, exactly the issuer's wording. No emoji, no urgency words of our own.
+      caption: `ESSENTIAL ALERT\n\n${r.title.trim()}${what ? `\n\n${what}` : ''}${who ? `\n\nIssued by ${who}.` : ''}\n\nLatest information: ${link}`,
+      image_url: null, link_url: link, context: `Essential alert: "${r.title}".`,
+    };
+  });
+}
+
+export async function selectMemories(svc: Svc, cfg: Record<string, unknown>): Promise<Candidate[]> {
+  const { data, error } = await svc.from('memories')
+    .select('id,title,body,era,place_name,visibility,is_hidden,parent_id')
+    .eq('visibility', 'public').eq('is_hidden', false).is('parent_id', null)
+    .order('created_at', { ascending: false }).limit(80);
+  if (error) throw error;
+  const rows = (data ?? []) as Memory[];
+  if (!rows.length) return [];
+  const { data: perms, error: e2 } = await svc.from('social_promotion_permissions')
+    .select('entity_id,allowed').eq('entity_type', 'memory').in('entity_id', rows.map((r) => r.id));
+  if (e2) throw e2;
+  const allowed = new Set(((perms ?? []) as { entity_id: string; allowed: boolean }[]).filter((p) => p.allowed).map((p) => p.entity_id));
+  return rows.filter((m) => memoryEligible(m, allowed.has(m.id), cfg).ok).map((m) => {
+    const link = go(`memory/${m.id}`);
+    const era = m.era ? ` (${m.era})` : '';
+    return {
+      kind: 'aald_memory' as const, entity_type: 'memory', entity_id: m.id,
+      caption: `AALD MEMORIES 📷\n\n${m.title!.trim()}${era}${m.place_name ? `\n📍 ${m.place_name}` : ''}\n\n${excerpt(m.body, 220)}\n\nRead it, and add your own memories: ${link}`,
+      // Memory photos live in a PRIVATE bucket; there is no promotion-safe public image, so none is attached. Facebook builds the link preview.
+      image_url: null, link_url: link, context: `A community memory shared on OneShetland: "${m.title}".`,
+    };
+  });
+}
+
+export async function selectBusinesses(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
+  const { data, error } = await svc.from('local_businesses')
+    .select('id,name,description,cover_url,logo_url,category,is_claimed,is_active')
+    .eq('is_claimed', true).eq('is_active', true).limit(120);
+  if (error) throw error;
+  const rows = (data ?? []) as Business[];
+  if (!rows.length) return [];
+  const { data: perms } = await svc.from('social_promotion_permissions').select('entity_id,allowed').eq('entity_type', 'business').in('entity_id', rows.map((r) => r.id));
+  const out = new Set(((perms ?? []) as { entity_id: string; allowed: boolean }[]).filter((p) => !p.allowed).map((p) => p.entity_id));
+  const result: Candidate[] = [];
+  for (const b of rows) {
+    if (result.length >= MAX_CANDIDATES) break;   // bounded: never one RPC per business across the whole directory
+    if (!businessEligible(b, false, out.has(b.id), cfg).ok) continue;   // cheap checks first, then the hidden-fixture RPC
+    const { data: hidden } = await svc.rpc('is_discovery_hidden', { p_entity: 'business', p_id: b.id });
+    if (!businessEligible(b, hidden === true, out.has(b.id), cfg).ok) continue;
+    const link = go(`business/${b.id}`);
+    result.push({
+      kind: 'business_spotlight', entity_type: 'business', entity_id: b.id, business_id: b.id,
+      caption: `LOCAL BUSINESS SPOTLIGHT 🏪\n\n${b.name.trim()}${b.category ? ` — ${b.category}` : ''}\n\n${excerpt(b.description, 220)}\n\nFind them on OneShetland: ${link}`,
+      image_url: httpsUrl(b.cover_url) ?? httpsUrl(b.logo_url), link_url: link, context: `Local Shetland business "${b.name}".`,
+    });
+  }
+  void now;
+  return result;
+}
+
+export async function selectHubs(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
+  const { data, error } = await svc.from('hubs')
+    .select('id,name,description,cover_url,logo_url,area,join_mode,is_active,slug').eq('is_active', true).limit(80);
+  if (error) throw error;
+  const rows = (data ?? []) as Hub[];
+  if (!rows.length) return [];
+  const { data: perms } = await svc.from('social_promotion_permissions').select('entity_id,allowed').eq('entity_type', 'hub').in('entity_id', rows.map((r) => r.id));
+  const out = new Set(((perms ?? []) as { entity_id: string; allowed: boolean }[]).filter((p) => !p.allowed).map((p) => p.entity_id));
+  const result: Candidate[] = [];
+  for (const h of rows) {
+    if (result.length >= MAX_CANDIDATES) break;
+    if (!hubEligible(h, false, out.has(h.id), cfg).ok) continue;
+    const { data: hidden } = await svc.rpc('is_discovery_hidden', { p_entity: 'hub', p_id: h.id });
+    if (!hubEligible(h, hidden === true, out.has(h.id), cfg).ok) continue;
+    const fundraiser = await mentionableCampaign(svc, h.id, now);
+    const link = go(`hub/${h.id}`);
+    const join = h.join_mode === 'open' ? '\nAnyone can join.' : '';
+    result.push({
+      kind: 'hub_community', entity_type: 'hub', entity_id: h.id,
+      caption: `HUBS & COMMUNITY 🤝\n\n${h.name.trim()}${h.area ? ` · ${h.area}` : ''}\n\n${excerpt(h.description, 220)}${join}${fundraiser ? `\n\nCurrently fundraising: ${fundraiser.title}` : ''}\n\nSee what’s happening: ${link}`,
+      image_url: httpsUrl(h.cover_url) ?? httpsUrl(h.logo_url), link_url: link, context: `A community Hub in Shetland: "${h.name}".`,
+    });
+  }
+  return result;
+}
+
+async function mentionableCampaign(svc: Svc, hubId: string, now: Date): Promise<{ id: string; title: string } | null> {
+  const { data } = await svc.from('hub_campaigns').select('id,title,status,ends_at').eq('hub_id', hubId).eq('status', 'active').limit(5);
+  for (const c of (data ?? []) as { id: string; title: string; status: string; ends_at: string | null }[]) {
+    if (c.ends_at && new Date(c.ends_at).getTime() <= now.getTime()) continue;
+    const { data: ready } = await svc.rpc('campaign_payout_ready', { p_campaign: c.id });
+    if (campaignMentionable(c, ready === true, now)) return { id: c.id, title: c.title };
+  }
+  return null;
+}
+
+export async function selectGames(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
+  const ids = ((cfg.games as string[] | undefined) ?? Object.keys(GAME_COPY)).filter((g) => GAME_COPY[g]);
+  if (!ids.length) return [];
+  const { data } = await svc.from('social_posts').select('entity_id,created_at').eq('kind', 'game_challenge').order('created_at', { ascending: false }).limit(60);
+  const history = (data ?? []) as { entity_id: string | null; created_at: string }[];
+  const gameOf = (e: string | null) => (e ?? '').split(':')[0];
+  // Least recently featured first, so the games rotate rather than Guess da Wird dominating.
+  const last = new Map<string, number>(); const count = new Map<string, number>();
+  for (const h of history) { const g = gameOf(h.entity_id); count.set(g, (count.get(g) ?? 0) + 1); if (!last.has(g)) last.set(g, new Date(h.created_at).getTime()); }
+  const week = isoWeekKey(now);
+  return [...ids].sort((a, b) => (last.get(a) ?? 0) - (last.get(b) ?? 0)).map((g) => {
+    const c = GAME_COPY[g]; const link = go(c.slug);
+    const line = c.lines[(count.get(g) ?? 0) % c.lines.length];
+    return {
+      kind: 'game_challenge' as const, entity_type: 'game', entity_id: `${g}:${week}`,
+      caption: `${c.label.toUpperCase()} 🎮\n\n${line}\n\nPlay free: ${link}`,
+      image_url: null, link_url: link, context: `The OneShetland game "${c.label}". Do not mention any specific answer.`,
+    };
+  });
+}
+
+export async function selectCruise(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
+  const today = londonParts(now).ymd; const lead = Number(cfg.lead_days ?? 3);
+  const { data, error } = await svc.from('cruise_visits')
+    .select('id,ship_name_cache,arrival_at,departure_at,visit_date,berth,status,is_cruise_ship,last_verified,verification_source,is_tender')
+    .gte('visit_date', today).lte('visit_date', addDays(today, lead)).order('arrival_at', { ascending: true }).limit(40);
+  if (error) throw error;
+  const byDate = new Map<string, Visit[]>();
+  for (const v of (data ?? []) as Visit[]) if (visitEligible(v, cfg, now).ok) byDate.set(v.visit_date, [...(byDate.get(v.visit_date) ?? []), v]);
+  const t = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  const day = (ymd: string) => new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/London' });
+  return [...byDate.entries()].map(([date, vs]) => {
+    const link = go(`cruise/${date}`);
+    const lines = vs.map((v) => `• ${v.ship_name_cache!.trim()} — in ${t(v.arrival_at)}${v.departure_at ? `, away ${t(v.departure_at)}` : ''}${v.berth ? ` (${v.berth})` : ''}`).join('\n');
+    return {
+      kind: 'cruise_visit' as const, entity_type: 'cruise_day', entity_id: date,
+      caption: `CRUISE VISIT IN LERWICK 🚢\n\n${day(date)}\n${lines}\n\nVisitor information and what’s on: ${link}`,
+      image_url: null, link_url: link, context: `Cruise ship visit on ${date}.`,
+    };
+  });
+}
+
+/* ── Publish-time revalidation ─────────────────────────────────────────────────────────────────────────────────── */
+
+export type Validity = { state: 'valid' | 'invalid' | 'unknown'; reason?: string };
+type QueuedPost = { id: string; kind: string; entity_id: string | null; caption: string };
+
+/**
+ * Asked by social-publisher immediately before sending one of the new kinds. A draft may have waited days: the notice may have
+ * expired or been withdrawn, the alert may be over, the visit cancelled, the permission revoked, the fundraiser closed.
+ * 'invalid' => the publisher marks the post skipped. 'unknown' (a lookup failed) => the publisher leaves it untouched for the next pass.
+ */
+export async function revalidatePost(svc: Svc, post: QueuedPost, now: Date): Promise<Validity> {
+  try {
+    const id = post.entity_id ?? '';
+    switch (post.kind) {
+      case 'notice_update': {
+        const { data, error } = await svc.rpc('get_public_notices', { p_level: 'all', p_area_ids: null, p_category: null, p_limit: 1, p_offset: 0, p_id: id });
+        if (error) return { state: 'unknown' };
+        const n = ((data ?? []) as Notice[])[0];
+        if (!n) return { state: 'invalid', reason: 'notice is no longer public' };
+        if (n.expires_at && new Date(n.expires_at).getTime() <= now.getTime()) return { state: 'invalid', reason: 'notice has expired' };
+        const { data: m } = await svc.from('notices').select('is_person_notice,withdrawn_at,status,is_hidden,visibility,source_label').eq('id', id).maybeSingle();
+        if (!m || m.withdrawn_at || m.status !== 'published' || m.is_hidden || m.visibility !== 'public') return { state: 'invalid', reason: 'notice withdrawn' };
+        if (isSensitiveText(n.title, n.body, n.category)) return { state: 'invalid', reason: 'sensitive' };
+        return { state: 'valid' };
+      }
+      case 'essential_alert': {
+        const { data, error } = await svc.rpc('get_public_notices', { p_level: 'essential', p_area_ids: null, p_category: null, p_limit: 1, p_offset: 0, p_id: id });
+        if (error) return { state: 'unknown' };
+        const n = ((data ?? []) as Notice[])[0];
+        if (!n || n.is_essential_active !== true) return { state: 'invalid', reason: 'alert is no longer active' };
+        if (n.expires_at && new Date(n.expires_at).getTime() <= now.getTime()) return { state: 'invalid', reason: 'alert has expired' };
+        if (!n.review_at || new Date(n.review_at).getTime() <= now.getTime()) return { state: 'invalid', reason: 'alert is due for review' };
+        return { state: 'valid' };
+      }
+      case 'aald_memory': {
+        const { data: m, error } = await svc.from('memories').select('id,visibility,is_hidden').eq('id', id).maybeSingle();
+        if (error) return { state: 'unknown' };
+        if (!m || m.visibility !== 'public' || m.is_hidden) return { state: 'invalid', reason: 'memory no longer public' };
+        const { data: p } = await svc.from('social_promotion_permissions').select('allowed').eq('entity_type', 'memory').eq('entity_id', id).maybeSingle();
+        return p?.allowed === true ? { state: 'valid' } : { state: 'invalid', reason: 'promotion permission removed' };
+      }
+      case 'business_spotlight': {
+        const { data: b, error } = await svc.from('local_businesses').select('id,is_claimed,is_active').eq('id', id.split(':')[0]).maybeSingle();
+        if (error) return { state: 'unknown' };
+        if (!b || !b.is_claimed || !b.is_active) return { state: 'invalid', reason: 'business no longer claimed/active' };
+        const { data: hidden } = await svc.rpc('is_discovery_hidden', { p_entity: 'business', p_id: b.id });
+        const { data: p } = await svc.from('social_promotion_permissions').select('allowed').eq('entity_type', 'business').eq('entity_id', b.id).maybeSingle();
+        return hidden === true || p?.allowed === false ? { state: 'invalid', reason: 'business hidden or opted out' } : { state: 'valid' };
+      }
+      case 'hub_community': {
+        const hubId = id.split(':')[0];
+        const { data: h, error } = await svc.from('hubs').select('id,is_active').eq('id', hubId).maybeSingle();
+        if (error) return { state: 'unknown' };
+        if (!h || !h.is_active) return { state: 'invalid', reason: 'hub no longer active' };
+        const { data: hidden } = await svc.rpc('is_discovery_hidden', { p_entity: 'hub', p_id: hubId });
+        if (hidden === true) return { state: 'invalid', reason: 'hub hidden' };
+        // If the caption advertises a fundraiser, it must still be one that can take a donation.
+        const m = post.caption.match(/Currently fundraising: (.+)/);
+        if (m) {
+          const live = await mentionableCampaign(svc, hubId, now);
+          if (!live || live.title.trim() !== m[1].trim()) return { state: 'invalid', reason: 'fundraiser can no longer take donations' };
+        }
+        return { state: 'valid' };
+      }
+      case 'cruise_visit': {
+        const { data, error } = await svc.from('cruise_visits')
+          .select('id,ship_name_cache,arrival_at,departure_at,visit_date,berth,status,is_cruise_ship,last_verified,verification_source').eq('visit_date', id);
+        if (error) return { state: 'unknown' };
+        const ok = ((data ?? []) as Visit[]).some((v) => visitEligible(v, { max_verified_age_days: 365 }, now).ok);
+        return ok ? { state: 'valid' } : { state: 'invalid', reason: 'visit cancelled, past or unverified' };
+      }
+      case 'game_challenge': return { state: 'valid' };
+      default: return { state: 'valid' };
+    }
+  } catch { return { state: 'unknown' }; }
+}
+
+/* ── Orchestration ─────────────────────────────────────────────────────────────────────────────────────────────── */
+
+export type ComposeDeps = {
+  svc: Svc;
+  now: Date;
+  recipes: Map<string, { key: string; enabled: boolean; autopilot: boolean; config: Record<string, unknown> }>;
+  force?: boolean;
+  /** Optional caption warm-up (the composer's polishCaption); never used for FACTUAL kinds. */
+  polish?: (template: string, context: string) => Promise<string>;
+  rand?: () => number;
+};
+export type ComposeResult = Record<NewKind, number> & { errors: string[]; skipped: Record<string, string> };
+
+const PENDING_STATUSES = ['draft', 'approved', 'scheduled'];
+const periodKey = (id: string, now: Date, days: number) => `${id}:${Math.floor(now.getTime() / (days * 86400_000))}`;
+
+export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> {
+  const { svc, now } = d;
+  const out = Object.fromEntries(NEW_KINDS.map((k) => [k, 0])) as unknown as ComposeResult; out.errors = []; out.skipped = {};
+  const active = ORDER.filter((k) => d.recipes.get(k)?.enabled === true);
+  if (!active.length) return out;
+
+  // Global spacing settings.
+  const { data: cfgRows } = await svc.from('admin_config').select('key,value').in('key', ['social.max_posts_per_day', 'social.min_gap_minutes', 'social.window_hours']);
+  const g = new Map<string, string>(((cfgRows ?? []) as { key: string; value: string }[]).map((r) => [r.key, r.value]));
+  const maxPerDay = Math.max(1, Number(g.get('social.max_posts_per_day') ?? 3) || 3);
+  const gapMinutes = Math.max(15, Number(g.get('social.min_gap_minutes') ?? 120) || 120);
+  const [ws, we] = (g.get('social.window_hours') ?? '8-20').split('-').map(Number);
+  const windowStartHour = Number.isFinite(ws) ? ws : 8; const windowEndHour = Number.isFinite(we) ? we : 20;
+
+  // Everything already queued for the future, or posted today, occupies a slot — old recipes included.
+  const todayStart = londonInstant(londonParts(now).ymd, 0, 0).toISOString();
+  const { data: around } = await svc.from('social_posts').select('kind,status,scheduled_for,posted_at,created_at,entity_id')
+    .or(`and(status.in.(draft,approved,scheduled),scheduled_for.gte.${now.toISOString()}),and(status.eq.posted,posted_at.gte.${todayStart})`).limit(500);
+  const taken: Date[] = ((around ?? []) as { scheduled_for: string | null; posted_at: string | null; status: string }[])
+    .map((r) => new Date((r.status === 'posted' ? r.posted_at : r.scheduled_for) as string)).filter((x) => !isNaN(x.getTime()));
+
+  // One run never creates more than a day's worth of posts across ALL new recipes, however many are switched on or how much content exists.
+  let runBudget = maxPerDay;
+
+  for (const kind of active) {
+    if (runBudget <= 0) { out.skipped[kind] = 'run budget used'; continue; }
+    const r = d.recipes.get(kind)!;
+    const cfg = { ...DEFAULTS[kind], ...(r.config ?? {}) } as Record<string, unknown>;
+    try {
+      const today = londonParts(now);
+      const days = cfg.weekdays as string[] | undefined;
+      if (!d.force && days && !days.includes(today.weekday)) { out.skipped[kind] = `not a posting day (${today.weekday})`; continue; }
+
+      // Retire this recipe's OWN stale, never-reviewed drafts so unreviewed drafts cannot pile up into another backlog.
+      // (Only the new kinds; nothing older is touched.)
+      await svc.from('social_posts').update({ status: 'skipped', error: 'stale: never reviewed' })
+        .eq('kind', kind).eq('status', 'draft').lt('scheduled_for', new Date(now.getTime() - 48 * 3600_000).toISOString());
+
+      const { data: mine } = await svc.from('social_posts').select('entity_id,status,created_at,scheduled_for').eq('kind', kind).order('created_at', { ascending: false }).limit(300);
+      const history = (mine ?? []) as { entity_id: string | null; status: string; created_at: string; scheduled_for: string | null }[];
+      const pending = history.filter((h) => PENDING_STATUSES.includes(h.status) && (!h.scheduled_for || new Date(h.scheduled_for).getTime() >= now.getTime() - 48 * 3600_000)).length;
+      if (!d.force && pending >= Number(cfg.max_pending ?? 3)) { out.skipped[kind] = `${pending} awaiting review/posting`; continue; }
+      if (cfg.max_per_week && history.filter((h) => now.getTime() - new Date(h.created_at).getTime() < 7 * 86400_000).length >= Number(cfg.max_per_week)) { out.skipped[kind] = 'weekly limit'; continue; }
+      if (kind === 'essential_alert') {
+        const recent = history[0];
+        if (recent && (now.getTime() - new Date(recent.created_at).getTime()) / 3600_000 < Number(cfg.min_hours_between ?? 6)) { out.skipped[kind] = 'too soon after previous alert post'; continue; }
+      }
+
+      let cands: Candidate[] = [];
+      if (kind === 'notice_update') cands = await selectNotices(svc, cfg, now);
+      else if (kind === 'essential_alert') cands = await selectAlerts(svc, cfg, now);
+      else if (kind === 'aald_memory') cands = await selectMemories(svc, cfg);
+      else if (kind === 'business_spotlight') cands = await selectBusinesses(svc, cfg, now);
+      else if (kind === 'hub_community') cands = await selectHubs(svc, cfg, now);
+      else if (kind === 'game_challenge') cands = await selectGames(svc, cfg, now);
+      else if (kind === 'cruise_visit') cands = await selectCruise(svc, cfg, now);
+
+      // Duplicate prevention. Single-use kinds: entity ever used. Rotating kinds: per period (business 90d, hub 30d). Games: per ISO week.
+      const repeat = Number(cfg.repeat_after_days ?? 0);
+      const keyOf = (c: Candidate) => (repeat > 0 ? periodKey(c.entity_id, now, repeat) : c.entity_id);
+      const used = new Set(history.map((h) => h.entity_id));
+      const usedByEntity = (c: Candidate) => (repeat > 0 ? history.some((h) => (h.entity_id ?? '').split(':')[0] === c.entity_id && now.getTime() - new Date(h.created_at).getTime() < repeat * 86400_000) : used.has(c.entity_id));
+      cands = cands.filter((c) => !usedByEntity(c));
+
+      const maxRun = Math.min(Number(cfg.max_per_run ?? 1), runBudget);
+      let made = 0;
+      for (const c of cands) {
+        if (made >= maxRun) break;
+        const slot = allocateSlot({
+          now, preferredHour: typeof cfg.hour === 'number' ? cfg.hour : null, taken, gapMinutes, maxPerDay,
+          windowStartHour, windowEndHour, horizonDays: 3, rand: d.rand,
+        });
+        if (!slot) { out.skipped[kind] = 'no free slot in the next 3 days'; break; }
+        let caption = c.caption;
+        if (cfg.polish === true && !FACTUAL.has(kind) && d.polish) {
+          const polished = await d.polish(c.caption, c.context);
+          // Never accept a rewrite that lost the link or, for games, could name an answer.
+          if (polished.includes(c.link_url) && (kind !== 'game_challenge' || !/answer|solution/i.test(polished))) caption = polished;
+        }
+        const status = kind === 'essential_alert' ? 'draft' : r.autopilot === true ? 'scheduled' : 'draft';
+        const { error } = await svc.from('social_posts').insert({
+          kind, entity_type: c.entity_type, entity_id: repeat > 0 ? keyOf(c) : c.entity_id, business_id: c.business_id ?? null,
+          caption, image_url: c.image_url, link_url: c.link_url, scheduled_for: slot.toISOString(), status,
+        });
+        if (error) { out.errors.push(`${kind} insert: ${error.message}`); continue; }
+        taken.push(slot); made++; out[kind]++; runBudget--;
+      }
+      if (!made && !out.skipped[kind]) out.skipped[kind] = 'nothing eligible';
+      await svc.from('social_recipes').update({ last_run_at: now.toISOString() }).eq('key', kind);
+    } catch (e) { out.errors.push(`${kind}: ${e instanceof Error ? e.message : e}`); }
+  }
+  return out;
+}

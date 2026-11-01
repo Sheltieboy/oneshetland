@@ -121,3 +121,22 @@ select cron.schedule(
 Instagram (`channels` is multi-channel; IG needs the image URL flow it already
 has), autopilot per recipe, offer roundups / business spotlights / ship-day
 recipes, tier slot ledger.
+
+## Newer recipes (notices, alerts, memories, businesses, hubs, games, cruise)
+
+Migration `20261202000000_social_recipes_expansion.sql` adds seven recipes to `social_recipes`, **disabled, autopilot off**. Their logic is in
+`_shared/social-recipes.ts`, called by `social-composer` (drafting) and `social-publisher` (re-check at the moment of posting).
+
+| Recipe | Schedule (London) | Source | Rules |
+|---|---|---|---|
+| `notice_update` | any day, ≤1/run, ≤4/week, ~12:00 | `get_public_notices` | public, ≤7 days old, ≥24h left; never person/funeral/sensitive; links `/go/notice/<id>` |
+| `essential_alert` | as soon as a slot is free, ≥6h apart | `get_public_notices('essential')` | active + verified, ≥2h before expiry/review; **always a draft; autopilot impossible** |
+| `aald_memory` | Mon, Wed, Sat ~19:00 | `memories` | public, top-level, needs a row in `social_promotion_permissions`; no image (private bucket) |
+| `business_spotlight` | Tue, Fri ~13:00 | `local_businesses` | claimed, active, visible, described, has image; 90-day repeat gap; opt-out via permissions |
+| `hub_community` | Wed, Sat ~10:00 | `hubs` | active, visible, described; fundraiser line only if it can take donations; 30-day repeat gap |
+| `game_challenge` | Thu, Sun ~17:00 | `GAME_COPY` | rotates least-recently-featured; generic copy, never an answer |
+| `cruise_visit` | up to 3 days before a visit, ~08:00 | `cruise_visits` | scheduled/confirmed, cruise ship, verified within 365 days, not past |
+
+Spacing (all new recipes): `admin_config` `social.max_posts_per_day` (3), `social.min_gap_minutes` (120), `social.window_hours` (8-20); one run creates at
+most a day's worth in total; unreviewed drafts cap each recipe (`max_pending`) and its own drafts >48h stale are retired. Nothing here touches existing
+posts, recipes or schedules. Grant a memory permission: `insert into social_promotion_permissions (entity_type, entity_id, allowed) values ('memory','<id>',true);`
