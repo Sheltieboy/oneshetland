@@ -16,10 +16,13 @@
 export const SITE = 'https://oneshetland.com';
 export const go = (slug: string) => `${SITE}/go/${slug}`;
 
+/** The five original recipes whose posts are also re-checked at send time (their ids ride in link_url#ids=, or the entity id). */
+export const ORIGINAL_REVALIDATED = ['jobs_roundup', 'whats_on_roundup', 'event_spotlight', 'new_product'] as const;
+
 export const NEW_KINDS = ['essential_alert', 'notice_update', 'cruise_visit', 'aald_memory', 'business_spotlight', 'hub_community', 'game_challenge'] as const;
 export type NewKind = typeof NEW_KINDS[number];
 /** Kinds the publisher re-checks just before sending. */
-export const REVALIDATED_KINDS = new Set<string>(NEW_KINDS);
+export const REVALIDATED_KINDS = new Set<string>([...NEW_KINDS, ...ORIGINAL_REVALIDATED]);
 /** Kinds whose caption states facts, so the AI "warm-up" is never applied (it could soften or embellish). */
 const FACTUAL: ReadonlySet<string> = new Set(['essential_alert', 'notice_update', 'cruise_visit']);
 
@@ -161,7 +164,7 @@ export function excerpt(text: string | null | undefined, max: number): string {
 }
 
 export const httpsUrl = (u: unknown): string | null => (typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u) ? u : null);
-const isFixtureName = (n: string | null | undefined) => /^\s*(ZZ|DEMO)\b/i.test(n ?? '');
+export const isFixtureName = (n: string | null | undefined) => /^\s*(ZZ|DEMO)\b/i.test(n ?? '');
 
 /* ── Eligibility predicates (pure; the selectors below feed them rows) ─────────────────────────────────────────── */
 
@@ -266,6 +269,82 @@ export const GAME_COPY: Record<string, { label: string; slug: string; lines: str
 };
 /** True if a game caption could reveal a current answer. Generic copy never does; this guards edits to GAME_COPY and the AI warm-up. */
 export const spoilsAnswer = (caption: string, answers: string[]): boolean => answers.some((a) => a && new RegExp(`\\b${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(caption));
+
+
+/* ── Original recipes: availability rules shared by the composer (at compose) and the publisher (at send) ─────────── */
+
+type EventRow = { id: string; title: string; starts_at: string; status: string | null; is_hidden: boolean | null; organiser_hub_id?: string | null; calendar_approved?: boolean | null };
+/** Public, listed, not cancelled, a real (non-fixture) event that has NOT started by `at` (the moment the post goes out). */
+export function eventPromotable(e: EventRow, at: Date): { ok: boolean; reason?: string } {
+  if (e.status !== 'published') return { ok: false, reason: 'not-published' };      // cancelled / draft / archived
+  if (e.is_hidden) return { ok: false, reason: 'hidden' };
+  if (e.organiser_hub_id && e.calendar_approved !== true) return { ok: false, reason: 'not-calendar-approved' };   // the website's own listing rule
+  if (isFixtureName(e.title)) return { ok: false, reason: 'fixture' };
+  if (new Date(e.starts_at).getTime() <= at.getTime()) return { ok: false, reason: 'already-started' };
+  return { ok: true };
+}
+
+type JobRow = { id: string; status: string | null; is_hidden: boolean | null; expires_at: string | null };
+/** Open, listed and not past its closing time at `at` — the same rule the website's job list applies. */
+export function jobPromotable(j: JobRow, at: Date): { ok: boolean; reason?: string } {
+  if (j.status !== 'open') return { ok: false, reason: 'not-open' };
+  if (j.is_hidden) return { ok: false, reason: 'hidden' };
+  if (j.expires_at && new Date(j.expires_at).getTime() <= at.getTime()) return { ok: false, reason: 'expired' };
+  return { ok: true };
+}
+
+type ProductRow = { id: string; title: string; is_active: boolean | null; sold_at: string | null; stock_mode: string | null; stock: number | null; reserved: number | null; photos?: string[] | null };
+type VariantRow = { stock: number | null; reserved: number | null; is_active: boolean | null };
+/** The Shop's own availableQty() rule (lib/shop-data.ts), plus: has a photo, and is not a test fixture. */
+export function productPromotable(p: ProductRow, variants: VariantRow[], businessName: string | null, businessActive: boolean, businessHidden: boolean): { ok: boolean; reason?: string } {
+  if (!p.is_active || p.sold_at) return { ok: false, reason: 'unavailable' };
+  if (!businessActive) return { ok: false, reason: 'business-inactive' };
+  if (businessHidden) return { ok: false, reason: 'business-hidden' };
+  if (isFixtureName(businessName) || isFixtureName(p.title)) return { ok: false, reason: 'fixture' };
+  if (!(p.photos ?? []).length) return { ok: false, reason: 'no-photo' };
+  const live = variants.filter((v) => v.is_active !== false);
+  let qty: number;
+  if (p.stock_mode === 'made_to_order') qty = 99;
+  else if (p.stock_mode === 'one_off') qty = (p.reserved ?? 0) > 0 ? 0 : 1;
+  else if (live.length && live.some((v) => v.stock != null)) qty = Math.max(0, ...live.map((v) => (v.stock != null ? v.stock - (v.reserved ?? 0) : 99)));
+  else if (p.stock == null) qty = 99;
+  else qty = Math.max(0, p.stock - (p.reserved ?? 0));
+  return qty > 0 ? { ok: true } : { ok: false, reason: 'out-of-stock' };
+}
+
+/** Roundups record which items they list in link_url's fragment (never sent to Facebook: roundups are photo posts), so the publisher can re-check exactly those. */
+export const withIds = (link: string, ids: string[]): string => (ids.length ? `${link}#ids=${ids.join(',')}` : link);
+export const idsFromLink = (link: string | null | undefined): string[] => {
+  const m = (link ?? '').match(/#ids=([A-Za-z0-9,_-]+)$/);
+  return m ? m[1].split(',').filter(Boolean) : [];
+};
+
+/* ── One shared slot allocator for ALL twelve recipes ─────────────────────────────────────────────────────────── */
+
+export type SlotContext = { now: Date; taken: Date[]; gapMinutes: number; maxPerDay: number; windowStartHour: number; windowEndHour: number };
+
+/** Reads the shared limits (admin_config) and every post already queued for the future or posted today. Call once per composer run. */
+export async function loadSlotContext(svc: Svc, now: Date): Promise<SlotContext> {
+  const { data: cfgRows } = await svc.from('admin_config').select('key,value').in('key', ['social.max_posts_per_day', 'social.min_gap_minutes', 'social.window_hours']);
+  const g = new Map<string, string>(((cfgRows ?? []) as { key: string; value: string }[]).map((r) => [r.key, r.value]));
+  const [ws, we] = (g.get('social.window_hours') ?? '8-20').split('-').map(Number);
+  const todayStart = londonInstant(londonParts(now).ymd, 0, 0).toISOString();
+  const { data: around } = await svc.from('social_posts').select('status,scheduled_for,posted_at')
+    .or(`and(status.in.(approved,scheduled),scheduled_for.gte.${now.toISOString()}),and(status.eq.draft,scheduled_for.gte.${now.toISOString()}),and(status.eq.posted,posted_at.gte.${todayStart})`).limit(500);
+  const taken = ((around ?? []) as { status: string; scheduled_for: string | null; posted_at: string | null }[])
+    .map((r) => new Date((r.status === 'posted' ? r.posted_at : r.scheduled_for) as string)).filter((x) => !isNaN(x.getTime()));
+  return {
+    now, taken,
+    gapMinutes: Math.max(15, Number(g.get('social.min_gap_minutes') ?? 120) || 120),
+    maxPerDay: Math.max(1, Number(g.get('social.max_posts_per_day') ?? 3) || 3),
+    windowStartHour: Number.isFinite(ws) ? ws : 8, windowEndHour: Number.isFinite(we) ? we : 20,
+  };
+}
+
+/** The next free slot for a recipe's preferred hour, or null if the limits leave none in the next 3 days. Does NOT reserve it: call ctx.taken.push(slot) once the post exists. */
+export function peekSlot(ctx: SlotContext, preferredHour: number | null, rand: () => number = Math.random): Date | null {
+  return allocateSlot({ now: ctx.now, preferredHour, taken: ctx.taken, gapMinutes: ctx.gapMinutes, maxPerDay: ctx.maxPerDay, windowStartHour: ctx.windowStartHour, windowEndHour: ctx.windowEndHour, horizonDays: 3, rand });
+}
 
 /* ── Selectors: each returns already-filtered Candidates, best first ───────────────────────────────────────────── */
 
@@ -443,7 +522,7 @@ export async function selectCruise(svc: Svc, cfg: Record<string, unknown>, now: 
 /* ── Publish-time revalidation ─────────────────────────────────────────────────────────────────────────────────── */
 
 export type Validity = { state: 'valid' | 'invalid' | 'unknown'; reason?: string };
-type QueuedPost = { id: string; kind: string; entity_id: string | null; caption: string };
+type QueuedPost = { id: string; kind: string; entity_id: string | null; caption: string; link_url?: string | null };
 
 /**
  * Asked by social-publisher immediately before sending one of the new kinds. A draft may have waited days: the notice may have
@@ -511,6 +590,55 @@ export async function revalidatePost(svc: Svc, post: QueuedPost, now: Date): Pro
         const ok = ((data ?? []) as Visit[]).some((v) => visitEligible(v, { max_verified_age_days: 365 }, now).ok);
         return ok ? { state: 'valid' } : { state: 'invalid', reason: 'visit cancelled, past or unverified' };
       }
+
+      // ── The original recipes. Same question, asked of live data at the moment of sending. ──
+      case 'event_spotlight': {
+        const { data: e, error } = await svc.from('events').select('id,title,starts_at,status,is_hidden,organiser_hub_id,calendar_approved').eq('id', id).maybeSingle();
+        if (error) return { state: 'unknown' };
+        if (!e) return { state: 'invalid', reason: 'event no longer exists' };
+        const v = eventPromotable(e as EventRow, now);
+        return v.ok ? { state: 'valid' } : { state: 'invalid', reason: `event ${v.reason}` };
+      }
+      case 'whats_on_roundup': {
+        const ids = idsFromLink((post as QueuedPost & { link_url?: string | null }).link_url);
+        let evs: EventRow[];
+        if (ids.length) {
+          const { data, error } = await svc.from('events').select('id,title,starts_at,status,is_hidden,organiser_hub_id,calendar_approved').in('id', ids);
+          if (error) return { state: 'unknown' };
+          evs = (data ?? []) as EventRow[];
+          if (evs.length !== ids.length) return { state: 'invalid', reason: 'a listed event no longer exists' };
+          const bad = evs.find((e) => !eventPromotable(e, now).ok);
+          return bad ? { state: 'invalid', reason: `a listed event is ${eventPromotable(bad, now).reason}` } : { state: 'valid' };
+        }
+        // No recorded list (a hand-made or older post): at least some upcoming public events must remain.
+        const { data, error } = await svc.from('events').select('id,title,starts_at,status,is_hidden,organiser_hub_id,calendar_approved').eq('status', 'published').eq('is_hidden', false).gt('starts_at', now.toISOString()).limit(20);
+        if (error) return { state: 'unknown' };
+        return ((data ?? []) as EventRow[]).some((e) => eventPromotable(e, now).ok) ? { state: 'valid' } : { state: 'invalid', reason: 'no upcoming events' };
+      }
+      case 'jobs_roundup': {
+        const ids = idsFromLink((post as QueuedPost & { link_url?: string | null }).link_url);
+        let q = svc.from('jobs').select('id,status,is_hidden,expires_at');
+        q = ids.length ? q.in('id', ids) : q.eq('status', 'open').eq('is_hidden', false).limit(20);
+        const { data, error } = await q;
+        if (error) return { state: 'unknown' };
+        const rows = (data ?? []) as JobRow[];
+        if (ids.length) {
+          if (rows.length !== ids.length) return { state: 'invalid', reason: 'a listed job no longer exists' };
+          const bad = rows.find((j) => !jobPromotable(j, now).ok);
+          return bad ? { state: 'invalid', reason: `a listed job is ${jobPromotable(bad, now).reason}` } : { state: 'valid' };
+        }
+        return rows.some((j) => jobPromotable(j, now).ok) ? { state: 'valid' } : { state: 'invalid', reason: 'no open jobs' };
+      }
+      case 'new_product': {
+        const { data: p, error } = await svc.from('products').select('id,title,is_active,sold_at,stock_mode,stock,reserved,photos,business_id').eq('id', id).maybeSingle();
+        if (error) return { state: 'unknown' };
+        if (!p) return { state: 'invalid', reason: 'product no longer exists' };
+        const { data: b } = await svc.from('local_businesses').select('name,is_active').eq('id', (p as { business_id: string }).business_id).maybeSingle();
+        const { data: vs } = await svc.from('product_variants').select('stock,reserved,is_active').eq('product_id', id);
+        const { data: hidden } = await svc.rpc('is_discovery_hidden', { p_entity: 'business', p_id: (p as { business_id: string }).business_id });
+        const v = productPromotable(p as ProductRow, (vs ?? []) as VariantRow[], b?.name ?? null, b?.is_active === true, hidden === true);
+        return v.ok ? { state: 'valid' } : { state: 'invalid', reason: `product ${v.reason}` };
+      }
       case 'game_challenge': return { state: 'valid' };
       default: return { state: 'valid' };
     }
@@ -527,6 +655,8 @@ export type ComposeDeps = {
   /** Optional caption warm-up (the composer's polishCaption); never used for FACTUAL kinds. */
   polish?: (template: string, context: string) => Promise<string>;
   rand?: () => number;
+  /** Shared slot context (limits + queued posts). Omit to load it. */
+  ctx?: SlotContext;
 };
 export type ComposeResult = Record<NewKind, number> & { errors: string[]; skipped: Record<string, string> };
 
@@ -539,20 +669,10 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
   const active = ORDER.filter((k) => d.recipes.get(k)?.enabled === true);
   if (!active.length) return out;
 
-  // Global spacing settings.
-  const { data: cfgRows } = await svc.from('admin_config').select('key,value').in('key', ['social.max_posts_per_day', 'social.min_gap_minutes', 'social.window_hours']);
-  const g = new Map<string, string>(((cfgRows ?? []) as { key: string; value: string }[]).map((r) => [r.key, r.value]));
-  const maxPerDay = Math.max(1, Number(g.get('social.max_posts_per_day') ?? 3) || 3);
-  const gapMinutes = Math.max(15, Number(g.get('social.min_gap_minutes') ?? 120) || 120);
-  const [ws, we] = (g.get('social.window_hours') ?? '8-20').split('-').map(Number);
-  const windowStartHour = Number.isFinite(ws) ? ws : 8; const windowEndHour = Number.isFinite(we) ? we : 20;
-
-  // Everything already queued for the future, or posted today, occupies a slot — old recipes included.
-  const todayStart = londonInstant(londonParts(now).ymd, 0, 0).toISOString();
-  const { data: around } = await svc.from('social_posts').select('kind,status,scheduled_for,posted_at,created_at,entity_id')
-    .or(`and(status.in.(draft,approved,scheduled),scheduled_for.gte.${now.toISOString()}),and(status.eq.posted,posted_at.gte.${todayStart})`).limit(500);
-  const taken: Date[] = ((around ?? []) as { scheduled_for: string | null; posted_at: string | null; status: string }[])
-    .map((r) => new Date((r.status === 'posted' ? r.posted_at : r.scheduled_for) as string)).filter((x) => !isNaN(x.getTime()));
+  // Shared limits + everything already queued (the original recipes' posts included) — the same context the original recipes use.
+  const ctx = d.ctx ?? await loadSlotContext(svc, now);   // the composer passes the one it already used for the original recipes
+  const { maxPerDay, gapMinutes, windowStartHour, windowEndHour } = ctx;
+  const taken = ctx.taken;
 
   // One run never creates more than a day's worth of posts across ALL new recipes, however many are switched on or how much content exists.
   let runBudget = maxPerDay;

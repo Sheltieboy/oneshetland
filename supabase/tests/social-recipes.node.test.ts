@@ -487,8 +487,9 @@ describe('Publish-time revalidation', () => {
     w.db.tables.cruise_visits[0].status = 'scheduled';
     assert.equal((await R.revalidatePost(w.db, queued('cruise_visit', '2026-11-06'), new Date('2026-11-07T00:00:00Z'))).state, 'invalid');
   });
-  test('old recipe kinds are not revalidated (their behaviour is unchanged)', () => {
-    for (const k of ['wird_of_day', 'whats_on_roundup', 'jobs_roundup', 'new_product', 'event_spotlight', 'custom']) assert.equal(R.REVALIDATED_KINDS.has(k), false);
+  test('word of the day and hand-written posts are not re-checked at send time (nothing they say can go stale); the other original recipes now are', () => {
+    for (const k of ['wird_of_day', 'custom']) assert.equal(R.REVALIDATED_KINDS.has(k), false);
+    for (const k of ['whats_on_roundup', 'jobs_roundup', 'new_product', 'event_spotlight']) assert.equal(R.REVALIDATED_KINDS.has(k), true);
   });
 });
 
@@ -505,9 +506,9 @@ describe('Existing pipeline unchanged', () => {
   test('publisher still publishes only approved/scheduled posts that are due, and still marks stale ones skipped', () => {
     assert.match(pub, /\.in\('status', \['approved', 'scheduled'\]\)/); assert.match(pub, /status: 'skipped', error: `stale: scheduled_for more than/);
   });
-  test('composer: every existing recipe block, its schedule and its status rule are untouched', () => {
+  test('composer: every existing recipe block, its weekday gate and its status rule are untouched (their hour now goes through the shared slot allocator)', () => {
     for (const marker of ["enabled('wird_of_day')", "enabled('whats_on_roundup')", "enabled('jobs_roundup')", "enabled('new_product')", "enabled('event_spotlight')", "isMonday || force", "isWednesday || force",
-      "Number(cfg('wird_of_day').hour ?? 8)", "Number(cfg('whats_on_roundup').hour ?? 9)", "Number(cfg('jobs_roundup').hour ?? 9)", "Number(cfg('new_product').hour ?? 11)", "Number(cfg('event_spotlight').hour ?? 18)"]) assert.ok(comp.includes(marker), marker);
+      "slotFor('wird_of_day', 8)", "slotFor('whats_on_roundup', 9)", "slotFor('jobs_roundup', 9)", "slotFor('new_product', 11)", "slotFor('event_spotlight', 18)"]) assert.ok(comp.includes(marker), marker);
     assert.match(comp, /status: statusFor\('wird_of_day'\)/);
   });
   test('composer calls the new recipes once, after the existing ones, and cannot let a failure break the run', () => {

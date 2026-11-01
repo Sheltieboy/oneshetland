@@ -1,7 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
-import { composeNewRecipes } from '../_shared/social-recipes.ts';
+import {
+  composeNewRecipes, loadSlotContext, peekSlot, eventPromotable, jobPromotable, productPromotable, isFixtureName, withIds,
+} from '../_shared/social-recipes.ts';
 
 /**
  * social-composer — the "Peerie Press" recipe runner (Phase 1).
@@ -155,6 +157,14 @@ serve(async (req) => {
     // this needs: autopilot-composed, not human-approved.
     const statusFor = (k: string): 'draft' | 'scheduled' => recipes.get(k)?.autopilot === true ? 'scheduled' : 'draft';
 
+    // ONE slot allocator for all twelve recipes: the shared daily maximum, minimum gap and posting window (admin_config social.*), counting every
+    // post already queued or posted today. The original recipes keep their own preferred hour; they just can no longer bypass the limits.
+    // A slot is only reserved once its post exists, so a recipe with nothing to say does not use up the day.
+    const slotCtx = await loadSlotContext(svc, now);
+    const slotFor = (key: string, fallbackHour: number): Date | null => peekSlot(slotCtx, Number(cfg(key).hour ?? fallbackHour));
+    const take = (d: Date) => { slotCtx.taken.push(d); };
+    const noSlot = (key: string) => { result.errors.push(`${key}: daily posting limit reached — nothing composed`); };
+
     /* ── Wird o' da Day ──────────────────────────────────────────────────── */
     if (enabled('wird_of_day')) {
       try {
@@ -180,19 +190,21 @@ serve(async (req) => {
             const template =
               `WORD OF THE DAY 🗣️\n\n${w.word} — ${w.short_meaning}\n\n“${w.example_sentence}”\n\nDiscover more Shetland words: ${link}`;
             const caption = await polishCaption(template, `Shetland dialect word of the day: "${w.word}" meaning "${w.short_meaning}".`);
+            const at = slotFor('wird_of_day', 8);
+            if (!at) { noSlot('wird_of_day'); throw new Error('limit'); }
             const { error } = await svc.from('social_posts').insert({
               kind: 'wird_of_day', entity_type: 'spik_word', entity_id: String(w.id),
               caption,
               image_url: `${SITE}/api/social-image?kind=wird&id=${w.id}`,
               link_url: link,
-              scheduled_for: jitter(nextLondonHour(Number(cfg('wird_of_day').hour ?? 8))),
+              scheduled_for: at.toISOString(),
               status: statusFor('wird_of_day'),
             });
-            if (!error) result.wird_of_day++; else result.errors.push(`wird insert: ${error.message}`);
+            if (!error) { take(at); result.wird_of_day++; } else result.errors.push(`wird insert: ${error.message}`);
           }
           await touch('wird_of_day');
         }
-      } catch (e) { result.errors.push(`wird_of_day: ${e}`); }
+      } catch (e) { if (String(e) !== 'Error: limit') result.errors.push(`wird_of_day: ${e}`); }
     }
 
     /* ── Whit's On dis week (Mondays) ────────────────────────────────────── */
@@ -203,16 +215,20 @@ serve(async (req) => {
           const week = isoWeek(now);
           const from = `${today.ymd}T00:00:00Z`;
           const max = Number(cfg('whats_on_roundup').max_events ?? 8);
+          // Only events that have NOT started by the moment this post goes out, that are published, listed (hub events need calendar approval,
+          // the website's own rule) and not test fixtures. (Previously: anything from midnight today, which could include events already over.)
+          const postAt = slotFor('whats_on_roundup', 9);
+          if (!postAt) { noSlot('whats_on_roundup'); throw new Error('limit'); }
           const fetchWindow = async (days: number) => {
-            const to = new Date(now.getTime() + days * 86400_000).toISOString();
+            const to = new Date(postAt.getTime() + days * 86400_000).toISOString();
             const { data } = await svc
               .from('events')
-              .select('id, title, starts_at, venue, locality')
+              .select('id, title, starts_at, venue, locality, status, is_hidden, organiser_hub_id, calendar_approved')
               .eq('status', 'published').eq('is_hidden', false)
-              .gte('starts_at', from).lt('starts_at', to)
+              .gt('starts_at', postAt.toISOString()).lt('starts_at', to)
               .order('starts_at', { ascending: true })
-              .limit(max);
-            return data ?? [];
+              .limit(max * 3);
+            return (data ?? []).filter((e: { starts_at: string }) => eventPromotable(e as never, postAt).ok).slice(0, max);
           };
           // A one-event card looks dead — widen to a fortnight when thin.
           let days = 7;
@@ -229,15 +245,15 @@ serve(async (req) => {
               kind: 'whats_on_roundup', entity_type: 'week', entity_id: week,
               caption,
               image_url: `${SITE}/api/social-image?kind=roundup&start=${today.ymd}&days=${days}`,
-              link_url: link,
-              scheduled_for: jitter(nextLondonHour(Number(cfg('whats_on_roundup').hour ?? 9))),
+              link_url: withIds(link, events.map((e: { id: string }) => e.id)),   // which events the post lists, so the publisher can re-check exactly those
+              scheduled_for: postAt.toISOString(),
               status: statusFor('whats_on_roundup'),
             });
-            if (!error) result.whats_on_roundup++; else result.errors.push(`roundup insert: ${error.message}`);
+            if (!error) { take(postAt); result.whats_on_roundup++; } else result.errors.push(`roundup insert: ${error.message}`);
           }
           await touch('whats_on_roundup');
         }
-      } catch (e) { result.errors.push(`whats_on_roundup: ${e}`); }
+      } catch (e) { if (String(e) !== 'Error: limit') result.errors.push(`whats_on_roundup: ${e}`); }
     }
 
     /* ── Jobs roundup (Wednesdays) — newest open roles + total count ──────── */
@@ -246,18 +262,24 @@ serve(async (req) => {
         const isWednesday = today.weekday === 'Wed';
         if (isWednesday || force) {
           const week = isoWeek(now);
+          // A job counts, and is listed, only if it is still open when the post goes out: the website hides jobs past `expires_at` and nothing
+          // flips their status, so the composer must apply the same condition to BOTH the count and the list.
+          const postAt = slotFor('jobs_roundup', 9);
+          if (!postAt) { noSlot('jobs_roundup'); throw new Error('limit'); }
+          const notExpired = `expires_at.is.null,expires_at.gt.${postAt.toISOString()}`;
           const { count } = await svc
             .from('jobs').select('id', { count: 'exact', head: true })
-            .eq('status', 'open').eq('is_hidden', false);
+            .eq('status', 'open').eq('is_hidden', false).or(notExpired);
           const { data: jobs } = await svc
             .from('jobs')
-            .select('title, external_employer_name, locality, location, local_businesses!posted_as_business_id(name)')
-            .eq('status', 'open').eq('is_hidden', false)
+            .select('id, title, external_employer_name, locality, location, status, is_hidden, expires_at, local_businesses!posted_as_business_id(name)')
+            .eq('status', 'open').eq('is_hidden', false).or(notExpired)
             .order('posted_at', { ascending: false })
             .limit(Number(cfg('jobs_roundup').max_jobs ?? 6));
-          if (count && jobs?.length) {
+          const live = (jobs ?? []).filter((j: { id: string; status: string; is_hidden: boolean; expires_at: string | null }) => jobPromotable(j, postAt).ok);
+          if (count && live.length) {
             const link = go('jobs');
-            const lines = jobs.map((j: { title: string; external_employer_name: string | null; locality: string | null; location: string | null; local_businesses?: { name?: string } | { name?: string }[] }) => {
+            const lines = live.map((j: { title: string; external_employer_name: string | null; locality: string | null; location: string | null; local_businesses?: { name?: string } | { name?: string }[] }) => {
               const biz = Array.isArray(j.local_businesses) ? j.local_businesses[0] : j.local_businesses;
               const employer = biz?.name ?? j.external_employer_name;
               return `• ${j.title}${employer ? ` — ${employer}` : ''}`;
@@ -269,15 +291,15 @@ serve(async (req) => {
               kind: 'jobs_roundup', entity_type: 'week', entity_id: week,
               caption,
               image_url: `${SITE}/api/social-image?kind=jobs`,
-              link_url: link,
-              scheduled_for: jitter(nextLondonHour(Number(cfg('jobs_roundup').hour ?? 9))),
+              link_url: withIds(link, live.map((j: { id: string }) => j.id)),   // the jobs the post lists, re-checked by the publisher
+              scheduled_for: postAt.toISOString(),
               status: statusFor('jobs_roundup'),
             });
-            if (!error) result.jobs_roundup++; else result.errors.push(`jobs insert: ${error.message}`);
+            if (!error) { take(postAt); result.jobs_roundup++; } else result.errors.push(`jobs insert: ${error.message}`);
           }
           await touch('jobs_roundup');
         }
-      } catch (e) { result.errors.push(`jobs_roundup: ${e}`); }
+      } catch (e) { if (String(e) !== 'Error: limit') result.errors.push(`jobs_roundup: ${e}`); }
     }
 
     /* ── New product spotlights — Shop Shetland's marketing loop ─────────── */
@@ -286,7 +308,7 @@ serve(async (req) => {
         const maxPerRun = Number(cfg('new_product').max_per_run ?? 2);
         const { data: candidates } = await svc
           .from('products')
-          .select('id, title, price_pence, stock_mode, photos, created_at, business:local_businesses(name, is_active)')
+          .select('id, business_id, title, price_pence, stock_mode, stock, reserved, is_active, sold_at, photos, created_at, business:local_businesses(name, is_active)')
           .eq('is_active', true)
           .is('sold_at', null)
           .order('created_at', { ascending: false })
@@ -300,8 +322,14 @@ serve(async (req) => {
           if (doneIds.has(prod.id as string)) continue;
           const biz = (Array.isArray(prod.business) ? (prod.business as Record<string, unknown>[])[0] : prod.business) as { name?: string; is_active?: boolean } | null;
           if (!biz?.is_active) continue;
-          if (!(prod.photos as string[])?.length) continue;             // photo-less posts don't sell
-          if ((biz.name ?? '').toUpperCase().startsWith('DEMO')) continue; // never market test data
+          // Genuinely buyable, by the Shop's own availableQty() rule (stock minus reserved, one-offs, made-to-order, variants), with a photo, from a
+          // visible business, and never test data (ZZ / DEMO names or titles, or a business hidden as a fixture).
+          const { data: variants } = await svc.from('product_variants').select('stock, reserved, is_active').eq('product_id', prod.id);
+          const { data: bizHidden } = await svc.rpc('is_discovery_hidden', { p_entity: 'business', p_id: prod.business_id });
+          if (!productPromotable(prod as never, (variants ?? []) as never, biz.name ?? null, biz.is_active === true, bizHidden === true).ok) continue;
+          if (isFixtureName(biz.name)) continue;
+          const at = slotFor('new_product', 11);
+          if (!at) { noSlot('new_product'); break; }
           const price = `£${((prod.price_pence as number) / 100).toFixed(2)}`;
           const modeLine = prod.stock_mode === 'one_off' ? '\nOne of a kind — first come, first served.'
             : prod.stock_mode === 'made_to_order' ? '\nMade to order, just for you.' : '';
@@ -314,10 +342,10 @@ serve(async (req) => {
             caption,
             image_url: `${SITE}/api/social-image?kind=product&id=${prod.id}`,
             link_url: link,
-            scheduled_for: jitter(nextLondonHour(Number(cfg('new_product').hour ?? 11))),
+            scheduled_for: at.toISOString(),
             status: statusFor('new_product'),
           });
-          if (!error) { created++; result.new_product++; }
+          if (!error) { take(at); created++; result.new_product++; }
           else result.errors.push(`new_product insert: ${error.message}`);
         }
         await touch('new_product');
@@ -330,7 +358,7 @@ serve(async (req) => {
         const maxPerRun = Number(cfg('event_spotlight').max_per_run ?? 2);
         const { data: candidates } = await svc
           .from('events')
-          .select('id, title, starts_at, venue, locality, cover_url, organiser_business_id, local_businesses!events_organiser_business_id_fkey(subscription_tier, name)')
+          .select('id, title, starts_at, venue, locality, cover_url, status, is_hidden, organiser_hub_id, calendar_approved, organiser_business_id, local_businesses!events_organiser_business_id_fkey(subscription_tier, name)')
           .eq('status', 'published').eq('is_hidden', false)
           .not('organiser_business_id', 'is', null)
           .gt('starts_at', now.toISOString())
@@ -347,6 +375,11 @@ serve(async (req) => {
         for (const e of premium) {
           if (created >= maxPerRun) break;
           if (doneIds.has(e.id)) continue;
+          // The event must not have started by the moment the post goes out (the old check was "later than the 05:40 compose time", which let a
+          // 10:00 event be advertised at 18:00), and must be published, listed and not a fixture.
+          const at = slotFor('event_spotlight', 18);
+          if (!at) { noSlot('event_spotlight'); break; }
+          if (!eventPromotable(e as never, at).ok) continue;
           const b = Array.isArray(e.local_businesses) ? e.local_businesses[0] : e.local_businesses;
           const where = [e.venue, e.locality].filter(Boolean).join(', ');
           const link = go(`event/${e.id}`);
@@ -359,10 +392,10 @@ serve(async (req) => {
             caption,
             image_url: `${SITE}/api/social-image?kind=event&id=${e.id}`,
             link_url: link,
-            scheduled_for: jitter(nextLondonHour(Number(cfg('event_spotlight').hour ?? 18))),
+            scheduled_for: at.toISOString(),
             status: statusFor('event_spotlight'),
           });
-          if (!error) { created++; result.event_spotlight++; }
+          if (!error) { take(at); created++; result.event_spotlight++; }
         }
         await touch('event_spotlight');
       } catch (e) { result.errors.push(`event_spotlight: ${e}`); }
@@ -373,7 +406,7 @@ serve(async (req) => {
        seeded DISABLED with autopilot OFF; essential_alert can never be autopilot. Existing recipes above are unchanged. */
     let newRecipes: unknown = null;
     try {
-      newRecipes = await composeNewRecipes({ svc, now, recipes, force, polish: polishCaption });
+      newRecipes = await composeNewRecipes({ svc, now, recipes, force, polish: polishCaption, ctx: slotCtx });
     } catch (e) { result.errors.push(`new_recipes: ${e}`); }
 
     return json({ ok: true, ...result, new_recipes: newRecipes });
