@@ -4,6 +4,7 @@ import { safeError } from '../_shared/safe-error.ts';
 import { requireCaller } from '../_shared/require-caller.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { authoriseBusinessClaimNotify } from '../_shared/business-claim-notify-auth.ts';
+import { emailClaimReceived } from '../_shared/claim-emails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -84,7 +85,11 @@ serve(async (req) => {
       notified++;
     }
 
-    return json({ ok: true, notified });
+    // Email as well as push: the claimant gets a confirmation, and every admin is told by email (an admin without the app, or without a push token,
+    // would otherwise never know). Never throws; a failed email does not fail the notification.
+    const emails = await emailClaimReceived(svc, claim_id);
+
+    return json({ ok: true, notified, emails });
   } catch (err) {
     console.error('[notify-business-claim]', err);
     return json({ error: safeError('notify-business-claim', err) }, 500);

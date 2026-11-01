@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient, sendUserPush } from '../_shared/send-push.ts';
 import { requireCaller } from '../_shared/require-caller.ts';
+import { emailClaimOutcome } from '../_shared/claim-emails.ts';
 import { safeError } from '../_shared/safe-error.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
 import { authoriseClaimOutcomeNotify } from '../_shared/claim-outcome-notify-auth.ts';
@@ -68,7 +69,9 @@ serve(async (req) => {
         : `Your claim for ${name} wasn't approved this time. Get in touch if you think this is a mistake.`,
       data:       { business_id: claim.business_id },
     });
-    return json({ ok: true, notified: 1 });
+    // The same outcome by email, so a claimant who only uses the website hears too. Never throws.
+    const email = await emailClaimOutcome(svc, claim_id, approved ? 'approved' : 'rejected');
+    return json({ ok: true, notified: 1, email });
   } catch (err) {
     console.error('[notify-claim]', err);
     return json({ error: safeError('notify-claim', err) }, 500);
