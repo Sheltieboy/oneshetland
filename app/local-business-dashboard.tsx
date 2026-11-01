@@ -121,7 +121,7 @@ const PLAN_FEATURES: { label: string; req: TierLevel }[] = [
   { label: 'Loyalty programme',      req: 'pro'     },
   { label: 'Time-limited offers',    req: 'pro'     },
   { label: 'Local Wallet payments',  req: 'pro'     },
-  { label: 'NFC tap-to-stamp tile',  req: 'pro'     },
+  { label: 'NFC tap-to-stamp tile (coming soon)', req: 'pro' },
   { label: 'In-app bookings',        req: 'pro'     },
   { label: 'Featured homepage spot', req: 'premium' },
 ];
@@ -1306,12 +1306,12 @@ export default function BusinessDashboardScreen() {
               cannot do is behave as though Wallet were live — see walletLive. */}
           {true && (<>
             <View style={styles.subDivider} />
-            <Text style={styles.subSectionLabel}>NFC tile</Text>
+            <Text style={styles.subSectionLabel}>NFC tile · coming soon</Text>
             <Text style={styles.cardSub}>
               {activeBusiness.nfc_status === 'active' ? '✓ Active · customers can tap to stamp' :
                activeBusiness.nfc_status === 'dispatched' ? 'Posted — stick it on the counter and tap it once with the app to activate' :
-               activeBusiness.nfc_status === 'requested' ? 'Requested · we\'ll ship within 3 working days' :
-               'Branded tap-to-stamp tile — included with your subscription'}
+               activeBusiness.nfc_status === 'requested' ? 'You\'re on the waiting list — we\'ll let you know when tiles are ready (no delivery date yet)' :
+               'Tap-to-stamp tiles are coming soon. Join the waiting list — nothing is posted yet.'}
             </Text>
             {activeBusiness.nfc_token && (
               <View style={styles.nfcTokenRow}>
@@ -1337,8 +1337,8 @@ export default function BusinessDashboardScreen() {
                     track('nfc_tile_requested', { businessId: activeBusiness.id });
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     brandedAlert({
-                      title: 'Tile requested!',
-                      message: 'We\'ll print your branded NFC tile and post it within 3 working days. You\'ll get a notification when it ships.',
+                      title: 'You\'re on the list',
+                      message: 'We\'ll let you know when tap-to-stamp tiles are ready to post. There\'s no delivery date yet.',
                     });
                     loadAll(activeBusiness);
                   } catch (e: any) {
@@ -1348,7 +1348,7 @@ export default function BusinessDashboardScreen() {
                 activeOpacity={0.85}
               >
                 <FontAwesome5 name="paper-plane" size={11} color="#fff" solid />
-                <Text style={styles.upgradeBtnText}>Request my NFC tile</Text>
+                <Text style={styles.upgradeBtnText}>Join the tile waiting list</Text>
               </TouchableOpacity>
             )}
           </>)}
