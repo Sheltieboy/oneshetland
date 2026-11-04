@@ -164,6 +164,24 @@ export function excerpt(text: string | null | undefined, max: number): string {
 }
 
 export const httpsUrl = (u: unknown): string | null => (typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u) ? u : null);
+/**
+ * Category artwork for notice posts. The images are static files on the website (public/social/notices/), so a notice post is
+ * published as an explicit Facebook photo (social_posts.image_url) instead of a link post whose card Facebook builds from the
+ * notice page's generic site image. Unmapped / missing categories fall back to the Community Notice card.
+ */
+export const NOTICE_IMAGE_BASE = `${SITE}/social/notices`;
+export const NOTICE_CATEGORY_IMAGE: Readonly<Record<string, string>> = {
+  travel_transport: 'travel',
+  health: 'health',
+  public_services: 'council',
+  consultations_funding: 'consultations',
+  community: 'community',
+};
+export const NOTICE_IMAGE_FALLBACK = 'community';
+export function noticeCategoryImage(category: string | null | undefined): string {
+  const key = NOTICE_CATEGORY_IMAGE[String(category ?? '').trim().toLowerCase()] ?? NOTICE_IMAGE_FALLBACK;
+  return `${NOTICE_IMAGE_BASE}/notice-${key}.jpg`;
+}
 export const isFixtureName = (n: string | null | undefined) => /^\s*(ZZ|DEMO)\b/i.test(n ?? '');
 
 /* ── Eligibility predicates (pure; the selectors below feed them rows) ─────────────────────────────────────────── */
@@ -364,7 +382,7 @@ export async function selectNotices(svc: Svc, cfg: Record<string, unknown>, now:
     return {
       kind: 'notice_update' as const, entity_type: 'notice', entity_id: r.id,
       caption: `COMMUNITY NOTICE 📣\n\n${r.title.trim()}${body ? `\n\n${body}` : ''}${source ? `\n\nSource: ${source}` : ''}\n\nRead the full notice: ${link}`,
-      image_url: httpsUrl(r.image_url), link_url: link, context: `Public notice: "${r.title}".`,
+      image_url: httpsUrl(r.image_url) ?? noticeCategoryImage(r.category), link_url: link, context: `Public notice: "${r.title}".`,
     };
   });
 }
