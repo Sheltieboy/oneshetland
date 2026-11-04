@@ -59,11 +59,15 @@ interface PostRow {
 }
 
 async function postToFacebook(pageId: string, token: string, post: PostRow): Promise<string> {
-  // Photo post when we have an image (the branded card), plain link post otherwise.
-  const endpoint = post.image_url ? `${GRAPH}/${pageId}/photos` : `${GRAPH}/${pageId}/feed`;
+  // Photo post when we have an image (the branded card), plain link post otherwise. Notice posts are ALWAYS link posts: their image_url is
+  // only the Social Studio preview of the category card the notice page serves as its og:image, so Facebook's card opens the notice itself
+  // (a /photos post would open Facebook's photo viewer instead).
+  const photoUrl = post.kind === 'notice_update' ? null : post.image_url;
+  const asPhoto = !!photoUrl;
+  const endpoint = asPhoto ? `${GRAPH}/${pageId}/photos` : `${GRAPH}/${pageId}/feed`;
   const body = new URLSearchParams(
-    post.image_url
-      ? { url: post.image_url, caption: post.caption, access_token: token }
+    asPhoto
+      ? { url: photoUrl as string, caption: post.caption, access_token: token }
       : { message: post.caption, ...(post.link_url ? { link: post.link_url } : {}), access_token: token },
   );
   const res = await fetch(endpoint, { method: 'POST', body });

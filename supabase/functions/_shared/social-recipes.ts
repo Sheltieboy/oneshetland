@@ -165,9 +165,10 @@ export function excerpt(text: string | null | undefined, max: number): string {
 
 export const httpsUrl = (u: unknown): string | null => (typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u) ? u : null);
 /**
- * Category artwork for notice posts. The images are static files on the website (public/social/notices/), so a notice post is
- * published as an explicit Facebook photo (social_posts.image_url) instead of a link post whose card Facebook builds from the
- * notice page's generic site image. Unmapped / missing categories fall back to the Community Notice card.
+ * Category artwork for notice posts. The images are static files on the website (public/social/notices/) and each notice page serves
+ * its category's card as og:image (web lib/notice-share-image.ts, same mapping), so Facebook's LINK card shows it and opens the notice.
+ * social_posts.image_url holds the same URL purely so Social Studio can preview it; the publisher never sends it as a photo post for
+ * notices. Unmapped / missing categories fall back to the Community Notice card.
  */
 export const NOTICE_IMAGE_BASE = `${SITE}/social/notices`;
 export const NOTICE_CATEGORY_IMAGE: Readonly<Record<string, string>> = {
@@ -366,6 +367,19 @@ export function peekSlot(ctx: SlotContext, preferredHour: number | null, rand: (
 
 /* ── Selectors: each returns already-filtered Candidates, best first ───────────────────────────────────────────── */
 
+/**
+ * A notice caption. The artwork already says "OneShetland" and the notice type, so the FIRST LINE is the notice's own title (the real
+ * information, never a generic "COMMUNITY NOTICE" header). Then a short excerpt of the notice's own text, the source if it has one, and the link.
+ * Nothing is invented: every word comes from the notice. Dates and deadlines appear when they are in the notice text itself.
+ */
+export function noticeCaption(n: { title: string; body: string | null; source?: string | null; link: string }): string {
+  const title = excerpt(n.title.replace(/\s+/g, ' ').trim(), 140);
+  let body = excerpt(n.body, 220);
+  // Don't repeat the headline as the first words of the excerpt.
+  if (body && title.length > 8 && body.toLowerCase().startsWith(title.toLowerCase())) body = body.slice(title.length).replace(/^[\s.:;,\-–—]+/, '');
+  return [title, body, n.source ? `Source: ${n.source}` : '', `Full notice: ${n.link}`].filter(Boolean).join('\n\n');
+}
+
 export async function selectNotices(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
   const { data, error } = await svc.rpc('get_public_notices', { p_level: 'all', p_area_ids: null, p_category: null, p_limit: 50, p_offset: 0 });
   if (error) throw error;
@@ -381,8 +395,8 @@ export async function selectNotices(svc: Svc, cfg: Record<string, unknown>, now:
     const body = excerpt(r.body, 220);
     return {
       kind: 'notice_update' as const, entity_type: 'notice', entity_id: r.id,
-      caption: `COMMUNITY NOTICE 📣\n\n${r.title.trim()}${body ? `\n\n${body}` : ''}${source ? `\n\nSource: ${source}` : ''}\n\nRead the full notice: ${link}`,
-      image_url: httpsUrl(r.image_url) ?? noticeCategoryImage(r.category), link_url: link, context: `Public notice: "${r.title}".`,
+      caption: noticeCaption({ title: r.title, body: r.body, source, link }),
+      image_url: noticeCategoryImage(r.category), link_url: link, context: `Public notice: "${r.title}".`,
     };
   });
 }

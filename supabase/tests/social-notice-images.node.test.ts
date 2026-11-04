@@ -1,5 +1,5 @@
 /**
- * social-notice-images.node.test.ts — category artwork for Social Studio notice posts.
+ * social-notice-images.node.test.ts — category artwork + specific-headline captions for Social Studio notice posts (link posts; og:image served by the notice page).
  *
  * Real shared module + real composer + real publisher against an in-memory database. fetch is replaced: NOTHING reaches Meta, nothing is posted.
  */
@@ -64,10 +64,10 @@ describe('composer: the right image is chosen for each notice', () => {
       assert.ok(c.caption.includes(c.link_url!), 'link is in the caption too, so Facebook shows it under the photo');
     }
   });
-  test('a notice with its own https image keeps it; a null category uses Community', async () => {
+  test('a null category uses Community; a notice\u2019s own image field never turns it into a photo post', async () => {
     const db = world([notice(1, { image_url: 'https://cdn.example/own.jpg', category: 'health' }), notice(2, { category: null })]);
     const out = await R.selectNotices(db, R.DEFAULTS.notice_update, NOW);
-    assert.deepEqual(out.map((c) => c.image_url), ['https://cdn.example/own.jpg', `${BASE}notice-community.jpg`]);
+    assert.deepEqual(out.map((c) => c.image_url), [`${BASE}notice-health.jpg`, `${BASE}notice-community.jpg`]);
   });
   test('funeral / person / sensitive notices are still never selected (so never get an image)', async () => {
     const db = world(
@@ -123,27 +123,35 @@ describe('publisher: image post to Facebook (mocked Graph API)', () => {
     }) as typeof fetch;
     return calls;
   };
+  const L = () => `https://oneshetland.com/go/notice/${U(1)}`;
   const queued = (o: Record<string, any>) => ({ id: 'p1', kind: 'notice_update', entity_id: U(1), status: 'approved', channels: ['facebook'], posted_ids: {}, scheduled_for: null,
-    caption: `COMMUNITY NOTICE\n\nRead the full notice: https://oneshetland.com/go/notice/${U(1)}`, link_url: `https://oneshetland.com/go/notice/${U(1)}`, ...o });
+    caption: R.noticeCaption({ title: 'Changes to inter-island ferry services this weekend', body: 'Sailings are retimed.', link: L() }), link_url: L(), ...o });
 
-  test('a notice post with a category image goes to /photos with that url and the original-notice link in the caption', async () => {
+  test('a notice post WITH a category preview image is still a LINK post (feed + link), never /photos, so the card opens the notice', async () => {
     const db = world([notice(1, { category: 'travel_transport' })]); db.tables.social_posts = [queued({ image_url: `${BASE}notice-travel.jpg` })];
     const calls = mockGraph();
-    const res = await (await load(db))(new Request('http://x/', { method: 'POST', body: '{}' }));
-    const out = await res.json();
+    const out = await (await (await load(db))(new Request('http://x/', { method: 'POST', body: '{}' }))).json();
     assert.equal(out.posted, 1, JSON.stringify(out));
     assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/PAGE1\/photos$/);
-    assert.equal(calls[0].body.get('url'), `${BASE}notice-travel.jpg`);
-    assert.ok(calls[0].body.get('caption')!.includes(`/go/notice/${U(1)}`));
+    assert.match(calls[0].url, /\/PAGE1\/feed$/);
+    assert.equal(calls[0].body.get('link'), L());
+    assert.equal(calls[0].body.get('url'), null);
+    assert.ok(calls[0].body.get('message')!.startsWith('Changes to inter-island ferry services this weekend\n'));
     assert.equal(db.table('social_posts')[0].status, 'posted');
+  });
+  test('other recipes with an image (e.g. branded cards) still go as photo posts: unchanged', async () => {
+    const db = world([]); db.tables.social_posts = [queued({ kind: 'wird_of_day', entity_id: 'b', image_url: 'https://cdn.example/b.jpg', caption: 'Hello' })];
+    const calls = mockGraph();
+    await (await load(db))(new Request('http://x/', { method: 'POST', body: '{}' }));
+    assert.match(calls[0].url, /\/PAGE1\/photos$/);
+    assert.equal(calls[0].body.get('url'), 'https://cdn.example/b.jpg');
   });
   test('without an image the publisher still posts a link post (existing behaviour unchanged)', async () => {
     const db = world([notice(1)]); db.tables.social_posts = [queued({ image_url: null })];
     const calls = mockGraph();
     await (await load(db))(new Request('http://x/', { method: 'POST', body: '{}' }));
     assert.match(calls[0].url, /\/PAGE1\/feed$/);
-    assert.equal(calls[0].body.get('link'), `https://oneshetland.com/go/notice/${U(1)}`);
+    assert.equal(calls[0].body.get('link'), L());
   });
   test('send-time re-check still blocks a notice that became sensitive/withdrawn: no Graph call', async () => {
     const db = world([notice(1)], [meta(1, { withdrawn_at: ago(0.1) })]); db.tables.social_posts = [queued({ image_url: `${BASE}notice-community.jpg` })];
@@ -173,5 +181,46 @@ describe('the image files', () => {
       const name = R.noticeCategoryImage(c).split('/').pop()!;
       assert.ok(existsSync(join(dir, name)), `${c} → ${name} exists`);
     }
+  });
+});
+
+describe('captions: the first line is the real information', () => {
+  const L = 'https://oneshetland.com/go/notice/x';
+  test('title first; excerpt; source; link; no generic header, no repeated branding', () => {
+    const c = R.noticeCaption({ title: 'NHS Shetland announces winter vaccination clinics', body: 'Clinics run at Gilbert Bain Hospital from Monday 10 November. Book by phone.', source: 'NHS Shetland', link: L });
+    assert.equal(c, `NHS Shetland announces winter vaccination clinics\n\nClinics run at Gilbert Bain Hospital from Monday 10 November. Book by phone.\n\nSource: NHS Shetland\n\nFull notice: ${L}`);
+    assert.doesNotMatch(c, /COMMUNITY NOTICE|HEALTH NOTICE|IMPORTANT NOTICE|📣/i);
+    assert.ok(c.split('\n')[0].length <= 140);
+  });
+  test('no body / no source: just headline and link', () => {
+    assert.equal(R.noticeCaption({ title: 'Applications open for local energy support', body: null, link: L }), `Applications open for local energy support\n\nFull notice: ${L}`);
+  });
+  test('an excerpt that merely repeats the headline does not repeat it', () => {
+    const c = R.noticeCaption({ title: 'Changes to ferry services this weekend', body: 'Changes to ferry services this weekend. The 7am sailing is cancelled.', link: L });
+    assert.equal(c, `Changes to ferry services this weekend\n\nThe 7am sailing is cancelled.\n\nFull notice: ${L}`);
+  });
+  test('words come only from the notice: nothing is added to a notice that has no urgency', () => {
+    const c = R.noticeCaption({ title: 'Library opening hours', body: 'Open 10 to 4.', link: L });
+    assert.doesNotMatch(c, /urgent|emergency|breaking|alert|important/i);
+  });
+  test('very long titles are shortened at a word, not mid-word', () => {
+    const c = R.noticeCaption({ title: 'word '.repeat(60), body: null, link: L });
+    assert.ok(c.split('\n')[0].length <= 141 && !/wor…$/.test(c.split('\n')[0]));
+  });
+  test('composed notice captions carry the title first and the original link; the composer does not polish factual kinds', async () => {
+    const out = await R.selectNotices(world([notice(1, { title: 'NHS Shetland announces winter vaccination clinics', category: 'health' })], [meta(1, { source_label: 'NHS Shetland' })]), R.DEFAULTS.notice_update, NOW);
+    assert.ok(out[0].caption.startsWith('NHS Shetland announces winter vaccination clinics\n'));
+    assert.ok(out[0].caption.includes('Source: NHS Shetland') && out[0].caption.endsWith(`Full notice: ${out[0].link_url}`));
+  });
+});
+
+describe('web and backend share one category mapping', () => {
+  test('lib/notice-share-image.ts maps exactly like noticeCategoryImage()', () => {
+    const f = join(WEB, 'lib', 'notice-share-image.ts');
+    assert.ok(existsSync(f), f);
+    const src = readFileSync(f, 'utf8');
+    const m = [...src.matchAll(/^\s*([a-z_]+): "([a-z]+)",$/gm)].map((x) => [x[1], x[2]]);
+    assert.deepEqual(Object.fromEntries(m), R.NOTICE_CATEGORY_IMAGE);
+    assert.match(src, /NOTICE_SHARE_FALLBACK = "community"/);
   });
 });

@@ -55,7 +55,7 @@ describe('Notices & community updates', () => {
     const w = world({ notices: [notice(1)] });
     const c = await R.selectNotices(w.db, R.DEFAULTS.notice_update, NOW);
     assert.equal(c.length, 1);
-    assert.match(c[0].caption, /^COMMUNITY NOTICE/);
+    assert.match(c[0].caption, /^Bus timetable change 1\n/);
     assert.ok(c[0].caption.includes('https://oneshetland.com/go/notice/' + U(1)));
     assert.equal(c[0].link_url, 'https://oneshetland.com/go/notice/' + U(1));
   });
@@ -87,10 +87,10 @@ describe('Notices & community updates', () => {
     const w = world({ notices: [notice(14, { is_essential_active: true })] });
     assert.deepEqual(await R.selectNotices(w.db, R.DEFAULTS.notice_update, NOW), []);
   });
-  test('only an https image is attached (a notice\u2019s own image wins; otherwise the category card)', async () => {
+  test('the preview image is always the https category card (the notice page serves it as og:image)', async () => {
     const w = world({ notices: [notice(15, { image_url: 'http://x/y.jpg' }), notice(16, { image_url: 'https://cdn.example/y.jpg' })] });
     const c = await R.selectNotices(w.db, R.DEFAULTS.notice_update, NOW);
-    assert.deepEqual(c.map((x) => x.image_url), ['https://oneshetland.com/social/notices/notice-travel.jpg', 'https://cdn.example/y.jpg']);
+    assert.deepEqual(c.map((x) => x.image_url), Array(2).fill('https://oneshetland.com/social/notices/notice-travel.jpg'));
   });
 });
 
