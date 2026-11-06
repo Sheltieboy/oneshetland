@@ -99,13 +99,20 @@ create table public.event_submissions (
   constraint event_submissions_latlng_pair check ((lat is null) = (lng is null))
 );
 -- ── attribution: a community event is platform-OWNED but must never read as OneShetland-organised ───────────────────────────────────────────────
--- Reader rule: OFFICIAL OneShetland event = is_platform_event AND source IS NULL.  COMMUNITY event = source = 'community_submission' (show organiser_name).
--- Rows that exist today have source NULL, so every existing platform event stays official.
+-- Reader rule (decided 6 Nov 2026). Who an event is "by", in this order:
+--   1. source = 'community_submission'          -> organiser_name (a named community group; NEVER OneShetland)
+--   2. an owning business or hub                -> that entity (existing behaviour, unchanged)
+--   3. source = 'oneshetland'                   -> OneShetland: an EXPLICIT marker only staff can set, the ONLY way an event reads as OneShetland-organised
+--   4. organiser_name with no owner, source NULL -> that name (a curated listing credited to the real organiser)
+--   5. otherwise                                -> no organiser claim at all, exactly as the public pages behave today
+-- is_platform_event only says who OWNS the row. It is NOT a statement about who ORGANISES the event: the 120 existing platform-owned events (a parkrun,
+-- drama groups, a venue's weekend ...) are third-party events curated by staff. They keep source NULL and are never labelled OneShetland.
 alter table public.events add column if not exists source text;
 alter table public.events add column if not exists submission_id uuid;
-alter table public.events add constraint events_source_check check (source is null or source = 'community_submission');
+alter table public.events add constraint events_source_check check (source is null or source in ('community_submission', 'oneshetland'));
 alter table public.events add constraint events_community_needs_organiser check
-  (source is null or (is_platform_event and organiser_name is not null and btrim(organiser_name) <> ''));
+  (source is distinct from 'community_submission' or (is_platform_event and organiser_name is not null and btrim(organiser_name) <> ''));
+alter table public.events add constraint events_oneshetland_is_platform check (source is distinct from 'oneshetland' or is_platform_event);
 
 create index idx_event_submissions_status on public.event_submissions (status, created_at);
 create index idx_event_submissions_submitter on public.event_submissions (submitter_id, created_at desc);

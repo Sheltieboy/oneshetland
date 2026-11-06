@@ -18,7 +18,7 @@ end $$;
 drop function if exists public.admin_list_event_submissions(text, int), public.admin_event_submission_counts(), public.admin_review_event_submission(uuid, text, text),
   public.withdraw_event_submission(uuid), public.submit_event_submission(jsonb), public.event_validate_occurrences(jsonb, timestamptz), public.event_clean_field(text, jsonb, uuid),
   public.event_submission_ts(jsonb), public.event_submissions_open();
-alter table public.events drop constraint if exists events_community_needs_organiser, drop constraint if exists events_source_check, drop constraint if exists events_submission_id_fkey;
+alter table public.events drop constraint if exists events_oneshetland_is_platform, drop constraint if exists events_community_needs_organiser, drop constraint if exists events_source_check, drop constraint if exists events_submission_id_fkey;
 alter table public.events drop column if exists source, drop column if exists submission_id;
 drop table if exists public.event_submissions;
 drop function if exists public.tg_event_submissions_touch(), public.event_submission_text_problem(text, boolean), public.event_category_label(text);

@@ -735,6 +735,22 @@ describe('existing business / hub permissions are unchanged, and nothing contact
     assert.ok(okq(E.do('ADMIN', `insert into events (title, starts_at, status, is_platform_event) values ('staff official',now()+interval '3 days','published',true)`)));
     assert.equal(E.q(`select source is null from events where title='staff official'`), 't');
   });
+  test('only an EXPLICIT staff marker makes an event OneShetland-organised: curated platform events, business events and clients can never carry it', () => {
+    // 1. nothing existing is marked: every seeded platform and business event has source NULL, so none can read as OneShetland-organised
+    assert.equal(E.q(`select count(*) from events where source is not null and submission_id is null`), '0', 'no seeded platform/business event is marked');
+    assert.equal(E.q(`select count(*) from events where id in ('${E_PLAT}','${E_BIZ}','${E_BIZ_TICKETED}') and source is null`), '3');
+    // 2. staff may mark a platform-owned event; the marker needs no organiser_name
+    assert.ok(okq(E.sup(`insert into events (title, starts_at, status, is_platform_event, source) values ('marked official', now() + interval '5 days', 'draft', true, 'oneshetland')`)));
+    // 3. a business- or hub-owned event can never carry it, and neither can an unknown value
+    assert.match(E.sup(`insert into events (title, starts_at, status, is_platform_event, organiser_business_id, source) values ('x', now(), 'draft', false, '${BZ}', 'oneshetland')`), /events_oneshetland_is_platform/);
+    assert.match(E.sup(`insert into events (title, starts_at, status, is_platform_event, source) values ('x', now(), 'draft', true, 'official')`), /events_source_check/);
+    // 4. a signed-in business owner cannot set it (the guard clears client-set source), nor can an ordinary member insert anything
+    E.do('BIZ', `insert into events (id, title, starts_at, status, organiser_business_id, source) values ('${id(0xa1)}','client tried', now() + interval '6 days', 'draft', '${BZ}', 'oneshetland')`);
+    assert.notEqual(E.q(`select coalesce(source,'(null)') from events where id='${id(0xa1)}'`), 'oneshetland', 'a client can never set the marker');
+    // 5. approving a community submission produces community, never the OneShetland marker
+    assert.equal(E.q(`select count(*) from events where source = 'oneshetland' and submission_id is not null`), '0');
+    E.sup(`delete from events where title in ('marked official','client tried')`);
+  });
   test('no notification_log rows, no emails: the whole flow wrote none', () => {
     assert.equal(notifCount(), NOTIF0);
     assert.equal(E.q(`select count(*) from pg_trigger t join pg_proc p on p.oid=t.tgfoid where t.tgrelid in ('event_occurrences'::regclass,'event_submissions'::regclass,'event_change_requests'::regclass,'event_organiser_trust'::regclass) and not t.tgisinternal and pg_get_functiondef(p.oid) ~* 'notification_log|net\\.http|email'`), '0');
@@ -797,8 +813,10 @@ describe('mutation controls (each weakens one guard and shows the probe catches 
     (e) => e.q(`select has_function_privilege('anon','public.submit_event_submission(jsonb)','execute')`) === 'f');
   run('double approve is not idempotent', [{ file: M2, find: "if p_decision = 'approve' and s.status = 'approved' then", replace: 'if false then' }],
     (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','open','events')`); const s = e.submit('SUB'); e.approve(s.id); const o = e.approve(s.id); return !failed(o) && /"duplicate": true/.test(o); });
-  run('community event without organiser name allowed', [{ file: M2, find: /alter table public\.events add constraint events_community_needs_organiser check\n  \(source is null or \(is_platform_event and organiser_name is not null and btrim\(organiser_name\) <> ''\)\);/, replace: 'select 1;' }],
+  run('community event without organiser name allowed', [{ file: M2, find: /alter table public\.events add constraint events_community_needs_organiser check\n  \(source is distinct from 'community_submission' or \(is_platform_event and organiser_name is not null and btrim\(organiser_name\) <> ''\)\);/, replace: 'select 1;' }],
     (e) => failed(e.sup(`insert into events (title, starts_at, status, is_platform_event, source) values ('x', now(), 'draft', true, 'community_submission')`)));
+  run('the OneShetland marker is allowed on a business event', [{ file: M2, find: /alter table public\.events add constraint events_oneshetland_is_platform check \(source is distinct from 'oneshetland' or is_platform_event\);/, replace: 'select 1;' }],
+    (e) => failed(e.sup(`insert into events (title, starts_at, status, is_platform_event, organiser_business_id, source) values ('x', now(), 'draft', false, '${BZ}', 'oneshetland')`)));
   run('clients can forge is_dated_run', [{ file: M2, find: '  new.is_dated_run := old.is_dated_run;\n  if not public.attribution_staff()', replace: '  if not public.attribution_staff()' }],
     (e) => { e.do('BIZ', `update events set is_dated_run = true where id='${E_BIZ}'`); return e.q(`select is_dated_run from events where id='${E_BIZ}'`) === 'f'; });
   run('contributor check ignores who the contributor is', [{ file: M3, find: '       and s.event_id = e.id and s.submitter_id = auth.uid());', replace: '       and s.event_id = e.id);' }],

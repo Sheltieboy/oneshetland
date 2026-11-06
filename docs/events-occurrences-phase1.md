@@ -22,7 +22,7 @@ Parent sync (trigger, definer): parent `starts_at` = earliest non-cancelled star
 
 **Reader rules (for the website/app teams)**
 - A row with `is_dated_run = true` is a discrete run of performances. NEVER show it as running continuously between `starts_at` and `ends_at`; list the occurrence dates.
-- Official OneShetland event = `is_platform_event AND source IS NULL`. Community event = `source = 'community_submission'` - show `organiser_name` as the organiser and never imply OneShetland organised it. The database guarantees a community event always has a non-blank `organiser_name`.
+- **Who an event is "by"** (decided 6 Nov 2026), in order: community (`source='community_submission'`) -> `organiser_name`, never OneShetland; an owning business or hub -> that entity; `source='oneshetland'` -> OneShetland (an EXPLICIT staff-only marker, the only way an event reads as OneShetland-organised); `organiser_name` with no owner -> that name (a curated listing credited to its real organiser); otherwise NO organiser claim, exactly as today. `is_platform_event` says who OWNS the row, not who ORGANISES it: the 120 existing platform-owned events are third-party events curated by staff (source NULL) and are never labelled OneShetland. Existing counts on 6 Nov: 33 business-owned, 120 platform-owned, 0 hub-owned.
 - Show `status` of each occurrence; a cancelled occurrence is not a live date.
 
 New tables: `event_occurrences`, `event_submissions`, `event_change_requests`, `event_organiser_trust`, `event_change_log`. All have RLS; no client can INSERT/UPDATE/DELETE the last four (every write is a function).
