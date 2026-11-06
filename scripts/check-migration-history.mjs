@@ -1,73 +1,29 @@
 #!/usr/bin/env node
 /**
- * check-migration-history.mjs — is it safe to run `supabase db push` against production?
- *
- * Only while the repository's migration files and the versions production has REGISTERED agree. If a migration is ever applied by hand and not
- * registered (list it in supabase/production/hand-applied-migrations.json), `db push` would try to apply it a second time; this compares the two
- * lists and exits non-zero whenever they differ. (On 2026-10-08 the 29 earlier hand-applied migrations were registered; they now agree.)
- *
- *   node scripts/check-migration-history.mjs                       reads the registered versions with `supabase migration list --linked` (READ-ONLY)
- *   node scripts/check-migration-history.mjs --snapshot            offline: uses supabase/production/registered-migrations.json
- *   node scripts/check-migration-history.mjs --registered <file>   offline: a JSON array of versions, or saved `migration list` output
- *   add --json for machine-readable output
- *
- * Exit 0 = repository and registered history agree. Exit 1 = they differ (do not db push). Exit 2 = could not read the history.
- * Never writes to production and carries no credentials: the CLI handles its own login.
+ * check-migration-history.mjs — READ-ONLY. Compares a directory of migration files with the migration history recorded in the linked production database.
+ *   node scripts/check-migration-history.mjs [--dir <path-to-supabase/migrations>]
+ * Runs ONE SELECT (supabase db query --linked). Exit 1 if it finds a problem that would make a deployment skip, reorder or mis-record a migration:
+ *   COLLISION     a local file whose VERSION is already applied in production under a DIFFERENT NAME. `supabase db push` would treat it as applied and silently skip it.
+ *   OUT-OF-ORDER  a local file that is NOT applied but is older than the newest applied version (it would be inserted behind production's history).
+ * Also reports, for information, applied versions that have no local file (history that lives on another branch).
+ * Run it before ANY deployment of a branch that carries migrations, and fix by renumbering the unapplied file (never by editing history).
  */
-import { readFileSync, readdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
+import { resolve } from "node:path";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-
-export const localVersions = (dir = join(ROOT, 'supabase/migrations')) =>
-  readdirSync(dir).filter((f) => /^\d{14}_.+\.sql$/.test(f)).map((f) => f.slice(0, 14)).sort();
-
-/** Registered versions out of JSON ([..] or {versions:[..]}) or `supabase migration list` text (Local | Remote | Time). */
-export function parseRegistered(text) {
-  const t = text.trim();
-  if (t.startsWith('[') || t.startsWith('{')) { const j = JSON.parse(t); return (Array.isArray(j) ? j : j.versions).map(String).sort(); }
-  const out = [];
-  for (const line of t.split('\n')) {
-    const cols = line.split('|').map((c) => c.trim());
-    if (cols.length >= 2 && /^\d{14}$/.test(cols[1])) out.push(cols[1]);
-  }
-  return out.sort();
-}
-
-export function analyse(local, registered, handApplied) {
-  const reg = new Set(registered), loc = new Set(local), hand = new Set(handApplied);
-  const localOnly = local.filter((v) => !reg.has(v));
-  return {
-    unregistered_known: localOnly.filter((v) => hand.has(v)),
-    unregistered_unknown: localOnly.filter((v) => !hand.has(v)),
-    registered_without_file: registered.filter((v) => !loc.has(v)),
-    stale_hand_applied_entries: handApplied.filter((v) => !localOnly.includes(v)),
-    safe_to_push: localOnly.length === 0 && registered.every((v) => loc.has(v)),
-  };
-}
-
-function main(argv) {
-  const a = argv.slice(2); const opt = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
-  const hand = JSON.parse(readFileSync(join(ROOT, 'supabase/production/hand-applied-migrations.json'), 'utf8')).migrations.map((m) => m.version); // known-but-unregistered entries (normally empty)
-  let registered;
-  try {
-    if (a.includes('--snapshot')) registered = parseRegistered(readFileSync(join(ROOT, 'supabase/production/registered-migrations.json'), 'utf8'));
-    else if (opt('--registered')) registered = parseRegistered(readFileSync(opt('--registered'), 'utf8'));
-    else registered = parseRegistered(execFileSync('supabase', ['migration', 'list', '--linked'], { encoding: 'utf8' }));
-  } catch (e) { console.error(`could not read the registered migration history: ${e.message}`); return 2; }
-  const r = analyse(localVersions(), registered, hand);
-  if (a.includes('--json')) console.log(JSON.stringify(r, null, 2));
-  else if (r.safe_to_push) console.log('Repository migrations and registered production history agree.');
-  else {
-    console.log('DO NOT RUN `supabase db push` AGAINST PRODUCTION.');
-    if (r.unregistered_known.length) console.log(`  ${r.unregistered_known.length} migration(s) are applied in production but not registered (hand-applied); db push would run them again:\n    ${r.unregistered_known.join('\n    ')}`);
-    if (r.unregistered_unknown.length) console.log(`  ${r.unregistered_unknown.length} migration file(s) are neither registered nor listed as hand-applied — they may be UNAPPLIED:\n    ${r.unregistered_unknown.join('\n    ')}`);
-    if (r.registered_without_file.length) console.log(`  ${r.registered_without_file.length} registered version(s) have no file in the repository:\n    ${r.registered_without_file.join('\n    ')}`);
-    if (r.stale_hand_applied_entries.length) console.log(`  hand-applied list has stale entries (now registered or missing): ${r.stale_hand_applied_entries.join(', ')}`);
-    console.log('  See docs/MIGRATION-HISTORY.md. Registration is a separate, explicitly approved step.');
-  }
-  return r.safe_to_push ? 0 : 1;
-}
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) process.exit(main(process.argv));
+const dirArg = process.argv.indexOf("--dir");
+const dir = resolve(dirArg > -1 ? process.argv[dirArg + 1] : "supabase/migrations");
+const out = execFileSync("supabase", ["db", "query", "--linked", "select version, name from supabase_migrations.schema_migrations order by version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+const rows = JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1)).rows;
+const remote = new Map(rows.map((r) => [r.version, r.name]));
+const newest = [...remote.keys()].sort().at(-1);
+const local = readdirSync(dir).filter((f) => /^\d{12,14}_.+\.sql$/.test(f)).map((f) => { const m = /^(\d+)_(.+)\.sql$/.exec(f); return { file: f, version: m[1], name: m[2] }; });
+const collisions = local.filter((l) => remote.has(l.version) && remote.get(l.version) !== l.name);
+const outOfOrder = local.filter((l) => !remote.has(l.version) && l.version < newest);
+const pending = local.filter((l) => !remote.has(l.version) && l.version >= newest);
+const noFile = [...remote.keys()].filter((v) => !local.some((l) => l.version === v));
+console.log(`Production: ${remote.size} applied, newest ${newest}. Directory: ${local.length} files. Pending (safe to apply, in order): ${pending.length}. Applied versions with no file here: ${noFile.length}.`);
+for (const c of collisions) console.log(`COLLISION     ${c.file}  — version ${c.version} is applied in production as "${remote.get(c.version)}". Renumber this file above ${newest}.`);
+for (const o of outOfOrder) console.log(`OUT-OF-ORDER  ${o.file}  — not applied, but older than the newest applied version ${newest}. Renumber it above ${newest}.`);
+process.exit(collisions.length || outOfOrder.length ? 1 : 0);
