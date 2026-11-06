@@ -328,3 +328,26 @@ t("idempotent: applying the migration a second time changes nothing", () => {
   const snap = () => run("select (select count(*) from public.regular_activities)||'|'||(select count(*) from pg_policy where polrelid::regclass::text like 'public.%activit%')||'|'||(select count(*) from pg_trigger where tgrelid::regclass::text like 'public.%activit%' and not tgisinternal)");
   const a = snap(); run(readFileSync(MIG, "utf8")); assert.equal(snap(), a);
 });
+
+// ── load: the listing and sessions stay fast with far more data than Shetland will have for a long time
+t("a month's listing over 300 activities / 900 weekly times / 300 exceptions stays fast, bounded and correct", () => {
+  run(`insert into public.regular_activities(title, category, status, organiser_business_id, locality, booking_mode)
+         select 'Load activity ' || g, (array['fitness','kids_family','social','arts_crafts','sport','wellbeing'])[1 + g % 6], 'published', '${B1}', (array['Lerwick','Scalloway','Brae'])[1 + g % 3], 'drop_in'
+           from generate_series(1, 300) g`);
+  run(`insert into public.activity_schedule_rules(activity_id, day_of_week, start_time, end_time, anchor_date)
+         select a.id, d, time '09:00' + (d || ' hours')::interval, time '10:00' + (d || ' hours')::interval, date '2026-09-07'
+           from public.regular_activities a cross join (values (1),(3),(5)) v(d) where a.title like 'Load activity %'`);
+  run(`insert into public.activity_exceptions(activity_id, rule_id, occurrence_date, kind, note)
+         select r.activity_id, r.id, date '2026-11-09', 'cancelled', 'Load test'
+           from public.activity_schedule_rules r join public.regular_activities a on a.id = r.activity_id where a.title like 'Load activity %' and r.day_of_week = 1 limit 600`);
+  const ms = (q: string) => { const t0 = Date.now(); run(q, "anon"); return Date.now() - t0; };
+  const listing = ms(`select count(*) from public.regular_activities_listing('2026-11-09','2026-12-10', null, null, null, null, null, 100)`);
+  const day = ms(`select count(*) from public.regular_activities_listing('2026-11-10','2026-11-11')`);
+  assert.equal(run(`select count(*) from public.regular_activities_listing('2026-11-09','2026-12-10', null, null, null, null, null, 100)`, "anon"), "100", "the row cap holds");
+  assert.ok(listing < 2500, `a month's listing took ${listing} ms`);
+  assert.ok(day < 2500, `one day's listing took ${day} ms`);
+  const plan = lastFull(`explain (analyze, timing off) select count(*) from public.activity_sessions('2026-11-09','2026-12-10', null, 1000)`, "anon");
+  assert.match(plan, /Execution Time: \d+/);
+  const exec = Number(plan.match(/Execution Time: ([\d.]+) ms/)![1]);
+  assert.ok(exec < 1500, `computing a month of sessions for 300 activities took ${exec} ms`);
+});
