@@ -13,18 +13,24 @@
  * No Deno-only globals at module scope, so it also runs under node:test with a mocked client.
  */
 
+import { selectRoundup, selectAccessible, revalidateRoundup, revalidateAccessible, formatOfEntity } from './social-regular-access.ts';
+
 export const SITE = 'https://oneshetland.com';
+
+/** Defaults for the two newest recipes. Kept here (not in social-regular-access.ts) so neither module needs the other at load time. */
+export const REGULAR_DEFAULTS = { hour: 18, weekdays: ['Sat', 'Sun'], max_per_run: 1, max_pending: 2, max_items: 6, max_per_organiser: 2, lookback_weeks: 8, max_regenerations: 2 };
+export const ACCESS_DEFAULTS = { hour: 14, weekdays: ['Wed'], max_per_run: 1, max_pending: 2, min_days_between: 13, business_requires_review: true, min_facts: 3, repeat_business_days: 90, repeat_resource_days: 120, max_resource_age_days: 180, approved_resources: [] as string[] };
 export const go = (slug: string) => `${SITE}/go/${slug}`;
 
 /** The five original recipes whose posts are also re-checked at send time (their ids ride in link_url#ids=, or the entity id). */
 export const ORIGINAL_REVALIDATED = ['jobs_roundup', 'whats_on_roundup', 'event_spotlight', 'new_product'] as const;
 
-export const NEW_KINDS = ['essential_alert', 'notice_update', 'cruise_visit', 'aald_memory', 'business_spotlight', 'hub_community', 'game_challenge'] as const;
+export const NEW_KINDS = ['essential_alert', 'notice_update', 'cruise_visit', 'aald_memory', 'business_spotlight', 'hub_community', 'game_challenge', 'regular_roundup', 'accessible_info'] as const;
 export type NewKind = typeof NEW_KINDS[number];
 /** Kinds the publisher re-checks just before sending. */
 export const REVALIDATED_KINDS = new Set<string>([...NEW_KINDS, ...ORIGINAL_REVALIDATED]);
 /** Kinds whose caption states facts, so the AI "warm-up" is never applied (it could soften or embellish). */
-const FACTUAL: ReadonlySet<string> = new Set(['essential_alert', 'notice_update', 'cruise_visit']);
+const FACTUAL: ReadonlySet<string> = new Set(['essential_alert', 'notice_update', 'cruise_visit', 'regular_roundup', 'accessible_info']);
 
 /* ── Defaults (the migration seeds the same values into social_recipes.config) ─────────────────────────────────── */
 
@@ -36,10 +42,12 @@ export const DEFAULTS: Record<NewKind, Record<string, unknown>> = {
   business_spotlight: { hour: 13, weekdays: ['Mon', 'Tue', 'Thu', 'Fri'], max_per_run: 1, max_pending: 3, min_description_chars: 60, min_description_words: 8, repeat_after_days: 90, welcome_days: 14, welcome_max_consecutive: 2, skipped_cooloff_days: 7, failed_cooloff_days: 2 },
   hub_community:      { hour: 10, weekdays: ['Wed', 'Sat'], max_per_run: 1, max_pending: 2, min_description_chars: 40, repeat_after_days: 30 },
   game_challenge:     { hour: 17, weekdays: ['Thu', 'Sun'], max_per_run: 1, max_pending: 2, games: ['guess_da_wird', 'spik_sprint', 'spik_snap', 'map_it'] },
+  regular_roundup:    { ...REGULAR_DEFAULTS },
+  accessible_info:    { ...ACCESS_DEFAULTS },
 };
 /** Order matters: an alert is considered first so it gets the earliest free slot. Autopilot content that will really be published (notices, business
  *  spotlights) now comes BEFORE the review-only recipes (Aald Memories, Hubs), whose drafts still reserve slots until a person looks at them. */
-const ORDER: NewKind[] = ['essential_alert', 'notice_update', 'cruise_visit', 'business_spotlight', 'aald_memory', 'hub_community', 'game_challenge'];
+const ORDER: NewKind[] = ['essential_alert', 'notice_update', 'cruise_visit', 'business_spotlight', 'regular_roundup', 'accessible_info', 'aald_memory', 'hub_community', 'game_challenge'];
 
 export type Candidate = {
   kind: NewKind;
@@ -54,6 +62,8 @@ export type Candidate = {
   needsApproval?: boolean;
   /** Why it is held / which rotation lane chose it (shown to admins). */
   note?: string;
+  /** Alt text for the image where the channel supports it (Facebook photo posts). */
+  imageAlt?: string;
 };
 
 /** Upper bound on candidates a selector builds per run (each may cost a lookup); a run posts at most a day's worth anyway. */
@@ -851,9 +861,26 @@ export async function revalidatePost(svc: Svc, post: QueuedPost, now: Date): Pro
         return v.ok ? { state: 'valid' } : { state: 'invalid', reason: `product ${v.reason}` };
       }
       case 'game_challenge': return { state: 'valid' };
+      case 'regular_roundup': return await revalidateRoundup(svc, post, now);
+      case 'accessible_info': return await revalidateAccessible(svc, post, now);
       default: return { state: 'valid' };
     }
   } catch { return { state: 'unknown' }; }
+}
+
+const addDaysYmd = (ymd: string, n: number): string => { const [y, m, dd] = ymd.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1, dd + n)); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`; };
+
+/** The latest selection, left where staff can read it (admin_config). Best effort: never blocks a run. */
+async function writeSnapshot(svc: Svc, key: string, report: unknown): Promise<void> {
+  try { await svc.from('admin_config').upsert({ key, value: JSON.stringify(report), category: 'social', description: 'Latest Social Studio selection snapshot (read-only).', is_secret: false }, { onConflict: 'key' }); } catch { /* ignore */ }
+}
+/** When a recipe has nothing to post, say why in Social Studio as a skipped row (one per period, refreshed rather than duplicated). */
+async function recordSkippedRow(svc: Svc, kind: string, entityType: string, entityId: string, reason: string, now: Date): Promise<void> {
+  try {
+    const { data: ex } = await svc.from('social_posts').select('id').eq('kind', kind).eq('entity_id', entityId).limit(1);
+    if (ex && ex.length) { await svc.from('social_posts').update({ error: reason }).eq('id', ex[0].id); return; }
+    await svc.from('social_posts').insert({ kind, entity_type: entityType, entity_id: entityId, caption: '(nothing to post)', status: 'skipped', error: reason, scheduled_for: now.toISOString() });
+  } catch { /* ignore */ }
 }
 
 /* ── Orchestration ─────────────────────────────────────────────────────────────────────────────────────────────── */
@@ -868,15 +895,20 @@ export type ComposeDeps = {
   rand?: () => number;
   /** Shared slot context (limits + queued posts). Omit to load it. */
   ctx?: SlotContext;
+  /** Network access for link checks (tests inject a stub). */
+  fetchFn?: typeof fetch;
+  /** Build and report drafts but insert nothing: the preview path for staff and tests. */
+  dryRun?: boolean;
 };
-export type ComposeResult = Record<NewKind, number> & { errors: string[]; skipped: Record<string, string> };
+export type DryRunDraft = { kind: string; entity_id: string; caption: string; image_url: string | null; link_url: string; image_alt?: string; held: boolean; note?: string; scheduled_for: string };
+export type ComposeResult = Record<NewKind, number> & { errors: string[]; skipped: Record<string, string>; drafts?: DryRunDraft[] };
 
 const PENDING_STATUSES = ['draft', 'approved', 'scheduled'];
 const periodKey = (id: string, now: Date, days: number) => `${id}:${Math.floor(now.getTime() / (days * 86400_000))}`;
 
 export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> {
   const { svc, now } = d;
-  const out = Object.fromEntries(NEW_KINDS.map((k) => [k, 0])) as unknown as ComposeResult; out.errors = []; out.skipped = {};
+  const out = Object.fromEntries(NEW_KINDS.map((k) => [k, 0])) as unknown as ComposeResult; out.errors = []; out.skipped = {}; if (d.dryRun) out.drafts = [];
   const active = ORDER.filter((k) => d.recipes.get(k)?.enabled === true);
   if (!active.length) return out;
 
@@ -898,7 +930,7 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
 
       // Retire this recipe's OWN stale, never-reviewed drafts so unreviewed drafts cannot pile up into another backlog.
       // (Only the new kinds; nothing older is touched.)
-      await svc.from('social_posts').update({ status: 'skipped', error: 'stale: never reviewed' })
+      if (!d.dryRun) await svc.from('social_posts').update({ status: 'skipped', error: 'stale: never reviewed' })
         .eq('kind', kind).eq('status', 'draft').lt('scheduled_for', new Date(now.getTime() - 48 * 3600_000).toISOString());
 
       const { data: mine } = await svc.from('social_posts').select('entity_id,status,created_at,scheduled_for').eq('kind', kind).order('created_at', { ascending: false }).limit(300);
@@ -911,7 +943,14 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
         if (recent && (now.getTime() - new Date(recent.created_at).getTime()) / 3600_000 < Number(cfg.min_hours_between ?? 6)) { out.skipped[kind] = 'too soon after previous alert post'; continue; }
       }
 
+      // A recipe that runs less often than its posting day (Accessible Shetland: fortnightly) says so with min_days_between.
+      if (!d.force && Number(cfg.min_days_between ?? 0) > 0) {
+        const lastMade = history.find((h) => !['skipped', 'failed'].includes(h.status));
+        if (lastMade && (now.getTime() - new Date(lastMade.created_at).getTime()) / 86400_000 < Number(cfg.min_days_between)) { out.skipped[kind] = `posted within the last ${cfg.min_days_between} days`; continue; }
+      }
+
       let cands: Candidate[] = [];
+      let postDayOnly: string | null = null;
       if (kind === 'notice_update') cands = await selectNotices(svc, cfg, now);
       else if (kind === 'essential_alert') cands = await selectAlerts(svc, cfg, now);
       else if (kind === 'aald_memory') cands = await selectMemories(svc, cfg);
@@ -919,6 +958,15 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
       else if (kind === 'hub_community') cands = await selectHubs(svc, cfg, now);
       else if (kind === 'game_challenge') cands = await selectGames(svc, cfg, now);
       else if (kind === 'cruise_visit') cands = await selectCruise(svc, cfg, now);
+      else if (kind === 'regular_roundup') {
+        const r = await selectRoundup(svc, cfg, now); cands = r.candidate ? [{ ...r.candidate, imageAlt: r.imageAlt }] : []; postDayOnly = r.report.postDay;
+        if (!d.dryRun) await writeSnapshot(svc, 'social.regular_roundup_last', r.report);
+        if (!r.candidate) { out.skipped[kind] = r.report.reason ?? 'nothing eligible'; if (!d.dryRun) await recordSkippedRow(svc, kind, 'week', `reg:${r.report.monday}:skip`, r.report.reason ?? 'nothing eligible', now); }
+      } else if (kind === 'accessible_info') {
+        const r = await selectAccessible(svc, cfg, now, d.fetchFn); cands = r.candidate ? [{ ...r.candidate, imageAlt: r.imageAlt }] : [];
+        if (!d.dryRun) await writeSnapshot(svc, 'social.accessible_info_last', r.report);
+        if (!r.candidate) { out.skipped[kind] = r.report.reason ?? 'nothing eligible'; if (!d.dryRun) await recordSkippedRow(svc, kind, 'fortnight', `access:${londonParts(now).ymd}:skip`, r.report.reason ?? 'nothing eligible', now); }
+      }
 
       // Duplicate prevention. Single-use kinds: entity ever used. Rotating kinds: per period (business 90d, hub 30d). Games: per ISO week.
       const repeat = kind === 'business_spotlight' ? 0 : Number(cfg.repeat_after_days ?? 0);   // the spotlight applies its own, status-aware rule
@@ -927,7 +975,16 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
       const spotlightDays = new Set<string>(kind === 'business_spotlight' ? history.filter((h) => ['draft', 'approved', 'scheduled', 'posted'].includes(h.status) && h.scheduled_for).map((h) => londonParts(new Date(h.scheduled_for as string)).ymd) : []);
       const used = new Set(history.map((h) => h.entity_id));
       const usedByEntity = (c: Candidate) => (repeat > 0 ? history.some((h) => (h.entity_id ?? '').split(':')[0] === c.entity_id && now.getTime() - new Date(h.created_at).getTime() < repeat * 86400_000) : used.has(c.entity_id));
-      if (kind !== 'business_spotlight') cands = cands.filter((c) => !usedByEntity(c));
+      if (kind === 'regular_roundup' || kind === 'accessible_info') {
+        // One roundup per week; one Accessible post per run. A skipped or failed one may be regenerated (a revision suffix keeps the unique key free), up to a limit.
+        const c0 = cands[0];
+        if (c0) {
+          const same = history.filter((h) => h.entity_id && !h.entity_id.endsWith(':skip') && (kind === 'regular_roundup' ? h.entity_id.startsWith(c0.entity_id) : h.entity_id === c0.entity_id || h.entity_id.startsWith(`${c0.entity_id}:r`)));
+          if (kind === 'regular_roundup' && same.some((h) => ['draft', 'approved', 'scheduled', 'posted'].includes(h.status))) { cands = []; out.skipped[kind] = 'already drafted or posted for this week'; }
+          else if (same.length > Number(cfg.max_regenerations ?? 2)) { cands = []; out.skipped[kind] = 'regeneration limit reached'; }
+          else if (same.length) c0.entity_id = `${c0.entity_id}:r${same.length + 1}`;
+        }
+      } else if (kind !== 'business_spotlight') cands = cands.filter((c) => !usedByEntity(c));
 
       const maxRun = Math.min(Number(cfg.max_per_run ?? 1), runBudget);
       let made = 0;
@@ -938,7 +995,8 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
         const asDraft = kind === 'essential_alert' || (c.needsApproval !== true && r.autopilot !== true);   // a sensitive hold still keeps a real slot
         const slot = allocateSlot({
           now, preferredHour: typeof cfg.hour === 'number' ? cfg.hour : null, taken: asDraft ? [...ctx.taken, ...ctx.draftTaken] : ctx.taken, gapMinutes, maxPerDay,
-          windowStartHour, windowEndHour, horizonDays: 3, rand: d.rand, excludeDays: kind === 'business_spotlight' ? spotlightDays : undefined,
+          windowStartHour, windowEndHour, horizonDays: postDayOnly ? 7 : 3, rand: d.rand,
+          excludeDays: kind === 'business_spotlight' ? spotlightDays : postDayOnly ? new Set(Array.from({ length: 8 }, (_, n) => addDaysYmd(londonParts(now).ymd, n)).filter((y) => y !== postDayOnly)) : undefined,
         });
         if (!slot) { out.skipped[kind] = 'no free slot in the next 3 days'; break; }
         let caption = c.caption;
@@ -948,17 +1006,19 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
           if (polished.includes(c.link_url) && (kind !== 'game_challenge' || !/answer|solution/i.test(polished))) caption = polished;
         }
         const status = held ? 'draft' : r.autopilot === true ? 'scheduled' : 'draft';
+        if (d.dryRun) { out.drafts!.push({ kind, entity_id: c.entity_id, caption, image_url: c.image_url, link_url: c.link_url, image_alt: c.imageAlt, held: status === 'draft' && (held || r.autopilot !== true), note: c.note, scheduled_for: slot.toISOString() }); (asDraft ? ctx.draftTaken : ctx.taken).push(slot); made++; out[kind]++; runBudget--; continue; }
         const { error } = await svc.from('social_posts').insert({
           // A spotlight's id carries the day it was scheduled, so a later retry after a skipped or failed post never collides with the old row.
           kind, entity_type: c.entity_type, entity_id: kind === 'business_spotlight' ? `${c.entity_id}:${londonParts(slot).ymd}` : repeat > 0 ? keyOf(c) : c.entity_id, business_id: c.business_id ?? null,
           caption, image_url: c.image_url, link_url: c.link_url, scheduled_for: slot.toISOString(), status,
           ...(c.needsApproval ? { error: c.note ?? 'Held for approval' } : {}),
+          ...(c.imageAlt ? { image_alt: c.imageAlt } : {}),
         });
         if (error) { out.errors.push(`${kind} insert: ${error.message}`); continue; }
         (asDraft ? ctx.draftTaken : ctx.taken).push(slot); if (kind === 'business_spotlight') spotlightDays.add(londonParts(slot).ymd); made++; out[kind]++; runBudget--;
       }
       if (!made && !out.skipped[kind]) out.skipped[kind] = 'nothing eligible';
-      await svc.from('social_recipes').update({ last_run_at: now.toISOString() }).eq('key', kind);
+      if (!d.dryRun) await svc.from('social_recipes').update({ last_run_at: now.toISOString() }).eq('key', kind);
     } catch (e) { out.errors.push(`${kind}: ${e instanceof Error ? e.message : e}`); }
   }
   return out;

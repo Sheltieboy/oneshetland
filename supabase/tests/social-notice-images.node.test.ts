@@ -104,6 +104,7 @@ describe('publisher: image post to Facebook (mocked Graph API)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'publisher-'));
     mkdirSync(join(dir, 'social-publisher')); mkdirSync(join(dir, '_shared'));
     writeFileSync(join(dir, '_shared', 'social-recipes.ts'), readFileSync(join(FN, '_shared', 'social-recipes.ts'), 'utf8'));
+    writeFileSync(join(dir, '_shared', 'social-regular-access.ts'), readFileSync(join(FN, '_shared', 'social-regular-access.ts'), 'utf8'));
     const src = readFileSync(join(FN, 'social-publisher', 'index.ts'), 'utf8')
       .replace(/import \{ serve \} from '[^']+';/, 'const serve = (h: any) => { (globalThis as any).__pubHandler = h; };')
       .replace(/import \{ createServiceClient \} from '[^']+';/, 'const createServiceClient = () => (globalThis as any).__db;')

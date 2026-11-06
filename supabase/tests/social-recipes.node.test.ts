@@ -526,9 +526,11 @@ describe('Migration 20261202000000', () => {
   test('adds all six new kinds to the check and keeps the old ones', () => {
     for (const k of ['notice_update', 'essential_alert', 'aald_memory', 'hub_community', 'game_challenge', 'cruise_visit', 'wird_of_day', 'whats_on_roundup', 'event_spotlight', 'jobs_roundup', 'new_product', 'business_spotlight', 'custom']) assert.ok(sql.includes(`'${k}'`), k);
   });
+  // regular_roundup and accessible_info are seeded by their own migration (20261211000000), proved in social-regular-access.node.test.ts.
+  const LATER = new Set(['regular_roundup', 'accessible_info']);
   test('seeds exactly seven recipes, all disabled and autopilot off', () => {
     const seeds = [...sql.matchAll(/^\s*\('([a-z_]+)',\s*'[^']*',\s*(true|false),\s*(true|false),/gm)];
-    assert.deepEqual(seeds.map((m) => m[1]).sort(), [...R.NEW_KINDS].sort());
+    assert.deepEqual(seeds.map((m) => m[1]).sort(), [...R.NEW_KINDS].filter((k) => !LATER.has(k)).sort());
     assert.ok(seeds.every((m) => m[2] === 'false' && m[3] === 'false'));
   });
   test('does not touch existing posts, existing recipes or their schedules', () => {
@@ -539,7 +541,7 @@ describe('Migration 20261202000000', () => {
     assert.match(sql, /kind <> 'essential_alert' or status <> 'scheduled'/); assert.match(sql, /new\.key = 'essential_alert' and new\.autopilot is true/);
   });
   test('config defaults in the migration match the code defaults', () => {
-    for (const k of R.NEW_KINDS) {
+    for (const k of R.NEW_KINDS.filter((x) => !LATER.has(x))) {
       const m = sql.match(new RegExp(`\\('${k}',[^']*'[^']*',\\s*false,\\s*false,\\s*'(\\{[^']*\\})'`));
       assert.ok(m, k); const cfg = JSON.parse(m![1]);
       // business_spotlight's code defaults moved on (launch cadence and rotation settings); the live row in social_recipes.config is what runs, and is changed deliberately at rollout.

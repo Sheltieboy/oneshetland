@@ -51,6 +51,7 @@ interface PostRow {
   entity_id: string | null;
   caption: string;
   image_url: string | null;
+  image_alt?: string | null;
   link_url: string | null;
   channels: string[];
   status: string;
@@ -67,7 +68,7 @@ async function postToFacebook(pageId: string, token: string, post: PostRow): Pro
   const endpoint = asPhoto ? `${GRAPH}/${pageId}/photos` : `${GRAPH}/${pageId}/feed`;
   const body = new URLSearchParams(
     asPhoto
-      ? { url: photoUrl as string, caption: post.caption, access_token: token }
+      ? { url: photoUrl as string, caption: post.caption, ...(post.image_alt ? { alt_text_custom: post.image_alt } : {}), access_token: token }
       : { message: post.caption, ...(post.link_url ? { link: post.link_url } : {}), access_token: token },
   );
   const res = await fetch(endpoint, { method: 'POST', body });

@@ -16,6 +16,7 @@ export async function loadComposer(db: FakeDb) {
   const dir = mkdtempSync(join(tmpdir(), 'composer-'));
   mkdirSync(join(dir, 'social-composer')); mkdirSync(join(dir, '_shared'));
   writeFileSync(join(dir, '_shared', 'social-recipes.ts'), readFileSync(join(FN, '_shared', 'social-recipes.ts'), 'utf8'));
+  writeFileSync(join(dir, '_shared', 'social-regular-access.ts'), readFileSync(join(FN, '_shared', 'social-regular-access.ts'), 'utf8'));
   let src = readFileSync(join(FN, 'social-composer', 'index.ts'), 'utf8');
   src = src
     .replace(/import \{ serve \} from '[^']+';/, 'const serve = (h: any) => { (globalThis as any).__composerHandler = h; };')

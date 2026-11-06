@@ -26,7 +26,7 @@ export class FakeDb {
 const cmp = (a: any, b: any) => (a < b ? -1 : a > b ? 1 : 0);
 
 class Q implements PromiseLike<Result> {
-  mode: 'select' | 'update' | 'insert' = 'select';
+  mode: 'select' | 'update' | 'insert' | 'upsert' = 'select'; conflictCol: string | null = null;
   filters: ((r: Row) => boolean)[] = [];
   patch: Row | null = null; ins: Row | null = null;
   orderBy: { col: string; asc: boolean } | null = null; lim = Infinity; single = false;
@@ -36,6 +36,7 @@ class Q implements PromiseLike<Result> {
   select(_c?: string, o?: { count?: 'exact'; head?: boolean }) { if (o?.count) { this.count = o.count; this.head = !!o.head; } return this; }
   update(p: Row) { this.mode = 'update'; this.patch = p; return this; }
   insert(r: Row) { this.mode = 'insert'; this.ins = r; return this; }
+  upsert(r: Row, o?: { onConflict?: string }) { this.mode = 'upsert'; this.ins = r; this.conflictCol = o?.onConflict ?? 'id'; return this; }
   eq(c: string, v: any) { this.filters.push((r) => r[c] === v); return this; }
   in(c: string, vs: any[]) { this.filters.push((r) => vs.includes(r[c])); return this; }
   neq(c: string, v: any) { this.filters.push((r) => r[c] !== v); return this; }
@@ -54,6 +55,12 @@ class Q implements PromiseLike<Result> {
     const db = this.db;
     if (db.failTables.has(this.t)) return { data: null, error: { message: `${this.t} unavailable` } };
     const rows = db.table(this.t);
+    if (this.mode === 'upsert') {
+      const col = this.conflictCol!; const hit = rows.find((x) => x[col] === this.ins![col]);
+      if (hit) Object.assign(hit, this.ins); else rows.push({ id: crypto.randomUUID(), created_at: db.clock(), ...this.ins });
+      db.log.push({ op: 'upsert', table: this.t, payload: this.ins });
+      return { data: null, error: null };
+    }
     if (this.mode === 'insert') {
       const r = { id: crypto.randomUUID(), created_at: db.clock(), ...this.ins };
       if (this.t === 'social_posts') {
