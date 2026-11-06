@@ -143,8 +143,9 @@ export function roundupItem(r: ListingRow): RoundupItem {
   const live = (r.upcoming ?? []).filter((u) => isLiveStatus(u.status));
   if (r.next_starts_at && r.next_ends_at && !live.some((u) => u.starts_at === r.next_starts_at)) live.unshift({ starts_at: r.next_starts_at, ends_at: r.next_ends_at, status: 'scheduled', venue: null, note: null });
   live.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  const place = [...new Set([r.venue, r.locality].filter((x): x is string => !!x && !!x.trim()))].join(', ') || null;
-  return { id: r.id, title: r.title.trim(), organiser: r.owner_kind === 'platform' ? 'OneShetland' : r.owner_name, category: r.category, place, photo: !!httpsUrl(r.cover_url),
+  const tidy = (x: string) => x.replace(/\s+/g, ' ').trim();   // owners type double spaces; a caption should not repeat them
+  const place = [...new Set([r.venue, r.locality].filter((x): x is string => !!x && !!x.trim()).map(tidy))].join(', ') || null;
+  return { id: r.id, title: tidy(r.title), organiser: r.owner_kind === 'platform' ? 'OneShetland' : tidy(r.owner_name), category: r.category, place, photo: !!httpsUrl(r.cover_url),
     sessions: live.slice(0, 2).map((u) => ({ starts_at: u.starts_at, ends_at: u.ends_at })), moreSessions: r.sessions_in_window > Math.min(live.length, 2) };
 }
 
@@ -319,9 +320,10 @@ export function pickResource(history: { entity_id: string | null; created_at: st
     });
 }
 
+const norm = (x: string) => x.toLowerCase().replace(/[’']/g, "'");
 export const resourceCaption = (r: AccessResource, link: string): string =>
-  `${HOOKS[r.topic]}\n\n${r.title}, from ${r.by}. ${r.about}\n\nAccessible Shetland brings links like this together so you can plan on your own terms: ${link}\n\nSource: ${r.by} (${r.href})`;
-export const resourceAlt = (r: AccessResource) => `OneShetland card: ${r.title}, from ${r.by}, shared through Accessible Shetland.`;
+  `${HOOKS[r.topic]}\n\n${r.title}${norm(r.title).includes(norm(r.by)) ? '' : `, from ${r.by}`}. ${r.about}\n\nAccessible Shetland brings links like this together so you can plan on your own terms: ${link}\n\nSource: ${r.by} (${r.href})`;
+export const resourceAlt = (r: AccessResource) => `OneShetland card: ${r.title}${norm(r.title).includes(norm(r.by)) ? '' : `, from ${r.by}`}, shared through Accessible Shetland.`;
 
 /* ── Business access information ───────────────────────────────────────────────────────────────────────────── */
 

@@ -120,6 +120,10 @@ describe('Regular Activities roundup: selection', () => {
     assert.doesNotMatch(c, /\bfree\b|drop[- ]?in|everyone|beginner|suitable|no need to book/i); assert.match(c, /Fancy trying something new this week\? 💙/);
     assert.match(c, /Tue 18:00–19:00( and more)?, Hall, Lerwick/); assert.match(c, /go\/regular-activities/);
   });
+  test('stray double spaces in owner-typed names are tidied in the caption and alt text', async () => {
+    const w = world({ recipe: 'regular_roundup', autopilot: true, rows: [listing(1, { title: 'Stay Active  with Ruth', venue: 'Clickimin Leisure  Complex' })] }); await compose(w, SAT); const p = posts(w, 'regular_roundup')[0];
+    assert.match(p.caption, /Stay Active with Ruth/); assert.match(p.caption, /Clickimin Leisure Complex/); assert.doesNotMatch(p.caption + p.image_alt, /  /);
+  });
   test('MISSING images: the card is still requested, with the real photographs first; image alt text is recorded', async () => {
     const w = world({ recipe: 'regular_roundup', autopilot: true, rows: [listing(1), listing(2, { cover_url: 'https://x.supabase.co/storage/v1/object/public/activity/a.webp' }), listing(3)] });
     await compose(w, SAT); const p = posts(w, 'regular_roundup')[0];
@@ -283,6 +287,10 @@ describe('Accessible Shetland: rotation, evidence and review', () => {
 });
 
 describe('static guarantees', () => {
+  test('a resource caption does not repeat the source when the title already names it', () => {
+    const e = X.ACCESS_RESOURCES.find((r) => r.slug === 'euans-guide')!; assert.doesNotMatch(X.resourceCaption(e, 'L'), /Guide, from Euan/);
+    const n = X.ACCESS_RESOURCES.find((r) => r.slug === 'northlink-support')!; assert.match(X.resourceCaption(n, 'L'), /Accessibility support, from NorthLink Ferries\./);
+  });
   test('the migration seed config matches the code defaults for both recipes', () => {
     const sql = Deno_read('../migrations/20261211000000_social_regular_accessible_recipes.sql');
     for (const k of ['regular_roundup', 'accessible_info'] as const) {
