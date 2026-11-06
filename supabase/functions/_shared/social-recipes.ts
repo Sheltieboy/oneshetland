@@ -33,12 +33,13 @@ export const DEFAULTS: Record<NewKind, Record<string, unknown>> = {
   notice_update:      { hour: 12, max_per_run: 1, max_per_week: 4, max_age_days: 7, min_remaining_hours: 24, max_pending: 3, include_person: false },
   cruise_visit:       { hour: 8, max_per_run: 1, lead_days: 3, max_pending: 2, max_verified_age_days: 365 },
   aald_memory:        { hour: 19, weekdays: ['Mon', 'Wed', 'Sat'], max_per_run: 1, max_pending: 3, min_body_chars: 80 },
-  business_spotlight: { hour: 13, weekdays: ['Tue', 'Fri'], max_per_run: 1, max_pending: 3, min_description_chars: 60, repeat_after_days: 90 },
+  business_spotlight: { hour: 13, weekdays: ['Mon', 'Tue', 'Thu', 'Fri'], max_per_run: 1, max_pending: 3, min_description_chars: 60, min_description_words: 8, repeat_after_days: 90, welcome_days: 14, welcome_max_consecutive: 2, skipped_cooloff_days: 7, failed_cooloff_days: 2 },
   hub_community:      { hour: 10, weekdays: ['Wed', 'Sat'], max_per_run: 1, max_pending: 2, min_description_chars: 40, repeat_after_days: 30 },
   game_challenge:     { hour: 17, weekdays: ['Thu', 'Sun'], max_per_run: 1, max_pending: 2, games: ['guess_da_wird', 'spik_sprint', 'spik_snap', 'map_it'] },
 };
-/** Order matters: an alert is considered first so it gets the earliest free slot. */
-const ORDER: NewKind[] = ['essential_alert', 'notice_update', 'cruise_visit', 'aald_memory', 'business_spotlight', 'hub_community', 'game_challenge'];
+/** Order matters: an alert is considered first so it gets the earliest free slot. Autopilot content that will really be published (notices, business
+ *  spotlights) now comes BEFORE the review-only recipes (Aald Memories, Hubs), whose drafts still reserve slots until a person looks at them. */
+const ORDER: NewKind[] = ['essential_alert', 'notice_update', 'cruise_visit', 'business_spotlight', 'aald_memory', 'hub_community', 'game_challenge'];
 
 export type Candidate = {
   kind: NewKind;
@@ -49,6 +50,10 @@ export type Candidate = {
   image_url: string | null;
   link_url: string;
   context: string;
+  /** Held as a DRAFT for a human to approve even when the recipe's autopilot is on (sensitive subject matter). */
+  needsApproval?: boolean;
+  /** Why it is held / which rotation lane chose it (shown to admins). */
+  note?: string;
 };
 
 /** Upper bound on candidates a selector builds per run (each may cost a lookup); a run posts at most a day's worth anyway. */
@@ -229,17 +234,6 @@ export function memoryEligible(m: Memory, allowed: boolean, cfg: Record<string, 
 }
 
 type Business = { id: string; name: string; description: string | null; cover_url: string | null; logo_url: string | null; category: string | null; is_claimed: boolean; is_active: boolean };
-export function businessEligible(b: Business, hidden: boolean, optedOut: boolean, cfg: Record<string, unknown>): { ok: boolean; reason?: string } {
-  if (!b.is_claimed) return { ok: false, reason: 'unclaimed' };
-  if (!b.is_active) return { ok: false, reason: 'inactive' };
-  if (hidden) return { ok: false, reason: 'hidden' };
-  if (optedOut) return { ok: false, reason: 'opted-out' };
-  if (isFixtureName(b.name)) return { ok: false, reason: 'fixture' };
-  if ((b.description ?? '').trim().length < Number(cfg.min_description_chars ?? 60)) return { ok: false, reason: 'no-description' };
-  if (!httpsUrl(b.cover_url) && !httpsUrl(b.logo_url)) return { ok: false, reason: 'no-image' };
-  return { ok: true };
-}
-
 type Hub = { id: string; name: string; description: string | null; cover_url: string | null; logo_url: string | null; area: string | null; join_mode: string | null; is_active: boolean; slug: string | null };
 export function hubEligible(h: Hub, hidden: boolean, optedOut: boolean, cfg: Record<string, unknown>): { ok: boolean; reason?: string } {
   if (!h.is_active) return { ok: false, reason: 'inactive' };
@@ -447,30 +441,200 @@ export async function selectMemories(svc: Svc, cfg: Record<string, unknown>): Pr
   });
 }
 
-export async function selectBusinesses(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
-  const { data, error } = await svc.from('local_businesses')
-    .select('id,name,description,cover_url,logo_url,category,is_claimed,is_active')
-    .eq('is_claimed', true).eq('is_active', true).limit(120);
-  if (error) throw error;
-  const rows = (data ?? []) as Business[];
-  if (!rows.length) return [];
-  const { data: perms } = await svc.from('social_promotion_permissions').select('entity_id,allowed').eq('entity_type', 'business').in('entity_id', rows.map((r) => r.id));
-  const out = new Set(((perms ?? []) as { entity_id: string; allowed: boolean }[]).filter((p) => !p.allowed).map((p) => p.entity_id));
-  const result: Candidate[] = [];
-  for (const b of rows) {
-    if (result.length >= MAX_CANDIDATES) break;   // bounded: never one RPC per business across the whole directory
-    if (!businessEligible(b, false, out.has(b.id), cfg).ok) continue;   // cheap checks first, then the hidden-fixture RPC
-    const { data: hidden } = await svc.rpc('is_discovery_hidden', { p_entity: 'business', p_id: b.id });
-    if (!businessEligible(b, hidden === true, out.has(b.id), cfg).ok) continue;
-    const link = go(`business/${b.id}`);
-    result.push({
+/* ── Business Spotlight: a fair, deterministic rotation ─────────────────────────────────────────────────────────────
+ *
+ * WHO GOES NEXT (never database order):
+ *   1. WELCOME lane: claimed within the last `welcome_days` (14), never featured, OLDEST CLAIM FIRST.
+ *   2. NEW: every other business that has never been featured, oldest claim first.
+ *   3. ROTATION: businesses featured before whose `repeat_after_days` (90) exclusion has run out, longest ago first.
+ *   No more than `welcome_max_consecutive` (2) welcome picks in a row while any other eligible business is waiting.
+ *   Ties are broken by id, so the same data always gives the same order.
+ * WHAT COUNTS:
+ *   · Only a post that was actually PUBLISHED starts the 90-day exclusion.
+ *   · A post still waiting (draft / approved / scheduled) blocks that business so it is never picked twice.
+ *   · A skipped or failed post never blocks for long: a short cool-off (skipped_cooloff_days 7, failed_cooloff_days 2), then it is eligible again.
+ * CONTENT: a business without a photograph uses OneShetland's generated card. A business whose wording is sensitive is still posted, but only as a
+ *   DRAFT that a person approves. The pool is every claimed, active business (paged by id), not the first 120.
+ */
+export type SpotBiz = Business & { claimed_at?: string | null; owner_activated_at?: string | null; created_at?: string | null };
+export type SpotPost = { entity_id: string | null; business_id?: string | null; status: string; created_at: string; posted_at?: string | null; scheduled_for?: string | null; error?: string | null };
+export type SpotLane = 'welcome' | 'new' | 'rotation';
+export type SpotRank = { id: string; name: string; lane: SpotLane; claimedAt: string | null; lastPostedAt: string | null; sensitive: boolean };
+export type SpotExcluded = { id: string; name: string; reason: string; until?: string | null };
+export type SpotReport = {
+  at: string; streak: number; order: SpotRank[]; excluded: SpotExcluded[];
+  counts: { pool: number; eligible: number; welcome: number; new: number; rotation: number; excluded: number };
+  recent: { id: string; name: string; status: string; when: string }[];
+};
+export const SPOT_DEFAULTS = { welcome_days: 14, welcome_max_consecutive: 2, repeat_after_days: 90, skipped_cooloff_days: 7, failed_cooloff_days: 2, min_description_chars: 60, min_description_words: 8 };
+const DAY = 86400_000;
+const num = (v: unknown, d: number) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : d);
+const spotCfg = (cfg: Record<string, unknown>) => ({
+  welcomeDays: num(cfg.welcome_days, SPOT_DEFAULTS.welcome_days), welcomeMax: Math.max(1, num(cfg.welcome_max_consecutive, SPOT_DEFAULTS.welcome_max_consecutive)),
+  repeatDays: num(cfg.repeat_after_days, SPOT_DEFAULTS.repeat_after_days), skippedDays: num(cfg.skipped_cooloff_days, SPOT_DEFAULTS.skipped_cooloff_days),
+  failedDays: num(cfg.failed_cooloff_days, SPOT_DEFAULTS.failed_cooloff_days), minChars: num(cfg.min_description_chars, SPOT_DEFAULTS.min_description_chars),
+  minWords: num(cfg.min_description_words, SPOT_DEFAULTS.min_description_words),
+});
+
+export const claimDate = (b: SpotBiz): string | null => b.claimed_at ?? b.owner_activated_at ?? b.created_at ?? null;
+const PLACEHOLDER = /\b(lorem ipsum|placeholder|coming soon|to be confirmed|tbc|tba|n\/a|test (listing|business|description)|sample (text|business)|xxx+)\b/i;
+/** Subjects that are fine to promote but deserve a person's eye first. Added to the shared sensitive-text list (bereavement, funerals, death...). */
+const BUSINESS_SENSITIVE = /\b(counsell?ing|counsellor\w*|psychotherap\w*|grief|suicid\w*|self[- ]?harm|addiction|substance (use|misuse)|alcohol (dependency|misuse)|domestic (abuse|violence)|abuse|safeguarding|palliative|hospice|mental health|crisis|helpline|samaritans|cancer|undertaker\w*|cremat\w*|funeral\w*)\b/i;
+export const businessSensitive = (b: { name?: string | null; description?: string | null; category?: string | null }) =>
+  isSensitiveText(b.name, b.description, b.category) || BUSINESS_SENSITIVE.test([b.name, b.description, b.category].filter(Boolean).join(' '));
+
+/** Minimum listing quality for an automatic Spotlight. A photograph is NOT required: the generated card is used instead. */
+export function businessEligible(b: Business, hidden: boolean, optedOut: boolean, cfg: Record<string, unknown>): { ok: boolean; reason?: string } {
+  const c = spotCfg(cfg);
+  if (!b.is_claimed) return { ok: false, reason: 'unclaimed' };
+  if (!b.is_active) return { ok: false, reason: 'inactive' };
+  if (hidden) return { ok: false, reason: 'hidden' };
+  if (optedOut) return { ok: false, reason: 'opted-out' };
+  if (isFixtureName(b.name)) return { ok: false, reason: 'fixture' };
+  if ((b.name ?? '').trim().length < 3) return { ok: false, reason: 'no-name' };
+  const d = (b.description ?? '').trim();
+  if (d.length < c.minChars) return { ok: false, reason: 'no-description' };
+  if (d.split(/\s+/).filter(Boolean).length < c.minWords) return { ok: false, reason: 'thin-description' };
+  if (PLACEHOLDER.test(`${b.name} ${d}`)) return { ok: false, reason: 'placeholder-text' };
+  return { ok: true };
+}
+
+const bizOf = (p: SpotPost) => (p.business_id ?? (p.entity_id ?? '').split(':')[0]) || '';
+const WAITING = ['draft', 'approved', 'scheduled'];
+const tOf = (p: SpotPost) => Date.parse((p.posted_at ?? p.scheduled_for ?? p.created_at) as string);
+
+type BizState = { lastPostedAt: number | null; pending: boolean; coolUntil: number | null };
+export function spotlightStates(history: SpotPost[], cfg: Record<string, unknown>): Map<string, BizState> {
+  const c = spotCfg(cfg); const m = new Map<string, BizState>();
+  for (const h of history) {
+    const id = bizOf(h); if (!id) continue;
+    const st = m.get(id) ?? { lastPostedAt: null, pending: false, coolUntil: null }; m.set(id, st);
+    if (h.status === 'posted') { const t = tOf(h); if (!isNaN(t) && (st.lastPostedAt === null || t > st.lastPostedAt)) st.lastPostedAt = t; }
+    else if (WAITING.includes(h.status)) st.pending = true;
+    else if (h.status === 'skipped' || h.status === 'failed') {
+      const t = Date.parse((h.scheduled_for ?? h.created_at) as string) + (h.status === 'failed' ? c.failedDays : c.skippedDays) * DAY;
+      if (!isNaN(t) && (st.coolUntil === null || t > st.coolUntil)) st.coolUntil = t;
+    }
+  }
+  return m;
+}
+
+/** How many of the most recent real picks (posted or waiting) were welcome-lane picks, in a row. Derived from the history, so it needs no stored state. */
+export function welcomeStreak(history: SpotPost[], pool: Map<string, SpotBiz>, cfg: Record<string, unknown>): number {
+  const c = spotCfg(cfg);
+  const picks = history.filter((h) => h.status === 'posted' || WAITING.includes(h.status)).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  const seen = new Set<string>(); const lanes: boolean[] = [];
+  for (const p of picks) {
+    const id = bizOf(p); const b = pool.get(id); const cd = b ? claimDate(b) : null; const t = Date.parse(p.created_at);
+    lanes.push(!seen.has(id) && !!cd && t >= Date.parse(cd) - DAY && t - Date.parse(cd) <= c.welcomeDays * DAY);
+    seen.add(id);
+  }
+  let s = 0; for (let i = lanes.length - 1; i >= 0 && lanes[i]; i--) s++;
+  return s;
+}
+
+/** The full pick order. Pure: same inputs, same order. */
+export function orderSpotlight(eligible: SpotRank[], streak: number, welcomeMax: number): SpotRank[] {
+  const byClaim = (a: SpotRank, b: SpotRank) => (a.claimedAt ?? '').localeCompare(b.claimedAt ?? '') || a.id.localeCompare(b.id);
+  const w = eligible.filter((r) => r.lane === 'welcome').sort(byClaim);
+  const n = eligible.filter((r) => r.lane === 'new').sort(byClaim);
+  const r = eligible.filter((x) => x.lane === 'rotation').sort((a, b) => (a.lastPostedAt ?? '').localeCompare(b.lastPostedAt ?? '') || a.id.localeCompare(b.id));
+  const out: SpotRank[] = []; let s = streak;
+  while (w.length || n.length || r.length) {
+    const others = n.length > 0 || r.length > 0;
+    if (s >= welcomeMax && others) { out.push((n.length ? n : r).shift()!); s = 0; }
+    else if (w.length) { out.push(w.shift()!); s++; }
+    else { out.push((n.length ? n : r).shift()!); s = 0; }
+  }
+  return out;
+}
+
+async function loadSpotPool(svc: Svc): Promise<SpotBiz[]> {
+  const out: SpotBiz[] = []; let last = '';
+  for (let page = 0; page < 40; page++) {
+    let q = svc.from('local_businesses').select('id,name,description,cover_url,logo_url,category,is_claimed,is_active,claimed_at,owner_activated_at,created_at').eq('is_claimed', true).eq('is_active', true).order('id', { ascending: true }).limit(500);
+    if (last) q = q.gt('id', last);
+    const { data, error } = await q; if (error) throw error;
+    const rows = (data ?? []) as SpotBiz[]; out.push(...rows);
+    if (rows.length < 500) break; last = rows[rows.length - 1].id;
+  }
+  return out;
+}
+
+const generatedCard = (id: string) => `${SITE}/api/social-image?kind=business&id=${id}`;
+
+export async function selectSpotlight(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<{ candidates: Candidate[]; report: SpotReport }> {
+  const c = spotCfg(cfg);
+  const [poolRows, hist, perms] = await Promise.all([
+    loadSpotPool(svc),
+    svc.from('social_posts').select('entity_id,business_id,status,created_at,posted_at,scheduled_for,error').eq('kind', 'business_spotlight').order('created_at', { ascending: false }).limit(5000),
+    svc.from('social_promotion_permissions').select('entity_id,allowed').eq('entity_type', 'business'),
+  ]);
+  if (hist.error) throw hist.error;
+  const history = (hist.data ?? []) as SpotPost[];
+  const optedOut = new Set(((perms.data ?? []) as { entity_id: string; allowed: boolean }[]).filter((p) => !p.allowed).map((p) => p.entity_id));
+  const pool = new Map(poolRows.map((b) => [b.id, b])); const states = spotlightStates(history, cfg);
+  const excluded: SpotExcluded[] = []; const passing: SpotBiz[] = [];
+  const ymd = (t: number) => londonParts(new Date(t)).ymd;
+  for (const b of poolRows) {
+    const st = states.get(b.id); const q = businessEligible(b, false, optedOut.has(b.id), cfg);
+    if (!q.ok) { excluded.push({ id: b.id, name: b.name, reason: q.reason! }); continue; }
+    if (st?.pending) { excluded.push({ id: b.id, name: b.name, reason: 'already queued' }); continue; }
+    if (st?.lastPostedAt != null && now.getTime() - st.lastPostedAt < c.repeatDays * DAY) { excluded.push({ id: b.id, name: b.name, reason: `featured ${ymd(st.lastPostedAt)}`, until: ymd(st.lastPostedAt + c.repeatDays * DAY) }); continue; }
+    if (st?.coolUntil != null && st.coolUntil > now.getTime()) { excluded.push({ id: b.id, name: b.name, reason: 'cooling off after a skipped or failed post', until: ymd(st.coolUntil) }); continue; }
+    passing.push(b);
+  }
+  const eligible: SpotBiz[] = passing;
+  const ranks: SpotRank[] = eligible.map((b) => {
+    const st = states.get(b.id); const cd = claimDate(b);
+    const featured = st?.lastPostedAt != null;
+    const lane: SpotLane = featured ? 'rotation' : cd && now.getTime() - Date.parse(cd) <= c.welcomeDays * DAY ? 'welcome' : 'new';
+    return { id: b.id, name: b.name, lane, claimedAt: cd, lastPostedAt: featured ? new Date(st!.lastPostedAt!).toISOString() : null, sensitive: businessSensitive(b) };
+  });
+  const streak = welcomeStreak(history, pool, cfg);
+  // The hidden-listing check is one RPC per business, so it is made only for the businesses about to be picked (the head of the order), a few at a
+  // time; anyone found hidden is dropped and the order is recomputed. A large directory therefore costs a handful of lookups per run, never one each.
+  let live = ranks.slice(); let order = orderSpotlight(live, streak, c.welcomeMax); const verified = new Set<string>();
+  for (let guard = 0; guard < 50; guard++) {
+    const head = order.slice(0, MAX_CANDIDATES).filter((r) => !verified.has(r.id));
+    if (!head.length) break;
+    const res = await Promise.all(head.map((r) => svc.rpc('is_discovery_hidden', { p_entity: 'business', p_id: r.id })));
+    let dropped = false;
+    head.forEach((r, j) => { if (res[j].data === true) { excluded.push({ id: r.id, name: r.name, reason: 'hidden' }); live = live.filter((x) => x.id !== r.id); dropped = true; } else verified.add(r.id); });
+    if (!dropped) break;
+    order = orderSpotlight(live, streak, c.welcomeMax);
+  }
+  const byId = new Map(eligible.map((b) => [b.id, b]));
+  const candidates: Candidate[] = order.slice(0, MAX_CANDIDATES).map((r) => {
+    const b = byId.get(r.id)!; const link = go(`business/${b.id}`);
+    return {
       kind: 'business_spotlight', entity_type: 'business', entity_id: b.id, business_id: b.id,
       caption: `LOCAL BUSINESS SPOTLIGHT 🏪\n\n${b.name.trim()}${b.category ? ` — ${b.category}` : ''}\n\n${excerpt(b.description, 220)}\n\nFind them on OneShetland: ${link}`,
-      image_url: httpsUrl(b.cover_url) ?? httpsUrl(b.logo_url), link_url: link, context: `Local Shetland business "${b.name}".`,
-    });
-  }
-  void now;
-  return result;
+      image_url: httpsUrl(b.cover_url) ?? httpsUrl(b.logo_url) ?? generatedCard(b.id), link_url: link, context: `Local Shetland business "${b.name}".`,
+      needsApproval: r.sensitive, note: r.sensitive ? 'Held for approval: the listing touches a sensitive subject' : `${r.lane} lane`,
+    };
+  });
+  const report: SpotReport = {
+    at: now.toISOString(), streak, order: order.slice(0, 60), excluded: excluded.sort((a, b) => a.reason.localeCompare(b.reason) || a.name.localeCompare(b.name)).slice(0, 80),
+    counts: { pool: poolRows.length, eligible: order.length, welcome: order.filter((r) => r.lane === 'welcome').length, new: order.filter((r) => r.lane === 'new').length, rotation: order.filter((r) => r.lane === 'rotation').length, excluded: excluded.length },
+    recent: history.filter((h) => h.status === 'posted' || WAITING.includes(h.status)).slice(0, 12).map((h) => ({ id: bizOf(h), name: pool.get(bizOf(h))?.name ?? bizOf(h), status: h.status, when: (h.posted_at ?? h.scheduled_for ?? h.created_at) as string })),
+  };
+  return { candidates, report };
+}
+
+/** Back-compatible entry point: the ordered candidates only. */
+export async function selectBusinesses(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
+  return (await selectSpotlight(svc, cfg, now)).candidates;
+}
+
+/** Leave the latest selection where administrators can read it (admin_config 'social.spotlight_pool'). Best effort: never blocks a run. */
+export async function writeSpotlightSnapshot(svc: Svc, report: SpotReport): Promise<void> {
+  try {
+    const key = 'social.spotlight_pool'; const value = JSON.stringify(report);
+    const { data } = await svc.from('admin_config').select('key').eq('key', key).maybeSingle();
+    if (data) await svc.from('admin_config').update({ value }).eq('key', key);
+    else await svc.from('admin_config').insert({ key, value });
+  } catch { /* visibility only */ }
 }
 
 export async function selectHubs(svc: Svc, cfg: Record<string, unknown>, now: Date): Promise<Candidate[]> {
@@ -737,17 +901,17 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
       if (kind === 'notice_update') cands = await selectNotices(svc, cfg, now);
       else if (kind === 'essential_alert') cands = await selectAlerts(svc, cfg, now);
       else if (kind === 'aald_memory') cands = await selectMemories(svc, cfg);
-      else if (kind === 'business_spotlight') cands = await selectBusinesses(svc, cfg, now);
+      else if (kind === 'business_spotlight') { const sp = await selectSpotlight(svc, cfg, now); cands = sp.candidates; await writeSpotlightSnapshot(svc, sp.report); }
       else if (kind === 'hub_community') cands = await selectHubs(svc, cfg, now);
       else if (kind === 'game_challenge') cands = await selectGames(svc, cfg, now);
       else if (kind === 'cruise_visit') cands = await selectCruise(svc, cfg, now);
 
       // Duplicate prevention. Single-use kinds: entity ever used. Rotating kinds: per period (business 90d, hub 30d). Games: per ISO week.
-      const repeat = Number(cfg.repeat_after_days ?? 0);
+      const repeat = kind === 'business_spotlight' ? 0 : Number(cfg.repeat_after_days ?? 0);   // the spotlight applies its own, status-aware rule
       const keyOf = (c: Candidate) => (repeat > 0 ? periodKey(c.entity_id, now, repeat) : c.entity_id);
       const used = new Set(history.map((h) => h.entity_id));
       const usedByEntity = (c: Candidate) => (repeat > 0 ? history.some((h) => (h.entity_id ?? '').split(':')[0] === c.entity_id && now.getTime() - new Date(h.created_at).getTime() < repeat * 86400_000) : used.has(c.entity_id));
-      cands = cands.filter((c) => !usedByEntity(c));
+      if (kind !== 'business_spotlight') cands = cands.filter((c) => !usedByEntity(c));
 
       const maxRun = Math.min(Number(cfg.max_per_run ?? 1), runBudget);
       let made = 0;
@@ -764,10 +928,13 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
           // Never accept a rewrite that lost the link or, for games, could name an answer.
           if (polished.includes(c.link_url) && (kind !== 'game_challenge' || !/answer|solution/i.test(polished))) caption = polished;
         }
-        const status = kind === 'essential_alert' ? 'draft' : r.autopilot === true ? 'scheduled' : 'draft';
+        const held = kind === 'essential_alert' || c.needsApproval === true;   // alerts and sensitive subjects always wait for a person
+        const status = held ? 'draft' : r.autopilot === true ? 'scheduled' : 'draft';
         const { error } = await svc.from('social_posts').insert({
-          kind, entity_type: c.entity_type, entity_id: repeat > 0 ? keyOf(c) : c.entity_id, business_id: c.business_id ?? null,
+          // A spotlight's id carries the day it was scheduled, so a later retry after a skipped or failed post never collides with the old row.
+          kind, entity_type: c.entity_type, entity_id: kind === 'business_spotlight' ? `${c.entity_id}:${londonParts(slot).ymd}` : repeat > 0 ? keyOf(c) : c.entity_id, business_id: c.business_id ?? null,
           caption, image_url: c.image_url, link_url: c.link_url, scheduled_for: slot.toISOString(), status,
+          ...(c.needsApproval ? { error: c.note ?? 'Held for approval' } : {}),
         });
         if (error) { out.errors.push(`${kind} insert: ${error.message}`); continue; }
         taken.push(slot); made++; out[kind]++; runBudget--;

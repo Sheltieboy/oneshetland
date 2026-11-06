@@ -177,9 +177,9 @@ describe('Business spotlight', () => {
     assert.equal(c.entity_id, U(50)); assert.equal(c.business_id, U(50));
     assert.ok(c.caption.includes('/go/business/' + U(50))); assert.equal(c.image_url, 'https://cdn.example/c.jpg');
   });
-  test('unclaimed, inactive, hidden, opted-out, fixture-named, undescribed and image-less are all excluded', async () => {
+  test('unclaimed, inactive, hidden, opted-out, fixture-named and undescribed are all excluded (a missing image is not: the generated card is used)', async () => {
     const w = world();
-    w.db.tables.local_businesses = [biz(51, { is_claimed: false }), biz(52, { is_active: false }), biz(53), biz(54), biz(55, { name: 'ZZ TEST — Acceptance Fixture' }), biz(56, { name: 'DEMO Cafe' }), biz(57, { description: 'Nice.' }), biz(58, { cover_url: null, logo_url: null })];
+    w.db.tables.local_businesses = [biz(51, { is_claimed: false }), biz(52, { is_active: false }), biz(53), biz(54), biz(55, { name: 'ZZ TEST — Acceptance Fixture' }), biz(56, { name: 'DEMO Cafe' }), biz(57, { description: 'Nice.' }), biz(58, { description: 'Lorem ipsum placeholder text for this business listing here' })];
     w.db.rpcs.is_discovery_hidden = (a: any) => a.p_id === U(53);
     w.db.tables.social_promotion_permissions = [{ entity_type: 'business', entity_id: U(54), allowed: false }];
     // the real query filters claimed/active at the database; the predicate re-checks everything
@@ -542,7 +542,9 @@ describe('Migration 20261202000000', () => {
     for (const k of R.NEW_KINDS) {
       const m = sql.match(new RegExp(`\\('${k}',[^']*'[^']*',\\s*false,\\s*false,\\s*'(\\{[^']*\\})'`));
       assert.ok(m, k); const cfg = JSON.parse(m![1]);
-      for (const key of Object.keys(R.DEFAULTS[k])) if (key !== 'games') assert.deepEqual(cfg[key], (R.DEFAULTS[k] as any)[key], `${k}.${key}`);
+      // business_spotlight's code defaults moved on (launch cadence and rotation settings); the live row in social_recipes.config is what runs, and is changed deliberately at rollout.
+      const moved = k === 'business_spotlight' ? new Set(['weekdays', 'min_description_words', 'welcome_days', 'welcome_max_consecutive', 'skipped_cooloff_days', 'failed_cooloff_days']) : new Set<string>();
+      for (const key of Object.keys(R.DEFAULTS[k])) if (key !== 'games' && !moved.has(key)) assert.deepEqual(cfg[key], (R.DEFAULTS[k] as any)[key], `${k}.${key}`);
     }
   });
 });
