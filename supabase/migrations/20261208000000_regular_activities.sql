@@ -197,7 +197,9 @@ as $$
             or (not a.is_platform_activity and public.controls_event_entity(a.organiser_business_id, a.organiser_hub_id))));
 $$;
 revoke all on function public.can_manage_activity(uuid) from public;
-grant execute on function public.can_manage_activity(uuid) to anon, authenticated, service_role;
+-- Not executable by visitors (they never need it, and the helpers it calls are not theirs to run).
+revoke all on function public.can_manage_activity(uuid) from anon;
+grant execute on function public.can_manage_activity(uuid) to authenticated, service_role;
 
 -- 5. Guard, slug, hub approval --------------------------------------------------------------------------------------------------------
 create or replace function public.tg_ra_guard()
@@ -337,12 +339,17 @@ alter table public.activity_legacy_events  enable row level security;
 alter table public.activity_change_notices enable row level security;
 alter table public.activity_notice_state   enable row level security;
 
+-- Two permissive policies, OR-ed: the PUBLIC rule (visitors and everyone) and the MANAGER rule (signed-in only). They are split because the
+-- ownership helpers are not executable by the anonymous role in production, and a visitor's read must never call them.
 drop policy if exists ra_read on public.regular_activities;
-create policy ra_read on public.regular_activities for select using (
-  (status = 'published' and not admin_paused
-     and (organiser_hub_id is null or (calendar_approved and exists (select 1 from public.hubs h where h.id = organiser_hub_id and h.is_active)))
-     and (organiser_business_id is null or exists (select 1 from public.local_businesses b where b.id = organiser_business_id and b.is_active)))
-  or public.attribution_staff()
+drop policy if exists ra_read_public on public.regular_activities;
+create policy ra_read_public on public.regular_activities for select to anon, authenticated using (
+  status = 'published' and not admin_paused
+  and (organiser_hub_id is null or (calendar_approved and exists (select 1 from public.hubs h where h.id = organiser_hub_id and h.is_active)))
+  and (organiser_business_id is null or exists (select 1 from public.local_businesses b where b.id = organiser_business_id and b.is_active)));
+drop policy if exists ra_read_manage on public.regular_activities;
+create policy ra_read_manage on public.regular_activities for select to authenticated using (
+  public.attribution_staff()
   or (not is_platform_activity and public.controls_event_entity(organiser_business_id, organiser_hub_id)));
 
 drop policy if exists ra_insert on public.regular_activities;

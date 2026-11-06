@@ -49,6 +49,9 @@ test.before(() => {
       select auth.uid() is not null and (
         (p_business is not null and exists (select 1 from public.local_businesses b where b.id = p_business and b.owner_id = auth.uid()))
         or (p_hub is not null and (public.is_hub_admin(p_hub, auth.uid()) or exists (select 1 from public.hubs h where h.id = p_hub and h.owner_id = auth.uid())))) $$;
+    -- production: visitors cannot run these two helpers
+    revoke execute on function public.attribution_staff() from public; grant execute on function public.attribution_staff() to authenticated, service_role;
+    revoke execute on function public.controls_event_entity(uuid, uuid) from public; grant execute on function public.controls_event_entity(uuid, uuid) to authenticated, service_role;
     alter table public.local_businesses enable row level security; alter table public.hubs enable row level security;
     create policy b_read on public.local_businesses for select using (is_active or owner_id = auth.uid());
     create policy h_read on public.hubs for select using (is_active or owner_id = auth.uid());
