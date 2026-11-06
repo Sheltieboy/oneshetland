@@ -2,7 +2,6 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
 import { getConfig } from '../_shared/admin-config.ts';
-import { loadOccurrences, runBlocksPost } from '../_shared/event-occurrence-dates.ts';
 
 /**
  * social-publisher — posts due, human-approved social_posts to the OneShetland
@@ -47,8 +46,6 @@ const corsHeaders = {
 
 interface PostRow {
   id: string;
-  kind?: string;
-  entity_id?: string | null;
   caption: string;
   image_url: string | null;
   link_url: string | null;
@@ -139,24 +136,6 @@ serve(async (req) => {
           .eq('id', post.id);
         result.skipped++;
         continue;
-      }
-
-      // Events Phase 1 send-time check: an event_spotlight for a production that runs on several dates is dropped if the event is now
-      // cancelled/hidden or every remaining date is cancelled or past. Applies ONLY to events that have occurrence rows; with no
-      // event_occurrences table (migration not applied) or no rows for the event this never fires and nothing changes.
-      if (post.kind === 'event_spotlight' && post.entity_id) {
-        try {
-          const occ = await loadOccurrences(svc, [post.entity_id]);
-          if (occ.has(post.entity_id)) {
-            const { data: evRow } = await svc.from('events').select('status, is_hidden').eq('id', post.entity_id).maybeSingle();
-            const why = runBlocksPost(occ.get(post.entity_id), evRow, now);
-            if (why) {
-              await svc.from('social_posts').update({ status: 'skipped', error: `not posted: ${why}` }).eq('id', post.id);
-              result.skipped++;
-              continue;
-            }
-          }
-        } catch { /* a failed check never blocks or changes the existing behaviour */ }
       }
 
       try {
