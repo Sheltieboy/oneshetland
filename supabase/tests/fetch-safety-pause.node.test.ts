@@ -44,10 +44,36 @@ test('NO LATER migration can undo it: it may not re-create the dropped policies,
     assert.doesNotMatch(sql, /create policy[^;]*on\s+(public\.)?delivery_requests[^;]*for select[^;]*status\s*=\s*'pending'[^;]*driver_profiles/is, `${f} lets drivers read pending requests`);
   }
 });
-test('NO LATER migration may add a definer function that writes Fetch tables without consulting the pause (SECURITY DEFINER bypasses the guard triggers)', () => {
-  for (const f of files.filter((x) => x.split('_')[0] > SAFETY)) {
-    const sql = strip(read(f));
-    const writesFetch = /security\s+definer[\s\S]*?(insert\s+into|update)\s+public\.(delivery_requests|runs|driver_profiles)\b/i.test(sql);
-    if (writesFetch) assert.match(sql, /fetch_is_open\(\)/, `${f} adds a SECURITY DEFINER function that writes Fetch tables but never calls public.fetch_is_open()`);
-  }
+// Functions that legitimately write Fetch tables WITHOUT consulting the pause. Each is deliberate; a NEW definer writer must be classified here or gated.
+const PAUSE_EXEMPT: Record<string, string> = {
+  // keep protecting jobs and money that already exist while paused
+  fetch_v2_release_internal: 'releases an existing hold', fetch_v2_cancel_matched_internal: 'cancels an existing job', fetch_v2_expire_due: 'expires existing requests/holds',
+  fetch_v2_escalate_cancel_requests: 'escalates an existing cancel request', fetch_v2_retire_authorisation: 'retires an existing authorisation', fetch_v2_apply_payment_state: 'records the real state of an existing payment',
+  fetch_v2_rotate_authorisation: 'renews an existing hold', fetch_v2_escalate_payment: 'escalates an existing payment problem', fetch_v2_bump_member: 'counter on an existing member',
+  // audit trails and the notification outbox
+  fetch_v2_log: 'audit log', fetch_v2_vlog: 'audit log', tg_driver_verification_file_deleted: 'audit trigger', fetch_v2_enqueue_notice: 'outbox (sending is separately gated)', fetch_v2_settle_notification: 'outbox bookkeeping',
+  // verification administration: nothing here creates, accepts or approves; approving a driver changes driver_profiles.driver_status, which the driver_profiles guard blocks on every API path
+  fetch_v2_decide_driver: 'approval -> driver_status, blocked by tg_fetch_pause_drivers (reject/suspend must stay possible)', fetch_v2_sync_verification: 'recomputes verification state', fetch_v2_open_verification_issue: 'staff issue',
+  fetch_v2_apply_vehicle: 'applicant data', fetch_v2_discard_evidence_upload: 'cleanup', fetch_v2_review_evidence: 'staff review', fetch_v2_set_requirement: 'staff config', fetch_v2_record_evidence_file_deleted: 'cleanup',
+  fetch_v2_verification_sweep: 'scheduled expiry of evidence', fetch_v2_discard_photo_upload: 'cleanup',
+};
+const FETCH_TABLES = /(delivery_requests|\bruns\b|driver_profiles|fetch_[a-z_]+|waiting_events|driver_verification_[a-z_]+)/;
+function functionsIn(sql: string) {
+  const out: { name: string; definer: boolean; writes: boolean; body: string }[] = [];
+  for (const m of sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)\s*\((.*?)\)\s*(.*?)\$(\w*)\$(.*?)\$\4\$/gis))
+    out.push({ name: m[1], definer: /security\s+definer/i.test(m[3]), writes: new RegExp(`(insert\\s+into|update|delete\\s+from)\\s+public\\.${FETCH_TABLES.source}`, 'i').test(m[5]), body: m[5] });
+  return out;
+}
+test('EVERY definer function in a later migration that writes Fetch tables is gated by the pause (directly or through a gated helper) or deliberately exempt', () => {
+  const fns = files.filter((x) => x.split('_')[0] > SAFETY).flatMap((f) => functionsIn(strip(read(f))));
+  const gated = new Set(['fetch_is_open', 'fetch_is_api_call', 'fetch_v2_enabled_for', 'fetch_v2_enabled', 'fetch_v2_require', 'fetch_v2_audience']);
+  for (let changed = true; changed;) { changed = false; for (const f of fns) if (!gated.has(f.name) && [...gated].some((g) => new RegExp(`\\b${g}\\s*\\(`).test(f.body))) { gated.add(f.name); changed = true; } }
+  const loose = fns.filter((f) => f.definer && f.writes && !gated.has(f.name) && !(f.name in PAUSE_EXEMPT)).map((f) => f.name);
+  assert.deepEqual(loose, [], `SECURITY DEFINER writer(s) with no pause check and no explicit exemption (add fetch_v2_require()/fetch_is_open(), or classify in PAUSE_EXEMPT): ${loose.join(', ')}`);
+});
+test('Fetch v2 can never be more open than Fetch: fetch_v2_audience() is off unless the master pause is open, so every v2 gate inherits it', () => {
+  const f = files.find((x) => /_fetch_v2_feature_flag\.sql$/.test(x));
+  if (!f) return;                                                      // the v2 migrations are not on every branch
+  const a = functionsIn(strip(read(f))).find((x) => x.name === 'fetch_v2_audience')!;
+  assert.match(a.body, /when not public\.fetch_is_open\(\) then 'off'/);
 });
