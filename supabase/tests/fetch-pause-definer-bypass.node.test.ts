@@ -51,15 +51,23 @@ test('isolated cluster: control, fix and master pause', { skip: !have }, () => {
     assert.equal(as('authenticated', 'select public.fetch_v2_definer_create()').ok, true, 'CONTROL: before the fix a definer function reached through the API gets past the guard while paused');
     assert.equal(as('authenticated', `select public.fetch_v2_definer_approve('00000000-0000-0000-0000-0000000000d1')`).ok, true, 'CONTROL: approvals get past too');
 
+    // DIRECT (invoker) paths: the guard triggers run AS the API role, so every helper they call must be executable by it. Paused: the pause message, never "permission denied".
+    sql(`create or replace function public.tmp_probe() returns void language sql as $$ select 1 $$;`);
     // FIX
     assert.ok(sql(file('20261213000000')).ok, 'migration 20261213 applies');
     const c = as('authenticated', 'select public.fetch_v2_definer_create()'); assert.equal(c.ok, false); assert.match(c.err, /New delivery requests are paused/);
     const a = as('service_role', `select public.fetch_v2_definer_approve('00000000-0000-0000-0000-0000000000d2')`); assert.equal(a.ok, false); assert.match(a.err, /Driver approvals are paused/);
     assert.equal(as('service_role', `update public.driver_profiles set driver_status = 'rejected' where id = '00000000-0000-0000-0000-0000000000d2'`).ok, true, 'rejecting stays possible');
     assert.equal(as('service_role', `update public.delivery_requests set status = 'cancelled' where id = '00000000-0000-0000-0000-0000000000a1'`).ok, true, 'cancelling an existing request stays possible');
+    for (const role of ['authenticated', 'anon', 'service_role']) {
+      const d = as(role, `insert into public.delivery_requests(status) values ('pending')`); assert.equal(d.ok, false, `${role}: a DIRECT insert is blocked while paused`); assert.match(d.err, /New delivery requests are paused/, `${role}: the pause message, not a permission error: ${d.err}`);
+      const r = as(role, `insert into public.runs(driver_id) values ('00000000-0000-0000-0000-000000000001')`); assert.match(r.err, /New runs are paused/, `${role}: ${r.err}`);
+      const p = as(role, `insert into public.driver_profiles(id, driver_status) values (gen_random_uuid(), 'pending')`); assert.match(p.err, /Driver applications are paused/, `${role}: ${p.err}`);
+    }
     assert.equal(sql(`select public.fetch_v2_definer_create()`).ok, true, 'SQL run directly as the database owner is not blocked');
     assert.equal(sql(`update public.admin_config set value = 'open' where key = 'fetch.operations'`).ok, true);
     assert.equal(as('authenticated', 'select public.fetch_v2_definer_create()').ok, true, 'open means open');
+    for (const role of ['authenticated', 'service_role']) assert.equal(as(role, `insert into public.delivery_requests(status) values ('pending')`).ok, true, `${role}: a DIRECT insert works when open (no permission error from the guard)`);
     sql(`update public.admin_config set value = 'banana' where key = 'fetch.operations'`);
     assert.equal(as('authenticated', 'select public.fetch_v2_definer_create()').ok, false, 'garbage means paused');
 

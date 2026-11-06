@@ -17,7 +17,7 @@ language sql stable set search_path = public, pg_temp as $$
   select current_user in ('anon', 'authenticated', 'service_role') or session_user = 'authenticator'
 $$;
 revoke all on function public.fetch_is_api_call() from public, anon, authenticated;
-grant execute on function public.fetch_is_api_call() to service_role;   -- guards below are invoker triggers run by the API roles; the function itself reveals nothing, but keep it unexposed
+grant execute on function public.fetch_is_api_call() to anon, authenticated, service_role;   -- the guard triggers are SECURITY INVOKER: they run AS the calling API role, which therefore needs EXECUTE (it reveals nothing about the caller beyond what it already knows)
 comment on function public.fetch_is_api_call() is 'True when the statement arrived through the API (PostgREST), including inside SECURITY DEFINER functions.';
 
 create or replace function public.tg_fetch_pause_requests() returns trigger
