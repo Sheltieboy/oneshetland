@@ -27,7 +27,12 @@ export const localVersions = (dir = join(ROOT, 'supabase/migrations')) =>
 /** Registered versions out of JSON ([..] or {versions:[..]}) or `supabase migration list` text (Local | Remote | Time). */
 export function parseRegistered(text) {
   const t = text.trim();
-  if (t.startsWith('[') || t.startsWith('{')) { const j = JSON.parse(t); return (Array.isArray(j) ? j : j.versions).map(String).sort(); }
+  if (t.startsWith('[') || t.startsWith('{')) {
+    const j = JSON.parse(t);
+    // `supabase migration list --linked` (CLI 2.x) prints {"migrations":[{"local":..,"remote":..}]}; only entries with a REMOTE version are registered.
+    if (!Array.isArray(j) && Array.isArray(j.migrations)) return j.migrations.filter((m) => m.remote).map((m) => String(m.remote)).sort();
+    return (Array.isArray(j) ? j : j.versions).map(String).sort();
+  }
   const out = [];
   for (const line of t.split('\n')) {
     const cols = line.split('|').map((c) => c.trim());

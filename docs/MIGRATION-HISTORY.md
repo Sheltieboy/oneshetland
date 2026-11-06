@@ -1,5 +1,26 @@
 # Migration history
 
+## Reconciliation (6 November 2026): one canonical history of 281 versions
+
+**Status: `supabase/migrations/` = production's 281 registered versions + 1 migration applied by hand and awaiting registration (see decision below). No version is missing, duplicated or edited.**
+
+How it was established (all read-only against production): every file on every branch, remote and worktree (34,000 file instances, 104 refs, 47 worktrees) was normalised and compared with the
+statements production RECORDED for its version. Result: 266 versions already matched on `origin/main`; 15 matched exactly but existed only on feature branches and were copied in unchanged
+(`jobs_structural_readiness`, `hub_campaign_requires_payout_ready`, `social_recipes_expansion`, `business_claim_emails`, `search_site`, `email_group1_templates`, `home_pin`, `business_discovery`,
+`regular_activities`, `activity_notifications`, `schedule_activity_notices`, `activity_messages`, `accessible_shetland`, `social_regular_accessible_recipes`, `fetch_safety_pause`); none had conflicting content.
+
+Two things were NOT rewritten and need a decision: see "Open decisions" in the reconciliation report (shift_employer lock registration; Fetch v2 renumbering on `fetch-v2-rc-renumbered`).
+
+### Tools
+- `node scripts/snapshot-production-migrations.mjs [--check]` refreshes / verifies `supabase/production/registered-migrations.json` (versions, NAMES and a content hash of each recorded migration).
+- `supabase/tests/migration-immutability.node.test.ts` fails if an applied migration is edited, renamed, renumbered, duplicated or missing.
+- `node scripts/check-migration-collisions.mjs [--dir <migrations>]` lists COLLISIONS (a file whose version production registered under another name) and OUT-OF-ORDER files for ANY branch's migrations folder.
+- `node scripts/check-migration-history.mjs` (the original guard) still blocks `db push` while anything is unregistered.
+
+### Branch hazard: do not merge these branches' copies of applied migrations
+Some old branches (`build-147`, `build-148`, `accessible-shetland`'s older base, `notices-alerts-app-ui`) carry EDITED variants of applied migrations (`20260721020000`, `20260829120000`, `20260903120000`,
+`20260925120000`, `20261129000000`..`20261129040000`). Production and this branch hold the recorded originals. When merging those branches, take this branch's version of every file under `supabase/migrations/`.
+
 **Status (8 October 2026): the repository and production's registered history agree — 247 migration files, 247 registered versions.**
 
 ## How we got here
