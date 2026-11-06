@@ -77,3 +77,10 @@ test('Fetch v2 can never be more open than Fetch: fetch_v2_audience() is off unl
   const a = functionsIn(strip(read(f))).find((x) => x.name === 'fetch_v2_audience')!;
   assert.match(a.body, /when not public\.fetch_is_open\(\) then 'off'/);
 });
+test('NO rollback script (other than the safety fix\'s own) may re-create the four dropped policies: rolling back must never re-open the privacy hole', () => {
+  const RB = join(ROOT, 'supabase', 'rollbacks');
+  for (const f of readdirSync(RB).filter((x) => x.endsWith('.sql') && !x.startsWith(`${SAFETY}_fetch_safety_pause`))) {
+    const sql = strip(readFileSync(join(RB, f), 'utf8'));
+    for (const p of PROTECTED_POLICIES) assert.doesNotMatch(sql, new RegExp(`create policy "${p}"`, 'i'), `${f} would re-create "${p}"`);
+  }
+});
