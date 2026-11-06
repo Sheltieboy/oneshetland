@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createServiceClient } from '../_shared/send-push.ts';
 import { requireCronSecret } from '../_shared/cron-auth.ts';
+import { loadOccurrences, runState, listOncePerProduction } from '../_shared/event-occurrence-dates.ts';
 
 /**
  * social-composer — the "Peerie Press" recipe runner (Phase 1).
@@ -209,7 +210,11 @@ serve(async (req) => {
               .gte('starts_at', from).lt('starts_at', to)
               .order('starts_at', { ascending: true })
               .limit(max);
-            return data ?? [];
+            // Events Phase 1: a production that runs on several dates is listed ONCE under its next live date (or not at all if none is left).
+            // With no event_occurrences table/rows this returns the events exactly as before.
+            const rows = data ?? [];
+            const occ = await loadOccurrences(svc, rows.map((r: { id: string }) => r.id));
+            return listOncePerProduction(rows, occ, now, new Date(to));
           };
           // A one-event card looks dead — widen to a fortnight when thin.
           let days = 7;
@@ -340,10 +345,16 @@ serve(async (req) => {
         const { data: done } = await svc
           .from('social_posts').select('entity_id').eq('kind', 'event_spotlight').limit(5000);
         const doneIds = new Set((done ?? []).map((d: { entity_id: string | null }) => d.entity_id));
+        // Events Phase 1: dated runs are advertised under their next live date and never once every date is cancelled or past.
+        // The dedupe key stays the event id, so one production gets ONE spotlight, ever (not one per date).
+        const occ = await loadOccurrences(svc, premium.map((e: { id: string }) => e.id));
         let created = 0;
-        for (const e of premium) {
+        for (const e0 of premium) {
           if (created >= maxPerRun) break;
-          if (doneIds.has(e.id)) continue;
+          if (doneIds.has(e0.id)) continue;
+          const st = runState(occ.get(e0.id), now);
+          if (st.kind === 'gone') continue;
+          const e = st.kind === 'run' ? { ...e0, starts_at: st.next } : e0;
           const b = Array.isArray(e.local_businesses) ? e.local_businesses[0] : e.local_businesses;
           const where = [e.venue, e.locality].filter(Boolean).join(', ');
           const link = go(`event/${e.id}`);

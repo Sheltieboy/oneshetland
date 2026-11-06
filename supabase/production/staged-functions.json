@@ -7,5 +7,18 @@
       "reason": "HELD on purpose: not activated until hosted Cloudflare Turnstile verification and trusted client-IP verification have passed; the database function submit_funeral_enquiry is service-role only, so with no function deployed the public endpoint is closed"
     }
   },
-  "modified": {}
+  "modified": {
+    "create-event-ticket-intent": {
+      "step": "Events Phase 2",
+      "reason": "Events Phase 2 (local): deploy ONLY after the Events Phase-1 migrations are applied and verified; see docs/events-release-order.md - friendly MULTI_PERFORMANCE sentence via _shared/ticket-reserve-error.ts"
+    },
+    "social-composer": {
+      "step": "Events Phase 2",
+      "reason": "Events Phase 2 (local): deploy ONLY after the Events Phase-1 migrations are applied and verified; see docs/events-release-order.md - dated runs listed once under their next live date via _shared/event-occurrence-dates.ts"
+    },
+    "social-publisher": {
+      "step": "Events Phase 2",
+      "reason": "Events Phase 2 (local): deploy ONLY after the Events Phase-1 migrations are applied and verified; see docs/events-release-order.md - send-time check for dated runs via _shared/event-occurrence-dates.ts"
+    }
+  }
 }

@@ -9,6 +9,7 @@ import { enforcePaymentStart } from '../_shared/rate-limit.ts';
 import { onSessionConfirm, classifyIntent, failureMessage } from '../_shared/stripe-sca.ts';
 import { resolveSavedCard, boundCustomerFor } from '../_shared/saved-card-state.ts';
 import { stripeError, checkoutFailure } from '../_shared/stripe-errors.ts';
+import { reserveFailureText } from '../_shared/ticket-reserve-error.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -284,11 +285,7 @@ serve(async (req) => {
       const msg = basketErr?.message ?? '';
       console.error('[create-event-ticket-intent] basket reservation failed:', msg);
       // Each of these is an ordinary outcome with its own sentence, not a fault.
-      const text =
-        msg.includes('SOLD_OUT')             ? 'Some tickets are now sold out. Please refresh and try again.'
-      : msg.includes('CHECKOUT_EXPIRED')     ? 'This checkout has expired. Please start again.'
-      : msg.includes('IDEMPOTENCY_CONFLICT') ? 'That checkout reference was already used for a different order. Please start again.'
-      :                                        'Those tickets are not available. Please refresh and try again.';
+      const text = reserveFailureText(msg);
       return new Response(JSON.stringify({ error: text }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
