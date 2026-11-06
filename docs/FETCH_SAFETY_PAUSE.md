@@ -16,14 +16,14 @@ Applied to production 6 Nov 2026. Recorded in migration history as `202612120000
 - `supabase/tests/fetch-safety-pause.verify.sql`: rolled-back verification against production with real role impersonation. Run any time:
   `supabase db query --linked -f supabase/tests/fetch-safety-pause.verify.sql` (every check should read as in the 6 Nov run: stranger driver sees 0 pending rows and 0 phones; create/accept/run/apply/approve BLOCKED).
 - `supabase/tests/fetch-safety-pause.node.test.ts`: repository guards (part of `npm test`).
-- `scripts/check-migration-history.mjs`: read-only collision / out-of-order check against production history.
+- `scripts/check-migration-collisions.mjs`: read-only collision / out-of-order check against production history.
 
 ## Reopening Fetch
 Only with Darren's explicit approval, as a separate, deliberate act (not inside a feature migration):
 `update public.admin_config set value = 'open' where key = 'fetch.operations';`  Re-run the verify script first and read what "driver_accepts_when_open" will then allow.
 
 ## Rules for any future change
-- Before deploying ANY branch with migrations: `node scripts/check-migration-history.mjs`. Fix every COLLISION / OUT-OF-ORDER by renumbering the unapplied file ABOVE the newest applied version.
+- Before deploying ANY branch with migrations: `node scripts/check-migration-collisions.mjs`. Fix every COLLISION / OUT-OF-ORDER by renumbering the unapplied file ABOVE the newest applied version.
 - A migration after 20261212000000 must not re-create the four dropped policies, touch `fetch.operations`, drop the guards, or add a SECURITY DEFINER function that writes `delivery_requests`/`runs`/`driver_profiles`
   without calling `public.fetch_is_open()` (definer functions run as the owner, which bypasses the guard triggers). `fetch-safety-pause.node.test.ts` enforces this.
 - Never apply a rollback file, and never rebuild a database from a branch that lacks migration 20261212000000 (the baseline recreates the dangerous policies).

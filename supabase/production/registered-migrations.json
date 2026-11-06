@@ -1,8 +1,8 @@
 {
-  "captured_on": "2026-10-31",
+  "captured_on": "2026-11-06",
   "project_ref": "nkrtmakxygkvxuxriiil",
   "how": "read-only: select version from supabase_migrations.schema_migrations",
-  "note": "Snapshot of the versions production has REGISTERED in supabase_migrations.schema_migrations. Updated 2026-10-08 after the 29 hand-applied migrations were registered with `supabase migration repair --status applied` (history only; no SQL executed). 247 files, 247 registered. Then 20261122000000_shift_employer_stripe_customer_lock was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261122000000`: 248 files, 248 registered. Then 20261123000000_shift_profile_trust_fields was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261123000000`: 249 files, 249 registered. Then 20261124000000_referrals_disabled_for_launch was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261124000000`: 250 files, 250 registered. Then 20261125000000_launch_test_centre was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261125000000`: 251 files, 251 registered. Then 20261126000000_launch_test_centre_web_platform was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261126000000`: 252 files, 252 registered. Updated 2026-10-31 after the Notices & Alerts migrations 20261129000000-20261129090000 were applied and registered (and 20261127000000-20261128010000, applied earlier from stage branches, were added to this branch).",
+  "note": "Snapshot of the versions production has REGISTERED in supabase_migrations.schema_migrations. Updated 2026-10-08 after the 29 hand-applied migrations were registered with `supabase migration repair --status applied` (history only; no SQL executed). 247 files, 247 registered. Then 20261122000000_shift_employer_stripe_customer_lock was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261122000000`: 248 files, 248 registered. Then 20261123000000_shift_profile_trust_fields was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261123000000`: 249 files, 249 registered. Then 20261124000000_referrals_disabled_for_launch was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261124000000`: 250 files, 250 registered. Then 20261125000000_launch_test_centre was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261125000000`: 251 files, 251 registered. Then 20261126000000_launch_test_centre_web_platform was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261126000000`: 252 files, 252 registered. Updated 2026-10-31 after the Notices & Alerts migrations 20261129000000-20261129090000 were applied and registered (and 20261127000000-20261128010000, applied earlier from stage branches, were added to this branch). Refreshed 2026-11-06: 281 versions (adds 20261130000000..20261212000000; 20261211000000 social recipes and 20261212000000 fetch safety pause registered with migration repair).",
   "versions": [
     "20260623000000",
     "20260623010000",
@@ -269,6 +269,21 @@
     "20261129060000",
     "20261129070000",
     "20261129080000",
-    "20261129090000"
+    "20261129090000",
+    "20261130000000",
+    "20261201000000",
+    "20261202000000",
+    "20261203000000",
+    "20261204000000",
+    "20261205000000",
+    "20261206000000",
+    "20261207000000",
+    "20261208000000",
+    "20261208010000",
+    "20261208020000",
+    "20261209000000",
+    "20261210000000",
+    "20261211000000",
+    "20261212000000"
   ]
 }
