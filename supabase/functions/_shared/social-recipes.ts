@@ -116,6 +116,8 @@ export type SlotOpts = {
   leadMinutes?: number;
   /** [0,1) — injected so tests are deterministic. */
   rand?: () => number;
+  /** London dates (YYYY-MM-DD) this post must not land on (e.g. a day that already has a Business Spotlight). */
+  excludeDays?: ReadonlySet<string>;
 };
 
 export function allocateSlot(o: SlotOpts): Date | null {
@@ -134,6 +136,7 @@ export function allocateSlot(o: SlotOpts): Date | null {
   };
   for (let day = 0; day <= o.horizonDays; day++) {
     const ymd = addDays(todayYmd, day);
+    if (o.excludeDays?.has(ymd)) continue;
     // A preferred hour outside the window (or none) means "as early as the window allows".
     const pref = o.preferredHour != null && o.preferredHour >= o.windowStartHour && o.preferredHour <= o.windowEndHour ? o.preferredHour : o.windowStartHour;
     const startMin = pref * 60;
@@ -334,7 +337,9 @@ export const idsFromLink = (link: string | null | undefined): string[] => {
 
 /* ── One shared slot allocator for ALL twelve recipes ─────────────────────────────────────────────────────────── */
 
-export type SlotContext = { now: Date; taken: Date[]; gapMinutes: number; maxPerDay: number; windowStartHour: number; windowEndHour: number };
+/** Marks a draft that is an autopilot post waiting only for approval (sensitive listing). */
+export const HELD_PREFIX = 'Held for approval';
+export type SlotContext = { now: Date; /** approved / scheduled / posted-today: slots that are really committed */ taken: Date[]; /** unapproved drafts: they space out against each other but never block a post that will really be published */ draftTaken: Date[]; gapMinutes: number; maxPerDay: number; windowStartHour: number; windowEndHour: number };
 
 /** Reads the shared limits (admin_config) and every post already queued for the future or posted today. Call once per composer run. */
 export async function loadSlotContext(svc: Svc, now: Date): Promise<SlotContext> {
@@ -342,12 +347,18 @@ export async function loadSlotContext(svc: Svc, now: Date): Promise<SlotContext>
   const g = new Map<string, string>(((cfgRows ?? []) as { key: string; value: string }[]).map((r) => [r.key, r.value]));
   const [ws, we] = (g.get('social.window_hours') ?? '8-20').split('-').map(Number);
   const todayStart = londonInstant(londonParts(now).ymd, 0, 0).toISOString();
-  const { data: around } = await svc.from('social_posts').select('status,scheduled_for,posted_at')
+  const { data: around } = await svc.from('social_posts').select('status,scheduled_for,posted_at,error')
     .or(`and(status.in.(approved,scheduled),scheduled_for.gte.${now.toISOString()}),and(status.eq.draft,scheduled_for.gte.${now.toISOString()}),and(status.eq.posted,posted_at.gte.${todayStart})`).limit(500);
-  const taken = ((around ?? []) as { status: string; scheduled_for: string | null; posted_at: string | null }[])
-    .map((r) => new Date((r.status === 'posted' ? r.posted_at : r.scheduled_for) as string)).filter((x) => !isNaN(x.getTime()));
+  type Around = { status: string; scheduled_for: string | null; posted_at: string | null; error?: string | null };
+  const rowsAround = (around ?? []) as Around[];
+  const when = (r: Around) => new Date((r.status === 'posted' ? r.posted_at : r.scheduled_for) as string);
+  // Unapproved REVIEW-ONLY drafts do NOT reserve publishing slots: approved, scheduled and already-posted items do. A draft held for a person because of
+  // sensitive subject matter ('Held for approval: ...') is an autopilot post waiting for one tick, so it keeps its slot like any scheduled post.
+  const reserves = (r: Around) => r.status !== 'draft' || String(r.error ?? '').startsWith(HELD_PREFIX);
+  const taken = rowsAround.filter(reserves).map(when).filter((x) => !isNaN(x.getTime()));
+  const draftTaken = rowsAround.filter((r) => !reserves(r)).map(when).filter((x) => !isNaN(x.getTime()));
   return {
-    now, taken,
+    now, taken, draftTaken,
     gapMinutes: Math.max(15, Number(g.get('social.min_gap_minutes') ?? 120) || 120),
     maxPerDay: Math.max(1, Number(g.get('social.max_posts_per_day') ?? 3) || 3),
     windowStartHour: Number.isFinite(ws) ? ws : 8, windowEndHour: Number.isFinite(we) ? we : 20,
@@ -355,8 +366,8 @@ export async function loadSlotContext(svc: Svc, now: Date): Promise<SlotContext>
 }
 
 /** The next free slot for a recipe's preferred hour, or null if the limits leave none in the next 3 days. Does NOT reserve it: call ctx.taken.push(slot) once the post exists. */
-export function peekSlot(ctx: SlotContext, preferredHour: number | null, rand: () => number = Math.random): Date | null {
-  return allocateSlot({ now: ctx.now, preferredHour, taken: ctx.taken, gapMinutes: ctx.gapMinutes, maxPerDay: ctx.maxPerDay, windowStartHour: ctx.windowStartHour, windowEndHour: ctx.windowEndHour, horizonDays: 3, rand });
+export function peekSlot(ctx: SlotContext, preferredHour: number | null, rand: () => number = Math.random, asDraft = false): Date | null {
+  return allocateSlot({ now: ctx.now, preferredHour, taken: asDraft ? [...ctx.taken, ...ctx.draftTaken] : ctx.taken, gapMinutes: ctx.gapMinutes, maxPerDay: ctx.maxPerDay, windowStartHour: ctx.windowStartHour, windowEndHour: ctx.windowEndHour, horizonDays: 3, rand });
 }
 
 /* ── Selectors: each returns already-filtered Candidates, best first ───────────────────────────────────────────── */
@@ -503,12 +514,13 @@ const bizOf = (p: SpotPost) => (p.business_id ?? (p.entity_id ?? '').split(':')[
 const WAITING = ['draft', 'approved', 'scheduled'];
 const tOf = (p: SpotPost) => Date.parse((p.posted_at ?? p.scheduled_for ?? p.created_at) as string);
 
-type BizState = { lastPostedAt: number | null; pending: boolean; coolUntil: number | null };
+type BizState = { lastPostedAt: number | null; pending: boolean; coolUntil: number | null; firstAttemptAt: number | null };
 export function spotlightStates(history: SpotPost[], cfg: Record<string, unknown>): Map<string, BizState> {
   const c = spotCfg(cfg); const m = new Map<string, BizState>();
   for (const h of history) {
     const id = bizOf(h); if (!id) continue;
-    const st = m.get(id) ?? { lastPostedAt: null, pending: false, coolUntil: null }; m.set(id, st);
+    const st = m.get(id) ?? { lastPostedAt: null, pending: false, coolUntil: null, firstAttemptAt: null }; m.set(id, st);
+    const ct = Date.parse(h.created_at); if (!isNaN(ct) && (st.firstAttemptAt === null || ct < st.firstAttemptAt)) st.firstAttemptAt = ct;
     if (h.status === 'posted') { const t = tOf(h); if (!isNaN(t) && (st.lastPostedAt === null || t > st.lastPostedAt)) st.lastPostedAt = t; }
     else if (WAITING.includes(h.status)) st.pending = true;
     else if (h.status === 'skipped' || h.status === 'failed') {
@@ -523,11 +535,12 @@ export function spotlightStates(history: SpotPost[], cfg: Record<string, unknown
 export function welcomeStreak(history: SpotPost[], pool: Map<string, SpotBiz>, cfg: Record<string, unknown>): number {
   const c = spotCfg(cfg);
   const picks = history.filter((h) => h.status === 'posted' || WAITING.includes(h.status)).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-  const seen = new Set<string>(); const lanes: boolean[] = [];
+  const lanes: boolean[] = [];
   for (const p of picks) {
     const id = bizOf(p); const b = pool.get(id); const cd = b ? claimDate(b) : null; const t = Date.parse(p.created_at);
-    lanes.push(!seen.has(id) && !!cd && t >= Date.parse(cd) - DAY && t - Date.parse(cd) <= c.welcomeDays * DAY);
-    seen.add(id);
+    const earlierPosted = history.some((h) => bizOf(h) === id && h.status === 'posted' && Date.parse(h.created_at) < t);
+    const first = Math.min(...history.filter((h) => bizOf(h) === id).map((h) => Date.parse(h.created_at)));
+    lanes.push(!earlierPosted && !!cd && first >= Date.parse(cd) - DAY && first - Date.parse(cd) <= c.welcomeDays * DAY);
   }
   let s = 0; for (let i = lanes.length - 1; i >= 0 && lanes[i]; i--) s++;
   return s;
@@ -588,7 +601,9 @@ export async function selectSpotlight(svc: Svc, cfg: Record<string, unknown>, no
   const ranks: SpotRank[] = eligible.map((b) => {
     const st = states.get(b.id); const cd = claimDate(b);
     const featured = st?.lastPostedAt != null;
-    const lane: SpotLane = featured ? 'rotation' : cd && now.getTime() - Date.parse(cd) <= c.welcomeDays * DAY ? 'welcome' : 'new';
+    // A failed or skipped attempt keeps the business's priority: the welcome window is judged at its FIRST attempt (or now, if it has had none), so a cool-off never costs it its place.
+    const anchor = st?.firstAttemptAt ?? now.getTime();
+    const lane: SpotLane = featured ? 'rotation' : cd && anchor - Date.parse(cd) <= c.welcomeDays * DAY ? 'welcome' : 'new';
     return { id: b.id, name: b.name, lane, claimedAt: cd, lastPostedAt: featured ? new Date(st!.lastPostedAt!).toISOString() : null, sensitive: businessSensitive(b) };
   });
   const streak = welcomeStreak(history, pool, cfg);
@@ -611,7 +626,7 @@ export async function selectSpotlight(svc: Svc, cfg: Record<string, unknown>, no
       kind: 'business_spotlight', entity_type: 'business', entity_id: b.id, business_id: b.id,
       caption: `LOCAL BUSINESS SPOTLIGHT 🏪\n\n${b.name.trim()}${b.category ? ` — ${b.category}` : ''}\n\n${excerpt(b.description, 220)}\n\nFind them on OneShetland: ${link}`,
       image_url: httpsUrl(b.cover_url) ?? httpsUrl(b.logo_url) ?? generatedCard(b.id), link_url: link, context: `Local Shetland business "${b.name}".`,
-      needsApproval: r.sensitive, note: r.sensitive ? 'Held for approval: the listing touches a sensitive subject' : `${r.lane} lane`,
+      needsApproval: r.sensitive, note: r.sensitive ? `${HELD_PREFIX}: the listing touches a sensitive subject` : `${r.lane} lane`,
     };
   });
   const report: SpotReport = {
@@ -868,7 +883,6 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
   // Shared limits + everything already queued (the original recipes' posts included) — the same context the original recipes use.
   const ctx = d.ctx ?? await loadSlotContext(svc, now);   // the composer passes the one it already used for the original recipes
   const { maxPerDay, gapMinutes, windowStartHour, windowEndHour } = ctx;
-  const taken = ctx.taken;
 
   // One run never creates more than a day's worth of posts across ALL new recipes, however many are switched on or how much content exists.
   let runBudget = maxPerDay;
@@ -909,6 +923,8 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
       // Duplicate prevention. Single-use kinds: entity ever used. Rotating kinds: per period (business 90d, hub 30d). Games: per ISO week.
       const repeat = kind === 'business_spotlight' ? 0 : Number(cfg.repeat_after_days ?? 0);   // the spotlight applies its own, status-aware rule
       const keyOf = (c: Candidate) => (repeat > 0 ? periodKey(c.entity_id, now, repeat) : c.entity_id);
+      // At most ONE Business Spotlight on any day: days that already have one (queued, scheduled or published) are skipped when placing the next.
+      const spotlightDays = new Set<string>(kind === 'business_spotlight' ? history.filter((h) => ['draft', 'approved', 'scheduled', 'posted'].includes(h.status) && h.scheduled_for).map((h) => londonParts(new Date(h.scheduled_for as string)).ymd) : []);
       const used = new Set(history.map((h) => h.entity_id));
       const usedByEntity = (c: Candidate) => (repeat > 0 ? history.some((h) => (h.entity_id ?? '').split(':')[0] === c.entity_id && now.getTime() - new Date(h.created_at).getTime() < repeat * 86400_000) : used.has(c.entity_id));
       if (kind !== 'business_spotlight') cands = cands.filter((c) => !usedByEntity(c));
@@ -917,9 +933,12 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
       let made = 0;
       for (const c of cands) {
         if (made >= maxRun) break;
+        // Will this post be a draft (review-only recipe, alert, sensitive business)? Drafts space themselves against everything; real posts only against real posts.
+        const held = kind === 'essential_alert' || c.needsApproval === true;
+        const asDraft = kind === 'essential_alert' || (c.needsApproval !== true && r.autopilot !== true);   // a sensitive hold still keeps a real slot
         const slot = allocateSlot({
-          now, preferredHour: typeof cfg.hour === 'number' ? cfg.hour : null, taken, gapMinutes, maxPerDay,
-          windowStartHour, windowEndHour, horizonDays: 3, rand: d.rand,
+          now, preferredHour: typeof cfg.hour === 'number' ? cfg.hour : null, taken: asDraft ? [...ctx.taken, ...ctx.draftTaken] : ctx.taken, gapMinutes, maxPerDay,
+          windowStartHour, windowEndHour, horizonDays: 3, rand: d.rand, excludeDays: kind === 'business_spotlight' ? spotlightDays : undefined,
         });
         if (!slot) { out.skipped[kind] = 'no free slot in the next 3 days'; break; }
         let caption = c.caption;
@@ -928,7 +947,6 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
           // Never accept a rewrite that lost the link or, for games, could name an answer.
           if (polished.includes(c.link_url) && (kind !== 'game_challenge' || !/answer|solution/i.test(polished))) caption = polished;
         }
-        const held = kind === 'essential_alert' || c.needsApproval === true;   // alerts and sensitive subjects always wait for a person
         const status = held ? 'draft' : r.autopilot === true ? 'scheduled' : 'draft';
         const { error } = await svc.from('social_posts').insert({
           // A spotlight's id carries the day it was scheduled, so a later retry after a skipped or failed post never collides with the old row.
@@ -937,7 +955,7 @@ export async function composeNewRecipes(d: ComposeDeps): Promise<ComposeResult> 
           ...(c.needsApproval ? { error: c.note ?? 'Held for approval' } : {}),
         });
         if (error) { out.errors.push(`${kind} insert: ${error.message}`); continue; }
-        taken.push(slot); made++; out[kind]++; runBudget--;
+        (asDraft ? ctx.draftTaken : ctx.taken).push(slot); if (kind === 'business_spotlight') spotlightDays.add(londonParts(slot).ymd); made++; out[kind]++; runBudget--;
       }
       if (!made && !out.skipped[kind]) out.skipped[kind] = 'nothing eligible';
       await svc.from('social_recipes').update({ last_run_at: now.toISOString() }).eq('key', kind);

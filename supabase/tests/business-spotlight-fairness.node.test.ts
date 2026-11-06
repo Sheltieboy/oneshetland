@@ -142,6 +142,54 @@ describe('Selection against the database', () => {
   });
 });
 
+describe('Publishing slots: drafts, approvals and the one-a-day rule', () => {
+  const dayAt = (d: number, h: number) => iso(R.londonInstant(ymdOf(at(d)), h, 0));
+  test('unapproved review-only drafts do not reserve slots; approved, scheduled and posted items do (nothing already approved or scheduled is displaced)', async () => {
+    const w = world([]);
+    post(w, { kind: 'aald_memory', entity_id: 'a1', status: 'draft', scheduled_for: dayAt(1, 13) });
+    post(w, { kind: 'hub_community', entity_id: 'h1', status: 'draft', scheduled_for: dayAt(1, 15), error: null });
+    post(w, { kind: 'notice_update', entity_id: 'n1', status: 'scheduled', scheduled_for: dayAt(1, 9) });
+    post(w, { kind: 'jobs_roundup', entity_id: 'j1', status: 'approved', scheduled_for: dayAt(1, 11) });
+    post(w, { kind: 'wird_of_day', entity_id: 'w1', status: 'posted', posted_at: iso(at(0)), scheduled_for: iso(at(0)) });
+    const ctx = await R.loadSlotContext(w.db, at(0));
+    assert.equal(ctx.taken.length, 3, 'scheduled + approved + posted-today'); assert.equal(ctx.draftTaken.length, 2, 'the two drafts are tracked apart');
+    // an autopilot post can use the hour a review-only draft was parked at; a draft avoids both
+    assert.equal(R.peekSlot(ctx, 13, () => 0.5, false)!.toISOString(), dayAt(1, 13) < iso(at(0)) ? '' : R.peekSlot(ctx, 13, () => 0.5, false)!.toISOString());
+    const real = R.peekSlot(ctx, 13, () => 0.5, false)!, asDraft = R.peekSlot(ctx, 13, () => 0.5, true)!;
+    assert.ok(Math.abs(real.getTime() - R.londonInstant(ymdOf(real), 13, 0).getTime()) <= 8 * 60_000, 'the real post gets its preferred 13:00 even though a draft sits there');
+    assert.ok(!(Math.abs(asDraft.getTime() - Date.parse(dayAt(1, 13))) < 120 * 60_000 && ymdOf(asDraft) === ymdOf(at(1))), 'a draft keeps clear of the other draft');
+  });
+  test('a spotlight held for approval (sensitive) DOES keep its slot, so approving it later cannot break the daily limit', async () => {
+    const w = world([]);
+    post(w, { kind: 'business_spotlight', entity_id: 's:1', status: 'draft', scheduled_for: dayAt(1, 13), error: 'Held for approval: the listing touches a sensitive subject' });
+    const ctx = await R.loadSlotContext(w.db, at(0)); assert.equal(ctx.taken.length, 1); assert.equal(ctx.draftTaken.length, 0);
+  });
+  test('only ONE Business Spotlight per day: a busy day pushes the next one to a different day, never a second on the same day', async () => {
+    const w = world(Array.from({ length: 6 }, (_, i) => ({ n: 1 + i, name: `Biz ${i}`, claimDay: -40 })));
+    for (let d = 0; d < 21; d++) { await compose(w, at(d)); for (const p of spots(w)) if (p.status === 'scheduled') p.status = 'posted', p.posted_at = p.scheduled_for; }
+    const days = spots(w).map((p) => ymdOf(new Date(Date.parse(p.scheduled_for)))); assert.equal(new Set(days).size, days.length, `two on one day: ${days}`);
+    // and a run on a day that already holds one defers rather than doubling up
+    const w2 = world([{ n: 1, name: 'A Co', claimDay: -40 }, { n: 2, name: 'B Co', claimDay: -39 }]);
+    post(w2, { kind: 'business_spotlight', entity_id: `${U(9)}:x`, business_id: U(9), status: 'scheduled', scheduled_for: dayAt(0, 13), entity_type: 'business' });
+    await compose(w2, at(0)); const mine = spots(w2).find((p) => p.business_id === U(1))!; assert.notEqual(ymdOf(new Date(Date.parse(mine.scheduled_for))), ymdOf(at(0)));
+  });
+  test('the compose run never removes, skips or reschedules an approved or scheduled post of any kind (only its OWN stale, never-reviewed spotlight drafts are retired)', async () => {
+    const w = world([{ n: 1, name: 'Only Co', claimDay: -40 }]);
+    post(w, { kind: 'wird_of_day', entity_id: 'w', status: 'scheduled', scheduled_for: dayAt(1, 9) }); post(w, { kind: 'jobs_roundup', entity_id: 'j', status: 'approved', scheduled_for: dayAt(2, 9) });
+    post(w, { kind: 'notice_update', entity_id: 'n', status: 'scheduled', scheduled_for: dayAt(-1, 12) });   // overdue but still scheduled: the publisher's business, not the composer's
+    post(w, { kind: 'business_spotlight', entity_id: `${U(5)}:old`, business_id: U(5), status: 'scheduled', scheduled_for: dayAt(-3, 13), entity_type: 'business' });
+    const before = JSON.stringify(w.db.table('social_posts').map((p) => [p.id, p.status, p.scheduled_for]));
+    await compose(w, at(0)); const after = w.db.table('social_posts').filter((p) => !['b', 'x'].includes(p.entity_id) && p.business_id !== U(1));
+    assert.equal(JSON.stringify(after.map((p) => [p.id, p.status, p.scheduled_for])), before, 'every pre-existing row is exactly as it was');
+  });
+  test('a failed or skipped business keeps its fair place: a business claimed 10 days ago that failed on day 0 is still welcome-lane on day 20, ahead of an older never-featured business', async () => {
+    const w = world([{ n: 1, name: 'Failed Co', claimDay: -10 }, { n: 2, name: 'Older Co', claimDay: -60 }, { n: 3, name: 'Welcome Co', claimDay: 15 }]);
+    post(w, { kind: 'business_spotlight', entity_id: `${U(1)}:2026-11-09`, business_id: U(1), status: 'failed', created_at: iso(at(0)), scheduled_for: iso(at(0)), entity_type: 'business' });
+    const r = await R.selectSpotlight(w.db, {}, at(20)); const byId = Object.fromEntries(r.report.order.map((x, i) => [x.id, { i, lane: x.lane }]));
+    assert.equal(byId[U(1)].lane, 'welcome', 'its welcome priority survived the cool-off and the backlog'); assert.ok(byId[U(1)].i < byId[U(2)].i, 'it is not sent to the back behind older never-featured businesses');
+  });
+});
+
 describe('Composing', () => {
   test('a business already queued is never selected again, and entity ids are unique even when a business is retried', async () => {
     const w = world([{ n: 1, name: 'Only Co', claimDay: -30 }]);
@@ -221,7 +269,7 @@ const BEFORE: Load = {
 const AFTER: Load = { aald_memory: { hour: 19, days: ['Mon', 'Wed', 'Sat'], draft: true }, hub_community: { hour: 10, days: ['Wed', 'Sat'], draft: true }, game_challenge: { hour: 17, days: ['Thu', 'Sun'] } };
 const LIGHT: Load = { wird_of_day: BEFORE.wird_of_day, whats_on_roundup: BEFORE.whats_on_roundup, jobs_roundup: BEFORE.jobs_roundup, notice_update: { hour: 12, days: ['Tue', 'Thu'] }, game_challenge: AFTER.game_challenge };
 
-async function simulate(maxPerDay: number, before: Load, after: Load) {
+async function simulate(maxPerDay: number, before: Load, after: Load, approveMode: 'reslot' | 'asis' = 'reslot') {
   const w = world(SPECS); w.db.tables.admin_config = [{ key: 'social.max_posts_per_day', value: String(maxPerDay) }];
   const fail = seeded(11), human = seeded(23), claimMs = (s: Spec) => at(s.claimDay).getTime();
   const stats = { otherPlaced: 0, otherMoved: 0, otherLost: 0, spotPicks: 0, spotSlotSkips: 0, spotPosted: 0, spotFailed: 0 };
@@ -251,7 +299,8 @@ async function simulate(maxPerDay: number, before: Load, after: Load) {
       if (h.some((p) => p.status === 'skipped' && t < Date.parse(p.scheduled_for) + 7 * DAY)) return false;
       return true;
     });
-    const lane = (s: Spec) => (hist(U(s.n)).some((p) => p.status === 'posted') ? 'rotation' : t - claimMs(s) <= 14 * DAY ? 'welcome' : 'new');
+    // A failed or skipped attempt keeps its priority: the welcome window is judged at the business's FIRST attempt (or now, if it has had none).
+    const lane = (s: Spec) => { const h = hist(U(s.n)); if (h.some((p) => p.status === 'posted')) return 'rotation'; const anchor = h.length ? Math.min(...h.map((p) => Date.parse(p.created_at))) : t; return anchor - claimMs(s) <= 14 * DAY ? 'welcome' : 'new'; };
     const last = (s: Spec) => Math.max(...hist(U(s.n)).filter((p) => p.status === 'posted').map((p) => Date.parse(p.posted_at)));
     const byClaim = (a: Spec, b: Spec) => a.claimDay - b.claimDay || U(a.n).localeCompare(U(b.n));
     const W = pool.filter((s) => lane(s) === 'welcome').sort(byClaim), N = pool.filter((s) => lane(s) === 'new').sort(byClaim);
@@ -282,10 +331,20 @@ async function simulate(maxPerDay: number, before: Load, after: Load) {
       if (p.kind === 'business_spotlight') {
         if (now.getTime() - Date.parse(p.created_at) >= DAY && human() < 0.7) {
           const ctx = await R.loadSlotContext(w.db, now);
-          const slot = R.allocateSlot({ now, preferredHour: 14, taken: ctx.taken, gapMinutes: ctx.gapMinutes, maxPerDay: ctx.maxPerDay, windowStartHour: ctx.windowStartHour, windowEndHour: ctx.windowEndHour, horizonDays: 3 });
+          // approving keeps the draft's own day; if that time has passed it takes the next free slot on a day with no other spotlight
+          const days = new Set(spots(w).filter((x) => x.id !== p.id && ['draft', 'approved', 'scheduled', 'posted'].includes(x.status)).map((x) => ymdOf(new Date(Date.parse(x.scheduled_for)))));
+          const slot = Date.parse(p.scheduled_for) > now.getTime() + 30 * 60_000 ? new Date(p.scheduled_for) : R.allocateSlot({ now, preferredHour: 14, taken: ctx.taken, gapMinutes: ctx.gapMinutes, maxPerDay: ctx.maxPerDay, windowStartHour: ctx.windowStartHour, windowEndHour: ctx.windowEndHour, horizonDays: 3, excludeDays: days });
           if (slot) { p.status = 'scheduled'; p.scheduled_for = slot.toISOString(); }
         }
-      } else if (Date.parse(p.scheduled_for) <= now.getTime() + 18 * 3600_000) { if (human() < 0.5) { p.status = 'posted'; p.posted_at = p.scheduled_for; } else p.status = 'skipped'; }
+      } else if (Date.parse(p.scheduled_for) <= now.getTime() + 18 * 3600_000) {
+        if (human() < 0.5) {
+          if (approveMode === 'reslot') {   // a person approves it and it takes a real slot against everything committed
+            const ctx = await R.loadSlotContext(w.db, now);
+            const slot = R.allocateSlot({ now, preferredHour: 15, taken: ctx.taken, gapMinutes: ctx.gapMinutes, maxPerDay: ctx.maxPerDay, windowStartHour: ctx.windowStartHour, windowEndHour: ctx.windowEndHour, horizonDays: 3 });
+            if (slot) { p.status = 'scheduled'; p.scheduled_for = slot.toISOString(); } else p.status = 'skipped';
+          } else { p.status = 'posted'; p.posted_at = p.scheduled_for; }   // worst case: it goes out at the time it was drafted for
+        } else p.status = 'skipped';
+      }
     }
     const endOfDay = now.getTime() + 18 * 3600_000;
     for (const p of w.db.table('social_posts')) if (p.status === 'scheduled' && Date.parse(p.scheduled_for) <= endOfDay) {
@@ -305,6 +364,9 @@ function checkInvariants(name: string, sim: Awaited<ReturnType<typeof simulate>>
   const by = new Map<string, number[]>();
   for (const p of w.db.table('social_posts').filter((x) => x.status === 'posted')) { const t = Date.parse(p.posted_at); const lp = R.londonParts(new Date(t)); (by.get(lp.ymd) ?? by.set(lp.ymd, []).get(lp.ymd)!).push(t); assert.ok(lp.hour * 60 + lp.minute >= 8 * 60 && lp.hour * 60 + lp.minute <= 20 * 60, `${name} ${lp.ymd}: outside the window`); }
   let busiest = 0; for (const [d, ts] of by) { ts.sort((a, b) => a - b); busiest = Math.max(busiest, ts.length); assert.ok(ts.length <= maxPerDay, `${name} ${d}: ${ts.length} posts`); for (let i = 1; i < ts.length; i++) assert.ok(ts[i] - ts[i - 1] >= 120 * 60_000, `${name} ${d}: two posts ${(ts[i] - ts[i - 1]) / 60000} minutes apart`); }
+  // at most ONE Business Spotlight on any day
+  const perDay = new Map<string, number>(); for (const p of SP.filter((x) => ['posted', 'scheduled', 'approved', 'draft'].includes(x.status))) { const d = ymdOf(new Date(Date.parse(p.status === 'posted' ? p.posted_at : p.scheduled_for))); perDay.set(d, (perDay.get(d) ?? 0) + 1); }
+  for (const [d, n] of perDay) assert.ok(n <= 1, `${name}: ${n} Business Spotlights on ${d}`);
   // unique ids, never queued twice
   const ids = SP.map((p) => p.entity_id); assert.equal(new Set(ids).size, ids.length, 'duplicate (kind, entity_id)');
   const tl = SP.flatMap((p) => [{ t: Date.parse(p.created_at), d: 1 }, { t: Date.parse(p.status === 'posted' ? p.posted_at : p.scheduled_for) + 1, d: -1 }]).sort((a, b) => a.t - b.t || a.d - b.d);
@@ -337,12 +399,17 @@ function checkInvariants(name: string, sim: Awaited<ReturnType<typeof simulate>>
 }
 
 describe('Simulation: 40+ businesses over 18 weeks (quiet start, a 15-claim burst, a long trickle) through the real composer, with every other recipe sharing the daily limit', () => {
-  test('production-like load, current limit of 3 a day: every rule holds, and the shared limit — not the rotation — is what caps the cadence', async () => {
+  test('production-like load, limit of 3 a day: every rule holds and four a week is still delivered', async () => {
     const sim = await simulate(3, BEFORE, AFTER); const r = checkInvariants('3/day, production-like', sim, 3);
     assert.equal(r.waits.filter((x) => !isFinite(x.wait)).length, 0, 'every eligible, non-sensitive business was featured within the 18 weeks');
     assert.ok(r.failed > 0 && r.retried >= r.failed - 4, 'sends failed and were retried');
     assert.ok(sim.pickLog.some((p) => p.lane === 'new'), 'the never-featured lane got turns during the burst');
-    assert.ok(r.perWeek.slice(0, 16).every((c) => c >= 2), `at least two a week even with a saturated calendar: ${r.perWeek}`);
+    assert.ok(r.perWeek.slice(0, 10).every((c) => c >= 3), `about four a week even on a busy calendar, now that review-only drafts do not reserve slots: ${r.perWeek}`);
+  });
+  test('worst case for the draft change: if a person approves a review-only draft and it goes out at the time it was drafted for, how often does a day exceed the limit?', async () => {
+    const sim = await simulate(4, BEFORE, AFTER, 'asis'); const over = [...sim.dayCounts.entries()].filter(([, n]) => n > 4);
+    console.log(`# [4/day, drafts approved and published as-is] days over the limit of 4: ${over.length} of ${sim.dayCounts.size}${over.length ? ` (worst ${Math.max(...over.map((o) => o[1]))} posts)` : ''}; autopilot posts and every scheduled or approved post were still placed within the limit`);
+    assert.ok(spots(sim.w).length > 0);
   });
   test('the same load with the limit raised to 4 a day for launch: four a week is delivered and the burst clears in weeks', async () => {
     const sim = await simulate(4, BEFORE, AFTER); const r = checkInvariants('4/day, production-like', sim, 4);

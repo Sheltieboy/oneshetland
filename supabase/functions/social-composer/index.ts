@@ -161,8 +161,9 @@ serve(async (req) => {
     // post already queued or posted today. The original recipes keep their own preferred hour; they just can no longer bypass the limits.
     // A slot is only reserved once its post exists, so a recipe with nothing to say does not use up the day.
     const slotCtx = await loadSlotContext(svc, now);
-    const slotFor = (key: string, fallbackHour: number): Date | null => peekSlot(slotCtx, Number(cfg(key).hour ?? fallbackHour));
-    const take = (d: Date) => { slotCtx.taken.push(d); };
+    // Review-only drafts space against everything but never block a post that will really be published (see loadSlotContext).
+    const slotFor = (key: string, fallbackHour: number): Date | null => peekSlot(slotCtx, Number(cfg(key).hour ?? fallbackHour), Math.random, statusFor(key) === 'draft');
+    const take = (d: Date, key: string) => { (statusFor(key) === 'draft' ? slotCtx.draftTaken : slotCtx.taken).push(d); };
     const noSlot = (key: string) => { result.errors.push(`${key}: daily posting limit reached — nothing composed`); };
 
     /* ── Wird o' da Day ──────────────────────────────────────────────────── */
@@ -200,7 +201,7 @@ serve(async (req) => {
               scheduled_for: at.toISOString(),
               status: statusFor('wird_of_day'),
             });
-            if (!error) { take(at); result.wird_of_day++; } else result.errors.push(`wird insert: ${error.message}`);
+            if (!error) { take(at, 'wird_of_day'); result.wird_of_day++; } else result.errors.push(`wird insert: ${error.message}`);
           }
           await touch('wird_of_day');
         }
@@ -249,7 +250,7 @@ serve(async (req) => {
               scheduled_for: postAt.toISOString(),
               status: statusFor('whats_on_roundup'),
             });
-            if (!error) { take(postAt); result.whats_on_roundup++; } else result.errors.push(`roundup insert: ${error.message}`);
+            if (!error) { take(postAt, 'whats_on_roundup'); result.whats_on_roundup++; } else result.errors.push(`roundup insert: ${error.message}`);
           }
           await touch('whats_on_roundup');
         }
@@ -295,7 +296,7 @@ serve(async (req) => {
               scheduled_for: postAt.toISOString(),
               status: statusFor('jobs_roundup'),
             });
-            if (!error) { take(postAt); result.jobs_roundup++; } else result.errors.push(`jobs insert: ${error.message}`);
+            if (!error) { take(postAt, 'jobs_roundup'); result.jobs_roundup++; } else result.errors.push(`jobs insert: ${error.message}`);
           }
           await touch('jobs_roundup');
         }
@@ -345,7 +346,7 @@ serve(async (req) => {
             scheduled_for: at.toISOString(),
             status: statusFor('new_product'),
           });
-          if (!error) { take(at); created++; result.new_product++; }
+          if (!error) { take(at, 'new_product'); created++; result.new_product++; }
           else result.errors.push(`new_product insert: ${error.message}`);
         }
         await touch('new_product');
@@ -395,7 +396,7 @@ serve(async (req) => {
             scheduled_for: at.toISOString(),
             status: statusFor('event_spotlight'),
           });
-          if (!error) { take(at); created++; result.event_spotlight++; }
+          if (!error) { take(at, 'event_spotlight'); created++; result.event_spotlight++; }
         }
         await touch('event_spotlight');
       } catch (e) { result.errors.push(`event_spotlight: ${e}`); }
