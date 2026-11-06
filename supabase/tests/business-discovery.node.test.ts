@@ -32,6 +32,8 @@ const TS = new Set(["subscription_until", "created_at", "claimed_at", "verified_
 const typeOf = (c: string) => c === "id" ? "uuid" : BOOL.has(c) ? "boolean" : TS.has(c) ? "timestamptz" : "text";
 const F = (n: number) => `00000000-0000-0000-0000-0000000000${String(n).padStart(2, "0")}`;
 const OWNER = "11111111-1111-1111-1111-111111111111";
+const FOUNDER = "a0848cef-c8d1-435a-83be-0187502f4da3";
+const ADMIN = "22222222-2222-2222-2222-222222222222";
 let columnsBefore = "";
 
 test.before(() => {
@@ -47,7 +49,8 @@ test.before(() => {
     create table local_businesses(${tableCols});
     create table business_claims(id serial primary key, business_id uuid, status text, reviewed_at timestamptz);
     create function auth_uid() returns uuid language sql stable as $$ select nullif(current_setting('app.uid', true), '')::uuid $$;
-    create function is_admin() returns boolean language sql stable as $$ select false $$;
+    create function is_admin() returns boolean language sql stable as $$ select coalesce(current_setting('app.admin', true), '') = 'yes' $$;
+    create schema auth; create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.uid', true), '')::uuid $$;
     -- the deployed rule, verbatim in effect
     create function tg_is_trusted_writer() returns boolean language plpgsql stable as $$ begin
       if current_user not in ('authenticated','anon') then return true; end if; return is_admin(); end $$;
@@ -96,6 +99,10 @@ test.before(() => {
          values ('${F(n)}', ${owned ? `'${OWNER}'` : "null"}, '${name}', '${tier}', ${until}, ${claimed}, ${active}, false, 'Lerwick', ${created}, ${claimedAt})`);
   }
   run(`insert into hidden_ids values ('${F(12)}')`);
+  // the founder-owned Premium business (seeded exclusion) and a second, ordinary Premium business owned by someone else
+  run(`insert into local_businesses(id, owner_id, name, subscription_tier, subscription_until, is_claimed, is_active, is_verified, address, created_at)
+       values ('${FOUNDER}', '${OWNER}', 'Darren Fullerton Consultancy Ltd', 'premium', now() + interval '80 days', true, true, false, 'Lerwick', '2026-10-06'),
+              ('${F(50)}', '${OWNER}', 'Other Premium Ltd', 'premium', now() + interval '80 days', true, true, false, 'Lerwick', '2026-10-07')`);
   // approved claim for E (date differs from claimed_at on purpose); a PENDING and a REJECTED claim must be ignored
   run(`insert into business_claims(business_id, status, reviewed_at) values ('${F(5)}','approved','2026-09-10 09:00+00'), ('${F(5)}','pending','2026-09-20'), ('${F(2)}','rejected','2026-09-01')`);
   columnsBefore = run("select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_name='local_businesses_public'");
@@ -122,7 +129,7 @@ t("tier 2: unclaimed imports", () => { assert.equal(rank(8), "2"); assert.equal(
 
 t("the order is tier, then the EXISTING order (verified first, then name) inside each tier", () => {
   run("update local_businesses set is_verified = true where id in ('" + F(7) + "','" + F(9) + "')");
-  const order = run(`select string_agg(left(name,1), '' order by directory_rank, is_verified desc, name) from local_businesses_public where is_active = true`, "anon");
+  const order = run(`select string_agg(left(name,1), '' order by directory_rank, is_verified desc, name) from local_businesses_public where is_active = true and id not in ('${FOUNDER}','${F(50)}')`, "anon");
   // tier 0: A, B (by name)   tier 1: G (verified first), then D, E, F, M   tier 2: I (verified first), then C, H
   assert.equal(order, "ABGDEFMICH");
   run("update local_businesses set is_verified = false");
@@ -138,7 +145,7 @@ t("live_tier is the entitlement right now: premium, pro, or free — never the r
 
 // ── visibility and privacy
 t("no visibility gain: inactive and discovery-hidden rows stay absent for visitors, whatever their tier", () => {
-  assert.equal(run("select string_agg(left(name,1), '' order by name) from local_businesses_public", "anon"), "ABCDEFGHIM");
+  assert.equal(run(`select string_agg(left(name,1), '' order by name) from local_businesses_public where id not in ('${FOUNDER}','${F(50)}')`, "anon"), "ABCDEFGHIM");
 });
 t("visitors still cannot read owner_id; the view stays security_invoker; there is no SECURITY DEFINER helper", () => {
   assert.ok(denied("select owner_id from local_businesses", "anon"));
@@ -147,9 +154,9 @@ t("visitors still cannot read owner_id; the view stays security_invoker; there i
   assert.equal(run("select count(*) from pg_proc where proname in ('business_has_owner')"), "0");
   assert.equal(run("select prosecdef from pg_proc where proname='tg_owner_activation'"), "f");
 });
-t("the migration only appends three columns and keeps every existing position", () => {
+t("the migration only appends four columns and keeps every existing position", () => {
   assert.equal(run("select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_name='local_businesses_public'"),
-    columnsBefore + ",directory_rank,live_tier,owner_activated_at");
+    columnsBefore + ",directory_rank,live_tier,owner_activated_at,homepage_excluded");
 });
 
 // ── ownership activation date
@@ -192,6 +199,56 @@ t("visitors can read the activation date through the view, and the column is not
   assert.ok(denied(`update local_businesses set owner_activated_at = now() where id='${F(5)}'`, "anon"));
 });
 t("idempotent: applying the migration twice changes no date and no rank", () => {
-  const snap = () => run("select md5(string_agg(id::text||coalesce(owner_activated_at::text,'-')||coalesce(directory_rank::text,'-'), ',' order by id)) from local_businesses_public");
+  const snap = () => run("select md5(string_agg(id::text||coalesce(owner_activated_at::text,'-')||coalesce(directory_rank::text,'-')||homepage_excluded::text, ',' order by id)) from local_businesses_public");
   const a = snap(); run(migration); assert.equal(snap(), a);
+});
+
+// ── admin-controlled exclusion from homepage promotional placement
+t("seeded: the founder's business is excluded, by id and name, and nothing else is", () => {
+  assert.equal(run(`select homepage_excluded::text from local_businesses_public where id='${FOUNDER}'`, "anon"), "true");
+  assert.equal(run("select count(*) from local_businesses where homepage_excluded"), "1");
+  assert.equal(run(`select count(*) from homepage_exclusion_log where business_id='${FOUNDER}' and excluded`), "1");
+  assert.equal(col("homepage_excluded::text", 1), "false");
+});
+t("excluding changes NOTHING else: the plan, live tier, Directory tier and ownership are exactly what they were", () => {
+  assert.equal(run(`select directory_rank||'|'||live_tier||'|'||subscription_tier from local_businesses_public where id='${FOUNDER}'`, "anon"), "0|premium|premium");
+  assert.equal(run(`select directory_rank||'|'||live_tier from local_businesses_public where id='${F(50)}'`, "anon"), "0|premium", "an identical non-excluded business is unchanged");
+  assert.equal(run(`select (owner_activated_at is not null)::text from local_businesses where id='${FOUNDER}'`), "true");
+});
+t("visitors see only the boolean: reason, time and admin are not readable", () => {
+  for (const c of ["homepage_excluded_reason", "homepage_excluded_at", "homepage_excluded_by"]) assert.ok(denied(`select ${c} from local_businesses`, "anon"), c);
+  assert.ok(denied("select * from homepage_exclusion_log", "anon") && denied("select * from homepage_exclusion_log", "authenticated"));
+});
+t("an owner cannot set or clear the switch, on insert or on update", () => {
+  const n = run(`set app.uid='${OWNER}'; with u as (update local_businesses set homepage_excluded = false where id='${FOUNDER}' returning 1) select count(*) from u`, "authenticated");
+  assert.equal(n.split("\n").pop(), "1", "the owner's update really ran");
+  assert.equal(run(`select homepage_excluded::text from local_businesses where id='${FOUNDER}'`), "true", "still excluded");
+  run(`set app.uid='${OWNER}'; insert into local_businesses(id, owner_id, name, subscription_tier, is_claimed, is_active, is_verified, address, homepage_excluded, created_at) values ('${F(60)}', '${OWNER}', 'Self excluded', 'free', true, true, false, 'Lerwick', true, now())`, "authenticated");
+  assert.equal(run(`select homepage_excluded::text from local_businesses where id='${F(60)}'`), "false");
+});
+t("the admin function: refuses non-admins (and visitors), requires a reason to exclude, and rejects an unknown business", () => {
+  assert.ok(denied(`select admin_set_homepage_exclusion('${F(1)}', true, 'because I said so')`, "anon"));
+  assert.ok(denied(`set app.uid='${OWNER}'; select admin_set_homepage_exclusion('${F(1)}', true, 'because I said so')`, "authenticated"), "an owner is not an administrator");
+  assert.ok(denied(`set app.admin='yes'; select admin_set_homepage_exclusion('${F(1)}', true, '')`, "authenticated"), "no reason");
+  assert.ok(denied(`set app.admin='yes'; select admin_set_homepage_exclusion(gen_random_uuid(), true, 'no such business')`, "authenticated"));
+});
+t("an administrator can exclude and re-include a business; every change is logged with who, why and when; nothing else moves", () => {
+  const before = run(`select directory_rank||'|'||live_tier||'|'||subscription_until::text from local_businesses_public where id='${F(50)}'`, "postgres");
+  const out = run(`set app.admin='yes'; set app.uid='${ADMIN}'; select admin_set_homepage_exclusion('${F(50)}', true, 'Founder partner: not promoted')`, "authenticated");
+  assert.match(out, /"excluded": true/);
+  assert.equal(run(`select homepage_excluded::text from local_businesses_public where id='${F(50)}'`, "anon"), "true");
+  assert.equal(run(`select homepage_excluded_by::text from local_businesses where id='${F(50)}'`), ADMIN);
+  assert.equal(run(`select directory_rank||'|'||live_tier||'|'||subscription_until::text from local_businesses_public where id='${F(50)}'`, "postgres"), before);
+  const listed = run(`set app.admin='yes'; select string_agg(name||':'||live_tier, ',' order by name) from admin_homepage_exclusions()`, "authenticated");
+  assert.match(listed, /Darren Fullerton Consultancy Ltd:premium/); assert.match(listed, /Other Premium Ltd:premium/);
+  assert.ok(denied("select * from admin_homepage_exclusions()", "authenticated"), "a non-admin cannot list them");
+  run(`set app.admin='yes'; set app.uid='${ADMIN}'; select admin_set_homepage_exclusion('${F(50)}', false)`, "authenticated");
+  assert.equal(run(`select homepage_excluded::text||coalesce(homepage_excluded_reason,'-') from local_businesses where id='${F(50)}'`), "false-");
+  assert.equal(run(`select string_agg(excluded::text, ',' order by id) from homepage_exclusion_log where business_id='${F(50)}'`), "true,false");
+});
+t("re-running the migration does not re-apply the seed after an admin has re-included the business", () => {
+  run(`set app.admin='yes'; set app.uid='${ADMIN}'; select admin_set_homepage_exclusion('${FOUNDER}', false)`, "authenticated");
+  run(migration);
+  assert.equal(run(`select homepage_excluded::text from local_businesses where id='${FOUNDER}'`), "false");
+  run(`set app.admin='yes'; set app.uid='${ADMIN}'; select admin_set_homepage_exclusion('${FOUNDER}', true, 'Restored for the rest of the tests')`, "authenticated");
 });
