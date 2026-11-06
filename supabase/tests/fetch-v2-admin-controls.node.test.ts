@@ -1,6 +1,6 @@
 /**
  * fetch-v2-admin-controls.node.test.ts — Fetch v2 Step 10: the operations reads and the new audited admin actions
- * (migration 20261207000000 + the `support` area of fetch-v2-admin), against the real SQL of Steps 1–10.
+ * (migration 20261224000000 + the `support` area of fetch-v2-admin), against the real SQL of Steps 1–10.
  *
  * Built around the six operational scenarios the console exists for (A–F below). States are reached through the real Step 3–9
  * functions where practical; where a scenario needs time to have passed (a hold about to lapse, a cancellation left unanswered),
@@ -19,9 +19,9 @@ import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 import { handleSupportAdmin, type PhotoDeps } from '../functions/_shared/fetch-v2-photos.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261207000000_fetch_v2_admin_controls.sql';
+const FIX_NAME = '20261224000000_fetch_v2_admin_controls.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261207000000_fetch_v2_admin_controls.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261224000000_fetch_v2_admin_controls.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;

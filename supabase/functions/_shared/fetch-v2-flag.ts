@@ -1,7 +1,7 @@
 /**
  * fetch-v2-flag.ts — the Fetch v2 feature flag, as an edge function sees it (docs/FETCH_V2_IMPLEMENTATION.md, N.1).
  *
- * The database answers (fetch_v2_enabled_for, migration 20261127000000); this module only asks it, with the service client, for the
+ * The database answers (fetch_v2_enabled_for, migration 20261214000000); this module only asks it, with the service client, for the
  * caller the function has already authenticated. Every Fetch v2 edge function calls fetchV2Gate before reading its body or touching
  * any row, and returns the decision as-is when it is not ok:
  *

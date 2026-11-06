@@ -1,5 +1,5 @@
 /**
- * fetch-v2-messages-issues-photos.node.test.ts — Fetch v2 Step 9 (migration 20261206000000 + supabase/functions/_shared/fetch-v2-photos.ts),
+ * fetch-v2-messages-issues-photos.node.test.ts — Fetch v2 Step 9 (migration 20261223000000 + supabase/functions/_shared/fetch-v2-photos.ts),
  * against the real SQL, the real Step 8 outbox and the real storage row-level security on the replayed storage.objects table.
  *
  * Photo bytes go to an in-memory store that behaves like Supabase Storage (one-use signed upload to an exact path, never overwritten by a
@@ -19,9 +19,9 @@ import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 import { handlePhotos, handleSupportAdmin, runPhotoSweep, MEMBER_LINK_SECS, ADMIN_LINK_SECS, type PhotoDeps, type PhotoStorage } from '../functions/_shared/fetch-v2-photos.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261206000000_fetch_v2_messages_issues_photos.sql';
+const FIX_NAME = '20261223000000_fetch_v2_messages_issues_photos.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261206000000_fetch_v2_messages_issues_photos.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261223000000_fetch_v2_messages_issues_photos.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;

@@ -1,5 +1,5 @@
 /**
- * fetch-v2-flag.node.test.ts — the Fetch v2 feature flag (migration 20261127000000), against the real SQL.
+ * fetch-v2-flag.node.test.ts — the Fetch v2 feature flag (migration 20261214000000), against the real SQL.
  *
  * WHAT IT PROVES (every earlier migration replayed into a private database, then the flag migration applied):
  *   · the default is off, and off means nobody — not admins, not testers, not anon;
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261127000000_fetch_v2_feature_flag.sql';
+const FIX_NAME = '20261214000000_fetch_v2_feature_flag.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
 
 let db: ReplayDb;

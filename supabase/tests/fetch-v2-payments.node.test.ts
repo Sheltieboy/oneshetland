@@ -1,5 +1,5 @@
 /**
- * fetch-v2-payments.node.test.ts — Fetch v2 Step 5: the payment layer end to end (migration 20261202000000 +
+ * fetch-v2-payments.node.test.ts — Fetch v2 Step 5: the payment layer end to end (migration 20261219000000 +
  * supabase/functions/_shared/fetch-v2-payments.ts), against the real SQL and a deterministic in-memory Stripe.
  *
  * The REAL handlers (accept, requester payment, driver actions, admin, runner, webhook hand-off) run against a throwaway database
@@ -23,9 +23,9 @@ import { handleAccept, handleRequesterPayment, handleDriverAction, handleAdmin, 
 import { type PaymentIntent, type StripeGateway, StripeDeclined, StripeRejected, StripeUnavailable } from '../functions/_shared/fetch-v2-stripe.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261202000000_fetch_v2_payments.sql';
+const FIX_NAME = '20261219000000_fetch_v2_payments.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261202000000_fetch_v2_payments.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261219000000_fetch_v2_payments.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;

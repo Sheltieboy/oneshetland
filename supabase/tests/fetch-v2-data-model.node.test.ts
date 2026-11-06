@@ -1,5 +1,5 @@
 /**
- * fetch-v2-data-model.node.test.ts — the Fetch v2 data model (migration 20261128000000), against the real SQL.
+ * fetch-v2-data-model.node.test.ts — the Fetch v2 data model (migration 20261215000000), against the real SQL.
  *
  * Every earlier migration is replayed into a private database with realistic pre-existing state (the 17 production regions, the live
  * pricing row, an approved driver pool, a v1 request), then the migration is applied. It proves:
@@ -28,9 +28,9 @@ import { fileURLToPath } from 'node:url';
 import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261128000000_fetch_v2_data_model.sql';
+const FIX_NAME = '20261215000000_fetch_v2_data_model.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261128000000_fetch_v2_data_model.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261215000000_fetch_v2_data_model.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
@@ -269,12 +269,11 @@ describe('2 · clients never write v2 fields, v2 states or v2 rows', () => {
   test('a client cannot set the v2-only states', () => {
     fails(tryAs('REQ', `insert into public.delivery_requests (customer_id, pickup_name, pickup_location, destination_address, status) values ('${ids.REQ}', 'x', 'y', 'z', 'returned')`), /only be set by Fetch/);
   });
-  test('the v1 flow still works exactly as before (an approved driver can accept a v1 request), but cannot touch v2 fields on it', () => {
-    // Read back as the server: after accepting, the v1 row is no longer visible to that driver's v1 read policies.
+  test('the v1 direct-write accept path stays closed (the safety fix 20261212 removed the driver read + accept policies): an approved driver can neither see nor change a v1 pending request, and the v1 row is untouched', () => {
     const o = db.raw(`begin; ${roleSql('DRV_B')} update public.delivery_requests set status = 'matched', run_id = '${RUN_B}', driver_id = '${ids.DRV_B}', return_fee_pence = 1, fetch_version = 2
        where id = '${R.V1}'; reset role;
-       select status || ':' || (run_id = '${RUN_B}') || ':' || coalesce(driver_id::text, '-') || ':' || coalesce(return_fee_pence::text, '-') || ':' || fetch_version from public.delivery_requests where id = '${R.V1}'; rollback;`);
-    assert.equal(lastRow(o), 'matched:true:-:-:1');
+       select status || ':' || coalesce(run_id::text, '-') || ':' || coalesce(driver_id::text, '-') || ':' || coalesce(return_fee_pence::text, '-') || ':' || fetch_version from public.delivery_requests where id = '${R.V1}'; rollback;`);
+    assert.equal(lastRow(o), 'pending:-:-:-:1');
   });
   test('nobody updates or deletes a v2 row from a client — requester, assigned driver or administrator', () => {
     for (const w of ['REQ', 'DRV_A', 'ADMIN'] as Who[]) {
@@ -328,8 +327,8 @@ describe('3 · privacy of a v2 request', () => {
     assert.equal(lastRow(db.raw(`begin; update public.admin_config set value = 'forever' where key = 'fetch.timeouts.address_access_secs';
       ${roleSql('DRV_A')} select count(*) from public.delivery_requests where id in ('${R.CLOSED_NEW}', '${R.CLOSED_OLD}'); rollback;`)), '1');
   });
-  test('the v1 exposure is unchanged by this step (approved drivers still read v1 pending rows until Step 2 replaces those policies)', () => {
-    assert.ok(sees('DRV_B', R.V1));
+  test('no approved driver reads another customer\'s v1 pending request (closed by the safety fix 20261212; this step must not reopen it)', () => {
+    assert.ok(!sees('DRV_B', R.V1));
     assert.ok(!sees('MEMBER', R.V1));
   });
   test('waiting events on a v2 request: no client writes; parties read; v1 unchanged', () => {
@@ -474,16 +473,16 @@ describe('5 · photos and private storage', () => {
 // ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 describe('6 · mutation controls (each protection is load-bearing)', () => {
   test('without the restrictive read policy, an unassigned approved driver would read the open v2 request', () => {
-    assert.equal(lastRow(db.raw(`begin; drop policy "Fetch v2 requests: parties only" on public.delivery_requests;
+    assert.equal(lastRow(db.raw(`begin; create policy "Approved drivers can read all pending requests" on public.delivery_requests for select using (status = 'pending' and exists (select 1 from public.driver_profiles dp where dp.id = auth.uid() and dp.driver_status = 'approved')); drop policy "Fetch v2 requests: parties only" on public.delivery_requests;
       ${roleSql('DRV_B')} select count(*) from public.delivery_requests where id = '${R.OPEN}'; rollback;`)), '1');
   });
   test('without the server-managed trigger, a client could write v2 money fields on a v1 row', () => {
-    assert.equal(lastRow(db.raw(`begin; drop trigger delivery_requests_v2_server_managed on public.delivery_requests;
+    assert.equal(lastRow(db.raw(`begin; create policy "Approved drivers can read all pending requests" on public.delivery_requests for select using (status = 'pending' and exists (select 1 from public.driver_profiles dp where dp.id = auth.uid() and dp.driver_status = 'approved')); grant update on public.delivery_requests to authenticated; create policy "Drivers must have bank connected to accept requests" on public.delivery_requests for update using (true); drop trigger delivery_requests_v2_server_managed on public.delivery_requests;
       ${roleSql('DRV_B')} update public.delivery_requests set return_fee_pence = 9999 where id = '${R.V1}'; reset role;
       select return_fee_pence from public.delivery_requests where id = '${R.V1}'; rollback;`)), '9999');
   });
   test('the three layers together (read policy, update policy, trigger) are what stop the v1 policies rewriting an open v2 request', () => {
-    assert.equal(lastRow(db.raw(`begin; drop trigger delivery_requests_v2_server_managed on public.delivery_requests;
+    assert.equal(lastRow(db.raw(`begin; create policy "Approved drivers can read all pending requests" on public.delivery_requests for select using (status = 'pending' and exists (select 1 from public.driver_profiles dp where dp.id = auth.uid() and dp.driver_status = 'approved')); grant update on public.delivery_requests to authenticated; create policy "Drivers must have bank connected to accept requests" on public.delivery_requests for update using (true); drop trigger delivery_requests_v2_server_managed on public.delivery_requests;
       drop policy "Fetch v2 requests: server writes only (update)" on public.delivery_requests;
       drop policy "Fetch v2 requests: parties only" on public.delivery_requests;
       ${roleSql('DRV_B')} update public.delivery_requests set ready_for_collection = true where id = '${R.OPEN}'; reset role;

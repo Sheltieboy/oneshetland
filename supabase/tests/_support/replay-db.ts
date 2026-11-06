@@ -28,7 +28,7 @@ export interface ReplayDb {
   drop(): void;
 }
 
-export function createReplayDb(name: string, opts: { stopBefore?: string } = {}): ReplayDb {
+export function createReplayDb(name: string, opts: { stopBefore?: string; keepFetchPaused?: boolean } = {}): ReplayDb {
   const DSN = process.env.PASS_PROOF_DSN ?? '';
   const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
   assert.ok(DSN, 'PASS_PROOF_DSN is not set — run `npm run test:isolated`.');
@@ -55,6 +55,10 @@ export function createReplayDb(name: string, opts: { stopBefore?: string } = {})
     if (existsSync(sup)) psql(dsnPg, ['-f', sup]);
   }
   assert.deepEqual(errors, [], 'the migration replay must be clean');
+  // The replay now carries the production Fetch safety pause (20261212): Fetch is PAUSED by default, which is the right state for production but would make every
+  // Fetch v2 behaviour suite see 'Fetch is not available'. A replayed test world opens the master switch (v2's own audience flag still decides who is admitted);
+  // the suites that prove the pause itself pass keepFetchPaused. No effect where the pause migration is not part of the replay.
+  if (!opts.keepFetchPaused) psql(dsnPg, ['-c', "update public.admin_config set value = 'open' where key = 'fetch.operations'"]);
 
   return {
     dsnPg,

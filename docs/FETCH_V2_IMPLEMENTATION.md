@@ -825,13 +825,13 @@ Further constraints:
 | 2 | **Permissions / RLS** | DONE (see Step 2 status): v1 broad policies and grants retired; public runs, matching board and participant detail representations; phone, address and history windows | migration | 1 | **Medium**: ends v1 client write paths | Access matrix per audience | **Yes**: v1 web and app Fetch actions stop | **Yes**: deploy only after clearance, with 0a |
 | 3 | **Lifecycle RPCs** | F.2 incl. cancel request, release, undeliverable, return resolution; events; idempotency; **plus run create/cancel and server-recorded arrival/collection waiting events** (client paths retired in Step 2) | migration | 2 | Medium | Transition table, race, idempotency | No (not yet called) | After clearance |
 | 4 | **Pricing + ferry (edge and frozen terms)** | The SQL price is done (Step 3). Step 4: `fetch-create`/`fetch-quote` edge functions (server geocoding with the Google server key, postcode fallback, refuse when unresolved, card-on-file check, then `fetch_v2_create_request`); extend Paygate frozen terms (`claim_fetch_authorisation`, `fetch_capture_total_pence`) with the ferry supplement, minimum applied, return rate and return max; make one service-fee source; retire `calculate-fee` from Fetch | edge functions, Paygate term functions | 3 | **High** (terms tables) | Quote, freeze, capture-total tests with controls | Changes quote behaviour | After clearance |
-| 5 | **Payment edge layer** | DONE (see Step 5 status): dedicated v2 functions `fetch-v2-accept`, `-payment`, `-driver`, `-admin`, `-runner`; Fetch v2 hand-off inside the existing `stripe-webhook`; manual capture with partial capture, Stripe's own `capture_before`, generation-based replacement, collection gate, admin payment actions | migration `20261202000000`, `supabase/functions/fetch-v2-*`, `_shared/fetch-v2-{payments,stripe,payment-deps}.ts`, `stripe-webhook` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests against the real SQL; controls proving guards are load-bearing | `stripe-webhook` gains a v2-only branch; deploy as exact deltas | After clearance |
-| 6 | **Driver verification** | DONE (see Step 6 status): application only ever pending; evidence upload to the service-only private bucket with real-type checks; audited review and decisions; `verification_ok_until` derived from the earliest required expiry; live claim and collection gates; expiry sweep, reminder outbox; per-vehicle re-verification | migration `20261203000000`, `fetch-v2-driver-verification`, `fetch-v2-admin` (`area: drivers`), `fetch-v2-runner`, `become-driver` | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating; expiry; controls | Driver application flow; admin approval screens must move to the new actions | After clearance |
-| 7 | **Matching** | DONE (see Step 7 status): board only for claim-eligible drivers; capacity filter with show-all; direction- and ferry-aware run fit; tiers and plain-English reasons; requester hint; once-only recipient selection; admin diagnostics (`notify-drivers` moved to Step 8) | migration `20261204000000` | 3, 4, 6 | Low | Matching fixtures; controls | No | After clearance |
-| 8 | **Notifications** | DONE (see Step 8 status): one server-fed outbox; Notification Centre row first, then push; opportunity vs activity policy; four time-critical kinds; deep-link contract; legacy `notify-drivers`/`notify-collected` refuse v2 | migration `20261205000000`, `fetch-v2-runner`, `notify-drivers`, `notify-collected`, `_shared/fetch-v2-notify.ts`, `_shared/fetch-v2-push-gateway.ts` | 5, 6, 7 | Low | `notification_log` assertions; controls | Legacy notifiers refuse v2 | After clearance |
-| 9 | **Messages, issues, photos** | DONE (see Step 9 status): participant-only messages with admin hide and a collapsed notice; 72-hour issue reporting and audited resolution; five photo roles by signed upload with real-type checks and metadata stripping; stricter delivery/return evidence; service-only photo bucket | migration `20261206000000`, `fetch-v2-photos`, `fetch-v2-admin` (`area: support`), `fetch-v2-runner` | 3, 8 | Low–Medium | Party-only, write-once, storage matrix; controls | No | After clearance |
-| 10 | **Admin controls** | DONE (see Step 10 status): web Fetch operations console at `/admin/fetch` (queues, jobs, job page, driver review, members, notifications) over admin-gated reads and the audited `fetch-v2-admin` actions; item-description redaction; Fetch restriction; counters | migration `20261207000000`, `fetch-v2-admin` support area; web `app/admin/fetch`, `lib/fetch-admin`, `components/admin/fetch` | 5, 6, 8, 9 | Medium | Admin action tests (isolated); web contract tests; build | Web admin only; old driver-approval screen replaced | After clearance |
-| 11 | **Web UI** | DONE (see Step 11 status): web requester and driver product on `lib/fetch-api.ts` — landing, 5-step create with server quote and hold explained, 18+, 3DS, job pages, messages, problems, photos, driver apply/verification/board/journeys/accept/active job, history, Step 8 deep links; old v1 routes forward; Shop Fetch stays hidden | web `app/fetch/**`, `components/fetch/v2`, `lib/fetch-api.ts`, `lib/fetch/*`; migration `20261208000000` (member lists) | 5–10 | Medium | Web contract + logic + scenario tests (33); isolated member-lists tests; build; fixture preview | Behind the flag | No |
+| 5 | **Payment edge layer** | DONE (see Step 5 status): dedicated v2 functions `fetch-v2-accept`, `-payment`, `-driver`, `-admin`, `-runner`; Fetch v2 hand-off inside the existing `stripe-webhook`; manual capture with partial capture, Stripe's own `capture_before`, generation-based replacement, collection gate, admin payment actions | migration `20261219000000`, `supabase/functions/fetch-v2-*`, `_shared/fetch-v2-{payments,stripe,payment-deps}.ts`, `stripe-webhook` | 3, 4 | **High** (Stripe) | Mocked-Stripe handler tests against the real SQL; controls proving guards are load-bearing | `stripe-webhook` gains a v2-only branch; deploy as exact deltas | After clearance |
+| 6 | **Driver verification** | DONE (see Step 6 status): application only ever pending; evidence upload to the service-only private bucket with real-type checks; audited review and decisions; `verification_ok_until` derived from the earliest required expiry; live claim and collection gates; expiry sweep, reminder outbox; per-vehicle re-verification | migration `20261220000000`, `fetch-v2-driver-verification`, `fetch-v2-admin` (`area: drivers`), `fetch-v2-runner`, `become-driver` | 1, 2, 5 | Medium (private document handling) | Storage access matrix; gating; expiry; controls | Driver application flow; admin approval screens must move to the new actions | After clearance |
+| 7 | **Matching** | DONE (see Step 7 status): board only for claim-eligible drivers; capacity filter with show-all; direction- and ferry-aware run fit; tiers and plain-English reasons; requester hint; once-only recipient selection; admin diagnostics (`notify-drivers` moved to Step 8) | migration `20261221000000` | 3, 4, 6 | Low | Matching fixtures; controls | No | After clearance |
+| 8 | **Notifications** | DONE (see Step 8 status): one server-fed outbox; Notification Centre row first, then push; opportunity vs activity policy; four time-critical kinds; deep-link contract; legacy `notify-drivers`/`notify-collected` refuse v2 | migration `20261222000000`, `fetch-v2-runner`, `notify-drivers`, `notify-collected`, `_shared/fetch-v2-notify.ts`, `_shared/fetch-v2-push-gateway.ts` | 5, 6, 7 | Low | `notification_log` assertions; controls | Legacy notifiers refuse v2 | After clearance |
+| 9 | **Messages, issues, photos** | DONE (see Step 9 status): participant-only messages with admin hide and a collapsed notice; 72-hour issue reporting and audited resolution; five photo roles by signed upload with real-type checks and metadata stripping; stricter delivery/return evidence; service-only photo bucket | migration `20261223000000`, `fetch-v2-photos`, `fetch-v2-admin` (`area: support`), `fetch-v2-runner` | 3, 8 | Low–Medium | Party-only, write-once, storage matrix; controls | No | After clearance |
+| 10 | **Admin controls** | DONE (see Step 10 status): web Fetch operations console at `/admin/fetch` (queues, jobs, job page, driver review, members, notifications) over admin-gated reads and the audited `fetch-v2-admin` actions; item-description redaction; Fetch restriction; counters | migration `20261224000000`, `fetch-v2-admin` support area; web `app/admin/fetch`, `lib/fetch-admin`, `components/admin/fetch` | 5, 6, 8, 9 | Medium | Admin action tests (isolated); web contract tests; build | Web admin only; old driver-approval screen replaced | After clearance |
+| 11 | **Web UI** | DONE (see Step 11 status): web requester and driver product on `lib/fetch-api.ts` — landing, 5-step create with server quote and hold explained, 18+, 3DS, job pages, messages, problems, photos, driver apply/verification/board/journeys/accept/active job, history, Step 8 deep links; old v1 routes forward; Shop Fetch stays hidden | web `app/fetch/**`, `components/fetch/v2`, `lib/fetch-api.ts`, `lib/fetch/*`; migration `20261225000000` (member lists) | 5–10 | Medium | Web contract + logic + scenario tests (33); isolated member-lists tests; build; fixture preview | Behind the flag | No |
 | 12 | **Mobile UI** | DONE (see Step 12 status): the Fetch v2 requester and driver product in the app on the web's shared modules (byte-identical), server-flag gating, 3DS on the hold, HEIC→JPEG on device, Step 8 push routing, Android directions; v1 screens moved to `legacy/fetch-v1/` with forwarding stubs; admin driver/waiting decisions sent to the web console | app branch `fetch-v2-mobile` from Build 148 `7317508` | 5–11 | Medium | 34 new app tests (logic + guards); offline suites unchanged vs Build 148; iOS simulator fixture preview | **Next native build only** | **No**: Build 148 untouched |
 | 13 | **Test safety & legacy tests** | DONE (see Step 13 status): hard production guard in every test process; safe offline `npm test` with base-baseline reporting; guarded isolated lane; opt-in read-only production lane; write-capable production suites quarantined; seven v1 Fetch suites retired (91 proven / 15 ported / 48 retired); A–J isolated scenarios; web/app contract hashes; fresh-worktree check | app 10c5e68 + 35dec22; web f3a3832; backend 1d2a370 | 3–5, 12 | Low | Offline + isolated lanes; fresh-worktree check | No | No |
 | 14 | **Deploy behind the flag + live acceptance gate** | Exact scope in "Step 14 scope" below: reconcile the lines; Darren-approved backend and web deploy with the flag off then admins; admin-console and member-UI browser checks; A–J on real devices; one real-card admin run (ferry, waiting, return) reconciled in Stripe | backend, web, app dev build | 11–13; Build 148 cleared | **High** (live money) | Reconciliation checklist | Live, admins only | **Each gate on Darren's go-ahead** |
@@ -840,13 +840,13 @@ Further constraints:
 
 **Step 0 status (25 Oct 2026): DONE, local only. Nothing applied or deployed.**
 
-- **0b:** migration `20261127000000_fetch_v2_feature_flag.sql`, the edge helper `_shared/fetch-v2-flag.ts`, and tests, on `fetch-v2` (this repo).
+- **0b:** migration `20261214000000_fetch_v2_feature_flag.sql`, the edge helper `_shared/fetch-v2-flag.ts`, and tests, on `fetch-v2` (this repo).
 - **0a:** the web hide, on branch `fetch-v2` of `oneshetland-web` (worktree `~/Claude/oneshetland-web-fetch-v2`).
 - **Mobile part of 0a:** deferred to Step 12 on `fetch-v2-mobile`, per Darren's Step 0 instruction (web only now).
 
 **Step 1 status (25 Oct 2026): DONE, local only. Not applied.**
 
-- **Files:** migration `20261128000000_fetch_v2_data_model.sql`, an exact reversal at `supabase/rollbacks/20261128000000_fetch_v2_data_model.down.sql`, and the isolated suite `fetch-v2-data-model.node.test.ts`.
+- **Files:** migration `20261215000000_fetch_v2_data_model.sql`, an exact reversal at `supabase/rollbacks/20261215000000_fetch_v2_data_model.down.sql`, and the isolated suite `fetch-v2-data-model.node.test.ts`.
 - **Departures from G**, each decided while building and documented in the migration:
   1. **v2 privacy lands now, not in Step 2.** RESTRICTIVE policies narrow every existing permissive policy for `fetch_version = 2` rows only. A v2 request is readable by its requester, its assigned driver (within the address window) and admins. No client, admins included, writes a v2 row directly. A permissive "assigned driver reads" policy is added because the v1 driver policies grant access through `runs`, not `driver_id`. v1 rows behave exactly as before.
   2. **`vehicle_class` is a new constrained column.** The free-text `vehicle_type` written by the current apply form is left unconstrained, so existing rows and v1 clients cannot break.
@@ -858,7 +858,7 @@ Further constraints:
 
 **Step 2 status (25 Oct 2026): DONE, local only. Not applied.**
 
-**Files:** migration `20261129000000_fetch_v2_access_boundary.sql`, the exact rollback `supabase/rollbacks/20261129000000_fetch_v2_access_boundary.down.sql`, and the suite `fetch-v2-access-boundary.node.test.ts`.
+**Files:** migration `20261216000000_fetch_v2_access_boundary.sql`, the exact rollback `supabase/rollbacks/20261216000000_fetch_v2_access_boundary.down.sql`, and the suite `fetch-v2-access-boundary.node.test.ts`.
 
 **Access tiers**
 
@@ -916,7 +916,7 @@ Admin screens become read-only. Requesters still read their own v1 history. Serv
 
 **Step 3 status (25 Oct 2026): DONE, local only. Not applied.**
 
-**Files:** migration `20261130000000_fetch_v2_lifecycle.sql`, rollback `supabase/rollbacks/20261130000000_fetch_v2_lifecycle.down.sql`, and the suite `fetch-v2-lifecycle.node.test.ts` (63 tests, including a real two-session claim race and a concurrent double-create).
+**Files:** migration `20261217000000_fetch_v2_lifecycle.sql`, rollback `supabase/rollbacks/20261217000000_fetch_v2_lifecycle.down.sql`, and the suite `fetch-v2-lifecycle.node.test.ts` (63 tests, including a real two-session claim race and a concurrent double-create).
 
 **State machine.** `fetch_v2_transition_allowed(from, to, role)` is the only definition of a legal move: 14 (from, to, role) triples. Every status-changing action asks it. Terminal states (`delivered`, `returned`, `cancelled`, `expired`) lead nowhere.
 
@@ -956,7 +956,7 @@ Every action checks the Fetch v2 flag for the actor, locks the job, writes an ap
 **Step 4 status (25 Oct 2026): DONE, local only. Not applied, not deployed.**
 
 **Files**
-- Migration `20261201000000_fetch_v2_pricing_terms.sql` and rollback `supabase/rollbacks/20261201000000_fetch_v2_pricing_terms.down.sql`.
+- Migration `20261218000000_fetch_v2_pricing_terms.sql` and rollback `supabase/rollbacks/20261218000000_fetch_v2_pricing_terms.down.sql`.
 - Edge functions `fetch-v2-quote` and `fetch-v2-create` (staged, see below), the shared modules `_shared/fetch-v2-intake.ts` and `_shared/fetch-v2-geocode.ts`.
 - Tests: `supabase/tests/fetch-v2-pricing-terms.node.test.ts` (31, isolated database, real handlers with mocked Google, Stripe and limiter) and `_shared/fetch-v2-intake.node.test.ts` (10, no database).
 - `supabase/production/staged-functions.json`: the manifest guard now accepts exactly these reviewed, undeployed functions and fails for any other, and for any listed function production already runs.
@@ -1019,7 +1019,7 @@ Either way nothing is created, and no geocoding is spent first.
 **Step 5 status (25 Oct 2026): DONE, local only. Not applied, not deployed. No live Stripe.**
 
 **Files**
-- Migration `20261202000000_fetch_v2_payments.sql` and rollback `supabase/rollbacks/20261202000000_fetch_v2_payments.down.sql` (refuses while any hold carries Stripe state; otherwise restores the catalogue exactly, proved).
+- Migration `20261219000000_fetch_v2_payments.sql` and rollback `supabase/rollbacks/20261219000000_fetch_v2_payments.down.sql` (refuses while any hold carries Stripe state; otherwise restores the catalogue exactly, proved).
 - `_shared/fetch-v2-stripe.ts`: the only Stripe calls Fetch v2 makes (create hold, retrieve, cancel, capture), typed errors, never the key in an error.
 - `_shared/fetch-v2-payments.ts`: every handler (accept, requester payment, driver actions, admin, runner, webhook). Pure: Supabase, Stripe, card lookup, Connect lookup, admin check and limiter are injected.
 - `_shared/fetch-v2-payment-deps.ts`: the Deno production wiring.
@@ -1153,7 +1153,7 @@ Every item is independent and repeat-safe, and one failure never stops the rest.
 **Step 6 status (25 Oct 2026): DONE, local only. Not applied, not deployed. No storage policy applied to production.**
 
 **Files**
-- Migration `20261203000000_fetch_v2_driver_verification.sql` and rollback `supabase/rollbacks/20261203000000_fetch_v2_driver_verification.down.sql` (refuses while any Step 6 record exists; otherwise restores the catalogue exactly — columns, constraints, indexes, triggers, functions with their grants, table grants, RLS and storage policies — proved, then re-applied).
+- Migration `20261220000000_fetch_v2_driver_verification.sql` and rollback `supabase/rollbacks/20261220000000_fetch_v2_driver_verification.down.sql` (refuses while any Step 6 record exists; otherwise restores the catalogue exactly — columns, constraints, indexes, triggers, functions with their grants, table grants, RLS and storage policies — proved, then re-applied).
 - `_shared/fetch-v2-verification.ts` (handlers), `_shared/fetch-v2-verification-deps.ts` (Deno wiring: service database, private bucket, limiter).
 - New edge function `fetch-v2-driver-verification` (staged). `fetch-v2-admin` gains `area: "drivers"`; `fetch-v2-runner` runs the verification sweep after the payment sweeps (both staged).
 - `become-driver` rewritten (deployed function → manifest `modified`; it needs this migration applied first).
@@ -1225,7 +1225,7 @@ Each submission is a new item with a `version`; nothing is overwritten. At most 
 **Step 7 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing sends.**
 
 **Files.**
-- Migration `20261204000000_fetch_v2_matching.sql` and rollback `supabase/rollbacks/20261204000000_fetch_v2_matching.down.sql`. The rollback refuses while any recipient record exists; otherwise it restores the catalogue exactly (proved, then re-applied).
+- Migration `20261221000000_fetch_v2_matching.sql` and rollback `supabase/rollbacks/20261221000000_fetch_v2_matching.down.sql`. The rollback refuses while any recipient record exists; otherwise it restores the catalogue exactly (proved, then re-applied).
 - Suite `supabase/tests/fetch-v2-matching.node.test.ts`: 32 isolated tests, using real island geography and the real create, run, claim and release functions.
 - `_shared/fetch-v2-payments.ts` gains one status code (`two_person_lift_required`).
 
@@ -1355,7 +1355,7 @@ It never includes addresses, phone or the requester.
 **Step 8 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing was sent.**
 
 **Files**
-- Migration `20261205000000_fetch_v2_notifications.sql` and rollback `supabase/rollbacks/20261205000000_fetch_v2_notifications.down.sql`. The rollback refuses while the outbox holds anything; otherwise it restores the catalogue exactly. Inbox rows already written stay.
+- Migration `20261222000000_fetch_v2_notifications.sql` and rollback `supabase/rollbacks/20261222000000_fetch_v2_notifications.down.sql`. The rollback refuses while the outbox holds anything; otherwise it restores the catalogue exactly. Inbox rows already written stay.
 - `_shared/fetch-v2-notify.ts` (the drain), `_shared/fetch-v2-push-gateway.ts` (production Expo gateway).
 - `fetch-v2-runner` drains the outbox after its sweeps.
 - `notify-drivers` and `notify-collected` now refuse Fetch v2 jobs. Both are deployed functions, so the manifest lists them as `modified`.
@@ -1514,7 +1514,7 @@ No private data and no query strings appear in links.
 **Step 9 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing was sent.**
 
 **Files**
-- Migration `20261206000000_fetch_v2_messages_issues_photos.sql` and rollback `supabase/rollbacks/20261206000000_fetch_v2_messages_issues_photos.down.sql`. The rollback refuses while any Step 9 record exists; otherwise it restores the catalogue exactly (functions, table and storage policies) and re-applies (proved).
+- Migration `20261223000000_fetch_v2_messages_issues_photos.sql` and rollback `supabase/rollbacks/20261223000000_fetch_v2_messages_issues_photos.down.sql`. The rollback refuses while any Step 9 record exists; otherwise it restores the catalogue exactly (functions, table and storage policies) and re-applies (proved).
 - `_shared/fetch-v2-photos.ts` (photo and support handlers), `_shared/fetch-v2-photo-deps.ts` (Deno wiring), `_shared/image-metadata.ts` (metadata removal).
 - New edge function `fetch-v2-photos` (staged). `fetch-v2-admin` gains `area: "support"`; `fetch-v2-runner` removes abandoned photo uploads.
 - Tests:
@@ -1636,7 +1636,7 @@ It never contains message text, issue detail, paths or image data.
 
 **Step 10 status (25 Oct 2026): DONE, local only. Not applied, not deployed. Nothing sent.**
 
-**Backend** (`fetch-v2`): migration `20261207000000_fetch_v2_admin_controls.sql`, with a rollback that refuses while any administrator history exists and otherwise restores the catalogue exactly (proved). Plus the `support` area of `fetch-v2-admin`, and `supabase/tests/fetch-v2-admin-controls.node.test.ts` (15 isolated tests, built around six operational scenarios).
+**Backend** (`fetch-v2`): migration `20261224000000_fetch_v2_admin_controls.sql`, with a rollback that refuses while any administrator history exists and otherwise restores the catalogue exactly (proved). Plus the `support` area of `fetch-v2-admin`, and `supabase/tests/fetch-v2-admin-controls.node.test.ts` (15 isolated tests, built around six operational scenarios).
 
 **Web** (`fetch-v2` branch of `oneshetland-web`, worktree `~/Claude/oneshetland-web-fetch-v2`):
 - **Pages:** `app/admin/fetch/**` (8 routes), `app/admin/fetch/actions.ts` (server actions).
@@ -1904,7 +1904,7 @@ These summaries never carry addresses or phone numbers. Job pages apply the serv
 
 **Old Shop Fetch option.** It stays hidden (`SHOP_FETCH_DELIVERY_OFFERED = false`, Step 0; a test pins it). A Shop purchase never creates a v2 request. **Transition requirement:** before Shop offers Fetch again, it needs an approved product design that creates a v2 request through `fetch-v2-create` (with the buyer as requester, quote shown, and 18+ and card checks). Until then the option stays hidden, and v1 `notify-drivers` customer pings stay only for legacy v1 rows.
 
-**Backend contract added** (migration `20261208000000_fetch_v2_member_lists`, with rollback). Since Step 2 a member cannot read v2 rows directly, so the product had no way to list its own Fetches, jobs or journeys, or set a driver's areas. Each function is for the signed-in member only, behind the flag, granted to `authenticated` and `service_role`, and never to `anon` (asserted):
+**Backend contract added** (migration `20261225000000_fetch_v2_member_lists`, with rollback). Since Step 2 a member cannot read v2 rows directly, so the product had no way to list its own Fetches, jobs or journeys, or set a driver's areas. Each function is for the signed-in member only, behind the flag, granted to `authenticated` and `service_role`, and never to `anon` (asserted):
 - `fetch_v2_my_requests()`: safe summary.
 - `fetch_v2_my_jobs()`: summary plus the driver's own pay line by line; no requester money.
 - `fetch_v2_my_runs()`: last 30 days, open first.
@@ -2399,18 +2399,18 @@ How the app suites reach production:
 
    | Migration | Rollback |
    |---|---|
-   | `20261127000000_fetch_v2_feature_flag` | none: additive, adds the flag row and a Launch Test Centre programme; inert while audience = `off` |
-   | `20261128000000_fetch_v2_data_model` | `.down` |
-   | `20261129000000_fetch_v2_access_boundary` | `.down` |
-   | `20261130000000_fetch_v2_lifecycle` | `.down` |
-   | `20261201000000_fetch_v2_pricing_terms` | `.down` |
-   | `20261202000000_fetch_v2_payments` | `.down` |
-   | `20261203000000_fetch_v2_driver_verification` | `.down` |
-   | `20261204000000_fetch_v2_matching` | `.down` |
-   | `20261205000000_fetch_v2_notifications` | `.down` |
-   | `20261206000000_fetch_v2_messages_issues_photos` | `.down` |
-   | `20261207000000_fetch_v2_admin_controls` | `.down` |
-   | `20261208000000_fetch_v2_member_lists` | `.down` |
+   | `20261214000000_fetch_v2_feature_flag` | none: additive, adds the flag row and a Launch Test Centre programme; inert while audience = `off` |
+   | `20261215000000_fetch_v2_data_model` | `.down` |
+   | `20261216000000_fetch_v2_access_boundary` | `.down` |
+   | `20261217000000_fetch_v2_lifecycle` | `.down` |
+   | `20261218000000_fetch_v2_pricing_terms` | `.down` |
+   | `20261219000000_fetch_v2_payments` | `.down` |
+   | `20261220000000_fetch_v2_driver_verification` | `.down` |
+   | `20261221000000_fetch_v2_matching` | `.down` |
+   | `20261222000000_fetch_v2_notifications` | `.down` |
+   | `20261223000000_fetch_v2_messages_issues_photos` | `.down` |
+   | `20261224000000_fetch_v2_admin_controls` | `.down` |
+   | `20261225000000_fetch_v2_member_lists` | `.down` |
 
 2. **Edge functions** (from `supabase/production/staged-functions.json`), after the migrations:
    - **New:**

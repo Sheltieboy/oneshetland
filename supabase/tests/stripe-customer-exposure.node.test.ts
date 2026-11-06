@@ -8,7 +8,7 @@
  * profile visible to all" (USING true) lets every row through. The column is an unused legacy field (no client selects it, no
  * Edge Function or SQL function reads it, production held no value in it), so nothing was leaked — but the first value anyone
  * stored there would have been public, and a later server path that trusted it would have acted on whatever customer a user wrote.
- * Migration 20261122000000 withdraws SELECT / INSERT / UPDATE at table level from the two client roles and grants every OTHER
+ * Migration 20261122010000 withdraws SELECT / INSERT / UPDATE at table level from the two client roles and grants every OTHER
  * column back, so the ordinary employer-profile reads and upserts of builds ≤147 and the web keep working unchanged.
  *
  * HOW IT PROVES IT
@@ -37,7 +37,7 @@ import { evaluate, ALLOWED, NAME_PATTERN } from '../../scripts/lib/stripe-custom
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MIG = join(REPO_ROOT, 'supabase/migrations');
 const BASELINE = join(MIG, '20260623000000_baseline_remote_schema.sql');
-const FIX = join(MIG, '20261122000000_shift_employer_stripe_customer_lock.sql');
+const FIX = join(MIG, '20261122010000_shift_employer_stripe_customer_lock.sql');
 const DSN = process.env.PASS_PROOF_DSN ?? '';
 const PSQL = process.env.PASS_PROOF_PSQL ?? 'psql';
 const src = (p: string) => readFileSync(p, 'utf8');

@@ -1,6 +1,6 @@
 /**
  * fetch-v2-pricing-terms.node.test.ts — Fetch v2 Step 4: the quote/create boundary, frozen terms, island derivation, 18+, and the
- * replacement-hold contract (migration 20261201000000 + supabase/functions/_shared/fetch-v2-intake.ts), against the real SQL.
+ * replacement-hold contract (migration 20261218000000 + supabase/functions/_shared/fetch-v2-intake.ts), against the real SQL.
  *
  * The REAL handlers (handleQuote / handleCreate) run against a throwaway database: their database calls go through a service-role
  * adapter to the real functions, while Google (geocoder), Stripe (card check) and the rate limiter are mocks. Nothing leaves the
@@ -22,9 +22,9 @@ import { handleQuote, handleCreate, type IntakeDeps, type CardStatus } from '../
 import { GeocodeUnavailable, type GeocodeQuery } from '../functions/_shared/fetch-v2-geocode.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261201000000_fetch_v2_pricing_terms.sql';
+const FIX_NAME = '20261218000000_fetch_v2_pricing_terms.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261201000000_fetch_v2_pricing_terms.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261218000000_fetch_v2_pricing_terms.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;

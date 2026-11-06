@@ -1,5 +1,5 @@
 /**
- * fetch-v2-member-lists.node.test.ts — Fetch v2 Step 11: the member lists (migration 20261208000000). Isolated database only.
+ * fetch-v2-member-lists.node.test.ts — Fetch v2 Step 11: the member lists (migration 20261225000000). Isolated database only.
  * Each list is the signed-in member's own, behind the flag, and carries no address, phone or notes.
  * Run: ISOLATED_ONLY=fetch-v2-member-lists npm run test:isolated
  */
@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261208000000_fetch_v2_member_lists.sql';
+const FIX_NAME = '20261225000000_fetch_v2_member_lists.sql';
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
 const rowsOf = (out: string) => out.split('\n').map((l) => l.trim()).filter((l) => l && !tag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^NOTICE|^WARNING/.test(l));
@@ -98,7 +98,7 @@ test('signed out: nothing; Fetch off: refused', () => {
   ok(db.raw(`update public.admin_config set value = 'everyone' where key = 'fetch.v2.audience'`));
 });
 test('rollback removes exactly the four functions; re-applies', () => {
-  ok(db.rawFile(join(REPO_ROOT, 'supabase/rollbacks/20261208000000_fetch_v2_member_lists.down.sql')));
+  ok(db.rawFile(join(REPO_ROOT, 'supabase/rollbacks/20261225000000_fetch_v2_member_lists.down.sql')));
   assert.equal(scalar(`select count(*) from pg_proc where proname in ('fetch_v2_my_requests', 'fetch_v2_my_jobs', 'fetch_v2_my_runs', 'fetch_v2_set_my_areas')`), '0');
   ok(db.rawFile(join(REPO_ROOT, 'supabase/migrations', FIX_NAME)));
   assert.equal(scalar(`select count(*) from pg_proc where proname in ('fetch_v2_my_requests', 'fetch_v2_my_jobs', 'fetch_v2_my_runs', 'fetch_v2_set_my_areas')`), '4');

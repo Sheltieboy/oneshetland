@@ -1,7 +1,14 @@
 {
   "captured_on": "2026-10-08",
   "note": "EMPTY: every migration in the repository is now registered in production. The 29 below were applied by hand earlier and were registered on 2026-10-08 with `supabase migration repair --status applied <versions> --linked` (it records the versions and their statements in supabase_migrations.schema_migrations and executes nothing). Kept as the record of what was registered. Add an entry here ONLY if a migration is again applied by hand without being registered; scripts/check-migration-history.mjs lists entries still unregistered.",
-  "migrations": [],
+  "migrations": [
+    {
+      "version": "20261122010000",
+      "name": "shift_employer_stripe_customer_lock",
+      "evidence": "APPLIED BUT NOT REGISTERED. Its protection is live in production (anon and authenticated cannot read shift_employer_profiles.stripe_customer_id; verified read-only 2026-11-06) but no schema_migrations row carries its statements: it was written as 20261122000000, a version production had registered for jobs_structural_readiness. The file was renumbered to the free version 20261122010000 on 2026-11-06 (content unchanged). Register with `supabase migration repair --status applied 20261122010000 --linked` only with explicit approval; until then `db push` stays blocked by the guard.",
+      "renumbered_from": "20261122000000"
+    }
+  ],
   "registered_by_repair_on": "2026-10-08",
   "registered_by_repair": [
     {

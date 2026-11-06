@@ -14,8 +14,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const has = (p: string) => existsSync(join(ROOT, p));
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const runner = read('scripts/isolated-pg.mjs');
-// Step 13: `npm test` reads its suites from supabase/tests/lanes.json (offline lane) instead of listing them in package.json.
-const pkgTest = read('package.json') + '\n' + (JSON.parse(read('supabase/tests/lanes.json')) as { offline: string[] }).offline.join('\n');
+const pkgTest = read('package.json');
 
 const FIXES: { name: string; migrations: string[]; code: string[]; isolated: string[]; hermetic: string[]; marker?: [string, RegExp] }[] = [
   { name: '1 email-table lockdown', migrations: ['20261115000000_email_tables_lock_down'], code: [], isolated: ['email-tables-lockdown'], hermetic: [] },
@@ -31,7 +30,7 @@ const FIXES: { name: string; migrations: string[]; code: string[]; isolated: str
     code: ['_shared/shift-notify-auth.ts', '_shared/fetch-notify-auth.ts', '_shared/notify-decision.ts', '_shared/require-caller.ts', 'notify-application-update/index.ts', 'notify-shift-application/index.ts', 'notify-worker-checkin/index.ts', 'notify-shift-complete/index.ts', 'notify-matching-workers/index.ts', 'notify-drivers/index.ts', 'notify-collected/index.ts'],
     isolated: [], hermetic: ['notify-entity-authorisation'] },
   { name: '8 event / notice attribution', migrations: ['20261121000000_event_notice_attribution'], code: ['_shared/event-update-notify-auth.ts', 'delete-account/index.ts'], isolated: ['event-notice-attribution'], hermetic: ['notify-fanout-authz'] },
-  { name: '10 Stripe customer ids not client-reachable (shift_employer_profiles.stripe_customer_id)', migrations: ['20261122000000_shift_employer_stripe_customer_lock'], code: [], isolated: ['stripe-customer-exposure'], hermetic: [] },
+  { name: '10 Stripe customer ids not client-reachable (shift_employer_profiles.stripe_customer_id)', migrations: ['20261122010000_shift_employer_stripe_customer_lock'], code: [], isolated: ['stripe-customer-exposure'], hermetic: [] },
   { name: '11 shift worker / employer payment and trust fields server-controlled', migrations: ['20261123000000_shift_profile_trust_fields'], code: [], isolated: ['shift-profile-trust-fields'], hermetic: [] },
   { name: '12 referral programme disabled for launch (no codes, no referrals, no rewards)', migrations: ['20261124000000_referrals_disabled_for_launch'], code: [], isolated: ['referral-disabled'], hermetic: [] },
 ];

@@ -1,5 +1,5 @@
 /**
- * fetch-v2-matching.node.test.ts — Fetch v2 Step 7: matching (migration 20261204000000), against the real SQL.
+ * fetch-v2-matching.node.test.ts — Fetch v2 Step 7: matching (migration 20261221000000), against the real SQL.
  *
  * A throwaway database replayed from every migration, with Shetland's real island geography: jobs and journeys are created through the
  * real create functions (server geocoding is replaced by fixed coordinates inside each island's area). Drivers are made eligible
@@ -17,9 +17,9 @@ import { randomUUID } from 'node:crypto';
 import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261204000000_fetch_v2_matching.sql';
+const FIX_NAME = '20261221000000_fetch_v2_matching.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261204000000_fetch_v2_matching.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261221000000_fetch_v2_matching.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;

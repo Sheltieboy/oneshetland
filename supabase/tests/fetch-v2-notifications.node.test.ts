@@ -1,5 +1,5 @@
 /**
- * fetch-v2-notifications.node.test.ts — Fetch v2 Step 8: the notification outbox (migration 20261205000000 +
+ * fetch-v2-notifications.node.test.ts — Fetch v2 Step 8: the notification outbox (migration 20261222000000 +
  * supabase/functions/_shared/fetch-v2-notify.ts), against the real SQL and the real Notification Centre table (notification_log).
  *
  * Events come from the real Step 3–7 functions where that is practical (create → matching selection, claim, release, cancellation,
@@ -20,9 +20,9 @@ import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 import { drainNotifications, type PushAttempt, type PushGateway, type PushMessage } from '../functions/_shared/fetch-v2-notify.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261205000000_fetch_v2_notifications.sql';
+const FIX_NAME = '20261222000000_fetch_v2_notifications.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261205000000_fetch_v2_notifications.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261222000000_fetch_v2_notifications.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;

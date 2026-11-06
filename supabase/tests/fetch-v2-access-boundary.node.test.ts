@@ -1,5 +1,5 @@
 /**
- * fetch-v2-access-boundary.node.test.ts — Fetch v2 access and privacy boundary (migration 20261129000000), against the real SQL.
+ * fetch-v2-access-boundary.node.test.ts — Fetch v2 access and privacy boundary (migration 20261216000000), against the real SQL.
  *
  * Every earlier migration (including Steps 0 and 1) is replayed into a private database with realistic state — regions, approved,
  * suspended and unrelated drivers, open/past runs with notes, a v1 request and v2 jobs at every stage of their privacy windows —
@@ -28,9 +28,9 @@ import { fileURLToPath } from 'node:url';
 import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261129000000_fetch_v2_access_boundary.sql';
+const FIX_NAME = '20261216000000_fetch_v2_access_boundary.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261129000000_fetch_v2_access_boundary.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261216000000_fetch_v2_access_boundary.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;

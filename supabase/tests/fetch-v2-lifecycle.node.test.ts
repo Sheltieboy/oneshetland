@@ -1,5 +1,5 @@
 /**
- * fetch-v2-lifecycle.node.test.ts — the Fetch v2 lifecycle server actions (migration 20261130000000), against the real SQL.
+ * fetch-v2-lifecycle.node.test.ts — the Fetch v2 lifecycle server actions (migration 20261217000000), against the real SQL.
  *
  * Every earlier migration (incl. Steps 0–2) is replayed into a private database with regions, live pricing, approved / unverified /
  * suspended / smaller-vehicle drivers, categories and the Fetch v2 audience open. Then Step 3 is applied and every action is
@@ -24,9 +24,9 @@ import { randomUUID } from 'node:crypto';
 import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const FIX_NAME = '20261130000000_fetch_v2_lifecycle.sql';
+const FIX_NAME = '20261217000000_fetch_v2_lifecycle.sql';
 const FIX = join(REPO_ROOT, 'supabase/migrations', FIX_NAME);
-const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261130000000_fetch_v2_lifecycle.down.sql');
+const DOWN = join(REPO_ROOT, 'supabase/rollbacks/20261217000000_fetch_v2_lifecycle.down.sql');
 
 let db: ReplayDb;
 const tag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
