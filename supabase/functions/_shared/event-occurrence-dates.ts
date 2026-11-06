@@ -85,3 +85,45 @@ export function runBlocksPost(rows: OccurrenceRow[] | undefined, event: { status
   if (s.kind === 'gone') return 'no live date left (all dates cancelled or past)';
   return null;
 }
+
+/* ── Who an event is "by" (Events Phase 1, decided 6 Nov 2026) ───────────────────────────────────────────────────────────────────────
+   events.source / events.organiser_name only exist once the Phase-1 migration is applied, so they are read in a SEPARATE, tolerant query
+   (never added to an existing events select): on any error the map is empty and every event is treated as an ordinary listing, as today.
+   Platform OWNERSHIP never means "organised by OneShetland": 120 curated platform events are third-party. Social copy therefore
+     · credits a community event to its organiser ("shared by <name>");
+     · says nothing about the organiser for every other event, including curated platform events;
+     · never credits a community or curated event to a business or to OneShetland.                                                         */
+export type Attribution = { source: string | null; organiser_name: string | null };
+
+export async function loadAttribution(svc: Svc, eventIds: string[]): Promise<Map<string, Attribution>> {
+  const out = new Map<string, Attribution>();
+  const ids = [...new Set(eventIds.filter(Boolean))];
+  if (!ids.length) return out;
+  try {
+    const { data, error } = await svc.from('events').select('id, source, organiser_name').in('id', ids).limit(5000);
+    if (error || !Array.isArray(data)) return out;
+    for (const r of data as Array<{ id: string; source?: string | null; organiser_name?: string | null }>) {
+      if (r?.id) out.set(r.id, { source: r.source ?? null, organiser_name: r.organiser_name ?? null });
+    }
+  } catch { /* old schema: no attribution columns */ }
+  return out;
+}
+
+const cleanName = (n: string | null | undefined): string => (n ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+
+/** ' (shared by Name)' for a community event with a name; '' for everything else. */
+export function creditSuffix(a: Attribution | undefined): string {
+  if (a?.source !== 'community_submission') return '';
+  const name = cleanName(a.organiser_name);
+  return name ? ` (shared by ${name})` : '';
+}
+
+/** A community event with no usable organiser name cannot be credited, so it is not advertised. */
+export function creditable(a: Attribution | undefined): boolean {
+  return a?.source !== 'community_submission' || cleanName(a.organiser_name) !== '';
+}
+
+/** event_spotlight is for business-owned events only ("Event by <business>"). Anything carrying a source marker is never spotlighted. */
+export function spotlightAllowed(a: Attribution | undefined): boolean {
+  return !a?.source;
+}

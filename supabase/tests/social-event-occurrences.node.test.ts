@@ -17,7 +17,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FakeDb } from './_support/fake-svc.ts';
 import { loadComposer, loadPublisher } from './_support/load-social-fns.ts';
-import { runState, listOncePerProduction, runBlocksPost, loadOccurrences } from '../functions/_shared/event-occurrence-dates.ts';
+import { runState, listOncePerProduction, runBlocksPost, loadOccurrences, creditSuffix, creditable, spotlightAllowed } from '../functions/_shared/event-occurrence-dates.ts';
 
 const MON = new Date('2026-11-02T05:40:00Z');
 const iso = (d: Date) => d.toISOString();
@@ -138,6 +138,82 @@ describe('event_spotlight', () => {
   });
 });
 
+describe('who an event is "by" (platform ownership is never "organised by OneShetland")', () => {
+  // Old schema: a select that names source/organiser_name fails, exactly as PostgREST would before the migration.
+  const oldSchema = (db: FakeDb) => { const f = db.from.bind(db); (db as any).from = (t: string) => { const q: any = f(t); const sel = q.select.bind(q); q.select = (c?: string, o?: any) => { if (t === 'events' && /\bsource\b|organiser_name/.test(c ?? '')) q.run = () => ({ data: null, error: { message: 'column events.source does not exist' } }); return sel(c, o); }; return q; }; };
+  const caseRows = {
+    community: { source: 'community_submission', organiser_name: 'Northmavine Drama' },
+    communityNoName: { source: 'community_submission', organiser_name: '  ' },
+    curated: { source: null, organiser_name: null },
+    curatedNamed: { source: null, organiser_name: 'Lerwick Parkrun' },
+    explicit: { source: 'oneshetland', organiser_name: null },
+  };
+  test('pure rules', () => {
+    assert.equal(creditSuffix({ ...caseRows.community }), ' (shared by Northmavine Drama)');
+    for (const k of ['communityNoName', 'curated', 'curatedNamed', 'explicit'] as const) assert.equal(creditSuffix(caseRows[k]), '', k);
+    assert.equal(creditSuffix(undefined), '');
+    assert.equal(creditable(caseRows.communityNoName), false);
+    for (const k of ['community', 'curated', 'curatedNamed', 'explicit'] as const) assert.equal(creditable(caseRows[k]), true, k);
+    assert.equal(spotlightAllowed(undefined), true); assert.equal(spotlightAllowed(caseRows.curated), true);
+    for (const k of ['community', 'communityNoName', 'explicit'] as const) assert.equal(spotlightAllowed(caseRows[k]), false, k);
+  });
+  test('roundup matrix: community credited, others neutral, no-name community left out, never OneShetland-as-organiser', async () => {
+    const db = world(['whats_on_roundup']);
+    db.tables.events = [
+      ev(1, { title: 'Community Panto', ...caseRows.community }), ev(2, { title: 'Parkrun', ...caseRows.curated }),
+      ev(3, { title: 'Drama Night', ...caseRows.curatedNamed }), ev(4, { title: 'Nameless', ...caseRows.communityNoName }),
+      ev(5, { title: 'Staff Pick', ...caseRows.explicit }), ev(6, { title: 'Business Gig', organiser_business_id: U(900) }),
+    ];
+    await run(db);
+    const c = posts(db, 'whats_on_roundup')[0].caption as string;
+    assert.match(c, /Community Panto.*\(shared by Northmavine Drama\)/);
+    assert.doesNotMatch(c, /Nameless/);
+    for (const t of ['Parkrun', 'Drama Night', 'Staff Pick', 'Business Gig']) {
+      const line = c.split('\n').find((l) => l.includes(t))!; assert.ok(line, t); assert.doesNotMatch(line, /shared by|organis|OneShetland|Peerie Theatre/i, t);
+    }
+    assert.equal((c.match(/shared by/g) ?? []).length, 1);
+  });
+  test('old schema: roundup behaves as before (no credit, nothing dropped, no errors)', async () => {
+    const db = world(['whats_on_roundup']); oldSchema(db);
+    db.tables.events = [ev(1, { title: 'A', ...caseRows.community }), ev(2, { title: 'B', ...caseRows.communityNoName }), ev(3, { title: 'C' })];
+    const r = await run(db); assert.deepEqual(r.errors, []);
+    const c = posts(db, 'whats_on_roundup')[0].caption; assert.doesNotMatch(c, /shared by/); for (const t of ['A', 'B', 'C']) assert.match(c, new RegExp(`· ${t}`));
+  });
+  test('spotlight matrix: only business-owned, unmarked events; community / explicit marker never; business credit stays "Event by <business>"', async () => {
+    const db = world(['event_spotlight']);
+    db.tables.events = [
+      spotEv(1, { title: 'Biz Show' }), spotEv(2, { title: 'Community Wrongly Owned', ...caseRows.community }),
+      spotEv(3, { title: 'Marked Staff', ...caseRows.explicit }), spotEv(4, { title: 'Curated Named', ...caseRows.curatedNamed }),
+    ];
+    await run(db);
+    const titles = posts(db, 'event_spotlight').map((p) => p.caption.split(' ')[0] + ' ' + p.caption.split(' ')[1]).join('|');
+    const ids = posts(db, 'event_spotlight').map((p) => p.entity_id);
+    assert.ok(ids.includes(U(1))); assert.ok(!ids.includes(U(2))); assert.ok(!ids.includes(U(3)));
+    for (const p of posts(db, 'event_spotlight')) assert.doesNotMatch(p.caption, /shared by|OneShetland (is|are) (the )?organis|organised by OneShetland/i, titles);
+  });
+  test('old schema: spotlight behaves exactly as before', async () => {
+    const db = world(['event_spotlight']); oldSchema(db); db.tables.events = [spotEv(1, { title: 'Plain' })];
+    const r = await run(db); assert.deepEqual(r.errors, []); assert.equal(posts(db, 'event_spotlight').length, 1);
+  });
+  test('combination matrix: dated run x ownership x schema, never a wrong credit or a duplicate', async () => {
+    for (const k of Object.keys(caseRows) as (keyof typeof caseRows)[]) for (const run_ of [false, true]) for (const old of [false, true]) {
+      const db = world(['whats_on_roundup']); if (old) oldSchema(db);
+      db.tables.events = [ev(1, { title: 'Combo', starts_at: plusH(30), ...caseRows[k] }), ev(2), ev(3)];
+      if (run_) db.tables.event_occurrences = [occ(1, 30), occ(1, 54), occ(1, 78)];
+      await run(db);
+      const c = posts(db, 'whats_on_roundup')[0].caption as string;
+      assert.equal(c.split('Combo').length - 1, k === 'communityNoName' && !old ? 0 : 1, `${k} run=${run_} old=${old}`);
+      const credited = /shared by/.test(c);
+      assert.equal(credited, k === 'community' && !old, `${k} run=${run_} old=${old}`);
+      assert.doesNotMatch(c, /organised by|OneShetland organis/i);
+    }
+  });
+  test('source guard: attribution is read in its own query, never added to an existing events select', () => {
+    const code = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'functions', 'social-composer', 'index.ts'), 'utf8');
+    assert.doesNotMatch(code.replace(/\/\*[\s\S]*?\*\//g, ''), /\.select\([^)]*(organiser_name|\bsource\b)/);
+  });
+});
+
 describe('social-publisher send-time check', () => {
   const draft = (n: number) => ({ id: `post${n}`, kind: 'event_spotlight', entity_id: U(n), caption: 'x https://oneshetland.com', image_url: null, link_url: 'https://oneshetland.com/go/event/' + U(n), status: 'scheduled', scheduled_for: plusH(-1), channels: ['facebook'], posted_ids: {} });
   async function publish(db: FakeDb) {
@@ -180,7 +256,7 @@ describe('source guards', () => {
   const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
   test('no events select names a Phase-1 column (migration-independent)', () => {
-    for (const f of ['supabase/functions/social-composer/index.ts', 'supabase/functions/social-publisher/index.ts', 'supabase/functions/_shared/event-occurrence-dates.ts'])
+    for (const f of ['supabase/functions/social-composer/index.ts', 'supabase/functions/social-publisher/index.ts'])
       assert.doesNotMatch(read(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''), /is_dated_run|organiser_name|submission_id/);
   });
   test('Business Spotlight is not part of this deployed lineage and was not touched', () => {
