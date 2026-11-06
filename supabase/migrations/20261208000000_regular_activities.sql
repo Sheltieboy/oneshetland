@@ -170,10 +170,23 @@ create table if not exists public.activity_change_notices (
   note                text,
   state_hash          text not null,                       -- what the session looks like now; identical state is never sent twice
   created_at          timestamptz not null default now(),
-  processed_at        timestamptz
+  processed_at        timestamptz,
+  outcome             text,                                -- delivered | superseded | identical | past | never_told | inactive | no_followers | failed
+  attempts            smallint not null default 0,
+  last_error          text
 );
+alter table public.activity_change_notices add column if not exists outcome text;
+alter table public.activity_change_notices add column if not exists attempts smallint not null default 0;
+alter table public.activity_change_notices add column if not exists last_error text;
 create unique index if not exists uq_acn_pending on public.activity_change_notices (session_key, state_hash) where processed_at is null;
 create index if not exists idx_acn_pending on public.activity_change_notices (created_at) where processed_at is null;
+
+-- One row per processor run that had something to do (for monitoring; pruned after 30 days).
+create table if not exists public.activity_notice_runs (
+  id      bigint generated always as identity primary key,
+  ran_at  timestamptz not null default now(),
+  summary jsonb not null
+);
 
 create table if not exists public.activity_notice_state (
   session_key    text primary key,
@@ -181,6 +194,7 @@ create table if not exists public.activity_notice_state (
   last_state_hash text not null,
   last_sent_at   timestamptz not null default now()
 );
+create index if not exists idx_ans_activity on public.activity_notice_state (activity_id, last_sent_at desc);
 
 -- 4. Ownership and permission helpers ---------------------------------------------------------------------------------------------
 create or replace function public.can_manage_activity(p_activity uuid)
@@ -338,6 +352,7 @@ alter table public.activity_owner_log      enable row level security;
 alter table public.activity_legacy_events  enable row level security;
 alter table public.activity_change_notices enable row level security;
 alter table public.activity_notice_state   enable row level security;
+alter table public.activity_notice_runs    enable row level security;
 
 -- Two permissive policies, OR-ed: the PUBLIC rule (visitors and everyone) and the MANAGER rule (signed-in only). They are split because the
 -- ownership helpers are not executable by the anonymous role in production, and a visitor's read must never call them.
@@ -394,7 +409,7 @@ create policy ale_read on public.activity_legacy_events for select using (true);
 -- 7. Grants: nothing by default, then exactly what is needed ------------------------------------------------------------------------
 revoke all on public.regular_activities, public.activity_schedule_rules, public.activity_exceptions, public.activity_breaks,
               public.activity_follows, public.activity_owner_log, public.activity_legacy_events, public.activity_change_notices,
-              public.activity_notice_state from public, anon, authenticated;
+              public.activity_notice_state, public.activity_notice_runs from public, anon, authenticated;
 
 grant select (id, slug, title, description, category, audience, venue, locality, lat, lng, cover_url, price_text, booking_mode, contact_info,
               booking_url, status, active_from, active_until, organiser_business_id, organiser_hub_id, is_platform_activity,
@@ -422,7 +437,7 @@ grant update (start_date, end_date, reason) on public.activity_breaks to authent
 grant delete on public.activity_breaks to authenticated;
 grant select, insert, delete on public.activity_follows to authenticated;
 grant select on public.activity_legacy_events to anon, authenticated;
--- activity_owner_log, activity_change_notices, activity_notice_state: no client grant at all (service role / definer functions only).
+-- activity_owner_log, activity_change_notices, activity_notice_state, activity_notice_runs: no client grant at all (service role / definer functions only).
 
 -- 8. Sessions: computed, in Europe/London, bounded --------------------------------------------------------------------------------
 create or replace function public.activity_sessions(p_from timestamptz, p_to timestamptz, p_activity_id uuid default null, p_limit integer default 400)
@@ -684,7 +699,8 @@ begin
   if new.end_date < (now() at time zone 'Europe/London')::date or new.start_date > (now() at time zone 'Europe/London')::date + 21 then return null; end if;
   insert into public.activity_change_notices (activity_id, kind, session_key, session_starts_at, note, state_hash)
   values (new.activity_id, 'break', 'break:' || new.id, (new.start_date::timestamp at time zone 'Europe/London'),
-          concat_ws(' ', to_char(new.start_date, 'FMDD Mon'), '–', to_char(new.end_date, 'FMDD Mon'), nullif(new.reason, '')),
+          concat_ws(' ', to_char(new.start_date, 'FMDD Mon'), '–', to_char(new.end_date, 'FMDD Mon'),
+                    case when nullif(btrim(new.reason), '') is not null then '(' || btrim(new.reason) || ')' end),
           md5(concat_ws('|', 'break', new.start_date, new.end_date, new.reason)))
   on conflict do nothing;
   return null;
