@@ -28,6 +28,17 @@ type Who = keyof typeof U | 'anon' | 'nobody' | 'service';
 const BZ = id(0x21), BZ2 = id(0x22), HUB = id(0x23);
 const E_BIZ = id(0x31), E_HUB = id(0x32), E_PLAT = id(0x33), E_BIZ_TICKETED = id(0x34), E_BIZ2 = id(0x35), E_BIZ_SOLD = id(0x36);
 const TT = id(0x41);
+
+/** A refund-shaped transaction (types FOR UPDATE, then UPDATE events) overlapping a sale of the same event. */
+async function refundVsSale(e: Env): Promise<{ deadlock: boolean; err: string }> {
+  const refund = e.db.bg(`begin; select 1 from event_ticket_types where event_id='${E_BIZ_TICKETED}' order by id for update; select pg_sleep(1.5); update events set tickets_sold = coalesce(tickets_sold, 0) where id='${E_BIZ_TICKETED}'; commit`);
+  await new Promise((res) => setTimeout(res, 400));
+  const sale = await e.db.bg(`select public.reserve_ticket_basket('${E_BIZ_TICKETED}','${U.OTH}','[{"ticket_type_id":"${TT}","token_hash":"${'b'.repeat(40)}"}]'::jsonb,500,0,'{}'::jsonb,'req-lockorder-001')`);
+  const rf = await refund;
+  const err = `${rf.stderr}${sale.stderr}`.trim();
+  return { deadlock: /deadlock detected/.test(err), err };
+}
+
 const COVER = (uid: string) => `https://nkrtmakxygkvxuxriiil.supabase.co/storage/v1/object/public/event-media/${uid}/events/poster.jpg`;
 
 const day = (n: number, h = 19) => { const d = new Date(Date.now() + n * 86400_000); d.setUTCHours(h, 0, 0, 0); return d.toISOString().replace('.000Z', 'Z'); };
@@ -294,6 +305,36 @@ describe('ticketing safety', () => {
     assert.match(b.stderr, /more than one date/);
     assert.equal(E.q(`select count(*) from event_ticket_types where event_id='${E_BIZ}'`), '0');
     E.sup(`delete from event_occurrences where event_id='${E_BIZ}'`);
+  });
+  test('lock order: a refund and a sale of the same event never deadlock', async () => {
+    // refund_event_tickets_for_payment() locks ticket types FIRST, then UPDATEs the event row (tickets_sold). reserve_ticket_basket() takes a lock on the
+    // event row before locking the types. A lock that conflicts with that UPDATE (FOR SHARE) would make the two wait for each other forever.
+    const r = await refundVsSale(E);
+    assert.equal(r.deadlock, false, `deadlock detected: ${r.err}`);
+    assert.equal(r.err, '', `both statements should finish cleanly, got: ${r.err}`);
+  });
+  test('reserve_ticket_basket keeps its live signature and permissions: server role only, SECURITY DEFINER, search_path=public, one overload', () => {
+    const fn = `'public.reserve_ticket_basket(uuid,uuid,jsonb,integer,integer,jsonb,text)'::regprocedure`;
+    assert.equal(E.q(`select count(*) from pg_proc where proname='reserve_ticket_basket' and pronamespace='public'::regnamespace`), '1', 'no second overload');
+    assert.equal(E.q(`select prosecdef from pg_proc where oid=${fn}`), 't');
+    assert.match(E.q(`select proconfig::text from pg_proc where oid=${fn}`), /search_path=public/);
+    assert.equal(E.q(`select pg_get_function_result(${fn.replace('::regprocedure', '::regprocedure::oid')})`), 'jsonb');
+    for (const role of ['anon', 'authenticated']) assert.equal(E.q(`select has_function_privilege('${role}', ${fn}, 'execute')`), 'f', `${role} must not be able to execute it (live: only postgres and service_role)`);
+    assert.equal(E.q(`select has_function_privilege('service_role', ${fn}, 'execute')`), 't');
+  });
+  test('the REAL refund function and the corrected reserve_ticket_basket coexist: the refund frees a seat, an overlapping sale takes one, counters stay exact', async () => {
+    const basket = (req: string, hash: string) => `select public.reserve_ticket_basket('${E_BIZ_TICKETED}','${U.OTH}','[{"ticket_type_id":"${TT}","token_hash":"${hash.repeat(40)}"}]'::jsonb,500,0,'{}'::jsonb,'${req}')->>'order_id'`;
+    const order = E.q(basket('req-real-refund-1', 'd'));
+    assert.match(order, /^[0-9a-f-]{36}$/, `the first sale must succeed: ${order}`);
+    E.sup(`update event_ticket_orders set status='paid', paid_at=now(), stripe_payment_intent_id='pi_lockorder_real' where id='${order}'; update event_tickets set status='valid' where order_id='${order}'`);
+    const before = Number(E.q(`select quantity_sold from event_ticket_types where id='${TT}'`));
+    const refundTx = E.db.bg(`begin; select public.refund_event_tickets_for_payment('pi_lockorder_real', true); select pg_sleep(1.2); commit`);
+    await new Promise((res) => setTimeout(res, 300));
+    const sale = await E.db.bg(basket('req-real-refund-2', 'e'));
+    const rf = await refundTx;
+    assert.doesNotMatch(`${rf.stderr}${sale.stderr}`, /ERROR|deadlock/i, `refund: ${rf.stderr} sale: ${sale.stderr}`);
+    assert.equal(Number(E.q(`select quantity_sold from event_ticket_types where id='${TT}'`)), before, 'one seat freed by the refund, one taken by the sale');
+    assert.equal(E.q(`select status from event_ticket_orders where stripe_payment_intent_id='pi_lockorder_real'`), 'refunded');
   });
 });
 
@@ -746,6 +787,8 @@ describe('mutation controls (each weakens one guard and shows the probe catches 
   run('reserve_ticket_basket does not refuse runs', [{ file: M3, find: /(o\.status <> 'cancelled'\) >= )2( then\n    raise exception 'MULTI_PERFORMANCE)/, replace: '$199$2' }],
     (e) => { e.sup(`alter table event_occurrences disable trigger tg_event_occurrences_guard; insert into event_occurrences (event_id, starts_at) values ('${E_BIZ_TICKETED}','${day(20)}'),('${E_BIZ_TICKETED}','${day(21)}')`);
       return /MULTI_PERFORMANCE/.test(e.sup(`select public.reserve_ticket_basket('${E_BIZ_TICKETED}','${U.OTH}','[{"ticket_type_id":"${TT}","token_hash":"${'a'.repeat(40)}"}]'::jsonb,500,0,'{}'::jsonb,'req-mut-000001')`)); });
+  run('reserve_ticket_basket takes a lock that conflicts with the refund path (FOR SHARE)', [{ file: M3, find: 'where id = p_event_id for key share;', replace: 'where id = p_event_id for share;' }],
+    async (e) => !(await refundVsSale(e)).deadlock);
   run('submission switch ignored', [{ file: M2, find: 'not public.attribution_staff() and not public.event_submissions_open()', replace: 'false' }],
     (e) => /not open yet/.test(e.submit('SUB').out));
   run('review function skips the staff check', [{ file: M2, find: /if not public\.attribution_staff\(\) then raise exception 'Only OneShetland staff can review submissions'/, replace: "if false then raise exception 'Only OneShetland staff can review submissions'" }],

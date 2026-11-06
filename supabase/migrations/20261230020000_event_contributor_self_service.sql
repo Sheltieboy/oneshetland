@@ -570,9 +570,12 @@ begin
   end if;
 
   -- ── A run of dates cannot be sold here: tickets bind to the EVENT, not to one performance ────────────────────────────────────────────────────
-  -- (events.occurrences phase 1.) Checked for a NEW reservation only - a retry of an existing order was answered above. FOR SHARE conflicts with the
-  -- occurrence trigger's FOR UPDATE on the same event row, so a second date and a sale cannot both slip through a race.
-  perform 1 from public.events where id = p_event_id for share;
+  -- (events.occurrences phase 1.) Checked for a NEW reservation only - a retry of an existing order was answered above. FOR KEY SHARE conflicts with the
+  -- occurrence guard's FOR UPDATE on the same event row, so a second date and a sale cannot both slip through a race. It deliberately does NOT conflict
+  -- with the plain UPDATE of events (FOR NO KEY UPDATE) that refund_event_tickets_for_payment() and the tickets_sold counter perform: that refund locks
+  -- ticket types FIRST and the event row afterwards, this function locks the event row first, so a stronger lock here (FOR SHARE) could deadlock a refund
+  -- against a sale of the same event.
+  perform 1 from public.events where id = p_event_id for key share;
   if (select count(*) from public.event_occurrences o where o.event_id = p_event_id and o.status <> 'cancelled') >= 2 then
     raise exception 'MULTI_PERFORMANCE: this event has more than one date, so its tickets cannot be sold here' using errcode = '22023';
   end if;

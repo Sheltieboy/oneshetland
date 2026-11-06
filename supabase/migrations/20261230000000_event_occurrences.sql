@@ -149,7 +149,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if tg_op = 'UPDATE' and not (new.is_active and (not old.is_active or new.event_id is distinct from old.event_id)) then return new; end if;
   if not new.is_active then return new; end if;
-  perform 1 from public.events where id = new.event_id for share;    -- conflicts with the occurrence guard's FOR UPDATE
+  perform 1 from public.events where id = new.event_id for key share;    -- conflicts with the occurrence guard's FOR UPDATE, not with ordinary event updates (lock order: refunds take ticket types first)
   if (select count(*) from public.event_occurrences o where o.event_id = new.event_id and o.status <> 'cancelled') >= 2 then
     raise exception 'This event has more than one date, so it cannot sell tickets through OneShetland. Use a ticket link, or create a separate event for each date.'
       using errcode = 'P0001', hint = 'run_cannot_sell_tickets';

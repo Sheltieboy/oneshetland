@@ -105,7 +105,7 @@ No emails, notifications or contacting triggers exist anywhere in these migratio
 ## 6. Release checklist (before applying anything)
 
 1. Run `node scripts/check-migration-collisions.mjs` from a trusted shell (it reads production's migration history; read-only) and confirm 20261230000000 / 010000 / 020000 are free and newer than the newest applied version.
-2. Diff `reserve_ticket_basket` in production against the body in the third migration (that copy came from the migration history). If production differs, regenerate the migration from production's definition plus the marked MULTI_PERFORMANCE block.
+2. ~~Diff `reserve_ticket_basket` against production~~ DONE 6 Nov 2026 (read-only; see 'Live comparison of reserve_ticket_basket' below). Re-run it immediately before applying if anything ticketing-related has been deployed since.
 3. Confirm `profiles.role` values and `attribution_staff()` in production match (admin, moderator).
 4. Confirm no production `events` row has a non-null `organiser_name`/`source`/`submission_id` column already (columns are new) and that no other view selects `events.*` into a fixed-width structure.
 5. Confirm production default privileges on `public` functions: the tests reproduce Supabase's grant-to-anon default and prove the migrations revoke it, but re-check `has_function_privilege('anon', ...)` on every new function after applying.
@@ -121,3 +121,19 @@ No emails, notifications or contacting triggers exist anywhere in these migratio
 `supabase/tests/events-occurrences-phase1.node.test.ts` (89 tests incl. 15 mutation controls). Isolated cluster only; registered in `scripts/isolated-pg.mjs`:
 
     ISOLATED_ONLY=events-occurrences-phase1 npm run test:isolated
+
+
+## Live comparison of reserve_ticket_basket (6 Nov 2026, read-only)
+
+Compared with `pg_get_functiondef` of the production function (project nkrtmakxygkvxuxriiil):
+
+- Signature `reserve_ticket_basket(uuid,uuid,jsonb,integer,integer,jsonb,text) returns jsonb`: identical; one overload only.
+- SECURITY DEFINER, `search_path=public`, owner `postgres`, ACL `{postgres, service_role}` (no anon/authenticated). `CREATE OR REPLACE` keeps owner and ACL; the migration contains no grants. A test asserts this.
+- Body: after normalising whitespace and comments the ONLY difference is the added block (event-row lock + `MULTI_PERFORMANCE` check) placed after the idempotent-retry return and before the ticket-type locks. The rollback body equals the live body exactly.
+- Only caller: the Edge Function `create-event-ticket-intent`, which calls it BEFORE any Stripe or wallet action; an unknown error from it returns HTTP 409 with the generic 'Those tickets are not available' sentence (fails closed, leaks nothing). Mapping `MULTI_PERFORMANCE` to a clearer sentence is cosmetic and can follow the migration.
+- Other production objects mentioning it: only a comment in `refund_event_tickets_for_payment`.
+
+**Defect found and fixed in this comparison (lock order).** `refund_event_tickets_for_payment` locks ticket types FIRST (`for update`) and then UPDATEs the event row (`tickets_sold`). The first draft of the new block took `FOR SHARE` on the event row BEFORE locking the types: a refund and a sale of the same event could wait for each other and Postgres would abort one (deadlock). Both new guards now use `FOR KEY SHARE`, which still conflicts with the occurrence guard's `FOR UPDATE` (so the date-versus-sale race stays closed, both orders tested) but not with the plain UPDATE the refund and the counter perform. Tests: `lock order: a refund and a sale of the same event never deadlock`, its mutation control (reverting to FOR SHARE reproduces the deadlock), and a test running the REAL refund function overlapping a sale.
+
+Existing suites that replay explicit older migration lists (`ticket-capacity-release`, `event-ticket-orders-server-only`, `event-wallet-refund`, `event-orders-access`) do not include the new migrations; they were run only to confirm the baseline (all pass). Suites for ticketing that are not registered in the isolated lane were NOT run (they may touch production).
+
