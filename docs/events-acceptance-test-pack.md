@@ -1,6 +1,6 @@
 # Events & Regular Activities: final acceptance test pack (R1 to R20)
 
-Prepared 7 Nov 2026 (about 07:30 UTC). **Nothing in this pack has enabled anything.** The public flag is OFF, the submissions switch is ABSENT (closed), Fetch is paused, no accounts were created, nothing was sent to anyone.
+Prepared 7 Nov 2026. **Updated 07:25 UTC: the tester migration (`20261230030000`, history 287) is APPLIED and the website tester gate (web `main` `3ce7cf5`) is DEPLOYED.** Nothing has been enabled: the public flag is OFF, the submissions switch is ABSENT (closed), the tester list is EMPTY, no accounts were created, no test event exists, nothing was sent to anyone, Fetch is paused.
 
 ## 1. How testing is kept away from the public
 
@@ -16,10 +16,23 @@ Three independent layers stand between the public and the new feature. Testing n
 
 Sign-in cannot be tested on a local copy of the site: the sign-in check (Turnstile) is bound to the production domain. So signed-in tests run on the real site.
 
-**State today:** both pieces are built, tested and committed LOCALLY, not applied or deployed.
-- Backend `events-testers` @ `1766617`: migration + rollback; isolated suite 112/112 (6 tests + 3 mutation controls + the release-script test); **rolled-back production dry run passed 17/17 on 7 Nov 07:15 UTC, nothing persisted.**
-- Web `events-testers-gate` @ `dd31c98`: full suite 1,638/1,638, tsc and lint clean. Tolerant of the database function being absent, so it can be deployed before or after the migration.
+**State today:** both pieces are LIVE but inactive (no tester is listed and the switch is closed, so the new code path changes nothing for anyone).
+- Backend: migration applied and registered 7 Nov 07:20 UTC; rolled-back dry run 17/17 before and after applying; the full 84-criteria check still 84/84; data checksums and row counts identical before and after; backend `main` `f1e98b2`.
+- Web: `main` `3ce7cf5`; full suite 1,647/1,647 including `tests/event-gate-viewers.test.mjs`, which runs the real gate for every viewer type.
 - Existing "Launch Test Centre" has its own tester list (`launch_testers`); the submissions allowlist is deliberately separate so enrolling someone as a launch tester never silently lets them submit events.
+
+### Who can see what (settles the "can admins preview?" question: they can, and links stay hidden for everyone)
+
+Two separate things were being described together. **Page access** and **links to the page** are different rules:
+
+| Viewer | Public flag OFF (today): can OPEN `/whats-on/add` and the member pages? | Public flag OFF: shown entry-point LINKS? | Public flag ON |
+|---|---|---|---|
+| Signed out | No: 404 | No | Yes (asked to sign in) + links shown |
+| Ordinary signed-in member | **No: 404** | No | Yes + links shown |
+| Allowlisted tester (switch `testers`, listed) | **Yes** (direct address) | No | Yes + links shown |
+| Admin | **Yes: preview** (direct address) | **No** (links never depend on who you are) | Yes + links shown |
+
+Proven by executing the real gate: `tests/event-gate-viewers.test.mjs` (9 tests: signed out, member, tester, admin x flag off/on, tester function missing/erroring/non-boolean). An earlier report line that a signed-in user got a 404 referred to an ordinary member, not an admin. Separately, being allowed to open the page does not mean being allowed to submit: submitting also needs the database switch (`open`, or `testers` and listed; staff may always submit and their submissions only wait in the queue).
 
 ## 2. Already run (no accounts needed)
 
@@ -111,8 +124,8 @@ R18 entry points present exactly once per surface with the flag on, and no link 
 
 ## 7. Approvals requested (nothing proceeds without each)
 
-1. Apply migration `20261230030000_event_submissions_testers.sql` to production (dry run passed 17/17; rollback file ready; adds one function and extends another; touches no data).
-2. Deploy the website gate (`events-testers-gate` @ `dd31c98`) to `main`.
+1. ~~Apply migration `20261230030000_event_submissions_testers.sql`~~ **DONE 7 Nov 07:20 UTC.**
+2. ~~Deploy the website gate~~ **DONE (web `main` `3ce7cf5`).**
 3. Set the switch to `testers` and list the tester account ids (two data rows in `admin_config`); close again afterwards by deleting both rows.
 4. Permission to approve test submissions publicly for minutes, then archive them.
 5. Permission for real email to go to your own test buyer account (R8).
