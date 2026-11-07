@@ -19,7 +19,7 @@ import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MIG = join(ROOT, 'supabase/migrations');
 const ROLL = join(ROOT, 'supabase/rollbacks');
-const M1 = '20261230000000_event_occurrences.sql', M2 = '20261230010000_event_member_submissions.sql', M3 = '20261230020000_event_contributor_self_service.sql';
+const M1 = '20261230000000_event_occurrences.sql', M2 = '20261230010000_event_member_submissions.sql', M3 = '20261230020000_event_contributor_self_service.sql', M4 = '20261230030000_event_submissions_testers.sql';
 const STOP = '20261230000000';
 
 const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
@@ -115,7 +115,7 @@ function build(name: string, mutate?: { file: string; find: string | RegExp; rep
   const before = env.q(`select md5(string_agg(t::text, '|' order by id)) from (select ${LEGACY_COLS} from events) t`);
   const dir = mkdtempSync(join(tmpdir(), 'evocc-'));
   try {
-    for (const f of [M1, M2, M3]) {
+    for (const f of [M1, M2, M3, M4]) {
       let sql = readFileSync(join(MIG, f), 'utf8');
       for (const m of (mutate ?? []).filter((x) => x.file === f)) { const n = sql.replace(m.find as any, m.replace); assert.notEqual(n, sql, `mutation did not apply: ${String(m.find).slice(0, 60)}`); sql = n; }
       const p = join(dir, f); writeFileSync(p, sql);
@@ -823,13 +823,13 @@ describe('existing business / hub permissions are unchanged, and nothing contact
 });
 
 describe('rollback restores the prior schema without losing event rows', () => {
-  test('rolling back all three files in reverse removes every new object, keeps every event row and reserve_ticket_basket works again', () => {
+  test('rolling back all four files in reverse removes every new object, keeps every event row and reserve_ticket_basket works again', () => {
     const b = build('evoccrb'); const e = b.env;
     try {
       e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','open','events')`);
       const s = e.submit('SUB'); e.approve(s.id);
       const nEvents = e.q('select count(*) from events');
-      for (const f of ['20261230020000_event_contributor_self_service', '20261230010000_event_member_submissions', '20261230000000_event_occurrences']) {
+      for (const f of ['20261230030000_event_submissions_testers', '20261230020000_event_contributor_self_service', '20261230010000_event_member_submissions', '20261230000000_event_occurrences']) {
         const o = e.db.rawFile(join(ROLL, `${f}.rollback.sql`)); assert.doesNotMatch(o.replace(/NOTICE.*/g, ''), /ERROR/, `${f}: ${o.slice(0, 800)}`);
       }
       assert.equal(e.q('select count(*) from events'), nEvents, 'no event row lost');
@@ -840,8 +840,89 @@ describe('rollback restores the prior schema without losing event rows', () => {
       assert.doesNotMatch(e.q(`select pg_get_functiondef('public.reserve_ticket_basket(uuid,uuid,jsonb,integer,integer,jsonb,text)'::regprocedure)`) + e.sup(`select prosrc from pg_proc where proname='reserve_ticket_basket'`), /MULTI_PERFORMANCE/);
       assert.ok(okq(e.sup(`insert into events (title, starts_at, status, is_platform_event) values ('after rollback', now(), 'draft', true)`)));
       // and the migrations apply again on top of the rolled-back schema
-      for (const f of [M1, M2, M3]) { const o = e.db.rawFile(join(MIG, f)); assert.doesNotMatch(o.replace(/NOTICE.*/g, ''), /ERROR/, `${f} re-apply`); }
+      for (const f of [M1, M2, M3, M4]) { const o = e.db.rawFile(join(MIG, f)); assert.doesNotMatch(o.replace(/NOTICE.*/g, ''), /ERROR/, `${f} re-apply`); }
     } finally { e.db.drop(); }
+  });
+});
+
+// ── controlled acceptance testing: the tester allowlist (switch value 'testers') ──────────────────────────────────────────────────────────────────────
+describe('tester allowlist: submissions for ONLY the listed accounts, never the public', () => {
+  const val = (w: Who, sql: string) => E.try(w, sql).trim().split('\n').pop();
+  const setSwitch = (v: string | null, list: string | null = null) => {
+    E.sup(`delete from admin_config where key in ('events.member_submissions','events.member_submissions.testers')`);
+    if (v !== null) E.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','${v}','events')`);
+    if (list !== null) E.sup(`insert into admin_config (key,value,category) values ('events.member_submissions.testers','${list}','events')`);
+  };
+  const open = (w: Who) => val(w, `select public.event_submissions_open()`);
+  const tester = (w: Who) => val(w, `select public.event_submissions_tester()`);
+
+  test('closed by default: nobody is a tester and the switch is closed', () => {
+    setSwitch(null);
+    for (const w of ['OTH', 'SUB', 'BIZ', 'ADMIN'] as Who[]) { assert.equal(open(w), 'f', w); assert.equal(tester(w), 'f', w); }
+    setSwitch('closed', U.OTH);   // a list with the switch closed grants nothing
+    assert.equal(tester('OTH'), 'f'); assert.equal(open('OTH'), 'f');
+  });
+  test("'testers': only the listed accounts may submit; everyone else is refused exactly as when closed; staff are unaffected", () => {
+    setSwitch('testers', U.OTH);
+    assert.equal(tester('OTH'), 't'); assert.equal(open('OTH'), 't');
+    for (const w of ['SUB', 'BIZ', 'HUBA', 'MOD'] as Who[]) { assert.equal(tester(w), 'f', w); assert.equal(open(w), 'f', w); }
+    assert.ok(E.submit('OTH').id, 'the listed tester can submit');
+    assert.match(E.submit('SUB').out, /not open yet/, 'an unlisted member is refused');
+    assert.ok(E.submit('ADMIN').id, 'staff may always submit (their submissions only wait in the queue)');
+    E.sup(`delete from event_submissions`);
+    // NULL uid and anon
+    assert.equal(val('nobody', `select public.event_submissions_tester()`), 'f');
+    assert.match(E.try('anon', `select public.event_submissions_tester()`), /permission denied/);
+    assert.match(E.try('anon', `select public.event_submissions_open()`), /permission denied/);
+  });
+  test("'open' is unchanged (everyone) and is not a tester mode; a tester list is ignored unless the value is exactly 'testers'", () => {
+    setSwitch('open', U.OTH);
+    for (const w of ['OTH', 'SUB', 'BIZ'] as Who[]) assert.equal(open(w), 't', w);
+    for (const w of ['OTH', 'SUB'] as Who[]) assert.equal(tester(w), 'f', `${w}: tester only exists in testers mode`);
+    setSwitch('opened', U.OTH); assert.equal(open('OTH'), 'f', "'opened' is not 'open'");
+    setSwitch('tester', U.OTH); assert.equal(open('OTH'), 'f', "'tester' is not 'testers'");
+  });
+  test('the list is read tolerantly: spaces, commas, semicolons, newlines, any case; garbage and partial ids are ignored; the value is trimmed and case-insensitive', () => {
+    setSwitch(' Testers ', `nonsense, ${U.SUB.toUpperCase()} ;\n  ${U.OTH.slice(0, 20)}  ,,  ${U.BIZ}`);
+    assert.equal(tester('SUB'), 't', 'upper-case id'); assert.equal(tester('BIZ'), 't', 'after a comma and spaces');
+    assert.equal(tester('OTH'), 'f', 'a truncated id never matches');
+    setSwitch('testers', `${U.OTH};${U.SUB}`); assert.equal(tester('OTH'), 't'); assert.equal(tester('SUB'), 't');
+    setSwitch('testers', ''); assert.equal(tester('OTH'), 'f', 'an empty list grants nothing');
+    setSwitch('testers', null); assert.equal(tester('OTH'), 'f', 'no list row grants nothing');
+  });
+  test('switching back is immediate: closed again refuses the tester; nothing was published or sent by any of this', () => {
+    const notes0 = E.q(`select count(*) from notification_log`), events0 = E.q(`select count(*) from events`);
+    setSwitch('testers', U.OTH); assert.equal(open('OTH'), 't');
+    setSwitch(null); assert.equal(open('OTH'), 'f'); assert.match(E.submit('OTH').out, /not open yet/);
+    assert.equal(E.q(`select count(*) from notification_log`), notes0, 'no notification was written');
+    assert.equal(E.q(`select count(*) from events`), events0, 'no event was created or published');
+    setSwitch(null);
+  });
+});
+
+// ── the tester-allowlist release script: runs end to end in BOTH modes, satisfies every criterion, and rolls back completely ───────────────────────────
+describe('tester allowlist release script (scripts/events-testers-release.mjs)', () => {
+  test('both modes run on a migrated database, every criterion passes, nothing persists', async () => {
+    const b = build('evtestrel');
+    try {
+      const { build: render } = await import('../../scripts/events-testers-release.mjs');
+      const { judge } = await import('../../scripts/events-release-check.mjs');
+      const expect = JSON.parse(readFileSync(join(MIG, '..', 'production', 'events-release', 'testers-expectations.json'), 'utf8')).expect;
+      const ids = { MEMBER_ID: U.OTH, OTHER_ID: U.SUB, ADMIN_ID: U.ADMIN };
+      const state = () => b.env.q(`select (select count(*) from admin_config where key like 'events.member_submissions%') || '/' || (select count(*) from event_submissions) || '/' || (select count(*) from events) || '/' || (select count(*) from notification_log) || '/' || (select md5(pg_get_functiondef('public.event_submissions_open()'::regprocedure)))`);
+      const s0 = state();
+      for (const postApply of [true, false]) {
+        const sql = render({ ids, postApply });
+        assert.equal((sql.match(/^begin;$/gm) ?? []).length, 1); assert.equal((sql.match(/^rollback;$/gm) ?? []).length, 1); assert.doesNotMatch(sql, /^\s*(commit|abort|savepoint)\b/im);
+        assert.equal(sql.includes('create or replace function public.event_submissions_tester'), !postApply, 'the migration text is inside only in dry-run mode');
+        const out = b.env.sup(sql);
+        const rows = out.split('\n').flatMap((l) => { const m = l.match(/^((?:c\d\d|pre)\.[A-Za-z0-9_.]*)\|(.*)$/); return m ? [{ k: m[1], v: m[2] }] : []; });
+        const bad = judge(rows, expect).filter((r: { ok: boolean }) => !r.ok);
+        assert.deepEqual(bad.map((r: { k: string; got: string }) => `${r.k} => ${String(r.got).slice(0, 100)}`), [], `postApply=${postApply}`);
+        assert.equal(state(), s0, `postApply=${postApply}: rolled back completely`);
+      }
+      assert.throws(() => render({ ids: { ...ids, ADMIN_ID: 'x' } }), /needs a UUID/);
+    } finally { b.env.db.drop(); }
   });
 });
 
@@ -926,6 +1007,12 @@ describe('mutation controls (each weakens one guard and shows the probe catches 
     (e) => { e.sup(`update events set status='draft' where id='${E_BIZ}'`); return e.try('anon', `select count(*) from events where id='${E_BIZ}'`).trim().split('\n').pop() === '0'; });
   run('a contributor can cancel an event that has ticket buyers', [{ file: M3, find: 'if public.event_has_ticket_buyers(p_event) then', replace: 'if false then' }],
     (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','open','events')`); const { eid } = e.community('SUB', [44]); e.sup(`insert into event_ticket_types (id, event_id, name, price_pence, quantity_available, per_order_max) values ('${id(0xb1)}','${eid}','Adult',100,5,5)`); e.sup(`select public.reserve_ticket_basket('${eid}','${U.OTH}','[{"ticket_type_id":"${id(0xb1)}","token_hash":"${'f'.repeat(40)}"}]'::jsonb,100,0,'{}'::jsonb,'req-buyers-0002')`); return /bought tickets/.test(e.do('SUB', `select public.report_event_cancelled('${eid}','x')`)); });
+  run('the allowlist is ignored: every signed-in member counts as a tester in testers mode', [{ file: M4, find: "and lower(tok)::uuid = auth.uid())", replace: "and true)" }],
+    (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','testers','events'), ('events.member_submissions.testers','${U.OTH}','events')`); return e.try('SUB', `select public.event_submissions_tester()`).trim().split('\n').pop() === 'f'; });
+  run('the mode check is removed: a listed account is a tester even while the switch is closed', [{ file: M4, find: "= 'testers'\n     and exists", replace: "is not null\n     and exists" }],
+    (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions.testers','${U.OTH}','events')`); return e.try('OTH', `select public.event_submissions_open()`).trim().split('\n').pop() === 'f'; });
+  run('event_submissions_open ignores the tester allowlist', [{ file: M4, find: "      or public.event_submissions_tester()", replace: "" }],
+    (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','testers','events'), ('events.member_submissions.testers','${U.OTH}','events')`); return e.try('OTH', `select public.event_submissions_open()`).trim().split('\n').pop() === 't'; });
   run('clients can forge is_dated_run', [{ file: M2, find: '  new.is_dated_run := old.is_dated_run;\n  if not public.attribution_staff()', replace: '  if not public.attribution_staff()' }],
     (e) => { e.do('BIZ', `update events set is_dated_run = true where id='${E_BIZ}'`); return e.q(`select is_dated_run from events where id='${E_BIZ}'`) === 'f'; });
   run('contributor check ignores who the contributor is', [{ file: M3, find: '       and s.event_id = e.id and s.submitter_id = auth.uid());', replace: '       and s.event_id = e.id);' }],

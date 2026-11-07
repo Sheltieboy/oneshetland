@@ -1,0 +1,22 @@
+{
+ "_comment": "Acceptance criteria for scripts/events-testers-release.mjs (tester allowlist, migration 20261230030000). Run against production the switch must be ABSENT beforehand (pre.switch_rows = 0).",
+ "expect": {
+  "c01.tester_fn_acl": "^false\\|true\\|true$",
+  "c02.open_fn_acl_unchanged": "^false\\|true\\|true$",
+  "c03.anon_cannot_call_tester": "^ERR 42501: permission denied",
+  "c04.closed_member": "^false\\|false$",
+  "c05.set_testers": "^OK$",
+  "c06.listed_tester": "^true\\|true$",
+  "c07.unlisted_member": "^false\\|false$",
+  "c08.staff_not_listed": "^false\\|false$",
+  "c09.listed_tester_can_submit": "^[0-9a-f-]{36}$",
+  "c10.unlisted_member_refused": "^ERR P0001: Event submissions are not open yet",
+  "c11.staff_may_still_submit": "^[0-9a-f-]{36}$",
+  "c12.set_open": "^OK$",
+  "c13.open_unchanged": "^false\\|true$",
+  "c14.set_closed": "^OK$",
+  "c15.closed_again_refused": "^ERR P0001: Event submissions are not open yet",
+  "c16.nothing_published": "^0\\|0\\|0$",
+  "pre.switch_rows": "^0$"
+ }
+}

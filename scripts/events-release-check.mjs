@@ -3,6 +3,7 @@
  * events-release-check.mjs — judge the output of supabase/production/events-release/post-apply-checks.sql against post-apply-expectations.json.
  *   supabase db query --linked -f <rendered post-apply-checks.sql> -o json > result.json
  *   node scripts/events-release-check.mjs result.json            (exit 0 = every criterion passed)
+ *   node scripts/events-release-check.mjs result.json --expect <criteria.json>   (a different criteria file, e.g. testers-expectations.json)
  * Reads files only; never touches the database.
  */
 import { readFileSync } from 'node:fs';
@@ -10,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const EXPECT = JSON.parse(readFileSync(join(here, '..', 'supabase/production/events-release/post-apply-expectations.json'), 'utf8')).expect;
+const expectFile = (() => { const i = process.argv.indexOf('--expect'); return i > 0 ? process.argv[i + 1] : null; })();
+export const EXPECT = JSON.parse(readFileSync(expectFile ?? join(here, '..', 'supabase/production/events-release/post-apply-expectations.json'), 'utf8')).expect;
 
 /** Accepts the CLI's JSON ({"rows":[{k,v}]}, possibly preceded by log text) or a plain array of {k,v}. */
 export function parseRows(text) {
