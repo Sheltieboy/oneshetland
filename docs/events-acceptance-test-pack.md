@@ -137,3 +137,9 @@ R18 entry points present exactly once per surface with the flag on, and no link 
 - Point-in-time recovery is still not enabled (daily backups only; the latest, 03:06 UTC on 7 Nov, is after the migrations).
 - Real signed-in behaviour has only been proven against mocks and rolled-back database runs: that is exactly what Parts A to C close. No launch decision should be taken before they pass.
 - Every other item found during preparation was fixed or is listed above; none is a launch blocker today.
+
+---
+
+## Open issue to resolve BEFORE public activation (recorded 7 Nov)
+
+**Staff whole-event cancellation leaves no audit trail.** Staff cancel/restore of a whole community event (Admin → Community events) updates `events.status` directly and writes nothing to `event_change_log`. Only staff cancel/restore of a single performance (via `admin_set_occurrence_status`) and contributor actions are logged. Fix needs a small migration (a staff RPC that updates the event and logs the action, or a trigger). Related: staff cannot attach a private note when cancelling a date (the existing note column is public).
