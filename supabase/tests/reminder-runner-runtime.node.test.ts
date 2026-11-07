@@ -36,7 +36,7 @@ const FAMILIES: Family[] = [
     seed: (d) => d.table('book_bookings').push({ id: 'b1', customer_id: 'u1', business_id: 'biz', status: 'confirmed', reminder_1h_sent_at: null, reminder_24h_sent_at: null, starts_at: at(600) }),
     stamped: (d) => d.table('book_bookings')[0].reminder_24h_sent_at != null },
   { name: 'event reminder (3 ticket holders)', counter: 'event_24h', users: ['h1', 'h2', 'h3'],
-    seed: (d) => { d.table('events').push({ id: 'e1', title: 'Up Helly Aa', starts_at: at(600), reminder_sent_at: null }); for (const h of ['h1', 'h2', 'h3']) d.table('event_tickets').push({ event_id: 'e1', holder_id: h, status: 'valid' }); },
+    seed: (d) => { d.table('events').push({ id: 'e1', title: 'Up Helly Aa', starts_at: at(600), reminder_sent_at: null, status: 'published' }); for (const h of ['h1', 'h2', 'h3']) d.table('event_tickets').push({ event_id: 'e1', holder_id: h, status: 'valid' }); },
     stamped: (d) => d.table('events')[0].reminder_sent_at != null },
   { name: 'daily digest: Wird o\' da day', counter: 'daily_wird', users: ['u1'],
     seed: (d) => d.table('spik_dictionary').push({ id: 1, word: 'peerie', short_meaning: 'small', word_status: 'approved' }),
@@ -70,6 +70,16 @@ beforeEach(async () => { await clearLedger(); mock.timers.enable({ apis: ['Date'
 afterEach(() => { expo.restore(); mock.timers.reset(); });
 
 test('0 the runner refuses an unauthenticated call (cron secret) before touching anything', async () => { db = makeDb(); assert.equal(await R.runUnauthorised(), 401); assert.equal(db.calls.rpc.length, 0); });
+
+test('0b a CANCELLED, postponed or draft event never sends the "Event tomorrow" reminder, even with valid tickets, and is left unstamped', async () => {
+  const f = FAMILIES.find((x) => x.counter === 'event_24h')!;
+  for (const status of ['cancelled', 'postponed', 'draft']) {
+    setup(f); db.table('events')[0].status = status;
+    const r = await R.run(db);
+    assert.equal(r.status, 200); assert.equal(expo.sent.length, 0, `${status}: nothing may be sent`); assert.equal(r.json.event_24h ?? 0, 0, status);
+    assert.equal(db.table('events')[0].reminder_sent_at, null, `${status}: not stamped, so a restored event is still reminded`);
+  }
+});
 
 for (const f of FAMILIES) describe(f.name, () => {
   test('A accepted: pushed through the real sender, counted and stamped', async () => {

@@ -263,6 +263,7 @@ serve(async (req) => {
     const { data: events } = await svc
       .from('events')
       .select('id, title, starts_at')
+      .eq('status', 'published')          // a cancelled / postponed / draft event must never send "Event tomorrow"
       .is('reminder_sent_at', null)
       .gt('starts_at', nowIso)
       .lte('starts_at', plus(24 * 60));

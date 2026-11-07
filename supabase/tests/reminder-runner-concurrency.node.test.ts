@@ -25,7 +25,7 @@ before(async () => { await resetLedgerDb(); R = await loadReminderRunner(); Obje
 beforeEach(async () => { await clearLedger(); mock.timers.enable({ apis: ['Date'], now: NOW }); expo = mockExpo(); expo.install(); });
 afterEach(() => { expo.restore(); mock.timers.reset(); });
 
-const eventDb = (holders: string[]) => { const d = makeDb(); d.table('events').push({ id: 'e1', title: 'Up Helly Aa', starts_at: at(600), reminder_sent_at: null }); for (const h of holders) { d.table('event_tickets').push({ event_id: 'e1', holder_id: h, status: 'valid' }); device(d, h); } return d; };
+const eventDb = (holders: string[]) => { const d = makeDb(); d.table('events').push({ id: 'e1', title: 'Up Helly Aa', starts_at: at(600), reminder_sent_at: null, status: 'published' }); for (const h of holders) { d.table('event_tickets').push({ event_id: 'e1', holder_id: h, status: 'valid' }); device(d, h); } return d; };
 const bookingDb = (mins = 60, n = 1) => { const d = makeDb(); for (let i = 0; i < n; i++) { d.table('book_bookings').push({ id: `b${i}`, customer_id: `c${i}`, business_id: 'biz', status: 'confirmed', reminder_1h_sent_at: null, reminder_24h_sent_at: null, starts_at: at(mins) }); device(d, `c${i}`); } return d; };
 
 describe('simultaneous runner executions send each reminder once', () => {
@@ -89,7 +89,7 @@ describe('partial event delivery and recovery (the persistent ledger)', () => {
 
 describe('deadlines: nothing is sent after the reminder stops being relevant', () => {
   test('a booking that has started, an event that has begun and a delivery that has expired are not reminded; a claim at the deadline is refused by the database itself', async () => {
-    const d = bookingDb(-5, 1); d.table('events').push({ id: 'e1', title: 'x', starts_at: at(-5), reminder_sent_at: null }); await R.run(d); assert.equal(expo.sent.length, 0);
+    const d = bookingDb(-5, 1); d.table('events').push({ id: 'e1', title: 'x', starts_at: at(-5), reminder_sent_at: null, status: 'published' }); await R.run(d); assert.equal(expo.sent.length, 0);
     const out = JSON.parse(await psql(`select jsonb_agg(to_jsonb(t)) from reminder_claim_many('event_24h','e2', array['${uuidOf('z')}']::uuid[], 600, '${at(-1)}'::timestamptz, 12, null, '${at(0)}'::timestamptz) t`));
     assert.equal(out[0].r_state, 'expired'); assert.equal(out[0].r_token, null); assert.equal((await ledgerRows("subject_id = 'e2'")).length, 0, 'no row is even created past the deadline');
   });

@@ -51,3 +51,10 @@ An earlier version of this section said the recipe chain was undeployed and that
 - `supabase/production/edge-function-manifest.json` (social-composer v28, 12a73fca...) is STALE for these functions, and `origin/main` is far behind production. Do not use either to decide what is deployed; download and hash.
 - The work was therefore redone on `events-phase2-social` (from 5877114) and removed from this branch.
 - Regular roundup: it lists `regular_activities` sessions through the `regular_activities_listing` function, with its own cancelled/break handling, and never touches `events` or `event_occurrences`, so dated-run logic does not apply to it; only its organiser wording was corrected.
+
+
+## Added 7 Nov 2026: cancelled events keep a public page; reminder-runner fix
+
+- **Migration 3 now adds `events_cancelled_public_read`** (a cancelled event stays openable by link; `is_hidden` stays true so every list that filters on it or on `status='published'` is unchanged) and a guard that a contributor cannot cancel an event with live OneShetland ticket buyers. Two already-cancelled TEST events (a 'DEMO' and a 'ZZ TEST' acceptance event, September) become openable by link; neither appears in any list.
+- **`reminder-runner` (Edge Function) fix, independent of the migrations:** the 24h event reminder had no status filter, so a cancelled event with valid tickets would send 'Event tomorrow'. It now requires `status='published'` (test `0b` in reminder-runner-runtime). Deploy it with the other Edge Function (ticket-intent message) step; it is safe before or after the migrations. Not deployed.
+- **Follow-ups (not blockers):** mobile `fetchHubEvents`/`fetchPendingHubEvents` have no status filter, so the (unpublished) app's public hub screens would show cancelled hub events; add `status='published'`. Optionally add `e.status='published'` to `search_site` as defence in depth, and let `event_updates_public_read` / `ticket_types_public_read` read cancelled events if an organiser's cancellation note should show on the cancelled page.
