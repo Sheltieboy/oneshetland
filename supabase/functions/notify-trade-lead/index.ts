@@ -2,6 +2,8 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendUserPush } from '../_shared/send-push.ts';
 import { enforceRateLimit, userSubject } from '../_shared/rate-limit.ts';
+import { sendEmail } from '../_shared/send-email.ts';
+import { SITE_URL, emailAllowed, generalLocation, isTestJob, safeSummary, tradeLabel } from '../_shared/trade-email.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -72,7 +74,7 @@ serve(async (req) => {
 
     const { data: brief } = await svc
       .from('trade_briefs')
-      .select('id, title, trades, scale, urgency, location_text, author_id')
+      .select('id, title, description, trades, scale, urgency, location_text, author_id')
       .eq('id', brief_id)
       .single();
     if (!brief) return json({ ok: true, sent: 0 });
@@ -83,11 +85,14 @@ serve(async (req) => {
     // legitimate is turned away.
     if (brief.author_id !== user.id) return json({ error: 'Forbidden' }, 403);
 
+    // Seed/test jobs never notify anybody, by push or email.
+    if (isTestJob(brief.title)) return json({ ok: true, sent: 0, emailed: 0, reason: 'test_job' });
+
     // Only those who haven't already answered — re-running this must not
     // pester somebody who already said no.
     const { data: matches } = await svc
       .from('trade_brief_matches')
-      .select('id, business_id, status, local_businesses(owner_id, name)')
+      .select('id, business_id, status, lead_email_at, local_businesses(owner_id, name)')
       .eq('brief_id', brief_id)
       .eq('status', 'sent');
 
@@ -113,7 +118,44 @@ serve(async (req) => {
       if (result.status === 'sent') sent++;
     }
 
-    return json({ ok: true, sent });
+    // ── Email: the same event, a second channel. The only way a website-only trade hears about a job. Dedupe: one email per match
+    // (lead_email_at is claimed BEFORE sending and released if the send fails, so a retry can try again but never double-send).
+    let emailed = 0; let emailFailed = 0;
+    for (const m of (matches ?? []) as Record<string, unknown>[]) {
+      if (m.lead_email_at) continue;
+      const raw = m.local_businesses;
+      const biz = (Array.isArray(raw) ? raw[0] : raw) as { owner_id?: string; name?: string } | null;
+      const ownerId = biz?.owner_id;
+      if (!ownerId) continue;
+      try {
+        // Re-verify the paid entitlement at send time (fail closed: an error or false means no email).
+        const { data: entitled, error: eErr } = await svc.rpc('business_meets_tier', { p_business_id: m.business_id, p_required_tier: 'pro' });
+        if (eErr || entitled !== true) continue;
+        const { data: prefs } = await svc.from('notification_preferences').select('enabled, business_enabled').eq('user_id', ownerId).maybeSingle();
+        if (!emailAllowed(prefs, 'business')) continue;
+        const { data: u } = await svc.auth.admin.getUserById(ownerId);
+        const to = u?.user?.email;
+        if (!to) continue;
+        const { data: claimed } = await svc.from('trade_brief_matches').update({ lead_email_at: new Date().toISOString() }).eq('id', m.id).is('lead_email_at', null).select('id');
+        if (!claimed || claimed.length === 0) continue;                       // another call got there first
+        const res = await sendEmail(svc, {
+          templateKey: 'trade.lead_waiting', recipientEmail: to, recipientId: ownerId,
+          variables: {
+            business_name: biz?.name ?? 'your business', job_type: tradeLabel(brief.trades as string[]), location: generalLocation(brief.location_text),
+            summary: safeSummary(brief.description), leads_url: `${SITE_URL}/business/${m.business_id}/manage/leads`,
+          },
+          metadata: { kind: 'trade_lead', match_id: m.id, brief_id: brief.id },
+        });
+        if (res.ok && !res.skipped) emailed++;
+        else { emailFailed++; await svc.from('trade_brief_matches').update({ lead_email_at: null }).eq('id', m.id); }   // not delivered: do not claim it was
+      } catch (e) {
+        emailFailed++;
+        console.error('[notify-trade-lead] email failed', e);
+        await svc.from('trade_brief_matches').update({ lead_email_at: null }).eq('id', m.id);
+      }
+    }
+
+    return json({ ok: true, sent, emailed, email_failed: emailFailed });
   } catch (err) {
     console.error('[notify-trade-lead]', err);
     // Never fail loudly: the brief is already posted and visible in the app.
