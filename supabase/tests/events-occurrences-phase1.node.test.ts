@@ -845,6 +845,46 @@ describe('rollback restores the prior schema without losing event rows', () => {
   });
 });
 
+// ── the production release script: post-apply-checks.sql must run end to end on a migrated database, satisfy every acceptance criterion, and leave NOTHING behind ──
+describe('release verification script (supabase/production/events-release)', () => {
+  const REL = join(MIG, '..', 'production', 'events-release');
+  const TOKENS: Record<string, string> = { '@@ADMIN_ID@@': U.ADMIN, '@@MEMBER_ID@@': U.OTH, '@@BUSINESS_OWNER_ID@@': U.BIZ, '@@BUSINESS_ID@@': BZ, '@@BUSINESS_EVENT_ID@@': E_BIZ,
+    '@@PLAIN_PLATFORM_EVENT_ID@@': E_PLAT, '@@TICKETED_EVENT_ID@@': E_BIZ_TICKETED, '@@TICKET_TYPE_ID@@': TT };
+  // the throwaway database differs from production in a few harmless ways (no supabase_migrations table, no Fetch switch row, default grants)
+  const RELAX: Record<string, string> = {
+    'post.migrations_registered_20261230': '.*',
+    'post.reserve_shape': '\\|true\\|\\{search_path=public\\}\\|jsonb\\|multi=true\\|keyshare=true$',
+    'post.fetch_operations': '^(paused|\\(absent\\))$',
+    't25.fetch_still_paused': '^(paused|\\(absent\\))$',
+  };
+  const render = () => { let sql = readFileSync(join(REL, 'post-apply-checks.sql'), 'utf8'); for (const [k, v] of Object.entries(TOKENS)) sql = sql.split(k).join(v); assert.doesNotMatch(sql, /@@/, 'every token is rendered'); return sql; };
+  const rowsOf = (out: string) => out.split('\n').flatMap((l) => { const m = l.match(/^((?:t\d|post\.)[A-Za-z0-9_.]*)\|(.*)$/); return m ? [{ k: m[1], v: m[2] }] : []; });
+
+  test('it runs end to end, every acceptance criterion passes, and it rolls back completely', async () => {
+    const b = build('evrelchk');
+    try {
+      const { judge, EXPECT } = await import('../../scripts/events-release-check.mjs');
+      const sql = render();
+      assert.equal((sql.match(/^begin;$/gm) ?? []).length, 1); assert.equal((sql.match(/^rollback;$/gm) ?? []).length, 1); assert.doesNotMatch(sql, /\b(commit|abort|savepoint)\b/i);
+      const state = () => b.env.q(`select (select md5(string_agg(t::text, '|' order by id)) from (select ${LEGACY_COLS} from events) t) || '/' || (select count(*) from events) || '/' || (select count(*) from event_occurrences) || '/' || (select count(*) from event_submissions) || '/' || (select count(*) from event_change_requests) || '/' || (select count(*) from event_ticket_orders) || '/' || (select count(*) from admin_config where key='events.member_submissions') || '/' || (select count(*) from event_ticket_types)`);
+      const s0 = state();
+      const out = b.env.sup(sql);
+      const rows = rowsOf(out);
+      const results = judge(rows, EXPECT, RELAX);
+      const bad = results.filter((r: { ok: boolean }) => !r.ok);
+      assert.deepEqual(bad.map((r: { k: string; got: string }) => `${r.k} => ${String(r.got).slice(0, 120)}`), [], 'every criterion must pass');
+      assert.equal(results.length, Object.keys(EXPECT).length);
+      assert.equal(state(), s0, 'the script rolled back completely: nothing persisted');
+      // the checker itself is not a rubber stamp: break each of three guarantees in the rows and it must notice
+      for (const [k, v] of [['post.new_functions_anon_executable', 'submit_event_submission'], ['t28e.contributor_cancel_refused_with_buyers', 'OK'], ['t27c.published_list_leaves_it_out', '1']]) {
+        const broken = judge(rows.map((r: { k: string; v: string }) => (r.k === k ? { k, v } : r)), EXPECT, RELAX);
+        assert.ok(broken.some((r: { k: string; ok: boolean }) => r.k === k && !r.ok), `${k} must fail when broken`);
+      }
+      assert.ok(judge(rows.filter((r: { k: string }) => r.k !== 't22.no_notifications_written'), EXPECT, RELAX).some((r: { k: string; ok: boolean }) => r.k === 't22.no_notifications_written' && !r.ok), 'a missing key fails');
+    } finally { b.env.db.drop(); }
+  });
+});
+
 // ── mutation controls: weaken ONE guard, rebuild, and the same probe must now FAIL ───────────────────────────────────────────────────────────────
 describe('mutation controls (each weakens one guard and shows the probe catches it)', () => {
   const run = (name: string, mut: Parameters<typeof build>[1], probe: (e: Env) => boolean | Promise<boolean>) => test(`MUTATION ${name}`, async () => {
