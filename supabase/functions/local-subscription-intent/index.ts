@@ -53,7 +53,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { business_id, tier, period = 'monthly', client_request_id, use_saved_card = true } = await req.json();
+    const { business_id, tier, period = 'monthly', client_request_id, use_saved_card = true, launch50 = false } = await req.json();
     if (!business_id || !['pro', 'premium'].includes(tier)) {
       return json({ error: 'business_id + tier (pro|premium) required' }, 400);
     }
@@ -222,8 +222,36 @@ serve(async (req) => {
       }
     }
 
+    // ── OneShetland Launch 50 (opt-in; inert unless the client asks AND the owner holds a live reservation) ──────────────────────────
+    // The discount is a Stripe coupon on an ordinary Pro/Premium subscription. Everything fails CLOSED: a missing/mismatched coupon, a
+    // missing or expired reservation, or annual billing means NO discounted subscription (the owner is told; nothing is charged, and
+    // we never fall back to charging the standard price under the Launch 50 name).
+    let launch50CouponId: string | null = null;
+    if (launch50 === true) {
+      const failL50 = async (code: string, error: string) => {
+        await svc.rpc('settle_subscription_attempt', { p_request_id: client_request_id, p_status: 'failed', p_result: { reason: code } });
+        return json({ error, code }, 409);
+      };
+      if (period_norm !== 'monthly') return await failL50('LAUNCH50_MONTHLY_ONLY', 'OneShetland Launch 50 is monthly billing only.');
+      const { data: cfgRow } = await svc.from('admin_config').select('value').eq('key', `stripe.coupon.launch50_${tier}`).maybeSingle();
+      const couponId = (cfgRow?.value as string | undefined) ?? null;
+      if (!couponId) return await failL50('LAUNCH50_UNAVAILABLE', 'OneShetland Launch 50 is not available right now. Nothing has been charged.');
+      const wantOff = tier === 'pro' ? 300 : 700;          // £12 -> £9 and £29 -> £22, for 12 months
+      let couponOk = false;
+      try {
+        const c = await stripe.coupons.retrieve(couponId);
+        couponOk = c.valid === true && c.amount_off === wantOff && c.currency === 'gbp' && c.duration === 'repeating' && c.duration_in_months === 12;
+      } catch { couponOk = false; }
+      if (!couponOk) return await failL50('LAUNCH50_UNAVAILABLE', 'OneShetland Launch 50 is not available right now. Nothing has been charged.');
+      const { data: held } = await svc.rpc('launch50_begin_checkout', { p_business: business_id, p_tier: tier, p_owner: user.id });
+      if (!(held as { ok?: boolean } | null)?.ok) return await failL50('LAUNCH50_NO_PLACE', 'Your Launch 50 place has expired or is not available. Please start again.');
+      launch50CouponId = couponId;
+    }
+
     // 2. Create an *incomplete* subscription so we get a PaymentIntent to inspect.
-    const subscription = await stripe.subscriptions.create({
+    let subscription: Stripe.Subscription;
+    try {
+    subscription = await stripe.subscriptions.create({
       customer:         customerId,
       // Pro carries the metered bookings price as a second item. Without it
       // there is nothing for meter-bookings to report usage against.
@@ -232,14 +260,21 @@ serve(async (req) => {
       payment_behavior: 'default_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },
       expand:           ['latest_invoice.payment_intent'],
-      metadata:         { business_id, owner_id: user.id, tier, period: annual ? 'annual' : 'monthly', type: 'local_subscription' },
+      ...(launch50CouponId ? { discounts: [{ coupon: launch50CouponId }] } : {}),
+      metadata:         { business_id, owner_id: user.id, tier, period: annual ? 'annual' : 'monthly', type: 'local_subscription', ...(launch50CouponId ? { launch50: '1' } : {}) },
     }, {
       // Deterministic, derived from the authoritative identities plus the
       // attempt reference. The belt to the registry's braces: if this request
       // is retried at the HTTP layer after Stripe already created the
       // subscription, Stripe returns the SAME one rather than a second.
-      idempotencyKey: `local-sub-${user.id}-${business_id}-${tier}-${period_norm}-${client_request_id}`,
+      idempotencyKey: `local-sub-${user.id}-${business_id}-${tier}-${period_norm}-${client_request_id}${launch50CouponId ? '-l50' : ''}`,
     });
+    } catch (createErr) {
+      // The held Launch 50 place goes back the moment the subscription could not be created.
+      if (launch50CouponId) await svc.rpc('launch50_abort_checkout', { p_business: business_id });
+      throw createErr;
+    }
+    if (launch50CouponId) await svc.rpc('launch50_attach_subscription', { p_business: business_id, p_subscription_id: subscription.id });
 
     // Recorded BEFORE the first payment is confirmed. If this request dies
     // mid-confirm, the retry finds the subscription here and resumes it.

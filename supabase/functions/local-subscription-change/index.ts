@@ -69,6 +69,11 @@ serve(async (req) => {
       .single();
 
     if (!business || business.owner_id !== user.id) return json({ error: 'Forbidden' }, 403);
+    // OneShetland Launch 50: plan changes are deferred, because the founding discount must keep its original end date and a coupon is plan-specific.
+    const { data: l50Locked } = await svc.rpc('launch50_blocks_plan_change', { p_business: business_id });
+    if (l50Locked === true) {
+      return json({ error: 'Plan changes are not available during OneShetland Launch 50 yet. You can cancel from your billing page.', code: 'LAUNCH50_PLAN_LOCKED' }, 409);
+    }
     if (!business.stripe_subscription_id) {
       return json({
         error: 'No active subscription. Use createSubscriptionIntent for first-time subscribers.',

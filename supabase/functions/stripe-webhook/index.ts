@@ -749,6 +749,39 @@ serve(async (req) => {
 
         console.log(`[stripe-webhook] subscription ${subId} (${status}): ${JSON.stringify(applied)}`);
 
+        // ── OneShetland Launch 50 (inert unless the subscription carries our launch50 metadata) ─────────────────────────────────────────
+        // Activation is idempotent in the database, so a retried or replayed event changes nothing. The discount is VERIFIED against Stripe
+        // (the coupon on the subscription must be the configured one) before a place is marked active; anything else is logged and refused.
+        if (meta.launch50 === '1' && metaBusiness) {
+          try {
+            if (isActive && (tier === 'pro' || tier === 'premium')) {
+              const expected = await getConfig(supabase, `stripe.coupon.launch50_${tier}`, null);
+              const r = await fetch(`https://api.stripe.com/v1/subscriptions/${encodeURIComponent(subId)}`, {
+                headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' },
+              });
+              const live = r.ok ? await r.json() as { discount?: { coupon?: { id?: string }; end?: number | null; start?: number } | null; start_date?: number } : null;
+              const couponId = live?.discount?.coupon?.id ?? null;
+              if (expected && couponId === expected) {
+                const endSec = typeof live?.discount?.end === 'number' ? live.discount.end : null;
+                const startSec = typeof live?.discount?.start === 'number' ? live.discount.start : (live?.start_date ?? Math.floor(Date.now() / 1000));
+                const ends = endSec ? new Date(endSec * 1000) : (() => { const d = new Date(startSec * 1000); d.setUTCMonth(d.getUTCMonth() + 12); return d; })();
+                const { data: act, error: actErr } = await supabase.rpc('launch50_activate', {
+                  p_business: metaBusiness, p_subscription_id: subId, p_tier: tier, p_discount_ends_at: ends.toISOString(),
+                });
+                if (actErr) throw actErr;
+                console.log(`[stripe-webhook] launch50 activate ${subId}: ${JSON.stringify(act)}`);
+              } else {
+                console.error(`[stripe-webhook] launch50 subscription ${subId} has coupon ${couponId ?? '(none)'}, expected ${expected ?? '(unset)'} — place NOT activated`);
+              }
+            } else if (['canceled', 'incomplete_expired', 'unpaid'].includes(status)) {
+              await supabase.rpc('launch50_subscription_ended', { p_subscription_id: subId });
+            }
+          } catch (e) {
+            // Never fail the webhook over this: Stripe retries, and activation/ending are idempotent.
+            console.error('[stripe-webhook] launch50 hook failed', e);
+          }
+        }
+
         // Nothing changed hands — no notification is owed either.
         if (!applied?.applied) break;
         const nextTier = String(applied.tier_after ?? 'free');
@@ -821,6 +854,8 @@ serve(async (req) => {
           }
         }
         console.log(`[stripe-webhook] subscription ${subId} deleted: ${JSON.stringify(retired)}`);
+        // Launch 50: a cancelled paid membership keeps counting ('ended'); one that never started frees its place. Idempotent, never fatal.
+        try { await supabase.rpc('launch50_subscription_ended', { p_subscription_id: subId }); } catch (e) { console.error('[stripe-webhook] launch50 end hook failed', e); }
         if (!retired?.applied) break;
         const bizDel = {
           id:                String(retired.business_id ?? ''),

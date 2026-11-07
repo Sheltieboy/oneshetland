@@ -87,6 +87,10 @@ verify_jwt = false
 [functions.stripe-webhook]
 verify_jwt = false
 
+# daily scheduler call (x-cron-secret, no JWT), like reminder-runner; not scheduled until Launch 50 opens
+[functions.launch50-reminders]
+verify_jwt = false
+
 
 # ── Public by nature ─────────────────────────────────────────────────────────
 #
