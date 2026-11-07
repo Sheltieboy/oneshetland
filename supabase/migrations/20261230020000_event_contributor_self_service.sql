@@ -697,4 +697,26 @@ begin
 end;
 $function$;
 
+-- ── the contributor can always READ their own community event, even when it is hidden ─────────────────────────────────────────────────────────────────
+-- Cancelling an event sets status 'cancelled', and the existing events trigger hides every non-published row. Without this, the person who submitted the
+-- event could no longer see it, its dates or its history (found while rendering the contributor screens). It grants READ of the contributor's OWN event
+-- only: no write, no other event, nothing for anyone else. The occurrence read policy asks the events policies, so the dates come with it.
+create or replace function public.is_my_community_event(p_event uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select auth.uid() is not null and exists (
+    select 1 from public.events e join public.event_submissions s on s.id = e.submission_id
+     where e.id = p_event and e.is_platform_event and e.source = 'community_submission' and s.event_id = e.id and s.submitter_id = auth.uid());
+$$;
+revoke all on function public.is_my_community_event(uuid) from public, anon;
+grant execute on function public.is_my_community_event(uuid) to authenticated, service_role;
+create policy events_contributor_read on public.events for select to authenticated using (public.is_my_community_event(id));
+
+-- Lets the change form say in advance whether the caller's changes go live straight away (the trust table itself stays staff-only).
+create or replace function public.my_event_organiser_trusted() returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select auth.uid() is not null and coalesce((select t.trusted from public.event_organiser_trust t where t.user_id = auth.uid()), false);
+$$;
+revoke all on function public.my_event_organiser_trusted() from public, anon;
+grant execute on function public.my_event_organiser_trusted() to authenticated, service_role;
+
 commit;

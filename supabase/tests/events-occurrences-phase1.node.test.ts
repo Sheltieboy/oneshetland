@@ -146,7 +146,9 @@ describe('existing rows and schema', () => {
   });
   test('the attribution CHECK and the events policies are unchanged', () => {
     assert.match(E.q(`select pg_get_constraintdef(oid) from pg_constraint where conname='events_attribution_exclusive'`), /is_platform_event AND \(organiser_business_id IS NULL\) AND \(organiser_hub_id IS NULL\)/);
-    assert.equal(E.q(`select count(*) from pg_policies where tablename='events'`), '5');
+    // the five original policies are untouched; the only addition is the contributor's read of their OWN community event (migration 3)
+    assert.equal(E.q(`select count(*) from pg_policies where tablename='events' and policyname <> 'events_contributor_read'`), '5');
+    assert.equal(E.q(`select string_agg(policyname,',') from pg_policies where tablename='events' and policyname = 'events_contributor_read'`), 'events_contributor_read');
   });
   test('an ordinary member cannot insert an event directly, nor an occurrence, nor a submission row', () => {
     assert.ok(failed(E.try('OTH', `insert into events (organiser_user_id, title, starts_at, status, is_platform_event) values ('${U.OTH}','x',now()+interval '1 day','published', true)`)));
@@ -670,6 +672,29 @@ describe('contributor self-service', () => {
     assert.match(E.do('ADMIN', `select public.admin_review_event_change('${cid}','approve',null)`), /sells tickets/);
     assert.equal(E.q(`select count(*) from event_occurrences where event_id='${e2}'`), '0');
   });
+  test('the contributor can still READ their own event, its dates and history after it is cancelled and hidden; nobody else can', () => {
+    const { eid } = E.community('SUB', [40, 41]);
+    assert.ok(okq(E.do('SUB', `select public.report_event_cancelled('${eid}','dry')`)));
+    assert.equal(E.q(`select is_hidden from events where id='${eid}'`), 't', 'cancelling hides the event for the public');
+    assert.equal(E.try('SUB', `select count(*) from events where id='${eid}'`).trim().split('\n').pop(), '1', 'the contributor still sees it');
+    assert.equal(E.try('SUB', `select count(*) from event_occurrences where event_id='${eid}'`).trim().split('\n').pop(), '2', 'and its dates');
+    for (const w of ['OTH', 'BIZ', 'HUBA', 'BIZ2', 'anon'] as Who[]) assert.equal(E.try(w, `select count(*) from events where id='${eid}'`).trim().split('\n').pop(), '0', `${w} must not see it`);
+    assert.equal(E.try('SUB', `select count(*) from events where id='${E_PLAT}' and is_hidden`).trim().split('\n').pop(), '0');
+    // read only: the contributor still cannot write the event or its dates
+    E.try('SUB', `update events set title='hijack' where id='${eid}'`);
+    assert.notEqual(E.q(`select title from events where id='${eid}'`), 'hijack');
+    assert.ok(failed(E.try('SUB', `insert into event_occurrences (event_id, starts_at) values ('${eid}', now() + interval '70 days')`)));
+    assert.match(E.try('anon', `select public.is_my_community_event('${eid}')`), /permission denied/);
+  });
+  test('my_event_organiser_trusted tells the caller about their own trust only', () => {
+    assert.equal(E.try('TRU', `select public.my_event_organiser_trusted()`).trim().split('\n').pop(), 'f');
+    E.sup(`select public.set_config_dummy()`.replace('select public.set_config_dummy()', `insert into event_organiser_trust (user_id, trusted, set_by) values ('${U.TRU}', true, '${U.ADMIN}') on conflict (user_id) do update set trusted = true`));
+    assert.equal(E.try('TRU', `select public.my_event_organiser_trusted()`).trim().split('\n').pop(), 't');
+    assert.equal(E.try('OTH', `select public.my_event_organiser_trusted()`).trim().split('\n').pop(), 'f', 'someone else is not trusted by TRU being trusted');
+    assert.match(E.try('anon', `select public.my_event_organiser_trusted()`), /permission denied/);
+    assert.equal(E.try('nobody', `select public.my_event_organiser_trusted()`).trim().split('\n').pop(), 'f');
+    E.sup(`delete from event_organiser_trust where user_id='${U.TRU}'`);
+  });
   test('Tier C: untrusted by default; trust is staff-only and cannot be self-granted; a trusted organiser auto-applies the permitted fields only', () => {
     const { eid } = E.community('TRU', [60]);
     const rq = (p: unknown) => E.do('TRU', `select public.request_event_change('${eid}', $j$${JSON.stringify(p)}$j$::jsonb, gen_random_uuid())`);
@@ -817,6 +842,8 @@ describe('mutation controls (each weakens one guard and shows the probe catches 
     (e) => failed(e.sup(`insert into events (title, starts_at, status, is_platform_event, source) values ('x', now(), 'draft', true, 'community_submission')`)));
   run('the OneShetland marker is allowed on a business event', [{ file: M2, find: /alter table public\.events add constraint events_oneshetland_is_platform check \(source is distinct from 'oneshetland' or is_platform_event\);/, replace: 'select 1;' }],
     (e) => failed(e.sup(`insert into events (title, starts_at, status, is_platform_event, organiser_business_id, source) values ('x', now(), 'draft', false, '${BZ}', 'oneshetland')`)));
+  run('the contributor read policy exposes every hidden event', [{ file: M3, find: 'create policy events_contributor_read on public.events for select to authenticated using (public.is_my_community_event(id));', replace: 'create policy events_contributor_read on public.events for select to authenticated using (true);' }],
+    (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','open','events')`); const { eid } = e.community('SUB', [40]); e.do('SUB', `select public.report_event_cancelled('${eid}','dry')`); return e.try('OTH', `select count(*) from events where id='${eid}'`).trim().split('\n').pop() === '0'; });
   run('clients can forge is_dated_run', [{ file: M2, find: '  new.is_dated_run := old.is_dated_run;\n  if not public.attribution_staff()', replace: '  if not public.attribution_staff()' }],
     (e) => { e.do('BIZ', `update events set is_dated_run = true where id='${E_BIZ}'`); return e.q(`select is_dated_run from events where id='${E_BIZ}'`) === 'f'; });
   run('contributor check ignores who the contributor is', [{ file: M3, find: '       and s.event_id = e.id and s.submitter_id = auth.uid());', replace: '       and s.event_id = e.id);' }],

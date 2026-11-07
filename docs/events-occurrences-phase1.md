@@ -137,3 +137,11 @@ Compared with `pg_get_functiondef` of the production function (project nkrtmakxy
 
 Existing suites that replay explicit older migration lists (`ticket-capacity-release`, `event-ticket-orders-server-only`, `event-wallet-refund`, `event-orders-access`) do not include the new migrations; they were run only to confirm the baseline (all pass). Suites for ticketing that are not registered in the isolated lane were NOT run (they may touch production).
 
+
+## Contributor read access (added 7 Nov 2026, found while rendering the contributor screens)
+
+Cancelling an event sets `status='cancelled'` and the existing events trigger hides every non-published row, so the person who submitted it could no longer see it, its dates or its history. Migration 3 now adds `events_contributor_read` (SELECT, authenticated) using `is_my_community_event(id)`: the contributor can read ONLY their own community event, even when hidden. It grants no write and nothing to anyone else (the occurrence read policy asks the events policies, so the dates come with it). `my_event_organiser_trusted()` lets the change form say in advance whether the caller's changes go live straight away. Both are covered by tests and a mutation control (suite 98/98).
+
+Release-checklist consequences: (1) the events now have SIX policies (five original, byte-identical, plus this one): the dry-run fingerprint's `events_policies_same` check must expect exactly that; (2) migration 3's text changed, so the rolled-back production dry run must be re-run on the final text (see events-release-order.md).
+
+Behaviour to be aware of (existing, not new): a WHOLE-event cancellation hides the event page from the public (is_hidden follows status), so visitors with a link see 'not found', whereas a single cancelled PERFORMANCE stays visible with a 'Cancelled' mark. Showing a cancelled event page for a period is a product decision for later.
