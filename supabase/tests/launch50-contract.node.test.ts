@@ -105,3 +105,13 @@ describe('migration', () => {
     assert.match(fn, /order by md5\(b\.id::text \|\| current_date::text\)/);
   });
 });
+
+describe('plan-activation email', () => {
+  test('a Launch 50 member is told their real plan price and is not shown the discount as a credit', () => {
+    assert.match(webhook, /launch50_places'\)\.select\('tier'\)/);
+    assert.match(webhook, /'£9\/month for 12 months, then £12\/month'/);
+    assert.match(webhook, /'£22\/month for 12 months, then £29\/month'/);
+    assert.match(webhook, /nextBillRow = adjustP !== 0 && !launch50Text/);
+    assert.match(webhook, /plan_price: launch50Text \?\? `£\$\{planPence \/ 100\}\$\{planPeriod\}`/);
+  });
+});

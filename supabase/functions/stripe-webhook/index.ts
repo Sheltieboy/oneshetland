@@ -98,6 +98,15 @@ async function emailPlanChange(
     // The upcoming invoice already includes the proration, which is exactly the
     // number somebody wants after switching.
     let nextBillRow = '';
+    // OneShetland Launch 50: a founding member's plan price is £9/£22 for 12 months, then the standard price. The email must say that and must not
+    // itemise the discount as a "credit for the plan you had".
+    let launch50Text: string | null = null;
+    try {
+      const { data: l50 } = await supabase.from('launch50_places').select('tier')
+        .eq('business_id', businessId).in('status', ['pending_payment', 'active']).maybeSingle();
+      if (l50?.tier === 'pro') launch50Text = '£9/month for 12 months, then £12/month';
+      else if (l50?.tier === 'premium') launch50Text = '£22/month for 12 months, then £29/month';
+    } catch { /* the standard wording is used */ }
     try {
       if (stripeCustomerId) {
         const auth = { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY') ?? ''}` };
@@ -144,7 +153,7 @@ async function emailPlanChange(
           const adjustP = due - planPence;
           // Itemise whenever the bill differs from the plan price. On a plain
           // renewal the two match and a breakdown would be noise.
-          nextBillRow = adjustP !== 0
+          nextBillRow = adjustP !== 0 && !launch50Text
             ? row(`${NAME[to]} from ${renews}`, gbp(planPence), false, true) +
               row(adjustP > 0 ? 'Catch-up for the rest of this month' : 'Credit for the plan you had',
                   `${adjustP > 0 ? '' : '−'}${gbp(adjustP)}`) +
@@ -168,7 +177,7 @@ async function emailPlanChange(
           ? `is now on <strong>${NAME[to]}</strong>.`
           : `has ${wentUp ? 'moved up' : 'moved'} from <strong>${NAME[from] ?? from}</strong> to <strong>${NAME[to]}</strong>.`,
         plan_name: NAME[to],
-        plan_price: `£${planPence / 100}${planPeriod}`,
+        plan_price: launch50Text ?? `£${planPence / 100}${planPeriod}`,
         renews_on: renews,
         next_bill_row_html: nextBillRow,
         plan_blurb: isPremium
