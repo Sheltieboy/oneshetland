@@ -275,7 +275,7 @@ begin
   end if;
 
   if payload -> 'adult_confirmed' is distinct from 'true'::jsonb then
-    raise exception 'Please confirm you are 18 or over and have the organiser''s permission to submit this event.' using errcode = 'P0001', hint = 'adult_confirmed';
+    raise exception 'Please confirm you are 18 or over and are authorised to submit this event.' using errcode = 'P0001', hint = 'adult_confirmed';
   end if;
 
   v_norm := public.event_validate_occurrences(payload -> 'occurrences', v_now);
