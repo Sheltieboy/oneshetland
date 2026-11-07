@@ -157,3 +157,47 @@ select jsonb_build_object(
  'TICKETED_EVENT_ID', ..., 'TICKET_TYPE_ID', ...)::text;
 ```
 The business owner/business/event come from a future published business-owned event whose owner exists and which has no ticket types; the ticketed event/type from any existing ticket type. Do not use the ZZ test member for MEMBER_ID (the script acts as that user inside a rolled-back transaction).
+
+
+---
+
+## Update 7 Nov 2026 (after Stages 1 to 4): the public submission experience is deployed, DARK
+
+**Deployed:** web `main` `8694c23`. The "Add an Event or Activity" entry points, the "Who is organising this?" journey and the new Community Guidelines section are live. The only visible change today is the Community Guidelines page; with `EVENT_FRONT_DOOR` unset, no page carries an entry-point link (checked: exact `href="/whats-on/add"` count 0 on 13 pages) and `/whats-on/add` is a 404.
+
+### How the pieces switch on and off
+
+| Piece | Controlled by | Effect |
+|---|---|---|
+| Entry-point links (What's On, Regular Activities, account, mobile menu) | server env `EVENT_FRONT_DOOR === "on"` (and nothing else, not even admin) | appear / disappear; every route is dynamic, so set the env and redeploy |
+| The front door page `/whats-on/add` and member pages | the same env, OR a signed-in admin (preview) | 404 otherwise |
+| Accepting submissions | database config `events.member_submissions = 'open'` (absent = closed) | closed: the form says "not open yet" |
+
+### Activation runbook (a separate approval; do not start before the acceptance below passes)
+1. Open the database switch first: `insert into admin_config (key,value,category) values ('events.member_submissions','open','events')` (harmless while the UI is hidden).
+2. Set `EVENT_FRONT_DOOR=on` in Netlify and redeploy. Entry points appear everywhere at once.
+3. Verify within minutes: the entry points show on `/whats-on` and `/whats-on/regular`; signed-out `/whats-on/add` shows the sign-in prompt; a staff test submission appears in the queue; nothing else changed (compare pages with the pre-activation snapshot).
+4. Watch the first submissions in the admin queue; staff reply times matter.
+**Kill switch, fastest first:** set the config value to anything but `open` (or delete the row): the database refuses new submissions immediately. Then unset the env and redeploy to hide every entry point. Existing events and approved submissions are unaffected.
+Do not set the env before the switch is open: visitors would see links to a form that says "not open yet".
+
+### The ownership journey (what a member now sees)
+Sign in first (18 or over). Then **"Who is organising this?"**: 1. My business (only businesses they own), 2. My hub or community organisation (only hubs they own or help run), 3. Independent event. Then the kind of thing, then:
+- Business or hub + event: a link to that business's or hub's existing events screen (business events go to the events LIST, which carries the commercial-terms gate; permissions and publishing rules are exactly as today).
+- Business or hub + regular activity: a link to that business's or hub's existing activity editor.
+- Independent + event: the moderated submission form (staff approve before anything appears).
+- Independent + regular activity: **no form**. It says plainly that a regular activity needs a business or a hub (so people can see who runs it, and changes, cancellations and follower messages have an owner) and offers "Start a free hub" and "Add your business", with a way back if it is really a one-off event.
+- Three or more of someone's own independent submissions: a gentle, dismissable-by-ignoring suggestion to create a free hub (My submissions and the success page).
+What would be needed to let ordinary members submit regular activities is written up in the web repo: `docs/ordinary-member-activity-submissions.md` (estimate 3 to 5 weeks; recommendation: keep Business-or-Hub ownership for now).
+
+### Acceptance tests still to run (Stage 5, signed in; Darren signs in, Claude never types credentials; `ZZ TEST` fixtures, retired not deleted)
+A second NON-ADMIN adult test account is needed, plus one account that owns a business and one that runs a hub (existing ZZ fixtures can serve).
+- **R1 to R12**: as listed in Stage 5 above (real RPCs and RLS, real poster upload to `event-media/<uid>/events/`, dark gating, submission, moderation, contributor tools, free-ticket regression, cancellation emails for business AND hub events, Social, Regular Activities, accessibility, app compatibility).
+- **R13 ownership journey, member with NO business or hub**: sees only "Independent event" and the calm note; independent event submits and appears in the staff queue; a regular activity shows the explanation and no form.
+- **R14 member with a business**: the business is listed (and only theirs); event and activity links land on the existing editors with the commercial-terms gate intact; nothing else listed.
+- **R15 member who runs a hub (owner and a committee member)**: the hub is listed for both; links land on the hub's event and activity screens; a plain hub MEMBER does not see it.
+- **R16 member with a business AND a hub**: both listed in the right order, independent last.
+- **R17 hub suggestion**: appears only after 3 own non-withdrawn independent submissions and never for a hub manager; blocks nothing.
+- **R18 entry points**: absent with the env unset (all pages identical to the pre-activation snapshot); present exactly once per surface with it set; the mobile menu item opens the front door; no link leads to a 404 for signed-out or signed-in visitors.
+- **R19 Community Guidelines**: Darren reads and approves the new "Sharing events and activities" section (adult responsibility; under-18 volunteers prepare material, an adult submits and is responsible; no accounts for young people).
+- **R20 keyboard and mobile**: the whole journey by keyboard only (focus lands on each step heading), at 375 and 1280, plus axe on each state.
