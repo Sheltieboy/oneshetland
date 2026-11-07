@@ -1,3 +1,5 @@
+> **7 Nov 2026: superseded by `docs/events-staged-release-plan.md`**, the authoritative staged production release plan (stages, gates, rollbacks, approvals, real database/storage/signed-in checks). This file is kept for the earlier reasoning.
+
 # Events & Activities Phase 1 + 2 - release blockers and deploy order
 
 Written 6 Nov 2026 (branch `events-phase2-backend`). Everything is LOCAL. Nothing has been pushed, applied or deployed. Items marked **[DARREN]** need Darren's explicit approval in chat before anyone runs them. Items marked **[CHECK]** are read-only.
