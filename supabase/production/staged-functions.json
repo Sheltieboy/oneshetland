@@ -9,12 +9,12 @@
   },
   "modified": {
     "create-event-ticket-intent": {
-      "step": "Events Phase 2",
-      "reason": "Events Phase 2 (local): deploy ONLY after the Events Phase-1 migrations are applied and verified; see docs/events-release-order.md - friendly MULTI_PERFORMANCE sentence via _shared/ticket-reserve-error.ts"
+      "step": "Events Stage 2",
+      "reason": "DEPLOYED 7 Nov 2026 (v72, from branch events-phase2-backend @11924cb): friendly MULTI_PERFORMANCE sentence via _shared/ticket-reserve-error.ts. Source not yet landed on main; the manifest entry still describes v71 until it is."
     },
     "reminder-runner": {
-      "step": "Events Phase 2",
-      "reason": "Pre-existing bug found during the cancelled-events audit (7 Nov 2026): the 24h event reminder selected events by start time only, so a CANCELLED event with valid tickets would send 'Event tomorrow'. Now .eq('status','published'). Deploy with the Edge Function step in docs/events-release-order.md; independent of the migrations and safe to deploy before or after them."
+      "step": "Events Stage 2",
+      "reason": "DEPLOYED 7 Nov 2026 (v59, from branch events-phase2-backend @11924cb): 24h event reminder requires status='published'. Source not yet landed on main; the manifest entry still describes v58 until it is."
     }
   }
 }
