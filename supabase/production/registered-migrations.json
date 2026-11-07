@@ -1,5 +1,5 @@
 {
-  "captured_on": "2026-11-06",
+  "captured_on": "2026-11-07",
   "project_ref": "nkrtmakxygkvxuxriiil",
   "how": "read-only: select version, name, statements from supabase_migrations.schema_migrations",
   "note": "Snapshot of the versions production has REGISTERED in supabase_migrations.schema_migrations. Updated 2026-10-08 after the 29 hand-applied migrations were registered with `supabase migration repair --status applied` (history only; no SQL executed). 247 files, 247 registered. Then 20261122000000_shift_employer_stripe_customer_lock was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261122000000`: 248 files, 248 registered. Then 20261123000000_shift_profile_trust_fields was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261123000000`: 249 files, 249 registered. Then 20261124000000_referrals_disabled_for_launch was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261124000000`: 250 files, 250 registered. Then 20261125000000_launch_test_centre was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261125000000`: 251 files, 251 registered. Then 20261126000000_launch_test_centre_web_platform was applied (one transaction, after a rolled-back dry run) and registered with `supabase migration repair --status applied 20261126000000`: 252 files, 252 registered. Updated 2026-10-31 after the Notices & Alerts migrations 20261129000000-20261129090000 were applied and registered (and 20261127000000-20261128010000, applied earlier from stage branches, were added to this branch).",
@@ -286,7 +286,10 @@
     "20261210000000",
     "20261211000000",
     "20261212000000",
-    "20261212010000"
+    "20261212010000",
+    "20261230000000",
+    "20261230010000",
+    "20261230020000"
   ],
   "names": {
     "20260623000000": "baseline_remote_schema",
@@ -571,7 +574,10 @@
     "20261210000000": "accessible_shetland",
     "20261211000000": "social_regular_accessible_recipes",
     "20261212000000": "fetch_safety_pause",
-    "20261212010000": "admin_driver_applicant_contacts"
+    "20261212010000": "admin_driver_applicant_contacts",
+    "20261230000000": "event_occurrences",
+    "20261230010000": "event_member_submissions",
+    "20261230020000": "event_contributor_self_service"
   },
   "content_sha256": {
     "20260623010000": "2897b17bee1b8a62b43afb0762e70a3ffbf9afe91fee170f5ceea24d7c1bd013",
@@ -855,6 +861,9 @@
     "20261210000000": "9b9176cbbe85b78dfc7b5eafc2a3f680384583037a6922d1775e12396799960d",
     "20261211000000": "aeab9951e9b6d0dd56a29b41fc3f2687ee0e710fe6e60c8444e8042a3ee5679f",
     "20261212000000": "0850bbb11e32b958204c5fa2680c4998af663597ec443fed1acbffaf9fe19b1d",
-    "20261212010000": "67e733a9c14a7546a4764716501cb47a99d5fe2c66a2839838f2555338596105"
+    "20261212010000": "67e733a9c14a7546a4764716501cb47a99d5fe2c66a2839838f2555338596105",
+    "20261230000000": "6e1fa56d5f0fa0a1031e6becbb2b46790eb51d0917cef56f3fa2e1a2c0df367c",
+    "20261230010000": "b4643e085f0f6427909280f53ca2c42e708532b194d01a1fee8a1f692d2cfe63",
+    "20261230020000": "3a7c377796abb32273b10d443ec8bea577e8ad20f9ca888000c95bd173975f02"
   }
 }
