@@ -1,7 +1,8 @@
 -- Reverses 20261230020000: contributor self-service. Restores reserve_ticket_basket to its previous body. Event rows are untouched.
 begin;
+drop policy if exists events_cancelled_public_read on public.events;
 drop policy if exists events_contributor_read on public.events;
-drop function if exists public.is_my_community_event(uuid), public.my_event_organiser_trusted();
+drop function if exists public.is_my_community_event(uuid), public.my_event_organiser_trusted(), public.event_has_ticket_buyers(uuid);
 CREATE OR REPLACE FUNCTION public.reserve_ticket_basket(p_event_id uuid, p_buyer_id uuid, p_tickets jsonb, p_total_pence integer, p_platform_fee_pence integer, p_snapshot jsonb, p_client_request_id text)
  RETURNS jsonb
  LANGUAGE plpgsql

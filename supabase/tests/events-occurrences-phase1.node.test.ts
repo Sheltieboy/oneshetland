@@ -146,9 +146,9 @@ describe('existing rows and schema', () => {
   });
   test('the attribution CHECK and the events policies are unchanged', () => {
     assert.match(E.q(`select pg_get_constraintdef(oid) from pg_constraint where conname='events_attribution_exclusive'`), /is_platform_event AND \(organiser_business_id IS NULL\) AND \(organiser_hub_id IS NULL\)/);
-    // the five original policies are untouched; the only addition is the contributor's read of their OWN community event (migration 3)
-    assert.equal(E.q(`select count(*) from pg_policies where tablename='events' and policyname <> 'events_contributor_read'`), '5');
-    assert.equal(E.q(`select string_agg(policyname,',') from pg_policies where tablename='events' and policyname = 'events_contributor_read'`), 'events_contributor_read');
+    // the five original policies are untouched; the only additions are the contributor's read of their OWN community event and the public read of CANCELLED events (migration 3)
+    assert.equal(E.q(`select count(*) from pg_policies where tablename='events' and policyname not in ('events_contributor_read','events_cancelled_public_read')`), '5');
+    assert.equal(E.q(`select string_agg(policyname,',' order by policyname) from pg_policies where tablename='events' and policyname in ('events_contributor_read','events_cancelled_public_read')`), 'events_cancelled_public_read,events_contributor_read');
   });
   test('an ordinary member cannot insert an event directly, nor an occurrence, nor a submission row', () => {
     assert.ok(failed(E.try('OTH', `insert into events (organiser_user_id, title, starts_at, status, is_platform_event) values ('${U.OTH}','x',now()+interval '1 day','published', true)`)));
@@ -672,19 +672,57 @@ describe('contributor self-service', () => {
     assert.match(E.do('ADMIN', `select public.admin_review_event_change('${cid}','approve',null)`), /sells tickets/);
     assert.equal(E.q(`select count(*) from event_occurrences where event_id='${e2}'`), '0');
   });
-  test('the contributor can still READ their own event, its dates and history after it is cancelled and hidden; nobody else can', () => {
+  const cnt = (w: Who, sql: string) => E.try(w, sql).trim().split('\n').pop();
+  test('the contributor can READ their own event and dates in a state the public cannot see (postponed); nobody else can', () => {
     const { eid } = E.community('SUB', [40, 41]);
-    assert.ok(okq(E.do('SUB', `select public.report_event_cancelled('${eid}','dry')`)));
-    assert.equal(E.q(`select is_hidden from events where id='${eid}'`), 't', 'cancelling hides the event for the public');
-    assert.equal(E.try('SUB', `select count(*) from events where id='${eid}'`).trim().split('\n').pop(), '1', 'the contributor still sees it');
-    assert.equal(E.try('SUB', `select count(*) from event_occurrences where event_id='${eid}'`).trim().split('\n').pop(), '2', 'and its dates');
-    for (const w of ['OTH', 'BIZ', 'HUBA', 'BIZ2', 'anon'] as Who[]) assert.equal(E.try(w, `select count(*) from events where id='${eid}'`).trim().split('\n').pop(), '0', `${w} must not see it`);
-    assert.equal(E.try('SUB', `select count(*) from events where id='${E_PLAT}' and is_hidden`).trim().split('\n').pop(), '0');
+    E.sup(`update events set status='postponed' where id='${eid}'`);
+    assert.equal(E.q(`select is_hidden from events where id='${eid}'`), 't');
+    assert.equal(cnt('SUB', `select count(*) from events where id='${eid}'`), '1', 'the contributor still sees it');
+    assert.equal(cnt('SUB', `select count(*) from event_occurrences where event_id='${eid}'`), '2', 'and its dates');
+    for (const w of ['OTH', 'BIZ', 'HUBA', 'BIZ2', 'anon'] as Who[]) assert.equal(cnt(w, `select count(*) from events where id='${eid}'`), '0', `${w} must not see it`);
     // read only: the contributor still cannot write the event or its dates
     E.try('SUB', `update events set title='hijack' where id='${eid}'`);
     assert.notEqual(E.q(`select title from events where id='${eid}'`), 'hijack');
     assert.ok(failed(E.try('SUB', `insert into event_occurrences (event_id, starts_at) values ('${eid}', now() + interval '70 days')`)));
     assert.match(E.try('anon', `select public.is_my_community_event('${eid}')`), /permission denied/);
+  });
+  test('a CANCELLED event keeps its public page (readable by link, anon included) but stays out of every list: draft, postponed and archived stay hidden', () => {
+    const { eid } = E.community('SUB', [42, 43]);
+    assert.ok(okq(E.do('SUB', `select public.report_event_cancelled('${eid}','dry')`)));
+    assert.equal(E.q(`select is_hidden from events where id='${eid}'`), 't', 'is_hidden stays true, so lists that filter on it still leave the event out');
+    for (const w of ['OTH', 'BIZ', 'anon', 'SUB'] as Who[]) {
+      assert.equal(cnt(w, `select count(*) from events where id='${eid}'`), '1', `${w} can open the cancelled page by its link`);
+      assert.equal(cnt(w, `select count(*) from event_occurrences where event_id='${eid}'`), '2', `${w} sees its dates`);
+      assert.equal(cnt(w, `select count(*) from events where id='${eid}' and status = 'published'`), '0', `${w}: a status=published list leaves it out`);
+      assert.equal(cnt(w, `select count(*) from events where id='${eid}' and not is_hidden`), '0', `${w}: an is_hidden=false list leaves it out`);
+    }
+    for (const st of ['draft', 'postponed', 'archived']) {
+      E.sup(`update events set status='${st}' where id='${eid}'`);
+      assert.equal(cnt('anon', `select count(*) from events where id='${eid}'`), '0', `${st} stays hidden from the public`);
+    }
+    // existing business / hub events cancelled by their owners get the same treatment; a members-only hub event stays private
+    const tier = E.q(`select hub_visibility from events where id='${E_HUB}'`);
+    E.sup(`update events set status='cancelled' where id in ('${E_BIZ}','${E_HUB}')`);
+    assert.equal(cnt('anon', `select count(*) from events where id='${E_BIZ}'`), '1');
+    E.sup(`update events set hub_visibility='members' where id='${E_HUB}'`);
+    assert.equal(cnt('anon', `select count(*) from events where id='${E_HUB}'`), '0', 'a members-only hub event is not made public by cancelling it');
+    E.sup(`update events set hub_visibility='islands' where id='${E_HUB}'`);
+    assert.equal(cnt('anon', `select count(*) from events where id='${E_HUB}'`), '1');
+    E.sup(`update events set status='published', hub_visibility=${tier ? `'${tier}'` : 'null'} where id in ('${E_BIZ}','${E_HUB}')`);
+    // the other existing policies are untouched
+    assert.equal(E.q(`select count(*) from pg_policies where tablename='events' and policyname not in ('events_contributor_read','events_cancelled_public_read')`), '5');
+  });
+  test('a contributor cannot cancel an event that has live OneShetland ticket buyers: OneShetland has to help tell them and refund', () => {
+    const { eid } = E.community('SUB', [44]);
+    E.sup(`insert into event_ticket_types (id, event_id, name, price_pence, quantity_available, per_order_max) values ('${id(0xb1)}','${eid}','Adult',100,5,5)`);
+    const order = E.q(`select (public.reserve_ticket_basket('${eid}','${U.OTH}','[{"ticket_type_id":"${id(0xb1)}","token_hash":"${'f'.repeat(40)}"}]'::jsonb,100,0,'{}'::jsonb,'req-buyers-0001')->>'order_id')`);
+    assert.match(order, /^[0-9a-f-]{36}$/, order);
+    assert.match(E.do('SUB', `select public.report_event_cancelled('${eid}','x')`), /bought tickets/);
+    assert.equal(E.q(`select status from events where id='${eid}'`), 'published', 'nothing was cancelled');
+    E.sup(`update event_ticket_orders set status='paid', paid_at=now(), stripe_payment_intent_id='pi_buyers_1' where id='${order}'; update event_tickets set status='valid' where order_id='${order}'`);
+    assert.match(E.do('SUB', `select public.report_event_cancelled('${eid}','x')`), /bought tickets/, 'paid and valid: still refused');
+    E.sup(`update event_ticket_orders set status='refunded' where id='${order}'; update event_tickets set status='refunded' where order_id='${order}'`);
+    assert.ok(okq(E.do('SUB', `select public.report_event_cancelled('${eid}','x')`)), 'once every buyer is refunded the contributor can cancel');
   });
   test('my_event_organiser_trusted tells the caller about their own trust only', () => {
     assert.equal(E.try('TRU', `select public.my_event_organiser_trusted()`).trim().split('\n').pop(), 'f');
@@ -843,7 +881,11 @@ describe('mutation controls (each weakens one guard and shows the probe catches 
   run('the OneShetland marker is allowed on a business event', [{ file: M2, find: /alter table public\.events add constraint events_oneshetland_is_platform check \(source is distinct from 'oneshetland' or is_platform_event\);/, replace: 'select 1;' }],
     (e) => failed(e.sup(`insert into events (title, starts_at, status, is_platform_event, organiser_business_id, source) values ('x', now(), 'draft', false, '${BZ}', 'oneshetland')`)));
   run('the contributor read policy exposes every hidden event', [{ file: M3, find: 'create policy events_contributor_read on public.events for select to authenticated using (public.is_my_community_event(id));', replace: 'create policy events_contributor_read on public.events for select to authenticated using (true);' }],
-    (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','open','events')`); const { eid } = e.community('SUB', [40]); e.do('SUB', `select public.report_event_cancelled('${eid}','dry')`); return e.try('OTH', `select count(*) from events where id='${eid}'`).trim().split('\n').pop() === '0'; });
+    (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','open','events')`); const { eid } = e.community('SUB', [40]); e.sup(`update events set status='postponed' where id='${eid}'`); return e.try('OTH', `select count(*) from events where id='${eid}'`).trim().split('\n').pop() === '0'; });
+  run('the cancelled-event policy exposes drafts', [{ file: M3, find: "using (status = 'cancelled' and (organiser_hub_id is null", replace: "using (status in ('cancelled','draft') and (organiser_hub_id is null" }],
+    (e) => { e.sup(`update events set status='draft' where id='${E_BIZ}'`); return e.try('anon', `select count(*) from events where id='${E_BIZ}'`).trim().split('\n').pop() === '0'; });
+  run('a contributor can cancel an event that has ticket buyers', [{ file: M3, find: 'if public.event_has_ticket_buyers(p_event) then', replace: 'if false then' }],
+    (e) => { e.sup(`insert into admin_config (key,value,category) values ('events.member_submissions','open','events')`); const { eid } = e.community('SUB', [44]); e.sup(`insert into event_ticket_types (id, event_id, name, price_pence, quantity_available, per_order_max) values ('${id(0xb1)}','${eid}','Adult',100,5,5)`); e.sup(`select public.reserve_ticket_basket('${eid}','${U.OTH}','[{"ticket_type_id":"${id(0xb1)}","token_hash":"${'f'.repeat(40)}"}]'::jsonb,100,0,'{}'::jsonb,'req-buyers-0002')`); return /bought tickets/.test(e.do('SUB', `select public.report_event_cancelled('${eid}','x')`)); });
   run('clients can forge is_dated_run', [{ file: M2, find: '  new.is_dated_run := old.is_dated_run;\n  if not public.attribution_staff()', replace: '  if not public.attribution_staff()' }],
     (e) => { e.do('BIZ', `update events set is_dated_run = true where id='${E_BIZ}'`); return e.q(`select is_dated_run from events where id='${E_BIZ}'`) === 'f'; });
   run('contributor check ignores who the contributor is', [{ file: M3, find: '       and s.event_id = e.id and s.submitter_id = auth.uid());', replace: '       and s.event_id = e.id);' }],

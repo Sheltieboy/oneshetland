@@ -44,6 +44,15 @@ language sql security definer set search_path = public, pg_temp as $$
 $$;
 
 -- ── who is the contributor ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+-- Does anyone hold a LIVE OneShetland ticket (or a paid / pending order) for this event? Cancelled, refunded and used tickets do not count.
+create or replace function public.event_has_ticket_buyers(p_event uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from public.event_ticket_orders o where o.event_id = p_event and o.status in ('paid', 'pending'))
+      or exists (select 1 from public.event_tickets t where t.event_id = p_event and t.status = 'valid');
+$$;
+revoke all on function public.event_has_ticket_buyers(uuid) from public, anon, authenticated;
+grant execute on function public.event_has_ticket_buyers(uuid) to service_role;
+
 create or replace function public.is_event_contributor(p_event uuid) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
   select auth.uid() is not null and exists (
@@ -153,6 +162,11 @@ begin
   if e.status = 'cancelled' then return jsonb_build_object('id', e.id, 'status', 'cancelled', 'duplicate', true); end if;
   if e.status <> 'published' then raise exception 'Only a published event can be cancelled here. Please ask OneShetland.' using errcode = 'P0001', hint = 'not_published'; end if;
   if not public.event_has_future_date(p_event) then raise exception 'This event has already taken place, so it can no longer be changed.' using errcode = 'P0001', hint = 'past'; end if;
+  -- Ticket buyers must never be left behind: a cancellation does not refund or contact anyone by itself, so when people hold live OneShetland tickets
+  -- OneShetland has to help (tell them, arrange refunds). Community events cannot sell OneShetland tickets, so this only guards a staff-added exception.
+  if public.event_has_ticket_buyers(p_event) then
+    raise exception 'People have bought tickets for this event through OneShetland, so we need to help you tell them and arrange refunds. Please contact OneShetland.' using errcode = 'P0001', hint = 'has_ticket_buyers';
+  end if;
   v_note := public.event_clean_note(p_note);
   update public.events set status = 'cancelled' where id = p_event;            -- the sync trigger tg_events_sync_hidden then hides it
   perform public.event_log(p_event, null, 'contributor', 'event_cancelled', jsonb_build_object('note', v_note, 'previous_status', e.status));
@@ -718,5 +732,13 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke all on function public.my_event_organiser_trusted() from public, anon;
 grant execute on function public.my_event_organiser_trusted() to authenticated, service_role;
+
+-- ── a cancelled event keeps its public page and says CANCELLED (product decision, 7 Nov 2026) ───────────────────────────────────────────────────────
+-- The existing trigger sets is_hidden for every non-published event, and the public read policy hides is_hidden rows, so a cancelled event used to return
+-- "not found". This ADDITIONAL policy lets anyone read a CANCELLED event by its link (hub events only on the tiers that are public today). is_hidden is
+-- deliberately left TRUE, so every list, calendar, homepage and feed that filters on is_hidden or status = 'published' still leaves it out; only a reader
+-- that asks for the event by id can see it. Draft, postponed and archived events stay hidden. Occurrence rows follow the parent through their own policy.
+create policy events_cancelled_public_read on public.events for select
+  using (status = 'cancelled' and (organiser_hub_id is null or hub_visibility = any (array['hub'::text, 'islands'::text])));
 
 commit;
