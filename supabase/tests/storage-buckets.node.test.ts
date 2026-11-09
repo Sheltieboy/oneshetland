@@ -68,6 +68,7 @@ const EXPECTED = {
                                                     'audio/webm','audio/ogg','audio/mpeg','audio/mp4','audio/m4a','audio/wav'] },
   'site-media':         { pub: true, mb: 10, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
   'spik-audio':         { pub: true, mb: 10, mime: ['audio/webm','audio/ogg','audio/mpeg','audio/mp4'] },
+  'edition-media':      { pub: true, mb: 10, mime: ['image/jpeg','image/jpg','image/png','image/webp'] },
 } as const;
 const BUCKETS = Object.keys(EXPECTED);
 

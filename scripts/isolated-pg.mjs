@@ -93,6 +93,18 @@ const SUITES = [
   'supabase/tests/reminder-runner-concurrency.node.test.ts',
   'supabase/tests/analytics-phase0.node.test.ts',
   'supabase/tests/events-occurrences-phase1.node.test.ts',
+  'supabase/tests/editions-foundation.node.test.ts',
+  'supabase/tests/editions-partners.node.test.ts',
+  'supabase/tests/editions-visitor.node.test.ts',
+  'supabase/tests/editions-commerce-core.node.test.ts',
+  'supabase/tests/editions-memberships.node.test.ts',
+  'supabase/tests/editions-participation.node.test.ts',
+  'supabase/tests/editions-operations.node.test.ts',
+  'supabase/tests/editions-branding.node.test.ts',
+  'supabase/tests/editions-hardening.node.test.ts',
+  'supabase/tests/editions-rollback.node.test.ts',
+  'supabase/tests/editions-post-checks.node.test.ts',
+  'supabase/tests/editions-migration-reconcile.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.

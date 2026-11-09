@@ -114,6 +114,9 @@ serve(async (req) => {
     await runCritical('funeral_notices', svc.rpc('delete_member_funeral_data', { p_user: uid }));
     await runCritical('organisation_memberships', svc.rpc('delete_member_memberships', { p_user: uid }));
 
+    // 1e. Editions: saved Editions and plans, and organiser team memberships. A sole owner of an organiser is refused (transfer ownership first). Absent function tolerated, as above.
+    await runCritical('edition_member_data', svc.rpc('delete_member_editions', { p_user: uid }));
+
     // 2. Push tokens + block relationships.
     await run('push_tokens', svc.from('push_tokens').delete().eq('user_id', uid));
     await run('blocks_by', svc.from('blocked_users').delete().eq('blocker_id', uid));
