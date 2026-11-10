@@ -118,6 +118,20 @@ describe('account deletion cleans up Editions data', () => {
     const src = readFileSync(new URL('../functions/delete-account/index.ts', import.meta.url), 'utf8');
     assert.match(src, /runCritical\('edition_member_data', svc\.rpc\('delete_member_editions', \{ p_user: uid \}\)\)/);
   });
+  test('delete-account keeps the live My Saved step (1d) and runs Editions (1e) after it, as critical steps, before anything irreversible', () => {
+    const src = readFileSync(new URL('../functions/delete-account/index.ts', import.meta.url), 'utf8');
+    const at = (re: RegExp) => { const m = re.exec(src); assert.ok(m, `missing ${re}`); return m.index; };
+    const saved = at(/runCritical\('saved_items', svc\.rpc\('delete_member_saved', \{ p_user: uid \}\)\)/);
+    const editions = at(/runCritical\('edition_member_data', svc\.rpc\('delete_member_editions', \{ p_user: uid \}\)\)/);
+    const funeral = at(/runCritical\('organisation_memberships'/);
+    const gate = at(/if \(failures\.length\)/);
+    const scrub = at(/run\('scrub_profile'/);
+    assert.ok(funeral < saved && saved < editions, '1c, then 1d (My Saved), then 1e (Editions)');
+    assert.ok(editions < gate && gate < scrub, 'a failing step returns 500 before the profile scrub / auth soft-delete');
+    // Each appears exactly once: neither step may be duplicated or dropped by a future merge.
+    assert.equal(src.split("delete_member_saved").length - 1, 1);
+    assert.equal(src.split("delete_member_editions").length - 1, 1);
+  });
 });
 
 describe('rollback', () => {
