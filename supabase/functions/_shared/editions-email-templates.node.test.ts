@@ -54,3 +54,11 @@ describe('content', () => {
     assert.match(src, /MessageStream: 'outbound'/); assert.match(src, /TrackOpens: false/); assert.match(src, /TrackLinks: 'None'/); assert.match(src, /Unauthorised/); assert.ok(!/launch|marketing|broadcast/i.test(src));
   });
 });
+
+test('partner emails to a Hub\'s administrators say they help run the Hub, and still send them to their invitations', () => {
+  const P = { organiser_name: 'Festival Co', edition_title: 'Fest 2027', subject_name: 'Slippit Hub', subject_kind: 'hub', link_id: 'l1' };
+  const r = renderEditionEmail({ kind: 'partner_invited', payload: P }, 'https://example.test')!;
+  assert.match(r.text, /you help run this Hub/); assert.match(r.text, /\/account\/editions/); assert.doesNotMatch(r.text, /manage this listing/);
+  assert.match(renderEditionEmail({ kind: 'partner_removed', payload: P }, 'https://example.test')!.text, /you help run this Hub/);
+  assert.match(renderEditionEmail({ kind: 'partner_invited', payload: { ...P, subject_kind: 'business' } }, 'https://example.test')!.text, /manage this listing/);
+});

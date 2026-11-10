@@ -76,7 +76,7 @@ describe('S8 R2 tables and functions are locked down', () => {
   });
   test('anon can read only the public columns of edition_links (no decision metadata)', () => {
     const cols = E.q(`select string_agg(column_name, ',' order by column_name) from information_schema.column_privileges where grantee='anon' and table_name='edition_links' and privilege_type='SELECT'`);
-    assert.equal(cols, 'activity_id,business_id,edition_id,event_id,id,kind,label,position,state');
+    assert.equal(cols, 'activity_id,business_id,edition_id,event_id,hub_id,id,kind,label,position,state');
     assert.equal(E.q(`select count(*) from information_schema.role_table_grants where grantee='anon' and table_name='edition_link_notes'`), '0');
   });
   test('no R2 definer function or trigger function is executable by anon', () => {
@@ -99,7 +99,7 @@ describe('R2 stays payment-free, with one insertion point for later eligibility 
   });
   test('every public read of a partnership goes through edition_participation_ok (policies and views)', () => {
     const defs = E.q(`select count(*) from pg_views where schemaname='public' and viewname like 'edition_public_%' and definition like '%edition_participation_ok%'`);
-    assert.equal(defs, '4');
+    assert.equal(defs, '6', 'the four partner views plus the two Hub views (Editions 1.1)');
     assert.equal(E.q(`select count(*) from pg_policies where tablename in ('edition_links','edition_link_offers') and roles::text like '%anon%' and qual like '%edition_participation_ok%'`), '2');
   });
   test('making the predicate false hides approved partners everywhere at once (proves the single insertion point)', () => {

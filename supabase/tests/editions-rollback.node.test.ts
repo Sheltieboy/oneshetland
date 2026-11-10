@@ -85,3 +85,26 @@ describe('R9 to R12 rollbacks (140000, 130000, 120000, 110000, 100000, 090000), 
   });
   test('a second run is harmless', () => { for (const stem of stems) assert.doesNotMatch(d2.raw(file(stem)), /ERROR/, stem); });
 });
+
+describe('Editions 1.1 rollbacks (190000, 180000, 170000, 160000), newest first, on their own fresh replay', () => {
+  let d3: ReplayDb; const q3 = (sql: string) => d3.raw(sql).split('\n').map((l) => l.trim()).filter((l) => l && !/^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|DELETE \d+)$/.test(l)).pop() ?? '';
+  before(() => { d3 = createReplayDb('editionsrollback3'); });
+  after(() => { try { d3?.drop(); } catch { /* */ } });
+  const stems = ['20270102190000_editions_add_from_hub', '20270102180000_editions_community_packages', '20270102170000_editions_hub_run', '20270102160000_editions_hub_partners'];
+  test('everything they add is present, then each rollback runs clean, twice', () => {
+    assert.equal(q3(`select to_regclass('public.edition_link_hub_items') is not null`), 't');
+    assert.equal(q3(`select count(*) from pg_proc where proname='edition_hub_own_items'`), '1');
+    assert.equal(q3(`select count(*) from information_schema.columns where table_name='edition_packages' and column_name='audience'`), '1');
+    for (const stem of stems) { const f = file(stem); for (let i = 0; i < 2; i++) assert.doesNotMatch(d3.raw(f), /ERROR/, `${stem} run ${i + 1}`); }
+  });
+  test('what they added is gone and the earlier layers work as before', () => {
+    assert.equal(q3(`select to_regclass('public.edition_link_hub_items') is null`), 't');
+    assert.equal(q3(`select count(*) from information_schema.columns where table_name='edition_links' and column_name='hub_id'`), '0');
+    assert.equal(q3(`select count(*) from information_schema.columns where table_name='edition_packages' and column_name='audience'`), '0');
+    for (const f of ['edition_hub_role', 'edition_my_organisers', 'create_edition_organiser_for_hub', 'edition_find_hubs', 'edition_available_packages', 'edition_hub_own_items']) assert.equal(q3(`select count(*) from pg_proc where proname='${f}'`), '0', f);
+    assert.equal(q3(`select count(*) from pg_proc where proname='edition_controls_subject' and pronargs=4`), '1', 'the original four-argument authority is back');
+    assert.equal(q3(`select pg_get_constraintdef(oid) from pg_constraint where conname='edition_links_kind_check'`).includes('hub'), false);
+    assert.equal(q3(`select count(*) from pg_policies where policyname='edition_packages read' and qual not like '%audience%'`), '1');
+    assert.equal(q3(`select (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute'))`), '6');
+  });
+});
