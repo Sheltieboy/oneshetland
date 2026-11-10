@@ -106,6 +106,7 @@ const SUITES = [
   'supabase/tests/editions-hub-partners.node.test.ts',
   'supabase/tests/editions-hub-run.node.test.ts',
   'supabase/tests/editions-pilot.node.test.ts',
+  'supabase/tests/editions-complete.node.test.ts',
   'supabase/tests/editions-hub-commerce.node.test.ts',
   'supabase/tests/editions-hub-addfrom.node.test.ts',
   'supabase/tests/editions-rollback.node.test.ts',
