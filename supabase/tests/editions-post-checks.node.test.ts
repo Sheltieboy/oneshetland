@@ -31,3 +31,21 @@ describe('every Editions post-check passes on a freshly replayed database', () =
     });
   }
 });
+
+describe('the permission assertion actually detects an exposure (mutation controls)', () => {
+  const foundation = join(DIR, 'editions-foundation.post-check.sql');
+  const badRows = () => db.rawFile(foundation).split('\n').map((l) => l.trim()).filter((l) => l.endsWith('|f'));
+  const target = `public.edition_org_contact_email(uuid)`;
+  test('granting a private Editions function to anon fails the check; revoking it restores the pass', () => {
+    assert.deepEqual(badRows(), []);
+    db.raw(`grant execute on function ${target} to anon`);
+    try { assert.ok(badRows().some((l) => /ONLY Editions functions anon can execute/.test(l)), 'the exposure must be reported'); }
+    finally { db.raw(`revoke execute on function ${target} from anon`); }
+    assert.deepEqual(badRows(), []);
+  });
+  test('a PUBLIC grant (inherited by anon) also fails the check', () => {
+    db.raw(`grant execute on function ${target} to public`);
+    try { assert.ok(badRows().length >= 1); } finally { db.raw(`revoke execute on function ${target} from public`); }
+    assert.deepEqual(badRows(), []);
+  });
+});
