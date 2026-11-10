@@ -102,6 +102,7 @@ const SUITES = [
   'supabase/tests/editions-operations.node.test.ts',
   'supabase/tests/editions-branding.node.test.ts',
   'supabase/tests/editions-hardening.node.test.ts',
+  'supabase/tests/editions-admin-access.node.test.ts',
   'supabase/tests/editions-rollback.node.test.ts',
   'supabase/tests/editions-post-checks.node.test.ts',
   'supabase/tests/editions-migration-reconcile.node.test.ts',
