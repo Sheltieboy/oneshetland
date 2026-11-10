@@ -86,18 +86,25 @@ describe('R9 to R12 rollbacks (140000, 130000, 120000, 110000, 100000, 090000), 
   test('a second run is harmless', () => { for (const stem of stems) assert.doesNotMatch(d2.raw(file(stem)), /ERROR/, stem); });
 });
 
-describe('Editions 1.1 rollbacks (190000, 180000, 170000, 160000), newest first, on their own fresh replay', () => {
+describe('Hub verification + pilot + 1.1 rollbacks (210000, 200000, 190000, 180000, 170000, 160000), newest first, on their own fresh replay', () => {
   let d3: ReplayDb; const q3 = (sql: string) => d3.raw(sql).split('\n').map((l) => l.trim()).filter((l) => l && !/^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|DELETE \d+)$/.test(l)).pop() ?? '';
   before(() => { d3 = createReplayDb('editionsrollback3'); });
   after(() => { try { d3?.drop(); } catch { /* */ } });
-  const stems = ['20270102190000_editions_add_from_hub', '20270102180000_editions_community_packages', '20270102170000_editions_hub_run', '20270102160000_editions_hub_partners'];
+  const stems = ['20270102210000_admin_verify_hub', '20270102200000_editions_pilot', '20270102190000_editions_add_from_hub', '20270102180000_editions_community_packages', '20270102170000_editions_hub_run', '20270102160000_editions_hub_partners'];
   test('everything they add is present, then each rollback runs clean, twice', () => {
+    assert.equal(q3(`select count(*) from pg_proc where proname='admin_set_hub_verified'`), '1');
+    assert.equal(q3(`select to_regclass('public.edition_pilot_approvals') is not null`), 't');
     assert.equal(q3(`select to_regclass('public.edition_link_hub_items') is not null`), 't');
     assert.equal(q3(`select count(*) from pg_proc where proname='edition_hub_own_items'`), '1');
     assert.equal(q3(`select count(*) from information_schema.columns where table_name='edition_packages' and column_name='audience'`), '1');
     for (const stem of stems) { const f = file(stem); for (let i = 0; i < 2; i++) assert.doesNotMatch(d3.raw(f), /ERROR/, `${stem} run ${i + 1}`); }
   });
   test('what they added is gone and the earlier layers work as before', () => {
+    assert.equal(q3(`select count(*) from pg_proc where proname='admin_set_hub_verified'`), '0');
+    assert.equal(q3(`select to_regclass('public.edition_pilot_approvals') is null`), 't');
+    for (const f of ['editions_pilot', 'edition_pilot_visible', 'admin_set_editions_pilot', 'admin_approve_edition_pilot', 'admin_revoke_edition_pilot', 'admin_grant_edition_pilot_publish', 'admin_create_edition_organiser_for_hub']) assert.equal(q3(`select count(*) from pg_proc where proname='${f}'`), '0', f);
+    assert.equal(q3(`select count(*) from pg_proc where proname='edition_is_public' and prosrc like '%pilot%'`), '0', 'edition_is_public is back to the pre-pilot predicate');
+    assert.equal(q3(`select count(*) from pg_policies where policyname='edition_organisers public read' and qual like '%pilot%'`), '0');
     assert.equal(q3(`select to_regclass('public.edition_link_hub_items') is null`), 't');
     assert.equal(q3(`select count(*) from information_schema.columns where table_name='edition_links' and column_name='hub_id'`), '0');
     assert.equal(q3(`select count(*) from information_schema.columns where table_name='edition_packages' and column_name='audience'`), '0');

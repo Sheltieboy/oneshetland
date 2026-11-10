@@ -70,7 +70,7 @@ describe('S8 every edition table is locked down by default', () => {
   test('no edition definer function is executable by anon except the public-read helpers', () => {
     const open = E.q(`select coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.prosecdef and (p.proname like 'edition%' or p.proname like 'admin_%edition%' or p.proname like '%edition_%') and has_function_privilege('anon', p.oid, 'execute')`);
-    assert.equal(open, 'edition_entitled,edition_is_public,edition_participation_ok,edition_public_tiers,editions_enabled');
+    assert.equal(open, 'edition_entitled,edition_is_public,edition_participation_ok,edition_pilot_visible,edition_public_tiers,editions_enabled');
   });
   test('S7: the R1 edition tables reference only each other, auth.users and hubs (later releases add their own, tested in their suites)', () => {
     const refs = E.q(`select coalesce(string_agg(distinct ccl.relname, ',' order by ccl.relname), '') from pg_constraint c join pg_class cl on cl.oid=c.conrelid join pg_class ccl on ccl.oid=c.confrelid

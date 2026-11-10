@@ -17,7 +17,7 @@ select 'the public Hub view exposes only whitelisted Hub columns (no owner, memb
           and column_name in ('owner_id','stripe_account_id','payout_enabled','contact_email','contact_phone','charity_number','memberships_enabled','join_mode')) = 0
 union all
 select 'no new Editions function is executable by anon or PUBLIC (the signed-out role still runs exactly the six reviewed helpers)',
-       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = 6
+       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = (6 + (select count(*) from pg_proc q where q.pronamespace = 'public'::regnamespace and q.proname = 'edition_pilot_visible'))
        and (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type='EXECUTE'))) = 0
 union all
 select 'Hub-derived organiser authority and the Hub organiser functions exist and are signed-in only',

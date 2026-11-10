@@ -121,8 +121,8 @@ describe('the strict model is unchanged', () => {
     assert.equal(hidden('edition_payout_accounts'), 'stripe_account_id');
     assert.equal(q(`select count(*) from information_schema.column_privileges where table_schema='public' and table_name='edition_organisers' and column_name='contact_email' and grantee in ('anon','authenticated') and privilege_type='SELECT'`), '0');
   });
-  test('no new anonymous capability: the signed-out role still executes exactly six Editions functions', () => {
-    assert.equal(q(`select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')`), '6');
+  test('no new anonymous capability: the signed-out role still executes exactly seven Editions functions (six reviewed helpers plus edition_pilot_visible)', () => {
+    assert.equal(q(`select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')`), '7');
     assert.equal(q(`select count(*) from information_schema.role_table_grants where grantee='anon' and table_schema='public' and table_name like 'edition%' and privilege_type <> 'SELECT'`), '0');
   });
   test('rollback removes only the function and is safe to run twice', () => {
