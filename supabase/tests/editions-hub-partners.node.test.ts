@@ -6,29 +6,19 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, draftEdition, d, last, failed as baseFailed } from './_support/editions-env.ts';
+import { publishEdition, approveEdition, addHelper, aliased } from './_support/editions-env-2.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), ORG_OWNER: id(3), ORG_EDITOR: id(4), BIZ: id(5), HUB_OWNER: id(8), HUB_COMMITTEE: id(9), HUB_MEMBER: id(10), HUB2_OWNER: id(11), STRANGER: id(7) } as const;
-type Who = keyof typeof U | 'anon';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
-const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates|not permitted|not found|only the|cannot change|at most|own events|approved Hub/im.test(o);
+// The Edition here is run by a BUSINESS (a Business-run organiser works exactly like a Hub-run one): ORG_OWNER is its owner, ORG_EDITOR a helper, BIZ the owner of a partner Business.
+const MAP = { ADMIN: 'ADMIN', ORG_OWNER: 'BIZ_OWNER', ORG_EDITOR: 'HELPER', BIZ: 'BIZ2_OWNER', HUB_OWNER: 'HUB_OWNER', HUB_COMMITTEE: 'HUB_COMMITTEE', HUB_MEMBER: 'HUB_MEMBER', HUB2_OWNER: 'HUB2_OWNER', STRANGER: 'STRANGER' } as const;
+const U = { ADMIN: USERS.ADMIN, ORG_OWNER: USERS.BIZ_OWNER, ORG_EDITOR: USERS.HELPER, BIZ: USERS.BIZ2_OWNER, HUB_OWNER: USERS.HUB_OWNER, HUB_COMMITTEE: USERS.HUB_COMMITTEE, HUB_MEMBER: USERS.HUB_MEMBER, HUB2_OWNER: USERS.HUB2_OWNER, STRANGER: USERS.STRANGER } as const;
+type Who = keyof typeof MAP | 'anon';
+const failed = (o: string) => baseFailed(o) || /cannot change|at most|own events|approved Hub|not available/i.test(o);
 
-class Env {
-  db!: ReplayDb;
-  as(who: Who) { return who === 'anon' ? 'set local role anon;' : `set local request.jwt.claims = '{"sub":"${U[who]}","email":"${U[who]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[who]}'; set local role authenticated;`; }
-  try(who: Who, sql: string) { return this.db.raw(`begin; ${this.as(who)} ${sql}; rollback;`); }
-  do(who: Who, sql: string) { return this.db.raw(`begin; ${this.as(who)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
-  sup(sql: string) { return this.db.raw(sql); }
-  one(who: Who, sql: string) { return last(this.try(who, sql)); }
-}
-let E: Env;
+let Base: Env, S: ReturnType<typeof seed>;
+let E: ReturnType<typeof aliased<keyof typeof MAP>>;
 let ORG = '', ED = '', HUB = '', HUB2 = '', HUB_OFF = '', BIZ1 = '';
 let EV_OPEN = '', EV_MEMBERS = '', EV_DRAFT = '', EV_HUB2 = '', ACT_OK = '', ACT_UNAPPROVED = '', ACT_HUB2 = '', EV_BIZ = '';
-const d = (n: number) => `(current_date + ${n})`;
 const invite = (who: Who, kind: string, subject: string) => E.do(who, `select public.edition_invite_partner('${ED}','${kind}','${subject}')`);
 const inviteId = (who: Who, kind: string, subject: string) => last(invite(who, kind, subject));
 const act = (who: Who, link: string, a: string) => E.try(who, `select public.edition_link_act('${link}','${a}',null)`);
@@ -39,44 +29,35 @@ const pubItems = () => E.one('anon', `select coalesce(string_agg(coalesce(event_
 const hubLink = (state_: string) => E.q(`select id from edition_links where edition_id='${ED}' and hub_id='${HUB}' and state='${state_}' order by created_at desc limit 1`);
 
 before(() => {
-  E = new Env();
-  E.db = createReplayDb('editionshubpartners');
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  E.sup(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array[${Object.values(U).map((u) => `'${u}'::uuid`).join(',')}]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) values ('${U.ADMIN}','admin','Zed Admin'),('${U.ORG_OWNER}','customer','Orla Organiser'),('${U.ORG_EDITOR}','customer','Eddie Editor'),('${U.BIZ}','customer','Bea Owner'),
-      ('${U.HUB_OWNER}','customer','Hana Hub'),('${U.HUB_COMMITTEE}','customer','Colm Committee'),('${U.HUB_MEMBER}','customer','Mia Member'),('${U.HUB2_OWNER}','customer','Hugh Other'),('${U.STRANGER}','customer','Sam Stranger')
-      on conflict (id) do update set role = excluded.role, full_name = excluded.full_name;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features') on conflict (key) do update set value='true';`);
-  const hub = (owner: string, name: string, slug: string, active = true) => last(E.sup(`insert into hubs (owner_id, name, slug, type, area, description, website, is_active) values ('${owner}','${name}','${slug}','community','Lerwick','A real Hub','https://hub.example',${active}) returning id`));
-  HUB = hub(U.HUB_OWNER, 'ZZ Slippit Hub', 'zz-slippit-hub'); HUB2 = hub(U.HUB2_OWNER, 'ZZ Other Hub', 'zz-other-hub'); HUB_OFF = hub(U.HUB2_OWNER, 'ZZ Dormant Hub', 'zz-dormant-hub', false);
-  E.sup(`insert into hub_members (hub_id, user_id, role, status) values ('${HUB}','${U.HUB_COMMITTEE}','committee','active'),('${HUB}','${U.HUB_MEMBER}','member','active') on conflict do nothing`);
-  BIZ1 = last(E.sup(`insert into local_businesses (owner_id, name, category, address, is_active) values ('${U.BIZ}','ZZ Harbour Cafe','food_drink','1 Quay, Lerwick',true) returning id`));
+  Base = new Env('editionshubpartners');
+  S = seed(Base); E = aliased(Base, MAP);
+  HUB = S.HUB; HUB2 = S.HUB2; BIZ1 = S.BIZ2;
+  HUB_OFF = last(E.sup(`insert into hubs (owner_id, name, slug, type, area, description, is_active) values ('${U.HUB2_OWNER}','ZZ Dormant Hub','zz-dormant-hub','community','Lerwick','A dormant Hub',false) returning id`));
+  E.sup(`update hubs set website='https://hub.example' where id='${HUB}'`);
   const ev = (title: string, status: string, vis: string, hubId: string | null, biz: string | null = null) => last(E.sup(`insert into events (title, starts_at, status, hub_visibility, organiser_hub_id, organiser_business_id, organiser_user_id)
-      values ('${title}', (${d(11)})::timestamp + interval '19 hours', '${status}', '${vis}', ${hubId ? `'${hubId}'` : 'null'}, ${biz ? `'${biz}'` : 'null'}, '${hubId ? U.HUB_OWNER : U.BIZ}') returning id`));
+      values ('${title}', (${d(21)})::timestamp + interval '19 hours', '${status}', '${vis}', ${hubId ? `'${hubId}'` : 'null'}, ${biz ? `'${biz}'` : 'null'}, '${hubId ? U.HUB_OWNER : U.BIZ}') returning id`));
   EV_OPEN = ev('ZZ Hub Open Concert', 'published', 'islands', HUB); EV_MEMBERS = ev('ZZ Hub Members Social', 'published', 'members', HUB); EV_DRAFT = ev('ZZ Hub Draft Gala', 'draft', 'islands', HUB);
   EV_HUB2 = ev('ZZ Other Hub Quiz', 'published', 'islands', HUB2); EV_BIZ = ev('ZZ Harbour Quiz Night', 'published', 'islands', null, BIZ1);
   const act = (slug: string, title: string, hubId: string, approved: boolean) => last(E.sup(`insert into regular_activities (slug, title, status, organiser_hub_id, created_by, calendar_approved) values ('${slug}','${title}','published','${hubId}','${U.HUB_OWNER}',${approved}) returning id`));
   ACT_OK = act('zz-hub-choir', 'ZZ Hub Choir', HUB, true); ACT_UNAPPROVED = act('zz-hub-pending', 'ZZ Hub Pending Club', HUB, false); ACT_HUB2 = act('zz-other-club', 'ZZ Other Hub Club', HUB2, true);
-  ORG = last(E.do('ORG_OWNER', `select public.create_edition_organiser('ZZ TEST Festival Co.', 'zz-test-festival-co', 'tag')`));
-  E.do('ORG_OWNER', `select public.invite_edition_member('${ORG}', '${U.ORG_EDITOR}@x.invalid', 'editor')`);
-  E.do('ORG_EDITOR', `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}'`)}')`);
-  E.do('ORG_OWNER', `select public.request_edition_organiser_verification('${ORG}', 'ZZ TEST committee evidence')`);
-  E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG}', 'verify', 'ok ok ok ok')`);
-  ED = last(E.do('ORG_OWNER', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG}','zz-test-fest-2027','ZZ TEST Fest','A festival.','multi_day',${d(10)},${d(12)}) returning id`));
-  E.do('ADMIN', `select public.admin_grant_edition_entitlement('${ED}', 'publish', now(), now() + interval '90 days', 'ZZ TEST grant for hub partner suite')`);
-  E.do('ORG_OWNER', `select public.edition_set_status('${ED}', 'published')`);
+  ORG = enter(Base, 'BIZ_OWNER', 'business', S.BIZ);
+  addHelper(Base, 'BIZ_OWNER', ORG, 'HELPER', `${USERS.HELPER}@x.invalid`);
+  ED = draftEdition(Base, 'BIZ_OWNER', ORG, 'zz-test-fest-2027', 'ZZ TEST Fest');
+  publishEdition(Base, 'BIZ_OWNER', ED, 'ZZ TEST grant for hub partner suite');
   assert.equal(E.one('anon', `select count(*) from public.editions where id='${ED}'`), '1');
 });
+after(() => Base?.drop());
+
 after(() => { try { E?.db.drop(); } catch { /* */ } });
 
 describe('finding a Hub to invite', () => {
   test('the organiser team finds active Hubs by name, area or type; short searches, strangers, Hub admins and inactive Hubs get nothing', () => {
-    assert.equal(E.one('ORG_EDITOR', `select name from public.edition_find_hubs('${ED}', 'slippit')`), 'ZZ Slippit Hub');
+    assert.equal(E.one('ORG_EDITOR', `select name from public.edition_find_hubs('${ED}', 'test hub')`), 'ZZ Test Hub');
     assert.equal(E.one('ORG_EDITOR', `select count(*) from public.edition_find_hubs('${ED}', 'Lerwick')`), '2', 'by area: both active Hubs');
     assert.equal(E.one('ORG_EDITOR', `select count(*) from public.edition_find_hubs('${ED}', 'Dormant')`), '0', 'an inactive Hub is not offered');
     assert.equal(E.one('ORG_EDITOR', `select count(*) from public.edition_find_hubs('${ED}', 'z')`), '0');
-    for (const w of ['STRANGER', 'HUB_OWNER', 'BIZ'] as Who[]) assert.ok(failed(E.try(w, `select * from public.edition_find_hubs('${ED}','slippit')`)), w);
-    assert.ok(failed(E.try('anon', `select * from public.edition_find_hubs('${ED}','slippit')`)));
+    for (const w of ['STRANGER', 'HUB_OWNER', 'BIZ'] as Who[]) assert.ok(failed(E.try(w, `select * from public.edition_find_hubs('${ED}','test hub')`)), w);
+    assert.ok(failed(E.try('anon', `select * from public.edition_find_hubs('${ED}','test hub')`)));
   });
 });
 
@@ -94,10 +75,10 @@ describe('invitation and consent: only the Hub\'s own owner and active committee
   });
   test('the Hub\'s committee approves; the Hub then appears as its own live row, with whitelisted columns only', () => {
     doAct('HUB_COMMITTEE', L, 'approve');
-    assert.equal(state(L), 'approved'); assert.equal(pubHubs(), 'ZZ Slippit Hub');
-    E.sup(`update hubs set name = 'ZZ Slippit Hub (renamed)' where id='${HUB}'`);
-    assert.equal(pubHubs(), 'ZZ Slippit Hub (renamed)', 'nothing is copied: a rename shows at once');
-    E.sup(`update hubs set name = 'ZZ Slippit Hub' where id='${HUB}'`);
+    assert.equal(state(L), 'approved'); assert.equal(pubHubs(), 'ZZ Test Hub');
+    E.sup(`update hubs set name = 'ZZ Test Hub (renamed)' where id='${HUB}'`);
+    assert.equal(pubHubs(), 'ZZ Test Hub (renamed)', 'nothing is copied: a rename shows at once');
+    E.sup(`update hubs set name = 'ZZ Test Hub' where id='${HUB}'`);
     const cols = E.q(`select string_agg(column_name, ',' order by column_name) from information_schema.columns where table_schema='public' and table_name='edition_public_hubs'`);
     assert.equal(cols, 'area,brand_color,cover_url,description,edition_id,hub_id,is_charity,is_verified,label,link_id,logo_url,name,position,slug,type,website');
     for (const c of ['owner_id', 'stripe_account_id', 'contact_email', 'payout_enabled']) assert.ok(failed(E.try('anon', `select ${c} from public.edition_public_hubs`)), c);
@@ -120,7 +101,7 @@ describe('the Hub asks to join; the organiser answers', () => {
     const R = last(E.do('HUB_COMMITTEE', `select public.edition_request_to_join('${ED}','hub','${HUB}','please include us')`));
     assert.equal(state(R), 'pending'); assert.equal(E.q(`select initiated_by from edition_links where id='${R}'`), 'entity');
     assert.ok(failed(act('HUB_COMMITTEE', R, 'approve')), 'a requester cannot approve itself'); assert.ok(failed(act('HUB_OWNER', R, 'approve')));
-    doAct('ORG_EDITOR', R, 'approve'); assert.equal(state(R), 'approved'); assert.equal(pubHubs(), 'ZZ Slippit Hub');
+    doAct('ORG_EDITOR', R, 'approve'); assert.equal(state(R), 'approved'); assert.equal(pubHubs(), 'ZZ Test Hub');
   });
 });
 
@@ -162,7 +143,7 @@ describe('withdrawal is the Hub\'s right, immediate, and final until asked again
   test('a Hub admin withdraws; the card and its items vanish at once; the organiser cannot revive it; a member cannot withdraw', () => {
     const L = hubLink('approved');
     for (const w of ['HUB_MEMBER', 'HUB2_OWNER', 'STRANGER', 'ORG_EDITOR'] as Who[]) assert.ok(failed(act(w, L, 'withdraw')), w);
-    assert.equal(pubHubs(), 'ZZ Slippit Hub'); doAct('HUB_COMMITTEE', L, 'withdraw');
+    assert.equal(pubHubs(), 'ZZ Test Hub'); doAct('HUB_COMMITTEE', L, 'withdraw');
     assert.equal(state(L), 'withdrawn'); assert.equal(E.q(`select ended_by from edition_links where id='${L}'`), 'entity');
     assert.equal(pubHubs(), ''); assert.equal(pubItems(), '');
     assert.equal(E.q(`select count(*) from edition_link_hub_items where link_id='${L}'`), '0', 'the choice is cleared: re-approval needs a fresh one');
@@ -170,16 +151,16 @@ describe('withdrawal is the Hub\'s right, immediate, and final until asked again
   });
   test('the organiser can also remove an approved Hub; the Hub\'s own records are untouched', () => {
     E.sup(`update edition_links set created_at = created_at - interval '40 days', decided_at = decided_at - interval '40 days' where edition_id='${ED}' and hub_id='${HUB}'`);
-    const l = inviteId('ORG_OWNER', 'hub', HUB); doAct('HUB_OWNER', l, 'approve'); assert.equal(pubHubs(), 'ZZ Slippit Hub');
+    const l = inviteId('ORG_OWNER', 'hub', HUB); doAct('HUB_OWNER', l, 'approve'); assert.equal(pubHubs(), 'ZZ Test Hub');
     const before = E.q(`select md5(h::text) from hubs h where id='${HUB}'`);
     doAct('ORG_OWNER', l, 'remove');
     assert.equal(state(l), 'withdrawn'); assert.equal(E.q(`select ended_by from edition_links where id='${l}'`), 'organiser');
     assert.equal(E.q(`select md5(h::text) from hubs h where id='${HUB}'`), before);
   });
   test('an inactive Hub disappears from the Edition at once and returns with it', () => {
-    const l = inviteId('ORG_OWNER', 'hub', HUB); doAct('HUB_OWNER', l, 'approve'); assert.equal(pubHubs(), 'ZZ Slippit Hub');
+    const l = inviteId('ORG_OWNER', 'hub', HUB); doAct('HUB_OWNER', l, 'approve'); assert.equal(pubHubs(), 'ZZ Test Hub');
     E.sup(`update hubs set is_active=false where id='${HUB}'`); assert.equal(pubHubs(), '');
-    E.sup(`update hubs set is_active=true where id='${HUB}'`); assert.equal(pubHubs(), 'ZZ Slippit Hub');
+    E.sup(`update hubs set is_active=true where id='${HUB}'`); assert.equal(pubHubs(), 'ZZ Test Hub');
   });
 });
 
@@ -220,7 +201,7 @@ describe('the Hub administrator\'s own view', () => {
     E.do('ORG_EDITOR', `select public.edition_invite_partner('${ed3}','hub','${HUB}')`);
     assert.equal(E.one('HUB_OWNER', `select count(*) from public.edition_my_pending_count()`), '1');
     assert.equal(E.one('HUB_COMMITTEE', `select count(*) from public.edition_my_partnerships() where kind='hub' and state='pending'`), '1');
-    assert.equal(E.one('HUB_COMMITTEE', `select subject_name from public.edition_my_partnerships() where kind='hub' and state='pending'`), 'ZZ Slippit Hub');
+    assert.equal(E.one('HUB_COMMITTEE', `select subject_name from public.edition_my_partnerships() where kind='hub' and state='pending'`), 'ZZ Test Hub');
     for (const w of ['HUB_MEMBER', 'HUB2_OWNER', 'BIZ', 'STRANGER'] as Who[]) assert.equal(E.one(w, `select count(*) from public.edition_my_partnerships() where subject_name like 'ZZ Slippit%'`), '0', w);
     assert.equal(E.one('ORG_EDITOR', `select count(*) from public.edition_partner_rows('${ED}') where kind='hub'`), E.q(`select count(*) from edition_links where edition_id='${ED}' and kind='hub'`));
   });
@@ -238,10 +219,15 @@ describe('integrity', () => {
     assert.match(E.sup(`insert into edition_links (edition_id, kind, initiated_by, state) values ('${ED}','hub','organiser','pending')`), /violates check constraint/);
   });
   test('a Hub-run Edition cannot invite its own Hub as a partner (its identity is already the Edition\'s), but can invite another Hub', () => {
-    const o = last(E.do('HUB_OWNER', `select public.create_edition_organiser_for_hub('${HUB}', 'zz-slippit-fest')`));
-    const edH = last(E.do('HUB_OWNER', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${o}','zz-slippit-fest-2027','ZZ Slippit Fest','x','multi_day',${d(50)},${d(52)}) returning id`));
+    const o = enter(Base, 'HUB_OWNER', 'hub', HUB);
+    const edH = draftEdition(Base, 'HUB_OWNER', o, 'zz-hub-fest-2027', 'ZZ Hub Fest');
+    approveEdition(Base, 'HUB_OWNER', edH); // the first approval also verifies the organiser, which invitations require
     assert.match(E.try('HUB_OWNER', `select public.edition_invite_partner('${edH}','hub','${HUB}')`), /run by that Hub already/);
     assert.match(E.try('HUB_COMMITTEE', `select public.edition_invite_partner('${edH}','hub','${HUB}')`), /run by that Hub already/);
+    // a Hub-run Edition can invite another Hub (NB: no equivalent self-partner refusal exists for a Business-run Edition inviting its own Business; reported, not asserted)
+    const lh2 = last(E.do('HUB_OWNER', `select public.edition_invite_partner('${edH}','hub','${HUB2}')`));
+    E.do('HUB2_OWNER', `select public.edition_link_act('${lh2}','approve',null)`);
+    assert.equal(E.q(`select state from edition_links where id='${lh2}'`), 'approved');
   });
 });
 
@@ -252,8 +238,8 @@ describe('businesses and Hubs together, and nothing about business participation
     assert.ok(failed(act('HUB_OWNER', lb, 'approve')), 'a Hub admin cannot answer for a business');
     assert.ok(failed(act('BIZ', lh, 'approve')), 'a business owner cannot answer for a Hub');
     doAct('BIZ', lb, 'approve'); doAct('HUB_OWNER', le, 'approve'); doAct('HUB_OWNER', lh, 'approve');
-    assert.equal(E.one('anon', `select string_agg(name, '|' order by name) from public.edition_public_businesses where edition_id='${ED}'`), 'ZZ Harbour Cafe');
-    assert.equal(pubHubs(), 'ZZ Slippit Hub');
+    assert.equal(E.one('anon', `select string_agg(name, '|' order by name) from public.edition_public_businesses where edition_id='${ED}'`), 'ZZ Other Shop');
+    assert.equal(pubHubs(), 'ZZ Test Hub');
     assert.equal(E.one('anon', `select string_agg(title, '|') from public.edition_public_events where edition_id='${ED}'`), 'ZZ Hub Open Concert');
     doAct('HUB_OWNER', lh, 'withdraw');
     assert.equal(pubHubs(), ''); assert.equal(E.one('anon', `select count(*) from public.edition_public_businesses where edition_id='${ED}'`), '1', 'a Hub withdrawal does not touch the business');

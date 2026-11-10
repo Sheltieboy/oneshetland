@@ -10,5 +10,5 @@ union all
 select 'contact_email is still NOT selectable directly by authenticated or anon (the table grants are unchanged)',
        (select count(*) from information_schema.column_privileges where table_schema = 'public' and table_name = 'edition_organisers' and column_name = 'contact_email' and grantee in ('anon', 'authenticated') and privilege_type = 'SELECT') = 0
 union all
-select 'the signed-out role still executes exactly the six reviewed public helpers (foundation check is authoritative)',
-       (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = (6 + (select count(*) from pg_proc q where q.pronamespace = 'public'::regnamespace and q.proname = 'edition_pilot_visible'));
+select 'the signed-out role still executes exactly the nine reviewed public helpers (foundation check is authoritative)',
+       (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = 9;

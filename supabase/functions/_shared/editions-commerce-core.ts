@@ -199,6 +199,12 @@ export const refundParams = (r: { payment_intent: string; amount_pence: number; 
   assertPence(r.amount_pence, 'refund');
   return { payment_intent: r.payment_intent, amount: String(r.amount_pence), reverse_transfer: 'true', refund_application_fee: r.refund_application_fee ? 'true' : 'false', 'metadata[kind]': 'edition_refund', 'metadata[request_id]': r.request_id };
 };
+/** Refund of a PACKAGE order: the platform kept the whole price (no transfer, no application fee), so nothing is reversed. */
+export const orderRefundParams = (r: { payment_intent: string; amount_pence: number; request_id: string; order_id: string }): Record<string, string> => {
+  assertPence(r.amount_pence, 'refund');
+  if (r.amount_pence <= 0) throw new Error('refund must be more than nothing');
+  return { payment_intent: r.payment_intent, amount: String(r.amount_pence), reason: 'requested_by_customer', 'metadata[kind]': 'edition_order_refund', 'metadata[request_id]': r.request_id, 'metadata[order_id]': r.order_id };
+};
 /**
  * The provider request that ends a card membership's subscription. 'at_period_end' stops renewal but keeps what was paid for; 'now' ends it immediately with no proration and no
  * final invoice. Returned as data so it can be unit-tested and checked against Stripe's API spec.
@@ -259,3 +265,30 @@ export function safeEqual(a: string, b: string): boolean {
 }
 /** Form-encode (Stripe takes application/x-www-form-urlencoded). */
 export const formBody = (p: Record<string, string>): string => new URLSearchParams(p).toString();
+
+/**
+ * May this signed-in person start a card payment for this package order? Pure, so it is unit-tested.
+ * The order was created by the database (edition_create_order: an owner or admin, an APPROVED Edition, a live Business or Hub, the stored price). The checkout re-checks the parts that can
+ * change in between: still the buyer, still an owner or admin, Edition still approved, payments still switched on. A 'failed' order may be retried (the same quote reuses the same provider request).
+ */
+export function orderCheckoutDecision(i: { order: { buyer_id: string; status: string } | null; userId: string; canAdmin: boolean; editionApproved: boolean; commerceOn: boolean }): { ok: true } | { ok: false; status: number; error: string } {
+  if (!i.order || i.order.buyer_id !== i.userId || !['pending', 'failed'].includes(i.order.status)) return { ok: false, status: 404, error: 'Order not available' };
+  if (!i.commerceOn) return { ok: false, status: 409, error: 'Payments are not switched on yet' };
+  if (!i.canAdmin) return { ok: false, status: 403, error: 'Only an owner or admin can pay for a package' };
+  if (!i.editionApproved) return { ok: false, status: 409, error: 'This Edition needs to be approved before a package can be bought' };
+  return { ok: true };
+}
+
+/**
+ * Package orders are held in edition_orders (not the participation/membership payments ledger), so the reconciliation compares them here. Returns the exceptions an administrator should see
+ * for ONE Edition-order charge from the provider (nothing is auto-fixed). Unpaid or uncaptured charges are skipped.
+ */
+export function reconcileOrderCharge(charge: { payment_intent: string; amount: number; refunded: number; paid: boolean }, order: { organiser_id: string; amount_pence: number; refunded_pence: number; status: string } | null): { kind: 'missing_in_ledger' | 'amount_mismatch' | 'refund_mismatch'; ref: string; org: string | null; detail: Record<string, unknown> }[] {
+  if (!charge.paid) return [];
+  const ref = charge.payment_intent;
+  if (!order || !['paid', 'partially_refunded', 'refunded'].includes(order.status)) return [{ kind: 'missing_in_ledger', ref, org: order?.organiser_id ?? null, detail: { amount: charge.amount, order_status: order?.status ?? 'none' } }];
+  const out: ReturnType<typeof reconcileOrderCharge> = [];
+  if (charge.amount !== order.amount_pence) out.push({ kind: 'amount_mismatch', ref, org: order.organiser_id, detail: { provider: charge.amount, ledger: order.amount_pence } });
+  if (charge.refunded !== order.refunded_pence) out.push({ kind: 'refund_mismatch', ref, org: order.organiser_id, detail: { provider: charge.refunded, ledger: order.refunded_pence } });
+  return out;
+}

@@ -39,7 +39,22 @@ serve(async (req) => {
   try {
     if (routed.onlyIfKnownPaymentIntent) {
       const { data: known } = await svc.rpc('edition_payment_known', { p_payment_intent: routed.onlyIfKnownPaymentIntent });
-      if (known !== true) { await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'ignored', p_detail: 'not an Edition payment' }); return json({ received: true, ignored: 'not ours' }); }
+      if (known !== true) {
+        // A PACKAGE order lives in edition_orders, not the payments ledger. A dispute or an unmarked refund on its payment must still reach it (otherwise the Edition would stay live after the money has gone).
+        const { data: ord } = await svc.from('edition_orders').select('id, organiser_id, edition_id').eq('stripe_payment_intent_id', routed.onlyIfKnownPaymentIntent).maybeSingle();
+        const first = routed.calls[0];
+        if (ord && first?.fn === 'edition_payment_refunded') {
+          const { error } = await svc.rpc('edition_refund_order', { p_order: ord.id, p_refunded_total: first.args.p_refunded_total });
+          if (error) throw new Error(`edition_refund_order: ${error.message}`);
+          await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'ok', p_detail: 'package order refund' }); return json({ received: true });
+        }
+        if (ord && first?.fn === 'edition_payment_disputed') {
+          // a dispute never silently changes entitlements: it is raised for the administrator, who can void the package if the dispute is lost
+          await svc.rpc('edition_record_exception', { p_kind: 'dispute', p_ref: routed.onlyIfKnownPaymentIntent, p_org: ord.organiser_id, p_detail: { order: ord.id, edition: ord.edition_id, reason: first.args.p_reason, event_type: type } });
+          await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'ok', p_detail: 'package order dispute raised' }); return json({ received: true });
+        }
+        await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'ignored', p_detail: 'not an Edition payment' }); return json({ received: true, ignored: 'not ours' });
+      }
     }
     // Optional enrichment: the provider's own fee numbers for the ledger (never used to decide whether to fulfil).
     let platformFee: number | null = null, stripeFee: number | null = null;
@@ -53,7 +68,14 @@ serve(async (req) => {
       const args = { ...call.args };
       if (call.fn === 'edition_membership_payment_succeeded') { args.p_stripe_fee = stripeFee; args.p_platform_fee = platformFee; }
       if (call.fn === 'edition_participation_payment_succeeded') { args.p_stripe_fee = stripeFee; }
-      const { error } = await svc.rpc(call.fn, args);
+      const { data: result, error } = await svc.rpc(call.fn, args);
+      if (!error && call.fn === 'edition_fulfil_order' && result === 'already_fulfilled') {
+        // the order was already paid. The same payment arriving again is a harmless replay; a DIFFERENT payment for it is a duplicate charge that the administrator must refund.
+        const { data: ord } = await svc.from('edition_orders').select('organiser_id, stripe_payment_intent_id').eq('id', call.args.p_order).maybeSingle();
+        if (ord && ord.stripe_payment_intent_id && ord.stripe_payment_intent_id !== call.args.p_payment_intent) {
+          await svc.rpc('edition_record_exception', { p_kind: 'missing_in_ledger', p_ref: String(call.args.p_payment_intent), p_org: ord.organiser_id, p_detail: { duplicate_payment_for_order: call.args.p_order, amount: call.args.p_amount, note: 'a second payment for an order that was already paid: refund it' } });
+        }
+      }
       if (error) {
         // An amount the database refuses is a business problem, not a retry problem: record it for the administrator and acknowledge.
         if (/amount_mismatch|does not match/.test(error.message)) {

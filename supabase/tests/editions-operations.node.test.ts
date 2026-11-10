@@ -5,57 +5,54 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env as BaseEnv, USERS, seed, enter, last, d } from './_support/editions-env.ts';
+import { approve, grantPublish } from './_support/editions-env-1.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), OWNER: id(3), ORG_ADMIN: id(4), ORG_EDITOR: id(5), BIZ1: id(6), BIZ2: id(7), STRANGER: id(8), VISITOR: id(9) } as const;
+// OWNER = the Hub's owner (runs the organiser); ORG_ADMIN / ORG_EDITOR = invited helpers; BIZ1 / BIZ2 = Business owners (partners); STRANGER; VISITOR = a Hub member with a pending invitation; ADMIN = platform administrator
+const U = { ADMIN: USERS.ADMIN, OWNER: USERS.HUB_OWNER, ORG_ADMIN: USERS.HELPER, ORG_EDITOR: USERS.EDITOR, BIZ1: USERS.BIZ_OWNER, BIZ2: USERS.BIZ2_OWNER, STRANGER: USERS.STRANGER, VISITOR: USERS.HUB_MEMBER } as const;
 type Who = keyof typeof U | 'anon' | 'service';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
 const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates/im.test(o);
 class Env {
-  db!: ReplayDb;
+  b: BaseEnv;
+  constructor(name: string) { this.b = new BaseEnv(name); }
+  get db() { return this.b.db; }
   as(w: Who) { return w === 'anon' ? 'set local role anon;' : w === 'service' ? 'set local role service_role;' : `set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated;`; }
   try(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; rollback;`); }
   do(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
+  q(sql: string) { return this.b.q(sql); }
   sup(sql: string) { return this.db.raw(sql); }
   one(w: Who, sql: string) { return last(this.try(w, sql)); }
   doOne(w: Who, sql: string) { return last(this.do(w, sql)); }
 }
 let E: Env; let ORG = '', ED = '', B1 = '', B2 = '', T = '';
-const days = (n: number) => `(now() + interval '${n} days')`; const d = (n: number) => `(current_date + ${n})`;
+const days = (n: number) => `(now() + interval '${n} days')`;
 const outbox = (where = 'true') => E.q(`select coalesce(string_agg(kind || ':' || user_id, ',' order by id), '') from edition_email_outbox where ${where}`);
 const U_ = (k: keyof typeof U) => U[k];
 
 before(() => {
-  E = new Env(); E.db = createReplayDb('editionsops');
+  E = new Env('editionsops');
   E.sup(`do $$ begin if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if; end $$;`);
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  const all = Object.values(U).map((x) => `'${x}'::uuid`).join(',');
-  E.sup(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array[${all}]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) select x, case when x = '${U.ADMIN}'::uuid then 'admin' else 'customer' end, 'N' from unnest(array[${all}]) x on conflict (id) do update set role = excluded.role;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features'),('editions.commerce.enabled','true','editions') on conflict (key) do update set value = excluded.value;`);
-  ORG = last(E.do('OWNER', `select public.create_edition_organiser('ZZ Ops Org', 'zz-ops-org')`));
-  E.do('OWNER', `select public.invite_edition_member('${ORG}', '${U.ORG_ADMIN}@x.invalid', 'admin')`);
-  E.do('ORG_ADMIN', `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}' and email='${U.ORG_ADMIN}@x.invalid'`)}')`);
-  E.do('OWNER', `select public.invite_edition_member('${ORG}', '${U.ORG_EDITOR}@x.invalid', 'editor')`);
-  E.do('ORG_EDITOR', `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}' and email='${U.ORG_EDITOR}@x.invalid'`)}')`);
+  const S = seed(E.b);
+  E.sup(`insert into admin_config (key, value, category) values ('editions.commerce.enabled','true','editions') on conflict (key) do update set value = excluded.value;`);
+  ORG = enter(E.b, 'HUB_OWNER', 'hub', S.HUB);
+  const accept = (helper: 'ORG_ADMIN' | 'ORG_EDITOR', role: string) => {
+    E.do('OWNER', `select public.invite_edition_member('${ORG}', '${U[helper]}@x.invalid', '${role}')`);
+    E.do(helper, `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}' and email='${U[helper]}@x.invalid'`)}')`);
+  };
+  accept('ORG_ADMIN', 'admin'); accept('ORG_EDITOR', 'editor');
   E.do('OWNER', `select public.invite_edition_member('${ORG}', '${U.VISITOR}@x.invalid', 'editor')`);   // left pending on purpose
-  E.do('OWNER', `select public.request_edition_organiser_verification('${ORG}', 'evidence evidence')`);
   E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG}', 'verify', 'ok ok ok ok')`);
   for (const f of ['collect_payments', 'memberships', 'offline_records', 'participation_fees']) E.do('ADMIN', `select public.admin_grant_edition_org_entitlement('${ORG}', '${f}', null, ${days(90)}, 'ZZ ops suite')`);
   E.do('OWNER', `select public.edition_accept_commerce_terms('${ORG}', 'draft-1')`);
   E.do('service', `select public.edition_payout_account_sync('${ORG}', 'acct_ops_1', true, true, true, '[]'::jsonb)`);
   ED = last(E.do('OWNER', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG}','zz-ops-fest','ZZ Ops Fest','x','multi_day',${d(10)},${d(12)}) returning id`));
-  E.do('ADMIN', `select public.admin_grant_edition_entitlement('${ED}', 'publish', now(), ${days(90)}, 'ZZ ops suite')`);
+  E.sup(`insert into public.edition_pages (edition_id, slug, nav_label, title, body, position, in_nav, is_home) values ('${ED}','welcome','Welcome','Welcome','Hello',0,true,true)`);
+  approve(E.b, 'HUB_OWNER', ED); grantPublish(E.b, ED);
   E.do('OWNER', `select public.edition_set_status('${ED}', 'published')`);
-  const biz = (o: string, n: string) => last(E.sup(`insert into local_businesses (owner_id, name, category, address, is_active) values ('${o}', '${n}', 'food_drink', 'x', true) returning id`));
-  B1 = biz(U.BIZ1, 'ZZ Ops Cafe'); B2 = biz(U.BIZ2, 'ZZ Ops Bakery');
+  B1 = S.BIZ; B2 = S.BIZ2;
   T = last(E.do('ORG_ADMIN', `select public.edition_tier_save('${ORG}', null, 'ZZ Ops Tier', 'd', '[]'::jsonb, 1000, null, false, 'none', 'application', 'free', null, null, 1)`));
 });
-after(() => { try { E?.db.drop(); } catch { /* */ } });
+after(() => E?.b.drop());
 
 describe('email outbox: the right people, once, with no address or body stored', () => {
   test('nothing is readable or callable by people; the table holds no email address column', () => {
@@ -70,9 +67,9 @@ describe('email outbox: the right people, once, with no address or body stored',
     const l = last(E.do('ORG_ADMIN', `select public.edition_invite_partner('${ED}','business','${B1}','Cafe','Hi')`));
     assert.equal(outbox(`kind='partner_invited'`), `partner_invited:${U.BIZ1}`);
     E.do('BIZ1', `select public.edition_link_act('${l}','approve',null)`);
-    assert.equal(outbox(`kind='partner_answered'`), `partner_answered:${U.OWNER},partner_answered:${U.ORG_ADMIN}`.split(',').sort().join(',') === outbox(`kind='partner_answered'`).split(',').sort().join(',') ? outbox(`kind='partner_answered'`) : 'MISMATCH');
     assert.match(outbox(`kind='partner_answered'`), new RegExp(U.OWNER)); assert.match(outbox(`kind='partner_answered'`), new RegExp(U.ORG_ADMIN));
     assert.doesNotMatch(outbox(`kind='partner_answered'`), new RegExp(U.ORG_EDITOR), 'editors are not emailed');
+    assert.match(outbox(`kind='partner_answered'`), new RegExp(USERS.HUB_COMMITTEE), 'the Hub committee are admins through the Hub and are told too');
     const before = E.q(`select count(*) from edition_email_outbox`);
     E.do('BIZ1', `select public.edition_link_act('${l}','withdraw',null)`);
     assert.match(outbox(`kind='partner_withdrew'`), new RegExp(U.OWNER));
@@ -86,7 +83,7 @@ describe('email outbox: the right people, once, with no address or body stored',
   });
   test('payload carries only titles and names, never contact details', () => {
     const p = E.q(`select payload::text from edition_email_outbox where kind='partner_invited'`);
-    assert.match(p, /ZZ Ops Fest/); assert.match(p, /ZZ Ops Org/); assert.doesNotMatch(p, /@|phone|password/i);
+    assert.match(p, /ZZ Ops Fest/); assert.match(p, /ZZ Test Hub/); assert.doesNotMatch(p, /@|phone|password/i);
   });
   test('repeating the same event does not queue a second message (dedupe)', () => {
     const n = E.q(`select count(*) from edition_email_outbox`);
@@ -158,7 +155,7 @@ describe('analytics: aggregates, masked small counts, team only', () => {
 
 describe('team invitations name the organiser', () => {
   test('an invited person sees who invited them and in what role; nobody else sees it', () => {
-    assert.match(E.one('VISITOR', `select organiser_name || '|' || role from public.edition_my_org_invites()`), /ZZ Ops Org\|editor/, E.try('VISITOR', `select * from public.edition_my_org_invites()`) + E.q(`select email || status from edition_organiser_invites where email like '${U.VISITOR}%'`));
+    assert.match(E.one('VISITOR', `select organiser_name || '|' || role from public.edition_my_org_invites()`), /ZZ Test Hub\|editor/, E.try('VISITOR', `select * from public.edition_my_org_invites()`) + E.q(`select email || status from edition_organiser_invites where email like '${U.VISITOR}%'`));
     assert.equal(E.one('STRANGER', `select count(*) from public.edition_my_org_invites()`), '0');
     assert.ok(failed(E.try('anon', `select * from public.edition_my_org_invites()`)));
   });
@@ -185,7 +182,7 @@ describe('security review: every Editions table and function, from the catalog',
   test('no Editions function is executable by PUBLIC; anon runs only the allow-listed read helpers', () => {
     assert.equal(E.q(`select coalesce(string_agg(p.proname, ','), '') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and (p.proname like 'edition%' or p.proname like 'admin_%edition%' or p.proname like 'organiser_membership%') and exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)`), '');
     const anon = E.q(`select coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and (p.proname like 'edition%' or p.proname like 'admin_%edition%' or p.proname like 'organiser_membership%' or p.proname like 'editions%') and has_function_privilege('anon', p.oid, 'execute')`);
-    assert.equal(anon, 'edition_entitled,edition_is_public,edition_participation_ok,edition_pilot_visible,edition_public_tiers,edition_role_rank,editions_enabled');   // edition_role_rank is a pure ranking function (no data access)
+    assert.equal(anon, 'edition_business_role,edition_controls_business,edition_entitled,edition_is_public,edition_parent_live,edition_participation_ok,edition_public_tiers,edition_role_rank,editions_enabled');   // the pilot reader is gone; the three parent helpers are booleans for the public policies   // edition_role_rank is a pure ranking function (no data access)
   });
   test('money and provider functions are never executable by a signed-in person', () => {
     const exposed = E.q(`select coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('authenticated', p.oid, 'execute')
@@ -197,9 +194,11 @@ describe('security review: every Editions table and function, from the catalog',
   test('the simulator is absent from every migration (it exists only in the local stack)', () => {
     assert.equal(E.q(`select count(*) from pg_proc where proname like 'edition_local_simulate%'`), '0');
   });
-  test('Editions touched no existing table: no new column on shared tables, no trigger added to them except through the edition tables', () => {
+  test('Editions touched no existing table: no new column on shared tables, no trigger added to them except the two name-follows-its-parent triggers', () => {
     assert.equal(E.q(`select count(*) from information_schema.columns where table_schema='public' and table_name in ('local_businesses','local_offers','events','regular_activities','hubs','hub_members','profiles','saved_items') and column_name ~* '(edition|organiser_member)'`), '0');
-    assert.equal(E.q(`select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where not t.tgisinternal and c.relname in ('local_businesses','local_offers','events','regular_activities','hubs','hub_members') and t.tgname ~* 'edition'`), '0');
+    assert.equal(E.q(`select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where not t.tgisinternal and c.relname in ('local_offers','events','regular_activities','hub_members') and t.tgname ~* 'edition'`), '0');
+    // the one deliberate exception: the Editions profile's name follows its Hub / Business
+    assert.equal(E.q(`select string_agg(t.tgname, ',' order by t.tgname) from pg_trigger t join pg_class c on c.oid=t.tgrelid where not t.tgisinternal and c.relname in ('local_businesses','hubs') and t.tgname ~* 'edition'`), 'edition_sync_business_name,edition_sync_hub_name');
   });
   test('the ledger and entitlement tables reject deletes and unsanctioned updates even for the superuser', () => {
     assert.match(E.sup(`delete from edition_payments`), /cannot be deleted/); assert.match(E.sup(`delete from edition_entitlements`), /cannot be deleted/); assert.match(E.sup(`delete from edition_organiser_entitlements`), /cannot be deleted/);

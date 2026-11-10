@@ -6,72 +6,48 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, draftEdition, d, last, failed as baseFailed, type Who as BaseWho } from './_support/editions-env.ts';
+import { publishEdition, addHelper } from './_support/editions-env-2.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), HUB_OWNER: id(8), HUB_COMMITTEE: id(9), HUB_MEMBER: id(10), HUB2_OWNER: id(11), STRANGER: id(7), ORG_OWNER: id(3), ORG_EDITOR: id(4) } as const;
+// ORG_OWNER is the Business owner (a Business-run organiser is the "not Hub-run" case); ORG_EDITOR is a helper who is not on the Hub's committee
+const U = { ADMIN: USERS.ADMIN, HUB_OWNER: USERS.HUB_OWNER, HUB_COMMITTEE: USERS.HUB_COMMITTEE, HUB_MEMBER: USERS.HUB_MEMBER, HUB2_OWNER: USERS.HUB2_OWNER, STRANGER: USERS.STRANGER, ORG_OWNER: USERS.BIZ_OWNER, ORG_EDITOR: USERS.HELPER } as const;
 type Who = keyof typeof U | 'anon';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
-const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates|not permitted|not found|only the|already|not run by a Hub/im.test(o);
+const failed = (o: string) => baseFailed(o) || /not run by a Hub/i.test(o);
+const as = (w: Who): BaseWho => (w === 'ORG_OWNER' ? 'BIZ_OWNER' : w === 'ORG_EDITOR' ? 'HELPER' : w);
 
-class Env {
-  db!: ReplayDb;
-  as(who: Who) { return who === 'anon' ? 'set local role anon;' : `set local request.jwt.claims = '{"sub":"${U[who]}","email":"${U[who]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[who]}'; set local role authenticated;`; }
-  try(who: Who, sql: string) { return this.db.raw(`begin; ${this.as(who)} ${sql}; rollback;`); }
-  do(who: Who, sql: string) { return this.db.raw(`begin; ${this.as(who)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
-  sup(sql: string) { return this.db.raw(sql); }
-  one(who: Who, sql: string) { return last(this.try(who, sql)); }
-}
 let E: Env;
 let HUB = '', HUB2 = '', ORG = '', ED = '', ED_PLAIN = '';
 let EV_OPEN = '', EV_HUBONLY = '', EV_MEMBERS = '', EV_DRAFT = '', EV_OUTSIDE = '', EV_HUB2 = '', ACT_OK = '', ACT_PAUSED = '', ACT_UNAPPROVED = '';
-const d = (n: number) => `(current_date + ${n})`;
-const items = (who: Who, ed = ED) => E.one(who, `select coalesce(string_agg(kind || ':' || title || ':' || (link_id is not null)::text, '|' order by kind, title), '') from public.edition_hub_own_items('${ed}')`);
-const add = (who: Who, kind: string, subject: string) => E.do(who, `select public.edition_invite_partner('${ED}','${kind}','${subject}')`);
+const items = (who: Who, ed = ED) => E.one(as(who), `select coalesce(string_agg(kind || ':' || title || ':' || (link_id is not null)::text, '|' order by kind, title), '') from public.edition_hub_own_items('${ed}')`);
+const add = (who: Who, kind: string, subject: string) => E.do(as(who), `select public.edition_invite_partner('${ED}','${kind}','${subject}')`);
 const publicEvents = () => E.one('anon', `select coalesce(string_agg(title, '|' order by title), '') from public.edition_public_events where edition_id='${ED}'`);
 const publicActs = () => E.one('anon', `select coalesce(string_agg(title, '|' order by title), '') from public.edition_public_activities where edition_id='${ED}'`);
 const linkOf = (kind: 'event' | 'activity', subject: string) => E.q(`select id from edition_links where edition_id='${ED}' and ${kind}_id='${subject}' and state in ('pending','approved')`);
 
+let S: ReturnType<typeof seed>;
 before(() => {
-  E = new Env();
-  E.db = createReplayDb('editionsaddfromhub');
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  const ids = Object.values(U).map((u) => `'${u}'::uuid`).join(',');
-  E.sup(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array[${ids}]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) values ('${U.ADMIN}','admin','Zed Admin'),('${U.HUB_OWNER}','customer','Hana Hub'),('${U.HUB_COMMITTEE}','customer','Colm Committee'),('${U.HUB_MEMBER}','customer','Mia Member'),
-      ('${U.HUB2_OWNER}','customer','Hugh Other'),('${U.STRANGER}','customer','Sam Stranger'),('${U.ORG_OWNER}','customer','Orla Organiser'),('${U.ORG_EDITOR}','customer','Eddie Editor')
-      on conflict (id) do update set role = excluded.role, full_name = excluded.full_name;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features') on conflict (key) do update set value='true';`);
-  const hub = (owner: string, name: string, slug: string) => last(E.sup(`insert into hubs (owner_id, name, slug, type, is_active) values ('${owner}','${name}','${slug}','community',true) returning id`));
-  HUB = hub(U.HUB_OWNER, 'ZZ Slippit Hub', 'zz-slippit-hub'); HUB2 = hub(U.HUB2_OWNER, 'ZZ Other Hub', 'zz-other-hub');
-  E.sup(`insert into hub_members (hub_id, user_id, role, status) values ('${HUB}','${U.HUB_COMMITTEE}','committee','active'),('${HUB}','${U.HUB_MEMBER}','member','active') on conflict do nothing`);
+  E = new Env('editionsaddfromhub');
+  S = seed(E);
+  HUB = S.HUB; HUB2 = S.HUB2;
   const ev = (title: string, status: string, vis: string, hubId: string, day: number, hidden = false) => last(E.sup(`insert into events (title, starts_at, status, hub_visibility, organiser_hub_id, organiser_user_id, is_hidden)
       values ('${title}', (${d(day)})::timestamp + interval '19 hours', '${status}', '${vis}', '${hubId}', '${U.HUB_OWNER}', ${hidden}) returning id`));
-  EV_OPEN = ev('ZZ Open Concert', 'published', 'islands', HUB, 11); EV_HUBONLY = ev('ZZ Hub Only Meeting', 'published', 'hub', HUB, 11);
-  EV_MEMBERS = ev('ZZ Members Social', 'published', 'members', HUB, 11); EV_DRAFT = ev('ZZ Draft Gala', 'draft', 'islands', HUB, 11);
+  EV_OPEN = ev('ZZ Open Concert', 'published', 'islands', HUB, 21); EV_HUBONLY = ev('ZZ Hub Only Meeting', 'published', 'hub', HUB, 21);
+  EV_MEMBERS = ev('ZZ Members Social', 'published', 'members', HUB, 21); EV_DRAFT = ev('ZZ Draft Gala', 'draft', 'islands', HUB, 21);
   EV_OUTSIDE = ev('ZZ Outside Dates Event', 'published', 'islands', HUB, 40);
-  EV_HUB2 = ev('ZZ Other Hub Quiz', 'published', 'islands', HUB2, 11);
+  EV_HUB2 = ev('ZZ Other Hub Quiz', 'published', 'islands', HUB2, 21);
   const act = (slug: string, title: string, extra: string) => last(E.sup(`insert into regular_activities (slug, title, status, organiser_hub_id, created_by, calendar_approved ${extra.split('|')[0]}) values ('${slug}','${title}','published','${HUB}','${U.HUB_OWNER}', ${extra.split('|')[1]}) returning id`));
   ACT_OK = act('zz-choir', 'ZZ Hub Choir', '|true'); ACT_PAUSED = act('zz-paused', 'ZZ Paused Club', ', admin_paused|true, true'); ACT_UNAPPROVED = act('zz-unapproved', 'ZZ Unapproved Club', '|false');
-  ORG = last(E.do('HUB_OWNER', `select public.create_edition_organiser_for_hub('${HUB}','zz-slippit-festivals','ZZ Slippit Festivals')`));
-  E.do('HUB_OWNER', `select public.request_edition_organiser_verification('${ORG}', 'ZZ TEST committee evidence')`);
-  E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG}', 'verify', 'ok ok ok ok')`);
-  ED = last(E.do('HUB_COMMITTEE', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG}','zz-slippit-fest','ZZ Slippit Fest','A festival.','multi_day',${d(10)},${d(13)}) returning id`));
-  E.do('ADMIN', `select public.admin_grant_edition_entitlement('${ED}', 'publish', now(), now() + interval '90 days', 'ZZ TEST grant for add-from-hub suite')`);
-  E.do('HUB_COMMITTEE', `select public.edition_set_status('${ED}', 'published')`);
-  // a plain (not Hub-run) organiser and Edition, with an explicit team Editor
-  const PORG = last(E.do('ORG_OWNER', `select public.create_edition_organiser('ZZ TEST Festival Co.', 'zz-test-festival-co', 'tag')`));
-  E.do('ORG_OWNER', `select public.invite_edition_member('${PORG}', '${U.ORG_EDITOR}@x.invalid', 'editor')`);
-  E.do('ORG_EDITOR', `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${PORG}'`)}')`);
-  ED_PLAIN = last(E.do('ORG_OWNER', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${PORG}','zz-plain-fest','ZZ Plain Fest','A festival.','multi_day',${d(10)},${d(13)}) returning id`));
-  // an explicit team Editor on the Hub-run organiser who is NOT on the Hub's committee
-  E.do('HUB_OWNER', `select public.invite_edition_member('${ORG}', '${U.ORG_EDITOR}@x.invalid', 'editor')`);
-  E.do('ORG_EDITOR', `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}' order by created_at desc limit 1`)}')`);
+  ORG = enter(E, 'HUB_OWNER', 'hub', HUB);
+  ED = draftEdition(E, 'HUB_COMMITTEE', ORG, 'zz-slippit-fest', 'ZZ Slippit Fest');
+  publishEdition(E, 'HUB_COMMITTEE', ED, 'ZZ TEST grant for add-from-hub suite');
+  // a Business-run (not Hub-run) organiser and Edition, with an explicit team Editor
+  const PORG = enter(E, 'BIZ_OWNER', 'business', S.BIZ);
+  addHelper(E, 'BIZ_OWNER', PORG, 'HELPER', `${USERS.HELPER}@x.invalid`);
+  ED_PLAIN = draftEdition(E, 'BIZ_OWNER', PORG, 'zz-plain-fest', 'ZZ Plain Fest');
+  // the same helper is also an explicit team Editor on the Hub-run organiser but NOT on the Hub's committee
+  addHelper(E, 'HUB_OWNER', ORG, 'HELPER', `${USERS.HELPER}@x.invalid`);
 });
-after(() => { try { E?.db.drop(); } catch { /* */ } });
+after(() => E?.drop());
 
 describe('what the chooser offers', () => {
   test('the Hub owner and an active committee member see the same eligible events and activities, none of them added yet', () => {
@@ -83,11 +59,11 @@ describe('what the chooser offers', () => {
     for (const bad of ['Members Social', 'Draft Gala', 'Outside Dates', 'Other Hub Quiz', 'Paused Club', 'Unapproved Club']) assert.doesNotMatch(t, new RegExp(bad), bad);
   });
   test('a Hub member, a stranger, another Hub, anon and a team Editor who is not on the committee are refused', () => {
-    for (const w of ['HUB_MEMBER', 'STRANGER', 'HUB2_OWNER', 'ORG_EDITOR'] as Who[]) assert.ok(failed(E.try(w, `select * from public.edition_hub_own_items('${ED}')`)), w);
+    for (const w of ['HUB_MEMBER', 'STRANGER', 'HUB2_OWNER', 'ORG_EDITOR'] as Who[]) assert.ok(failed(E.try(as(w), `select * from public.edition_hub_own_items('${ED}')`)), w);
     assert.ok(failed(E.try('anon', `select * from public.edition_hub_own_items('${ED}')`)));
   });
   test('an Edition that is not Hub-run has nothing to offer', () => {
-    assert.match(E.try('ORG_OWNER', `select * from public.edition_hub_own_items('${ED_PLAIN}')`), /not run by a Hub/);
+    assert.match(E.try('BIZ_OWNER', `select * from public.edition_hub_own_items('${ED_PLAIN}')`), /not run by a Hub/);
   });
 });
 

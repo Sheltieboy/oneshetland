@@ -5,44 +5,30 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, draftEdition, d, last, failed as baseFailed } from './_support/editions-env.ts';
+import { approveEdition, addHelper, aliased } from './_support/editions-env-2.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), MOD: id(2), OWNER: id(3), EDITOR: id(4), OTHER: id(6) } as const;
-type Who = keyof typeof U | 'anon' | 'service';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
-const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates/im.test(o);
-class Env {
-  db!: ReplayDb;
-  as(w: Who) { return w === 'anon' ? 'set local role anon;' : w === 'service' ? 'set local role service_role;' : `set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated;`; }
-  try(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; rollback;`); }
-  do(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
-  sup(sql: string) { return this.db.raw(sql); }
-  one(w: Who, sql: string) { return last(this.try(w, sql)); }
-}
-let E: Env; let ORG = '', ED = '', PKG = '', PKG2 = '';
-const d = (n: number) => `(current_date + ${n})`;
+// The organiser is a BUSINESS (ZZ Test Cafe): OWNER is its owner, EDITOR an invited editor, ADMINH an invited admin helper, OTHER a stranger, MOD a platform moderator.
+const MAP = { ADMIN: 'ADMIN', MOD: 'HUB_COMMITTEE', OWNER: 'BIZ_OWNER', EDITOR: 'EDITOR', ADMINH: 'HELPER', OTHER: 'STRANGER' } as const;
+const U = { ADMIN: USERS.ADMIN, MOD: USERS.HUB_COMMITTEE, OWNER: USERS.BIZ_OWNER, EDITOR: USERS.EDITOR, ADMINH: USERS.HELPER, OTHER: USERS.STRANGER } as const;
+type Who = keyof typeof MAP | 'anon' | 'service';
+const failed = baseFailed;
+let Base: Env, S: ReturnType<typeof seed>;
+let E: ReturnType<typeof aliased<keyof typeof MAP>>;
+let ORG = '', ED = '', PKG = '', PKG2 = '';
 const cfg = (k: string, v: string) => E.do('ADMIN', `select public.admin_set_edition_commerce_config('${k}', '${v}')`);
 
 before(() => {
-  E = new Env(); E.db = createReplayDb('editionscommerce');
-  E.sup(`do $$ begin if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if; end $$;`);
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  E.sup(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array['${U.ADMIN}'::uuid,'${U.MOD}'::uuid,'${U.OWNER}'::uuid,'${U.EDITOR}'::uuid,'${U.OTHER}'::uuid]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) values ('${U.ADMIN}','admin','Zed'),('${U.MOD}','moderator','Mo'),('${U.OWNER}','customer','Orla'),('${U.EDITOR}','customer','Eddie'),('${U.OTHER}','customer','Other')
-      on conflict (id) do update set role = excluded.role;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features') on conflict (key) do update set value='true';`);
-  ORG = last(E.do('OWNER', `select public.create_edition_organiser('ZZ Commerce Org', 'zz-commerce-org')`));
-  E.do('OWNER', `select public.invite_edition_member('${ORG}', '${U.EDITOR}@x.invalid', 'editor')`);
-  E.do('EDITOR', `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}'`)}')`);
-  E.do('OWNER', `select public.request_edition_organiser_verification('${ORG}', 'evidence evidence')`);
-  E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG}', 'verify', 'ok ok ok ok')`);
-  ED = last(E.do('OWNER', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG}','zz-com-fest','ZZ Com Fest','x','multi_day',${d(10)},${d(12)}) returning id`));
+  Base = new Env('editionscommerce');
+  S = seed(Base); E = aliased(Base, MAP);
+  E.sup(`update profiles set role='moderator', full_name='Mo' where id='${U.MOD}'`);
+  ORG = enter(Base, 'BIZ_OWNER', 'business', S.BIZ);
+  addHelper(Base, 'BIZ_OWNER', ORG, 'EDITOR', `${U.EDITOR}@x.invalid`, 'editor');
+  addHelper(Base, 'BIZ_OWNER', ORG, 'HELPER', `${U.ADMINH}@x.invalid`, 'admin');
+  ED = draftEdition(Base, 'BIZ_OWNER', ORG, 'zz-com-fest', 'ZZ Com Fest');
+  approveEdition(Base, 'BIZ_OWNER', ED); // a package is chosen only after approval (this also records the organiser's identity check)
 });
-after(() => { try { E?.db.drop(); } catch { /* */ } });
+after(() => Base?.drop());
 
 describe('lockdown', () => {
   test('RLS on every R4 table, no FOR ALL, no write grants, no anon', () => {
@@ -115,7 +101,7 @@ describe('fee maths', () => {
     cfg('editions.commerce.participation.fee_cap_pence', ''); cfg('editions.commerce.participation.fee_min_pence', '0'); cfg('editions.commerce.participation.fee_fixed_pence', '0'); cfg('editions.commerce.participation.fee_percent', '10');
     const bd = (mode: string) => E.q(`select price_pence || '|' || vat_pence || '|' || platform_fee_pence || '|' || charge_pence || '|' || net_to_organiser_pence || '|' || vat_mode from public.edition_charge_breakdown('participation', 10000, '${mode}', '${ORG}')`);
     assert.equal(bd('inclusive'), '10000|0|1000|10000|9000|none', 'not VAT registered => no VAT');
-    E.do('OWNER', `select public.edition_set_vat_details('${ORG}', true, 'GB123456789', 'ZZ Commerce Org Ltd')`);
+    E.do('OWNER', `select public.edition_set_vat_details('${ORG}', true, 'GB123456789', 'ZZ Test Cafe Ltd')`);
     assert.equal(bd('inclusive'), '10000|1667|1000|10000|9000|inclusive');
     assert.equal(bd('exclusive'), '10000|2000|1200|12000|10800|exclusive');
     assert.equal(bd('none'), '10000|0|1000|10000|9000|none');
@@ -178,8 +164,9 @@ describe('packages and orders (organiser pays OneShetland)', () => {
     PKG2 = last(E.do('ADMIN', `select public.admin_upsert_edition_package('test_single','ZZ Single','d',1000,30,'[]',null,true,2)`));
     assert.equal(E.one('OWNER', `select count(*) from public.edition_packages`), '2', 'inactive drafts are hidden from organisers');
   });
-  test('orders: owners only, server-priced, one attempt = one order, switch and ceiling respected', () => {
+  test('orders: owner or admin only (never an editor or a stranger), server-priced, one attempt = one order, switch and ceiling respected', () => {
     for (const w of ['EDITOR', 'OTHER', 'anon'] as Who[]) assert.ok(failed(E.try(w, `select public.edition_create_order('${ORG}','${ED}','${PKG}','attempt-aaaa-1')`)), w);
+    assert.match(E.try('EDITOR', `select public.edition_create_order('${ORG}','${ED}','${PKG}','attempt-aaaa-1')`), /only an owner or admin/);
     E.sup(`update admin_config set value='false' where key='editions.commerce.enabled'`);
     assert.match(E.try('OWNER', `select public.edition_create_order('${ORG}','${ED}','${PKG}','attempt-aaaa-1')`), /not switched on/);
     E.sup(`update admin_config set value='true' where key='editions.commerce.enabled'`);
@@ -193,6 +180,13 @@ describe('packages and orders (organiser pays OneShetland)', () => {
     E.sup(`update edition_packages set price_pence = 3000 where id='${PKG}'`);
     assert.equal(E.q(`select amount_pence from edition_orders where id='${o1}'`), '2500', 'an existing order keeps its price');
     E.sup(`update edition_packages set price_pence = 2500 where id='${PKG}'`);
+    // an admin helper may also buy (it is the same Business-run organiser); the order is its own attempt and is removed again so later counts are unchanged
+    const oa = last(E.do('ADMINH', `select public.edition_create_order('${ORG}','${ED}','${PKG}','attempt-admh-1')`));
+    assert.equal(E.q(`select amount_pence from edition_orders where id='${oa}'`), '2500');
+    E.sup(`delete from edition_orders where id='${oa}'`);
+    // an unapproved Edition cannot have a package chosen
+    const raw = draftEdition(Base, 'BIZ_OWNER', ORG, 'zz-com-raw', 'ZZ Com Raw');
+    assert.match(E.try('OWNER', `select public.edition_create_order('${ORG}','${raw}','${PKG}','attempt-raw-1')`), /once OneShetland has approved/);
   });
   test('fulfilment: amount must match; grants publish and the package features; duplicates and replays do nothing more', () => {
     const o = E.q(`select id from edition_orders where attempt_id='attempt-aaaa-1'`);

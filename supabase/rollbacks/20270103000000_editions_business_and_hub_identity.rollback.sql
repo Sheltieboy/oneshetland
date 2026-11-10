@@ -1,6 +1,9 @@
 -- Rollback of 20270103000000_editions_business_and_hub_identity. Refuses if any organiser already belongs to a Business (that data would be lost); detach those first.
-do $$ begin
-  if exists (select 1 from public.edition_organisers where business_id is not null) then raise exception 'organisers belong to Businesses; remove or re-home them before rolling back' using errcode = '23514'; end if;
+do $$ declare v_n int := 0; begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'edition_organisers' and column_name = 'business_id') then
+    execute 'select count(*) from public.edition_organisers where business_id is not null' into v_n;
+    if v_n > 0 then raise exception 'organisers belong to Businesses; remove or re-home them before rolling back' using errcode = '23514'; end if;
+  end if;
 end $$;
 drop trigger if exists edition_sync_hub_name on public.hubs;
 drop trigger if exists edition_sync_business_name on public.local_businesses;
@@ -98,7 +101,11 @@ drop function if exists public.edition_controls_business(uuid);
 drop function if exists public.edition_business_role(uuid);
 drop function if exists public.edition_parent_live(uuid);
 drop index if exists public.edition_organisers_one_per_business;
-revoke select (business_id) on public.edition_organisers from anon, authenticated;
+do $$ begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'edition_organisers' and column_name = 'business_id') then
+    revoke select (business_id) on public.edition_organisers from anon, authenticated;
+  end if;
+end $$;
 alter table public.edition_organisers drop constraint if exists edition_organisers_business_id_fkey;
 alter table public.edition_organisers drop column if exists business_id;
 alter table public.edition_organisers drop constraint if exists edition_organisers_hub_id_fkey;

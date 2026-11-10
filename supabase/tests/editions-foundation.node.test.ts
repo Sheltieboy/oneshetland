@@ -8,54 +8,54 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, last, d } from './_support/editions-env.ts';
+import { MOD, addModerator, verifyOrg } from './_support/editions-env-1.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), MOD: id(2), OWNER_A: id(3), ADMIN_A: id(4), EDITOR_A: id(5), OWNER_B: id(6), VISITOR: id(7) } as const;
+// The cast, in the finished model (a Hub and a Business run Editions; nobody registers an organiser):
+//   OWNER_A  = the Hub's owner (owner of organiser A)      ADMIN_A  = the Hub's committee member (admin through the Hub)
+//   EDITOR_A = an invited helper (editor)                  OWNER_B  = the Business owner (owner of organiser B)
+//   VISITOR  = a stranger                                  MOD      = a platform moderator;  ADMIN = a platform administrator
+const U = { ADMIN: USERS.ADMIN, MOD, OWNER_A: USERS.HUB_OWNER, ADMIN_A: USERS.HUB_COMMITTEE, EDITOR_A: USERS.EDITOR, HELPER_A: USERS.HELPER, OWNER_B: USERS.BIZ_OWNER, VISITOR: USERS.STRANGER } as const;
 type Who = keyof typeof U | 'anon';
 const EMAIL = (w: keyof typeof U) => `${U[w]}@x.invalid`;
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
 const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates check constraint|violates exclusion|violates unique|violates foreign/im.test(o);
+const asUser = (env: Env, who: Who, sql: string, commit: boolean) => who === 'anon'
+  ? env.db.raw(`begin; set local role anon; ${sql}; rollback;`)
+  : env.db.raw(`begin; set local request.jwt.claims = '{"sub":"${U[who]}","email":"${EMAIL(who)}","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[who]}'; set local role authenticated; ${sql}; ${commit ? 'commit' : 'rollback'};`);
 
-class Env {
-  db!: ReplayDb;
-  as(who: Who) { return who === 'anon' ? 'set local role anon;' : `set local request.jwt.claims = '{"sub":"${U[who]}","email":"${EMAIL(who)}","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[who]}'; set local role authenticated;`; }
-  try(who: Who, sql: string) { return this.db.raw(`begin; ${this.as(who)} ${sql}; rollback;`); }
-  do(who: Who, sql: string) { return this.db.raw(`begin; ${this.as(who)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
-  sup(sql: string) { return this.db.raw(sql); }
-  /** run as a user and return the last scalar */
+/** thin wrapper: same method names the old suite used, over the shared Env (plus the moderator) */
+class Wrap {
+  env: Env;
+  constructor(env: Env) { this.env = env; }
+  get db() { return this.env.db; }
+  try(who: Who, sql: string) { return asUser(this.env, who, sql, false); }
+  do(who: Who, sql: string) { return asUser(this.env, who, sql, true); }
+  q(sql: string) { return this.env.q(sql); }
+  sup(sql: string) { return this.env.sup(sql); }
   one(who: Who, sql: string) { return last(this.try(who, sql)); }
 }
 
-let E: Env;
+let E: Wrap;
+let ENV: Env;
+let S: ReturnType<typeof seed>;
 const flag = (on: boolean) => E.sup(on
   ? `insert into admin_config (key, value, category) values ('editions.enabled','true','features') on conflict (key) do update set value='true'`
   : `delete from admin_config where key='editions.enabled'`);
 let ORG_A = '', ORG_B = '', ED_A = '', ED_B = '';
-const d = (n: number) => `(current_date + ${n})`;
 
 before(() => {
-  E = new Env();
-  E.db = createReplayDb('editions');
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  const s = E.sup(`
-    insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array['${U.ADMIN}'::uuid,'${U.MOD}'::uuid,'${U.OWNER_A}'::uuid,'${U.ADMIN_A}'::uuid,'${U.EDITOR_A}'::uuid,'${U.OWNER_B}'::uuid,'${U.VISITOR}'::uuid]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) values ('${U.ADMIN}','admin','Zed Admin'),('${U.MOD}','moderator','Mo Mod'),('${U.OWNER_A}','customer','Olive A'),
-      ('${U.ADMIN_A}','customer','Adam A'),('${U.EDITOR_A}','customer','Edie A'),('${U.OWNER_B}','customer','Oscar B'),('${U.VISITOR}','customer','Vi Visitor')
-      on conflict (id) do update set role = excluded.role, full_name = excluded.full_name;`);
-  assert.doesNotMatch(s, /ERROR/, s);
-  // organisers are created through the real function, as real users (the database refuses this while Editions is dark, so open it for the fixture, then restore the dark default)
-  flag(true);
-  ORG_A = last(E.do('OWNER_A', `select public.create_edition_organiser('ZZ TEST Editions Co.', 'zz-test-editions-co', 'tagline')`));
-  ORG_B = last(E.do('OWNER_B', `select public.create_edition_organiser('ZZ Other Organiser', 'zz-other-organiser')`));
+  ENV = new Env('editions');
+  E = new Wrap(ENV);
+  S = seed(ENV);
+  addModerator(ENV);
+  // organisers are created by entering Editions from a real Hub / Business, as its owner (the only way there is)
+  ORG_A = enter(ENV, 'HUB_OWNER', 'hub', S.HUB);
+  ORG_B = enter(ENV, 'BIZ_OWNER', 'business', S.BIZ);
   assert.match(ORG_A, /^[0-9a-f-]{36}$/, ORG_A);
   assert.match(ORG_B, /^[0-9a-f-]{36}$/, ORG_B);
   flag(false);
 });
-after(() => { try { E?.db.drop(); } catch { /* */ } });
+after(() => ENV?.drop());
 
 describe('S8 every edition table is locked down by default', () => {
   test('RLS on every edition table, no FOR ALL policy, nothing granted to PUBLIC', () => {
@@ -70,70 +70,56 @@ describe('S8 every edition table is locked down by default', () => {
   test('no edition definer function is executable by anon except the public-read helpers', () => {
     const open = E.q(`select coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.prosecdef and (p.proname like 'edition%' or p.proname like 'admin_%edition%' or p.proname like '%edition_%') and has_function_privilege('anon', p.oid, 'execute')`);
-    assert.equal(open, 'edition_entitled,edition_is_public,edition_participation_ok,edition_pilot_visible,edition_public_tiers,editions_enabled');
+    assert.equal(open, 'edition_business_role,edition_controls_business,edition_entitled,edition_is_public,edition_parent_live,edition_participation_ok,edition_public_tiers,editions_enabled'); // the pilot reader is gone; the three parent helpers are read-only booleans used by the public policies
   });
-  test('S7: the R1 edition tables reference only each other, auth.users and hubs (later releases add their own, tested in their suites)', () => {
+  test('S7: the R1 edition tables reference only each other, auth.users, hubs and local_businesses (the two parents) (later releases add their own, tested in their suites)', () => {
     const refs = E.q(`select coalesce(string_agg(distinct ccl.relname, ',' order by ccl.relname), '') from pg_constraint c join pg_class cl on cl.oid=c.conrelid join pg_class ccl on ccl.oid=c.confrelid
       where c.contype='f' and cl.relname in ('edition_reserved_names','edition_organisers','edition_organiser_members','edition_organiser_invites','edition_organiser_verifications','edition_series','editions','edition_pages','edition_venues','edition_sessions','edition_updates','edition_sponsors','edition_entitlements','edition_audit_log') and ccl.relname not like 'edition%' and ccl.relname <> 'editions'`);
-    assert.equal(refs, 'hubs,users');
+    assert.equal(refs, 'hubs,local_businesses,users');
   });
 });
 
 describe('O1/O2/A1/A7 organisers and verification', () => {
-  test('anon cannot create an organiser; direct inserts and status writes are refused for everyone', () => {
-    assert.ok(failed(E.try('anon', `select public.create_edition_organiser('Nope Co', 'nope-co')`)));
-    assert.ok(failed(E.try('OWNER_A', `insert into public.edition_organisers (slug, name) values ('sneaky','Sneaky')`)));
+  test('anon cannot enter Editions; direct inserts and status writes are refused for everyone', () => {
+    assert.ok(failed(E.try('anon', `select public.edition_ensure_organiser('hub', '${S.HUB}')`)));
+    assert.ok(failed(E.try('OWNER_A', `insert into public.edition_organisers (slug, name, hub_id) values ('sneaky','Sneaky','${S.HUB2}')`)));
     assert.ok(failed(E.try('OWNER_A', `update public.edition_organisers set status = 'verified' where id = '${ORG_A}'`)));
     assert.ok(failed(E.try('OWNER_A', `update public.edition_organisers set is_test = true where id = '${ORG_A}'`)));
   });
-  test('the creator is the owner; the organiser starts pending', () => {
+  test('the Hub owner is the owner; the organiser starts pending', () => {
     assert.equal(E.one('OWNER_A', `select public.edition_org_role('${ORG_A}')`), 'owner');
+    assert.equal(E.one('OWNER_B', `select public.edition_org_role('${ORG_B}')`), 'owner');
     assert.equal(E.q(`select status from edition_organisers where id='${ORG_A}'`), 'pending');
   });
-  test('DARK LAUNCH is enforced in the database: while editions.enabled is off an ordinary user cannot create an organiser (by function or directly); an administrator can', () => {
+  test('DARK LAUNCH is enforced in the database: while editions.enabled is off an owner cannot enter Editions for the first time; when it is open they can', () => {
     flag(false);
-    assert.match(E.try('VISITOR', `select public.create_edition_organiser('Dark Co', 'dark-co')`), /not open yet/);
-    assert.ok(failed(E.try('VISITOR', `insert into public.edition_organisers (slug, name, created_by) values ('dark-direct', 'Dark Direct', '${U.VISITOR}')`)));
-    assert.equal(E.q(`select count(*) from edition_organisers where slug in ('dark-co','dark-direct')`), '0');
-    const adm = last(E.do('ADMIN', `select public.create_edition_organiser('Admin Pilot Co', 'admin-pilot-co')`));
-    assert.match(adm, /^[0-9a-f-]{36}$/);
-    E.sup(`delete from edition_organisers where id='${adm}'`);
-    flag(true); assert.match(last(E.do('VISITOR', `select public.create_edition_organiser('Open Co', 'open-co')`)), /^[0-9a-f-]{36}$/);
-    E.sup(`delete from edition_organisers where slug='open-co'`); flag(false);
-  });
-  test('reserved slugs refused; a real-festival-looking name is flagged for careful verification', () => {
+    assert.match(ENV.try('HUB2_OWNER', `select public.edition_ensure_organiser('hub', '${S.HUB2}')`), /not open yet/);
+    assert.equal(E.q(`select count(*) from edition_organisers where hub_id='${S.HUB2}'`), '0');
     flag(true);
-    assert.match(E.try('OWNER_B', `select public.create_edition_organiser('Admin Co', 'admin')`), /reserved/);
-    const flagged = last(E.do('VISITOR', `select public.create_edition_organiser('Friends of Wool Week', 'friends-of-wool-week')`));
-    assert.equal(E.q(`select reserved_name_flag from edition_organisers where id='${flagged}'`), 't');
+    assert.match(last(ENV.do('HUB2_OWNER', `select public.edition_ensure_organiser('hub', '${S.HUB2}') ->> 'id'`)), /^[0-9a-f-]{36}$/);
+    E.sup(`delete from edition_organisers where hub_id='${S.HUB2}'`); flag(false);
+  });
+  test('the address is generated (never typed): reserved words are skipped; a real-festival-looking name is flagged for careful verification', () => {
+    flag(true);
+    const h = last(E.sup(`insert into hubs (owner_id, name, slug, type, area, is_active) values ('${USERS.HUB2_OWNER}','Friends of Wool Week','zz-friends-wool','club','Lerwick',true) returning id`));
+    const o = last(ENV.do('HUB2_OWNER', `select public.edition_ensure_organiser('hub', '${h}') ->> 'id'`));
+    assert.equal(E.q(`select reserved_name_flag from edition_organisers where id='${o}'`), 't');
     // a flagged organiser cannot be verified without a written note
-    assert.match(E.try('ADMIN', `select public.admin_decide_edition_organiser('${flagged}', 'verify', null)`), /reserved-name organiser needs a written/);
-    E.sup(`delete from edition_organisers where id='${flagged}'`);
+    assert.match(E.try('ADMIN', `select public.admin_decide_edition_organiser('${o}', 'verify', null)`), /reserved-name organiser needs a written/);
+    E.sup(`delete from edition_organisers where id='${o}'; delete from hubs where id='${h}'`);
     flag(false);
   });
-  test('per-user organiser cap is enforced', () => {
+  // RETIRED: "per-user organiser cap" (one profile per Hub/Business now; covered by the one-per-parent index in editions-complete) and "only the owner can request verification" (the request form no longer exists: the identity check is recorded with the first Edition approval, proved in editions-complete)
+  test('moderators and members cannot verify; the administrator can', () => {
     flag(true);
-    let o = '';
-    for (let i = 0; i < 5; i++) o = E.do('VISITOR', `select public.create_edition_organiser('Cap ${i}', 'cap-co-${i}')`);
-    assert.match(E.try('VISITOR', `select public.create_edition_organiser('Cap 9', 'cap-co-9')`), /organiser limit reached/);
-    E.sup(`delete from edition_organisers where slug like 'cap-co-%'`);
-    flag(false);
-  });
-  test('only the owner can request verification; evidence is required', () => {
-    assert.ok(failed(E.try('VISITOR', `select public.request_edition_organiser_verification('${ORG_A}', 'I am definitely the owner of this')`)));
-    assert.ok(failed(E.try('OWNER_A', `select public.request_edition_organiser_verification('${ORG_A}', 'short')`)));
-    assert.ok(!failed(E.do('OWNER_A', `select public.request_edition_organiser_verification('${ORG_A}', 'Committee minutes show I chair this group.')`)));
-    assert.ok(failed(E.try('OWNER_A', `select public.request_edition_organiser_verification('${ORG_A}', 'A second concurrent request is refused')`)));
-  });
-  test('moderators and members cannot verify; the administrator can; moderators can suspend', () => {
-    for (const who of ['MOD', 'OWNER_A', 'VISITOR'] as Who[]) assert.match(E.try(who, `select public.admin_decide_edition_organiser('${ORG_A}', 'verify', 'ok ok ok ok ok')`), /admins only/, who);
-    assert.ok(!failed(E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG_A}', 'verify', 'Checked the committee minutes.')`)));
-    assert.equal(E.q(`select status from edition_organisers where id='${ORG_A}'`), 'verified');
-    assert.equal(E.q(`select status from edition_organiser_verifications where organiser_id='${ORG_A}'`), 'approved');
+    const o = last(ENV.do('HUB2_OWNER', `select public.edition_ensure_organiser('hub', '${S.HUB2}') ->> 'id'`));
+    for (const who of ['MOD', 'OWNER_A', 'VISITOR'] as Who[]) assert.match(E.try(who, `select public.admin_decide_edition_organiser('${o}', 'verify', 'ok ok ok ok ok')`), /admins only/, who);
+    assert.ok(!failed(E.do('ADMIN', `select public.admin_decide_edition_organiser('${o}', 'verify', 'Checked the committee minutes.')`)));
+    assert.equal(E.q(`select status from edition_organisers where id='${o}'`), 'verified');
+    E.sup(`delete from edition_organisers where id='${o}'`); flag(false);
   });
   test('organiser B is verified too, so isolation tests are meaningful', () => {
-    E.do('OWNER_B', `select public.request_edition_organiser_verification('${ORG_B}', 'Evidence that I run this organisation.')`);
-    E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG_B}', 'verify', 'Verified.')`);
+    verifyOrg(ENV, ORG_B);
     assert.equal(E.q(`select status from edition_organisers where id='${ORG_B}'`), 'verified');
   });
 });
@@ -142,7 +128,7 @@ describe('O3/S3/S4 team, roles and invitations', () => {
   let INV_ADMIN = '', INV_EDITOR = '';
   test('only the owner invites; the invitation is for an email, not a user lookup', () => {
     assert.ok(failed(E.try('VISITOR', `select public.invite_edition_member('${ORG_A}', 'a@b.invalid', 'editor')`)));
-    INV_ADMIN = last(E.do('OWNER_A', `select public.invite_edition_member('${ORG_A}', '${EMAIL('ADMIN_A')}', 'admin')`));
+    INV_ADMIN = last(E.do('OWNER_A', `select public.invite_edition_member('${ORG_A}', '${EMAIL('HELPER_A')}', 'admin')`));
     INV_EDITOR = last(E.do('OWNER_A', `select public.invite_edition_member('${ORG_A}', '${EMAIL('EDITOR_A').toUpperCase()}', 'editor')`));
     assert.match(INV_ADMIN, /^[0-9a-f-]{36}$/);
     assert.ok(failed(E.try('OWNER_A', `select public.invite_edition_member('${ORG_A}', 'x@y.invalid', 'owner')`)), 'cannot invite as owner');
@@ -150,29 +136,33 @@ describe('O3/S3/S4 team, roles and invitations', () => {
   test('only the addressed email can accept; a stranger cannot', () => {
     assert.match(E.try('VISITOR', `select public.accept_edition_invite('${INV_ADMIN}')`), /invitation not available/);
     assert.match(E.try('EDITOR_A', `select public.accept_edition_invite('${INV_ADMIN}')`), /invitation not available/);
-    assert.ok(!failed(E.do('ADMIN_A', `select public.accept_edition_invite('${INV_ADMIN}')`)));
+    assert.ok(!failed(E.do('HELPER_A', `select public.accept_edition_invite('${INV_ADMIN}')`)));
     assert.ok(!failed(E.do('EDITOR_A', `select public.accept_edition_invite('${INV_EDITOR}')`)));
-    assert.equal(E.one('ADMIN_A', `select public.edition_org_role('${ORG_A}')`), 'admin');
+    assert.equal(E.one('HELPER_A', `select public.edition_org_role('${ORG_A}')`), 'admin');
     assert.equal(E.one('EDITOR_A', `select public.edition_org_role('${ORG_A}')`), 'editor');
-    assert.match(E.try('ADMIN_A', `select public.accept_edition_invite('${INV_ADMIN}')`), /invitation not available/, 'single use');
+    assert.equal(E.one('ADMIN_A', `select public.edition_org_role('${ORG_A}')`), 'admin', 'the Hub committee is admin without any invitation');
+    assert.match(E.try('HELPER_A', `select public.accept_edition_invite('${INV_ADMIN}')`), /invitation not available/, 'single use');
   });
-  test('team list: admins see it with names; editors and outsiders see nothing', () => {
-    assert.equal(E.one('ADMIN_A', `select count(*) from public.edition_org_team('${ORG_A}')`), '3');
+  test('team list: admins see it with names (the Hub owner and committee through the Hub, plus the two helpers); editors and outsiders see nothing', () => {
+    assert.equal(E.one('ADMIN_A', `select count(*) from public.edition_org_team('${ORG_A}')`), '4');
+    assert.equal(E.one('HELPER_A', `select count(*) from public.edition_org_team('${ORG_A}')`), '4');
     assert.equal(E.one('EDITOR_A', `select count(*) from public.edition_org_team('${ORG_A}')`), '0');
     assert.equal(E.one('OWNER_B', `select count(*) from public.edition_org_team('${ORG_A}')`), '0');
   });
   test('editors and admins cannot manage members; an owner can', () => {
-    for (const who of ['EDITOR_A', 'ADMIN_A'] as Who[]) {
+    for (const who of ['EDITOR_A', 'ADMIN_A', 'HELPER_A'] as Who[]) {
       assert.ok(failed(E.try(who, `select public.set_edition_member_role('${ORG_A}', '${U.EDITOR_A}', 'admin')`)), who);
       assert.ok(failed(E.try(who, `select public.remove_edition_member('${ORG_A}', '${U.OWNER_A}')`)), who);
       assert.ok(failed(E.try(who, `select public.invite_edition_member('${ORG_A}', 'z@z.invalid', 'editor')`)), who);
     }
     assert.ok(!failed(E.do('OWNER_A', `select public.set_edition_member_role('${ORG_A}', '${U.EDITOR_A}', 'editor')`)));
   });
-  test('S4 the last owner cannot be removed or demoted, by anyone', () => {
-    assert.match(E.try('OWNER_A', `select public.remove_edition_member('${ORG_A}', '${U.OWNER_A}')`), /at least one owner/);
-    assert.match(E.try('OWNER_A', `select public.set_edition_member_role('${ORG_A}', '${U.OWNER_A}', 'admin')`), /at least one owner/);
-    assert.match(E.sup(`delete from edition_organiser_members where organiser_id='${ORG_A}' and user_id='${U.OWNER_A}'`), /at least one owner/);
+  // REWRITTEN: "the last owner cannot be removed or demoted". Ownership is no longer a membership row: it comes live from the Hub/Business owner, so there is nothing to remove and nobody can make a helper an owner.
+  test('S4 ownership comes from the parent: a helper can never be made owner, and removing every helper leaves the owner in control', () => {
+    assert.match(E.sup(`insert into edition_organiser_members (organiser_id, user_id, role) values ('${ORG_A}','${USERS.STRANGER}','owner')`), /helper cannot be an owner/);
+    assert.match(E.sup(`update edition_organiser_members set role='owner' where organiser_id='${ORG_A}' and user_id='${U.EDITOR_A}'`), /helper cannot be an owner/);
+    assert.equal(E.q(`select count(*) from edition_organiser_members where organiser_id='${ORG_A}' and role='owner'`), '0');
+    assert.equal(E.one('OWNER_A', `select public.edition_org_role('${ORG_A}')`), 'owner');
   });
   test('a member may leave; a revoked or expired invitation cannot be accepted', () => {
     const inv = last(E.do('OWNER_A', `select public.invite_edition_member('${ORG_A}', '${EMAIL('VISITOR')}', 'editor')`));
@@ -181,6 +171,8 @@ describe('O3/S3/S4 team, roles and invitations', () => {
     const inv2 = last(E.do('OWNER_A', `select public.invite_edition_member('${ORG_A}', '${EMAIL('VISITOR')}', 'editor')`));
     E.sup(`update edition_organiser_invites set expires_at = now() - interval '1 minute' where id='${inv2}'`);
     assert.match(E.try('VISITOR', `select public.accept_edition_invite('${inv2}')`), /invitation not available/);
+    E.do('HELPER_A', `select public.remove_edition_member('${ORG_A}', '${U.HELPER_A}')`);
+    assert.equal(E.one('HELPER_A', `select coalesce(public.edition_org_role('${ORG_A}'),'none')`), 'none');
   });
 });
 
@@ -196,7 +188,7 @@ describe('S1/S2 isolation between organisers and from the public', () => {
   test('B cannot edit A’s organiser profile', () => {
     const o = E.try('OWNER_B', `update public.edition_organisers set name = 'hijacked' where id='${ORG_A}'; select name from public.edition_organisers where id='${ORG_A}'`);
     assert.ok(failed(o) || last(o) !== 'hijacked', o);
-    assert.equal(E.q(`select name from edition_organisers where id='${ORG_A}'`), 'ZZ TEST Editions Co.');
+    assert.equal(E.q(`select name from edition_organisers where id='${ORG_A}'`), 'ZZ Test Hub');
   });
   test('editors cannot edit the organiser profile; admins and owners can (allowed columns only)', () => {
     const e = E.try('EDITOR_A', `update public.edition_organisers set tagline = 'x' where id='${ORG_A}'; select tagline from public.edition_organisers where id='${ORG_A}'`);
@@ -260,7 +252,21 @@ describe('O4/O5/S10 editions: creation, dates, immutability', () => {
 
 describe('O10/A4/P5/P11 the publish gate and the entitlement ledger', () => {
   const publish = (who: Who, ed: string) => E.try(who, `select public.edition_set_status('${ed}', 'published')`);
-  test('without an entitlement nobody can publish: not owner, not admin, not even the service role', () => {
+  test('without OneShetland approval nobody can publish: not owner, not admin, not even the service role', () => {
+    assert.match(publish('OWNER_A', ED_A), /organiser is not verified/, 'a pending organiser is refused first');
+    assert.match(E.sup(`update editions set status='published' where id='${ED_A}'`), /organiser is not verified/);
+    E.sup(`update edition_organisers set status='verified' where id='${ORG_A}'`);
+    assert.match(publish('OWNER_A', ED_A), /not been approved/, 'then an unapproved Edition is refused');
+    E.sup(`update edition_organisers set status='pending' where id='${ORG_A}'`);
+  });
+  test('the owner builds a welcome page, submits, and the administrator approves; approval records the identity check too', () => {
+    assert.ok(!failed(E.do('EDITOR_A', `insert into public.edition_pages (edition_id, slug, nav_label, title, body, is_home, position) values ('${ED_A}','welcome','Welcome','Welcome','## Hello', true, 0)`)));
+    assert.equal(E.q(`select status from edition_organisers where id='${ORG_A}'`), 'pending');
+    E.do('OWNER_A', `select public.edition_submit_for_review('${ED_A}')`);
+    assert.ok(!failed(E.do('ADMIN', `select public.admin_review_edition('${ED_A}', 'approve', 'ZZ TEST approved')`)));
+    assert.equal(E.q(`select review_state || ',' || (select status from edition_organisers where id='${ORG_A}') from editions where id='${ED_A}'`), 'approved,verified');
+  });
+  test('approved but without a package nobody can publish: not owner, not admin, not even the service role', () => {
     assert.match(publish('OWNER_A', ED_A), /no live publish entitlement/);
     assert.match(E.sup(`update editions set status='published' where id='${ED_A}'`), /no live publish entitlement/);
   });
@@ -288,13 +294,13 @@ describe('O10/A4/P5/P11 the publish gate and the entitlement ledger', () => {
     assert.equal(E.q(`select status from editions where id='${ED_A}'`), 'published');
   });
   test('organiser B has no entitlement, so B cannot publish; A’s grant is visible only to A’s admins and staff', () => {
-    assert.match(publish('OWNER_B', ED_B), /no live publish entitlement/);
+    assert.match(publish('OWNER_B', ED_B), /not been approved/);
     assert.equal(E.one('OWNER_B', `select count(*) from public.edition_entitlements`), '0');
     assert.equal(E.one('EDITOR_A', `select count(*) from public.edition_entitlements`), '0');
     assert.equal(E.one('ADMIN_A', `select count(*) from public.edition_entitlements`), '1');
     assert.equal(E.one('ADMIN', `select count(*) from public.edition_entitlements`), '1');
   });
-  test('V4 public visibility needs the flag, a verified organiser, a published edition and a live entitlement', () => {
+  test('V4 public visibility needs the flag, a verified organiser, an approved and published edition and a live entitlement', () => {
     flag(false);
     assert.equal(E.one('anon', `select count(*) from public.editions`), '0', 'flag off');
     flag(true);
@@ -332,6 +338,9 @@ describe('O10/A4/P5/P11 the publish gate and the entitlement ledger', () => {
   });
   test('test editions are never public, but still go through the real gate', () => {
     const t = last(E.do('OWNER_A', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG_A}','zz-test-private','ZZ TEST private','Sample','single_day',${d(5)},${d(5)}) returning id`));
+    E.sup(`insert into public.edition_pages (edition_id, slug, nav_label, title, body, position, in_nav, is_home) values ('${t}','welcome','Welcome','Welcome','Hello',0,true,true)`);
+    E.do('OWNER_A', `select public.edition_submit_for_review('${t}')`);
+    E.do('ADMIN', `select public.admin_review_edition('${t}', 'approve', 'ZZ TEST approved')`);
     assert.match(E.try('ADMIN', `select public.admin_mark_edition_test('${ORG_A}', '${t}')`).replace(/\s+/g, ' '), /^(?!.*ERROR)/);
     assert.match(E.try('OWNER_A', `select public.admin_mark_edition_test('${ORG_A}', '${t}')`), /admins only/);
     E.do('ADMIN', `select public.admin_mark_edition_test('${ORG_A}', '${t}')`);
@@ -350,7 +359,7 @@ describe('O10/A4/P5/P11 the publish gate and the entitlement ledger', () => {
 describe('O6/O9/S10 programme, pages, updates and sponsors', () => {
   const ins = (who: Who, table: string, cols: string, vals: string) => E.try(who, `insert into public.${table} (${cols}) values (${vals})`);
   test('editors can build content for their own edition; outsiders cannot', () => {
-    assert.ok(!failed(E.do('EDITOR_A', `insert into public.edition_pages (edition_id, slug, nav_label, title, body, is_home, position) values ('${ED_A}','welcome','Welcome','Welcome','## Hello', true, 0)`)));
+    // (the welcome page was built by the editor in the publish-gate section above)
     assert.ok(!failed(E.do('EDITOR_A', `insert into public.edition_pages (edition_id, slug, nav_label, title, body, position) values ('${ED_A}','visit','Visit','Visit us','Getting here', 1)`)));
     assert.ok(failed(ins('OWNER_B', 'edition_pages', 'edition_id, slug, nav_label, title', `'${ED_A}','x','X','X'`)));
     assert.ok(failed(ins('anon', 'edition_pages', 'edition_id, slug, nav_label, title', `'${ED_A}','x','X','X'`)));
@@ -425,7 +434,7 @@ describe('A2/A6/A7 moderation, audit and series', () => {
   });
   test('A6 the audit log recorded the sensitive actions and is invisible to other organisers', () => {
     const acts = E.q(`select string_agg(distinct action, ',' order by action) from edition_audit_log where organiser_id='${ORG_A}'`);
-    for (const a of ['organiser_created', 'verification_requested', 'organiser_verify', 'member_invited', 'member_joined', 'entitlement_granted', 'entitlement_voided', 'edition_status', 'organiser_status', 'edition_suspend', 'edition_restore']) {
+    for (const a of ['organiser_created_from_hub', 'edition_submitted', 'edition_review_approve', 'member_invited', 'member_joined', 'entitlement_granted', 'entitlement_voided', 'edition_status', 'organiser_status', 'edition_suspend', 'edition_restore']) {
       assert.ok(acts.split(',').includes(a), `missing audit action ${a}: ${acts}`);
     }
     assert.equal(E.one('OWNER_B', `select count(*) from public.edition_audit_log where organiser_id='${ORG_A}'`), '0');
@@ -445,9 +454,10 @@ describe('A2/A6/A7 moderation, audit and series', () => {
 });
 
 describe('S7/S12 existing functionality is untouched', () => {
-  test('no existing table gained a column, policy or trigger from this migration', () => {
+  test('no existing table gained a column or trigger from Editions, except the two name-follows-its-parent triggers (hubs, local_businesses)', () => {
     assert.equal(E.q(`select count(*) from information_schema.columns where table_schema='public' and table_name in ('local_businesses','events','hubs','hub_members','saved_items','event_ticket_orders') and column_name like '%edition%'`), '0');
-    assert.equal(E.q(`select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relname in ('local_businesses','events','hubs','hub_members') and t.tgname like '%edition%'`), '0');
+    assert.equal(E.q(`select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relname in ('events','hub_members') and t.tgname like '%edition%'`), '0');
+    assert.equal(E.q(`select string_agg(c.relname || '.' || t.tgname, ',' order by c.relname) from pg_trigger t join pg_class c on c.oid=t.tgrelid where c.relname in ('local_businesses','hubs') and t.tgname like '%edition%' and not t.tgisinternal`), 'hubs.edition_sync_hub_name,local_businesses.edition_sync_business_name');
   });
   test('the storage bucket and its organiser-scoped policies exist', () => {
     assert.equal(E.q(`select count(*) from storage.buckets where id='edition-media' and public and file_size_limit = 10485760`), '1');

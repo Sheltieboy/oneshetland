@@ -62,3 +62,61 @@ test('partner emails to a Hub\'s administrators say they help run the Hub, and s
   assert.match(renderEditionEmail({ kind: 'partner_removed', payload: P }, 'https://example.test')!.text, /you help run this Hub/);
   assert.match(renderEditionEmail({ kind: 'partner_invited', payload: { ...P, subject_kind: 'business' } }, 'https://example.test')!.text, /manage this listing/);
 });
+
+describe('approval, package and helper emails', () => {
+  const N = { edition_title: 'Folk 2027', edition_slug: 'folk-2027', organiser_slug: 'folk-fest', organiser_name: 'Folk Festival', subject_kind: 'hub', note: 'Please add a venue and a clearer summary.', ends_at: '2027-06-30T23:30:00Z', amount_pence: 5000, role: 'editor', inviter: 'Ann Smith' };
+  const NEW = ['edition_approved', 'edition_changes_requested', 'edition_rejected', 'package_active', 'helper_invited'] as const;
+  const links = (kind: string, payload: Record<string, unknown> = N) => (renderEditionEmail({ kind, payload }, 'https://oneshetland.com/')!.text.match(/https:\/\/\S+/g) ?? []);
+  test('all five are registered and render subject, text and html', () => {
+    for (const k of NEW) { assert.ok((EMAIL_KINDS as readonly string[]).includes(k), k); const r = renderEditionEmail({ kind: k, payload: N }, O)!; assert.ok(r.subject && r.text && r.html, k); }
+  });
+  test('links use the organiser and Edition web addresses; helper invitations go to /organise', () => {
+    for (const k of ['edition_approved', 'edition_changes_requested', 'edition_rejected', 'package_active']) assert.deepEqual(links(k), ['https://oneshetland.com/organise/folk-fest/editions/folk-2027'], k);
+    assert.deepEqual(links('helper_invited'), ['https://oneshetland.com/organise']);
+  });
+  test('approved tells them the next step; changes and rejection show the note; both reach people with no note too', () => {
+    assert.match(renderEditionEmail({ kind: 'edition_approved', payload: N }, O)!.text, /Next: choose a package, then publish when you are ready\./);
+    for (const k of ['edition_changes_requested', 'edition_rejected']) {
+      assert.match(renderEditionEmail({ kind: k, payload: N }, O)!.text, /Please add a venue and a clearer summary\./, k);
+      const none = renderEditionEmail({ kind: k, payload: { ...N, note: undefined } }, O)!; assert.ok(none.subject && !/reviewer.s message/.test(none.text), k);
+    }
+  });
+  test('package_active: London end date, "free" at 0, pounds otherwise, publishing is up to them', () => {
+    const paid = renderEditionEmail({ kind: 'package_active', payload: N }, O)!.text;
+    assert.match(paid, /active until 1 July 2027/); assert.match(paid, /£50\.00/); assert.match(paid, /publishing is now up to you|Publishing is now up to you/);
+    const free = renderEditionEmail({ kind: 'package_active', payload: { ...N, amount_pence: 0 } }, O)!.text;
+    assert.match(free, /free/i); assert.ok(!/£/.test(free));
+    assert.ok(!/Amount paid|Cost/.test(renderEditionEmail({ kind: 'package_active', payload: { ...N, amount_pence: undefined, ends_at: undefined } }, O)!.text));
+  });
+  test('footers say why: Hub helps run, Business owns, helper_invited was invited', () => {
+    assert.match(renderEditionEmail({ kind: 'edition_approved', payload: N }, O)!.text, /you help run this Hub/);
+    assert.match(renderEditionEmail({ kind: 'edition_approved', payload: { ...N, subject_kind: 'business' } }, O)!.text, /you own this Business/);
+    const h = renderEditionEmail({ kind: 'helper_invited', payload: N }, O)!.text;
+    assert.match(h, /someone invited this email address/); assert.match(h, /Ann Smith has invited you/); assert.match(h, /as an editor/);
+    assert.match(h, /sign in using this email address/i); assert.match(h, /create an account using this same email address/i);
+    assert.match(renderEditionEmail({ kind: 'helper_invited', payload: { ...N, role: 'admin', inviter: null } }, O)!.text, /You have been invited to help .* as an admin/);
+  });
+  test('hostile payload text is escaped or flattened in every new kind', () => {
+    const evil = { ...N, edition_title: '<script>alert(1)</script>', organiser_name: 'A"B\r\nBcc: x@y.z', note: '<img src=x onerror=alert(1)> "quoted" & \'q\'', inviter: '</p><script>x</script>', organiser_slug: 'a"b<c', edition_slug: 'x"y' };
+    for (const k of NEW) {
+      const r = renderEditionEmail({ kind: k, payload: evil }, O)!;
+      assert.ok(!/[\r\n]/.test(r.subject), k); assert.ok(!/<script|<img/i.test(r.html), k);
+      for (const url of r.html.match(/href="[^"]*"/g) ?? []) assert.ok(!/[<>]|"[^"]*"$/.test(url.slice(6, -1)) , `${k}: ${url}`);
+    }
+    assert.match(renderEditionEmail({ kind: 'edition_changes_requested', payload: evil }, O)!.html, /&lt;img src=x onerror=alert\(1\)&gt; &quot;quoted&quot; &amp; &#39;q&#39;/);
+  });
+  test('missing values never print undefined, null or NaN, and never leave empty paragraphs', () => {
+    for (const k of NEW) {
+      const r = renderEditionEmail({ kind: k, payload: {} }, O)!;
+      assert.ok(r.subject && r.text && r.html, k); assert.ok(!/undefined|null|NaN/.test(`${r.subject}${r.text}${r.html}`), k); assert.ok(!r.html.includes('<p style="margin:0 0 .9rem"></p>'), k);
+      const nul = renderEditionEmail({ kind: k, payload: { edition_title: null, organiser_name: null, ends_at: null, amount_pence: null, note: null, inviter: null } }, O)!;
+      assert.ok(!/undefined|null|NaN/.test(`${nul.subject}${nul.text}${nul.html}`), k);
+    }
+  });
+  test('the cron works for a row with no user id (an invitee without an account) and never stores or logs the address', async () => {
+    const src = (await import('node:fs')).readFileSync(new URL('../editions-email-cron/index.ts', import.meta.url), 'utf8');
+    assert.ok(!/user_id/.test(src), 'nothing in the sender depends on a user id'); assert.ok(!/console\.(log|error|warn|info)/.test(src), 'nothing is logged');
+    assert.ok(!/last_error|p_error: .*\.email|\.email.*p_error/.test(src)); assert.match(src, /To: r\.email/);
+    assert.ok(renderEditionEmail({ id: 1, kind: 'helper_invited', user_id: null, email: 'x@example.test', payload: N, attempts: 0 }, O));
+  });
+});

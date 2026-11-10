@@ -5,43 +5,30 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, draftEdition, last, failed as baseFailed } from './_support/editions-env.ts';
+import { approveEdition, addHelper, aliased } from './_support/editions-env-2.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), OWNER: id(3), ORG_ADMIN: id(4), ORG_EDITOR: id(5), BIZ1: id(6), BIZ2: id(7), STRANGER: id(8) } as const;
-type Who = keyof typeof U | 'anon' | 'service';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
-const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates/im.test(o);
-class Env {
-  db!: ReplayDb;
-  as(w: Who) { return w === 'anon' ? 'set local role anon;' : w === 'service' ? 'set local role service_role;' : `set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated;`; }
-  try(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; rollback;`); }
-  do(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
-  sup(sql: string) { return this.db.raw(sql); }
-  one(w: Who, sql: string) { return last(this.try(w, sql)); }
-  doOne(w: Who, sql: string) { return last(this.do(w, sql)); }
-}
-let E: Env; let ORG = '', B1 = '', B2 = '', B_UNCL = '', T_PAID = '', T_OPEN = '', T_FREE = '', T_INVITE = '';
+// The organiser is a BUSINESS (ZZ Test Cafe): OWNER is its owner; ORG_ADMIN and ORG_EDITOR are invited helpers; BIZ1 and BIZ2 own the businesses that become members.
+const MAP = { ADMIN: 'ADMIN', OWNER: 'BIZ_OWNER', ORG_ADMIN: 'HELPER', ORG_EDITOR: 'EDITOR', BIZ1: 'BIZ2_OWNER', BIZ2: 'HUB2_OWNER', STRANGER: 'STRANGER' } as const;
+const U = { ADMIN: USERS.ADMIN, OWNER: USERS.BIZ_OWNER, ORG_ADMIN: USERS.HELPER, ORG_EDITOR: USERS.EDITOR, BIZ1: USERS.BIZ2_OWNER, BIZ2: USERS.HUB2_OWNER, STRANGER: USERS.STRANGER } as const;
+type Who = keyof typeof MAP | 'anon' | 'service';
+const failed = baseFailed;
+let Base: Env, S: ReturnType<typeof seed>;
+let E: ReturnType<typeof aliased<keyof typeof MAP>>;
+let HUB_MEMBERS0 = '', ORG = '', B1 = '', B2 = '', B_UNCL = '', T_PAID = '', T_OPEN = '', T_FREE = '', T_INVITE = '';
 const days = (n: number) => `(now() + interval '${n} days')`;
 const MS = (m: string) => `status || '|' || coalesce(billing_interval,'') from organiser_memberships where id='${m}'`;
 
 before(() => {
-  E = new Env(); E.db = createReplayDb('editionsmemb');
-  E.sup(`do $$ begin if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if; end $$;`);
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  E.sup(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array['${U.ADMIN}'::uuid,'${U.OWNER}'::uuid,'${U.ORG_ADMIN}'::uuid,'${U.ORG_EDITOR}'::uuid,'${U.BIZ1}'::uuid,'${U.BIZ2}'::uuid,'${U.STRANGER}'::uuid]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) select x, case when x = '${U.ADMIN}'::uuid then 'admin' else 'customer' end, 'N' from unnest(array['${U.ADMIN}'::uuid,'${U.OWNER}'::uuid,'${U.ORG_ADMIN}'::uuid,'${U.ORG_EDITOR}'::uuid,'${U.BIZ1}'::uuid,'${U.BIZ2}'::uuid,'${U.STRANGER}'::uuid]) x on conflict (id) do update set role = excluded.role;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features'),('editions.commerce.enabled','true','editions') on conflict (key) do update set value = excluded.value;`);
-  ORG = last(E.do('OWNER', `select public.create_edition_organiser('ZZ Member Org', 'zz-member-org')`));
-  for (const [u, r] of [['ORG_ADMIN', 'admin'], ['ORG_EDITOR', 'editor']] as const) {
-    E.do('OWNER', `select public.invite_edition_member('${ORG}', '${U[u]}@x.invalid', '${r}')`);
-    E.do(u, `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}' and email='${U[u]}@x.invalid'`)}')`);
-  }
-  E.do('OWNER', `select public.request_edition_organiser_verification('${ORG}', 'evidence evidence')`);
-  E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG}', 'verify', 'ok ok ok ok')`);
+  Base = new Env('editionsmemb');
+  S = seed(Base); E = aliased(Base, MAP);
+  E.sup(`insert into admin_config (key, value, category) values ('editions.commerce.enabled','true','editions') on conflict (key) do update set value = excluded.value;`);
+  HUB_MEMBERS0 = E.q(`select count(*) from hub_members`);
+  ORG = enter(Base, 'BIZ_OWNER', 'business', S.BIZ);
+  addHelper(Base, 'BIZ_OWNER', ORG, 'HELPER', `${U.ORG_ADMIN}@x.invalid`, 'admin');
+  addHelper(Base, 'BIZ_OWNER', ORG, 'EDITOR', `${U.ORG_EDITOR}@x.invalid`, 'editor');
+  // the first approved Edition records the organiser's identity check (there is no separate verification step any more)
+  approveEdition(Base, 'BIZ_OWNER', draftEdition(Base, 'BIZ_OWNER', ORG, 'zz-member-fest', 'ZZ Member Fest'));
   for (const f of ['collect_payments', 'memberships', 'offline_records']) E.do('ADMIN', `select public.admin_grant_edition_org_entitlement('${ORG}', '${f}', ${f === 'memberships' ? 5 : 'null'}, ${days(90)}, 'ZZ membership suite')`);
   E.do('OWNER', `select public.edition_accept_commerce_terms('${ORG}', 'draft-1')`);
   E.do('service', `select public.edition_payout_account_sync('${ORG}', 'acct_member_1', true, true, true, '[]'::jsonb)`);
@@ -53,7 +40,7 @@ before(() => {
   T_FREE = tier('ZZ Supporter', 'null', 'null', 'true', 'open', 'none', 'null');
   T_INVITE = tier('ZZ Patron', '2000', 'null', 'false', 'invite_only', 'free', 'null');
 });
-after(() => { try { E?.db.drop(); } catch { /* */ } });
+after(() => Base?.drop());
 
 describe('lockdown and isolation', () => {
   test('RLS on, no FOR ALL, no direct writes, organiser notes and provider ids are not readable by businesses', () => {
@@ -107,9 +94,9 @@ describe('tiers', () => {
     E.do('BIZ1', `select public.edition_membership_withdraw('${m}')`); T_OPEN = v2;
   });
   test('public tier list: only open and application tiers of a verified organiser that can collect; free tiers always', () => {
-    assert.equal(E.one('anon', `select string_agg(name, ',' order by name) from public.edition_public_tiers('zz-member-org')`), 'ZZ Friend,ZZ Full member,ZZ Supporter');
+    assert.equal(E.one('anon', `select string_agg(name, ',' order by name) from public.edition_public_tiers('zz-test-cafe')`), 'ZZ Friend,ZZ Full member,ZZ Supporter');
     E.do('ADMIN', `select public.admin_set_edition_collection('${ORG}', true, 'ZZ suspended for the test')`);
-    assert.equal(E.one('anon', `select string_agg(name, ',') from public.edition_public_tiers('zz-member-org')`), 'ZZ Supporter');
+    assert.equal(E.one('anon', `select string_agg(name, ',') from public.edition_public_tiers('zz-test-cafe')`), 'ZZ Supporter');
     E.do('ADMIN', `select public.admin_set_edition_collection('${ORG}', false, 'ZZ resumed after the test')`);
   });
 });
@@ -391,7 +378,7 @@ describe('privacy and views', () => {
   });
   test('Business plan and Hub membership state is byte-identical to before (nothing in this release wrote them)', () => {
     assert.equal(E.q(`select count(*) from local_businesses where id in ('${B1}','${B2}','${B_UNCL}') and subscription_tier='pro' and subscription_until > now() + interval '80 days'`), '3');
-    assert.equal(E.q(`select count(*) from hub_members`), '0');
+    assert.equal(E.q(`select count(*) from hub_members`), HUB_MEMBERS0, 'Hub memberships are untouched');
   });
 });
 
@@ -423,5 +410,18 @@ describe('R12 a past-due card membership is paid through its existing subscripti
       assert.ok(failed(E.try(w, `select * from public.edition_stripe_stray_next()`)), w);
       assert.ok(failed(E.try(w, `select * from public.edition_stripe_stray_subscriptions`)), w);
     }
+  });
+});
+
+describe('a Hub-run organiser works exactly like a Business-run one', () => {
+  test('the Hub\'s committee (an admin) saves a tier once the package includes memberships; a plain Hub member and a stranger cannot; the tier is public once the Edition is approved', () => {
+    const horg = enter(Base, 'HUB_OWNER', 'hub', S.HUB);
+    approveEdition(Base, 'HUB_OWNER', draftEdition(Base, 'HUB_OWNER', horg, 'zz-hub-member-fest', 'ZZ Hub Member Fest'));
+    for (const f of ['collect_payments', 'memberships', 'offline_records']) E.do('ADMIN', `select public.admin_grant_edition_org_entitlement('${horg}', '${f}', ${f === 'memberships' ? 5 : 'null'}, ${days(90)}, 'ZZ Hub-run parity')`);
+    const save = (w: 'HUB_COMMITTEE' | 'HUB_MEMBER' | 'STRANGER') => Base.try(w, `select public.edition_tier_save('${horg}', null, 'ZZ Hub Friend', 'd', '[]'::jsonb, null, null, true, 'none', 'open', 'none', null, null, 1)`);
+    assert.ok(failed(save('HUB_MEMBER'))); assert.ok(failed(save('STRANGER')));
+    const t = last(Base.do('HUB_COMMITTEE', `select public.edition_tier_save('${horg}', null, 'ZZ Hub Friend', 'd', '[]'::jsonb, null, null, true, 'none', 'open', 'none', null, null, 1)`));
+    assert.match(t, /^[0-9a-f-]{36}$/, t);
+    assert.equal(Base.one('anon', `select string_agg(name, ',') from public.edition_public_tiers('${E.q(`select slug from edition_organisers where id='${horg}'`)}')`), 'ZZ Hub Friend', 'a free open tier is public');
   });
 });

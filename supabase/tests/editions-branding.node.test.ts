@@ -5,31 +5,25 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, last } from './_support/editions-env.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), ORG: id(3), OTHER: id(5), EDITOR: id(7) } as const;
-type Who = keyof typeof U | 'anon';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
+// ORG = the Hub's owner (an organiser admin through the Hub); OTHER = a stranger; EDITOR = an invited helper
+const KEY = { ADMIN: 'ADMIN', ORG: 'HUB_OWNER', OTHER: 'STRANGER', EDITOR: 'EDITOR' } as const;
+type Who = keyof typeof KEY | 'anon';
 const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates/im.test(o);
-let db: ReplayDb; let ORG = '', ED = '';
-const as = (w: Who) => w === 'anon' ? 'set local role anon;' : `set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated;`;
-const run = (w: Who, sql: string, commit = false) => db.raw(`begin; ${as(w)} ${sql}; ${commit ? 'commit' : 'rollback'};`);
-const q = (sql: string) => last(db.raw(sql));
+let E: Env; let ORG = '', ED = '';
+const run = (w: Who, sql: string, commit = false) => (w === 'anon' ? E.db.raw(`begin; set local role anon; ${sql}; rollback;`) : commit ? E.do(KEY[w], sql) : E.try(KEY[w], sql));
+const q = (sql: string) => E.q(sql);
+const db = { raw: (sql: string) => E.sup(sql) };
 
 before(() => {
-  db = createReplayDb('editionsbranding');
-  db.raw(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  db.raw(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array['${U.ADMIN}'::uuid,'${U.ORG}'::uuid,'${U.OTHER}'::uuid,'${U.EDITOR}'::uuid]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) values ('${U.ADMIN}','admin','Zed'),('${U.ORG}','customer','Orla'),('${U.OTHER}','customer','Otto'),('${U.EDITOR}','customer','Edie') on conflict (id) do update set role = excluded.role;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features') on conflict (key) do update set value='true';`);
-  ORG = last(run('ORG', `select public.create_edition_organiser('ZZ Brand Org', 'zz-brand-org')`, true));
-  db.raw(`insert into public.edition_organiser_members (organiser_id, user_id, role) values ('${ORG}','${U.EDITOR}','editor') on conflict do nothing`);
+  E = new Env('editionsbranding');
+  const S = seed(E);
+  ORG = enter(E, 'HUB_OWNER', 'hub', S.HUB);
+  E.sup(`insert into public.edition_organiser_members (organiser_id, user_id, role) values ('${ORG}','${USERS.EDITOR}','editor') on conflict do nothing`);
   ED = last(run('ORG', `insert into public.editions (organiser_id, slug, title, kind, starts_on, ends_on, cover_focus) values ('${ORG}','zz-brand-fest','ZZ Brand Fest','multi_day',current_date+10,current_date+12,'30% 20%') returning id`, true));
 });
-after(() => { try { db?.drop(); } catch { /* */ } });
+after(() => E?.drop());
 
 describe('cover focus point', () => {
   test('the columns exist, are nullable and default to null', () => {

@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { enforcePaymentStart } from '../_shared/rate-limit.ts';
-import { chargeKey, connectAccountParams, existingSubscriptionDecision, formBody, idempotencyKey, orderIntentParams, participationIntentParams, productParams, subscriptionParams } from '../_shared/editions-commerce-core.ts';
+import { chargeKey, connectAccountParams, existingSubscriptionDecision, formBody, idempotencyKey, orderCheckoutDecision, orderIntentParams, participationIntentParams, productParams, subscriptionParams } from '../_shared/editions-commerce-core.ts';
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const STRIPE = 'https://api.stripe.com/v1';
@@ -46,9 +46,15 @@ serve(async (req) => {
     };
 
     if (kind === 'order') {
-      // organiser buys a package: the database creates/returns the order at the stored price (owner only, commerce switch)
-      const { data: order, error } = await asUser.from('edition_orders').select('id, organiser_id, edition_id, amount_pence, status').eq('id', id).maybeSingle();
-      if (error || !order || order.status !== 'pending') return json({ error: 'Order not available' }, 404);
+      // organiser buys a package: the DATABASE created the order (edition_create_order: owner or admin, approved Edition, stored price). Read it with the service role (the order table's read
+      // policy is owner-only, and an admin who created the order must be able to pay it), then re-check who is asking and that the Edition is still approved.
+      const { data: order } = await svc.from('edition_orders').select('id, organiser_id, edition_id, amount_pence, status, buyer_id').eq('id', id).maybeSingle();
+      const decision = order
+        ? orderCheckoutDecision({ order, userId: user.id, canAdmin: (await asUser.rpc('edition_org_can', { p_org: order.organiser_id, p_min: 'admin' })).data === true,
+            editionApproved: (await svc.from('editions').select('review_state').eq('id', order.edition_id).maybeSingle()).data?.review_state === 'approved',
+            commerceOn: (await asUser.rpc('edition_commerce_enabled')).data === true })
+        : orderCheckoutDecision({ order: null, userId: user.id, canAdmin: false, editionApproved: false, commerceOn: false });
+      if (!decision.ok || !order) return json({ error: decision.ok ? 'Order not available' : decision.error }, decision.ok ? 404 : decision.status);
       const pi = await post('/payment_intents', orderIntentParams({ order_id: order.id, organiser_id: order.organiser_id, amount_pence: order.amount_pence, edition_id: order.edition_id, buyer_id: user.id }), chargeKey('order', order.id, { charge_pence: order.amount_pence }, order.organiser_id));
       return json({ client_secret: pi.client_secret, payment_intent_id: pi.id });
     }

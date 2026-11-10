@@ -366,6 +366,10 @@ describe('packages: chosen after approval, free is a real kind, Community is Hub
     assert.equal(E.q(`select count(*) from public.edition_email_outbox where kind='package_active' and user_id='${USERS.BIZ_OWNER}'`), '1');
     assert.equal(last2(E.sup(`select public.edition_fulfil_order('${o1}', 'pi_test_1', 5000)`)), 'already_fulfilled');
   });
+  test('the administrator can list an Edition\'s orders (with ids and refunded amounts); nobody else can', () => {
+    assert.equal(E.one('ADMIN', `select count(*) from public.admin_edition_orders('${EDP}') where status='paid' and amount_pence=5000 and refunded_pence=0`), '1');
+    for (const who of ['BIZ_OWNER', 'STRANGER'] as const) assert.match(E.try(who, `select * from public.admin_edition_orders('${EDP}')`), /admins only/, who);
+  });
   test('the owner then publishes an approved, entitled Edition and it is public', () => {
     setStatus('BIZ_OWNER', 'published', EDP);
     assert.equal(anonPublic(EDP), true);
@@ -471,7 +475,7 @@ describe('each rollback restores the previous state cleanly (fresh database, rev
     const R = new Env('editionscompleterb');
     try {
       const out: string[] = [];
-      for (const f of ['20270103040000_editions_retire_pilot_and_standalone', '20270103030000_editions_packages_and_notifications', '20270103020000_editions_review', '20270103010000_hub_events_auto_approve', '20270103000000_editions_business_and_hub_identity']) {
+      for (const f of ['20270103060000_editions_admin_orders', '20270103050000_editions_package_refunds', '20270103040000_editions_retire_pilot_and_standalone', '20270103030000_editions_packages_and_notifications', '20270103020000_editions_review', '20270103010000_hub_events_auto_approve', '20270103000000_editions_business_and_hub_identity']) {
         out.push(R.db.rawFile(new URL(`../rollbacks/${f}.rollback.sql`, import.meta.url).pathname));
       }
       const errs = out.join('\n').split('\n').filter((l) => /ERROR/.test(l));

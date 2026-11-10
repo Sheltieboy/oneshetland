@@ -6,39 +6,36 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, last, d } from './_support/editions-env.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), MOD: id(2), ORG_OWNER: id(3), ORG_EDITOR: id(4), BIZ: id(5), HUB_ADMIN: id(6), STRANGER: id(7) } as const;
+// ORG_OWNER = the Hub's owner (runs ORG, pending); ORG_EDITOR = an invited helper of ORG; BIZ = a Business owner who has NOT entered Editions; HUB_ADMIN = another Hub's owner who has not either;
+// the Business owner of ORG2 is BIZ_RUNNER (verified, Business-run). MOD = moderator, STRANGER = ordinary user.
+const MODERATOR = 'ab000000-0000-4000-8000-0000000000ab';
+const U = { ADMIN: USERS.ADMIN, MOD: MODERATOR, ORG_OWNER: USERS.HUB_OWNER, ORG_EDITOR: USERS.EDITOR, BIZ: USERS.BIZ2_OWNER, HUB_ADMIN: USERS.HUB2_OWNER, STRANGER: USERS.STRANGER, BIZ_RUNNER: USERS.BIZ_OWNER } as const;
 type Who = keyof typeof U | 'anon';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
 const failed = (o: string) => /^ERROR:|permission denied|row-level security|not permitted/im.test(o);
-let db: ReplayDb; let ORG = '', ORG2 = '', ED = '';
-const as = (w: Who) => w === 'anon' ? 'set local role anon;' : `set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated;`;
-const run = (w: Who, sql: string, commit = false) => db.raw(`begin; ${as(w)} ${sql}; ${commit ? 'commit' : 'rollback'};`);
+let E: Env; let ORG = '', ORG2 = '', ED = '';
+const run = (w: Who, sql: string, commit = false) => w === 'anon' ? E.db.raw(`begin; set local role anon; ${sql}; rollback;`)
+  : E.db.raw(`begin; set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated; ${sql}; ${commit ? 'commit' : 'rollback'};`);
 const one = (w: Who, sql: string) => last(run(w, sql));
-const q = (sql: string) => last(db.raw(sql));
-const d = (n: number) => `(current_date + ${n})`;
+const q = (sql: string) => E.q(sql);
+const db = { rawFile: (f: string) => E.db.rawFile(f) };
 
 before(() => {
-  db = createReplayDb('editionsadminaccess');
-  db.raw(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  db.raw(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array[${Object.values(U).map((u) => `'${u}'::uuid`).join(',')}]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) values ('${U.ADMIN}','admin','Zed Admin'),('${U.MOD}','moderator','Mo Mod'),('${U.ORG_OWNER}','customer','Orla Owner'),('${U.ORG_EDITOR}','customer','Eddie Editor'),
-      ('${U.BIZ}','customer','Bea Biz'),('${U.HUB_ADMIN}','customer','Hugh Hub'),('${U.STRANGER}','customer','Sam Stranger') on conflict (id) do update set role = excluded.role, full_name = excluded.full_name;
-    insert into admin_config (key, value, category) values ('editions.enabled','false','features') on conflict (key) do update set value='false';`);
-  db.raw(`insert into local_businesses (owner_id, name, category, address, is_active) values ('${U.BIZ}','ZZ Cafe','food_drink','x',true);
-    insert into hubs (owner_id, name, slug, type, is_active) values ('${U.HUB_ADMIN}','ZZ Hub','zz-hub','community',true);`);
-  ORG = q(`insert into public.edition_organisers (slug, name, status, contact_email, created_by, verification_note, reserved_name_flag) values ('zz-org','ZZ Org','pending','private-org@x.invalid','${U.ORG_OWNER}','INTERNAL NOTE',true) returning id`);
-  ORG2 = q(`insert into public.edition_organisers (slug, name, status, contact_email, created_by) values ('zz-org-two','ZZ Org Two','verified','two@x.invalid','${U.ORG_OWNER}') returning id`);
-  db.raw(`insert into public.edition_organiser_members (organiser_id, user_id, role) values ('${ORG}','${U.ORG_OWNER}','owner'),('${ORG}','${U.ORG_EDITOR}','editor');
-    insert into public.edition_organiser_verifications (organiser_id, requested_by, evidence, status) values ('${ORG}','${U.ORG_OWNER}','We run the annual festival','pending');`);
-  ED = q(`insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG2}','zz-fest','ZZ Fest','x','multi_day',${d(10)},${d(12)}) returning id`);
+  E = new Env('editionsadminaccess');
+  const S = seed(E);
+  E.sup(`insert into auth.users (id, email) values ('${MODERATOR}','${MODERATOR}@x.invalid') on conflict do nothing; insert into profiles (id, role, full_name) values ('${MODERATOR}','moderator','Mo Mod') on conflict (id) do update set role='moderator'`);
+  ORG = enter(E, 'HUB_OWNER', 'hub', S.HUB);
+  ORG2 = enter(E, 'BIZ_OWNER', 'business', S.BIZ);
+  E.sup(`update public.edition_organisers set contact_email='private-org@x.invalid', verification_note='INTERNAL NOTE', reserved_name_flag=true where id='${ORG}';
+    update public.edition_organisers set contact_email='two@x.invalid', status='verified' where id='${ORG2}';`);
+  E.sup(`insert into public.edition_organiser_members (organiser_id, user_id, role) values ('${ORG}','${USERS.EDITOR}','editor');
+    insert into public.edition_organiser_verifications (organiser_id, requested_by, evidence, status) values ('${ORG}','${USERS.HUB_OWNER}','We run the annual festival','pending');`);
+  ED = last(E.sup(`insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG2}','zz-fest','ZZ Fest','x','multi_day',${d(10)},${d(12)}) returning id`));
   run('ADMIN', `select public.admin_grant_edition_entitlement('${ED}', 'publish', now(), now() + interval '30 days', 'ZZ admin access suite')`, true);
+  E.sup(`delete from admin_config where key='editions.enabled'`);   // the dark state these checks were written for
 });
-after(() => { try { db?.drop(); } catch { /* */ } });
+after(() => E?.drop());
 
 describe('the production failure, reproduced: contact_email cannot be read directly by anyone signed in', () => {
   test('the exact old admin queries fail with permission denied, for the administrator too', () => {
@@ -59,7 +56,7 @@ describe('admin_edition_org_contacts: platform administrators only', () => {
     assert.equal(one('ADMIN', `select count(*) from public.admin_edition_org_contacts('00000000-0000-4000-8000-000000000000')`), '0');
   });
   test('nobody else can: moderator, organiser owner and editor, business owner, Hub administrator, ordinary user; and signed-out visitors cannot even call it', () => {
-    for (const w of ['MOD', 'ORG_OWNER', 'ORG_EDITOR', 'BIZ', 'HUB_ADMIN', 'STRANGER'] as Who[]) {
+    for (const w of ['MOD', 'ORG_OWNER', 'ORG_EDITOR', 'BIZ', 'HUB_ADMIN', 'BIZ_RUNNER', 'STRANGER'] as Who[]) {
       assert.match(run(w, `select * from public.admin_edition_org_contacts('${ORG}')`), /not permitted/, w);
       assert.match(run(w, `select * from public.admin_edition_org_contacts()`), /not permitted/, `${w} (all)`);
     }
@@ -74,9 +71,9 @@ describe('admin_edition_org_contacts: platform administrators only', () => {
 describe('every query the admin pages now run works for an administrator', () => {
   test('verification queue, organisers list, organiser detail (without the hidden column), with the internal flags and note through their admin functions', () => {
     assert.equal(one('ADMIN', `select v.evidence from public.edition_organiser_verifications v where status='pending'`), 'We run the annual festival');
-    assert.equal(one('ADMIN', `select (select name from public.edition_organisers o where o.id = v.organiser_id) from public.edition_organiser_verifications v where status='pending'`), 'ZZ Org');
+    assert.equal(one('ADMIN', `select (select name from public.edition_organisers o where o.id = v.organiser_id) from public.edition_organiser_verifications v where status='pending'`), 'ZZ Test Hub');
     assert.equal(one('ADMIN', `select count(*) from (select id, name, slug, status, is_test, created_at from public.edition_organisers order by created_at desc limit 300) x`), '2');
-    assert.equal(one('ADMIN', `select name from (select id, name, slug, tagline, description, website, status, verified_at, is_test, hub_id, created_at from public.edition_organisers where id='${ORG}') x`), 'ZZ Org');
+    assert.equal(one('ADMIN', `select name from (select id, name, slug, tagline, description, website, status, verified_at, is_test, hub_id, created_at from public.edition_organisers where id='${ORG}') x`), 'ZZ Test Hub');
     assert.equal(one('ADMIN', `select verification_note from public.admin_edition_org_internal('${ORG}')`), 'INTERNAL NOTE');
     assert.equal(one('ADMIN', `select reserved_name_flag from public.admin_edition_org_flags() where id='${ORG}'`), 't');
   });
@@ -84,7 +81,7 @@ describe('every query the admin pages now run works for an administrator', () =>
     assert.equal(one('ADMIN', `select title from public.editions e join public.edition_organisers o on o.id = e.organiser_id where e.id='${ED}'`), 'ZZ Fest');
     assert.equal(one('ADMIN', `select count(*) from public.edition_entitlements n join public.editions e on e.id = n.edition_id join public.edition_organisers o on o.id = n.organiser_id`), '1');
     assert.ok(Number(one('ADMIN', `select count(*) from public.edition_audit_log`)) >= 1, 'the grant was audited');
-    assert.equal(one('ADMIN', `select count(*) from public.edition_organiser_members where organiser_id='${ORG}'`), '2');
+    assert.equal(one('ADMIN', `select count(*) from public.edition_organiser_members where organiser_id='${ORG}'`), '1'); // the helper only: the Hub owner holds no membership row
     for (const t of ['edition_pages', 'edition_sessions', 'edition_updates', 'edition_sponsors']) assert.doesNotMatch(run('ADMIN', `select count(*) from public.${t} where edition_id='${ED}'`), /ERROR|denied/, t);
   });
 });
@@ -121,8 +118,9 @@ describe('the strict model is unchanged', () => {
     assert.equal(hidden('edition_payout_accounts'), 'stripe_account_id');
     assert.equal(q(`select count(*) from information_schema.column_privileges where table_schema='public' and table_name='edition_organisers' and column_name='contact_email' and grantee in ('anon','authenticated') and privilege_type='SELECT'`), '0');
   });
-  test('no new anonymous capability: the signed-out role still executes exactly seven Editions functions (six reviewed helpers plus edition_pilot_visible)', () => {
-    assert.equal(q(`select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')`), '7');
+  test('no new anonymous capability: the signed-out role executes exactly the reviewed read helpers (the pilot reader is gone; three parent-liveness booleans were added)', () => {
+    assert.equal(q(`select string_agg(p.proname, ',' order by p.proname) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')`),
+      'edition_business_role,edition_controls_business,edition_entitled,edition_is_public,edition_parent_live,edition_participation_ok,edition_public_tiers,edition_role_rank,editions_enabled');
     assert.equal(q(`select count(*) from information_schema.role_table_grants where grantee='anon' and table_schema='public' and table_name like 'edition%' and privilege_type <> 'SELECT'`), '0');
   });
   test('rollback removes only the function and is safe to run twice', () => {

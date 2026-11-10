@@ -3,7 +3,7 @@
  * Rules: plain, short, one clear next step, no tracking, no marketing, every message says why the person is receiving it. Text is escaped for HTML and the subject can
  * never be forged by a name or title (header injection). Money is shown from integer pence. Links are built only from the configured site origin and fixed paths.
  */
-export type OutboxRow = { id: number; kind: string; user_id: string; email: string; payload: Record<string, unknown>; attempts: number };
+export type OutboxRow = { id: number; kind: string; user_id: string | null; email: string; payload: Record<string, unknown>; attempts: number };
 export type Rendered = { subject: string; text: string; html: string };
 
 const s = (v: unknown, max = 120): string => (typeof v === 'string' ? v.replace(/[\r\n\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -19,11 +19,16 @@ export function renderEditionEmail(row: Pick<OutboxRow, 'kind' | 'payload'>, ori
   const base = origin.replace(/\/+$/, '');
   const S = (x: Spec): Rendered => {
     const url = `${base}${x.cta.path}`;
-    const text = [...x.lines, '', `${x.cta.label}: ${url}`, '', x.why, 'OneShetland Editions'].join('\n');
-    const html = `<!doctype html><html><body style="font-family:system-ui,Segoe UI,Arial,sans-serif;color:#10222e;line-height:1.5;max-width:34rem;margin:0 auto;padding:1.25rem">${x.lines.map((l) => `<p style="margin:0 0 .9rem">${esc(l)}</p>`).join('')}<p style="margin:1.4rem 0"><a href="${esc(url)}" style="background:#032f4c;color:#fff;padding:.7rem 1.2rem;border-radius:999px;text-decoration:none;font-weight:600">${esc(x.cta.label)}</a></p><p style="color:#5b6b75;font-size:.85rem;margin:1.4rem 0 0">${esc(x.why)}</p></body></html>`;
+    const text = [...x.lines.filter(Boolean), '', `${x.cta.label}: ${url}`, '', x.why, 'OneShetland Editions'].join('\n');
+    const html = `<!doctype html><html><body style="font-family:system-ui,Segoe UI,Arial,sans-serif;color:#10222e;line-height:1.5;max-width:34rem;margin:0 auto;padding:1.25rem">${x.lines.filter(Boolean).map((l) => `<p style="margin:0 0 .9rem">${esc(l)}</p>`).join('')}<p style="margin:1.4rem 0"><a href="${esc(url)}" style="background:#032f4c;color:#fff;padding:.7rem 1.2rem;border-radius:999px;text-decoration:none;font-weight:600">${esc(x.cta.label)}</a></p><p style="color:#5b6b75;font-size:.85rem;margin:1.4rem 0 0">${esc(x.why)}</p></body></html>`;
     return { subject: s(x.subject, 150), text, html };
   };
   const mgr = p.subject_kind === 'hub' ? 'You are receiving this because you help run this Hub on OneShetland.' : 'You are receiving this because you manage this listing on OneShetland.';
+  // approval, package and helper emails: who is receiving this, and the Edition / organiser pages they link to (the slugs are plain web addresses, never ids)
+  const own = p.subject_kind === 'hub' ? 'You are receiving this because you help run this Hub on OneShetland.' : 'You are receiving this because you own this Business on OneShetland.';
+  const orgN = org || 'your organiser', edN = ed || 'your Edition';
+  const edPath = `/organise/${s(p.organiser_slug, 80)}/editions/${s(p.edition_slug, 120)}`;
+  const note = s(p.note, 1000);
   const biz_ = '/account/editions'; const org_ = (suffix: string) => `/organise/${s(p.organiser_slug, 80)}${suffix}`;
   switch (row.kind) {
     case 'partner_invited': return S({ subject: `${org} has invited ${name} to take part in ${ed}`, lines: [`${org} would like ${name} to take part in ${ed}.`, 'You decide whether to say yes, what is shown, and you can step back at any time. Nothing appears until you agree.'], cta: { label: 'See the invitation', path: biz_ }, why: mgr });
@@ -43,7 +48,19 @@ export function renderEditionEmail(row: Pick<OutboxRow, 'kind' | 'payload'>, ori
     case 'membership_renewal_30d':
     case 'membership_renewal_7d': return S({ subject: `Your ${tier} membership renews ${row.kind.endsWith('7d') ? 'soon' : 'next month'}`, lines: [`${biz}'s ${tier} membership of ${org} runs to ${day(p.period_end)}.`, `${org} will be in touch about renewing, or you can contact them directly.`], cta: { label: 'See your membership', path: biz_ }, why: 'You are receiving this because you manage this business on OneShetland.' });
     case 'payment_receipt': return S({ subject: `Receipt: ${pounds(p.charge_pence)} to ${org}`, lines: [`Thank you. ${biz} paid ${pounds(p.charge_pence)} to ${org}${label ? ` for ${label}` : ''}.`, Number(p.vat_pence) > 0 ? `This includes VAT of ${pounds(p.vat_pence)}.` : '', s(p.legal_name) ? `Supplier: ${s(p.legal_name)}${s(p.vat_number) ? ` (VAT no. ${s(p.vat_number)})` : ''}.` : ''], cta: { label: 'See your payments', path: biz_ }, why: 'You are receiving this receipt because a payment was made for this business on OneShetland.' });
+    case 'edition_approved': return S({ subject: `${edN} has been approved`, lines: [`Good news: ${edN} (${orgN}) has been approved.`, 'Next: choose a package, then publish when you are ready.'], cta: { label: 'Choose a package', path: edPath }, why: own });
+    case 'edition_changes_requested': return S({ subject: `A few changes are needed for ${edN}`, lines: [`We have looked at ${edN} (${orgN}) and a few changes are needed before it can be approved.`, note ? `The reviewer's message: \u201c${note}\u201d` : '', 'Make the changes, then send it for review again.'], cta: { label: 'Open your Edition', path: edPath }, why: own });
+    case 'edition_rejected': return S({ subject: `${edN} could not be approved`, lines: [`We are sorry: ${edN} (${orgN}) could not be approved.`, note ? `The reviewer's message: \u201c${note}\u201d` : '', 'You can read the message and look at your options on the Edition page.'], cta: { label: 'Open your Edition', path: edPath }, why: own });
+    case 'package_active': {
+      const amt = typeof p.amount_pence === 'number' && Number.isInteger(p.amount_pence) ? p.amount_pence : null;
+      const until = day(p.ends_at);
+      return S({ subject: `Your package for ${edN} is active`, lines: [until ? `Your package for ${edN} (${orgN}) is active until ${until}.` : `Your package for ${edN} (${orgN}) is now active.`, amt === 0 ? 'Cost: free.' : amt !== null ? `Amount paid: ${pounds(amt)}.` : '', 'Publishing is now up to you: open your Edition and publish it when you are ready.'], cta: { label: 'Open your Edition', path: edPath }, why: own });
+    }
+    case 'helper_invited': {
+      const inviter = s(p.inviter, 80), role = p.role === 'admin' ? 'an admin' : 'an editor';
+      return S({ subject: `You have been invited to help with Editions for ${orgN}`, lines: [`${inviter ? `${inviter} has` : 'You have been'} invited${inviter ? ' you' : ''} to help with Editions for ${orgN} as ${role}.`, 'If you already have a OneShetland account, sign in using this email address. If not, create an account using this same email address.', 'Then open Editions to accept the invitation.'], cta: { label: 'Open Editions', path: '/organise' }, why: 'You are receiving this because someone invited this email address to help with Editions on OneShetland.' });
+    }
     default: return null;
   }
 }
-export const EMAIL_KINDS = ['partner_invited', 'partner_requested', 'partner_answered', 'partner_request_answered', 'partner_withdrew', 'partner_removed', 'membership_invited', 'membership_applied', 'membership_approved', 'membership_declined', 'membership_welcome', 'membership_payment_failed', 'membership_expired', 'membership_ended', 'membership_renewal_30d', 'membership_renewal_7d', 'payment_receipt'] as const;
+export const EMAIL_KINDS = ['partner_invited', 'partner_requested', 'partner_answered', 'partner_request_answered', 'partner_withdrew', 'partner_removed', 'membership_invited', 'membership_applied', 'membership_approved', 'membership_declined', 'membership_welcome', 'membership_payment_failed', 'membership_expired', 'membership_ended', 'membership_renewal_30d', 'membership_renewal_7d', 'payment_receipt', 'edition_approved', 'edition_changes_requested', 'edition_rejected', 'package_active', 'helper_invited'] as const;

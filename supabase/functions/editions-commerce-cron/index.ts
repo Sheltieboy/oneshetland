@@ -1,12 +1,12 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { safeEqual, formBody, idempotencyKey, isRetryableProviderStatus, refundParams, subscriptionCancelRequest } from '../_shared/editions-commerce-core.ts';
+import { safeEqual, formBody, idempotencyKey, isRetryableProviderStatus, orderRefundParams, reconcileOrderCharge, refundParams, subscriptionCancelRequest } from '../_shared/editions-commerce-core.ts';
 
 /**
  * editions-commerce-cron — scheduled housekeeping for Editions money. NOT DEPLOYED, NOT SCHEDULED. Service-role bearer required (same pattern as the other crons).
  *   action 'sweep'      membership expiry/cancellation/withdrawal sweep (database function)
  *   action 'cancels'    end the provider subscription of every card membership that has been cancelled or ended (queued by the database); safe to repeat
- *   action 'refunds'    drain pending refund requests: one provider refund each, reverse_transfer, application fee refunded per admin setting; the webhook confirms
+ *   action 'refunds'    drain pending refund requests: one provider refund each (participation: reverse_transfer, application fee per admin setting; package orders: a plain refund, the platform kept the whole price); the webhook confirms
  *   action 'reconcile'  compare the provider's charges for the last N days with the ledger; mismatches become exceptions for the administrator (nothing is auto-fixed)
  */
 serve(async (req) => {
@@ -57,7 +57,7 @@ serve(async (req) => {
         let status: 'submitted' | 'retry' | 'failed' = 'failed', msg: string | null = null;
         try {
           const res = await fetch('https://api.stripe.com/v1/refunds', { method: 'POST', headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey('refund', r.request_id, '1') },
-            body: formBody(refundParams({ payment_intent: r.stripe_payment_intent_id, amount_pence: r.amount_pence, refund_application_fee: r.refund_application_fee, request_id: r.request_id })) });
+            body: formBody(r.order_id ? orderRefundParams({ payment_intent: r.stripe_payment_intent_id, amount_pence: r.amount_pence, request_id: r.request_id, order_id: r.order_id }) : refundParams({ payment_intent: r.stripe_payment_intent_id, amount_pence: r.amount_pence, refund_application_fee: r.refund_application_fee, request_id: r.request_id })) });
           if (res.ok) status = 'submitted';
           else {
             const j = await res.json().catch(() => ({}));
@@ -73,16 +73,25 @@ serve(async (req) => {
     }
     if (action === 'reconcile') {
       const to = Math.floor(Date.now() / 1000), from = to - Math.min(Math.max(Number(days) || 2, 1), 31) * 86400;
-      const snapshot: unknown[] = []; let startingAfter = '';
+      const snapshot: unknown[] = []; const orderCharges: { payment_intent: string; amount: number; refunded: number; paid: boolean }[] = []; let startingAfter = '';
       for (let page = 0; page < 20; page++) {
         const q = new URLSearchParams({ limit: '100', 'created[gte]': String(from), 'created[lte]': String(to) }); if (startingAfter) q.set('starting_after', startingAfter);
         const r = await fetch(`https://api.stripe.com/v1/charges?${q}`, { headers: { Authorization: `Bearer ${stripeKey}` } }); const j = await r.json(); if (!r.ok) throw new Error(j.error?.message);
         // Edition-marked charges, plus subscription invoice charges (which carry no marker on the charge itself); the database ignores unmarked ones it does not know.
-        for (const c of j.data) { const marked = String(c.metadata?.kind ?? '').startsWith('edition_'); if ((marked || c.invoice) && c.payment_intent) snapshot.push({ payment_intent: c.payment_intent, marked, amount: c.amount, application_fee: c.application_fee_amount ?? 0, refunded: c.amount_refunded, destination: c.transfer_data?.destination ?? c.destination ?? null, status: c.status === 'succeeded' ? 'succeeded' : c.status }); }
+        for (const c of j.data) {
+          // package orders are held in edition_orders (not the payments ledger): compared separately below
+          if (c.metadata?.kind === 'edition_order' && c.payment_intent) { orderCharges.push({ payment_intent: String(c.payment_intent), amount: c.amount, refunded: c.amount_refunded ?? 0, paid: c.status === 'succeeded' && c.paid === true }); continue; }
+          const marked = String(c.metadata?.kind ?? '').startsWith('edition_'); if ((marked || c.invoice) && c.payment_intent) snapshot.push({ payment_intent: c.payment_intent, marked, amount: c.amount, application_fee: c.application_fee_amount ?? 0, refunded: c.amount_refunded, destination: c.transfer_data?.destination ?? c.destination ?? null, status: c.status === 'succeeded' ? 'succeeded' : c.status }); }
         if (!j.has_more) break; startingAfter = j.data[j.data.length - 1].id;
       }
       const { data, error } = await svc.rpc('edition_reconcile_apply', { p_snapshot: snapshot, p_from: new Date(from * 1000).toISOString(), p_to: new Date(to * 1000).toISOString() }); if (error) throw error;
-      return json({ ok: true, ...data });
+      // package orders: raise an exception for anything the provider and the order table disagree about (never auto-corrected)
+      let orderExceptions = 0;
+      for (const oc of orderCharges) {
+        const { data: ord } = await svc.from('edition_orders').select('organiser_id, amount_pence, refunded_pence, status').eq('stripe_payment_intent_id', oc.payment_intent).maybeSingle();
+        for (const x of reconcileOrderCharge(oc, ord ?? null)) { await svc.rpc('edition_record_exception', { p_kind: x.kind, p_ref: x.ref, p_org: x.org, p_detail: x.detail }); orderExceptions++; }
+      }
+      return json({ ok: true, ...data, orders_checked: orderCharges.length, order_exceptions: orderExceptions });
     }
     return json({ error: 'unknown action' }, 400);
   } catch (err) { console.error('[editions-commerce-cron]', (err as Error).message); return json({ error: 'failed' }, 500); }

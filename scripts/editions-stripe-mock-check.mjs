@@ -3,7 +3,7 @@
 // stripe-mock returns fixture responses (it does not echo values), so success here means Stripe's SPEC accepts the request, nothing more.
 // It proves the REQUEST SHAPES are ones Stripe accepts. It does NOT prove behaviour against real Stripe (no real account, no card, no webhooks from Stripe).
 //   docker run -d --rm --name editions-stripe-mock -p 127.0.0.1:12111:12111 stripe/stripe-mock:latest && node scripts/editions-stripe-mock-check.mjs
-import { orderIntentParams, participationIntentParams, subscriptionParams, productParams, connectAccountParams, refundParams, formBody, idempotencyKey, subscriptionCancelRequest } from '../supabase/functions/_shared/editions-commerce-core.ts';
+import { orderIntentParams, participationIntentParams, subscriptionParams, productParams, connectAccountParams, refundParams, orderRefundParams, formBody, idempotencyKey, subscriptionCancelRequest } from '../supabase/functions/_shared/editions-commerce-core.ts';
 const BASE = process.env.STRIPE_MOCK ?? 'http://127.0.0.1:12111/v1';
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log(`  ok   ${m}`); } else { fail++; console.log(`  FAIL ${m}`); } };
@@ -39,6 +39,7 @@ console.log('Connect onboarding and refunds');
 r = await post('/accounts', connectAccountParams({ organiser_id: U(2), email: 'owner@example.test', name: 'Demo Organiser' })); ok(r.status === 200, `Express account accepted (${r.status})`);
 const pi = await post('/payment_intents', { ...op }); 
 r = await post('/refunds', refundParams({ payment_intent: pi.body.id, amount_pence: 3000, refund_application_fee: true, request_id: U(9) })); ok(r.status === 200, `refund request accepted: reverse transfer and the fee refunded (${r.status})`);
+r = await post('/refunds', orderRefundParams({ payment_intent: pi.body.id, amount_pence: 1500, request_id: U(9), order_id: U(3) })); ok(r.status === 200, `package order refund (no transfer reversal) accepted (${r.status})`);
 
 console.log('paying a past-due membership through its existing subscription (R12)');
 { const g = await fetch(`${BASE}/subscriptions/sub_123?expand[]=latest_invoice.payment_intent`, { headers: { authorization: 'Bearer sk_test_123' } }); ok(g.status === 200, `retrieving the existing subscription with its open invoice is accepted by Stripe's spec (${g.status})`); }

@@ -1,7 +1,11 @@
 -- Rollback of 20270103040000_editions_retire_pilot_and_standalone: recreates the pilot table and functions (empty: history lives in the audit log) and the retired organiser functions.
 -- Run BEFORE the rollbacks of 20270103030000 downward. The pilot switch is restored as OFF.
-alter table public.edition_organisers drop constraint if exists edition_organisers_one_parent;
-alter table public.edition_organisers add constraint edition_organisers_one_parent check (num_nonnulls(hub_id, business_id) = 1) not valid;
+do $$ begin
+  alter table public.edition_organisers drop constraint if exists edition_organisers_one_parent;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'edition_organisers' and column_name = 'business_id') then
+    alter table public.edition_organisers add constraint edition_organisers_one_parent check (num_nonnulls(hub_id, business_id) = 1) not valid;
+  end if;
+end $$;
 grant update (name) on public.edition_organisers to authenticated;
 -- OneShetland Editions: CONTROLLED PILOT. A scoped, administrator-only way for ONE approved organiser or Hub to be publicly visible while Editions stays dark for everyone else.
 --
@@ -37,6 +41,7 @@ create unique index if not exists edition_pilot_one_live_approval on public.edit
 
 alter table public.edition_pilot_approvals enable row level security;
 revoke all on public.edition_pilot_approvals from public, anon, authenticated;
+drop policy if exists "edition_pilot_approvals admin read" on public.edition_pilot_approvals;
 create policy "edition_pilot_approvals admin read" on public.edition_pilot_approvals for select to authenticated using (coalesce(public.is_admin(), false));
 grant select on public.edition_pilot_approvals to authenticated;
 
@@ -49,6 +54,7 @@ begin
   end if;
   return new;
 end $$;
+drop trigger if exists edition_pilot_approvals_guard on public.edition_pilot_approvals;
 create trigger edition_pilot_approvals_guard before update or delete on public.edition_pilot_approvals for each row execute function public.edition_pilot_approvals_guard();
 
 -- The single read-time predicate. Evaluated live, so nothing needs to be "cleaned up" when anything below changes.

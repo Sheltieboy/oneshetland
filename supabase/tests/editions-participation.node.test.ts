@@ -5,27 +5,17 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env, USERS, seed, enter, draftEdition, d, last, failed as baseFailed } from './_support/editions-env.ts';
+import { publishEdition, addHelper, aliased } from './_support/editions-env-2.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), OWNER: id(3), ORG_ADMIN: id(4), ORG_EDITOR: id(5), BIZ1: id(6), BIZ2: id(7), BIZ3: id(8), STRANGER: id(9) } as const;
-type Who = keyof typeof U | 'anon' | 'service';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
-const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates/im.test(o);
-class Env {
-  db!: ReplayDb;
-  as(w: Who) { return w === 'anon' ? 'set local role anon;' : w === 'service' ? 'set local role service_role;' : `set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated;`; }
-  try(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; rollback;`); }
-  do(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
-  sup(sql: string) { return this.db.raw(sql); }
-  one(w: Who, sql: string) { return last(this.try(w, sql)); }
-  doOne(w: Who, sql: string) { return last(this.do(w, sql)); }
-}
-let E: Env; let ORG = '', ED = '', B1 = '', B2 = '', B3 = '', L1 = '', L2 = '', L3 = '', T_FREE = '', T_PCT = '', EV = '', LEV = '';
-const d = (n: number) => `(current_date + ${n})`;
+// The organiser is a BUSINESS (ZZ Test Cafe): OWNER is its owner; ORG_ADMIN and ORG_EDITOR are invited helpers; BIZ1..BIZ3 own the participating businesses.
+const MAP = { ADMIN: 'ADMIN', OWNER: 'BIZ_OWNER', ORG_ADMIN: 'HELPER', ORG_EDITOR: 'EDITOR', BIZ1: 'BIZ2_OWNER', BIZ2: 'HUB2_OWNER', BIZ3: 'HUB_MEMBER', STRANGER: 'STRANGER' } as const;
+const U = { ADMIN: USERS.ADMIN, OWNER: USERS.BIZ_OWNER, ORG_ADMIN: USERS.HELPER, ORG_EDITOR: USERS.EDITOR, BIZ1: USERS.BIZ2_OWNER, BIZ2: USERS.HUB2_OWNER, BIZ3: USERS.HUB_MEMBER, STRANGER: USERS.STRANGER } as const;
+type Who = keyof typeof MAP | 'anon' | 'service';
+const failed = baseFailed;
+let Base: Env, S: ReturnType<typeof seed>;
+let E: ReturnType<typeof aliased<keyof typeof MAP>>;
+let ORG = '', ED = '', B1 = '', B2 = '', B3 = '', L1 = '', L2 = '', L3 = '', T_FREE = '', T_PCT = '', EV = '', LEV = '';
 const days = (n: number) => `(now() + interval '${n} days')`;
 const pubCount = () => E.one('anon', `select count(*) from public.edition_public_businesses where edition_id='${ED}'`);
 const terms = (who: Who, mode: string, fee: string, vat = 'none', rp = 'none', ru = 'null', cap = 'null', close = 'null') => E.try(who, `select public.edition_set_participation_terms('${ED}', '${mode}', ${fee}, '${vat}', '${rp}', ${ru}, ${cap}, ${close})`);
@@ -34,26 +24,17 @@ const cfg = (k: string, v: string) => E.do('ADMIN', `select public.admin_set_edi
 const succeed = (link: string, pi: string, charge: number, who: Who = 'service') => E.try(who, `select public.edition_participation_payment_succeeded('${link}', '${pi}', 'ch_${pi}', ${charge}, 30)`);
 
 before(() => {
-  E = new Env(); E.db = createReplayDb('editionspart');
-  E.sup(`do $$ begin if not exists (select 1 from pg_roles where rolname='service_role') then create role service_role nologin; end if; end $$;`);
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  const all = [U.ADMIN, U.OWNER, U.ORG_ADMIN, U.ORG_EDITOR, U.BIZ1, U.BIZ2, U.BIZ3, U.STRANGER].map((x) => `'${x}'::uuid`).join(',');
-  E.sup(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array[${all}]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) select x, case when x = '${U.ADMIN}'::uuid then 'admin' else 'customer' end, 'N' from unnest(array[${all}]) x on conflict (id) do update set role = excluded.role;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features'),('editions.commerce.enabled','true','editions') on conflict (key) do update set value = excluded.value;`);
-  ORG = last(E.do('OWNER', `select public.create_edition_organiser('ZZ Part Org', 'zz-part-org')`));
-  for (const [u, r] of [['ORG_ADMIN', 'admin'], ['ORG_EDITOR', 'editor']] as const) {
-    E.do('OWNER', `select public.invite_edition_member('${ORG}', '${U[u]}@x.invalid', '${r}')`);
-    E.do(u, `select public.accept_edition_invite('${E.q(`select id from edition_organiser_invites where organiser_id='${ORG}' and email='${U[u]}@x.invalid'`)}')`);
-  }
-  E.do('OWNER', `select public.request_edition_organiser_verification('${ORG}', 'evidence evidence')`);
-  E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG}', 'verify', 'ok ok ok ok')`);
+  Base = new Env('editionspart');
+  S = seed(Base); E = aliased(Base, MAP);
+  E.sup(`insert into admin_config (key, value, category) values ('editions.commerce.enabled','true','editions') on conflict (key) do update set value = excluded.value;`);
+  ORG = enter(Base, 'BIZ_OWNER', 'business', S.BIZ);
+  addHelper(Base, 'BIZ_OWNER', ORG, 'HELPER', `${U.ORG_ADMIN}@x.invalid`, 'admin');
+  addHelper(Base, 'BIZ_OWNER', ORG, 'EDITOR', `${U.ORG_EDITOR}@x.invalid`, 'editor');
   for (const f of ['collect_payments', 'memberships', 'offline_records', 'participation_fees']) E.do('ADMIN', `select public.admin_grant_edition_org_entitlement('${ORG}', '${f}', null, ${days(90)}, 'ZZ participation suite')`);
   E.do('OWNER', `select public.edition_accept_commerce_terms('${ORG}', 'draft-1')`);
   E.do('service', `select public.edition_payout_account_sync('${ORG}', 'acct_part_1', true, true, true, '[]'::jsonb)`);
-  ED = last(E.do('OWNER', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG}','zz-part-fest','ZZ Part Fest','x','multi_day',${d(20)},${d(22)}) returning id`));
-  E.do('ADMIN', `select public.admin_grant_edition_entitlement('${ED}', 'publish', now(), ${days(90)}, 'ZZ participation suite')`);
-  E.do('OWNER', `select public.edition_set_status('${ED}', 'published')`);
+  ED = draftEdition(Base, 'BIZ_OWNER', ORG, 'zz-part-fest', 'ZZ Part Fest');
+  publishEdition(Base, 'BIZ_OWNER', ED, 'ZZ participation suite');
   const biz = (o: string, n: string) => last(E.sup(`insert into local_businesses (owner_id, name, category, address, is_active, subscription_tier, subscription_until) values ('${o}', '${n}', 'food_drink', 'x', true, 'pro', now() + interval '90 days') returning id`));
   B1 = biz(U.BIZ1, 'ZZ Part Cafe'); B2 = biz(U.BIZ2, 'ZZ Part Bakery'); B3 = biz(U.BIZ3, 'ZZ Part Deli');
   const link = (b: string, u: Who) => { const l = last(E.do('ORG_EDITOR', `select public.edition_invite_partner('${ED}','business','${b}')`)); E.do(u, `select public.edition_link_act('${l}','approve',null)`); return l; };
@@ -63,7 +44,7 @@ before(() => {
   const tier = (n: string, ben: string, disc: string) => last(E.do('ORG_ADMIN', `select public.edition_tier_save('${ORG}', null, '${n}', 'd', '[]'::jsonb, 1000, null, false, 'none', 'application', '${ben}', ${disc}, null, 1)`));
   T_FREE = tier('ZZ Gold', 'free', 'null'); T_PCT = tier('ZZ Silver', 'percent_off', '25');
 });
-after(() => { try { E?.db.drop(); } catch { /* */ } });
+after(() => Base?.drop());
 
 describe('lockdown and function exposure', () => {
   test('RLS on, no FOR ALL, no direct writes; money-in functions are service-role only', () => {
@@ -350,7 +331,7 @@ describe('statements and views', () => {
   });
   test('platform fee statement is admin only', () => {
     assert.ok(failed(E.try('ORG_ADMIN', `select * from public.admin_edition_fee_statement(now() - interval '1 year', now() + interval '1 day')`)));
-    assert.match(E.one('ADMIN', `select organiser_name || '|' || platform_fee_pence from public.admin_edition_fee_statement(now() - interval '1 year', now() + interval '1 day')`), /ZZ Part Org\|\d+/);
+    assert.match(E.one('ADMIN', `select organiser_name || '|' || platform_fee_pence from public.admin_edition_fee_statement(now() - interval '1 year', now() + interval '1 day')`), /ZZ Test Cafe\|\d+/);
   });
   test('a business sees its own payments (with the organiser\'s VAT details) and nobody else\'s', () => {
     assert.ok(Number(E.one('BIZ2', `select count(*) from public.edition_my_payments()`)) >= 1);
@@ -433,3 +414,19 @@ describe('R12 an organiser who disconnects Stripe stops collecting at once', () 
   });
 });
 
+
+describe('a Hub-run organiser works exactly like a Business-run one', () => {
+  test('the Hub\'s committee (an admin) sets a participation fee on a published Hub-run Edition; an approved but unpaid business is then hidden; a plain Hub member cannot set terms', () => {
+    const horg = enter(Base, 'HUB_OWNER', 'hub', S.HUB);
+    const hed = draftEdition(Base, 'HUB_OWNER', horg, 'zz-hub-part-fest', 'ZZ Hub Part Fest');
+    publishEdition(Base, 'HUB_OWNER', hed, 'ZZ Hub-run parity');
+    for (const f of ['collect_payments', 'participation_fees']) E.do('ADMIN', `select public.admin_grant_edition_org_entitlement('${horg}', '${f}', null, ${days(90)}, 'ZZ Hub-run parity')`);
+    const set = (w: 'HUB_COMMITTEE' | 'HUB_MEMBER') => Base.try(w, `select public.edition_set_participation_terms('${hed}', 'fee_required', 2000, 'none', 'none', null, null, null)`);
+    assert.ok(failed(set('HUB_MEMBER')));
+    assert.ok(!failed(Base.do('HUB_COMMITTEE', `select public.edition_set_participation_terms('${hed}', 'fee_required', 2000, 'none', 'none', null, null, null)`)));
+    const l = last(Base.do('HUB_COMMITTEE', `select public.edition_invite_partner('${hed}','business','${B1}')`));
+    E.do('BIZ1', `select public.edition_link_act('${l}','approve',null)`);
+    assert.equal(E.q(`select state from edition_links where id='${l}'`), 'approved');
+    assert.equal(E.one('anon', `select count(*) from public.edition_public_businesses where edition_id='${hed}'`), '0', 'unpaid: not shown');
+  });
+});

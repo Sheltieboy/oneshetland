@@ -16,13 +16,14 @@ select 'the public Hub view exposes only whitelisted Hub columns (no owner, memb
        (select count(*) from information_schema.columns where table_schema='public' and table_name='edition_public_hubs'
           and column_name in ('owner_id','stripe_account_id','payout_enabled','contact_email','contact_phone','charity_number','memberships_enabled','join_mode')) = 0
 union all
-select 'no new Editions function is executable by anon or PUBLIC (the signed-out role still runs exactly the six reviewed helpers)',
-       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = (6 + (select count(*) from pg_proc q where q.pronamespace = 'public'::regnamespace and q.proname = 'edition_pilot_visible'))
+select 'no new Editions function is executable by anon or PUBLIC (the signed-out role runs exactly the nine reviewed helpers)',
+       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = 9
        and (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type='EXECUTE'))) = 0
 union all
-select 'Hub-derived organiser authority and the Hub organiser functions exist and are signed-in only',
-       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname in ('edition_hub_role','edition_my_organisers','edition_my_hubs','create_edition_organiser_for_hub','edition_controls_hub') and p.prosecdef) = 5
-       and (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname in ('create_edition_organiser_for_hub','edition_my_hubs','edition_my_organisers') and has_function_privilege('anon', p.oid, 'execute')) = 0
+select 'Hub-derived organiser authority and the entry functions exist and are signed-in only (the standalone and admin-created Hub organiser functions are gone)',
+       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname in ('edition_hub_role','edition_my_organisers','edition_my_hubs','edition_my_businesses','edition_ensure_organiser','edition_controls_hub') and p.prosecdef) = 6
+       and (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname in ('edition_my_hubs','edition_my_businesses','edition_my_organisers','edition_ensure_organiser') and has_function_privilege('authenticated', p.oid, 'execute') and not has_function_privilege('anon', p.oid, 'execute')) = 4
+       and (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname in ('create_edition_organiser_for_hub','admin_create_edition_organiser_for_hub','admin_link_edition_organiser_hub')) = 0
 union all
 select 'one Editions organiser per Hub (unique index) and no organiser table grant changed',
        (select count(*) from pg_indexes where indexname='edition_organisers_one_per_hub') = 1

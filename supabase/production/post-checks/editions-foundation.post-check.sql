@@ -14,14 +14,15 @@ select 'anon has read-only access to Editions tables (no write grant)',
 union all
 -- THE SECURITY ASSERTION. Every Editions function (SECURITY DEFINER or not, whatever its name) that the signed-out role can execute, with its full signature, must be exactly this
 -- list. Each is a deliberate public helper: a boolean or constant used by the public RLS policies and views (edition_entitled, edition_is_public, edition_participation_ok,
--- editions_enabled, edition_role_rank) or the public membership-tier reader (edition_public_tiers, itself gated on the flag, a verified organiser and a public tier).
+-- editions_enabled, edition_role_rank, and the three parent-liveness helpers edition_parent_live / edition_business_role / edition_controls_business, which answer only for the caller's own identity or a public fact)
+-- or the public membership-tier reader (edition_public_tiers, itself gated on the flag, a verified organiser and a public tier). The pilot reader (edition_pilot_visible) no longer exists.
 -- has_function_privilege('anon') includes anything inherited from PUBLIC. A new anon-executable function must be added here deliberately, after review.
-select 'the ONLY Editions functions anon can execute are the seven reviewed public helpers',
+select 'the ONLY Editions functions anon can execute are the nine reviewed public helpers',
        coalesce((select string_agg(p.oid::regprocedure::text, ',' order by p.oid::regprocedure::text collate "C")
                    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                   where n.nspname = 'public' and (p.proname ilike '%edition%' or p.proname in ('organiser_memberships_email', 'organisers_audit_status'))
                     and has_function_privilege('anon', p.oid, 'execute')), '')
-       = 'edition_entitled(uuid,text,timestamp with time zone),edition_is_public(uuid),edition_participation_ok(uuid),edition_pilot_visible(uuid),edition_public_tiers(text),edition_role_rank(text),editions_enabled()'
+       = 'edition_business_role(uuid),edition_controls_business(uuid),edition_entitled(uuid,text,timestamp with time zone),edition_is_public(uuid),edition_parent_live(uuid),edition_participation_ok(uuid),edition_public_tiers(text),edition_role_rank(text),editions_enabled()'
 union all
 select 'no Editions function carries a PUBLIC execute grant or a default ACL',
        (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -43,11 +44,10 @@ select 'four reserved names are seeded', (select count(*) from public.edition_re
 union all
 select 'the Editions feature flag is still off (public pages 404, organiser creation limited to administrators)', not public.editions_enabled()
 union all
-select 'while Editions is dark, no real (non-test) Edition is published unless its organiser holds a live pilot approval',
-       public.editions_enabled() or (select count(*) from public.editions e where e.status = 'published' and not e.is_test
-         and not exists (select 1 from public.edition_pilot_approvals a where a.organiser_id = e.organiser_id and a.revoked_at is null)) = 0
+select 'every published real (non-test) Edition has been approved by OneShetland (the publish gate and the public rule both require it; the old pilot exception no longer exists)',
+       (select count(*) from public.editions e where e.status = 'published' and not e.is_test and e.review_state <> 'approved') = 0
 union all
-select 'while Editions is dark, every organiser was created by an administrator (Hub-run ones are set up by administrators and run by their own Hub committee) and every explicit organiser member is an administrator (no external organiser access)',
+select 'while Editions is dark, every organiser was created by an administrator (their Hub or Business owner runs it from the parent) and every explicit organiser member is an administrator (no external organiser access)',
        public.editions_enabled() or (
          (select count(*) from public.edition_organisers o where not exists (select 1 from public.profiles p where p.id = o.created_by and p.role = 'admin')) = 0
          and (select count(*) from public.edition_organiser_members m where not exists (select 1 from public.profiles p where p.id = m.user_id and p.role = 'admin')) = 0

@@ -4,48 +4,41 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createReplayDb, type ReplayDb } from './_support/replay-db.ts';
+import { Env as BaseEnv, USERS, seed, enter, last, d } from './_support/editions-env.ts';
+import { approve, grantPublish } from './_support/editions-env-1.ts';
 
-const id = (n: number) => `${n.toString(16).padStart(2, '0')}000000-0000-4000-8000-0000000000${n.toString(16).padStart(2, '0')}`;
-const U = { ADMIN: id(1), ORG: id(3), BIZ: id(5), VIS_A: id(7), VIS_B: id(8) } as const;
-type Who = keyof typeof U | 'anon';
-const rowsTag = /^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|COMMENT|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|UPDATE \d+|DELETE \d+)$/;
-const rowsOf = (o: string) => o.split('\n').map((l) => l.trim()).filter((l) => l && !rowsTag.test(l) && !/^ERROR|^psql:|^LINE |^\s*\^|^DETAIL|^HINT|^CONTEXT|^WARNING|^NOTICE/.test(l));
-const last = (o: string) => rowsOf(o).pop() ?? '';
+// ORG = the Hub's owner (runs the organiser); BIZ = the owner of a partner Business; VIS_A / VIS_B = ordinary visitors; ADMIN = platform administrator
+const KEY = { ADMIN: 'ADMIN', ORG: 'HUB_OWNER', BIZ: 'BIZ2_OWNER', VIS_A: 'STRANGER', VIS_B: 'HELPER' } as const;
+const U = { ADMIN: USERS.ADMIN, ORG: USERS.HUB_OWNER, BIZ: USERS.BIZ2_OWNER, VIS_A: USERS.STRANGER, VIS_B: USERS.HELPER } as const;
+type Who = keyof typeof KEY | 'anon';
 const failed = (o: string) => /^ERROR:|permission denied|row-level security|violates/im.test(o);
 class Env {
-  db!: ReplayDb;
-  as(w: Who) { return w === 'anon' ? 'set local role anon;' : `set local request.jwt.claims = '{"sub":"${U[w]}","email":"${U[w]}@x.invalid","role":"authenticated"}'; set local request.jwt.claim.sub = '${U[w]}'; set local role authenticated;`; }
-  try(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; rollback;`); }
-  do(w: Who, sql: string) { return this.db.raw(`begin; ${this.as(w)} ${sql}; commit;`); }
-  q(sql: string) { return last(this.db.raw(sql)); }
-  sup(sql: string) { return this.db.raw(sql); }
+  b: BaseEnv;
+  constructor(name: string) { this.b = new BaseEnv(name); }
+  get db() { return this.b.db; }
+  try(w: Who, sql: string) { return w === 'anon' ? this.b.db.raw(`begin; set local role anon; ${sql}; rollback;`) : this.b.try(KEY[w], sql); }
+  do(w: Who, sql: string) { return w === 'anon' ? this.b.db.raw(`begin; set local role anon; ${sql}; commit;`) : this.b.do(KEY[w], sql); }
+  q(sql: string) { return this.b.q(sql); }
+  sup(sql: string) { return this.b.sup(sql); }
   one(w: Who, sql: string) { return last(this.try(w, sql)); }
 }
 let E: Env; let ED = '', ORG = '', S1 = '', S2 = '', EV = '', LINK = '';
-const d = (n: number) => `(current_date + ${n})`;
 
 before(() => {
-  E = new Env(); E.db = createReplayDb('editionsvisitor');
-  E.sup(`alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated;`);
-  E.sup(`insert into auth.users (id, email) select x, x::text || '@x.invalid' from unnest(array['${U.ADMIN}'::uuid,'${U.ORG}'::uuid,'${U.BIZ}'::uuid,'${U.VIS_A}'::uuid,'${U.VIS_B}'::uuid]) x on conflict do nothing;
-    insert into profiles (id, role, full_name) values ('${U.ADMIN}','admin','Zed'),('${U.ORG}','customer','Orla'),('${U.BIZ}','customer','Bea'),('${U.VIS_A}','customer','Vi A'),('${U.VIS_B}','customer','Vi B')
-      on conflict (id) do update set role = excluded.role;
-    insert into admin_config (key, value, category) values ('editions.enabled','true','features') on conflict (key) do update set value='true';`);
-  ORG = last(E.do('ORG', `select public.create_edition_organiser('ZZ Visitor Org', 'zz-visitor-org')`));
-  E.do('ORG', `select public.request_edition_organiser_verification('${ORG}', 'evidence evidence')`);
-  E.do('ADMIN', `select public.admin_decide_edition_organiser('${ORG}', 'verify', 'ok ok ok ok')`);
+  E = new Env('editionsvisitor');
+  const S = seed(E.b);
+  ORG = enter(E.b, 'HUB_OWNER', 'hub', S.HUB);
   ED = last(E.do('ORG', `insert into public.editions (organiser_id, slug, title, summary, kind, starts_on, ends_on) values ('${ORG}','zz-vis-fest','ZZ Vis Fest','x','multi_day',${d(10)},${d(12)}) returning id`));
-  E.do('ADMIN', `select public.admin_grant_edition_entitlement('${ED}', 'publish', now(), now() + interval '90 days', 'ZZ visitor suite')`);
+  E.sup(`insert into public.edition_pages (edition_id, slug, nav_label, title, body, position, in_nav, is_home) values ('${ED}','welcome','Welcome','Welcome','Hello',0,true,true)`);
+  approve(E.b, 'HUB_OWNER', ED); grantPublish(E.b, ED);
   E.do('ORG', `select public.edition_set_status('${ED}', 'published')`);
   S1 = last(E.do('ORG', `insert into public.edition_sessions (edition_id, title, starts_at, kind) values ('${ED}','ZZ Opening',(${d(10)})::timestamp + interval '10 hours','session') returning id`));
   S2 = last(E.do('ORG', `insert into public.edition_sessions (edition_id, title, starts_at, kind) values ('${ED}','ZZ Concert',(${d(11)})::timestamp + interval '19 hours','session') returning id`));
-  const biz = last(E.sup(`insert into local_businesses (owner_id, name, category, address, is_active) values ('${U.BIZ}','ZZ Pub','food_drink','x',true) returning id`));
-  EV = last(E.sup(`insert into events (title, starts_at, status, organiser_business_id, organiser_user_id) values ('ZZ Quiz', (${d(11)})::timestamp + interval '20 hours','published','${biz}','${U.BIZ}') returning id`));
+  EV = last(E.sup(`insert into events (title, starts_at, status, organiser_business_id, organiser_user_id) values ('ZZ Quiz', (${d(11)})::timestamp + interval '20 hours','published','${S.BIZ2}','${U.BIZ}') returning id`));
   LINK = last(E.do('ORG', `select public.edition_invite_partner('${ED}','event','${EV}')`));
   E.do('BIZ', `select public.edition_link_act('${LINK}','approve',null)`);
 });
-after(() => { try { E?.db.drop(); } catch { /* */ } });
+after(() => E?.b.drop());
 
 describe('lockdown', () => {
   test('RLS on, own-row read only, no direct DML, no anon access, no FOR ALL', () => {

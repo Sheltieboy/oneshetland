@@ -90,7 +90,16 @@ describe('Hub verification + pilot + 1.1 rollbacks (210000, 200000, 190000, 1800
   let d3: ReplayDb; const q3 = (sql: string) => d3.raw(sql).split('\n').map((l) => l.trim()).filter((l) => l && !/^(SET|RESET|BEGIN|COMMIT|ROLLBACK|DO|GRANT|REVOKE|CREATE .*|DROP .*|ALTER .*|INSERT \d+ \d+|DELETE \d+)$/.test(l)).pop() ?? '';
   before(() => { d3 = createReplayDb('editionsrollback3'); });
   after(() => { try { d3?.drop(); } catch { /* */ } });
+  // The finished-service migrations (identity, Hub events switch, review, packages, retirement of the pilot, package refunds) sit on top of these layers, so they roll back FIRST, newest to oldest.
+  // Their own rollbacks are proven in depth in editions-complete; here they only have to run clean (twice) so the older rollbacks below start from the state they were written for.
+  const newest = ['20270103060000_editions_admin_orders', '20270103050000_editions_package_refunds', '20270103040000_editions_retire_pilot_and_standalone', '20270103030000_editions_packages_and_notifications', '20270103020000_editions_review', '20270103010000_hub_events_auto_approve', '20270103000000_editions_business_and_hub_identity'];
   const stems = ['20270102210000_admin_verify_hub', '20270102200000_editions_pilot', '20270102190000_editions_add_from_hub', '20270102180000_editions_community_packages', '20270102170000_editions_hub_run', '20270102160000_editions_hub_partners'];
+  test('the finished-service migrations roll back first, newest to oldest, clean, twice', () => {
+    assert.equal(q3(`select count(*) from pg_proc where proname='edition_ensure_organiser'`), '1', 'present before');
+    for (const stem of newest) assert.doesNotMatch(d3.raw(file(stem)), /ERROR/, `${stem} run 1`);
+    for (const stem of newest) { const o = d3.raw(file(stem)); assert.doesNotMatch(o, /ERROR/, `${stem} run 2: ${o.split('\n').find((l) => /ERROR/.test(l))}`); }
+    assert.equal(q3(`select count(*) from pg_proc where proname='edition_ensure_organiser'`), '0', 'gone after');
+  });
   test('everything they add is present, then each rollback runs clean, twice', () => {
     assert.equal(q3(`select count(*) from pg_proc where proname='admin_set_hub_verified'`), '1');
     assert.equal(q3(`select to_regclass('public.edition_pilot_approvals') is not null`), 't');

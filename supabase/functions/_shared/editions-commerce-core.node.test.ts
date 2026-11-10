@@ -244,3 +244,64 @@ describe('R12 provider events and secrets', () => {
     for (const f of ['editions-commerce-cron', 'editions-email-cron']) { const src = fs.readFileSync(new URL(`../${f}/index.ts`, import.meta.url), 'utf8'); assert.match(src, /safeEqual\(bearer/, f); assert.doesNotMatch(src, /bearer\s*!==/, f); }
   });
 });
+
+describe('PACKAGE flow (editions-complete)', () => {
+  const read = async (p: string) => (await import('node:fs')).readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
+  const ok = { order: { buyer_id: 'u1', status: 'pending' }, userId: 'u1', canAdmin: true, editionApproved: true, commerceOn: true };
+  test('checkout decision: an owner OR admin who created the order may pay; others, unapproved Editions and switched-off payments may not', () => {
+    assert.deepEqual(C.orderCheckoutDecision(ok), { ok: true });
+    assert.deepEqual(C.orderCheckoutDecision({ ...ok, order: { buyer_id: 'u1', status: 'failed' } }), { ok: true }, 'a failed card can be retried');
+    assert.equal((C.orderCheckoutDecision({ ...ok, order: null }) as { status: number }).status, 404);
+    assert.equal((C.orderCheckoutDecision({ ...ok, userId: 'u2' }) as { status: number }).status, 404, 'someone else\'s order looks like no order');
+    for (const status of ['paid', 'cancelled', 'refunded', 'partially_refunded']) assert.equal((C.orderCheckoutDecision({ ...ok, order: { buyer_id: 'u1', status } }) as { status: number }).status, 404, status);
+    assert.equal((C.orderCheckoutDecision({ ...ok, canAdmin: false }) as { status: number }).status, 403);
+    assert.equal((C.orderCheckoutDecision({ ...ok, editionApproved: false }) as { status: number }).status, 409);
+    assert.equal((C.orderCheckoutDecision({ ...ok, commerceOn: false }) as { status: number }).status, 409);
+  });
+  test('the checkout does not assume the owner-only role or read the owner-only order policy as the user, and never inserts orders itself', async () => {
+    const src = await read('create-edition-checkout/index.ts');
+    assert.ok(!/asUser\.from\('edition_orders'\)/.test(src), 'order is read with the service role');
+    assert.match(src, /edition_org_can/); assert.match(src, /p_min: 'admin'/); assert.ok(!/p_min: 'owner'/.test(src));
+    assert.match(src, /orderCheckoutDecision/); assert.ok(!/\.insert\(|\.rpc\(.edition_create_order/.test(src), 'orders are created only by edition_create_order in the database (called by the web action), never here');
+    assert.ok(!/body.*amount|req\.json[^;]*amount/.test(src));
+  });
+  test('order charge reconciliation: matching charges are silent; missing, wrong-amount and refund drift are raised; unpaid charges are skipped', () => {
+    const ch = { payment_intent: 'pi_1', amount: 5000, refunded: 0, paid: true };
+    const ord = { organiser_id: 'o1', amount_pence: 5000, refunded_pence: 0, status: 'paid' };
+    assert.deepEqual(C.reconcileOrderCharge(ch, ord), []);
+    assert.deepEqual(C.reconcileOrderCharge({ ...ch, paid: false }, null), []);
+    assert.equal(C.reconcileOrderCharge(ch, null)[0].kind, 'missing_in_ledger');
+    assert.equal(C.reconcileOrderCharge(ch, { ...ord, status: 'pending' })[0].kind, 'missing_in_ledger');
+    assert.equal(C.reconcileOrderCharge({ ...ch, amount: 4000 }, ord)[0].kind, 'amount_mismatch');
+    assert.equal(C.reconcileOrderCharge({ ...ch, refunded: 5000 }, ord)[0].kind, 'refund_mismatch');
+    assert.deepEqual(C.reconcileOrderCharge({ ...ch, refunded: 5000 }, { ...ord, status: 'refunded', refunded_pence: 5000 }), []);
+  });
+  test('webhook: a dispute or unmarked refund on a package order reaches the order table; the cron checks order charges separately', async () => {
+    const w = await read('editions-stripe-webhook/index.ts');
+    assert.match(w, /from\('edition_orders'\)/); assert.match(w, /edition_refund_order/); assert.match(w, /p_kind: 'dispute'/);
+    const c = await read('editions-commerce-cron/index.ts');
+    assert.match(c, /reconcileOrderCharge/); assert.match(c, /'edition_order'/);
+  });
+  test('a dispute is routed by payment intent and never changes an entitlement by itself', () => {
+    const r = C.routeEditionEvent(ev('charge.dispute.created', { payment_intent: 'pi_9', reason: 'fraudulent' })) as { calls: { fn: string }[]; onlyIfKnownPaymentIntent: string };
+    assert.equal(r.onlyIfKnownPaymentIntent, 'pi_9'); assert.deepEqual(r.calls.map((x) => x.fn), ['edition_payment_disputed']);
+  });
+});
+
+test('webhook: a second, different payment for an already-paid package order is raised as a duplicate for the administrator', async () => {
+  const w = (await import('node:fs')).readFileSync(new URL('../editions-stripe-webhook/index.ts', import.meta.url), 'utf8');
+  assert.match(w, /already_fulfilled/); assert.match(w, /duplicate_payment_for_order/); assert.match(w, /stripe_payment_intent_id !== call\.args\.p_payment_intent/);
+});
+
+describe('package order refunds', () => {
+  test('a package refund is a plain refund: no transfer reversal, no application fee, integer positive pence, traceable ids', () => {
+    const p = C.orderRefundParams({ payment_intent: 'pi_1', amount_pence: 2500, request_id: U1, order_id: U2 });
+    assert.deepEqual(p, { payment_intent: 'pi_1', amount: '2500', reason: 'requested_by_customer', 'metadata[kind]': 'edition_order_refund', 'metadata[request_id]': U1, 'metadata[order_id]': U2 });
+    assert.ok(!('reverse_transfer' in p) && !('refund_application_fee' in p));
+    assert.throws(() => C.orderRefundParams({ payment_intent: 'pi_1', amount_pence: 0, request_id: U1, order_id: U2 })); assert.throws(() => C.orderRefundParams({ payment_intent: 'pi_1', amount_pence: 10.5, request_id: U1, order_id: U2 }));
+  });
+  test('the cron picks the order refund for order requests, keeps one idempotency key per request, and retries only temporary failures', async () => {
+    const src = (await import('node:fs')).readFileSync(new URL('../editions-commerce-cron/index.ts', import.meta.url), 'utf8');
+    assert.match(src, /r\.order_id \? orderRefundParams/); assert.match(src, /idempotencyKey\('refund', r\.request_id, '1'\)/); assert.match(src, /isRetryableProviderStatus/);
+  });
+});
