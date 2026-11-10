@@ -43,4 +43,10 @@ select 'four reserved names are seeded', (select count(*) from public.edition_re
 union all
 select 'the Editions feature flag is still off (public pages 404, organiser creation limited to administrators)', not public.editions_enabled()
 union all
-select 'no organiser exists yet (first-release state; expected to stop being true once staff create the first organiser)', (select count(*) from public.edition_organisers) = 0;
+select 'while Editions is dark, no real (non-test) Edition is published', public.editions_enabled() or (select count(*) from public.editions where status = 'published' and not is_test) = 0
+union all
+select 'while Editions is dark, every organiser was created by an administrator, none is Hub-run and every organiser member is an administrator (no external organiser access)',
+       public.editions_enabled() or (
+         (select count(*) from public.edition_organisers o where o.hub_id is not null or not exists (select 1 from public.profiles p where p.id = o.created_by and p.role = 'admin')) = 0
+         and (select count(*) from public.edition_organiser_members m where not exists (select 1 from public.profiles p where p.id = m.user_id and p.role = 'admin')) = 0
+         and (select count(*) from public.edition_organiser_invites) = 0);
