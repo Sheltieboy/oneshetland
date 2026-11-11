@@ -43,11 +43,26 @@ describe('destination allowlist (keys, never URLs)', () => {
   });
 });
 
+describe('check number', () => {
+  test('is four digits, uniform-ish, keeps leading zeros; its stored hash binds it to the code', async () => {
+    const seen = new Set<string>(); for (let i = 0; i < 3000; i++) { const n = C.generateCheckNumber(); assert.match(n, C.CHECK_RE); seen.add(n); }
+    assert.ok(seen.size > 1500); assert.ok([...seen].some((n) => n.startsWith('0')));
+    const a = await C.checkHash('a'.repeat(64), '4821'), b = await C.checkHash('b'.repeat(64), '4821'), c = await C.checkHash('a'.repeat(64), '4822');
+    assert.match(a, /^[0-9a-f]{64}$/); assert.notEqual(a, b); assert.notEqual(a, c); assert.equal(a, await C.checkHash('a'.repeat(64), '4821'));
+    for (const bad of ['', '123', '12345', '12a4', ' 123', '１２３４']) assert.doesNotMatch(bad, C.CHECK_RE);
+  });
+  test('secretMatches: only an exact, long-enough secret', async () => {
+    const s = 'x'.repeat(40); assert.ok(await C.secretMatches(s, s));
+    for (const [a, b] of [[s, s + 'x'], [s, s.slice(1)], [s, ''], ['', ''], ['short', 'short'], [s, 'y'.repeat(40)]] as [string, string][]) assert.equal(await C.secretMatches(a, b), false);
+  });
+});
+
 describe('url, mask, account decision', () => {
   test('the URL is on a fixed origin whatever is configured, and carries only the code', () => {
-    assert.equal(C.handoffUrl('https://evil.example', 'abc'), 'https://oneshetland.com/app-handoff?code=abc');
-    assert.equal(C.handoffUrl('https://www.oneshetland.com/', 'abc'), 'https://www.oneshetland.com/app-handoff?code=abc');
-    assert.equal(C.handoffUrl(undefined as never, 'a b&c'), 'https://oneshetland.com/app-handoff?code=a%20b%26c');
+    assert.equal(C.handoffUrl('https://evil.example', 'abc'), 'https://oneshetland.com/app-handoff#c=abc');
+    assert.equal(C.handoffUrl('https://www.oneshetland.com/', 'abc'), 'https://www.oneshetland.com/app-handoff#c=abc');
+    assert.equal(C.handoffUrl(undefined as never, 'a b&c'), 'https://oneshetland.com/app-handoff#c=a%20b%26c');
+    assert.doesNotMatch(C.handoffUrl(undefined as never, C.generateCode()), /\?/, 'no query string at all: the code is only ever in the fragment');
   });
   test('maskEmail shows one letter and the domain', () => { assert.equal(C.maskEmail('jane@example.com'), 'j***@example.com'); assert.equal(C.maskEmail(null), 'your account'); assert.equal(C.maskEmail('nope'), 'your account'); });
   const now = Date.parse('2026-11-11T12:00:00Z'), good = { email: 'a@b.co', email_confirmed_at: '2026-01-01T00:00:00Z' };
@@ -66,14 +81,24 @@ describe('url, mask, account decision', () => {
 
 describe('edge function source guards', () => {
   test('mint needs a real signed-in user and refuses a service-role caller', () => { assert.match(src, /requireCaller\(req, corsHeaders\)/); assert.match(src, /isServiceRole/); assert.ok(src.indexOf('requireCaller(') < src.indexOf("rpc('edition_handoff_mint'")); });
-  test('peek and redeem need the website server secret and fail closed without it', () => { assert.match(src, /HANDOFF_WEB_SECRET/); assert.match(src, /secret\.length < 32/); assert.match(src, /timingSafeEqual/); assert.ok(src.indexOf('HANDOFF_WEB_SECRET') < src.indexOf("rpc('edition_handoff_redeem'")); assert.ok(src.indexOf('HANDOFF_WEB_SECRET') < src.indexOf("rpc('edition_handoff_peek'")); });
+  test('peek, redeem and complete need the website server secret (digest compare) and fail closed without it; failures are counted', () => {
+    assert.match(src, /HANDOFF_WEB_SECRET/); assert.match(src, /secretMatches\(/); assert.match(src, /editions_handoff_secret_fail/);
+    for (const rpc of ['edition_handoff_redeem', 'edition_handoff_peek', 'edition_handoff_finish']) assert.ok(src.indexOf('secretMatches(') < src.indexOf(`rpc('${rpc}'`), rpc);
+  });
+  test('the check number is generated at mint, only its hash is stored, and redeem requires a well-formed number', () => {
+    assert.match(src, /generateCheckNumber\(\)/); assert.match(src, /p_check_hash: await checkHash\(hash, number\)/); assert.match(src, /CHECK_RE\.test\(number\)/);
+    assert.doesNotMatch(src, /p_number|check_number: hash/);
+  });
+  test('mint refuses a banned, unconfirmed, deleted or MFA account BEFORE any database write', () => { assert.ok(src.indexOf('accountDecision(') < src.indexOf("rpc('edition_handoff_mint'")); });
+  test('the website is told the outcome only via complete; the audit "redeemed" is never written by redeem itself', () => { assert.match(src, /action === 'complete'/); assert.match(src, /edition_handoff_finish/); });
+  test('no shared unknown bucket: an address is used only when one is passed, otherwise the code alone is throttled', () => { assert.doesNotMatch(src, /'unknown'\s*[;)]/.test(src) ? /$^/ : /unknown_bucket/); assert.match(src, /o\.ip !== 'unknown' \? o\.ip : null/); assert.match(src, /const codeSubject = `code:/); });
   test('rate limits per user, per address and per code; the limiter fails closed (shared helper)', () => { for (const a of ['editions_handoff_mint', 'editions_handoff_redeem_ip', 'editions_handoff_redeem_code', 'editions_handoff_view_ip']) assert.match(src, new RegExp(a)); });
   test('never logs the code, the hash or the token', () => {
     const logs = src.split('\n').filter((l) => /console\.(log|warn|error|info)/.test(l)).join('\n');
-    assert.ok(logs.length > 0); assert.doesNotMatch(logs, /\bcode\b|hash|token|secret|\bbody\b|\bo\.code/i);
+    assert.ok(logs.length > 0); assert.doesNotMatch(logs, /\bcode\b|hash|token|secret|\bbody\b|\bo\.code|number/i);
   });
   test('the path comes from the database and is re-checked against the allowlist; unconfirmed/banned/MFA are decided before a link is generated', () => {
-    assert.match(src, /ALLOWED_PATH\.test\(r\.path\)/); assert.ok(src.indexOf('accountDecision(') < src.indexOf('generateLink('));
+    assert.match(src, /ALLOWED_PATH\.test\(r\.path\)/); assert.ok(src.lastIndexOf('accountDecision(') < src.indexOf('generateLink(')); assert.ok(src.indexOf('generateLink(') > src.indexOf('refused(decision.reason)'), 'generateLink is the last step');
     assert.match(src, /type: 'magiclink'/); assert.doesNotMatch(src, /signInWithOtp|sendMagicLink|resetPasswordForEmail/);
   });
   test('the request carries no URL or redirect parameter and nothing here sends email', () => { assert.doesNotMatch(src, /redirectTo|redirect_to|\.destination_url|req\.url/); });

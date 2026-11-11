@@ -55,8 +55,28 @@ export function siteOrigin(configured: string | undefined | null): string {
   const v = (configured ?? '').trim().replace(/\/+$/, '');
   return ORIGINS.includes(v) ? v : ORIGINS[0];
 }
+/** The code travels in the URL FRAGMENT: browsers never send a fragment to any server, so no log, proxy, CDN or referrer can ever hold it. */
 export function handoffUrl(origin: string, code: string): string {
-  return `${siteOrigin(origin)}/app-handoff?code=${encodeURIComponent(code)}`;
+  return `${siteOrigin(origin)}/app-handoff#c=${encodeURIComponent(code)}`;
+}
+
+/** The 4-digit check number the app shows and the website asks for. Uniform (rejection sampling), never zero-padded away. */
+export const CHECK_RE = /^[0-9]{4}$/;
+export function generateCheckNumber(): string {
+  const buf = new Uint32Array(1);
+  const limit = Math.floor(0x100000000 / 10000) * 10000;
+  do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
+  return String(buf[0] % 10000).padStart(4, '0');
+}
+/** Only this hash is stored with the code: a number alone proves nothing without the code. */
+export async function checkHash(codeHash: string, number: string): Promise<string> {
+  return sha256Hex(`${codeHash}:${number}`);
+}
+
+/** Compares two secrets through equal-length SHA-256 digests, so neither length nor early mismatch is observable. */
+export async function secretMatches(secret: string, given: string): Promise<boolean> {
+  if (typeof secret !== 'string' || secret.length < 32 || typeof given !== 'string') return false;
+  return timingSafeEqual(await sha256Hex(secret), await sha256Hex(given));
 }
 
 /** j***@example.com — enough for a person to recognise their own address and nobody else's. */
