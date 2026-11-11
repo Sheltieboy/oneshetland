@@ -15,7 +15,7 @@ for (const d of readdirSync(FN)) { const p = join(FN, d, 'index.ts'); if (exists
 for (const f of readdirSync(join(FN, '_shared'))) if (f.endsWith('.ts')) files[`_shared/${f}`] = readFileSync(join(FN, '_shared', f), 'utf8');
 const senders = Object.keys(files).filter(f => !f.startsWith('_shared/send-push') && /\bsendUserPush(Bulk)?\s*\(/.test(files[f]));
 
-test('1 there are 41 sendUserPush / sendUserPushBulk caller files', () => assert.equal(senders.length, 41, senders.join(',')));
+test('1 there are 44 sendUserPush / sendUserPushBulk caller files', () => assert.equal(senders.length, 44, senders.join(',')));
 test('2 only the shared sender asks should_notify', () => {
   const asks = Object.keys(files).filter(f => /rpc\(\s*['"]should_notify['"]/.test(files[f]));
   assert.deepEqual(asks, ['_shared/send-push.ts']);

@@ -20,7 +20,7 @@ before(() => { db = createReplayDb('editionsrollback'); });
 after(() => { try { db?.drop(); } catch { /* */ } });
 
 describe('rolling back the newest migrations', () => {
-  const order = ['20270102060000_editions_operations', '20270102050000_editions_participation', '20270102040000_editions_memberships', '20270102030000_editions_commerce_core', '20270102020000_editions_visitor'];
+  const order = ['20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270102060000_editions_operations', '20270102050000_editions_participation', '20270102040000_editions_memberships', '20270102030000_editions_commerce_core', '20270102020000_editions_visitor'];
   test('everything is present after the replay', () => {
     for (const t of ['edition_email_outbox', 'edition_participations', 'organiser_memberships', 'edition_payments', 'edition_saves', 'edition_links', 'editions']) assert.ok(exists(t), t);
   });
@@ -54,7 +54,7 @@ describe('R9 to R12 rollbacks (140000, 130000, 120000, 110000, 100000, 090000), 
   let d2: ReplayDb; const q2 = (sql: string) => d2.raw(sql).split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
   before(() => { d2 = createReplayDb('editionsrollback2'); });
   after(() => { try { d2?.drop(); } catch { /* */ } });
-  const stems = ['20270102140000_editions_payment_safeguards_2', '20270102130000_editions_stripe_lifecycle', '20270102120000_editions_session_pages', '20270102110000_editions_stage_a', '20270102100000_editions_payment_safeguards', '20270102090000_editions_update_images'];
+  const stems = ['20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270102140000_editions_payment_safeguards_2', '20270102130000_editions_stripe_lifecycle', '20270102120000_editions_session_pages', '20270102110000_editions_stage_a', '20270102100000_editions_payment_safeguards', '20270102090000_editions_update_images'];
   test('everything they add is present after the replay', () => {
     assert.equal(q2(`select to_regclass('public.edition_stripe_cancel_queue') is not null`), 't');
     assert.equal(q2(`select to_regclass('public.edition_stripe_stray_subscriptions') is not null`), 't');
@@ -92,7 +92,7 @@ describe('Hub verification + pilot + 1.1 rollbacks (210000, 200000, 190000, 1800
   after(() => { try { d3?.drop(); } catch { /* */ } });
   // The finished-service migrations (identity, Hub events switch, review, packages, retirement of the pilot, package refunds) sit on top of these layers, so they roll back FIRST, newest to oldest.
   // Their own rollbacks are proven in depth in editions-complete; here they only have to run clean (twice) so the older rollbacks below start from the state they were written for.
-  const newest = ['20270103060000_editions_admin_orders', '20270103050000_editions_package_refunds', '20270103040000_editions_retire_pilot_and_standalone', '20270103030000_editions_packages_and_notifications', '20270103020000_editions_review', '20270103010000_hub_events_auto_approve', '20270103000000_editions_business_and_hub_identity'];
+  const newest = ['20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270103060000_editions_admin_orders', '20270103050000_editions_package_refunds', '20270103040000_editions_retire_pilot_and_standalone', '20270103030000_editions_packages_and_notifications', '20270103020000_editions_review', '20270103010000_hub_events_auto_approve', '20270103000000_editions_business_and_hub_identity'];
   const stems = ['20270102210000_admin_verify_hub', '20270102200000_editions_pilot', '20270102190000_editions_add_from_hub', '20270102180000_editions_community_packages', '20270102170000_editions_hub_run', '20270102160000_editions_hub_partners'];
   test('the finished-service migrations roll back first, newest to oldest, clean, twice', () => {
     assert.equal(q3(`select count(*) from pg_proc where proname='edition_ensure_organiser'`), '1', 'present before');

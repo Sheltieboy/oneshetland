@@ -70,7 +70,7 @@ describe('S8 every edition table is locked down by default', () => {
   test('no edition definer function is executable by anon except the public-read helpers', () => {
     const open = E.q(`select coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.prosecdef and (p.proname like 'edition%' or p.proname like 'admin_%edition%' or p.proname like '%edition_%') and has_function_privilege('anon', p.oid, 'execute')`);
-    assert.equal(open, 'edition_business_role,edition_controls_business,edition_entitled,edition_is_public,edition_parent_live,edition_participation_ok,edition_public_tiers,editions_enabled'); // the pilot reader is gone; the three parent helpers are read-only booleans used by the public policies
+    assert.equal(open, 'edition_business_role,edition_controls_business,edition_entitled,edition_featured,edition_is_public,edition_parent_live,edition_participation_ok,edition_promo_track,edition_public_tiers,editions_enabled'); // the pilot reader is gone; the three parent helpers are read-only booleans used by the public policies
   });
   test('S7: the R1 edition tables reference only each other, auth.users, hubs and local_businesses (the two parents) (later releases add their own, tested in their suites)', () => {
     const refs = E.q(`select coalesce(string_agg(distinct ccl.relname, ',' order by ccl.relname), '') from pg_constraint c join pg_class cl on cl.oid=c.conrelid join pg_class ccl on ccl.oid=c.confrelid

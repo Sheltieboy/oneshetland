@@ -7,7 +7,7 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Env, USERS, seed, enter, draftEdition, d, last } from './_support/editions-env.ts';
+import { Env, USERS, seed, enter, draftEdition, d, last, failed } from './_support/editions-env.ts';
 
 let E: Env;
 let S: ReturnType<typeof seed>;
@@ -322,14 +322,14 @@ describe('Hub verification no longer approves events; Editions approval never to
 });
 
 /* ── packages: paid, free and Community ──────────────────────────────────────────────────────────────────────────────────────────────────────── */
-describe('packages: chosen after approval, free is a real kind, Community is Hub-only', () => {
+describe('packages: chosen after approval, free is a real kind, identical for Businesses and Hubs', () => {
   let PAID = '', FREE = '', COMM = '';
   const flag = (k: string, v: string) => E.sup(`insert into admin_config (key, value, category) values ('${k}','${v}','features') on conflict (key) do update set value='${v}'`);
   const upsert = (code: string, price: number, active: boolean, free: boolean) => E.call('ADMIN', `select public.admin_upsert_edition_package('${code}','${code} package','test',${price},365,'[]'::jsonb,null,${active},10,${free})`);
   let EDP = '';
   before(() => {
     PAID = upsert('zz_paid', 5000, true, false); FREE = upsert('zz_free', 0, true, true);
-    COMM = upsert('zz_community', 1000, true, false); E.do('ADMIN', `select public.admin_set_edition_package_audience('zz_community','hub')`);
+    COMM = upsert('zz_community', 1000, true, false);
     EDP = draftEdition(E, 'BIZ_OWNER', BIZ_ORG, 'zz-biz-pkg', 'ZZ Business Package Edition'); submit('BIZ_OWNER', EDP); decide('approve', 'fine', EDP);
   });
   test('a £0 package cannot be offered unless it is deliberately marked free; a free package must cost nothing', () => {
@@ -337,22 +337,24 @@ describe('packages: chosen after approval, free is a real kind, Community is Hub
     assert.match(E.try('ADMIN', `select public.admin_upsert_edition_package('zz_bad','bad','x',500,365,'[]'::jsonb,null,true,20,true)`), /free package costs nothing/);
     assert.match(E.sup(`update public.edition_packages set price_pence = 0, is_free = false, active = true where code = 'zz_paid'`), /edition_packages_active_is_priced_or_free/);
   });
-  test('the seeded placeholder packages stay inactive and non-free (nothing is for sale by accident)', () => {
-    assert.equal(E.q(`select count(*) from public.edition_packages where code in ('publish_single','publish_collect','publish_full','community_publish') and active`), '0');
+  test('the shipped rate card is inactive and non-free (nothing is for sale by accident); the five old rows are retired', () => {
+    assert.equal(E.q(`select count(*) from public.edition_packages where code in ('launch','showcase','promo_discovery_2w','promo_discovery_6w','promo_homepage_7d','promo_campaign_full') and not active and not is_free and retired_at is null`), '6');
+    assert.equal(E.q(`select count(*) from public.edition_packages where code in ('publish_single','publish_collect','publish_full','community_publish','community_collect') and not active and retired_at is not null`), '5');
   });
-  test('packages offered: Community only to Hub-run organisers; free flag is visible', () => {
+  test('packages offered: the same rows to Hub-run and Business-run organisers (no Community audience); free flag is visible', () => {
     assert.equal(E.one('HUB_OWNER', `select count(*) from public.edition_available_packages('${HUB_ORG}') where code = 'zz_community'`), '1');
-    assert.equal(E.one('BIZ_OWNER', `select count(*) from public.edition_available_packages('${BIZ_ORG}') where code = 'zz_community'`), '0');
+    assert.equal(E.one('BIZ_OWNER', `select count(*) from public.edition_available_packages('${BIZ_ORG}') where code = 'zz_community'`), '1');
+    assert.match(E.try('ADMIN', `select public.admin_set_edition_package_audience('zz_community','hub')`), /cost the same/);
     assert.equal(E.one('BIZ_OWNER', `select is_free::text from public.edition_available_packages('${BIZ_ORG}') where code = 'zz_free'`), 'true');
     assert.match(E.try('STRANGER', `select * from public.edition_available_packages('${BIZ_ORG}')`), /not permitted/);
   });
-  test('paying needs payments switched on, an approved Edition, an owner or admin, the right audience, and a paid package', () => {
+  test('paying needs payments switched on, an approved Edition, an owner or admin, a paid package', () => {
     assert.match(E.try('BIZ_OWNER', `select public.edition_create_order('${BIZ_ORG}','${EDP}','${PAID}','attempt-0001')`), /payments are not switched on/);
     flag('editions.commerce.enabled', 'true');
     const unapproved = draftEdition(E, 'BIZ_OWNER', BIZ_ORG, 'zz-biz-unapproved', 'ZZ Unapproved Business Edition');
     assert.match(E.try('BIZ_OWNER', `select public.edition_create_order('${BIZ_ORG}','${unapproved}','${PAID}','attempt-0002')`), /once OneShetland has approved/);
     assert.match(E.try('BIZ_OWNER', `select public.edition_create_order('${BIZ_ORG}','${EDP}','${FREE}','attempt-0003')`), /claim it instead of paying/);
-    assert.match(E.try('BIZ_OWNER', `select public.edition_create_order('${BIZ_ORG}','${EDP}','${COMM}','attempt-0004')`), /Hub-run Editions/);
+    assert.ok(!failed(E.try('BIZ_OWNER', `select public.edition_create_order('${BIZ_ORG}','${EDP}','${COMM}','attempt-0004')`)), 'a Business may buy exactly what a Hub may');
     assert.match(E.try('HELPER', `select public.edition_create_order('${BIZ_ORG}','${EDP}','${PAID}','attempt-0005')`), /owner or admin/);
     assert.match(E.try('STRANGER', `select public.edition_create_order('${BIZ_ORG}','${EDP}','${PAID}','attempt-0006')`), /owner or admin/);
   });
@@ -384,7 +386,7 @@ describe('packages: chosen after approval, free is a real kind, Community is Hub
     assert.equal(E.q(`select status || amount_pence from public.edition_orders where id='${o}'`), 'paid0');
     assert.equal(E.q(`select public.edition_entitled('${edf}','publish')`), 't');
     assert.equal(E.call('HUB_COMMITTEE', `select public.edition_claim_free_package('${HUB_ORG}','${edf}','${FREE}','attempt-0023')`), o, 'idempotent per attempt');
-    assert.match(E.try('HUB_OWNER', `select public.edition_claim_free_package('${HUB_ORG}','${edf}','${FREE}','attempt-0024')`), /already has an active package/);
+    assert.match(E.try('HUB_OWNER', `select public.edition_claim_free_package('${HUB_ORG}','${edf}','${FREE}','attempt-0024')`), /already live until/);
     setStatus('HUB_OWNER', 'published', edf); assert.equal(anonPublic(edf), true);
   });
   test('Community (Hub-only) can be bought by a Hub-run organiser and not by a Business', () => {

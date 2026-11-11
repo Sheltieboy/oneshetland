@@ -200,6 +200,10 @@ describe('packages and orders (organiser pays OneShetland)', () => {
     assert.equal(E.q(`select public.edition_org_limit('${ORG}','memberships')`), '50');
     assert.equal(E.q(`select public.edition_entitled('${ED}','publish')`), 't');
   });
+  test('a second package is refused mid-term (no stacking, no extension product); a renewal window allows it', () => {
+    assert.match(E.try('OWNER', `select public.edition_create_order('${ORG}','${ED}','${PKG2}','attempt-stack-1')`), /already live until/);
+    E.sup(`insert into admin_config (key, value, category) values ('editions.commerce.renewal_window_days','800','editions') on conflict (key) do update set value='800'`);
+  });
   test('a second purchase extends rather than overlaps; the publish gate really opens with a paid order', () => {
     const o2 = last(E.do('OWNER', `select public.edition_create_order('${ORG}','${ED}','${PKG2}','attempt-bbbb-1')`));
     E.do('service', `select public.edition_fulfil_order('${o2}','pi_2',1000)`);
@@ -221,6 +225,7 @@ describe('packages and orders (organiser pays OneShetland)', () => {
     assert.equal(E.q(`select status from edition_orders where id='${o3}'`), 'failed');
     assert.equal(E.q(`select count(*) from edition_entitlements where order_id='${o3}'`), '0');
     assert.match(E.try('service', `select public.edition_fulfil_order('${o3}','pi_3',1000)`), /^(?!.*already_fulfilled)/);
+    E.sup(`delete from admin_config where key='editions.commerce.renewal_window_days'`);
   });
   test('refunds: partial recorded, full voids what the order granted, cumulative and idempotent, never above the amount', () => {
     const o = E.q(`select id from edition_orders where attempt_id='attempt-aaaa-1'`);

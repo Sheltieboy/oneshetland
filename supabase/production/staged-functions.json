@@ -1,6 +1,11 @@
 {
   "_comment": "Edge Functions that exist in the repository but are NOT deployed yet. Each needs an approved deploy; after it, run the manifest generator and remove the entry. The manifest guard fails for any undeployed function not listed here, and for any listed function that production already runs. \"modified\" lists DEPLOYED functions whose source has a reviewed, not-yet-deployed change: the guard skips only their index/bundle comparison and fails if one is listed that is not deployed.",
   "functions": {
+    "editions-web-handoff": {
+      "step": "Editions - app to website hand-off",
+      "verify_jwt": true,
+      "reason": "HELD on purpose: new authentication path needing an independent security review; deploys with migration 20270104020000 and the HANDOFF_WEB_SECRET secret; both app switches default off"
+    },
     "submit-funeral-enquiry": {
       "step": "Notices & Alerts - funeral enquiry protection",
       "verify_jwt": false,

@@ -16,8 +16,8 @@ select 'the public Hub view exposes only whitelisted Hub columns (no owner, memb
        (select count(*) from information_schema.columns where table_schema='public' and table_name='edition_public_hubs'
           and column_name in ('owner_id','stripe_account_id','payout_enabled','contact_email','contact_phone','charity_number','memberships_enabled','join_mode')) = 0
 union all
-select 'no new Editions function is executable by anon or PUBLIC (the signed-out role runs exactly the nine reviewed helpers)',
-       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = 9
+select 'no new Editions function is executable by anon or PUBLIC (the signed-out role runs exactly the eleven reviewed helpers)',
+       (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')) = 11
        and (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and (p.proacl is null or exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type='EXECUTE'))) = 0
 union all
 select 'Hub-derived organiser authority and the entry functions exist and are signed-in only (the standalone and admin-created Hub organiser functions are gone)',
@@ -32,10 +32,10 @@ union all
 select 'edition-media storage policies now follow organiser authority and none is open to anon',
        (select count(*) from pg_policies where schemaname='storage' and tablename='objects' and policyname like 'edition-media member%' and coalesce(qual,'') || coalesce(with_check,'') like '%edition_org_can%') = 3
 union all
-select 'packages have an audience; Community packages are hub-only, inactive drafts; the table read policy hides hub packages from non-administrators',
+select 'the audience column is dormant: no hub-only package is active, and the table read policy no longer filters by audience (Business and Hub see the same packages)',
        (select count(*) from information_schema.columns where table_name='edition_packages' and column_name='audience') = 1
        and (select count(*) from public.edition_packages where audience='hub' and active) = 0
-       and (select qual from pg_policies where policyname='edition_packages read') like '%audience%'
+       and (select qual from pg_policies where policyname='edition_packages read') not like '%audience%'
 union all
 select 'Editions are still dark and payments off', not public.editions_enabled() and not public.edition_commerce_enabled();
 

@@ -240,3 +240,6 @@ verify_jwt = true
 
 [functions.submit-funeral-enquiry]
 verify_jwt = false
+
+[functions.editions-web-handoff]
+verify_jwt = true

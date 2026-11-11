@@ -137,11 +137,11 @@ select 'the outbox needs a recipient (a member or an invitation), stores no addr
 
 -- ── the signed-out surface ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 union all
-select 'the signed-out role can execute only the nine reviewed Editions read helpers (nothing from the review, package, order, entry or notification functions)',
+select 'the signed-out role can execute only the eleven reviewed Editions read helpers (nothing from the review, package, order, entry or notification functions)',
        coalesce((select string_agg(p.oid::regprocedure::text, ',' order by p.oid::regprocedure::text collate "C")
                    from pg_proc p where p.pronamespace = 'public'::regnamespace and (p.proname ilike '%edition%' or p.proname in ('organiser_memberships_email', 'organisers_audit_status'))
                     and has_function_privilege('anon', p.oid, 'execute')), '')
-       = 'edition_business_role(uuid),edition_controls_business(uuid),edition_entitled(uuid,text,timestamp with time zone),edition_is_public(uuid),edition_parent_live(uuid),edition_participation_ok(uuid),edition_public_tiers(text),edition_role_rank(text),editions_enabled()'
+       = 'edition_business_role(uuid),edition_controls_business(uuid),edition_entitled(uuid,text,timestamp with time zone),edition_featured(text),edition_is_public(uuid),edition_parent_live(uuid),edition_participation_ok(uuid),edition_promo_track(uuid,text,text),edition_public_tiers(text),edition_role_rank(text),editions_enabled()'
 union all
 select 'no Editions function carries a PUBLIC execute grant or a default ACL, and every Editions SECURITY DEFINER function pins its search_path',
        (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and (p.proname ilike '%edition%' or p.proname in ('organiser_memberships_email', 'organisers_audit_status'))

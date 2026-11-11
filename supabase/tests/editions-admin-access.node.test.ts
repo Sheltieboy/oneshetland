@@ -120,7 +120,7 @@ describe('the strict model is unchanged', () => {
   });
   test('no new anonymous capability: the signed-out role executes exactly the reviewed read helpers (the pilot reader is gone; three parent-liveness booleans were added)', () => {
     assert.equal(q(`select string_agg(p.proname, ',' order by p.proname) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute')`),
-      'edition_business_role,edition_controls_business,edition_entitled,edition_is_public,edition_parent_live,edition_participation_ok,edition_public_tiers,edition_role_rank,editions_enabled');
+      'edition_business_role,edition_controls_business,edition_entitled,edition_featured,edition_is_public,edition_parent_live,edition_participation_ok,edition_promo_track,edition_public_tiers,edition_role_rank,editions_enabled');
     assert.equal(q(`select count(*) from information_schema.role_table_grants where grantee='anon' and table_schema='public' and table_name like 'edition%' and privilege_type <> 'SELECT'`), '0');
   });
   test('rollback removes only the function and is safe to run twice', () => {

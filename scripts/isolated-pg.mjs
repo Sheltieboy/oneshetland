@@ -109,9 +109,13 @@ const SUITES = [
   'supabase/tests/editions-package-refunds.node.test.ts',
   'supabase/tests/editions-hub-commerce.node.test.ts',
   'supabase/tests/editions-hub-addfrom.node.test.ts',
+  'supabase/tests/editions-push-notifications.node.test.ts',
+  'supabase/tests/editions-push-notifications-sql.node.test.ts',
   'supabase/tests/editions-rollback.node.test.ts',
   'supabase/tests/editions-post-checks.node.test.ts',
   'supabase/tests/editions-migration-reconcile.node.test.ts',
+  'supabase/tests/editions-promotions.node.test.ts',
+  'supabase/tests/editions-web-handoff.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.

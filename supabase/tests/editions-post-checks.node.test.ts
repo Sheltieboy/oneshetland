@@ -18,7 +18,7 @@ after(() => { try { db?.drop(); } catch { /* */ } });
 describe('every Editions post-check passes on a freshly replayed database', () => {
   const files = readdirSync(DIR).filter((f) => /^editions-.*\.post-check\.sql$/.test(f)).sort();
   test('there is a post-check for each release step', () => {
-    for (const must of ['foundation', 'partners', 'commerce', 'branding', 'hardening', 'update-images', 'stage-a', 'stripe-lifecycle', 'complete']) assert.ok(files.some((f) => f.includes(must)), `missing post-check: ${must}`);
+    for (const must of ['foundation', 'partners', 'commerce', 'branding', 'hardening', 'update-images', 'stage-a', 'stripe-lifecycle', 'complete', 'promotions']) assert.ok(files.some((f) => f.includes(must)), `missing post-check: ${must}`);
     assert.ok(!files.some((f) => f.includes('pilot')), 'the pilot post-check is retired with the pilot');
   });
   for (const f of files) {
@@ -100,7 +100,7 @@ describe('the finished-service rows detect an unapproved public Edition, an expo
     mutate(`grant execute on function public.edition_ensure_organiser(text, uuid) to anon`, `revoke execute on function public.edition_ensure_organiser(text, uuid) from anon`, complete, /signed-in only: callable by authenticated|signed-out role can execute only/);
     mutate(`grant execute on function public.edition_claim_free_package(uuid, uuid, uuid, text) to anon`, `revoke execute on function public.edition_claim_free_package(uuid, uuid, uuid, text) from anon`, complete, /free-claim, order and package functions are signed-in only|signed-out role can execute only/);
     mutate(`grant execute on function public.admin_review_edition(uuid, text, text) to anon`, `revoke execute on function public.admin_review_edition(uuid, text, text) from anon`, complete, /reviewer and owner functions are signed-in only|signed-out role can execute only/);
-    mutate(`grant execute on function public.edition_ensure_organiser(text, uuid) to anon`, `revoke execute on function public.edition_ensure_organiser(text, uuid) from anon`, foundation, /nine reviewed public helpers/);
+    mutate(`grant execute on function public.edition_ensure_organiser(text, uuid) to anon`, `revoke execute on function public.edition_ensure_organiser(text, uuid) from anon`, foundation, /eleven reviewed public helpers/);
   });
   test('making a review column client-writable is reported', () => {
     mutate(`grant update (review_state) on public.editions to authenticated`, `revoke update (review_state) on public.editions from authenticated`, complete, /review columns on editions are readable but not client-writable/);
@@ -126,5 +126,23 @@ describe('the finished-service rows detect an unapproved public Edition, an expo
     mutate(`alter table public.edition_packages drop constraint edition_packages_active_is_priced_or_free`, `alter table public.edition_packages add constraint edition_packages_active_is_priced_or_free check (not active or price_pence > 0 or is_free)`, complete, /package constraints hold/);
     mutate(`alter table public.hubs alter column events_auto_approve set default true`, `alter table public.hubs alter column events_auto_approve set default false`, complete, /events_auto_approve exists, is NOT NULL, defaults to false/);
     mutate(`alter table public.hubs disable trigger tg_zz_lock_hub_columns`, `alter table public.hubs enable trigger tg_zz_lock_hub_columns`, complete, /events_auto_approve exists|Hub column lock resets/);
+  });
+});
+
+describe('the promotions post-check detects real regressions (mutation controls)', () => {
+  const promo = join(DIR, 'editions-promotions.post-check.sql');
+  const bad = () => db.rawFile(promo).split('\n').map((l) => l.trim()).filter((l) => l.endsWith('|f'));
+  const mutate = (apply: string, undo: string, expect: RegExp) => {
+    db.raw(apply);
+    try { assert.ok(bad().some((l) => expect.test(l)), `expected a failing row matching ${expect}; got ${JSON.stringify(bad())}`); } finally { db.raw(undo); }
+    assert.deepEqual(bad(), [], 'restored');
+  };
+  test('clean database passes', () => assert.deepEqual(bad(), []));
+  test('exposing a booking function to anon, a client write grant on a promotion table, an active rate-card row, and a reactivated retired row are all reported', () => {
+    mutate(`grant execute on function public.edition_promo_book(uuid, date) to anon`, `revoke execute on function public.edition_promo_book(uuid, date) from anon`, /signed-out role may execute exactly|signed-in only/);
+    mutate(`grant insert on public.edition_promo_bookings to authenticated`, `revoke insert on public.edition_promo_bookings from authenticated`, /no write grant/);
+    mutate(`grant select on public.edition_promo_track_rate to authenticated`, `revoke select on public.edition_promo_track_rate from authenticated`, /rate-limit table/);
+    mutate(`update public.edition_packages set active = true where code = 'launch'`, `update public.edition_packages set active = false where code = 'launch'`, /six rate-card rows|nothing is on sale/);
+    mutate(`alter table public.edition_packages drop constraint edition_packages_retired_inactive`, `alter table public.edition_packages add constraint edition_packages_retired_inactive check (retired_at is null or not active)`, /catalogue constraints/);
   });
 });

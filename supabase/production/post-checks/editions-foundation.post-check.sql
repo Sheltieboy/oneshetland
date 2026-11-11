@@ -17,12 +17,12 @@ union all
 -- editions_enabled, edition_role_rank, and the three parent-liveness helpers edition_parent_live / edition_business_role / edition_controls_business, which answer only for the caller's own identity or a public fact)
 -- or the public membership-tier reader (edition_public_tiers, itself gated on the flag, a verified organiser and a public tier). The pilot reader (edition_pilot_visible) no longer exists.
 -- has_function_privilege('anon') includes anything inherited from PUBLIC. A new anon-executable function must be added here deliberately, after review.
-select 'the ONLY Editions functions anon can execute are the nine reviewed public helpers',
+select 'the ONLY Editions functions anon can execute are the eleven reviewed public helpers',
        coalesce((select string_agg(p.oid::regprocedure::text, ',' order by p.oid::regprocedure::text collate "C")
                    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                   where n.nspname = 'public' and (p.proname ilike '%edition%' or p.proname in ('organiser_memberships_email', 'organisers_audit_status'))
                     and has_function_privilege('anon', p.oid, 'execute')), '')
-       = 'edition_business_role(uuid),edition_controls_business(uuid),edition_entitled(uuid,text,timestamp with time zone),edition_is_public(uuid),edition_parent_live(uuid),edition_participation_ok(uuid),edition_public_tiers(text),edition_role_rank(text),editions_enabled()'
+       = 'edition_business_role(uuid),edition_controls_business(uuid),edition_entitled(uuid,text,timestamp with time zone),edition_featured(text),edition_is_public(uuid),edition_parent_live(uuid),edition_participation_ok(uuid),edition_promo_track(uuid,text,text),edition_public_tiers(text),edition_role_rank(text),editions_enabled()'
 union all
 select 'no Editions function carries a PUBLIC execute grant or a default ACL',
        (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
