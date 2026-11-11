@@ -18,7 +18,7 @@ after(() => { try { db?.drop(); } catch { /* */ } });
 describe('every Editions post-check passes on a freshly replayed database', () => {
   const files = readdirSync(DIR).filter((f) => /^editions-.*\.post-check\.sql$/.test(f)).sort();
   test('there is a post-check for each release step', () => {
-    for (const must of ['foundation', 'partners', 'commerce', 'branding', 'hardening', 'update-images', 'stage-a', 'stripe-lifecycle', 'complete', 'promotions']) assert.ok(files.some((f) => f.includes(must)), `missing post-check: ${must}`);
+    for (const must of ['foundation', 'partners', 'commerce', 'branding', 'hardening', 'update-images', 'stage-a', 'stripe-lifecycle', 'complete', 'promotions', 'fee-model']) assert.ok(files.some((f) => f.includes(must)), `missing post-check: ${must}`);
     assert.ok(!files.some((f) => f.includes('pilot')), 'the pilot post-check is retired with the pilot');
   });
   for (const f of files) {

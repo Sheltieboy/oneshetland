@@ -157,7 +157,7 @@ describe('paying by card (provider calls simulated through the service role)', (
     M = E.q(`select id from organiser_memberships where tier_id='${T_PAID}' and business_id='${B1}'`);
     for (const w of ['BIZ2', 'STRANGER', 'anon'] as Who[]) assert.ok(failed(E.try(w, `select public.edition_membership_pay_prepare('${M}', 'attempt-pay-001')`)), w);
     const r = JSON.parse(E.one('BIZ1', `select public.edition_membership_pay_prepare('${M}', 'attempt-pay-001')::text`));
-    assert.equal(r.price_pence, 10000); assert.equal(r.charge_pence, 10000); assert.equal(r.platform_fee_pence, 500); assert.equal(r.net_to_organiser_pence, 9500); assert.equal(r.organiser_id, ORG);
+    assert.equal(r.price_pence, 10000); assert.equal(r.charge_pence, 10000); assert.equal(r.platform_fee_pence, 370, '2% commission (200) + estimated processing fee 1.5% + 20p (170)'); assert.equal(r.net_to_organiser_pence, 9630); assert.equal(r.organiser_id, ORG);
     assert.match(E.try('BIZ1', `select public.edition_membership_pay_prepare('${M}', 'x')`), /invalid attempt/);
     const bo = last(E.sup(`insert into local_businesses (owner_id, name, category, address, is_active) values ('${U.ORG_ADMIN}', 'ZZ Admin Biz', 'retail', 'x', true) returning id`));
     const mo = last(E.do('ORG_ADMIN', `select public.edition_membership_apply('${T_OPEN}', '${bo}', 'monthly')`));
@@ -177,7 +177,8 @@ describe('paying by card (provider calls simulated through the service role)', (
     assert.match(E.try('service', `select public.edition_membership_payment_succeeded('${M}', 'sub_1', 'pi_a', 'in_a', 'ch_a', now(), ${days(365)}, 9999, null)`), /does not match the membership price/);
     assert.equal(E.doOne('service', `select public.edition_membership_payment_succeeded('${M}', 'sub_1', 'pi_a', 'in_a', 'ch_a', now(), ${days(365)}, 10000, 215)`), 'recorded');
     assert.equal(E.q(`select status from organiser_memberships where id='${M}'`), 'active');
-    assert.equal(E.q(`select platform_fee_pence || '|' || net_to_organiser_pence || '|' || stripe_fee_pence || '|' || source || '|' || status from edition_payments where stripe_invoice_id='in_a'`), '500|9500|215|stripe|succeeded');
+    assert.equal(E.q(`select platform_fee_pence || '|' || net_to_organiser_pence || '|' || stripe_fee_pence || '|' || source || '|' || status from edition_payments where stripe_invoice_id='in_a'`), '370|9630|215|stripe|succeeded');
+    assert.equal(E.q(`select commission_pence || '|' || recovery_estimate_pence || '|' || coalesce(recovery_variance_pence::text,'-') from edition_payments where stripe_invoice_id='in_a'`), '200|170|-45', 'parts recorded; variance = estimate 170 minus Stripe actual 215');
     assert.equal(E.q(`select stripe_subscription_id from organiser_memberships where id='${M}'`), 'sub_1');
   });
   test('a subscription fee that differs from the computed fee: the provider amount is the ledger truth and the difference is raised for reconciliation', () => {

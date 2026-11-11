@@ -66,10 +66,15 @@ export function routeEditionEvent(event: Obj): Routed {
   const type = str(event.type) ?? '';
   const obj = asObj(asObj(event.data).object);
   const kind = editionKind(obj);
-  // dispute objects carry no marker of their own: the caller checks the payment intent against the ledger first
+  // Dispute objects carry no marker of their own: the caller checks the payment intent against the ledger first. created / updated / closed are recorded by the database (one row per
+  // Stripe dispute id, so a repeat or an out-of-order event changes nothing); a LOST dispute queues the transfer reversal that the cron performs. Other dispute events are ignored.
   if (type.startsWith('charge.dispute.')) {
-    const pi = str(obj.payment_intent);
-    return pi ? { action: 'calls', onlyIfKnownPaymentIntent: pi, calls: [{ fn: 'edition_payment_disputed', args: { p_payment_intent: pi, p_reason: str(obj.reason) ?? 'unknown' } }] } : ignore('dispute without payment intent');
+    const pi = str(obj.payment_intent), did = str(obj.id), ev = type.slice('charge.dispute.'.length);
+    if (!pi) return ignore('dispute without payment intent');
+    if (!did || !['created', 'updated', 'closed'].includes(ev)) return ignore(`unhandled event ${type}`);
+    const bts = Array.isArray(obj.balance_transactions) ? (obj.balance_transactions as unknown[]) : [];
+    const fees = bts.map((b) => int(asObj(b).fee)).filter((n): n is number => n !== null);
+    return { action: 'calls', onlyIfKnownPaymentIntent: pi, calls: [{ fn: 'edition_dispute_event', args: { p_payment_intent: pi, p_dispute: did, p_event: ev, p_status: str(obj.status) ?? 'unknown', p_amount: int(obj.amount), p_fee: fees.length ? fees.reduce((a, b) => a + b, 0) : null, p_reason: str(obj.reason) ?? 'unknown' } }] };
   }
   // A refund of a SUBSCRIPTION charge: the charge itself carries no Edition marker (the marker lives on the subscription and invoice), so route it exactly like a dispute:
   // by payment intent, and only if the ledger already knows that payment intent.
@@ -102,7 +107,7 @@ export function routeEditionEvent(event: Obj): Routed {
       if (kind === 'edition_participation') {
         const l = uuid(m.link_id); if (!l) return ignore('bad link id');
         return { action: 'calls', needsChargeDetail: str(obj.latest_charge) ? { chargeId: str(obj.latest_charge)! } : undefined,
-          calls: [{ fn: 'edition_participation_payment_succeeded', args: { p_link: l, p_payment_intent: pi, p_charge: str(obj.latest_charge), p_charge_pence: paid, p_stripe_fee: null } }] };
+          calls: [{ fn: 'edition_participation_payment_succeeded', args: { p_link: l, p_payment_intent: pi, p_charge: str(obj.latest_charge), p_charge_pence: paid, p_stripe_fee: null, p_application_fee: null } }] };
       }
       return ignore('membership payments arrive as invoices');
     }
@@ -171,8 +176,95 @@ export function participationIntentParams(prep: Prepared & { link_id: string; bu
   if (customer) p.customer = customer;
   return p;
 }
-/** application_fee_percent for a subscription: Stripe takes a percentage per invoice, so express the computed fee as a percent of the charge (2 dp, rounded down so we never over-collect). */
-export const feePercent = (feePence: number, chargePence: number): number => (chargePence <= 0 ? 0 : Math.min(50, Math.floor((feePence / chargePence) * 10000) / 100));
+/**
+ * application_fee_percent for a subscription. Stripe takes a PERCENTAGE of each invoice (at most two decimal places; a flat amount cannot be set on the subscription), so the computed fee F is
+ * expressed as the exact equivalent percentage of the constant invoice amount, rounded to the NEAREST 0.01 (it used to round down). Integer arithmetic only. Capped at 100.
+ * The error this introduces is analysed by percentErrorPence() below and in the tests: Stripe's own conversion of the percentage back to pence is not documented, so we bound it under floor, nearest and ceiling.
+ */
+export const feePercent = (feePence: number, chargePence: number): number => {
+  if (!(chargePence > 0) || !(feePence > 0)) return 0;
+  const hundredths = Math.floor((feePence * 20000 + chargePence) / (2 * chargePence));   // round(F / C * 10000), half up
+  return Math.min(100, hundredths / 100);
+};
+/** What Stripe would collect on one invoice for a percentage, under each assumption about ITS rounding (it does not document which it uses). */
+export const stripePercentFee = (chargePence: number, pct: number, mode: 'floor' | 'nearest' | 'ceil'): number => {
+  const hundredths = Math.round(pct * 100); const exactNum = chargePence * hundredths, exactDen = 10000;   // fee = C * pct / 100 = C * hundredths / 10000
+  return mode === 'floor' ? Math.floor(exactNum / exactDen) : mode === 'ceil' ? Math.ceil(exactNum / exactDen) : Math.floor((exactNum * 2 + exactDen) / (2 * exactDen));
+};
+/** Signed error in pence (collected minus intended F) of the percentage conversion for one invoice. */
+export const percentErrorPence = (feePence: number, chargePence: number, mode: 'floor' | 'nearest' | 'ceil'): number => stripePercentFee(chargePence, feePercent(feePence, chargePence), mode) - feePence;
+
+/* ── the fee model (flat rate card is NOT touched; these are the organiser-collected rails only) ─────────────────────────────────────────────── */
+
+export type FeeConfig = { commission_percent: number; commission_fixed_pence: number; commission_min_pence: number; commission_cap_pence: number | null; stripe_cost_percent: number; stripe_cost_fixed_pence: number };
+export type FeeOverride = { fee_percent?: number | null; fee_fixed_pence?: number | null; waived?: boolean; recovery_waived?: boolean } | null;
+/** round half up of (n * pct / 100) in integer pence; pct has at most two decimals, so it is scaled to hundredths first (no floating point). */
+export const pctOf = (pence: number, pct: number): number => Math.floor((pence * Math.round(pct * 100) * 2 + 10000) / 20000);
+/**
+ * The same arithmetic as the database function edition_fee_parts (the isolated suite proves they agree over many amounts).
+ *   commission = round(C x pct / 100) + fixed, then minimum, cap, never above C            (a waiver zeroes the COMMISSION only)
+ *   recovery   = round(C x stripe_cost_percent / 100) + stripe_cost_fixed_pence             (an explicit recovery_waived override zeroes it)
+ *   F          = commission + recovery; if F would exceed C the RECOVERY is reduced first (recovery_reduced = true)
+ */
+export function feeParts(chargePence: number, cfg: FeeConfig, override: FeeOverride = null): { commission: number; recovery: number; fee: number; recovery_reduced: boolean } {
+  if (!Number.isInteger(chargePence) || chargePence <= 0) return { commission: 0, recovery: 0, fee: 0, recovery_reduced: false };
+  let commission = 0;
+  if (!(override && override.waived)) {
+    const pct = override && override.fee_percent != null ? override.fee_percent : cfg.commission_percent;
+    const fixed = override && override.fee_fixed_pence != null ? override.fee_fixed_pence : cfg.commission_fixed_pence;
+    commission = pctOf(chargePence, pct) + fixed;
+    commission = Math.max(commission, cfg.commission_min_pence);
+    if (cfg.commission_cap_pence !== null) commission = Math.min(commission, cfg.commission_cap_pence);
+    commission = Math.min(commission, chargePence);
+  }
+  let recovery = override && override.recovery_waived ? 0 : pctOf(chargePence, cfg.stripe_cost_percent) + cfg.stripe_cost_fixed_pence;
+  let reduced = false;
+  if (commission + recovery > chargePence) { recovery = chargePence - commission; reduced = true; }
+  return { commission, recovery, fee: commission + recovery, recovery_reduced: reduced };
+}
+/** Commission returned to the organiser after a cumulative refund: round(commission x refunded / charge); the whole commission when the charge is refunded in full. */
+export const commissionRefundedCumulative = (commission: number, refundedCumulative: number, charge: number): number =>
+  charge <= 0 ? 0 : refundedCumulative >= charge ? commission : Math.min(commission, Math.floor((commission * refundedCumulative * 2 + charge) / (2 * charge)));
+/** The increase since the last application-fee refund (never negative). */
+export const commissionRefundDelta = (commission: number, refundedCumulative: number, charge: number, alreadyReturned: number): number =>
+  Math.max(0, commissionRefundedCumulative(commission, refundedCumulative, charge) - alreadyReturned);
+/** estimate minus the actual Stripe fee (positive = the organiser was charged more than it cost us). */
+export const recoveryVariance = (recoveryEstimate: number, actualStripeFee: number): number => recoveryEstimate - actualStripeFee;
+
+/* ── refund / dispute provider requests (returned as data: unit-tested and checked against stripe-mock) ──────────────────────────────────────── */
+
+/** Step 2 of a refund: give the organiser back ONLY the commission share, by refunding part of the application fee. Idempotent: the key derives from the refund request id and the delta. */
+export function applicationFeeRefundRequest(r: { application_fee_id: string; amount_pence: number; request_id: string }): { method: 'POST'; path: string; params: Record<string, string>; idempotencyKey: string } {
+  if (!/^fee_[A-Za-z0-9]+$/.test(r.application_fee_id)) throw new Error('invalid application fee id');
+  assertPence(r.amount_pence, 'application fee refund'); if (r.amount_pence <= 0) throw new Error('application fee refund must be more than nothing');
+  return { method: 'POST', path: `/application_fees/${r.application_fee_id}/refunds`, params: { amount: String(r.amount_pence), 'metadata[kind]': 'edition_commission_refund', 'metadata[request_id]': r.request_id },
+    idempotencyKey: idempotencyKey('feerefund', r.request_id, String(r.amount_pence)) };
+}
+/** Recover a lost dispute from the organiser: reverse part of the destination-charge transfer. The platform keeps the application fee (refund_application_fee is never sent). */
+export function transferReversalRequest(r: { transfer_id: string; amount_pence: number; dispute_id: string }): { method: 'POST'; path: string; params: Record<string, string>; idempotencyKey: string } {
+  if (!/^tr_[A-Za-z0-9]+$/.test(r.transfer_id)) throw new Error('invalid transfer id');
+  if (!/^(dp|du)_[A-Za-z0-9]+$/.test(r.dispute_id)) throw new Error('invalid dispute id');
+  assertPence(r.amount_pence, 'transfer reversal'); if (r.amount_pence <= 0) throw new Error('transfer reversal must be more than nothing');
+  return { method: 'POST', path: `/transfers/${r.transfer_id}/reversals`, params: { amount: String(r.amount_pence), description: 'Edition payment dispute lost', 'metadata[kind]': 'edition_dispute_recovery', 'metadata[dispute_id]': r.dispute_id },
+    idempotencyKey: idempotencyKey('disputerev', r.dispute_id, String(r.amount_pence)) };
+}
+const refId = (v: unknown): string | null => (typeof v === 'string' && v ? v : str(asObj(v).id));
+/** The application fee and transfer of a charge (each is an id string, or an object when expanded). */
+export const chargeRefs = (charge: unknown): { application_fee: string | null; transfer: string | null; application_fee_amount: number | null } => {
+  const c = asObj(charge); return { application_fee: refId(c.application_fee), transfer: refId(c.transfer), application_fee_amount: int(c.application_fee_amount) };
+};
+/** Beyond Stripe's 24 hour idempotency window a retry would be a NEW request, so before repeating a refund or reversal look for one that already carries our metadata key. */
+export const findByMetadata = (list: unknown, key: string, value: string): string | null => {
+  for (const x of (Array.isArray(asObj(list).data) ? (asObj(list).data as unknown[]) : [])) { if (str(asObj(asObj(x).metadata)[key]) === value) return str(asObj(x).id); }
+  return null;
+};
+/**
+ * How to treat a failed provider call: 'insufficient' = the connected account balance could not cover a reversal (never retried automatically: blocks, alerts, suspends the organiser);
+ * 'retry' = temporary; 'failed' = a final refusal. UNVERIFIED against real Stripe: the exact error code for an insufficient connected balance is only provable in test mode.
+ */
+export const classifyProviderFailure = (f: { status: number; code?: string | null; message?: string | null }): 'insufficient' | 'retry' | 'failed' =>
+  f.code === 'balance_insufficient' || /insufficient (available )?funds|insufficient balance/i.test(f.message ?? '') ? 'insufficient' : isRetryableProviderStatus(f.status) ? 'retry' : 'failed';
+
 /** The Stripe Product a membership subscription's inline price hangs off. Stripe's subscription price_data REQUIRES an existing product id (product_data is only allowed in Checkout), found by testing against Stripe's API spec. */
 export function productParams(prep: { membership_id: string; organiser_id: string; tier_id: string; tier_name: string }): Record<string, string> {
   return { name: `${prep.tier_name} membership`.slice(0, 250), 'metadata[kind]': 'edition_membership_product', 'metadata[membership_id]': prep.membership_id, 'metadata[organiser_id]': prep.organiser_id, 'metadata[tier_id]': prep.tier_id };
@@ -195,9 +287,14 @@ export function connectAccountParams(org: { organiser_id: string; email: string;
   return { type: 'express', country: 'GB', email: org.email, 'capabilities[card_payments][requested]': 'true', 'capabilities[transfers][requested]': 'true',
     'business_profile[name]': org.name, 'metadata[kind]': 'edition_organiser', 'metadata[organiser_id]': org.organiser_id };
 }
-export const refundParams = (r: { payment_intent: string; amount_pence: number; refund_application_fee: boolean; request_id: string }): Record<string, string> => {
+/**
+ * Step 1 of an organiser-collected refund: refund the CUSTOMER from the platform and pull the money back from the organiser (reverse_transfer: Stripe reverses a proportional part of the transfer,
+ * all of it on a full refund). refund_application_fee is ALWAYS false: the platform keeps F by default, and the commission share is returned in step 2 (applicationFeeRefundRequest), so the
+ * organiser bears the unreturned processing-cost estimate. Stripe never returns its own processing fee on a refund.
+ */
+export const refundParams = (r: { payment_intent: string; amount_pence: number; request_id: string }): Record<string, string> => {
   assertPence(r.amount_pence, 'refund');
-  return { payment_intent: r.payment_intent, amount: String(r.amount_pence), reverse_transfer: 'true', refund_application_fee: r.refund_application_fee ? 'true' : 'false', 'metadata[kind]': 'edition_refund', 'metadata[request_id]': r.request_id };
+  return { payment_intent: r.payment_intent, amount: String(r.amount_pence), reverse_transfer: 'true', refund_application_fee: 'false', 'metadata[kind]': 'edition_refund', 'metadata[request_id]': r.request_id };
 };
 /** Refund of a PACKAGE order: the platform kept the whole price (no transfer, no application fee), so nothing is reversed. */
 export const orderRefundParams = (r: { payment_intent: string; amount_pence: number; request_id: string; order_id: string }): Record<string, string> => {

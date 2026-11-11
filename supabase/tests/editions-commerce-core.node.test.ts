@@ -74,6 +74,10 @@ describe('admin commercial model', () => {
 });
 
 describe('fee maths', () => {
+  // these cases pin the COMMISSION arithmetic (percent, fixed, minimum, cap, rounding, overrides); the processing-cost estimate has its own suite (editions-fees), so it is zeroed here and restored after
+  const COST = ['participation', 'membership'].flatMap((k) => [`editions.commerce.${k}.stripe_cost_percent`, `editions.commerce.${k}.stripe_cost_fixed_pence`]);
+  before(() => { for (const k of COST) cfg(k, '0'); });
+  after(() => { for (const k of COST) cfg(k, k.endsWith('percent') ? '1.5' : '20'); });
   const fee = (kind: string, base: number, org = ORG) => Number(E.q(`select public.edition_fee_calc('${kind}', ${base}, '${org}')`));
   test('percent + fixed, minimum, cap, never above the price, zero for a free price', () => {
     cfg('editions.commerce.participation.fee_percent', '10'); cfg('editions.commerce.participation.fee_fixed_pence', '20');
@@ -105,9 +109,12 @@ describe('fee maths', () => {
     assert.equal(bd('inclusive'), '10000|1667|1000|10000|9000|inclusive');
     assert.equal(bd('exclusive'), '10000|2000|1200|12000|10800|exclusive');
     assert.equal(bd('none'), '10000|0|1000|10000|9000|none');
-    cfg('editions.commerce.fee_payer', 'business');
-    assert.equal(bd('none'), '10000|0|1000|11000|10000|none', 'fee on top: the organiser receives the full price');
+    // the business can no longer pay the fee on top: the option is refused, and even a stored legacy value is ignored, so the customer always pays exactly the price
+    assert.match(E.try('ADMIN', `select public.admin_set_edition_commerce_config('editions.commerce.fee_payer','business')`), /not allowed/);
     cfg('editions.commerce.fee_payer', 'organiser');
+    E.sup(`update admin_config set value='business' where key='editions.commerce.fee_payer'`);
+    assert.equal(bd('none'), '10000|0|1000|10000|9000|none', 'a stored legacy "business" value changes nothing: nothing is added to the customer total');
+    E.sup(`update admin_config set value='organiser' where key='editions.commerce.fee_payer'`);
   });
   test('VAT details: owner only, a number is needed when registered, format checked', () => {
     assert.ok(failed(E.try('EDITOR', `select public.edition_set_vat_details('${ORG}', true, 'GB123456789', 'x ok')`)));

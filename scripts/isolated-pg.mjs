@@ -116,6 +116,7 @@ const SUITES = [
   'supabase/tests/editions-migration-reconcile.node.test.ts',
   'supabase/tests/editions-promotions.node.test.ts',
   'supabase/tests/editions-web-handoff.node.test.ts',
+  'supabase/tests/editions-fees.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.

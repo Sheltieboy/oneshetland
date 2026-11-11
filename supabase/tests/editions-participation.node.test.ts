@@ -100,7 +100,7 @@ describe('quote and member pricing', () => {
   const quote = (who: Who, link: string) => E.one(who, `select base_pence || '|' || discount_pence || '|' || price_pence || '|' || charge_pence || '|' || basis from public.edition_participation_quote('${link}')`);
   test('no membership: full price; the fee comes from the price (organiser receives price minus fee)', () => {
     assert.equal(quote('BIZ1', L1), '2000|0|2000|2000|fee');
-    assert.equal(E.one('BIZ1', `select platform_fee_pence || '|' || net_to_organiser_pence from public.edition_participation_quote('${L1}')`), '100|1900');
+    assert.equal(E.one('BIZ1', `select platform_fee_pence || '|' || net_to_organiser_pence from public.edition_participation_quote('${L1}')`), '90|1910', '2% commission (40) + estimated processing fee 1.5% + 20p (50) = 90; the customer still pays exactly 2000');
   });
   test('only the owner, the organiser team and admins can ask for a quote', () => {
     for (const w of ['STRANGER', 'BIZ2', 'anon'] as Who[]) assert.ok(failed(E.try(w, `select * from public.edition_participation_quote('${L1}')`)), w);
@@ -174,12 +174,12 @@ describe('paying (provider calls simulated)', () => {
   });
   test('prepare locks the quoted price; wrong amounts are refused; the right amount marks it paid and shows the business', () => {
     const r = JSON.parse(E.doOne('BIZ1', `select public.edition_participation_pay_prepare('${L1}', 'attempt-p-0007')::text`));
-    assert.equal(r.charge_pence, 2000); assert.equal(r.platform_fee_pence, 100); assert.equal(r.net_to_organiser_pence, 1900);
+    assert.equal(r.charge_pence, 2000); assert.equal(r.platform_fee_pence, 90); assert.equal(r.net_to_organiser_pence, 1910);
     for (const w of ['BIZ1', 'ORG_ADMIN', 'ADMIN', 'anon'] as Who[]) assert.ok(failed(succeed(L1, 'pi_x', 2000, w)), w);
     assert.match(succeed(L1, 'pi_p1', 1999), /does not match the quoted price/);
     assert.equal(last(E.do('service', `select public.edition_participation_payment_succeeded('${L1}', 'pi_p1', 'ch_p1', 2000, 30)`)), 'recorded');
     assert.equal(E.q(`select status || '|' || basis from edition_participations where link_id='${L1}'`), 'paid|fee');
-    assert.equal(E.q(`select source || '|' || platform_fee_pence || '|' || net_to_organiser_pence || '|' || kind from edition_payments where stripe_payment_intent_id='pi_p1'`), 'stripe|100|1900|participation');
+    assert.equal(E.q(`select source || '|' || platform_fee_pence || '|' || net_to_organiser_pence || '|' || kind from edition_payments where stripe_payment_intent_id='pi_p1'`), 'stripe|90|1910|participation');
     assert.equal(pubCount(), '2');
   });
   test('duplicates and replays change nothing; a quote change after prepare cannot alter what is accepted', () => {

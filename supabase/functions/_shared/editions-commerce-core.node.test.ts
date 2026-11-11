@@ -68,9 +68,10 @@ describe('event routing', () => {
   test('refunds use the CUMULATIVE amount; orders route to the order, everything else by payment intent; disputes only if the payment is ours', () => {
     assert.deepEqual((C.routeEditionEvent(ev('charge.refunded', { payment_intent: 'pi_o', amount_refunded: 500, metadata: { kind: 'edition_order', order_id: U1 } })) as Extract<C.Routed, { action: 'calls' }>).calls[0], { fn: 'edition_refund_order', args: { p_order: U1, p_refunded_total: 500 } });
     assert.deepEqual((C.routeEditionEvent(ev('charge.refunded', { payment_intent: 'pi_p', amount_refunded: 2000, metadata: { kind: 'edition_participation', link_id: U2 } })) as Extract<C.Routed, { action: 'calls' }>).calls[0], { fn: 'edition_payment_refunded', args: { p_payment_intent: 'pi_p', p_refunded_total: 2000 } });
-    const d = C.routeEditionEvent(ev('charge.dispute.created', { payment_intent: 'pi_p', reason: 'fraudulent' })) as Extract<C.Routed, { action: 'calls' }>;
-    assert.equal(d.onlyIfKnownPaymentIntent, 'pi_p'); assert.equal(d.calls[0].fn, 'edition_payment_disputed');
-    assert.equal(C.routeEditionEvent(ev('charge.dispute.created', { reason: 'x' })).action, 'ignore');
+    const d = C.routeEditionEvent(ev('charge.dispute.created', { id: 'dp_1', payment_intent: 'pi_p', reason: 'fraudulent', amount: 2000, status: 'needs_response', balance_transactions: [{ fee: 1500 }] })) as Extract<C.Routed, { action: 'calls' }>;
+    assert.equal(d.onlyIfKnownPaymentIntent, 'pi_p'); assert.equal(d.calls[0].fn, 'edition_dispute_event');
+    assert.deepEqual(d.calls[0].args, { p_payment_intent: 'pi_p', p_dispute: 'dp_1', p_event: 'created', p_status: 'needs_response', p_amount: 2000, p_fee: 1500, p_reason: 'fraudulent' });
+    assert.equal(C.routeEditionEvent(ev('charge.dispute.created', { id: 'dp_1', reason: 'x' })).action, 'ignore');
   });
   test('Connect account status -> payout account sync, only for Edition organiser accounts', () => {
     const r = C.routeEditionEvent(ev('account.updated', { id: 'acct_1', details_submitted: true, charges_enabled: true, payouts_enabled: false, requirements: { currently_due: ['external_account'] }, metadata: { kind: 'edition_organiser', organiser_id: U1 } })) as Extract<C.Routed, { action: 'calls' }>;
@@ -102,11 +103,11 @@ describe('provider parameters', () => {
     assert.throws(() => C.participationIntentParams({ ...prep, platform_fee_pence: 3000 }, 'acct_ABC123', U3, null), /exceeds the charge/);
     for (const bad of ['', 'acct_', 'cus_1', 'acct_x y', 'acct_x&transfer_data[destination]=acct_evil']) assert.throws(() => C.participationIntentParams(prep, bad, U3, null), /invalid connected account/, bad);
   });
-  test('subscription: inline price from the database amount, percent fee rounded down, destination and marker on the subscription', () => {
-    const p = C.subscriptionParams({ ...prep, membership_id: U2, tier_id: U3, tier_name: 'Full member', interval: 'annual', charge_pence: 10000, platform_fee_pence: 500 }, 'acct_ABC123', 'cus_9', 'prod_ABC123');
-    assert.equal(p['items[0][price_data][product]'], 'prod_ABC123'); assert.ok(!Object.keys(p).some((k) => k.includes('product_data')), 'Stripe rejects product_data inside a subscription price'); assert.equal(p['items[0][price_data][unit_amount]'], '10000'); assert.equal(p['items[0][price_data][recurring][interval]'], 'year'); assert.equal(p.application_fee_percent, '5'); assert.equal(p['transfer_data[destination]'], 'acct_ABC123');
+  test('subscription: inline price from the database amount, percent fee rounded to the nearest 0.01, destination and marker on the subscription', () => {
+    const p = C.subscriptionParams({ ...prep, membership_id: U2, tier_id: U3, tier_name: 'Full member', interval: 'annual', charge_pence: 10000, platform_fee_pence: 370 }, 'acct_ABC123', 'cus_9', 'prod_ABC123');
+    assert.equal(p['items[0][price_data][product]'], 'prod_ABC123'); assert.ok(!Object.keys(p).some((k) => k.includes('product_data')), 'Stripe rejects product_data inside a subscription price'); assert.equal(p['items[0][price_data][unit_amount]'], '10000'); assert.equal(p['items[0][price_data][recurring][interval]'], 'year'); assert.equal(p.application_fee_percent, '3.7', '370 of 10000 is exactly 3.7%'); assert.equal(p['transfer_data[destination]'], 'acct_ABC123');
     assert.equal(p['metadata[kind]'], 'edition_membership'); assert.equal(p['metadata[membership_id]'], U2); assert.equal(p.payment_behavior, 'default_incomplete');
-    assert.equal(C.feePercent(35, 700), 5); assert.equal(C.feePercent(24, 700), 3.42, 'rounded down so the platform never over-collects'); assert.equal(C.feePercent(0, 700), 0); assert.equal(C.feePercent(9999, 100), 50, 'capped');
+    assert.equal(C.feePercent(35, 700), 5); assert.equal(C.feePercent(24, 700), 3.43, 'rounded to the NEAREST 0.01 (3.4286)'); assert.equal(C.feePercent(0, 700), 0); assert.equal(C.feePercent(9999, 100), 100, 'capped at 100');
     assert.throws(() => C.subscriptionParams({ ...prep, membership_id: U2, tier_id: U3, tier_name: 'x', interval: 'weekly' as never }, 'acct_ABC123', 'cus_9', 'prod_ABC123'), /invalid interval/);
     assert.throws(() => C.subscriptionParams({ ...prep, membership_id: U2, tier_id: U3, tier_name: 'x', interval: 'annual' }, 'acct_ABC123', 'cus_9', 'price_x'), /invalid product/);
     const pr = C.productParams({ membership_id: U2, organiser_id: U1, tier_id: U3, tier_name: 'Full member' }); assert.equal(pr.name, 'Full member membership'); assert.equal(pr['metadata[kind]'], 'edition_membership_product');
@@ -114,9 +115,9 @@ describe('provider parameters', () => {
   test('connect account and refund parameters', () => {
     const a = C.connectAccountParams({ organiser_id: U1, email: 'o@example.org', name: 'Folk Festival Committee' });
     assert.equal(a.type, 'express'); assert.equal(a.country, 'GB'); assert.equal(a['metadata[kind]'], 'edition_organiser'); assert.equal(a['capabilities[transfers][requested]'], 'true');
-    const r = C.refundParams({ payment_intent: 'pi_1', amount_pence: 800, refund_application_fee: true, request_id: U2 });
-    assert.equal(r.reverse_transfer, 'true'); assert.equal(r.refund_application_fee, 'true'); assert.equal(r.amount, '800');
-    assert.throws(() => C.refundParams({ payment_intent: 'pi_1', amount_pence: 0.5, refund_application_fee: true, request_id: U2 }), /integer pence/);
+    const r = C.refundParams({ payment_intent: 'pi_1', amount_pence: 800, request_id: U2 });
+    assert.equal(r.reverse_transfer, 'true'); assert.equal(r.refund_application_fee, 'false', 'the platform keeps F; only the commission share goes back, in step 2'); assert.equal(r.amount, '800');
+    assert.throws(() => C.refundParams({ payment_intent: 'pi_1', amount_pence: 0.5, request_id: U2 }), /integer pence/);
   });
   test('idempotency keys are stable per attempt and bounded; form bodies are encoded', () => {
     assert.equal(C.idempotencyKey('participation', U2, 'attempt-1'), C.idempotencyKey('participation', U2, 'attempt-1'));
@@ -283,8 +284,8 @@ describe('PACKAGE flow (editions-complete)', () => {
     assert.match(c, /reconcileOrderCharge/); assert.match(c, /'edition_order'/);
   });
   test('a dispute is routed by payment intent and never changes an entitlement by itself', () => {
-    const r = C.routeEditionEvent(ev('charge.dispute.created', { payment_intent: 'pi_9', reason: 'fraudulent' })) as { calls: { fn: string }[]; onlyIfKnownPaymentIntent: string };
-    assert.equal(r.onlyIfKnownPaymentIntent, 'pi_9'); assert.deepEqual(r.calls.map((x) => x.fn), ['edition_payment_disputed']);
+    const r = C.routeEditionEvent(ev('charge.dispute.created', { id: 'dp_9', payment_intent: 'pi_9', reason: 'fraudulent' })) as { calls: { fn: string }[]; onlyIfKnownPaymentIntent: string };
+    assert.equal(r.onlyIfKnownPaymentIntent, 'pi_9'); assert.deepEqual(r.calls.map((x) => x.fn), ['edition_dispute_event']);
   });
 });
 

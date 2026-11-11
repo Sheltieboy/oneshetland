@@ -48,7 +48,7 @@ serve(async (req) => {
           if (error) throw new Error(`edition_refund_order: ${error.message}`);
           await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'ok', p_detail: 'package order refund' }); return json({ received: true });
         }
-        if (ord && first?.fn === 'edition_payment_disputed') {
+        if (ord && first?.fn === 'edition_dispute_event') {
           // a dispute never silently changes entitlements: it is raised for the administrator, who can void the package if the dispute is lost
           await svc.rpc('edition_record_exception', { p_kind: 'dispute', p_ref: routed.onlyIfKnownPaymentIntent, p_org: ord.organiser_id, p_detail: { order: ord.id, edition: ord.edition_id, reason: first.args.p_reason, event_type: type } });
           await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'ok', p_detail: 'package order dispute raised' }); return json({ received: true });
@@ -67,7 +67,7 @@ serve(async (req) => {
     for (const call of routed.calls) {
       const args = { ...call.args };
       if (call.fn === 'edition_membership_payment_succeeded') { args.p_stripe_fee = stripeFee; args.p_platform_fee = platformFee; }
-      if (call.fn === 'edition_participation_payment_succeeded') { args.p_stripe_fee = stripeFee; }
+      if (call.fn === 'edition_participation_payment_succeeded') { args.p_stripe_fee = stripeFee; args.p_application_fee = platformFee; }   // the application fee Stripe actually collected, for the fee check and the variance
       const { data: result, error } = await svc.rpc(call.fn, args);
       if (!error && call.fn === 'edition_fulfil_order' && result === 'already_fulfilled') {
         // the order was already paid. The same payment arriving again is a harmless replay; a DIFFERENT payment for it is a duplicate charge that the administrator must refund.
@@ -80,6 +80,9 @@ serve(async (req) => {
         // An amount the database refuses is a business problem, not a retry problem: record it for the administrator and acknowledge.
         if (/amount_mismatch|does not match/.test(error.message)) {
           await svc.rpc('edition_record_exception', { p_kind: 'amount_refused', p_ref: String(call.args.p_payment_intent ?? call.args.p_invoice ?? eventId), p_org: null, p_detail: { fn: call.fn, message: error.message } });
+          // A membership invoice for an amount other than the expected charge (proration, tier change, coupon, VAT): the subscription's fee is a PERCENTAGE of what was invoiced, so the fixed 20p part of the
+          // processing-cost estimate is mis-scaled for that invoice. It is surfaced as amount_mismatch with that note; nothing is activated on the wrong money.
+          if (call.fn === 'edition_membership_payment_succeeded') await svc.rpc('edition_record_exception', { p_kind: 'amount_mismatch', p_ref: String(call.args.p_invoice ?? eventId), p_org: null, p_detail: { invoiced_pence: call.args.p_charge_pence, application_fee_collected: platformFee, note: 'fee is a percentage of the invoice: the fixed component of the processing-cost estimate is mis-scaled for this invoice' } });
           await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'failed', p_detail: error.message });
           return json({ received: true, refused: 'amount' });
         }

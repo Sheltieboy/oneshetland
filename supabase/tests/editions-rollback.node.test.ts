@@ -20,7 +20,7 @@ before(() => { db = createReplayDb('editionsrollback'); });
 after(() => { try { db?.drop(); } catch { /* */ } });
 
 describe('rolling back the newest migrations', () => {
-  const order = ['20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270102060000_editions_operations', '20270102050000_editions_participation', '20270102040000_editions_memberships', '20270102030000_editions_commerce_core', '20270102020000_editions_visitor'];
+  const order = ['20270105000000_editions_fee_model', '20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270102060000_editions_operations', '20270102050000_editions_participation', '20270102040000_editions_memberships', '20270102030000_editions_commerce_core', '20270102020000_editions_visitor'];
   test('everything is present after the replay', () => {
     for (const t of ['edition_email_outbox', 'edition_participations', 'organiser_memberships', 'edition_payments', 'edition_saves', 'edition_links', 'editions']) assert.ok(exists(t), t);
   });
@@ -40,8 +40,13 @@ describe('rolling back the newest migrations', () => {
     assert.equal(q(`select count(*) from public.edition_public_businesses`), '0');
     assert.equal(q(`select prosecdef from pg_proc where proname='edition_participation_ok'`), 'f', 'back to the plain R2 stub');
   });
+  test('the fee-model rollback restored the previous functions and removed what it added', () => {
+    assert.equal(q(`select to_regclass('public.edition_dispute_recoveries') is not null`), 'f');
+    assert.equal(q(`select count(*) from information_schema.columns where table_name='edition_payments' and column_name in ('commission_pence','recovery_estimate_pence','commission_refunded_pence','dispute_state')`), '0');
+    assert.equal(q(`select count(*) from pg_proc where proname in ('edition_fee_parts','edition_dispute_event','edition_commission_plan_pending','admin_edition_variance_report')`), '0');
+  });
   test('a second run is harmless', () => {
-    for (const stem of order) assert.doesNotMatch(db.raw(file(stem)), /ERROR/, stem);
+    for (const stem of order) { const o = db.raw(file(stem)); assert.doesNotMatch(o, /ERROR/, `${stem}: ${o.split('\n').find((l) => /ERROR/.test(l))}`); }
   });
   test('no analytics definition, config or table of the existing platform was touched', () => {
     assert.equal(q(`select count(*) from analytics_event_defs where event_name in ('edition_saved','edition_plan_added','edition_calendar_exported','edition_search')`), '0', 'the visitor rollback removes its definitions');
@@ -54,7 +59,7 @@ describe('R9 to R12 rollbacks (140000, 130000, 120000, 110000, 100000, 090000), 
   let d2: ReplayDb; const q2 = (sql: string) => d2.raw(sql).split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
   before(() => { d2 = createReplayDb('editionsrollback2'); });
   after(() => { try { d2?.drop(); } catch { /* */ } });
-  const stems = ['20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270102140000_editions_payment_safeguards_2', '20270102130000_editions_stripe_lifecycle', '20270102120000_editions_session_pages', '20270102110000_editions_stage_a', '20270102100000_editions_payment_safeguards', '20270102090000_editions_update_images'];
+  const stems = ['20270105000000_editions_fee_model', '20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270102140000_editions_payment_safeguards_2', '20270102130000_editions_stripe_lifecycle', '20270102120000_editions_session_pages', '20270102110000_editions_stage_a', '20270102100000_editions_payment_safeguards', '20270102090000_editions_update_images'];
   test('everything they add is present after the replay', () => {
     assert.equal(q2(`select to_regclass('public.edition_stripe_cancel_queue') is not null`), 't');
     assert.equal(q2(`select to_regclass('public.edition_stripe_stray_subscriptions') is not null`), 't');
@@ -92,7 +97,7 @@ describe('Hub verification + pilot + 1.1 rollbacks (210000, 200000, 190000, 1800
   after(() => { try { d3?.drop(); } catch { /* */ } });
   // The finished-service migrations (identity, Hub events switch, review, packages, retirement of the pilot, package refunds) sit on top of these layers, so they roll back FIRST, newest to oldest.
   // Their own rollbacks are proven in depth in editions-complete; here they only have to run clean (twice) so the older rollbacks below start from the state they were written for.
-  const newest = ['20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270103060000_editions_admin_orders', '20270103050000_editions_package_refunds', '20270103040000_editions_retire_pilot_and_standalone', '20270103030000_editions_packages_and_notifications', '20270103020000_editions_review', '20270103010000_hub_events_auto_approve', '20270103000000_editions_business_and_hub_identity'];
+  const newest = ['20270105000000_editions_fee_model', '20270104010000_editions_promotion_rpcs', '20270104000000_editions_launch_showcase_promotions', '20270103060000_editions_admin_orders', '20270103050000_editions_package_refunds', '20270103040000_editions_retire_pilot_and_standalone', '20270103030000_editions_packages_and_notifications', '20270103020000_editions_review', '20270103010000_hub_events_auto_approve', '20270103000000_editions_business_and_hub_identity'];
   const stems = ['20270102210000_admin_verify_hub', '20270102200000_editions_pilot', '20270102190000_editions_add_from_hub', '20270102180000_editions_community_packages', '20270102170000_editions_hub_run', '20270102160000_editions_hub_partners'];
   test('the finished-service migrations roll back first, newest to oldest, clean, twice', () => {
     assert.equal(q3(`select count(*) from pg_proc where proname='edition_ensure_organiser'`), '1', 'present before');
@@ -122,5 +127,22 @@ describe('Hub verification + pilot + 1.1 rollbacks (210000, 200000, 190000, 1800
     assert.equal(q3(`select pg_get_constraintdef(oid) from pg_constraint where conname='edition_links_kind_check'`).includes('hub'), false);
     assert.equal(q3(`select count(*) from pg_policies where policyname='edition_packages read' and qual not like '%audience%'`), '1');
     assert.equal(q3(`select (select count(*) from pg_proc p where p.pronamespace='public'::regnamespace and p.proname ilike '%edition%' and has_function_privilege('anon', p.oid, 'execute'))`), '6');
+  });
+});
+
+describe('the fee-model rollback on its own: the previous behaviour is back (5% flat commission, no estimate), twice', () => {
+  let d4: ReplayDb; const q4 = (sql: string) => d4.raw(sql).split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
+  before(() => { d4 = createReplayDb('editionsrollback4'); });
+  after(() => { try { d4?.drop(); } catch { /* */ } });
+  test('with the migration: 2% + estimate; after rolling it back (alone): the old 5% and the old shapes; a second run is harmless', () => {
+    assert.equal(q4(`select public.edition_fee_calc('participation', 10000, gen_random_uuid())`), '370');
+    const f = file('20270105000000_editions_fee_model');
+    for (let i = 0; i < 2; i++) assert.doesNotMatch(d4.raw(f), /ERROR/, `run ${i + 1}`);
+    assert.equal(q4(`select public.edition_fee_calc('participation', 10000, gen_random_uuid())`), '500');
+    assert.equal(q4(`select count(*) from pg_proc where proname='edition_participation_payment_succeeded' and pronargs=5`), '1');
+    assert.equal(q4(`select count(*) from pg_proc where proname='edition_participation_payment_succeeded' and pronargs=6`), '0');
+    assert.equal(q4(`select count(*) from information_schema.columns where table_name='edition_payments' and column_name='commission_pence'`), '0');
+    assert.equal(q4(`select count(*) from admin_config where key like 'editions.commerce.%stripe_cost%'`), '0');
+    assert.equal(q4(`select count(*) from pg_proc p where proname in ('edition_fee_calc','edition_membership_payment_succeeded','edition_reconcile_apply') and has_function_privilege('anon', p.oid, 'execute')`), '0');
   });
 });

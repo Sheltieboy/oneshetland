@@ -1,12 +1,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { safeEqual, formBody, idempotencyKey, isRetryableProviderStatus, orderRefundParams, reconcileOrderCharge, refundParams, subscriptionCancelRequest } from '../_shared/editions-commerce-core.ts';
+import { safeEqual, formBody, idempotencyKey, isRetryableProviderStatus, orderRefundParams, reconcileOrderCharge, refundParams, subscriptionCancelRequest, applicationFeeRefundRequest, transferReversalRequest, chargeRefs, findByMetadata, classifyProviderFailure } from '../_shared/editions-commerce-core.ts';
 
 /**
  * editions-commerce-cron — scheduled housekeeping for Editions money. NOT DEPLOYED, NOT SCHEDULED. Service-role bearer required (same pattern as the other crons).
  *   action 'sweep'      membership expiry/cancellation/withdrawal sweep (database function)
  *   action 'cancels'    end the provider subscription of every card membership that has been cancelled or ended (queued by the database); safe to repeat
- *   action 'refunds'    drain pending refund requests: one provider refund each (participation: reverse_transfer, application fee per admin setting; package orders: a plain refund, the platform kept the whole price); the webhook confirms
+ *   action 'refunds'    drain pending refund requests: STEP 1 one provider refund each (participation: refund the customer with reverse_transfer and refund_application_fee=false; package orders: a plain refund, the
+ *                       platform kept the whole price), the webhook confirms; then STEP 2 (the same action, or 'commission_refunds' alone): refund ONLY the commission share through the application-fee refund API
+ *   action 'disputes'   recover LOST disputes from the organiser by a transfer reversal (an insufficient connected balance blocks, alerts and suspends: never loops), then the optional commission share
  *   action 'reconcile'  compare the provider's charges for the last N days with the ledger; mismatches become exceptions for the administrator (nothing is auto-fixed)
  */
 serve(async (req) => {
@@ -19,6 +21,69 @@ serve(async (req) => {
   try {
     if (action === 'sweep') { const { data, error } = await svc.rpc('edition_membership_sweep'); if (error) throw error; return json({ ok: true, ...data }); }
     if (!stripeKey) return json({ error: 'Payments are not configured' }, 503);
+    // shared provider helper for the money-back steps (never logs a secret; returns the parsed body)
+    const stripe = async (method: 'GET' | 'POST', path: string, params?: Record<string, string>, key?: string) => {
+      const res = await fetch(`https://api.stripe.com/v1${path}`, { method, headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16', ...(method === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}), ...(key ? { 'Idempotency-Key': key } : {}) }, body: method === 'POST' ? formBody(params ?? {}) : undefined });
+      const j = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, json: j, code: (j?.error?.code ?? null) as string | null, message: String(j?.error?.message ?? res.status) };
+    };
+    // the application fee and transfer of a payment's charge, read at the moment of use (the ledger never trusts a stale id)
+    const refsFor = async (chargeId: string | null, paymentIntent: string | null) => {
+      let cid = chargeId;
+      if (!cid && paymentIntent) { const pi = await stripe('GET', `/payment_intents/${encodeURIComponent(paymentIntent)}`); cid = pi.ok ? (typeof pi.json.latest_charge === 'string' ? pi.json.latest_charge : pi.json.latest_charge?.id ?? null) : null; }
+      if (!cid) return null;
+      const ch = await stripe('GET', `/charges/${encodeURIComponent(cid)}`); return ch.ok ? chargeRefs(ch.json) : null;
+    };
+    // STEP 2 of a refund: give back only the commission share (application-fee refund). Idempotent: the key derives from the request id and the amount, and a repeat beyond Stripe's 24 hours first looks for our own metadata.
+    const commissionStep = async (rows: { request_id?: string; dispute_id?: string; amount_pence: number; stripe_charge_id: string | null; stripe_payment_intent_id: string | null }[], mark: (id: string, st: 'done' | 'retry' | 'failed', msg: string | null) => Promise<void>) => {
+      let n = 0;
+      for (const r of rows) {
+        const id = String(r.request_id ?? r.dispute_id); let st: 'done' | 'retry' | 'failed' = 'retry', msg: string | null = null;
+        try {
+          const refs = await refsFor(r.stripe_charge_id, r.stripe_payment_intent_id);
+          if (!refs) { st = 'retry'; msg = 'charge not readable yet'; }
+          else if (!refs.application_fee) { st = 'failed'; msg = 'the charge has no application fee to refund'; }
+          else {
+            const q = applicationFeeRefundRequest({ application_fee_id: refs.application_fee, amount_pence: r.amount_pence, request_id: id });
+            const existing = await stripe('GET', `/application_fees/${refs.application_fee}/refunds?limit=100`);
+            if (existing.ok && findByMetadata(existing.json, 'request_id', id)) st = 'done';
+            else { const res = await stripe(q.method, q.path, q.params, q.idempotencyKey); if (res.ok) st = 'done'; else { msg = res.message; st = classifyProviderFailure(res) === 'retry' ? 'retry' : 'failed'; } }
+          }
+        } catch (e) { st = 'retry'; msg = (e as Error).message; }
+        await mark(id, st, msg); if (st === 'done') n++;
+      }
+      return n;
+    };
+    const refundCommissions = async () => {
+      await svc.rpc('edition_commission_plan_pending');
+      const { data: rows, error } = await svc.rpc('edition_commission_refunds_next'); if (error) throw error;
+      return commissionStep(rows ?? [], async (id, st, msg) => { await svc.rpc('edition_commission_refund_mark', { p_request: id, p_status: st, p_error: msg }); });
+    };
+    if (action === 'commission_refunds') return json({ ok: true, commission_refunded: await refundCommissions() });
+    if (action === 'disputes') {
+      const { data: rows, error } = await svc.rpc('edition_dispute_recoveries_next'); if (error) throw error;
+      let recovered = 0, blocked = 0, failed = 0;
+      for (const r of rows ?? []) {
+        let st: 'done' | 'retry' | 'insufficient' | 'failed' = 'retry', msg: string | null = null, reversal: string | null = null;
+        try {
+          const refs = await refsFor(r.stripe_charge_id, r.stripe_payment_intent_id);
+          if (!refs) { st = 'retry'; msg = 'charge not readable yet'; }
+          else if (!refs.transfer) { st = 'failed'; msg = 'the charge has no transfer to reverse'; }
+          else {
+            const q = transferReversalRequest({ transfer_id: refs.transfer, amount_pence: r.amount_pence, dispute_id: r.dispute_id });
+            const existing = await stripe('GET', `/transfers/${refs.transfer}/reversals?limit=100`);
+            const already = existing.ok ? findByMetadata(existing.json, 'dispute_id', r.dispute_id) : null;
+            if (already) { st = 'done'; reversal = already; }
+            else { const res = await stripe(q.method, q.path, q.params, q.idempotencyKey); if (res.ok) { st = 'done'; reversal = String(res.json.id ?? ''); } else { msg = res.message; st = classifyProviderFailure(res); } }
+          }
+        } catch (e) { st = 'retry'; msg = (e as Error).message; }
+        await svc.rpc('edition_dispute_recovery_mark', { p_dispute: r.dispute_id, p_status: st, p_error: msg, p_reversal: reversal });
+        if (st === 'done') recovered++; else if (st === 'insufficient') blocked++; else if (st === 'failed') failed++;
+      }
+      const { data: crows, error: cerr } = await svc.rpc('edition_dispute_commission_next'); if (cerr) throw cerr;
+      const commission = await commissionStep(crows ?? [], async (id, st, msg) => { await svc.rpc('edition_dispute_commission_mark', { p_dispute: id, p_status: st, p_error: msg }); });
+      return json({ ok: true, recovered, blocked, failed, commission_refunded: commission });
+    }
     if (action === 'cancels') {
       const { data: rows, error } = await svc.rpc('edition_stripe_cancels_next'); if (error) throw error;
       let done = 0, failed = 0;
@@ -57,7 +122,7 @@ serve(async (req) => {
         let status: 'submitted' | 'retry' | 'failed' = 'failed', msg: string | null = null;
         try {
           const res = await fetch('https://api.stripe.com/v1/refunds', { method: 'POST', headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey('refund', r.request_id, '1') },
-            body: formBody(r.order_id ? orderRefundParams({ payment_intent: r.stripe_payment_intent_id, amount_pence: r.amount_pence, request_id: r.request_id, order_id: r.order_id }) : refundParams({ payment_intent: r.stripe_payment_intent_id, amount_pence: r.amount_pence, refund_application_fee: r.refund_application_fee, request_id: r.request_id })) });
+            body: formBody(r.order_id ? orderRefundParams({ payment_intent: r.stripe_payment_intent_id, amount_pence: r.amount_pence, request_id: r.request_id, order_id: r.order_id }) : refundParams({ payment_intent: r.stripe_payment_intent_id, amount_pence: r.amount_pence, request_id: r.request_id })) });
           if (res.ok) status = 'submitted';
           else {
             const j = await res.json().catch(() => ({}));
@@ -69,19 +134,22 @@ serve(async (req) => {
         await svc.rpc('edition_refund_request_mark', { p_request: r.request_id, p_status: status, p_error: status === 'submitted' ? null : msg });
         if (status === 'submitted') done++;
       }
-      return json({ ok: true, submitted: done });
+      return json({ ok: true, submitted: done, commission_refunded: await refundCommissions() });
     }
     if (action === 'reconcile') {
       const to = Math.floor(Date.now() / 1000), from = to - Math.min(Math.max(Number(days) || 2, 1), 31) * 86400;
       const snapshot: unknown[] = []; const orderCharges: { payment_intent: string; amount: number; refunded: number; paid: boolean }[] = []; let startingAfter = '';
       for (let page = 0; page < 20; page++) {
-        const q = new URLSearchParams({ limit: '100', 'created[gte]': String(from), 'created[lte]': String(to) }); if (startingAfter) q.set('starting_after', startingAfter);
+        const q = new URLSearchParams({ limit: '100', 'created[gte]': String(from), 'created[lte]': String(to) }); for (const x of ['data.balance_transaction', 'data.application_fee', 'data.transfer']) q.append('expand[]', x); if (startingAfter) q.set('starting_after', startingAfter);
         const r = await fetch(`https://api.stripe.com/v1/charges?${q}`, { headers: { Authorization: `Bearer ${stripeKey}` } }); const j = await r.json(); if (!r.ok) throw new Error(j.error?.message);
         // Edition-marked charges, plus subscription invoice charges (which carry no marker on the charge itself); the database ignores unmarked ones it does not know.
         for (const c of j.data) {
           // package orders are held in edition_orders (not the payments ledger): compared separately below
           if (c.metadata?.kind === 'edition_order' && c.payment_intent) { orderCharges.push({ payment_intent: String(c.payment_intent), amount: c.amount, refunded: c.amount_refunded ?? 0, paid: c.status === 'succeeded' && c.paid === true }); continue; }
-          const marked = String(c.metadata?.kind ?? '').startsWith('edition_'); if ((marked || c.invoice) && c.payment_intent) snapshot.push({ payment_intent: c.payment_intent, marked, amount: c.amount, application_fee: c.application_fee_amount ?? 0, refunded: c.amount_refunded, destination: c.transfer_data?.destination ?? c.destination ?? null, status: c.status === 'succeeded' ? 'succeeded' : c.status }); }
+          const marked = String(c.metadata?.kind ?? '').startsWith('edition_'); if ((marked || c.invoice) && c.payment_intent) snapshot.push({ payment_intent: c.payment_intent, marked, amount: c.amount, application_fee: c.application_fee_amount ?? 0, refunded: c.amount_refunded, destination: c.transfer_data?.destination ?? c.destination ?? null, status: c.status === 'succeeded' ? 'succeeded' : c.status,
+            // the money-back and cost facts the ledger is compared with: Stripe's actual fee, application fee refunded so far, the transfer and how much of it has been reversed
+            ...(Number.isInteger(c.balance_transaction?.fee) ? { stripe_fee: c.balance_transaction.fee } : {}), ...(Number.isInteger(c.application_fee?.amount_refunded) ? { application_fee_refunded: c.application_fee.amount_refunded } : {}),
+            ...(Number.isInteger(c.transfer?.amount) ? { transfer_amount: c.transfer.amount, transfer_reversed: c.transfer.amount_reversed ?? 0 } : {}) }); }
         if (!j.has_more) break; startingAfter = j.data[j.data.length - 1].id;
       }
       const { data, error } = await svc.rpc('edition_reconcile_apply', { p_snapshot: snapshot, p_from: new Date(from * 1000).toISOString(), p_to: new Date(to * 1000).toISOString() }); if (error) throw error;
