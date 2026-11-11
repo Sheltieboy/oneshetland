@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { expectedSecretKind, routeEditionEvent, verifyStripeSignature } from '../_shared/editions-commerce-core.ts';
+import { expectedSecretKind, invoiceRefs, routeEditionEvent, verifyStripeSignature } from '../_shared/editions-commerce-core.ts';
 
 /**
  * editions-stripe-webhook — the ONLY door through which provider events change Editions money state.
@@ -56,17 +56,30 @@ serve(async (req) => {
         await svc.rpc('edition_webhook_done', { p_event: eventId, p_outcome: 'ignored', p_detail: 'not an Edition payment' }); return json({ received: true, ignored: 'not ours' });
       }
     }
-    // Optional enrichment: the provider's own fee numbers for the ledger (never used to decide whether to fulfil).
+    // Our own reads pin Stripe-Version 2023-10-16, so these responses have the legacy shape whatever the endpoint's event version is.
+    const PIN = { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' };
+    // A membership invoice event rendered in the 2025 shape may not carry the payment intent or charge (the payments list is not expanded in events). They are REQUIRED to record the payment (refunds and
+    // disputes find it by payment intent), so the invoice is read here, and a failure to read it is a retryable failure (Stripe redelivers) rather than a ledger row without them.
+    let invoiceFix: { payment_intent: string | null; charge: string | null; subscription: string | null } | null = null;
     let platformFee: number | null = null, stripeFee: number | null = null;
-    if (routed.needsChargeDetail && stripeKey) {
+    if (routed.needsInvoiceDetail) {
+      if (!stripeKey) throw new Error('cannot read the invoice: payments are not configured');
+      const r = await fetch(`https://api.stripe.com/v1/invoices/${encodeURIComponent(routed.needsInvoiceDetail.invoiceId)}?expand[]=charge.balance_transaction`, { headers: PIN });
+      if (!r.ok) throw new Error(`invoice read failed (${r.status})`);
+      const refs = invoiceRefs(await r.json());
+      if (!refs.payment_intent || !refs.charge) throw new Error('invoice has no payment yet');
+      invoiceFix = refs; platformFee = refs.application_fee_amount; stripeFee = refs.stripe_fee;
+    }
+    // Optional enrichment: the provider's own fee numbers for the ledger (never used to decide whether to fulfil).
+    if (!invoiceFix && routed.needsChargeDetail && stripeKey) {
       try {
-        const r = await fetch(`https://api.stripe.com/v1/charges/${encodeURIComponent(routed.needsChargeDetail.chargeId)}?expand[]=balance_transaction`, { headers: { Authorization: `Bearer ${stripeKey}` } });
+        const r = await fetch(`https://api.stripe.com/v1/charges/${encodeURIComponent(routed.needsChargeDetail.chargeId)}?expand[]=balance_transaction`, { headers: PIN });
         if (r.ok) { const c = await r.json(); platformFee = Number.isInteger(c.application_fee_amount) ? c.application_fee_amount : null; stripeFee = Number.isInteger(c.balance_transaction?.fee) ? c.balance_transaction.fee : null; }
       } catch { /* enrichment is best effort */ }
     }
     for (const call of routed.calls) {
       const args = { ...call.args };
-      if (call.fn === 'edition_membership_payment_succeeded') { args.p_stripe_fee = stripeFee; args.p_platform_fee = platformFee; }
+      if (call.fn === 'edition_membership_payment_succeeded') { args.p_stripe_fee = stripeFee; args.p_platform_fee = platformFee; if (invoiceFix) { args.p_payment_intent = args.p_payment_intent ?? invoiceFix.payment_intent; args.p_charge = args.p_charge ?? invoiceFix.charge; args.p_subscription = args.p_subscription ?? invoiceFix.subscription; } }
       if (call.fn === 'edition_participation_payment_succeeded') { args.p_stripe_fee = stripeFee; args.p_application_fee = platformFee; }   // the application fee Stripe actually collected, for the fee check and the variance
       const { data: result, error } = await svc.rpc(call.fn, args);
       if (!error && call.fn === 'edition_fulfil_order' && result === 'already_fulfilled') {

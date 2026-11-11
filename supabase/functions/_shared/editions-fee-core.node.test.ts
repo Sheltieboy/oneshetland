@@ -170,3 +170,77 @@ describe('source contracts for the functions that make the calls (they are not d
     const a = C.connectAccountParams({ organiser_id: U1, email: 'o@example.org', name: 'X' }); assert.equal(a['capabilities[card_payments][requested]'], 'true'); assert.equal(a['capabilities[transfers][requested]'], 'true');
   });
 });
+
+describe('API-version shapes: events rendered in 2025-08-27.basil AND the legacy 2023-10-16 shape both route', () => {
+  // REAL test-mode events fetched from Stripe (trimmed to the fields read; test data only)
+  const FX = JSON.parse(readFileSync(new URL('./fixtures/stripe-2025-basil-events.json', import.meta.url), 'utf8')) as Record<string, any>;
+  const route = (e: unknown) => C.routeEditionEvent(e as Record<string, unknown>) as Extract<C.Routed, { action: 'calls' }>;
+  test('basil invoice.paid and invoice.payment_succeeded: membership found from parent.subscription_details, subscription from the parent, period from the line; the missing payment intent and charge are fetched by the webhook', () => {
+    for (const t of ['invoice.paid', 'invoice.payment_succeeded']) {
+      const e = FX[t]; assert.equal(e.api_version, '2025-08-27.basil'); assert.equal(e.data.object.subscription, undefined); assert.equal(e.data.object.charge, undefined);
+      const r = route(e); assert.equal(r.action, 'calls'); const a = r.calls[0].args;
+      assert.equal(r.calls[0].fn, 'edition_membership_payment_succeeded'); assert.equal(a.p_membership, e.data.object.parent.subscription_details.metadata.membership_id);
+      assert.equal(a.p_subscription, e.data.object.parent.subscription_details.subscription); assert.equal(a.p_invoice, e.data.object.id); assert.equal(a.p_charge_pence, e.data.object.amount_paid);
+      assert.equal(a.p_payment_intent, null); assert.equal(a.p_charge, null); assert.deepEqual(r.needsInvoiceDetail, { invoiceId: e.data.object.id }, 'the webhook completes it before recording');
+      assert.equal(a.p_period_end, new Date(e.data.object.lines.data[0].period.end * 1000).toISOString());
+    }
+  });
+  test('basil invoice with the payments list expanded carries the payment intent and charge: nothing more to fetch', () => {
+    const e = JSON.parse(JSON.stringify(FX['invoice.paid'])); e.data.object.payments = { data: [{ payment: { type: 'payment_intent', payment_intent: 'pi_basil1', charge: 'ch_basil1' } }] };
+    const r = route(e); assert.equal(r.calls[0].args.p_payment_intent, 'pi_basil1'); assert.equal(r.calls[0].args.p_charge, 'ch_basil1'); assert.equal(r.needsInvoiceDetail, undefined); assert.deepEqual(r.needsChargeDetail, { chargeId: 'ch_basil1' });
+    assert.deepEqual(C.invoiceRefs({ ...e.data.object, payments: { data: [{ payment: { payment_intent: { id: 'pi_x' }, charge: { id: 'ch_x' } } }] } }), { subscription: e.data.object.parent.subscription_details.subscription, payment_intent: 'pi_x', charge: 'ch_x', application_fee_amount: null, stripe_fee: null });
+  });
+  test('the pinned (2023) invoice read: legacy fields first, expanded charge gives the actual application fee and Stripe fee', () => {
+    assert.deepEqual(C.invoiceRefs({ id: 'in_1', subscription: 'sub_1', payment_intent: 'pi_1', charge: { id: 'ch_1', application_fee_amount: 55, balance_transaction: { fee: 36 } } }), { subscription: 'sub_1', payment_intent: 'pi_1', charge: 'ch_1', application_fee_amount: 55, stripe_fee: 36 });
+    assert.deepEqual(C.invoiceRefs({}), { subscription: null, payment_intent: null, charge: null, application_fee_amount: null, stripe_fee: null });
+  });
+  test('legacy-shape invoices still work exactly as before (and need no extra read)', () => {
+    const legacy = { id: 'in_1', type: 'invoice.paid', data: { object: { id: 'in_1', amount_paid: 1000, subscription: 'sub_1', payment_intent: 'pi_i', charge: 'ch_i', subscription_details: { metadata: { kind: 'edition_membership', membership_id: U2 } }, lines: { data: [{ period: { start: 1_800_000_000, end: 1_802_592_000 } }] } } } };
+    const r = route(legacy); assert.equal(r.calls[0].args.p_payment_intent, 'pi_i'); assert.equal(r.calls[0].args.p_subscription, 'sub_1'); assert.equal(r.needsInvoiceDetail, undefined); assert.deepEqual(r.needsChargeDetail, { chargeId: 'ch_i' });
+  });
+  test('invoice.payment_failed routes in the basil shape (metadata from the parent)', () => {
+    const e = JSON.parse(JSON.stringify(FX['invoice.paid'])); e.type = 'invoice.payment_failed'; e.data.object.attempt_count = 2;
+    const r = route(e); assert.equal(r.calls[0].fn, 'edition_membership_payment_failed'); assert.equal(r.calls[0].args.p_membership, e.data.object.parent.subscription_details.metadata.membership_id); assert.equal(r.calls[0].args.p_attempt_count, 2);
+  });
+  test('basil subscription events: the period end comes from the subscription item; legacy current_period_end still wins when present', () => {
+    for (const t of ['customer.subscription.updated', 'customer.subscription.deleted']) {
+      const e = FX[t]; assert.equal(e.data.object.current_period_end, undefined);
+      const a = route(e).calls[0].args; assert.equal(a.p_membership, e.data.object.metadata.membership_id); assert.equal(a.p_period_end, new Date(e.data.object.items.data[0].current_period_end * 1000).toISOString());
+      assert.equal(a.p_status, t.endsWith('deleted') ? 'canceled' : e.data.object.status);
+    }
+    const legacy = JSON.parse(JSON.stringify(FX['customer.subscription.updated'])); legacy.data.object.current_period_end = 1_802_592_000;
+    assert.equal(route(legacy).calls[0].args.p_period_end, new Date(1_802_592_000 * 1000).toISOString());
+  });
+  test('charge.refunded and payment_intent.succeeded (unchanged between versions) route from the real events', () => {
+    const r = route(FX['charge.refunded']); assert.equal(r.calls[0].fn, 'edition_payment_refunded'); assert.equal(r.calls[0].args.p_refunded_total, FX['charge.refunded'].data.object.amount_refunded);
+    const p = route(FX['payment_intent.succeeded']); assert.equal(p.calls[0].fn, 'edition_participation_payment_succeeded'); assert.equal(p.calls[0].args.p_charge_pence, FX['payment_intent.succeeded'].data.object.amount_received);
+  });
+  test('source audit: every outgoing read pins 2023-10-16 (so direct responses keep the legacy shape); the webhook completes basil invoices before recording', () => {
+    const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
+    const wh = read('editions-stripe-webhook/index.ts'); assert.match(wh, /'Stripe-Version': '2023-10-16'/); assert.doesNotMatch(wh, /headers: \{ Authorization: `Bearer \$\{stripeKey\}` \}/); assert.match(wh, /needsInvoiceDetail/); assert.match(wh, /invoice has no payment yet/);
+    const cron = read('editions-commerce-cron/index.ts'); assert.match(cron, /charges\?\$\{q\}`, \{ headers: \{ Authorization: `Bearer \$\{stripeKey\}`, 'Stripe-Version': '2023-10-16'/);
+    assert.match(read('create-edition-checkout/index.ts'), /Stripe-Version': '2023-10-16'/);
+  });
+});
+
+describe('refund-drift repair: what the cron sends for it', () => {
+  test('the reconcile snapshot carries Stripe\'s cumulative refunded total per charge (the database repairs from it)', () => {
+    const cron = readFileSync(new URL('../editions-commerce-cron/index.ts', import.meta.url), 'utf8'); assert.match(cron, /refunded: c\.amount_refunded/);
+    const mig = readFileSync(new URL('../../migrations/20270105000000_editions_fee_model.sql', import.meta.url), 'utf8');
+    assert.match(mig, /edition_payment_refunded\(v_pi, \(s ->> 'refunded'\)::int\)/); assert.match(mig, /'repaired', true, 'external_or_out_of_order', true/); assert.match(mig, /so no commission refund was made/);
+  });
+});
+
+describe('fee tolerance scales with the invoice (flat base + ceil(charge x 0.00005))', () => {
+  test('the six measured real-Stripe cases are within it; the old flat 1p was not enough for the large ones; a clearly wrong fee is outside it', () => {
+    for (const [charge, F, collected] of [[2500, 108, 108], [25000, 895, 895], [100000, 3520, 3520], [20362, 732, 731], [30323, 1081, 1079], [123456, 4341, 4346]] as const) {
+      assert.equal(C.feeParts(charge, CFG).fee, F); assert.ok(Math.abs(collected - F) <= C.feeTolerance(charge), String(charge));
+    }
+    assert.ok(Math.abs(1079 - 1081) > 1 && Math.abs(4346 - 4341) > 1);
+    assert.ok(Math.abs(118 - 108) > C.feeTolerance(2500), '10p off on a 25.00 invoice is still a mismatch');
+    assert.deepEqual([2500, 100000, 500000].map((c) => C.feeTolerance(c)), [2, 6, 26], '+5p at 1,000.00 and +25p at 5,000.00 over the base'); assert.equal(C.feeTolerance(100000, 3), 8);
+  });
+  test('the bound holds for every amount up to the charge ceiling under nearest rounding (the measured Stripe behaviour)', () => {
+    for (let c = 100; c <= 500000; c += 7) { const f = C.feeParts(c, CFG).fee; assert.ok(Math.abs(C.percentErrorPence(f, c, 'nearest')) <= C.feeTolerance(c), String(c)); }
+  });
+});

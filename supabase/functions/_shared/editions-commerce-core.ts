@@ -53,7 +53,27 @@ export async function signForTest(payload: string, secret: string, t: number): P
 export type Call = { fn: string; args: Record<string, unknown> };
 export type Routed =
   | { action: 'ignore'; reason: string }
-  | { action: 'calls'; calls: Call[]; onlyIfKnownPaymentIntent?: string; needsChargeDetail?: { chargeId: string } };
+  | { action: 'calls'; calls: Call[]; onlyIfKnownPaymentIntent?: string; needsChargeDetail?: { chargeId: string }; needsInvoiceDetail?: { invoiceId: string } };
+
+
+/* ── API-version shapes. Stripe renders EVENTS in the endpoint's API version (the account default, 2025-08-27.basil, unless the endpoint was created with api_version 2023-10-16); our own outgoing calls pin 2023-10-16.
+ *    Every reader below takes the legacy field first and otherwise the new shape, so both work.
+ *    invoice:  legacy invoice.subscription / .payment_intent / .charge and subscription_details.metadata   |  basil: invoice.parent.subscription_details.{subscription,metadata}, invoice.payments.data[].payment.{payment_intent,charge}
+ *              (in basil EVENTS the payments list is usually NOT expanded: the webhook then reads the invoice with a pinned-version GET, see invoiceRefs).
+ *    subscription: legacy subscription.current_period_end  |  basil: subscription.items.data[].current_period_end. */
+const idOf = (v: unknown): string | null => (typeof v === 'string' && v ? v : str(asObj(v).id));
+/** The subscription metadata of an invoice, wherever this API version puts it. */
+export const invoiceMetadata = (inv: unknown): Obj => { const o = asObj(inv); return { ...asObj(asObj(o.parent).subscription_details && asObj(asObj(o.parent).subscription_details).metadata), ...asObj(asObj(o.subscription_details).metadata), ...asObj(asObj(asObj(asObj(o.lines).data as unknown[])[0] as Obj).metadata) }; };
+/** subscription id, payment intent id and charge id of an invoice in either shape (null when this rendering does not carry them). */
+export function invoiceRefs(inv: unknown): { subscription: string | null; payment_intent: string | null; charge: string | null; application_fee_amount: number | null; stripe_fee: number | null } {
+  const o = asObj(inv);
+  const pays = Array.isArray(asObj(o.payments).data) ? (asObj(o.payments).data as unknown[]) : [];
+  let pi: string | null = null, ch: string | null = null;
+  for (const x of pays) { const pay = asObj(asObj(x).payment); pi = pi ?? idOf(pay.payment_intent); ch = ch ?? idOf(pay.charge); }
+  const chargeObj = asObj(o.charge);
+  return { subscription: idOf(o.subscription) ?? idOf(asObj(asObj(o.parent).subscription_details).subscription), payment_intent: idOf(o.payment_intent) ?? pi, charge: idOf(o.charge) ?? ch,
+    application_fee_amount: int(chargeObj.application_fee_amount), stripe_fee: int(asObj(chargeObj.balance_transaction).fee) };
+}
 
 const iso = (sec: unknown) => (typeof sec === 'number' && Number.isFinite(sec) ? new Date(sec * 1000).toISOString() : null);
 const ignore = (reason: string): Routed => ({ action: 'ignore', reason });
@@ -89,7 +109,7 @@ export function routeEditionEvent(event: Obj): Routed {
   }
   if (!kind) return ignore('not an Edition object');
   const meta = asObj(obj.metadata);
-  const subMeta = asObj(asObj(obj.subscription_details).metadata);
+  const subMeta = invoiceMetadata(obj);
   const m = { ...subMeta, ...meta };
 
   switch (type) {
@@ -124,8 +144,10 @@ export function routeEditionEvent(event: Obj): Routed {
       const line = asObj((asObj(obj.lines).data as unknown[] | undefined)?.[0]); const period = asObj(line.period);
       const start = iso(period.start), end = iso(period.end);
       if (!mem || !inv || paid === null || !start || !end) return ignore('bad membership invoice');
-      return { action: 'calls', needsChargeDetail: str(obj.charge) ? { chargeId: str(obj.charge)! } : undefined,
-        calls: [{ fn: 'edition_membership_payment_succeeded', args: { p_membership: mem, p_subscription: str(obj.subscription), p_payment_intent: str(obj.payment_intent), p_invoice: inv, p_charge: str(obj.charge), p_period_start: start, p_period_end: end, p_charge_pence: paid, p_stripe_fee: null, p_platform_fee: null } }] };
+      const refs = invoiceRefs(obj);
+      // a rendering without the payment intent or charge (the 2025 shape in an event) is completed by the webhook from a pinned-version read of the invoice BEFORE anything is recorded
+      return { action: 'calls', needsChargeDetail: refs.charge ? { chargeId: refs.charge } : undefined, needsInvoiceDetail: refs.payment_intent && refs.charge ? undefined : { invoiceId: inv },
+        calls: [{ fn: 'edition_membership_payment_succeeded', args: { p_membership: mem, p_subscription: refs.subscription, p_payment_intent: refs.payment_intent, p_invoice: inv, p_charge: refs.charge, p_period_start: start, p_period_end: end, p_charge_pence: paid, p_stripe_fee: null, p_platform_fee: null } }] };
     }
     case 'invoice.payment_failed': {
       if (kind !== 'edition_membership') return ignore('invoice kind');
@@ -137,7 +159,7 @@ export function routeEditionEvent(event: Obj): Routed {
       if (kind !== 'edition_membership') return ignore('subscription kind');
       const mem = uuid(meta.membership_id); if (!mem) return ignore('bad membership id');
       const item = asObj((asObj(obj.items).data as unknown[] | undefined)?.[0]);
-      const end = iso(item.current_period_end ?? obj.current_period_end);
+      const end = iso(obj.current_period_end ?? item.current_period_end);
       return { action: 'calls', calls: [{ fn: 'edition_membership_subscription_changed', args: { p_membership: mem, p_status: type.endsWith('deleted') ? 'canceled' : str(obj.status) ?? 'active', p_cancel_at_period_end: obj.cancel_at_period_end === true, p_period_end: end } }] };
     }
     case 'charge.refunded': {
@@ -228,6 +250,11 @@ export const commissionRefundedCumulative = (commission: number, refundedCumulat
 /** The increase since the last application-fee refund (never negative). */
 export const commissionRefundDelta = (commission: number, refundedCumulative: number, charge: number, alreadyReturned: number): number =>
   Math.max(0, commissionRefundedCumulative(commission, refundedCumulative, charge) - alreadyReturned);
+/**
+ * Allowed difference between the application fee Stripe collected on a membership invoice and the expected F: the flat base (fee_tolerance_pence) + ceil(charge x 0.00005). A subscription fee is a percentage with
+ * at most two decimals (quantum 0.01%); Stripe rounds the collected fee to the nearest penny, so the error is bounded by half that quantum of the invoice: +5p at 1,000.00, +25p at 5,000.00. Same rule as edition_fee_tolerance().
+ */
+export const feeTolerance = (chargePence: number, basePence = 1): number => basePence + Math.ceil(Math.max(chargePence, 0) / 20000);
 /** estimate minus the actual Stripe fee (positive = the organiser was charged more than it cost us). */
 export const recoveryVariance = (recoveryEstimate: number, actualStripeFee: number): number => recoveryEstimate - actualStripeFee;
 

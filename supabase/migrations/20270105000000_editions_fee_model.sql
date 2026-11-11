@@ -222,14 +222,25 @@ begin
   end if;
 end $$;
 
--- the application fee Stripe actually collected, compared with the expected F within a tolerance
-create or replace function public.edition_payment_note_app_fee(p_payment uuid, p_actual integer, p_expected integer) returns void
+-- The allowed difference between the application fee Stripe collected on a MEMBERSHIP invoice and the expected F: the flat base (editions.commerce.fee_tolerance_pence) PLUS ceil(charge x 0.00005).
+-- Why: a subscription fee is a percentage with at most two decimals, so F/C is quantised to 0.01%; Stripe then rounds the collected fee to the nearest penny, so the collected fee can be off by up to half that
+-- quantum of the invoice (0.005%) plus rounding: 1p-ish at 200.00, +5p at 1,000.00, +25p at 5,000.00. A flat 1p would raise false fee_mismatch exceptions on larger awkward prices.
+create or replace function public.edition_fee_tolerance(p_charge_pence integer) returns integer
+language sql stable security definer set search_path = public, pg_temp as $$
+  select public.edition_commerce_cfg('editions.commerce.fee_tolerance_pence', '1')::integer + ceil(greatest(coalesce(p_charge_pence, 0), 0)::numeric / 20000)::integer
+$$;
+
+-- the application fee Stripe actually collected, compared with the expected F within a tolerance. p_charge_pence (membership invoices) scales the tolerance with the invoice; without it the flat base applies (a one-off
+-- participation payment carries the exact fee we sent).
+drop function if exists public.edition_payment_note_app_fee(uuid, integer, integer);
+create or replace function public.edition_payment_note_app_fee(p_payment uuid, p_actual integer, p_expected integer, p_charge_pence integer default null) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare p public.edition_payments%rowtype; v_tol integer := public.edition_commerce_cfg('editions.commerce.fee_tolerance_pence', '1')::integer;
+declare p public.edition_payments%rowtype; v_tol integer;
 begin
   if p_actual is null or p_actual < 0 then return; end if;
   select * into p from public.edition_payments where id = p_payment for update;
   if not found then return; end if;
+  v_tol := case when p_charge_pence is not null then public.edition_fee_tolerance(p_charge_pence) else public.edition_commerce_cfg('editions.commerce.fee_tolerance_pence', '1')::integer end;
   update public.edition_payments set application_fee_actual_pence = p_actual where id = p.id;
   if abs(p_actual - coalesce(p_expected, p.platform_fee_pence)) > v_tol then
     insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail)
@@ -297,7 +308,7 @@ begin
     v_pay := public.edition_record_payment_row(m.organiser_id, m.business_id, 'membership', m.id, 'stripe', 'succeeded', b.price_pence, b.vat_pence, b.vat_mode, v_fee, b.charge_pence,
       b.charge_pence - v_fee, p_payment_intent, p_invoice, p_charge, p_period_start, p_period_end, null, null, m.owner_user_id, null, null);
     update public.edition_payments set commission_pence = v_comm, recovery_estimate_pence = v_fee - v_comm where id = v_pay;
-    if p_platform_fee is not null then perform public.edition_payment_note_app_fee(v_pay, p_platform_fee, b.platform_fee_pence); end if;
+    if p_platform_fee is not null then perform public.edition_payment_note_app_fee(v_pay, p_platform_fee, b.platform_fee_pence, b.charge_pence); end if;
     if p_stripe_fee is not null then perform public.edition_payment_note_stripe_fee(v_pay, p_stripe_fee); end if;
     insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail) values (m.organiser_id, 'duplicate_subscription', coalesce(p_invoice, p_payment_intent), v_pay,
       jsonb_build_object('membership', m.id, 'kept', m.stripe_subscription_id, 'extra', p_subscription, 'charge', p_charge_pence)) on conflict do nothing;
@@ -308,7 +319,7 @@ begin
   v_pay := public.edition_record_payment_row(m.organiser_id, m.business_id, 'membership', m.id, 'stripe', 'succeeded', b.price_pence, b.vat_pence, b.vat_mode, v_fee, b.charge_pence,
     b.charge_pence - v_fee, p_payment_intent, p_invoice, p_charge, p_period_start, p_period_end, null, null, m.owner_user_id, null, null);
   update public.edition_payments set commission_pence = v_comm, recovery_estimate_pence = v_fee - v_comm where id = v_pay;
-  if p_platform_fee is not null then perform public.edition_payment_note_app_fee(v_pay, p_platform_fee, b.platform_fee_pence); end if;
+  if p_platform_fee is not null then perform public.edition_payment_note_app_fee(v_pay, p_platform_fee, b.platform_fee_pence, b.charge_pence); end if;
   if p_stripe_fee is not null then perform public.edition_payment_note_stripe_fee(v_pay, p_stripe_fee); end if;
   if v_dead then
     -- A payment arrived for a membership that has been cancelled, withdrawn or declined (the provider kept billing). The money is recorded in the ledger so nothing is lost, the membership is
@@ -554,7 +565,7 @@ end $$;
 -- p_snapshot items (all optional beyond payment_intent/amount): { payment_intent, amount, application_fee, refunded, destination, status, marked, stripe_fee, application_fee_refunded, transfer_amount, transfer_reversed }
 create or replace function public.edition_reconcile_apply(p_snapshot jsonb, p_from timestamptz, p_to timestamptz) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare s jsonb; p public.edition_payments%rowtype; a text; v_n int := 0; v_seen text[] := '{}'; v_pi text; v_tol integer := public.edition_commerce_cfg('editions.commerce.fee_tolerance_pence', '1')::integer; v_busy boolean;
+declare s jsonb; p public.edition_payments%rowtype; a text; v_n int := 0; v_seen text[] := '{}'; v_pi text; v_tol integer := public.edition_commerce_cfg('editions.commerce.fee_tolerance_pence', '1')::integer; v_busy boolean; v_before integer;
 begin
   if jsonb_typeof(coalesce(p_snapshot, '[]'::jsonb)) <> 'array' then raise exception 'snapshot must be an array' using errcode = '22023'; end if;
   for s in select * from jsonb_array_elements(p_snapshot) loop
@@ -567,12 +578,27 @@ begin
     end if;
     if (s ->> 'amount')::int is distinct from p.charge_pence then insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail) values (p.organiser_id, 'amount_mismatch', v_pi, p.id, jsonb_build_object('provider', s ->> 'amount', 'ledger', p.charge_pence)) on conflict do nothing; v_n := v_n + 1; end if;
     if s ? 'application_fee' then
-      if abs((s ->> 'application_fee')::int - p.platform_fee_pence) > v_tol then insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail) values (p.organiser_id, 'fee_mismatch', v_pi, p.id, jsonb_build_object('provider', s ->> 'application_fee', 'ledger', p.platform_fee_pence, 'tolerance', v_tol)) on conflict do nothing; v_n := v_n + 1; end if;
+      if abs((s ->> 'application_fee')::int - p.platform_fee_pence) > (case when p.kind = 'membership' then public.edition_fee_tolerance(p.charge_pence) else v_tol end) then insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail) values (p.organiser_id, 'fee_mismatch', v_pi, p.id, jsonb_build_object('provider', s ->> 'application_fee', 'ledger', p.platform_fee_pence, 'tolerance', case when p.kind = 'membership' then public.edition_fee_tolerance(p.charge_pence) else v_tol end)) on conflict do nothing; v_n := v_n + 1; end if;
       if p.application_fee_actual_pence is null then update public.edition_payments set application_fee_actual_pence = (s ->> 'application_fee')::int where id = p.id; end if;
     end if;
     -- Stripe's actual processing fee arrives here if the webhook could not read it: the variance (estimate minus actual) is computed and a large one raised
     if s ? 'stripe_fee' and s ->> 'stripe_fee' is not null and p.stripe_fee_pence is null then perform public.edition_payment_note_stripe_fee(p.id, (s ->> 'stripe_fee')::int); end if;
-    if s ? 'refunded' and (s ->> 'refunded')::int is distinct from p.refunded_pence then insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail) values (p.organiser_id, 'refund_mismatch', v_pi, p.id, jsonb_build_object('provider', s ->> 'refunded', 'ledger', p.refunded_pence)) on conflict do nothing; v_n := v_n + 1; end if;
+    if s ? 'refunded' and (s ->> 'refunded')::int is distinct from p.refunded_pence then
+      if (s ->> 'refunded')::int > p.refunded_pence and (s ->> 'refunded')::int <= p.charge_pence then
+        -- REPAIR: Stripe has refunded more than the ledger knows (a charge.refunded event that arrived before its payment was recorded, or a refund made outside our queue). Apply Stripe's CUMULATIVE total through the
+        -- normal idempotent path. No commission refund is invented for money that did not go through our refund queue: commission_refunded stays as recorded. The exception is kept as an already-resolved record.
+        v_before := p.refunded_pence;
+        perform public.edition_payment_refunded(v_pi, (s ->> 'refunded')::int);
+        select * into p from public.edition_payments where id = p.id;
+        insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail, status, resolved_at, note)
+        values (p.organiser_id, 'refund_mismatch', v_pi, p.id, jsonb_build_object('provider', s ->> 'refunded', 'ledger_before', v_before, 'repaired', true, 'external_or_out_of_order', true,
+          'commission_refunded_unchanged', p.commission_refunded_pence, 'note', 'refund applied from Stripe''s cumulative total; it did not go through the refund queue (external or out of order), so no commission refund was made'), 'resolved', now(), 'repaired automatically by reconciliation')
+        on conflict do nothing;
+      else
+        insert into public.edition_reconciliation_exceptions (organiser_id, kind, provider_ref, payment_id, detail) values (p.organiser_id, 'refund_mismatch', v_pi, p.id, jsonb_build_object('provider', s ->> 'refunded', 'ledger', p.refunded_pence)) on conflict do nothing;
+      end if;
+      v_n := v_n + 1;
+    end if;
     -- anything still in flight (a refund or a recovery that has not completed) would show a transient difference: compare the money-back figures only when nothing is pending for this payment
     v_busy := exists (select 1 from public.edition_refund_requests r where r.payment_id = p.id and (r.status in ('pending', 'submitted') or r.commission_refund_status = 'pending'))
            or exists (select 1 from public.edition_dispute_recoveries d where d.payment_id = p.id and (d.status = 'pending' or d.commission_refund_status = 'pending' or d.state = 'open'));
@@ -713,7 +739,7 @@ grant select on public.edition_dispute_recoveries to authenticated;
 do $$ declare f text; begin
   foreach f in array array[
     'edition_fee_parts(text,integer,uuid)', 'edition_fee_calc(text,integer,uuid)', 'edition_commission_rates()', 'edition_charge_breakdown(text,integer,text,uuid)', 'edition_payments_guard()', 'edition_payments_parts_default()',
-    'edition_payment_note_stripe_fee(uuid,integer)', 'edition_payment_note_app_fee(uuid,integer,integer)', 'edition_participation_payment_succeeded(uuid,text,text,integer,integer,integer)',
+    'edition_payment_note_stripe_fee(uuid,integer)', 'edition_payment_note_app_fee(uuid,integer,integer,integer)', 'edition_fee_tolerance(integer)', 'edition_participation_payment_succeeded(uuid,text,text,integer,integer,integer)',
     'edition_membership_payment_succeeded(uuid,text,text,text,text,timestamptz,timestamptz,integer,integer,integer)', 'edition_refund_request_before()', 'edition_commission_plan_pending()',
     'edition_commission_refunds_next()', 'edition_commission_refund_mark(uuid,text,text)', 'edition_dispute_event(text,text,text,text,integer,integer,text)', 'edition_dispute_recoveries_next()',
     'edition_dispute_recovery_mark(text,text,text,text)', 'edition_dispute_commission_next()', 'edition_dispute_commission_mark(text,text,text)', 'admin_retry_edition_dispute_recovery(text,text)',

@@ -141,7 +141,9 @@ serve(async (req) => {
       const snapshot: unknown[] = []; const orderCharges: { payment_intent: string; amount: number; refunded: number; paid: boolean }[] = []; let startingAfter = '';
       for (let page = 0; page < 20; page++) {
         const q = new URLSearchParams({ limit: '100', 'created[gte]': String(from), 'created[lte]': String(to) }); for (const x of ['data.balance_transaction', 'data.application_fee', 'data.transfer']) q.append('expand[]', x); if (startingAfter) q.set('starting_after', startingAfter);
-        const r = await fetch(`https://api.stripe.com/v1/charges?${q}`, { headers: { Authorization: `Bearer ${stripeKey}` } }); const j = await r.json(); if (!r.ok) throw new Error(j.error?.message);
+        // pinned to 2023-10-16: the legacy shape (charge.invoice) that the marker test below reads
+        const r = await fetch(`https://api.stripe.com/v1/charges?${q}`, { headers: { Authorization: `Bearer ${stripeKey}`, 'Stripe-Version': '2023-10-16' } });
+        const j = await r.json(); if (!r.ok) throw new Error(j.error?.message);
         // Edition-marked charges, plus subscription invoice charges (which carry no marker on the charge itself); the database ignores unmarked ones it does not know.
         for (const c of j.data) {
           // package orders are held in edition_orders (not the payments ledger): compared separately below

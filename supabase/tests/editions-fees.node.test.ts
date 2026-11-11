@@ -198,12 +198,26 @@ describe('membership invoices: percentage conversion, tolerance, rounding varian
     }
     assert.equal(exc('fee_mismatch', 'in_r'), '0', 'no exception for rounding inside tolerance');
     memSucceed(M, 'in_off1', 1000, '36', '56'); assert.equal(exc('fee_mismatch', 'in_off1'), '0', '+1p is inside the tolerance');
-    memSucceed(M, 'in_off2', 1000, '36', '57'); assert.equal(exc('fee_mismatch', 'in_off2'), '1', '+2p is beyond it');
-    assert.equal(row(`select detail->>'provider' || '|' || (detail->>'computed') || '|' || (detail->>'tolerance') from edition_reconciliation_exceptions where provider_ref='in_off2' and kind='fee_mismatch'`), '57|55|1');
-    assert.equal(pp('in_off2', `commission_pence || '|' || recovery_estimate_pence`), '20|37', 'parts always sum to the recorded fee: the residue sits in the estimate');
+    memSucceed(M, 'in_off2', 1000, '36', '58'); assert.equal(exc('fee_mismatch', 'in_off2'), '1', '+3p is beyond the 1p base + ceil(1000 x 0.00005) = 2p allowed');
+    assert.equal(row(`select detail->>'provider' || '|' || (detail->>'computed') || '|' || (detail->>'tolerance') from edition_reconciliation_exceptions where provider_ref='in_off2' and kind='fee_mismatch'`), '58|55|2');
+    assert.equal(pp('in_off2', `commission_pence || '|' || recovery_estimate_pence`), '20|38', 'parts always sum to the recorded fee: the residue sits in the estimate');
   });
   test('the tolerance is configurable', () => {
-    cfg('editions.commerce.fee_tolerance_pence', '3'); memSucceed(M, 'in_tol', 1000, '36', '58'); assert.equal(exc('fee_mismatch', 'in_tol'), '0'); cfg('editions.commerce.fee_tolerance_pence', '1');
+    cfg('editions.commerce.fee_tolerance_pence', '3'); memSucceed(M, 'in_tol', 1000, '36', '59'); assert.equal(exc('fee_mismatch', 'in_tol'), '0', 'base 3 + 1 = 4'); cfg('editions.commerce.fee_tolerance_pence', '1');
+  });
+  test('the tolerance scales with the invoice: the six measured real-Stripe cases are within it; a clearly wrong fee still raises fee_mismatch', () => {
+    const tol = (c: number) => Number(row(`select public.edition_fee_tolerance(${c})`));
+    assert.deepEqual([2500, 25000, 100000, 123456, 500000].map(tol), [2, 3, 6, 8, 26], 'base 1 + ceil(charge/20000)');
+    for (const [charge, F, collected] of [[2500, 108, 108], [25000, 895, 895], [100000, 3520, 3520], [20362, 732, 731], [30323, 1081, 1079], [123456, 4341, 4346]] as const) {
+      assert.equal(C.feeParts(charge, CFG).fee, F, `F at ${charge}`); assert.ok(Math.abs(collected - F) <= tol(charge), `${charge}: |${collected}-${F}| within ${tol(charge)}`); assert.equal(C.feeTolerance(charge), tol(charge), 'pure helper equals SQL');
+    }
+    assert.ok(Math.abs(4346 - 4341) > 1, 'the old flat 1p would have raised a false exception here');
+    const t25 = last(E.do('OWNER', `select public.edition_tier_save('${ORG}', null, 'ZZ Fee Twenty Five', 'd', '[]'::jsonb, 2500, null, false, 'none', 'open', 'none', null, null, 1)`));
+    const apply = (tier: string, name: string) => { const bz = last(E.sup(`insert into local_businesses (owner_id, name, category, address, is_active) values ('${USERS.STRANGER}', '${name}', 'retail', 'x', true) returning id`)); return last(E.do('STRANGER', `select public.edition_membership_apply('${tier}', '${bz}', 'monthly')`)); };
+    const m1 = apply(t25, 'ZZ Fee Tol A'), m2 = apply(t25, 'ZZ Fee Tol B');
+    memSucceed(m1, 'in_t25a', 2500, '36', '108'); assert.equal(exc('fee_mismatch', 'in_t25a'), '0');
+    memSucceed(m2, 'in_t25b', 2500, '36', '118'); assert.equal(exc('fee_mismatch', 'in_t25b'), '1', '10p off on a 25.00 invoice is clearly wrong');
+    assert.equal(row(`select detail->>'tolerance' from edition_reconciliation_exceptions where provider_ref='in_t25b' and kind='fee_mismatch'`), '2');
   });
   test('an invoice for a different amount (proration, coupon, tier change) is refused and nothing is recorded; no ledger row, no fee', () => {
     const n = row(`select count(*) from edition_payments`);
@@ -393,6 +407,30 @@ describe('reconciliation and the variance report', () => {
     rec([{ payment_intent: 'pi_f2', amount: 2000, application_fee: f + 5, refunded: 0, destination: 'acct_fee_1', status: 'succeeded' }]);
     rec([{ payment_intent: 'pi_f2', amount: 2000, application_fee: f + 5, refunded: 0, destination: 'acct_fee_1', status: 'succeeded' }]);
     assert.equal(exc('fee_mismatch', 'pi_f2'), '1', 'one open exception per kind and reference');
+  });
+  test('refund drift is REPAIRED: Stripe refunded more than the ledger knows (event out of order or external): the cumulative total is applied once, no commission refund is invented, the exception is kept as a resolved record', () => {
+    const snap = (refunded: number) => [{ payment_intent: 'pi_f2', amount: 2000, refunded, destination: 'acct_fee_1', status: 'succeeded' }];
+    const before = pp('pi_f2', `commission_refunded_pence || '|' || refunded_pence`); assert.equal(before, '0|0');
+    rec(snap(700));
+    assert.equal(pp('pi_f2', `status || '|' || refunded_pence || '|' || commission_refunded_pence`), 'partially_refunded|700|0');
+    assert.equal(row(`select status || '|' || (detail->>'repaired') || '|' || (detail->>'external_or_out_of_order') || '|' || (detail->>'ledger_before') || '|' || (detail->>'provider') from edition_reconciliation_exceptions where kind='refund_mismatch' and provider_ref='pi_f2'`), 'resolved|true|true|0|700');
+    rec(snap(700)); rec(snap(700));
+    assert.equal(row(`select count(*) from edition_reconciliation_exceptions where kind='refund_mismatch' and provider_ref='pi_f2'`), '1', 'idempotent: a repeat changes nothing and adds nothing');
+    rec(snap(2000)); assert.equal(pp('pi_f2', `status || '|' || refunded_pence || '|' || commission_refunded_pence`), 'refunded|2000|0', 'cumulative to full; commission refunded stays as recorded');
+    assert.equal(row(`select count(*) from edition_participations where payment_id='${pay('pi_f2')}' and status='refunded'`), '1');
+  });
+  test('drift that cannot be repaired stays an open exception: Stripe refunded LESS than the ledger, or more than the charge', () => {
+    rec([{ payment_intent: 'pi_d2', amount: 2000, refunded: 100, destination: 'acct_fee_1', status: 'succeeded' }]);
+    assert.equal(row(`select e.status || '|' || p.refunded_pence from edition_reconciliation_exceptions e join edition_payments p on p.id = e.payment_id where e.kind='refund_mismatch' and e.provider_ref='pi_d2'`), 'open|600');
+    rec([{ payment_intent: 'pi_d1', amount: 2000, refunded: 9000, destination: 'acct_fee_1', status: 'succeeded' }]);
+    assert.equal(row(`select count(*) from edition_reconciliation_exceptions where kind='refund_mismatch' and provider_ref='pi_d1' and status='open'`), '1'); assert.equal(pp('pi_d1', 'refunded_pence'), '0');
+  });
+  test('reconcile applies the scaled tolerance to MEMBERSHIP fees only (participation stays flat)', () => {
+    E.sup(`update edition_payments set platform_fee_pence = 108 where stripe_invoice_id='in_t25a'`);   // fixture: ledger fee at the expected figure
+    rec([{ payment_intent: 'pi_in_t25a', amount: 2500, application_fee: 110, destination: 'acct_fee_1', status: 'succeeded' }]);
+    assert.equal(exc('fee_mismatch', 'in_t25a'), '0', '2p off on 25.00 is inside 1 + ceil(25.00 x 0.00005) = 2p');
+    rec([{ payment_intent: 'pi_in_t25a', amount: 2500, application_fee: 111, destination: 'acct_fee_1', status: 'succeeded' }]);
+    assert.equal(exc('fee_mismatch', 'pi_in_t25a'), '1', '3p off is beyond it');
   });
   test('commission refunded, transfer and reversal totals are compared when nothing is in flight', () => {
     const pi = 'pi_f1';   // fully refunded: commission refunded 40, reversed 2000, transfer 2000
