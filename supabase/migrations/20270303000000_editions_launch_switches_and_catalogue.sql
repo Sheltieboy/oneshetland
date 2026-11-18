@@ -1,5 +1,9 @@
 -- Editions launch, stage 1: the two switches, a catalogue an administrator can actually run, and the free introductory package.
 --
+-- NUMBERING. Dated 2027-03-03 because the Editions work was written in January but production has since applied 20270201000000,
+-- 20270202000000 and 20270302000000. A migration numbered before the last applied one makes `supabase db push` refuse and offer
+-- `--include-all`; numbered after it, the push is ordinary. Verified by dry run: exactly this one file, no flags.
+--
 -- WHY. The Editions journey is complete in code but an organiser cannot finish it, because nothing downstream of "choose a package" is reachable:
 -- no Edition package has ever been active, and none has ever been free. The only way past is an administrator granting a publish entitlement by
 -- hand, which bypasses edition_fulfil_order — and edition_fulfil_order is also the only thing that creates promotion rights from a package's
@@ -19,6 +23,16 @@
 --
 -- NOTE ON SCOPE. admin_set_edition_commerce_config is deliberately NOT re-created. It carries ~25 validation branches and the launch switches are
 -- not commerce settings; re-stating it to add two lines risks silently dropping a rule. The switches get their own small setter below.
+
+-- ── 0. what public visibility is RIGHT NOW ─────────────────────────────────────────────────────────────────────────────────────────────────────
+--
+-- This migration never writes editions.enabled. That is easy to assert and hard to prove, so the value is captured here, before anything else
+-- runs, and checked against itself at the end. If a future edit ever reaches that key by accident, this migration refuses to finish.
+-- `preserve rows`, not `on commit drop`: db push runs a migration inside one transaction, but a plain psql run commits each
+-- statement, and an `on commit drop` table would be gone before the post-check reads it. This survives either way.
+drop table if exists _editions_enabled_before;
+create temp table _editions_enabled_before on commit preserve rows as
+  select coalesce((select c.value from public.admin_config c where c.key = 'editions.enabled'), '<unset>') as v;
 
 -- ── 1. new organiser access, its own switch ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -134,6 +148,10 @@ do $$
 declare n integer;
 begin
   if public.editions_signup_open() then raise exception 'post-check: new organiser access must be closed after this migration'; end if;
+  -- public visibility is exactly what it was when this migration started
+  if (select v from _editions_enabled_before) is distinct from coalesce((select c.value from public.admin_config c where c.key = 'editions.enabled'), '<unset>') then
+    raise exception 'post-check: this migration must not change public visibility (editions.enabled)';
+  end if;
   select count(*) into n from public.edition_packages where code = 'community_launch' and active;
   if n <> 0 then raise exception 'post-check: Community Launch must be added switched off'; end if;
   select count(*) into n from public.edition_packages where code = 'community_launch' and is_free and price_pence = 0 and duration_days = 365 and grants = '{}'::jsonb;

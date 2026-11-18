@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Proves 20270106000000_editions_launch_switches_and_catalogue.sql against a THROWAWAY PostgreSQL. Touches nothing real.
+# Proves 20270303000000_editions_launch_switches_and_catalogue.sql against a THROWAWAY PostgreSQL. Touches nothing real.
 #
 # It extracts the four real objects from the migration file — it never retypes them — and runs them against the smallest schema they need, with
 # stubs for the surrounding Editions functions. What it pins:
@@ -23,7 +23,7 @@ command -v postgres >/dev/null || { echo "no PostgreSQL server on PATH (brew ins
 export LC_ALL=C LANG=C
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-MIG="$HERE/../../migrations/20270106000000_editions_launch_switches_and_catalogue.sql"
+MIG="$HERE/../../migrations/20270303000000_editions_launch_switches_and_catalogue.sql"
 [ -f "$MIG" ] || { echo "migration not found: $MIG"; exit 1; }
 
 export PGDATA="$(mktemp -d)/pg" PGPORT="${PGPORT:-55439}" PGHOST=localhost PGDATABASE=postgres PGUSER=postgres
