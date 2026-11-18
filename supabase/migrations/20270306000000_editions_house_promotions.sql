@@ -192,9 +192,15 @@ begin
   v_cap := public.edition_promo_cfg_int('editions.promo.homepage_capacity', 3);
   if v_lim <> 14 then raise exception 'post-check: the homepage fairness limit changed (now %)', v_lim; end if;
   if v_cap <> 3 then raise exception 'post-check: the homepage capacity changed (now %)', v_cap; end if;
-  -- nobody is house until an administrator says so, and no existing right became a house right
-  if exists (select 1 from public.edition_organisers where is_house) then raise exception 'post-check: an organiser is already marked as house'; end if;
-  if exists (select 1 from public.edition_promo_rights where is_house) then raise exception 'post-check: an existing promotion right was marked as house'; end if;
+  -- Nobody is house until an administrator says so, and no existing right silently became a house right. Both are
+  -- checked only while no administrator has ever used the feature, so that re-running this migration after it has
+  -- been used in earnest does not fail on its own correct data.
+  if exists (select 1 from public.edition_organisers where is_house)
+     and not exists (select 1 from public.edition_audit_log where action = 'organiser_house_set') then
+    raise exception 'post-check: an organiser is already marked as house'; end if;
+  if exists (select 1 from public.edition_promo_rights where is_house)
+     and not exists (select 1 from public.edition_audit_log where action = 'promo_house_featured') then
+    raise exception 'post-check: an existing promotion right was marked as house'; end if;
   -- anon must not reach any of it
   if has_function_privilege('anon', 'public.admin_promo_feature_house(uuid,text,date,integer,text)', 'execute') then raise exception 'post-check: anon must not execute admin_promo_feature_house'; end if;
   if has_function_privilege('anon', 'public.admin_set_edition_organiser_house(uuid,boolean,text)', 'execute') then raise exception 'post-check: anon must not execute admin_set_edition_organiser_house'; end if;
