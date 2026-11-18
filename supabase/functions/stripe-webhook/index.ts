@@ -1,3 +1,4 @@
+import { isEditionObject } from '../_shared/editions-commerce-core.ts';
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getConfig } from '../_shared/admin-config.ts';
@@ -288,6 +289,17 @@ serve(async (req) => {
   const eventData = (event.data as Record<string, unknown>)?.object as Record<string, unknown>;
 
   console.log(`[stripe-webhook] Received: ${eventType} (${eventId})`);
+
+  // ── Editions commerce is NOT handled here ────────────────────────────────
+  //
+  // Organiser memberships, participation fees and Edition packages have their own endpoint, signing secret and tables (editions-stripe-webhook).
+  // The objects carry metadata.kind = edition_*; this endpoint receives every event on the platform account, so it must leave them alone — above all
+  // customer.subscription.* and invoice.* , which this handler maps onto BUSINESS tiers. Acknowledge and touch nothing. (Contract test:
+  // supabase/functions/_shared/editions-commerce-core.node.test.ts.)
+  if (isEditionObject(eventType, eventData)) {
+    console.log(`[stripe-webhook] ${eventId} belongs to Editions — ignored here`);
+    return new Response(JSON.stringify({ received: true, ignored: 'edition' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
 
   // ── Claim this event id before doing anything with it ────────────────────
   //

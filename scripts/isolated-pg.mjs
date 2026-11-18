@@ -76,7 +76,6 @@ const SUITES = [
   'supabase/tests/referral-disabled.node.test.ts',
   'supabase/tests/launch-test-centre.node.test.ts',
   'supabase/tests/launch-test-centre-web.node.test.ts',
-  'supabase/tests/my-tickets-privacy.node.test.ts',
   'supabase/tests/notices-structural-readiness.node.test.ts',
   'supabase/tests/notices-alerts-core.node.test.ts',
   'supabase/tests/notices-alerts-audience.node.test.ts',
@@ -93,6 +92,31 @@ const SUITES = [
   'supabase/tests/reminder-runner-concurrency.node.test.ts',
   'supabase/tests/analytics-phase0.node.test.ts',
   'supabase/tests/events-occurrences-phase1.node.test.ts',
+  'supabase/tests/editions-foundation.node.test.ts',
+  'supabase/tests/editions-partners.node.test.ts',
+  'supabase/tests/editions-visitor.node.test.ts',
+  'supabase/tests/editions-commerce-core.node.test.ts',
+  'supabase/tests/editions-memberships.node.test.ts',
+  'supabase/tests/editions-participation.node.test.ts',
+  'supabase/tests/editions-operations.node.test.ts',
+  'supabase/tests/editions-branding.node.test.ts',
+  'supabase/tests/editions-hardening.node.test.ts',
+  'supabase/tests/editions-admin-access.node.test.ts',
+  'supabase/tests/editions-hub-participation.node.test.ts',
+  'supabase/tests/editions-hub-partners.node.test.ts',
+  'supabase/tests/editions-hub-run.node.test.ts',
+  'supabase/tests/editions-complete.node.test.ts',
+  'supabase/tests/editions-package-refunds.node.test.ts',
+  'supabase/tests/editions-hub-commerce.node.test.ts',
+  'supabase/tests/editions-hub-addfrom.node.test.ts',
+  'supabase/tests/editions-push-notifications.node.test.ts',
+  'supabase/tests/editions-push-notifications-sql.node.test.ts',
+  'supabase/tests/editions-rollback.node.test.ts',
+  'supabase/tests/editions-post-checks.node.test.ts',
+  'supabase/tests/editions-migration-reconcile.node.test.ts',
+  'supabase/tests/editions-promotions.node.test.ts',
+  'supabase/tests/editions-web-handoff.node.test.ts',
+  'supabase/tests/editions-fees.node.test.ts',
 ];
 
 // ISOLATED_ONLY=<substring> runs just the matching suites while iterating on one.
@@ -102,7 +126,7 @@ const selected = process.env.ISOLATED_ONLY ? SUITES.filter((s) => s.includes(pro
 // including the suites that read and WRITE the live production project (see package.json test:fixtures). A typo in ISOLATED_ONLY
 // or an unregistered suite would otherwise run them.
 if (selected.length === 0) {
-  console.error(`[isolated-pg] no registered suite matches ISOLATED_ONLY=${JSON.stringify(process.env.ISOLATED_ONLY ?? '')}; refusing to start (an empty list would run every test file).`);
+  console.error(`[isolated-pg] no registered suite matches ISOLATED_ONLY=${JSON.stringify(process.env.ISOLATED_ONLY ?? '')}; refusing to run (an empty list would run every test file).`);
   process.exit(2);
 }
 

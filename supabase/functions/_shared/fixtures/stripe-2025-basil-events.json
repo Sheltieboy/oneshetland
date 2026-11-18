@@ -1,0 +1,206 @@
+{
+ "invoice.paid": {
+  "id": "evt_1Uaf0yCCZSiMQBCgZWpEN5cJ",
+  "type": "invoice.paid",
+  "api_version": "2025-08-27.basil",
+  "data": {
+   "object": {
+    "id": "in_1Uaf0fCCZSiMQBCgeKMbrnH4",
+    "object": "invoice",
+    "amount_paid": 100000,
+    "billing_reason": "subscription_cycle",
+    "status": "paid",
+    "parent": {
+     "quote_details": null,
+     "subscription_details": {
+      "metadata": {
+       "business_id": "96a036c7-1728-4dc3-82c7-20be8f04430c",
+       "kind": "edition_membership",
+       "membership_id": "cac04d16-f254-45cc-aff8-132d766931f7",
+       "oneshetland_test_run": "tr-202611111706b",
+       "organiser_id": "584f5676-f1e2-43e3-b9f1-ae747cdfadd4",
+       "tier_id": "b29c47de-1637-4e3a-b99b-238032ee822b"
+      },
+      "subscription": "sub_1UaezpCCZSiMQBCgzOKFbQsN"
+     },
+     "type": "subscription_details"
+    },
+    "lines": {
+     "data": [
+      {
+       "period": {
+        "end": 1802365642,
+        "start": 1799687242
+       },
+       "metadata": {
+        "business_id": "96a036c7-1728-4dc3-82c7-20be8f04430c",
+        "kind": "edition_membership",
+        "membership_id": "cac04d16-f254-45cc-aff8-132d766931f7",
+        "oneshetland_test_run": "tr-202611111706b",
+        "organiser_id": "584f5676-f1e2-43e3-b9f1-ae747cdfadd4",
+        "tier_id": "b29c47de-1637-4e3a-b99b-238032ee822b"
+       }
+      }
+     ]
+    }
+   }
+  }
+ },
+ "invoice.payment_succeeded": {
+  "id": "evt_1Uaf0yCCZSiMQBCgW3t7DJzE",
+  "type": "invoice.payment_succeeded",
+  "api_version": "2025-08-27.basil",
+  "data": {
+   "object": {
+    "id": "in_1Uaf0fCCZSiMQBCgeKMbrnH4",
+    "object": "invoice",
+    "amount_paid": 100000,
+    "billing_reason": "subscription_cycle",
+    "status": "paid",
+    "parent": {
+     "quote_details": null,
+     "subscription_details": {
+      "metadata": {
+       "business_id": "96a036c7-1728-4dc3-82c7-20be8f04430c",
+       "kind": "edition_membership",
+       "membership_id": "cac04d16-f254-45cc-aff8-132d766931f7",
+       "oneshetland_test_run": "tr-202611111706b",
+       "organiser_id": "584f5676-f1e2-43e3-b9f1-ae747cdfadd4",
+       "tier_id": "b29c47de-1637-4e3a-b99b-238032ee822b"
+      },
+      "subscription": "sub_1UaezpCCZSiMQBCgzOKFbQsN"
+     },
+     "type": "subscription_details"
+    },
+    "lines": {
+     "data": [
+      {
+       "period": {
+        "end": 1802365642,
+        "start": 1799687242
+       },
+       "metadata": {
+        "business_id": "96a036c7-1728-4dc3-82c7-20be8f04430c",
+        "kind": "edition_membership",
+        "membership_id": "cac04d16-f254-45cc-aff8-132d766931f7",
+        "oneshetland_test_run": "tr-202611111706b",
+        "organiser_id": "584f5676-f1e2-43e3-b9f1-ae747cdfadd4",
+        "tier_id": "b29c47de-1637-4e3a-b99b-238032ee822b"
+       }
+      }
+     ]
+    }
+   }
+  }
+ },
+ "customer.subscription.updated": {
+  "id": "evt_1Uaf0gCCZSiMQBCgEBlDd5gx",
+  "type": "customer.subscription.updated",
+  "api_version": "2025-08-27.basil",
+  "data": {
+   "object": {
+    "id": "sub_1UaezpCCZSiMQBCgzOKFbQsN",
+    "object": "subscription",
+    "status": "active",
+    "cancel_at_period_end": false,
+    "metadata": {
+     "business_id": "96a036c7-1728-4dc3-82c7-20be8f04430c",
+     "kind": "edition_membership",
+     "membership_id": "cac04d16-f254-45cc-aff8-132d766931f7",
+     "oneshetland_test_run": "tr-202611111706b",
+     "organiser_id": "584f5676-f1e2-43e3-b9f1-ae747cdfadd4",
+     "tier_id": "b29c47de-1637-4e3a-b99b-238032ee822b"
+    },
+    "items": {
+     "data": [
+      {
+       "id": "si_VbslFsPTCI9atO",
+       "current_period_start": 1799687242,
+       "current_period_end": 1802365642
+      }
+     ]
+    }
+   }
+  }
+ },
+ "customer.subscription.deleted": {
+  "id": "evt_1Uaf1YCCZSiMQBCgF9Z1EjoE",
+  "type": "customer.subscription.deleted",
+  "api_version": "2025-08-27.basil",
+  "data": {
+   "object": {
+    "id": "sub_1UaezaCCZSiMQBCgZDJl7qIi",
+    "object": "subscription",
+    "status": "canceled",
+    "cancel_at_period_end": false,
+    "metadata": {
+     "business_id": "5d862796-4412-4822-bd00-b49ca3249e5a",
+     "kind": "edition_membership",
+     "membership_id": "0df07508-22c2-422b-8173-6b4c00c407fb",
+     "oneshetland_test_run": "tr-202611111706b",
+     "organiser_id": "584f5676-f1e2-43e3-b9f1-ae747cdfadd4",
+     "tier_id": "956a469a-3d90-49b5-9051-37c684ff699a"
+    },
+    "items": {
+     "data": [
+      {
+       "id": "si_VbslkliGbh55Y5",
+       "current_period_start": 1799687242,
+       "current_period_end": 1802365642
+      }
+     ]
+    }
+   }
+  }
+ },
+ "charge.refunded": {
+  "id": "evt_3Uaf3CCCZSiMQBCg0scjD5WI",
+  "type": "charge.refunded",
+  "api_version": "2025-08-27.basil",
+  "data": {
+   "object": {
+    "id": "ch_3Uaf3CCCZSiMQBCg06f6yK13",
+    "object": "charge",
+    "amount": 2500,
+    "amount_refunded": 1000,
+    "payment_intent": "pi_3Uaf3CCCZSiMQBCg0xJTZixU",
+    "metadata": {
+     "business_id": "634ddb43-63df-4d08-aae4-0cee606b919a",
+     "buyer_id": "50302c31-8351-414d-ac97-299ffb8eb522",
+     "edition_id": "b35d9848-0fe0-4445-959a-c6583b93fdb3",
+     "kind": "edition_participation",
+     "link_id": "4ac3841b-44c9-465e-8107-c881d77f79d7",
+     "oneshetland_test_run": "tr-202611111706b",
+     "organiser_id": "4b8f5f33-0e0b-4993-bd92-c7143dd5cd1f"
+    },
+    "application_fee": "fee_1Uaf3EC9j2Wv69jbFZRD5UbC",
+    "transfer": "tr_3Uaf3CCCZSiMQBCg0zl6s0TG",
+    "status": "succeeded"
+   }
+  }
+ },
+ "payment_intent.succeeded": {
+  "id": "evt_3Uaf3CCCZSiMQBCg0ZQA9brb",
+  "type": "payment_intent.succeeded",
+  "api_version": "2025-08-27.basil",
+  "data": {
+   "object": {
+    "id": "pi_3Uaf3CCCZSiMQBCg0xJTZixU",
+    "object": "payment_intent",
+    "amount": 2500,
+    "amount_received": 2500,
+    "latest_charge": "ch_3Uaf3CCCZSiMQBCg06f6yK13",
+    "metadata": {
+     "business_id": "634ddb43-63df-4d08-aae4-0cee606b919a",
+     "buyer_id": "50302c31-8351-414d-ac97-299ffb8eb522",
+     "edition_id": "b35d9848-0fe0-4445-959a-c6583b93fdb3",
+     "kind": "edition_participation",
+     "link_id": "4ac3841b-44c9-465e-8107-c881d77f79d7",
+     "oneshetland_test_run": "tr-202611111706b",
+     "organiser_id": "4b8f5f33-0e0b-4993-bd92-c7143dd5cd1f"
+    },
+    "status": "succeeded"
+   }
+  }
+ }
+}

@@ -1,0 +1,8 @@
+-- Read-only post-check for 20270102110000_editions_stage_a.sql. Every row should say ok = true.
+select 'offline_method column exists' as check, count(*) = 1 as ok from information_schema.columns where table_schema='public' and table_name='organiser_memberships' and column_name='offline_method';
+select 'dark-launch guard trigger exists on edition_organisers' as check, count(*) = 1 as ok from pg_trigger where tgrelid='public.edition_organisers'::regclass and tgname='edition_organisers_dark_guard' and not tgisinternal;
+select 'guard function is not callable by users' as check, not has_function_privilege('authenticated','public.edition_dark_launch_guard()','execute') as ok;
+select 'authenticated cannot select contact_email' as check, count(*) = 0 as ok from information_schema.column_privileges where table_schema='public' and table_name='edition_organisers' and column_name='contact_email' and grantee in ('anon','authenticated') and privilege_type='SELECT';
+select 'authenticated cannot select edition_updates.created_by' as check, count(*) = 0 as ok from information_schema.column_privileges where table_schema='public' and table_name='edition_updates' and column_name='created_by' and grantee in ('anon','authenticated') and privilege_type='SELECT';
+select 'contact email function is team-only (no anon execute)' as check, not has_function_privilege('anon','public.edition_org_contact_email(uuid)','execute') and has_function_privilege('authenticated','public.edition_org_contact_email(uuid)','execute') as ok;
+select 'no offline-record membership is active without an accepting owner' as check, count(*) = 0 as ok from public.organiser_memberships where source='offline_record' and status='active' and owner_user_id is null;
